@@ -9,72 +9,68 @@ body {
 
 @layer base {
   :root {
-    --background: 222 47% 11%; /* #111827 */
-    --foreground: 0 0% 98%;
+    --background: 224 71% 4%; /* #050A19 */
+    --foreground: 210 40% 98%;
 
-    --card: 220 29% 16%; /* #1d2333 */
-    --card-foreground: 0 0% 98%;
+    --card: 224 33% 12%; /* #141B2D */
+    --card-foreground: 210 40% 98%;
 
-    --popover: 222 47% 11%;
-    --popover-foreground: 0 0% 98%;
+    --popover: 224 71% 4%;
+    --popover-foreground: 210 40% 98%;
     
     --primary: 153 52% 53%; /* #4ade80 */
     --primary-foreground: 222 47% 11%;
 
-    --secondary: 215 14% 34%;
-    --secondary-foreground: 0 0% 98%;
+    --secondary: 215 28% 17%;
+    --secondary-foreground: 210 40% 98%;
 
-    --muted: 215 14% 34%;
-    --muted-foreground: 220 9% 46%; /* #6B7280 */
+    --muted: 215 28% 17%;
+    --muted-foreground: 215 20% 65%; /* #94a3b8 */
 
-    --accent: 153 52% 53%; /* #4ade80 */
-    --accent-foreground: 222 47% 11%;
+    --accent: 215 28% 17%;
+    --accent-foreground: 210 40% 98%;
 
     --destructive: 0 62.8% 30.6%;
     --destructive-foreground: 0 0% 98%;
     
-    --border: 220 13% 25%; /* #374151 */
-    --input: 215 14% 34%;
+    --border: 215 28% 20%; /* #293548 */
+    --input: 215 28% 17%;
     --ring: 153 52% 53%;
     
     --radius: 0.75rem;
 
-    /* Custom Palette from image */
-    --bg-dark: #111827;
-    --card-dark: #1F2937;
-    --hero-banner: #103E33;
-    --accent-green: #34D399;
+    /* Custom Palette */
     --text-light: #F9FAFB;
     --text-muted: #9CA3AF;
   }
 
   .dark {
-    --background: 222 47% 11%;
-    --foreground: 0 0% 98%;
+    --background: 224 71% 4%; /* #050A19 */
+    --foreground: 210 40% 98%;
+
+    --card: 224 33% 12%; /* #141B2D */
+    --card-foreground: 210 40% 98%;
+
+    --popover: 224 71% 4%;
+    --popover-foreground: 210 40% 98%;
     
-    --card: 220 29% 16%;
-    --card-foreground: 0 0% 98%;
-    
-    --popover: 222 47% 11%;
-    --popover-foreground: 0 0% 98%;
-    
-    --primary: 153 52% 53%;
+    --primary: 153 52% 53%; /* #4ade80 */
     --primary-foreground: 222 47% 11%;
-    
-    --secondary: 215 14% 34%;
-    --secondary-foreground: 0 0% 98%;
-    
-    --muted: 215 14% 34%;
-    --muted-foreground: 220 9% 46%;
-    
-    --accent: 153 52% 53%;
-    --accent-foreground: 222 47% 11%;
-    
+
+    --secondary: 215 28% 17%;
+    --secondary-foreground: 210 40% 98%;
+
+    --muted: 215 28% 17%;
+    --muted-foreground: 215 20% 65%; /* #94a3b8 */
+
+    --accent: 215 28% 17%;
+    --accent-foreground: 210 40% 98%;
+
     --destructive: 0 62.8% 30.6%;
     --destructive-foreground: 0 0% 98%;
     
-    --border: 220 13% 25%;
-    --input: 215 14% 34%;
+    --border: 215 28% 20%; /* #293548 */
+    --input: 215 28% 17%;
     --ring: 153 52% 53%;
   }
 }
