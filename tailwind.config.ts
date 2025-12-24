@@ -1,3 +1,4 @@
+
 import type {Config} from 'tailwindcss';
 
 export default {
@@ -15,6 +16,15 @@ export default {
         code: ['monospace'],
       },
       colors: {
+        'bg-hero-dark': 'hsl(var(--bg-hero-dark))',
+        'bg-light-section': 'hsl(var(--bg-light-section))',
+        'btn-primary': 'hsl(var(--btn-primary))',
+        'btn-hover': 'hsl(var(--btn-hover))',
+        'accent-mint': 'hsl(var(--accent-mint))',
+        'accent-lavender': 'hsl(var(--accent-lavender))',
+        'text-on-dark': 'hsl(var(--text-on-dark))',
+        'text-primary': 'hsl(var(--text-primary))',
+        'text-secondary': 'hsl(var(--text-secondary))',
         background: 'hsl(var(--background))',
         foreground: 'hsl(var(--foreground))',
         card: {
