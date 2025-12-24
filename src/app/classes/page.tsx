@@ -16,7 +16,7 @@ const CourseCard = ({ course }) => {
             <CardContent className="p-6">
                 <div className="flex justify-start mb-4">
                     {course.tags.map(tag => (
-                        <Badge key={tag} variant="secondary" className={`bg-opacity-20 ${
+                        <Badge key={tag} variant="secondary" className={`bg-opacity-20 text-sm font-normal ${
                             tag === 'هوش مصنوعی' ? 'bg-green-500/20 text-green-400 border-green-500/30' :
                             tag === 'ریاضیات' ? 'bg-purple-500/20 text-purple-400 border-purple-500/30' :
                             tag === 'فیزیک' ? 'bg-blue-500/20 text-blue-400 border-blue-500/30' :

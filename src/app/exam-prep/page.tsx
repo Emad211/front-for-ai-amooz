@@ -5,7 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Search, SlidersHorizontal, LayoutGrid, List, Play } from 'lucide-react';
+import { Search, SlidersHorizontal, LayoutGrid, List, Play, ArrowLeft } from 'lucide-react';
 import examsData from '@/lib/exams.json';
 import Link from 'next/link';
 
@@ -35,10 +35,10 @@ const ExamCard = ({ exam }) => {
             <div className="px-6 pb-6">
                  {isInProgress ? (
                      <Button asChild className="w-full bg-primary hover:bg-primary/90 text-primary-foreground rounded-lg">
-                        <Link href="#">ادامه یادگیری <Play className="mr-2 h-4 w-4 fill-current" /></Link>
+                        <Link href="#">ادامه یادگیری <ArrowLeft className="mr-2 h-4 w-4" /></Link>
                      </Button>
                  ) : (
-                    <Button asChild variant="secondary" className="w-full bg-secondary hover:bg-secondary/80 text-secondary-foreground rounded-lg">
+                    <Button asChild variant="secondary" className="w-full bg-secondary hover:bg-secondary/80 text-primary rounded-lg">
                         <Link href="#">
                             شروع یادگیری <Play className="h-4 w-4 mr-2 fill-current" />
                         </Link>
