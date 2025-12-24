@@ -5,7 +5,7 @@ import Image from 'next/image';
 import { Bell, BookOpen, Calendar, History, LogOut, Target, Clock, Video, FileText, ArrowLeft } from 'lucide-react';
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 
 const StatCard = ({ title, value, subValue, icon, tag, progress, fullWidth = false }) => (
@@ -32,7 +32,7 @@ const StatCard = ({ title, value, subValue, icon, tag, progress, fullWidth = fal
 );
 
 const EventCard = ({ title, status, icon, date, month }) => (
-  <div className="flex items-center justify-between bg-card p-4 rounded-lg hover:bg-border transition-colors cursor-pointer">
+  <div className="flex items-center justify-between bg-card/50 p-4 rounded-lg hover:bg-border transition-colors cursor-pointer">
     <div className="flex items-center gap-4">
       <div className="flex flex-col items-center justify-center bg-primary/10 text-primary rounded-lg w-12 h-12 flex-shrink-0">
         <span className="text-sm font-bold">{date}</span>
@@ -53,7 +53,7 @@ const EventCard = ({ title, status, icon, date, month }) => (
 );
 
 const ActivityCard = ({ title, time, type, icon }) => (
-  <div className="flex items-center justify-between bg-card p-4 rounded-lg hover:bg-border transition-colors cursor-pointer">
+  <div className="flex items-center justify-between bg-card/50 p-4 rounded-lg hover:bg-border transition-colors cursor-pointer">
     <div className="flex items-center gap-4">
        <div className="flex items-center justify-center w-8 h-8 rounded-full bg-primary/10 text-primary">{icon}</div>
       <div>
@@ -147,33 +147,31 @@ export default function StudentDashboard() {
         </div>
         
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-            <section className="lg:col-span-2">
-                 <div className="flex items-center justify-between mb-4">
-                    <h3 className="flex items-center gap-2 text-xl font-bold"><History className="text-primary"/> فعالیت‌های اخیر</h3>
+            <Card className="lg:col-span-2 bg-card">
+                <CardHeader className="flex-row items-center justify-between">
+                    <CardTitle className="flex items-center gap-2 text-xl font-bold"><History className="text-primary"/> فعالیت‌های اخیر</CardTitle>
                     <Button variant="link" className="text-primary"><ArrowLeft className="h-4 w-4 mr-1"/> مشاهده همه</Button>
-                </div>
-                <div className="space-y-4">
+                </CardHeader>
+                <CardContent className="space-y-4">
                    <ActivityCard title="ریاضیات گسسته - فصل ۲" time="۲ ساعت پیش" type="در حال انجام" icon={<FileText className="h-4 w-4 text-current"/>} />
                    <ActivityCard title="فیزیک کوانتوم - مقدمه" time="دیروز" type="ویدیو" icon={<Video className="h-4 w-4 text-current"/>} />
                    <ActivityCard title="زبان انگلیسی تخصصی" time="۳ روز پیش" type="آزمون" icon={<BookOpen className="h-4 w-4 text-current"/>} />
-                </div>
-            </section>
+                </CardContent>
+            </Card>
             
-             <section>
-                <div className="flex items-center justify-between mb-4">
-                    <h3 className="flex items-center gap-2 text-xl font-bold"><Calendar className="text-primary"/> رویدادهای پیش رو</h3>
-                </div>
-                <div className="space-y-4">
+             <Card className="bg-card">
+                <CardHeader>
+                    <CardTitle className="flex items-center gap-2 text-xl font-bold"><Calendar className="text-primary"/> رویدادهای پیش رو</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
                     <EventCard title="آزمون میان‌ترم ریاضی" status="ساعت ۱۰:۰۰ - آنلاین" date="۱۵" month="تیر" icon={<Clock className="h-3 w-3 text-current"/>}/>
                     <EventCard title="تحویل پروژه فیزیک" status="تا پایان روز" date="۲۰" month="تیر" icon={<FileText className="h-3 w-3 text-current"/>}/>
-                    <Button variant="outline" className="w-full h-12 border-primary text-primary hover:bg-primary/10 hover:text-primary">مشاهده تقویم کامل</Button>
-                </div>
-            </section>
+                    <Button variant="outline" className="w-full h-12 border-primary/50 text-primary/80 hover:bg-primary/10 hover:text-primary">مشاهده تقویم کامل</Button>
+                </CardContent>
+            </Card>
         </div>
 
       </main>
     </div>
   );
 }
-
-    
