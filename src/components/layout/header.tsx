@@ -30,16 +30,16 @@ export function Header() {
         <Logo />
       </div>
 
-      <nav className="hidden md:flex items-center gap-1 bg-card p-1 rounded-full">
+      <nav className="hidden md:flex items-center gap-1 bg-card/50 p-1 rounded-full border border-border">
         {navItems.map((item) => (
           <Button
             key={item.href}
             variant="ghost"
             className={cn(
-              'rounded-full',
+              'rounded-full px-6 py-1 h-auto text-sm transition-all',
               pathname === item.href
-                ? 'bg-primary text-primary-foreground'
-                : 'text-text-muted'
+                ? 'bg-card text-primary shadow-inner'
+                : 'text-text-muted hover:text-text-light'
             )}
             asChild
           >
