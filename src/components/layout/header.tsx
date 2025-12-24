@@ -36,7 +36,7 @@ export function Header() {
             key={item.href}
             variant="ghost"
             className={cn(
-              'rounded-full px-6 py-2 h-auto text-sm transition-all',
+              'rounded-full px-6 py-2.5 h-auto text-sm transition-all',
               pathname === item.href
                 ? 'bg-card text-primary shadow-inner'
                 : 'text-text-muted hover:text-text-light'
