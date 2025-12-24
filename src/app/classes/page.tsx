@@ -5,12 +5,12 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Search, SlidersHorizontal, LayoutGrid, ArrowLeft } from 'lucide-react';
+import { Search, SlidersHorizontal, LayoutGrid, ArrowLeft, Play } from 'lucide-react';
 import coursesData from '@/lib/courses.json';
 import Link from 'next/link';
 
 const CourseCard = ({ course }) => {
-    const isFeatured = course.tags.includes('هوش مصنوعی') || course.tags.includes('ریاضیات') || course.tags.includes('برنامه‌نویسی');
+    const isFeatured = course.tags.includes('ریاضیات') || course.tags.includes('برنامه‌نویسی');
     return (
         <Card className="bg-card text-card-foreground overflow-hidden flex flex-col justify-between h-full">
             <CardContent className="p-6">
@@ -22,8 +22,9 @@ const CourseCard = ({ course }) => {
                             tag === 'فیزیک' ? 'bg-blue-500/20 text-blue-400 border-blue-500/30' :
                             tag === 'برنامه‌نویسی' ? 'bg-indigo-500/20 text-indigo-400 border-indigo-500/30' :
                             tag === 'زبان' ? 'bg-pink-500/20 text-pink-400 border-pink-500/30' :
+                            tag === 'ادبیات' ? 'bg-purple-500/20 text-purple-400 border-purple-500/30' :
                             'bg-gray-500/20 text-gray-400 border-gray-500/30'
-                        } border`}>{tag}</Badge>
+                        } border mr-2`}>{tag}</Badge>
                     ))}
                 </div>
                 <h3 className="font-bold text-xl text-text-light mb-2">{course.title}</h3>
@@ -35,8 +36,10 @@ const CourseCard = ({ course }) => {
                         <Link href="#">ادامه یادگیری <ArrowLeft className="mr-2 h-4 w-4" /></Link>
                      </Button>
                  ) : (
-                    <Button asChild variant="outline" className="w-full border-border hover:bg-border/50 text-text-light">
-                        <Link href="#">شروع دوره <ArrowLeft className="mr-2 h-4 w-4" /></Link>
+                    <Button asChild className="w-full bg-secondary hover:bg-secondary/80 text-primary">
+                        <Link href="#">
+                            <Play className="h-4 w-4 ml-2 fill-current" /> شروع دوره
+                        </Link>
                     </Button>
                  )}
             </div>
