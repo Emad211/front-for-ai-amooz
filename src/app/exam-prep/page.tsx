@@ -81,11 +81,11 @@ export default function ExamPrepPage() {
             </div>
           </div>
           
-          <div className="mt-6 flex items-center gap-2 rounded-xl bg-card p-2">
-                <span className="text-sm text-text-muted px-2">مرتب‌سازی:</span>
-                <Button variant="ghost" className="bg-secondary text-primary flex-1">جدیدترین</Button>
-                <Button variant="ghost" className="text-text-muted flex-1">محبوب</Button>
-                <Button variant="ghost" className="text-text-muted flex-1">سخت‌ترین</Button>
+          <div className="mt-6 flex items-center gap-4">
+            <span className="text-sm text-text-muted">مرتب‌سازی:</span>
+            <Button variant="ghost" className="bg-card text-text-light">جدیدترین</Button>
+            <Button variant="ghost" className="text-text-muted">محبوب</Button>
+            <Button variant="ghost" className="text-text-muted">سخت‌ترین</Button>
           </div>
 
           <div className="mt-8 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
