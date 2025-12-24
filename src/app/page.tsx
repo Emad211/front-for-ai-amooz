@@ -71,17 +71,24 @@ const ActivityCard = ({ title, time, type, icon }) => (
   </div>
 );
 
+const Logo = () => (
+    <svg width="120" height="32" viewBox="0 0 100 30" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M53.1329 13.0416C54.0202 10.9232 53.0335 8.40645 50.9151 7.51916C48.7967 6.63188 46.28 7.6186 45.3927 9.73699C44.5054 11.8554 45.4921 14.3721 47.6105 15.2594C49.7289 16.1467 52.2456 15.1599 53.1329 13.0416Z" fill="#34D399"/>
+        <path d="M49.4975 12.3582C49.7999 12.483 50.129 12.5454 50.4581 12.5454C50.9151 12.5454 51.3721 12.383 51.7584 12.069C52.1287 11.755 52.3739 11.3161 52.4431 10.8454C52.5122 10.3747 52.3847 9.89539 52.0913 9.49964C51.798 9.1039 51.3636 8.81669 50.8659 8.69191L49.4975 12.3582Z" fill="#F9FAFB"/>
+        <path d="M49.2319 23.4998C49.2319 23.4998 55.4361 23.1116 55.6921 18.2361C55.948 13.3606 48.9136 12.193 48.9136 12.193" stroke="#34D399" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+        <path d="M43.9551 23.5002C43.9551 23.5002 37.7508 23.1119 37.4949 18.2364C37.239 13.3609 44.2733 12.1933 44.2733 12.1933" stroke="#34D399" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+        <path d="M44.2733 12.1934L48.9136 12.1934" stroke="#34D399" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+        <text fill="#F9FAFB" fontFamily="sans-serif" fontSize="6" x="35" y="29">AI-Amooz</text>
+    </svg>
+);
+
+
 export default function StudentDashboard() {
   return (
     <div className="bg-background text-text-light min-h-screen font-sans">
       <header className="flex items-center justify-between p-4 border-b border-border">
         <div className="flex items-center gap-8">
-            <Image
-              src="https://picsum.photos/seed/logo/120/32"
-              width={120}
-              height={32}
-              alt="AI-Amooz Logo"
-            />
+            <Logo />
         </div>
         
         <nav className="hidden md:flex items-center gap-1 bg-card p-1 rounded-full">
@@ -168,3 +175,5 @@ export default function StudentDashboard() {
     </div>
   );
 }
+
+    
