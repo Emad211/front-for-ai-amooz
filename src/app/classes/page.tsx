@@ -38,7 +38,7 @@ const CourseCard = ({ course }) => {
                  ) : (
                     <Button asChild className="w-full bg-secondary hover:bg-secondary/80 text-primary">
                         <Link href="#">
-                            <Play className="h-4 w-4 ml-2 fill-current" /> شروع دوره
+                             شروع دوره <Play className="h-4 w-4 mr-2 fill-current" />
                         </Link>
                     </Button>
                  )}
