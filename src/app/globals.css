@@ -18,7 +18,7 @@ body {
     --popover: 224 71% 4%;
     --popover-foreground: 210 40% 98%;
     
-    --primary: 153 52% 53%; /* #4ade80 */
+    --primary: 160 60% 50%; /* Mint Green */
     --primary-foreground: 222 47% 11%;
 
     --secondary: 215 28% 17%;
@@ -35,7 +35,7 @@ body {
     
     --border: 215 28% 20%; /* #293548 */
     --input: 215 28% 17%;
-    --ring: 153 52% 53%;
+    --ring: 160 60% 50%;
     
     --radius: 0.75rem;
 
@@ -54,7 +54,7 @@ body {
     --popover: 224 71% 4%;
     --popover-foreground: 210 40% 98%;
     
-    --primary: 153 52% 53%; /* #4ade80 */
+    --primary: 160 60% 50%; /* Mint Green */
     --primary-foreground: 222 47% 11%;
 
     --secondary: 215 28% 17%;
@@ -71,7 +71,7 @@ body {
     
     --border: 215 28% 20%; /* #293548 */
     --input: 215 28% 17%;
-    --ring: 153 52% 53%;
+    --ring: 160 60% 50%;
   }
 }
 
