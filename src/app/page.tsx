@@ -96,12 +96,14 @@ export default function StudentDashboard() {
       <header className="flex items-center justify-between p-4 border-b border-border">
         <div className="flex items-center gap-8">
             <Logo />
-          <nav className="hidden md:flex items-center gap-1 bg-card p-1 rounded-full">
+        </div>
+        
+        <nav className="hidden md:flex items-center gap-1 bg-card p-1 rounded-full">
             <Button variant="ghost" className="bg-primary text-primary-foreground rounded-full">داشبورد</Button>
             <Button variant="ghost" className="text-text-muted rounded-full">کلاس‌ها</Button>
             <Button variant="ghost" className="text-text-muted rounded-full">آمادگی آزمون</Button>
-          </nav>
-        </div>
+        </nav>
+
         <div className="flex items-center gap-4">
           <Button variant="ghost" size="icon" className="relative text-text-muted">
             <Bell className="h-5 w-5" />
