@@ -1,7 +1,7 @@
 
 "use client";
 
-import { Bell, BookOpen, Calendar, ChevronLeft, ChevronRight, GraduationCap, History, LogOut, Medal, Target, Clock, Video, FileText } from 'lucide-react';
+import { Bell, BookOpen, Calendar, ChevronRight, ChevronLeft, GraduationCap, History, LogOut, Medal, Target, Clock, Video, FileText } from 'lucide-react';
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -41,7 +41,7 @@ const EventCard = ({ title, status, type, icon, date, month }) => (
       </div>
     </div>
     <Button variant="ghost" size="icon">
-        <ChevronLeft className="h-5 w-5 text-text-secondary"/>
+        <ChevronRight className="h-5 w-5 text-text-secondary"/>
     </Button>
   </div>
 );
@@ -59,7 +59,7 @@ const ActivityCard = ({ title, time, type, icon }) => (
       </div>
     </div>
      <Button variant="ghost" size="icon">
-        <ChevronLeft className="h-5 w-5 text-text-secondary"/>
+        <ChevronRight className="h-5 w-5 text-text-secondary"/>
     </Button>
   </div>
 );
@@ -67,7 +67,7 @@ const ActivityCard = ({ title, time, type, icon }) => (
 
 export default function StudentDashboard() {
   return (
-    <div className="bg-bg-hero-dark text-text-on-dark min-h-screen font-sans">
+    <div className="bg-background text-text-on-dark min-h-screen font-sans">
       <header className="flex items-center justify-between p-4 border-b border-btn-hover">
         <div className="flex items-center gap-8">
           <div className="flex items-center gap-2">
@@ -89,14 +89,14 @@ export default function StudentDashboard() {
             </span>
           </Button>
           <div className="flex items-center gap-3">
+             <div className="text-left hidden sm:block">
+              <p className="font-semibold text-sm">علی رضایی</p>
+              <p className="text-xs text-text-secondary">دانش آموز ممتاز</p>
+            </div>
             <Avatar>
               <AvatarImage src="https://picsum.photos/seed/user/40/40" alt="Ali Rezaei" />
               <AvatarFallback>AR</AvatarFallback>
             </Avatar>
-            <div className="text-right hidden sm:block">
-              <p className="font-semibold text-sm">علی رضایی</p>
-              <p className="text-xs text-text-secondary">دانش آموز ممتاز</p>
-            </div>
           </div>
            <Button variant="ghost" size="icon">
              <LogOut className="h-5 w-5 text-text-secondary" />
@@ -120,8 +120,8 @@ export default function StudentDashboard() {
             </p>
           </div>
           <Button size="lg" className="bg-accent-mint text-bg-hero-dark hover:bg-accent-mint/90 flex-shrink-0">
+            <ChevronRight className="ml-2 h-5 w-5" />
             ادامه یادگیری هوشمند
-            <ChevronLeft className="mr-2 h-5 w-5" />
           </Button>
         </div>
         
@@ -135,7 +135,7 @@ export default function StudentDashboard() {
             <section>
                  <div className="flex items-center justify-between mb-4">
                     <h3 className="flex items-center gap-2 text-xl font-bold"><History className="text-accent-mint"/> فعالیت‌های اخیر</h3>
-                    <Button variant="link" className="text-accent-mint">مشاهده همه <ChevronLeft className="h-4 w-4 mr-1"/></Button>
+                    <Button variant="link" className="text-accent-mint"><ChevronLeft className="h-4 w-4 ml-1"/> مشاهده همه</Button>
                 </div>
                 <div className="space-y-4">
                    <ActivityCard title="ریاضیات گسسته - فصل ۲" time="۲ ساعت پیش" type="در حال انجام" icon={<FileText className="text-current"/>} />

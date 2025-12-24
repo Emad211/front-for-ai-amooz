@@ -9,16 +9,16 @@ body {
 
 @layer base {
   :root {
-    --background: 224 71% 4%; /* Equivalent to #052E23 but in HSL for consistency */
+    --background: 158 80% 10%; /* #052E23 */
     --foreground: 0 0% 98%;
 
-    --bg-hero-dark: 165 83% 10%; /* #052E23 */
+    --bg-hero-dark: 158 80% 10%; /* #052E23 */
     --bg-light-section: 158 71% 97%; /* #F2FBF7 */
 
     --card: 225 18% 14%; /* #1F2937 - Adjusted to match design */
     --card-foreground: 0 0% 98%;
 
-    --popover: 224 71% 4%;
+    --popover: 158 80% 10%;
     --popover-foreground: 0 0% 98%;
     
     --primary: 170 71% 28%; /* #137968 */
@@ -53,13 +53,13 @@ body {
   }
 
   .dark {
-    --background: 165 83% 10%; /* bg-hero-dark */
+    --background: 158 80% 10%; /* bg-hero-dark */
     --foreground: 0 0% 100%; /* text-on-dark */
     
     --card: 220 13% 18%; /* text-primary */
     --card-foreground: 0 0% 100%;
     
-    --popover: 165 83% 10%;
+    --popover: 158 80% 10%;
     --popover-foreground: 0 0% 100%;
     
     --primary: 170 71% 28%; /* btn-primary */
