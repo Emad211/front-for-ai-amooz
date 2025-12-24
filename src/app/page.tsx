@@ -70,16 +70,32 @@ const ActivityCard = ({ title, time, type, icon }) => (
   </div>
 );
 
+const Logo = () => (
+    <div className="flex items-center gap-3">
+        <svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <defs>
+                <radialGradient id="grad1" cx="50%" cy="50%" r="50%" fx="50%" fy="50%">
+                <stop offset="0%" style={{stopColor:'hsl(var(--primary))', stopOpacity:1}} />
+                <stop offset="100%" style={{stopColor:'hsl(var(--primary))', stopOpacity:0}} />
+                </radialGradient>
+            </defs>
+            <path d="M18.86 23.3333C18.86 21.5733 19.34 20.2 20.3 19.2133C21.26 18.2267 22.56 17.7333 24.2 17.7333C25.7867 17.7333 27.0667 18.2267 28.04 19.2133C29.0133 20.2 29.5 21.5733 29.5 23.3333C29.5 24.08 29.38 24.7867 29.14 25.4533L27.18 25.04C27.2733 24.5467 27.32 24.0267 27.32 23.48C27.32 22.1467 26.9 21.08 26.06 20.28C25.22 19.48 24.16 19.08 22.88 19.08C22.2533 19.08 21.68 19.2667 21.16 19.64C20.64 20.0133 20.2733 20.5733 20.06 21.32L18.86 23.3333Z" fill="hsl(var(--primary))"/>
+            <path d="M15.4667 25.4C15.4667 24.5867 15.64 23.9067 15.9867 23.36C16.3333 22.8133 16.7867 22.3867 17.3467 22.08L18.84 21.3333C18.84 21.6 18.84 21.9067 18.84 22.2533C18.84 23.8267 18.4267 25.1333 17.6 26.1733C16.7733 27.2133 15.6533 27.7333 14.24 27.7333C12.8267 27.7333 11.6667 27.2267 10.76 26.2133C9.85333 25.2 9.4 23.8667 9.4 22.2133C9.4 20.56 9.85333 19.2267 10.76 18.2133C11.6667 17.2 12.8267 16.6933 14.24 16.6933C15.28 16.6933 16.24 17.0267 17.12 17.6933L17.8933 16.1067C16.8533 15.3733 15.6 15 14.1333 15C12.0667 15 10.4 15.6533 9.13333 16.96C7.86667 18.2667 7.2 19.9867 7.2 22.12C7.2 24.2533 7.86667 25.9733 9.13333 27.28C10.4 28.5867 12.0667 29.24 14.1333 29.24C14.7333 29.24 15.1467 28.2933 15.3733 26.4L15.4667 25.4Z" fill="hsl(var(--primary))"/>
+            <path d="M14.542 13.7599L6.33797 27.9999H9.01797L13.138 20.6799L17.258 27.9999H19.938L11.738 13.7599H14.542Z" fill="hsl(var(--primary))" transform="translate(-1, -1) scale(1.2)"/>
+            <circle cx="10.8" cy="8.2" r="3" fill="hsl(var(--primary))" />
+            <circle cx="10.8" cy="8.2" r="4.5" fill="url(#grad1)" />
+        </svg>
+        <h1 className="text-xl font-bold text-text-light">AI-Amooz</h1>
+    </div>
+);
+
 
 export default function StudentDashboard() {
   return (
     <div className="bg-background text-text-light min-h-screen font-sans">
       <header className="flex items-center justify-between p-4 border-b border-border">
         <div className="flex items-center gap-8">
-          <div className="flex items-center gap-2">
-            <GraduationCap className="h-8 w-8 text-primary" />
-            <h1 className="text-xl font-bold text-text-light">AI-Amooz</h1>
-          </div>
+            <Logo />
           <nav className="hidden md:flex items-center gap-1 bg-card p-1 rounded-full">
             <Button variant="ghost" className="bg-primary text-primary-foreground rounded-full">داشبورد</Button>
             <Button variant="ghost" className="text-text-muted rounded-full">کلاس‌ها</Button>
@@ -165,3 +181,4 @@ export default function StudentDashboard() {
   );
 }
 
+    
