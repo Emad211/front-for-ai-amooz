@@ -19,7 +19,7 @@ export function Header() {
   const pathname = usePathname();
 
   const navItems = [
-    { href: '/', label: 'داشبورد' },
+    { href: '/', label: 'خانه' },
     { href: '/classes', label: 'کلاس‌ها' },
     { href: '/exam-prep', label: 'آمادگی آزمون' },
   ];
