@@ -23,7 +23,7 @@ const ExamCard = ({ exam }) => {
                         exam.tags[0] === 'زبان' ? 'bg-pink-500/20 text-pink-400 border-pink-500/30' :
                         exam.tags[0] === 'آمار' ? 'bg-purple-500/20 text-purple-400 border-purple-500/30' :
                         'bg-gray-500/20 text-gray-400 border-gray-500/30'
-                    } border`}>{exam.tags[0]}</Badge>
+                    } border mr-2`}>{exam.tags[0]}</Badge>
                 </div>
                 <h3 className="font-bold text-xl text-text-light mb-2">{exam.title}</h3>
                 <p className="text-text-muted text-sm leading-relaxed mb-4">{exam.description}</p>
@@ -40,7 +40,7 @@ const ExamCard = ({ exam }) => {
                  ) : (
                     <Button asChild variant="secondary" className="w-full bg-secondary hover:bg-secondary/80 text-primary rounded-lg">
                         <Link href="#">
-                            شروع یادگیری <Play className="h-4 w-4 mr-2 fill-current" />
+                            <Play className="h-4 w-4 ml-2 fill-current" /> شروع یادگیری
                         </Link>
                     </Button>
                  )}

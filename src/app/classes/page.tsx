@@ -12,7 +12,7 @@ import Link from 'next/link';
 const CourseCard = ({ course }) => {
     const isFeatured = course.tags.includes('ریاضیات') || course.tags.includes('برنامه‌نویسی');
     return (
-        <Card className="bg-card text-card-foreground overflow-hidden flex flex-col justify-between h-full">
+        <Card className="bg-card text-card-foreground overflow-hidden flex flex-col justify-between h-full rounded-2xl">
             <CardContent className="p-6">
                 <div className="flex justify-start mb-4">
                     {course.tags.map(tag => (
@@ -38,7 +38,7 @@ const CourseCard = ({ course }) => {
                  ) : (
                     <Button asChild className="w-full bg-secondary hover:bg-secondary/80 text-primary">
                         <Link href="#">
-                             شروع دوره <Play className="h-4 w-4 mr-2 fill-current" />
+                             <Play className="h-4 w-4 ml-2 fill-current" /> شروع دوره
                         </Link>
                     </Button>
                  )}
