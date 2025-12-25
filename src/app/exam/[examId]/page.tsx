@@ -118,23 +118,23 @@ const ChatAssistant = ({ onToggle, isOpen }) => {
 
     return (
      <aside className={cn(
-        "flex-shrink-0 flex-col bg-card border-r border-border rounded-l-2xl overflow-hidden shadow-xl h-full hidden md:flex transition-all duration-300 ease-in-out",
+        "flex-shrink-0 flex-col bg-card border-l border-border rounded-r-2xl overflow-hidden shadow-xl h-full hidden md:flex transition-all duration-300 ease-in-out",
         isOpen ? "w-96" : "w-0 p-0 border-none"
      )}>
         <div className={cn("p-3 border-b border-border flex items-center justify-between bg-secondary/30 backdrop-blur-sm h-[73px]", !isOpen && "hidden")}>
             
+            <Button onClick={onToggle} variant="ghost" size="icon" className="h-8 w-8 rounded-lg text-muted-foreground hover:text-foreground">
+                <PanelLeftClose className="h-4 w-4" />
+            </Button>
             <div className="flex items-center gap-3">
+                <div>
+                    <h3 className="text-sm font-bold text-foreground text-right">دستیار حل سوال</h3>
+                </div>
                 <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-primary/20 to-purple-500/20 flex items-center justify-center relative ring-1 ring-foreground/10">
                     <Bot className="text-primary h-5 w-5" />
                     <span className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 bg-green-500 rounded-full border-2 border-card"></span>
                 </div>
-                <div>
-                    <h3 className="text-sm font-bold text-foreground">دستیار حل سوال</h3>
-                </div>
             </div>
-            <Button onClick={onToggle} variant="ghost" size="icon" className="h-8 w-8 rounded-lg text-muted-foreground hover:text-foreground">
-                <PanelLeftClose className="h-4 w-4" />
-            </Button>
         </div>
         <div className={cn("flex-1 overflow-y-auto p-4 space-y-6 bg-background/30 no-scrollbar", !isOpen && "hidden")}>
             <ChatMessage sender="ai" time="۱۰:۳۲" message="سلام! 👋 من دستیار حل سوالت هستم.<br/>میتونی سوالت رو بخونی، گزینه انتخاب کنی، یا اگه جایی گیر کردی ازم راهنمایی بخوای. اگه روی کاغذ حل کردی، عکسش رو بفرست تا بررسی کنم." />
@@ -152,9 +152,9 @@ const ChatAssistant = ({ onToggle, isOpen }) => {
                     onChange={handleInputChange}
                     placeholder="سوالت رو بپرس... یا تصویر حل دستیت رو بفرست" 
                     rows={1}
-                    className="bg-background border-border rounded-xl text-sm text-foreground focus:ring-1 focus:ring-primary focus:border-primary placeholder:text-muted-foreground/50 py-3 pl-12 pr-20 resize-none overflow-y-hidden no-scrollbar" 
+                    className="bg-background border-border rounded-xl text-sm text-foreground focus:ring-1 focus:ring-primary focus:border-primary placeholder:text-muted-foreground/50 py-3 pr-12 pl-20 resize-none overflow-y-hidden no-scrollbar" 
                 />
-                <div className="absolute right-2 bottom-1.5 flex items-center gap-1">
+                <div className="absolute left-2 bottom-1.5 flex items-center gap-1">
                     <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg text-muted-foreground hover:text-primary hover:bg-foreground/5" title="پیوست فایل">
                         <Paperclip className="h-4 w-4 -rotate-45" />
                     </Button>
@@ -162,7 +162,7 @@ const ChatAssistant = ({ onToggle, isOpen }) => {
                         <Mic className="h-4 w-4" />
                     </Button>
                 </div>
-                <div className="absolute left-2 bottom-1.5 flex items-center">
+                <div className="absolute right-2 bottom-1.5 flex items-center">
                     <Button size="icon" className="h-9 w-9 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground transition-all shadow-lg shadow-primary/20 hover:scale-105 active:scale-95">
                         <Send className="h-4 w-4 rtl:-rotate-180" />
                     </Button>
@@ -202,15 +202,15 @@ export default function ExamPage() {
     return (
         <div className="bg-background font-body text-foreground antialiased min-h-screen flex flex-col overflow-hidden">
             <Header />
-            <main className="flex-grow w-full max-w-[1920px] mx-auto p-0 h-[calc(100vh-64px)] flex flex-row-reverse overflow-hidden relative">
+            <main className="flex-grow w-full max-w-[1920px] mx-auto p-0 h-[calc(100vh-64px)] flex flex-row overflow-hidden relative">
                 
                 {!isChatOpen && (
                      <button 
                         onClick={toggleChat} 
-                        className="absolute top-1/2 -translate-y-1/2 left-0 h-28 w-10 bg-card/80 backdrop-blur-sm border-y border-l border-border rounded-l-2xl flex flex-col items-center justify-center text-primary shadow-lg hover:bg-card transition-all group z-50"
+                        className="absolute top-1/2 -translate-y-1/2 right-0 h-28 w-10 bg-card/80 backdrop-blur-sm border-y border-r border-border rounded-r-2xl flex flex-col items-center justify-center text-primary shadow-lg hover:bg-card transition-all group z-50"
                         title="باز کردن دستیار هوشمند"
                     >
-                        <ChevronLeft className="h-6 w-6 mb-1 transition-transform group-hover:scale-110" />
+                        <ChevronRight className="h-6 w-6 mb-1 transition-transform group-hover:scale-110" />
                         <Bot className="h-6 w-6 transition-transform group-hover:scale-110" />
                     </button>
                 )}
