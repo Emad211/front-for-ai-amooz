@@ -11,6 +11,7 @@ import {
     Mic,
     Send,
     PanelLeftClose,
+    PanelRightClose,
     ChevronLeft,
     ChevronRight,
 } from 'lucide-react';
@@ -52,28 +53,28 @@ const QuestionContent = () => (
                     اگر ۱, 2x - 1, x + 1, x² + x و x⁴ به ترتیب جملات چهارم، پنجم، هفتم و هشتم یک دنباله هندسی باشند، حاصل ضرب مقادیر ممکن برای قدر نسبت این دنباله کدام است؟
                 </p>
                 <RadioGroup defaultValue="c" dir="rtl" className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <Label htmlFor="option-a" className="flex items-center p-4 bg-background border border-border rounded-lg cursor-pointer hover:bg-secondary/50 has-[:checked]:bg-primary/10 has-[:checked]:border-primary">
+                    <Label htmlFor="option-a" className="flex items-center justify-between p-4 bg-background border border-border rounded-lg cursor-pointer hover:bg-secondary/50 has-[:checked]:bg-primary/10 has-[:checked]:border-primary">
                         <div className="flex items-center gap-3">
                            <RadioGroupItem value="a" id="option-a" />
                            <span>الف)</span>
                            <span className="font-mono">۱</span>
                         </div>
                     </Label>
-                    <Label htmlFor="option-b" className="flex items-center p-4 bg-background border border-border rounded-lg cursor-pointer hover:bg-secondary/50 has-[:checked]:bg-primary/10 has-[:checked]:border-primary">
+                    <Label htmlFor="option-b" className="flex items-center justify-between p-4 bg-background border border-border rounded-lg cursor-pointer hover:bg-secondary/50 has-[:checked]:bg-primary/10 has-[:checked]:border-primary">
                          <div className="flex items-center gap-3">
                            <RadioGroupItem value="b" id="option-b" />
                            <span>ب)</span>
                            <span className="font-mono">-۱</span>
                         </div>
                     </Label>
-                    <Label htmlFor="option-c" className="flex items-center p-4 bg-background border border-border rounded-lg cursor-pointer hover:bg-secondary/50 has-[:checked]:bg-primary/10 has-[:checked]:border-primary">
+                    <Label htmlFor="option-c" className="flex items-center justify-between p-4 bg-background border border-border rounded-lg cursor-pointer hover:bg-secondary/50 has-[:checked]:bg-primary/10 has-[:checked]:border-primary">
                          <div className="flex items-center gap-3">
                            <RadioGroupItem value="c" id="option-c" />
                            <span>ج)</span>
                            <span className="font-mono">۲</span>
                         </div>
                     </Label>
-                    <Label htmlFor="option-d" className="flex items-center p-4 bg-background border border-border rounded-lg cursor-pointer hover:bg-secondary/50 has-[:checked]:bg-primary/10 has-[:checked]:border-primary">
+                    <Label htmlFor="option-d" className="flex items-center justify-between p-4 bg-background border border-border rounded-lg cursor-pointer hover:bg-secondary/50 has-[:checked]:bg-primary/10 has-[:checked]:border-primary">
                          <div className="flex items-center gap-3">
                            <RadioGroupItem value="d" id="option-d" />
                            <span>د)</span>
@@ -219,3 +220,5 @@ export default function ExamPage() {
         </div>
     );
 }
+
+    
