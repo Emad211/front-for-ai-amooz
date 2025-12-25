@@ -11,7 +11,7 @@ import {
     List, 
     Flag, 
     Hourglass, 
-    FolderOpen, 
+    FolderOpen, b
     Book, 
     PlayCircle, 
     FileText, 
@@ -28,8 +28,7 @@ import {
     Signal,
     Clock,
     BarChart,
-    PanelRightClose,
-    PanelRightOpen
+    PanelRightClose
 } from 'lucide-react';
 import {
     Accordion,
@@ -207,11 +206,12 @@ const ChatAssistant = ({ onToggle, isOpen }) => {
             textareaRef.current.style.height = `${textareaRef.current.scrollHeight}px`;
         }
     };
-    
-    if (!isOpen) return null;
 
     return (
-     <aside className="w-96 flex-shrink-0 flex-col bg-card border border-border rounded-2xl overflow-hidden shadow-xl h-full hidden md:flex">
+     <aside className={cn(
+        "flex-shrink-0 flex-col bg-card border border-border rounded-2xl overflow-hidden shadow-xl h-full hidden md:flex transition-all duration-300 ease-in-out",
+        isOpen ? "w-96" : "w-0"
+     )}>
         <div className="p-3 border-b border-border flex items-center justify-between bg-secondary/30 backdrop-blur-sm h-14">
             <div className="flex items-center gap-3">
                 <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-primary/20 to-purple-500/20 flex items-center justify-center relative ring-1 ring-foreground/10">
@@ -296,11 +296,14 @@ export default function LearnPage() {
                 <LessonContent />
                 <ChatAssistant isOpen={isChatOpen} onToggle={toggleChat} />
                 {!isChatOpen && (
-                    <div className="absolute top-4 left-4 z-20">
-                         <Button onClick={toggleChat} variant="outline" size="icon" className="bg-card/80 backdrop-blur-sm">
-                            <PanelRightOpen className="h-5 w-5" />
-                        </Button>
-                    </div>
+                    <button 
+                        onClick={toggleChat} 
+                        className="fixed bottom-6 left-6 h-16 w-16 bg-card/50 backdrop-blur-lg border border-border rounded-2xl flex items-center justify-center text-primary shadow-2xl hover:border-primary/50 transition-all group z-50"
+                        title="باز کردن دستیار هوشمند"
+                    >
+                        <Bot className="h-8 w-8 transition-transform group-hover:scale-110" />
+                         <span className="absolute -bottom-1 -right-1 h-4 w-4 bg-green-500 rounded-full border-4 border-background"></span>
+                    </button>
                 )}
             </main>
         </div>
