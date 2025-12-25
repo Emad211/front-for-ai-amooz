@@ -124,7 +124,7 @@ const ChatAssistant = ({ onToggle, isOpen }) => {
 
     return (
      <aside className={cn(
-        "flex-shrink-0 flex-col bg-card border-l border-border rounded-r-2xl overflow-hidden shadow-xl h-full hidden md:flex transition-all duration-300 ease-in-out",
+        "flex-shrink-0 flex-col bg-card border-r border-border rounded-l-2xl overflow-hidden shadow-xl h-full hidden md:flex transition-all duration-300 ease-in-out",
         isOpen ? "w-96" : "w-0 p-0 border-none"
      )}>
         <div className={cn("p-3 border-b border-border flex items-center justify-between bg-secondary/30 backdrop-blur-sm h-[73px]", !isOpen && "hidden")}>
@@ -167,7 +167,7 @@ const ChatAssistant = ({ onToggle, isOpen }) => {
                         <Mic className="h-4 w-4" />
                     </Button>
                 </div>
-                <div className="absolute left-2 bottom-1-5 flex items-center">
+                <div className="absolute left-2 bottom-1.5 flex items-center">
                     <Button size="icon" className="h-9 w-9 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground transition-all shadow-lg shadow-primary/20 hover:scale-105 active:scale-95">
                         <Send className="h-4 w-4 rtl:-rotate-180" />
                     </Button>
@@ -206,22 +206,23 @@ export default function ExamPage() {
 
     return (
         <div className="bg-background font-body text-foreground antialiased min-h-screen flex flex-col overflow-hidden">
-            <main className="flex-grow w-full max-w-[1920px] mx-auto p-0 h-screen flex flex-row-reverse overflow-hidden relative">
-                <ChatAssistant isOpen={isChatOpen} onToggle={toggleChat} />
+            <main className="flex-grow w-full max-w-[1920px] mx-auto p-0 h-screen flex flex-row overflow-hidden relative">
+                
                 <div className={cn("flex-1 flex flex-col relative transition-all duration-300 ease-in-out", isChatOpen ? "w-[calc(100%-24rem)]" : "w-full")}>
                     <ExamHeader />
                     <div className="flex-1 overflow-y-auto">
                         <QuestionContent />
                     </div>
                 </div>
+                <ChatAssistant isOpen={isChatOpen} onToggle={toggleChat} />
                 
                 {!isChatOpen && (
                      <button 
                         onClick={toggleChat} 
-                        className="absolute top-1/2 -translate-y-1/2 right-0 h-28 w-10 bg-card/80 backdrop-blur-sm border-y border-r border-border rounded-r-2xl flex flex-col items-center justify-center text-primary shadow-lg hover:bg-card transition-all group z-50"
+                        className="absolute top-1/2 -translate-y-1/2 left-0 h-28 w-10 bg-card/80 backdrop-blur-sm border-y border-l border-border rounded-l-2xl flex flex-col items-center justify-center text-primary shadow-lg hover:bg-card transition-all group z-50"
                         title="باز کردن دستیار هوشمند"
                     >
-                        <ChevronRight className="h-6 w-6 mb-1 transition-transform group-hover:scale-110" />
+                        <ChevronLeft className="h-6 w-6 mb-1 transition-transform group-hover:scale-110" />
                         <Bot className="h-6 w-6 transition-transform group-hover:scale-110" />
                     </button>
                 )}
@@ -229,5 +230,3 @@ export default function ExamPage() {
         </div>
     );
 }
-
-    
