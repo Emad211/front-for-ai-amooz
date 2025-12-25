@@ -2,7 +2,6 @@
 
 import React from 'react';
 import Link from 'next/link';
-import { Header } from '@/components/layout/header';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
@@ -291,8 +290,7 @@ export default function LearnPage() {
 
     return (
         <div className="bg-background font-body text-foreground antialiased min-h-screen flex flex-col overflow-hidden">
-            <Header />
-            <main className="flex-grow w-full max-w-[1920px] mx-auto p-4 h-[calc(100vh-64px)] flex gap-4 overflow-hidden relative">
+            <main className="flex-grow w-full max-w-[1920px] mx-auto p-4 h-screen flex gap-4 overflow-hidden relative">
                 <CourseSidebar />
                 <div className={cn("flex-1 flex flex-col relative transition-all duration-300 ease-in-out", isChatOpen ? "w-[calc(100%-20rem-24rem)]" : "w-full")}>
                     <LessonContent />
