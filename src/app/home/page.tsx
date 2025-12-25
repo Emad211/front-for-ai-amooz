@@ -88,11 +88,11 @@ export default function StudentDashboard() {
                     </span>
                 هوش مصنوعی فعال است
                 </div>
-                <h2 className="text-2xl font-bold mb-2 text-text-light">👋 خوش آمدید به AI-Amooz</h2>
-                <p className="text-text-light/80 text-sm">
+                <h2 className="text-4xl font-bold mb-3 text-text-light">👋 خوش آمدید به AI-Amooz</h2>
+                <p className="text-text-light/80 text-base mb-6">
                 مسیر یادگیری شما با هوش مصنوعی بهینه سازی شده است. آماده ادامه فیزیک کوانتوم هستید؟
                 </p>
-                <Button size="default" className="mt-4 bg-primary text-primary-foreground hover:bg-primary/90 flex-shrink-0">
+                <Button size="lg" className="bg-primary text-primary-foreground hover:bg-primary/90 flex-shrink-0">
                     ادامه یادگیری هوشمند
                     <ArrowLeft className="mr-2 h-5 w-5" />
                 </Button>
