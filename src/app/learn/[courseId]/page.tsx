@@ -4,7 +4,6 @@ import React from 'react';
 import Link from 'next/link';
 import { Header } from '@/components/layout/header';
 import { Button } from '@/components/ui/button';
-import { Progress } from '@/components/ui/progress';
 import { Textarea } from '@/components/ui/textarea';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { 
@@ -18,14 +17,11 @@ import {
     PlayCircle, 
     FileText, 
     CheckCircle,
-    ChevronUp,
     Folder,
     Lock,
     BookOpen,
     Settings,
     RotateCcw,
-    Lightbulb,
-    Check,
     Bot,
     MoreVertical,
     Paperclip,
@@ -35,6 +31,12 @@ import {
     Clock,
     BarChart,
 } from 'lucide-react';
+import {
+    Accordion,
+    AccordionContent,
+    AccordionItem,
+    AccordionTrigger,
+} from "@/components/ui/accordion"
 import { cn } from '@/lib/utils';
 import '../learn.css';
 
@@ -59,25 +61,46 @@ const CourseSidebar = () => (
                 <SidebarItem icon={<Flag className="h-5 w-5" />} title="اهداف یادگیری" />
                 <SidebarItem icon={<Hourglass className="h-5 w-5" />} title="پیش نیازها" />
                 
-                <div>
-                    <div className="flex items-center justify-between p-3 rounded-xl bg-primary/10 text-foreground cursor-pointer">
-                        <div className="flex items-center gap-3">
-                            <FolderOpen className="text-primary h-5 w-5" />
+                <Accordion type="single" collapsible defaultValue="item-1" className="w-full">
+                  <AccordionItem value="item-1" className="border-none">
+                    <AccordionTrigger className="p-3 rounded-xl hover:no-underline hover:bg-secondary/30 text-foreground data-[state=open]:bg-primary/10 data-[state=open]:text-primary">
+                       <div className="flex items-center gap-3">
+                            <FolderOpen className="h-5 w-5" />
                             <span className="text-sm font-bold">آشنایی با سهمی</span>
                         </div>
-                        <ChevronUp className="h-4 w-4" />
-                    </div>
-                    <div className="p-1 space-y-1">
+                    </AccordionTrigger>
+                    <AccordionContent className="p-1 space-y-1">
                        <SubmenuItem icon={<FileText className="h-4 w-4" />} title="شکل کلی و جهت سهمی" />
                        <SubmenuItem icon={<PlayCircle className="h-4 w-4" />} title="رأس سهمی: مهمترین نقطه" active />
                        <SubmenuItem icon={<FileText className="h-4 w-4" />} title="ارتباط رأس با نقاط متقارن" />
                        <SubmenuItem icon={<Book className="h-4 w-4" />} title="عرض از مبدأ و ریشه‌ها" />
                        <SubmenuItem icon={<CheckCircle className="h-4 w-4 text-green-400" />} title="آزمون فصل" special />
-                    </div>
-                </div>
+                    </AccordionContent>
+                  </AccordionItem>
+                  <AccordionItem value="item-2" className="border-none">
+                    <AccordionTrigger className="p-3 rounded-xl hover:no-underline hover:bg-secondary/30 text-muted-foreground hover:text-foreground">
+                       <div className="flex items-center gap-3">
+                            <Folder className="h-5 w-5" />
+                            <span className="text-sm font-medium">گام به گام رسم نمودار</span>
+                        </div>
+                    </AccordionTrigger>
+                    <AccordionContent className="p-1 space-y-1">
+                        {/* Subitems for this section would go here */}
+                    </AccordionContent>
+                  </AccordionItem>
+                  <AccordionItem value="item-3" className="border-none">
+                    <AccordionTrigger className="p-3 rounded-xl hover:no-underline hover:bg-secondary/30 text-muted-foreground hover:text-foreground">
+                        <div className="flex items-center gap-3">
+                            <Folder className="h-5 w-5" />
+                            <span className="text-sm font-medium">حل مسائل مربوطه</span>
+                        </div>
+                    </AccordionTrigger>
+                    <AccordionContent className="p-1 space-y-1">
+                        {/* Subitems for this section would go here */}
+                    </AccordionContent>
+                  </AccordionItem>
+                </Accordion>
 
-                <SidebarItem icon={<Folder className="h-5 w-5" />} title="گام به گام رسم نمودار" expandable />
-                <SidebarItem icon={<Folder className="h-5 w-5" />} title="حل مسائل مربوطه" expandable />
                 <SidebarItem icon={<Lock className="h-5 w-5" />} title="آزمون نهایی دوره" disabled />
                 <SidebarItem icon={<BookOpen className="h-5 w-5" />} title="خلاصه و نکات" />
             </div>
@@ -101,7 +124,7 @@ const CourseSidebar = () => (
     </aside>
 );
 
-const SidebarItem = ({ icon, title, disabled = false, expandable = false }) => (
+const SidebarItem = ({ icon, title, disabled = false }) => (
     <div className={cn("group", disabled && "cursor-not-allowed text-muted-foreground/40")}>
         <div className={cn("flex items-center justify-between p-3 rounded-xl cursor-pointer transition-all", 
             disabled ? "" : "text-muted-foreground hover:bg-secondary/30 hover:text-foreground border border-transparent hover:border-border/30"
@@ -110,7 +133,6 @@ const SidebarItem = ({ icon, title, disabled = false, expandable = false }) => (
                 {React.cloneElement(icon, { className: cn("h-5 w-5", disabled ? "text-muted-foreground/40" : "text-muted-foreground") })}
                 <span className="text-sm font-medium">{title}</span>
             </div>
-            {expandable && <ChevronDown className="h-4 w-4 text-muted-foreground/60" />}
         </div>
     </div>
 );
