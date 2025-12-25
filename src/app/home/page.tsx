@@ -8,7 +8,6 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Header } from '@/components/layout/header';
 import Image from 'next/image';
-import HomeImage from '@/assets/home.png';
 
 
 const StatCard = ({ title, value, subValue, icon, tag, progress }) => (
@@ -99,7 +98,7 @@ export default function StudentDashboard() {
                 </Button>
             </div>
             <div className="md:w-1/2 flex justify-center items-center">
-                <Image src={HomeImage} alt="AI Learning" width={413} height={230} className="rounded-lg" priority />
+                <Image src="/home.png" alt="AI Learning" width={413} height={230} className="rounded-lg" priority />
             </div>
         </div>
         
@@ -130,7 +129,7 @@ export default function StudentDashboard() {
                     <EventCard title="آزمون میان‌ترم ریاضی" status="ساعت ۱۰:۰۰ - آنلاین" date="۱۵" month="تیر" icon={<Clock className="h-3 w-3 text-current"/>}/>
                     <EventCard title="تحویل پروژه فیزیک" status="تا پایان روز" date="۲۰" month="تیر" icon={<FileText className="h-3 w-3 text-current"/>}/>
                     <Button variant="outline" className="w-full h-12 border-primary/50 text-primary/80 hover:bg-primary/10 hover:text-primary">مشاهده تقویم کامل</Button>
-                </CardContent>_
+                </CardContent>
             </Card>
         </div>
 
