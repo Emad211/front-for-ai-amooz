@@ -55,7 +55,6 @@ const CourseSidebar = () => (
                     <List className="text-primary h-5 w-5" />
                     فهرست مطالب
                 </h3>
-                <span className="text-[10px] text-muted-foreground bg-secondary px-2 py-0.5 rounded-full">8 بخش</span>
             </div>
             <div className="flex-1 overflow-y-auto p-2 space-y-1 no-scrollbar">
                 <SidebarItem icon={<Flag className="h-5 w-5" />} title="اهداف یادگیری" />
