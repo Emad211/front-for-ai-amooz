@@ -17,6 +17,7 @@ import {
 import { cn } from '@/lib/utils';
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { Label } from "@/components/ui/label"
+import { Header } from '@/components/layout/header';
 
 
 const ExamHeader = ({ onToggle }) => (
@@ -40,11 +41,11 @@ const ExamHeader = ({ onToggle }) => (
 
 const QuestionContent = () => (
     <section className="flex-1 flex flex-col gap-8 p-4 sm:p-6 md:p-8">
-        <div className="bg-card border border-border rounded-2xl p-6 shadow-lg">
+        <div className="bg-card border border-border rounded-2xl p-6 shadow-lg flex flex-col flex-1">
             <div className="flex items-center justify-between mb-4">
                 <h2 className="text-lg font-bold text-primary">سوال ۱</h2>
             </div>
-            <div className="space-y-6">
+            <div className="space-y-6 flex-grow">
                 <p className="text-foreground leading-8 text-lg text-right">
                     اگر ۱, 2x - 1, x + 1, x² + x و x⁴ به ترتیب جملات چهارم، پنجم، هفتم و هشتم یک دنباله هندسی باشند، حاصل ضرب مقادیر ممکن برای قدر نسبت این دنباله کدام است؟
                 </p>
@@ -79,27 +80,17 @@ const QuestionContent = () => (
                     </Label>
                 </RadioGroup>
             </div>
-            <div className="mt-6 flex justify-end">
-                <Button size="lg" className="bg-primary text-primary-foreground hover:bg-primary/90">ثبت پاسخ</Button>
+            <div className="mt-6 flex justify-between items-center border-t border-border pt-4">
+                <Button variant="outline">
+                    <ChevronRight className="ml-2 h-4 w-4" />
+                    سوال قبلی
+                </Button>
+                <Button size="lg" className="bg-primary text-primary-foreground hover:bg-primary/90">ثبت پاسخ و ادامه</Button>
+                <Button variant="outline">
+                    سوال بعدی
+                    <ChevronLeft className="mr-2 h-4 w-4" />
+                </Button>
             </div>
-        </div>
-
-        <div className="flex items-center justify-between">
-            <Button variant="outline">
-                <ChevronRight className="ml-2 h-4 w-4" />
-                قبلی
-            </Button>
-            <div className="flex items-center gap-1">
-                {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11].map(i => (
-                    <Button key={i} size="icon" variant={i === 1 ? 'default' : 'outline'} className={cn("h-9 w-9 rounded-full", i === 1 ? "bg-primary" : "bg-card")}>
-                        {i}
-                    </Button>
-                ))}
-            </div>
-            <Button>
-                بعدی
-                <ChevronLeft className="mr-2 h-4 w-4" />
-            </Button>
         </div>
     </section>
 );
@@ -119,7 +110,7 @@ const ChatAssistant = ({ onToggle, isOpen }) => {
 
     return (
      <aside className={cn(
-        "flex-shrink-0 flex-col bg-card border-l border-border rounded-l-2xl overflow-hidden shadow-xl h-full hidden md:flex transition-all duration-300 ease-in-out",
+        "flex-shrink-0 flex-col bg-card border-r border-border rounded-r-2xl overflow-hidden shadow-xl h-full hidden md:flex transition-all duration-300 ease-in-out",
         isOpen ? "w-96" : "w-0 p-0 border-none"
      )}>
         <div className={cn("p-3 border-b border-border flex items-center justify-between bg-secondary/30 backdrop-blur-sm h-[73px]", !isOpen && "hidden")}>
@@ -215,10 +206,10 @@ export default function ExamPage() {
                 {!isChatOpen && (
                      <button 
                         onClick={toggleChat} 
-                        className="absolute top-1/2 -translate-y-1/2 left-0 h-28 w-10 bg-card/80 backdrop-blur-sm border-y border-l border-border rounded-l-2xl flex flex-col items-center justify-center text-primary shadow-lg hover:bg-card transition-all group z-50"
+                        className="absolute top-1/2 -translate-y-1/2 right-0 h-28 w-10 bg-card/80 backdrop-blur-sm border-y border-r border-border rounded-r-2xl flex flex-col items-center justify-center text-primary shadow-lg hover:bg-card transition-all group z-50"
                         title="باز کردن دستیار هوشمند"
                     >
-                        <ChevronRight className="h-6 w-6 mb-1 transition-transform group-hover:scale-110" />
+                        <ChevronLeft className="h-6 w-6 mb-1 transition-transform group-hover:scale-110" />
                         <Bot className="h-6 w-6 transition-transform group-hover:scale-110" />
                     </button>
                 )}
@@ -227,3 +218,5 @@ export default function ExamPage() {
         </div>
     );
 }
+
+    
