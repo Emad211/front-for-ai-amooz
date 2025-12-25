@@ -157,14 +157,14 @@ const LessonContent = () => (
         <div className="bg-card border border-border rounded-2xl p-4 shadow-lg relative overflow-hidden flex-shrink-0">
              <div className="flex flex-col gap-4">
                 <div>
-                    <h1 className="text-base font-bold text-foreground mb-1">
+                    <h1 className="text-lg font-bold text-foreground mb-1">
                         رسم نمودار توابع درجه دوم (سهمی)
                     </h1>
-                    <p className="text-muted-foreground text-xs leading-relaxed line-clamp-1">
+                    <p className="text-muted-foreground text-sm leading-relaxed line-clamp-1">
                         یادگیری چگونگی رسم دقیق نمودارهای توابع درجه دوم (سهمی) و تفسیر ویژگی‌های کلیدی آن‌ها.
                     </p>
                 </div>
-                 <div className="flex items-center justify-between text-xs text-muted-foreground border-t border-border pt-3">
+                 <div className="flex items-center justify-between text-sm text-muted-foreground border-t border-border pt-3">
                     <div className="flex items-center gap-2">
                         <BarChart className="h-4 w-4 text-primary"/>
                         <span>تکمیل: <span className="font-bold text-foreground">۶۷٪</span></span>
