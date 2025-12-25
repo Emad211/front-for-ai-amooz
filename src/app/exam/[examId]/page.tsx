@@ -2,6 +2,7 @@
 
 import React from 'react';
 import Link from 'next/link';
+import { Header } from '@/components/layout/header';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { 
@@ -13,14 +14,7 @@ import {
     PanelLeftClose,
     ChevronRight,
     ChevronLeft,
-    HelpCircle
 } from 'lucide-react';
-import {
-    Accordion,
-    AccordionContent,
-    AccordionItem,
-    AccordionTrigger,
-} from "@/components/ui/accordion"
 import { cn } from '@/lib/utils';
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { Label } from "@/components/ui/label"
@@ -124,13 +118,11 @@ const ChatAssistant = ({ onToggle, isOpen }) => {
 
     return (
      <aside className={cn(
-        "flex-shrink-0 flex-col bg-card border-l border-border rounded-r-2xl overflow-hidden shadow-xl h-full hidden md:flex transition-all duration-300 ease-in-out",
+        "flex-shrink-0 flex-col bg-card border-r border-border rounded-l-2xl overflow-hidden shadow-xl h-full hidden md:flex transition-all duration-300 ease-in-out",
         isOpen ? "w-96" : "w-0 p-0 border-none"
      )}>
         <div className={cn("p-3 border-b border-border flex items-center justify-between bg-secondary/30 backdrop-blur-sm h-[73px]", !isOpen && "hidden")}>
-            <Button onClick={onToggle} variant="ghost" size="icon" className="h-8 w-8 rounded-lg text-muted-foreground hover:text-foreground">
-                <PanelLeftClose className="h-4 w-4" />
-            </Button>
+            
             <div className="flex items-center gap-3">
                 <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-primary/20 to-purple-500/20 flex items-center justify-center relative ring-1 ring-foreground/10">
                     <Bot className="text-primary h-5 w-5" />
@@ -140,6 +132,9 @@ const ChatAssistant = ({ onToggle, isOpen }) => {
                     <h3 className="text-sm font-bold text-foreground">دستیار حل سوال</h3>
                 </div>
             </div>
+            <Button onClick={onToggle} variant="ghost" size="icon" className="h-8 w-8 rounded-lg text-muted-foreground hover:text-foreground">
+                <PanelLeftClose className="h-4 w-4" />
+            </Button>
         </div>
         <div className={cn("flex-1 overflow-y-auto p-4 space-y-6 bg-background/30 no-scrollbar", !isOpen && "hidden")}>
             <ChatMessage sender="ai" time="۱۰:۳۲" message="سلام! 👋 من دستیار حل سوالت هستم.<br/>میتونی سوالت رو بخونی، گزینه انتخاب کنی، یا اگه جایی گیر کردی ازم راهنمایی بخوای. اگه روی کاغذ حل کردی، عکسش رو بفرست تا بررسی کنم." />
@@ -206,15 +201,16 @@ export default function ExamPage() {
 
     return (
         <div className="bg-background font-body text-foreground antialiased min-h-screen flex flex-col overflow-hidden">
-            <main className="flex-grow w-full max-w-[1920px] mx-auto p-0 h-screen flex flex-row overflow-hidden relative">
+            <Header />
+            <main className="flex-grow w-full max-w-[1920px] mx-auto p-0 h-[calc(100vh-64px)] flex flex-row-reverse overflow-hidden relative">
                 
                 {!isChatOpen && (
                      <button 
                         onClick={toggleChat} 
-                        className="absolute top-1/2 -translate-y-1/2 right-0 h-28 w-10 bg-card/80 backdrop-blur-sm border-y border-r border-border rounded-r-2xl flex flex-col items-center justify-center text-primary shadow-lg hover:bg-card transition-all group z-50"
+                        className="absolute top-1/2 -translate-y-1/2 left-0 h-28 w-10 bg-card/80 backdrop-blur-sm border-y border-l border-border rounded-l-2xl flex flex-col items-center justify-center text-primary shadow-lg hover:bg-card transition-all group z-50"
                         title="باز کردن دستیار هوشمند"
                     >
-                        <ChevronRight className="h-6 w-6 mb-1 transition-transform group-hover:scale-110" />
+                        <ChevronLeft className="h-6 w-6 mb-1 transition-transform group-hover:scale-110" />
                         <Bot className="h-6 w-6 transition-transform group-hover:scale-110" />
                     </button>
                 )}
