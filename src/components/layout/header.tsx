@@ -39,17 +39,16 @@ const NavItem = ({ href, children }) => {
   const isActive = pathname === href;
 
   return (
-    <Link href={href}>
-      <div
-        className={cn(
-          'flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-colors',
-          isActive
-            ? 'bg-primary/10 text-primary'
-            : 'text-text-muted hover:bg-secondary/50 hover:text-text-light'
-        )}
-      >
-        {children}
-      </div>
+    <Link
+      href={href}
+      className={cn(
+        'rounded-full px-4 py-2 text-sm font-medium transition-colors',
+        isActive
+          ? 'bg-primary text-primary-foreground'
+          : 'text-muted-foreground hover:text-foreground'
+      )}
+    >
+      {children}
     </Link>
   );
 };
@@ -104,21 +103,19 @@ export function Header() {
     <header className="flex h-16 items-center justify-between px-4 md:px-6 border-b border-border bg-card/50 backdrop-blur-sm">
       <div className="flex items-center gap-6">
         <Logo />
-        <nav className="hidden md:flex items-center gap-2">
-          <NavItem href="/home">
-            <Home className="h-4 w-4" />
-            خانه
-          </NavItem>
-          <NavItem href="/classes">
-            <GraduationCap className="h-4 w-4" />
-            کلاس‌ها
-          </NavItem>
-          <NavItem href="/exam-prep">
-            <BookOpen className="h-4 w-4" />
-            آمادگی آزمون
-          </NavItem>
-        </nav>
       </div>
+
+      <nav className="hidden md:flex items-center gap-2 rounded-full bg-secondary p-1">
+        <NavItem href="/home">
+          داشبورد
+        </NavItem>
+        <NavItem href="/classes">
+          کلاس‌ها
+        </NavItem>
+        <NavItem href="/exam-prep">
+          آمادگی آزمون
+        </NavItem>
+      </nav>
 
       <div className="flex items-center gap-4">
         <Button variant="ghost" size="icon" className="h-10 w-10 rounded-full">
