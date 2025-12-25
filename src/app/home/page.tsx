@@ -79,23 +79,27 @@ export default function StudentDashboard() {
       <Header />
 
       <main className="p-4 md:p-8 grid gap-8">
-        <div style={{backgroundColor: '#103E33'}} className="p-8 rounded-2xl flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
-          <div className="text-right">
-            <div className="inline-flex items-center gap-2 bg-primary/20 text-primary text-xs font-semibold px-3 py-1 rounded-full mb-4">
-                <span className="relative flex h-2 w-2">
-                    <span className="relative inline-flex rounded-full h-2 w-2 bg-primary"></span>
-                </span>
-              هوش مصنوعی فعال است
+        <div className="bg-gradient-to-br from-primary/10 via-card to-card p-8 rounded-2xl flex flex-col md:flex-row items-center justify-between gap-8">
+            <div className="text-right md:w-1/2">
+                <div className="inline-flex items-center gap-2 bg-primary/20 text-primary text-xs font-semibold px-3 py-1 rounded-full mb-4">
+                    <span className="relative flex h-2 w-2">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75"></span>
+                        <span className="relative inline-flex rounded-full h-2 w-2 bg-primary"></span>
+                    </span>
+                هوش مصنوعی فعال است
+                </div>
+                <h2 className="text-3xl font-bold mb-2 text-text-light">👋 خوش آمدید به AI-Amooz</h2>
+                <p className="text-text-light/80 max-w-lg">
+                مسیر یادگیری شما با هوش مصنوعی بهینه سازی شده است. آماده ادامه فیزیک کوانتوم هستید؟
+                </p>
+                <Button size="lg" className="mt-6 bg-primary text-primary-foreground hover:bg-primary/90 flex-shrink-0">
+                    ادامه یادگیری هوشمند
+                    <ArrowLeft className="mr-2 h-5 w-5" />
+                </Button>
             </div>
-            <h2 className="text-3xl font-bold mb-2 text-text-light">👋 خوش آمدید به AI-Amooz</h2>
-            <p className="text-text-light/80 max-w-lg">
-              مسیر یادگیری شما با هوش مصنوعی بهینه سازی شده است. آماده ادامه فیزیک کوانتوم هستید؟
-            </p>
-          </div>
-          <Button size="lg" className="bg-primary text-primary-foreground hover:bg-primary/90 flex-shrink-0 self-start md:self-center mt-4 md:mt-0">
-            ادامه یادگیری هوشمند
-            <ArrowLeft className="mr-2 h-5 w-5" />
-          </Button>
+            <div className="md:w-1/2 flex justify-center">
+                <Image src="/home.png" alt="AI Learning" width={400} height={300} className="rounded-lg object-cover" />
+            </div>
         </div>
         
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
