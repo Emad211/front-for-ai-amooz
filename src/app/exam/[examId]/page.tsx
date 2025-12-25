@@ -11,16 +11,17 @@ import {
     Paperclip,
     Mic,
     Send,
-    PanelLeftClose,
+    PanelRightClose,
     ChevronRight,
     ChevronLeft,
+    HelpCircle
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { Label } from "@/components/ui/label"
 
 
-const ExamHeader = () => (
+const ExamHeader = ({ onToggle }) => (
     <header className="flex items-center justify-between p-4 border-b border-border w-full">
         <Button variant="outline" asChild className="bg-card hover:bg-card/80 border-border text-muted-foreground hover:text-foreground rounded-xl p-3 flex items-center justify-between transition-all group h-12">
              <Link href="/exam-prep">
@@ -31,8 +32,13 @@ const ExamHeader = () => (
         <div className="text-center">
             <h1 className="text-xl font-bold text-foreground">بررسی کنکور تیر 1403 - ریاضی</h1>
         </div>
-        <div className="bg-card border border-border text-foreground font-semibold px-4 py-2 rounded-lg">
-            سوال ۱ از ۱۱
+        <div className="flex items-center gap-4">
+             <Button onClick={onToggle} variant="ghost" size="icon" className="text-muted-foreground hover:text-primary">
+                <HelpCircle className="h-6 w-6" />
+            </Button>
+            <div className="bg-card border border-border text-foreground font-semibold px-4 py-2 rounded-lg">
+                سوال ۱ از ۱۱
+            </div>
         </div>
     </header>
 );
@@ -118,7 +124,7 @@ const ChatAssistant = ({ onToggle, isOpen }) => {
 
     return (
      <aside className={cn(
-        "flex-shrink-0 flex-col bg-card border-l border-border rounded-l-2xl overflow-hidden shadow-xl h-full hidden md:flex transition-all duration-300 ease-in-out",
+        "flex-shrink-0 flex-col bg-card border-r border-border rounded-r-2xl overflow-hidden shadow-xl h-full hidden md:flex transition-all duration-300 ease-in-out",
         isOpen ? "w-96" : "w-0 p-0 border-none"
      )}>
         <div className={cn("p-3 border-b border-border flex items-center justify-between bg-secondary/30 backdrop-blur-sm h-[73px]", !isOpen && "hidden")}>
@@ -132,7 +138,7 @@ const ChatAssistant = ({ onToggle, isOpen }) => {
                 </div>
             </div>
              <Button onClick={onToggle} variant="ghost" size="icon" className="h-8 w-8 rounded-lg text-muted-foreground hover:text-foreground">
-                <PanelLeftClose className="h-4 w-4" />
+                <PanelRightClose className="h-4 w-4" />
             </Button>
         </div>
         <div className={cn("flex-1 overflow-y-auto p-4 space-y-6 bg-background/30 no-scrollbar", !isOpen && "hidden")}>
@@ -151,17 +157,17 @@ const ChatAssistant = ({ onToggle, isOpen }) => {
                     onChange={handleInputChange}
                     placeholder="سوالت رو بپرس... یا تصویر حل دستیت رو بفرست" 
                     rows={1}
-                    className="bg-background border-border rounded-xl text-sm text-foreground focus:ring-1 focus:ring-primary focus:border-primary placeholder:text-muted-foreground/50 py-3 pr-20 pl-12 resize-none overflow-y-hidden no-scrollbar" 
+                    className="bg-background border-border rounded-xl text-sm text-foreground focus:ring-1 focus:ring-primary focus:border-primary placeholder:text-muted-foreground/50 py-3 pr-12 pl-20 resize-none overflow-y-hidden no-scrollbar" 
                 />
-                <div className="absolute right-2 bottom-1.5 flex items-center gap-1">
-                    <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg text-muted-foreground hover:text-primary hover:bg-foreground/5" title="پیوست فایل">
-                        <Paperclip className="h-4 w-4 -rotate-45" />
-                    </Button>
-                    <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg text-muted-foreground hover:text-primary hover:bg-foreground/5" title="ضبط صدا">
+                <div className="absolute left-2 bottom-1.5 flex items-center gap-1">
+                     <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg text-muted-foreground hover:text-primary hover:bg-foreground/5" title="ضبط صدا">
                         <Mic className="h-4 w-4" />
                     </Button>
+                   <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg text-muted-foreground hover:text-primary hover:bg-foreground/5" title="پیوست فایل">
+                        <Paperclip className="h-4 w-4 -rotate-45" />
+                    </Button>
                 </div>
-                <div className="absolute left-2 bottom-1.5 flex items-center">
+                <div className="absolute right-2 bottom-1.5 flex items-center">
                     <Button size="icon" className="h-9 w-9 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground transition-all shadow-lg shadow-primary/20 hover:scale-105 active:scale-95">
                         <Send className="h-4 w-4 rtl:-rotate-180" />
                     </Button>
@@ -201,21 +207,10 @@ export default function ExamPage() {
     return (
         <div className="bg-background font-body text-foreground antialiased min-h-screen flex flex-col overflow-hidden">
             <Header />
-            <main className="flex-grow w-full max-w-[1920px] mx-auto p-0 h-[calc(100vh-64px)] flex flex-row-reverse overflow-hidden relative">
+            <main className="flex-grow w-full max-w-[1920px] mx-auto p-0 h-[calc(100vh-64px)] flex overflow-hidden relative">
                 
-                {!isChatOpen && (
-                     <button 
-                        onClick={toggleChat} 
-                        className="absolute top-1/2 -translate-y-1/2 left-0 h-28 w-10 bg-card/80 backdrop-blur-sm border-y border-l border-border rounded-l-2xl flex flex-col items-center justify-center text-primary shadow-lg hover:bg-card transition-all group z-50"
-                        title="باز کردن دستیار هوشمند"
-                    >
-                        <ChevronLeft className="h-6 w-6 mb-1 transition-transform group-hover:scale-110" />
-                        <Bot className="h-6 w-6 transition-transform group-hover:scale-110" />
-                    </button>
-                )}
-
                 <div className={cn("flex-1 flex flex-col relative transition-all duration-300 ease-in-out", isChatOpen ? "w-[calc(100%-24rem)]" : "w-full")}>
-                    <ExamHeader />
+                    <ExamHeader onToggle={toggleChat} />
                     <div className="flex-1 overflow-y-auto">
                         <QuestionContent />
                     </div>
