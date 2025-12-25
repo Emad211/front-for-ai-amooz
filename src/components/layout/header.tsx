@@ -2,11 +2,19 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Bell, GraduationCap, LogOut } from 'lucide-react';
+import { Bell, GraduationCap, LogOut, User, Settings } from 'lucide-react';
 
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 
 const Logo = () => (
   <Link href="/" className="flex items-center gap-2">
@@ -55,19 +63,43 @@ export function Header() {
             <span className="relative inline-flex rounded-full h-2 w-2 bg-primary"></span>
           </span>
         </Button>
-        <div className="flex items-center gap-3">
-          <Avatar className="border-2 border-primary">
-            <AvatarImage src="https://picsum.photos/seed/user/40/40" alt="Ali Rezaei" />
-            <AvatarFallback>AR</AvatarFallback>
-          </Avatar>
-          <div className="text-right hidden sm:block">
-            <p className="font-semibold text-sm text-text-light">علی رضایی</p>
-            <p className="text-xs text-text-muted">دانش آموز</p>
-          </div>
-        </div>
-        <Button variant="ghost" size="icon" className="text-text-muted">
-          <LogOut className="h-5 w-5" />
-        </Button>
+        
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <div className="flex items-center gap-3 cursor-pointer">
+              <Avatar className="border-2 border-primary">
+                <AvatarImage src="https://picsum.photos/seed/user/40/40" alt="Ali Rezaei" />
+                <AvatarFallback>AR</AvatarFallback>
+              </Avatar>
+              <div className="text-right hidden sm:block">
+                <p className="font-semibold text-sm text-text-light">علی رضایی</p>
+                <p className="text-xs text-text-muted">دانش آموز</p>
+              </div>
+            </div>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent className="w-56" align="end" forceMount>
+            <DropdownMenuLabel className="font-normal">
+              <div className="flex flex-col space-y-1">
+                <p className="text-sm font-medium leading-none">علی رضایی</p>
+                <p className="text-xs leading-none text-muted-foreground">
+                  ali.rezaei@example.com
+                </p>
+              </div>
+            </DropdownMenuLabel>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem asChild>
+              <Link href="/profile"><User className="ml-2 h-4 w-4" /> پروفایل</Link>
+            </DropdownMenuItem>
+            <DropdownMenuItem>
+              <Settings className="ml-2 h-4 w-4" /> تنظیمات
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem>
+              <LogOut className="ml-2 h-4 w-4" /> خروج
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+
       </div>
     </header>
   );

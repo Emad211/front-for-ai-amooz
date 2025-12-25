@@ -98,7 +98,7 @@ export default function StudentDashboard() {
                 </Button>
             </div>
             <div className="md:w-1/2 flex justify-center items-center">
-                <Image src="/home.png" alt="AI Learning" width={413} height={230} className="rounded-lg" priority />
+                <Image src="/homee.png" alt="AI Learning" width={413} height={230} className="rounded-lg" priority />
             </div>
         </div>
         
