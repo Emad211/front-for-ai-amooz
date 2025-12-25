@@ -72,7 +72,7 @@ const CourseSidebar = () => (
                        <SubmenuItem icon={<FileText className="h-4 w-4" />} title="شکل کلی و جهت سهمی" />
                        <SubmenuItem icon={<PlayCircle className="h-4 w-4" />} title="رأس سهمی: مهمترین نقطه" active />
                        <SubmenuItem icon={<FileText className="h-4 w-4" />} title="ارتباط رأس با نقاط متقارن" />
-                       <SubmenuItem icon={<Book className="h-4 w-4" />} title="عرض از مبدأ و ریشه‌ها" />
+                       <SubmenuItem icon={<FileText className="h-4 w-4" />} title="عرض از مبدأ و ریشه‌ها" />
                        <SubmenuItem icon={<CheckCircle className="h-4 w-4" />} title="آزمون فصل" special />
                     </AccordionContent>
                   </AccordionItem>
@@ -85,7 +85,9 @@ const CourseSidebar = () => (
                         </div>
                     </AccordionTrigger>
                     <AccordionContent className="p-1 space-y-1">
-                        {/* Subitems for this section would go here */}
+                        <SubmenuItem icon={<FileText className="h-4 w-4" />} title="مثال عملی رسم سهمی با a>0" />
+                        <SubmenuItem icon={<FileText className="h-4 w-4" />} title="مثال عملی رسم سهمی با a<0" />
+                        <SubmenuItem icon={<CheckCircle className="h-4 w-4" />} title="آزمون فصل" special />
                     </AccordionContent>
                   </AccordionItem>
                   <AccordionItem value="item-3" className="border-none">
@@ -97,7 +99,9 @@ const CourseSidebar = () => (
                         </div>
                     </AccordionTrigger>
                     <AccordionContent className="p-1 space-y-1">
-                        {/* Subitems for this section would go here */}
+                        <SubmenuItem icon={<FileText className="h-4 w-4" />} title="یافتن ضرایب با استفاده از رأس سهمی" />
+                        <SubmenuItem icon={<FileText className="h-4 w-4" />} title="یافتن ضریب با استفاده از مقدار مینیمم" />
+                        <SubmenuItem icon={<Book className="h-4 w-4" />} title="آزمون فصل" />
                     </AccordionContent>
                   </AccordionItem>
                 </Accordion>
@@ -311,3 +315,5 @@ export default function LearnPage() {
         </div>
     );
 }
+
+    
