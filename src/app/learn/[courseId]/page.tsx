@@ -63,9 +63,10 @@ const CourseSidebar = () => (
                 
                 <Accordion type="single" collapsible defaultValue="item-1" className="w-full">
                   <AccordionItem value="item-1" className="border-none">
-                    <AccordionTrigger className="p-3 rounded-xl hover:no-underline hover:bg-secondary/30 text-foreground data-[state=open]:bg-primary/10 data-[state=open]:text-primary">
+                    <AccordionTrigger className="p-3 rounded-xl hover:no-underline hover:bg-secondary/30 text-foreground data-[state=open]:bg-primary/10 data-[state=open]:text-primary group">
                        <div className="flex items-center gap-3">
-                            <FolderOpen className="h-5 w-5" />
+                            <Folder className="h-5 w-5 group-data-[state=open]:hidden" />
+                            <FolderOpen className="h-5 w-5 hidden group-data-[state=open]:block" />
                             <span className="text-sm font-bold">آشنایی با سهمی</span>
                         </div>
                     </AccordionTrigger>
@@ -78,9 +79,10 @@ const CourseSidebar = () => (
                     </AccordionContent>
                   </AccordionItem>
                   <AccordionItem value="item-2" className="border-none">
-                    <AccordionTrigger className="p-3 rounded-xl hover:no-underline hover:bg-secondary/30 text-muted-foreground hover:text-foreground">
+                    <AccordionTrigger className="p-3 rounded-xl hover:no-underline hover:bg-secondary/30 text-muted-foreground hover:text-foreground group">
                        <div className="flex items-center gap-3">
-                            <Folder className="h-5 w-5" />
+                            <Folder className="h-5 w-5 group-data-[state=open]:hidden" />
+                            <FolderOpen className="h-5 w-5 hidden group-data-[state=open]:block" />
                             <span className="text-sm font-medium">گام به گام رسم نمودار</span>
                         </div>
                     </AccordionTrigger>
@@ -89,9 +91,10 @@ const CourseSidebar = () => (
                     </AccordionContent>
                   </AccordionItem>
                   <AccordionItem value="item-3" className="border-none">
-                    <AccordionTrigger className="p-3 rounded-xl hover:no-underline hover:bg-secondary/30 text-muted-foreground hover:text-foreground">
+                    <AccordionTrigger className="p-3 rounded-xl hover:no-underline hover:bg-secondary/30 text-muted-foreground hover:text-foreground group">
                         <div className="flex items-center gap-3">
-                            <Folder className="h-5 w-5" />
+                            <Folder className="h-5 w-5 group-data-[state=open]:hidden" />
+                            <FolderOpen className="h-5 w-5 hidden group-data-[state=open]:block" />
                             <span className="text-sm font-medium">حل مسائل مربوطه</span>
                         </div>
                     </AccordionTrigger>
