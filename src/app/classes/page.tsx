@@ -33,11 +33,11 @@ const CourseCard = ({ course }) => {
             <div className="px-6 pb-6">
                  {isFeatured ? (
                      <Button asChild className="w-full bg-primary hover:bg-primary/90 text-primary-foreground">
-                        <Link href="#">ادامه یادگیری <ArrowLeft className="mr-2 h-4 w-4" /></Link>
+                        <Link href="/learn/1">ادامه یادگیری <ArrowLeft className="mr-2 h-4 w-4" /></Link>
                      </Button>
                  ) : (
                     <Button asChild className="w-full bg-secondary hover:bg-secondary/80 text-primary">
-                        <Link href="#">
+                        <Link href="/learn/1">
                              <Play className="h-4 w-4 ml-2 fill-current" /> شروع دوره
                         </Link>
                     </Button>
