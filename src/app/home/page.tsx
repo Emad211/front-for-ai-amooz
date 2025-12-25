@@ -79,7 +79,7 @@ export default function StudentDashboard() {
       <Header />
 
       <main className="p-4 md:p-8 grid gap-8">
-        <div className="bg-gradient-to-br from-primary/10 via-card to-card p-8 rounded-2xl flex flex-col md:flex-row items-center justify-between gap-8">
+        <div className="bg-gradient-to-br from-primary/10 via-card to-card p-6 rounded-2xl flex flex-col md:flex-row items-center justify-between gap-6">
             <div className="text-right md:w-1/2">
                 <div className="inline-flex items-center gap-2 bg-primary/20 text-primary text-xs font-semibold px-3 py-1 rounded-full mb-4">
                     <span className="relative flex h-2 w-2">
@@ -137,5 +137,7 @@ export default function StudentDashboard() {
     </div>
   );
 }
+
+    
 
     
