@@ -231,7 +231,7 @@ const ChatAssistant = ({ onToggle, isOpen }) => {
         <div className={cn("flex-1 overflow-y-auto p-4 space-y-6 bg-background/30 no-scrollbar", !isOpen && "hidden")}>
             <ChatMessage sender="ai" time="۱۰:۳۲" message="سلام علی! 👋 <br/>من آماده‌ام تا در مورد «رأس سهمی» بهت کمک کنم. سوالی داری؟" />
             <ChatMessage sender="user" time="۱۰:۳۴" message="فرمول x رأس سهمی چی بود؟" />
-            <ChatMessage sender="ai" time="۱۰:۳۴" isFormula message='فرمول محاسبه طول رأس سهمی برابر است با: <br/> <span class="font-mono text-purple-400 bg-black/20 px-1 rounded my-1 block text-center" dir="ltr">x = -b / 2a</span>' />
+            <ChatMessage sender="ai" time="۱۰:۳۴" isFormula message='فرمول محاسبه طول رأس سهمی برابر است با: <br/> <span class="font-mono px-1 rounded my-1 block text-center" dir="ltr">x = -b / 2a</span>' />
         </div>
         <div className={cn("p-3 border-t border-border bg-card z-10", !isOpen && "hidden")}>
             <div className="relative">
@@ -272,7 +272,7 @@ const ChatMessage = ({ sender, time, message, isFormula=false }) => {
                     </div>
                 )}
                 <div className={cn(
-                    "text-sm p-3 rounded-2xl leading-6 shadow-sm border max-w-[90%]",
+                    "p-3 rounded-2xl leading-6 shadow-sm border max-w-[90%]",
                     isAI ? "bg-card text-gray-200 rounded-tr-none border-border/50"
                          : "bg-primary/10 text-foreground rounded-tl-none border-primary/20"
                 )}>
