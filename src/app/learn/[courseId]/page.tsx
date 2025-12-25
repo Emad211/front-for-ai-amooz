@@ -194,7 +194,19 @@ const LessonContent = () => (
     </section>
 );
 
-const ChatAssistant = () => (
+const ChatAssistant = () => {
+    const [message, setMessage] = React.useState('');
+    const textareaRef = React.useRef<HTMLTextAreaElement>(null);
+
+    const handleInputChange = (event: React.ChangeEvent<HTMLTextAreaElement>) => {
+        setMessage(event.target.value);
+        if (textareaRef.current) {
+            textareaRef.current.style.height = 'auto';
+            textareaRef.current.style.height = `${textareaRef.current.scrollHeight}px`;
+        }
+    };
+    
+    return (
      <aside className="w-96 flex-shrink-0 flex-col bg-card border border-border rounded-2xl overflow-hidden shadow-xl h-full hidden md:flex">
         <div className="p-3 border-b border-border flex items-center justify-between bg-secondary/30 backdrop-blur-sm h-14">
             <div className="flex items-center gap-3">
@@ -218,7 +230,14 @@ const ChatAssistant = () => (
         </div>
         <div className="p-3 border-t border-border bg-card z-10">
             <div className="relative">
-                <Textarea placeholder="سوالت رو بنویس..." className="bg-background border-border rounded-xl text-xs text-foreground focus:ring-1 focus:ring-primary focus:border-primary placeholder:text-muted-foreground/50 min-h-[48px] max-h-24 py-3 pr-20 pl-12 resize-none no-scrollbar" />
+                <Textarea 
+                    ref={textareaRef}
+                    value={message}
+                    onChange={handleInputChange}
+                    placeholder="سوالت رو بنویس..." 
+                    rows={1}
+                    className="bg-background border-border rounded-xl text-xs text-foreground focus:ring-1 focus:ring-primary focus:border-primary placeholder:text-muted-foreground/50 py-3 pr-20 pl-12 resize-none overflow-y-hidden no-scrollbar" 
+                />
                 <div className="absolute right-2 bottom-1.5 flex items-center gap-1">
                     <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg text-muted-foreground hover:text-primary hover:bg-foreground/5" title="پیوست فایل">
                         <Paperclip className="h-4 w-4 -rotate-45" />
@@ -235,7 +254,7 @@ const ChatAssistant = () => (
             </div>
         </div>
     </aside>
-);
+)};
 
 const ChatMessage = ({ sender, time, message, isFormula=false }) => {
     const isAI = sender === 'ai';
