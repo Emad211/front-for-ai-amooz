@@ -11,6 +11,8 @@ import Link from 'next/link';
 
 const ExamCard = ({ exam }) => {
     const isInProgress = exam.tags.includes('ریاضیات') || exam.tags.includes('برنامه نویسی');
+    const isDiscreteMath = exam.id === 1;
+
     return (
         <Card className="bg-card text-card-foreground overflow-hidden flex flex-col justify-between h-full rounded-2xl">
             <CardContent className="p-6">
@@ -35,7 +37,7 @@ const ExamCard = ({ exam }) => {
             <div className="px-6 pb-6">
                  {isInProgress ? (
                      <Button asChild className="w-full bg-primary hover:bg-primary/90 text-primary-foreground rounded-lg">
-                        <Link href="#">ادامه یادگیری <ArrowLeft className="mr-2 h-4 w-4" /></Link>
+                        <Link href={isDiscreteMath ? "/exam/1" : "#"}>ادامه یادگیری <ArrowLeft className="mr-2 h-4 w-4" /></Link>
                      </Button>
                  ) : (
                     <Button asChild variant="secondary" className="w-full bg-secondary hover:bg-secondary/80 text-primary rounded-lg">

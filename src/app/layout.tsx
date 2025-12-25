@@ -2,6 +2,7 @@ import type {Metadata} from 'next';
 import './globals.css';
 import { Toaster } from "@/components/ui/toaster";
 import { ThemeProvider } from "@/components/theme-provider";
+import './learn/learn.css';
 
 export const metadata: Metadata = {
   title: 'Midnight Canvas',
