@@ -10,14 +10,13 @@ import {
     Paperclip,
     Mic,
     Send,
-    PanelRightClose,
+    PanelLeftClose,
     ChevronLeft,
     ChevronRight,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { Label } from "@/components/ui/label"
-import { Header } from '@/components/layout/header';
 
 
 const ExamHeader = ({ onToggle }) => (
@@ -32,51 +31,54 @@ const ExamHeader = ({ onToggle }) => (
             <h1 className="text-xl font-bold text-foreground">بررسی کنکور تیر 1403 - ریاضی</h1>
         </div>
         <div className="flex items-center gap-4">
-            <div className="bg-card border border-border text-foreground font-semibold px-4 py-2 rounded-lg">
-                سوال ۱ از ۱۱
-            </div>
+             <Button onClick={onToggle} variant="ghost" size="icon" className="h-12 w-12 rounded-lg text-muted-foreground hover:text-foreground md:hidden">
+                <PanelLeftClose className="h-5 w-5" />
+            </Button>
         </div>
     </header>
 );
 
 const QuestionContent = () => (
-    <section className="flex-1 flex flex-col gap-8 p-4 sm:p-6 md:p-8">
-        <div className="bg-card border border-border rounded-2xl p-6 shadow-lg flex flex-col flex-1">
+    <section className="flex-1 flex flex-col justify-center items-center gap-8 p-4 sm:p-6 md:p-8 w-full">
+        <div className="bg-card border border-border rounded-2xl p-6 shadow-lg flex flex-col w-full max-w-4xl">
             <div className="flex items-center justify-between mb-4">
-                <h2 className="text-lg font-bold text-primary">سوال ۱</h2>
+                 <div className="flex items-center gap-3">
+                    <h2 className="text-lg font-bold text-primary">سوال ۱</h2>
+                    <span className="text-xs font-semibold text-muted-foreground bg-secondary px-2 py-1 rounded-md">۱ / ۱۱</span>
+                </div>
             </div>
             <div className="space-y-6 flex-grow">
                 <p className="text-foreground leading-8 text-lg text-right">
                     اگر ۱, 2x - 1, x + 1, x² + x و x⁴ به ترتیب جملات چهارم، پنجم، هفتم و هشتم یک دنباله هندسی باشند، حاصل ضرب مقادیر ممکن برای قدر نسبت این دنباله کدام است؟
                 </p>
-                <RadioGroup defaultValue="c" dir="rtl" className="grid grid-cols-2 gap-4">
-                    <Label htmlFor="option-a" className="flex items-center justify-between p-4 bg-background border border-border rounded-lg cursor-pointer hover:bg-secondary/50 has-[:checked]:bg-primary/10 has-[:checked]:border-primary">
+                <RadioGroup defaultValue="c" dir="rtl" className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <Label htmlFor="option-a" className="flex items-center p-4 bg-background border border-border rounded-lg cursor-pointer hover:bg-secondary/50 has-[:checked]:bg-primary/10 has-[:checked]:border-primary">
                         <div className="flex items-center gap-3">
                            <RadioGroupItem value="a" id="option-a" />
-                           <span>الف</span>
+                           <span>الف)</span>
+                           <span className="font-mono">۱</span>
                         </div>
-                        <span className="font-mono">۱</span>
                     </Label>
-                    <Label htmlFor="option-b" className="flex items-center justify-between p-4 bg-background border border-border rounded-lg cursor-pointer hover:bg-secondary/50 has-[:checked]:bg-primary/10 has-[:checked]:border-primary">
+                    <Label htmlFor="option-b" className="flex items-center p-4 bg-background border border-border rounded-lg cursor-pointer hover:bg-secondary/50 has-[:checked]:bg-primary/10 has-[:checked]:border-primary">
                          <div className="flex items-center gap-3">
                            <RadioGroupItem value="b" id="option-b" />
-                           <span>ب</span>
+                           <span>ب)</span>
+                           <span className="font-mono">-۱</span>
                         </div>
-                        <span className="font-mono">-۱</span>
                     </Label>
-                    <Label htmlFor="option-c" className="flex items-center justify-between p-4 bg-background border border-border rounded-lg cursor-pointer hover:bg-secondary/50 has-[:checked]:bg-primary/10 has-[:checked]:border-primary">
+                    <Label htmlFor="option-c" className="flex items-center p-4 bg-background border border-border rounded-lg cursor-pointer hover:bg-secondary/50 has-[:checked]:bg-primary/10 has-[:checked]:border-primary">
                          <div className="flex items-center gap-3">
                            <RadioGroupItem value="c" id="option-c" />
-                           <span>ج</span>
+                           <span>ج)</span>
+                           <span className="font-mono">۲</span>
                         </div>
-                        <span className="font-mono">۲</span>
                     </Label>
-                    <Label htmlFor="option-d" className="flex items-center justify-between p-4 bg-background border border-border rounded-lg cursor-pointer hover:bg-secondary/50 has-[:checked]:bg-primary/10 has-[:checked]:border-primary">
+                    <Label htmlFor="option-d" className="flex items-center p-4 bg-background border border-border rounded-lg cursor-pointer hover:bg-secondary/50 has-[:checked]:bg-primary/10 has-[:checked]:border-primary">
                          <div className="flex items-center gap-3">
                            <RadioGroupItem value="d" id="option-d" />
-                           <span>د</span>
+                           <span>د)</span>
+                           <span className="font-mono">-۲</span>
                         </div>
-                        <span className="font-mono">-۲</span>
                     </Label>
                 </RadioGroup>
             </div>
@@ -85,9 +87,8 @@ const QuestionContent = () => (
                     <ChevronRight className="ml-2 h-4 w-4" />
                     سوال قبلی
                 </Button>
-                <Button size="lg" className="bg-primary text-primary-foreground hover:bg-primary/90">ثبت پاسخ و ادامه</Button>
-                <Button variant="outline">
-                    سوال بعدی
+                <Button size="lg" className="bg-primary text-primary-foreground hover:bg-primary/90">
+                    ثبت پاسخ و ادامه
                     <ChevronLeft className="mr-2 h-4 w-4" />
                 </Button>
             </div>
@@ -110,7 +111,7 @@ const ChatAssistant = ({ onToggle, isOpen }) => {
 
     return (
      <aside className={cn(
-        "flex-shrink-0 flex-col bg-card border-r border-border rounded-r-2xl overflow-hidden shadow-xl h-full hidden md:flex transition-all duration-300 ease-in-out",
+        "flex-shrink-0 flex-col bg-card border-l border-border rounded-l-2xl overflow-hidden shadow-xl h-full hidden md:flex transition-all duration-300 ease-in-out",
         isOpen ? "w-96" : "w-0 p-0 border-none"
      )}>
         <div className={cn("p-3 border-b border-border flex items-center justify-between bg-secondary/30 backdrop-blur-sm h-[73px]", !isOpen && "hidden")}>
@@ -143,7 +144,7 @@ const ChatAssistant = ({ onToggle, isOpen }) => {
                     onChange={handleInputChange}
                     placeholder="سوالت رو بپرس... یا تصویر حل دستیت رو بفرست" 
                     rows={1}
-                    className="bg-background border-border rounded-xl text-sm text-foreground focus:ring-1 focus:ring-primary focus:border-primary placeholder:text-muted-foreground/50 py-3 pl-12 pr-20 resize-none overflow-y-hidden no-scrollbar" 
+                    className="bg-input border-border rounded-xl text-sm text-foreground focus:ring-1 focus:ring-primary focus:border-primary placeholder:text-muted-foreground/50 py-3 pl-12 pr-20 resize-none overflow-y-hidden no-scrollbar" 
                 />
                 <div className="absolute left-2 bottom-1.5 flex items-center">
                      <Button size="icon" className="h-9 w-9 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground transition-all shadow-lg shadow-primary/20 hover:scale-105 active:scale-95">
@@ -192,7 +193,7 @@ export default function ExamPage() {
 
     return (
         <div className="bg-background font-body text-foreground antialiased min-h-screen flex flex-col overflow-hidden">
-            <main className="flex-grow w-full max-w-[1920px] mx-auto p-0 h-screen flex overflow-hidden relative">
+            <main className="flex-grow w-full max-w-[1920px] mx-auto p-0 h-screen flex flex-row-reverse overflow-hidden relative">
                 
                 <div className={cn("flex-1 flex flex-col relative transition-all duration-300 ease-in-out", isChatOpen ? "w-[calc(100%-24rem)]" : "w-full")}>
                     <ExamHeader onToggle={toggleChat} />
@@ -218,5 +219,3 @@ export default function ExamPage() {
         </div>
     );
 }
-
-    
