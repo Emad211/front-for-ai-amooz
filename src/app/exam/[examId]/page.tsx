@@ -51,32 +51,32 @@ const QuestionContent = () => (
                 </p>
                 <RadioGroup defaultValue="c" dir="rtl" className="grid grid-cols-2 gap-4">
                     <Label htmlFor="option-a" className="flex items-center justify-between p-4 bg-background border border-border rounded-lg cursor-pointer hover:bg-secondary/50 has-[:checked]:bg-primary/10 has-[:checked]:border-primary">
-                        <span className="font-mono">۱</span>
                         <div className="flex items-center gap-3">
-                           <span>الف</span>
                            <RadioGroupItem value="a" id="option-a" />
+                           <span>الف</span>
                         </div>
+                        <span className="font-mono">۱</span>
                     </Label>
                     <Label htmlFor="option-b" className="flex items-center justify-between p-4 bg-background border border-border rounded-lg cursor-pointer hover:bg-secondary/50 has-[:checked]:bg-primary/10 has-[:checked]:border-primary">
-                        <span className="font-mono">-۱</span>
                          <div className="flex items-center gap-3">
-                           <span>ب</span>
                            <RadioGroupItem value="b" id="option-b" />
+                           <span>ب</span>
                         </div>
+                        <span className="font-mono">-۱</span>
                     </Label>
                     <Label htmlFor="option-c" className="flex items-center justify-between p-4 bg-background border border-border rounded-lg cursor-pointer hover:bg-secondary/50 has-[:checked]:bg-primary/10 has-[:checked]:border-primary">
-                        <span className="font-mono">۲</span>
                          <div className="flex items-center gap-3">
-                           <span>ج</span>
                            <RadioGroupItem value="c" id="option-c" />
+                           <span>ج</span>
                         </div>
+                        <span className="font-mono">۲</span>
                     </Label>
                     <Label htmlFor="option-d" className="flex items-center justify-between p-4 bg-background border border-border rounded-lg cursor-pointer hover:bg-secondary/50 has-[:checked]:bg-primary/10 has-[:checked]:border-primary">
-                        <span className="font-mono">-۲</span>
                          <div className="flex items-center gap-3">
-                           <span>د</span>
                            <RadioGroupItem value="d" id="option-d" />
+                           <span>د</span>
                         </div>
+                        <span className="font-mono">-۲</span>
                     </Label>
                 </RadioGroup>
             </div>
@@ -120,7 +120,7 @@ const ChatAssistant = ({ onToggle, isOpen }) => {
 
     return (
      <aside className={cn(
-        "flex-shrink-0 flex-col bg-card border-r border-border rounded-r-2xl overflow-hidden shadow-xl h-full hidden md:flex transition-all duration-300 ease-in-out",
+        "flex-shrink-0 flex-col bg-card border-l border-border rounded-l-2xl overflow-hidden shadow-xl h-full hidden md:flex transition-all duration-300 ease-in-out",
         isOpen ? "w-96" : "w-0 p-0 border-none"
      )}>
         <div className={cn("p-3 border-b border-border flex items-center justify-between bg-secondary/30 backdrop-blur-sm h-[73px]", !isOpen && "hidden")}>
@@ -217,10 +217,10 @@ export default function ExamPage() {
                 {!isChatOpen && (
                      <button 
                         onClick={toggleChat} 
-                        className="absolute top-1/2 -translate-y-1/2 left-0 h-28 w-10 bg-card/80 backdrop-blur-sm border-y border-l border-border rounded-l-2xl flex flex-col items-center justify-center text-primary shadow-lg hover:bg-card transition-all group z-50"
+                        className="absolute top-1/2 -translate-y-1/2 right-0 h-28 w-10 bg-card/80 backdrop-blur-sm border-y border-r border-border rounded-r-2xl flex flex-col items-center justify-center text-primary shadow-lg hover:bg-card transition-all group z-50"
                         title="باز کردن دستیار هوشمند"
                     >
-                        <ChevronLeft className="h-6 w-6 mb-1 transition-transform group-hover:scale-110" />
+                        <ChevronRight className="h-6 w-6 mb-1 transition-transform group-hover:scale-110" />
                         <Bot className="h-6 w-6 transition-transform group-hover:scale-110" />
                     </button>
                 )}
