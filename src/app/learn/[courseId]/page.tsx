@@ -12,7 +12,6 @@ import {
     Flag, 
     Hourglass, 
     FolderOpen, 
-    ChevronDown, 
     Book, 
     PlayCircle, 
     FileText, 
@@ -23,13 +22,14 @@ import {
     Settings,
     RotateCcw,
     Bot,
-    MoreVertical,
     Paperclip,
     Mic,
     Send,
     Signal,
     Clock,
     BarChart,
+    PanelRightClose,
+    PanelRightOpen
 } from 'lucide-react';
 import {
     Accordion,
@@ -196,7 +196,7 @@ const LessonContent = () => (
     </section>
 );
 
-const ChatAssistant = () => {
+const ChatAssistant = ({ onToggle, isOpen }) => {
     const [message, setMessage] = React.useState('');
     const textareaRef = React.useRef<HTMLTextAreaElement>(null);
 
@@ -208,6 +208,8 @@ const ChatAssistant = () => {
         }
     };
     
+    if (!isOpen) return null;
+
     return (
      <aside className="w-96 flex-shrink-0 flex-col bg-card border border-border rounded-2xl overflow-hidden shadow-xl h-full hidden md:flex">
         <div className="p-3 border-b border-border flex items-center justify-between bg-secondary/30 backdrop-blur-sm h-14">
@@ -221,8 +223,8 @@ const ChatAssistant = () => {
                     <p className="text-[10px] text-muted-foreground font-medium">پاسخگوی سوالات شما</p>
                 </div>
             </div>
-            <Button variant="ghost" size="icon" className="h-7 w-7 rounded text-muted-foreground hover:text-foreground">
-                <MoreVertical className="h-4 w-4" />
+            <Button onClick={onToggle} variant="ghost" size="icon" className="h-8 w-8 rounded-lg text-muted-foreground hover:text-foreground">
+                <PanelRightClose className="h-4 w-4" />
             </Button>
         </div>
         <div className="flex-1 overflow-y-auto p-4 space-y-6 bg-background/30 no-scrollbar">
@@ -282,13 +284,24 @@ const ChatMessage = ({ sender, time, message, isFormula=false }) => {
 };
 
 export default function LearnPage() {
+    const [isChatOpen, setIsChatOpen] = React.useState(true);
+
+    const toggleChat = () => setIsChatOpen(!isChatOpen);
+
     return (
         <div className="bg-background font-body text-foreground antialiased min-h-screen flex flex-col overflow-hidden">
             <Header />
-            <main className="flex-grow w-full max-w-[1920px] mx-auto p-4 h-[calc(100vh-64px)] flex gap-4 overflow-hidden">
+            <main className="flex-grow w-full max-w-[1920px] mx-auto p-4 h-[calc(100vh-64px)] flex gap-4 overflow-hidden relative">
                 <CourseSidebar />
                 <LessonContent />
-                <ChatAssistant />
+                <ChatAssistant isOpen={isChatOpen} onToggle={toggleChat} />
+                {!isChatOpen && (
+                    <div className="absolute top-4 left-4 z-20">
+                         <Button onClick={toggleChat} variant="outline" size="icon" className="bg-card/80 backdrop-blur-sm">
+                            <PanelRightOpen className="h-5 w-5" />
+                        </Button>
+                    </div>
+                )}
             </main>
         </div>
     );
