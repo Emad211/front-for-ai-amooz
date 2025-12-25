@@ -28,7 +28,8 @@ import {
     Signal,
     Clock,
     BarChart,
-    PanelRightClose
+    PanelRightClose,
+    ChevronLeft,
 } from 'lucide-react';
 import {
     Accordion,
@@ -210,9 +211,9 @@ const ChatAssistant = ({ onToggle, isOpen }) => {
     return (
      <aside className={cn(
         "flex-shrink-0 flex-col bg-card border border-border rounded-2xl overflow-hidden shadow-xl h-full hidden md:flex transition-all duration-300 ease-in-out",
-        isOpen ? "w-96" : "w-0"
+        isOpen ? "w-96" : "w-0 p-0 border-none"
      )}>
-        <div className="p-3 border-b border-border flex items-center justify-between bg-secondary/30 backdrop-blur-sm h-14">
+        <div className={cn("p-3 border-b border-border flex items-center justify-between bg-secondary/30 backdrop-blur-sm h-14", !isOpen && "hidden")}>
             <div className="flex items-center gap-3">
                 <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-primary/20 to-purple-500/20 flex items-center justify-center relative ring-1 ring-foreground/10">
                     <Bot className="text-primary h-5 w-5" />
@@ -227,12 +228,12 @@ const ChatAssistant = ({ onToggle, isOpen }) => {
                 <PanelRightClose className="h-4 w-4" />
             </Button>
         </div>
-        <div className="flex-1 overflow-y-auto p-4 space-y-6 bg-background/30 no-scrollbar">
+        <div className={cn("flex-1 overflow-y-auto p-4 space-y-6 bg-background/30 no-scrollbar", !isOpen && "hidden")}>
             <ChatMessage sender="ai" time="۱۰:۳۲" message="سلام علی! 👋 <br/>من آماده‌ام تا در مورد «رأس سهمی» بهت کمک کنم. سوالی داری؟" />
             <ChatMessage sender="user" time="۱۰:۳۴" message="فرمول x رأس سهمی چی بود؟" />
             <ChatMessage sender="ai" time="۱۰:۳۴" isFormula message='فرمول محاسبه طول رأس سهمی برابر است با: <br/> <span class="font-mono text-purple-400 bg-black/20 px-1 rounded my-1 block text-center" dir="ltr">x = -b / 2a</span>' />
         </div>
-        <div className="p-3 border-t border-border bg-card z-10">
+        <div className={cn("p-3 border-t border-border bg-card z-10", !isOpen && "hidden")}>
             <div className="relative">
                 <Textarea 
                     ref={textareaRef}
@@ -293,16 +294,19 @@ export default function LearnPage() {
             <Header />
             <main className="flex-grow w-full max-w-[1920px] mx-auto p-4 h-[calc(100vh-64px)] flex gap-4 overflow-hidden relative">
                 <CourseSidebar />
-                <LessonContent />
+                <div className={cn("flex-1 flex flex-col relative transition-all duration-300 ease-in-out", isChatOpen ? "w-[calc(100%-20rem-24rem)]" : "w-full")}>
+                    <LessonContent />
+                </div>
                 <ChatAssistant isOpen={isChatOpen} onToggle={toggleChat} />
+                
                 {!isChatOpen && (
-                    <button 
+                     <button 
                         onClick={toggleChat} 
-                        className="fixed bottom-6 left-6 h-16 w-16 bg-card/50 backdrop-blur-lg border border-border rounded-2xl flex items-center justify-center text-primary shadow-2xl hover:border-primary/50 transition-all group z-50"
+                        className="absolute top-1/2 -translate-y-1/2 left-0 h-24 w-8 bg-card/80 backdrop-blur-sm border-y border-l border-border rounded-l-2xl flex flex-col items-center justify-center text-primary shadow-lg hover:bg-card transition-all group z-50"
                         title="باز کردن دستیار هوشمند"
                     >
-                        <Bot className="h-8 w-8 transition-transform group-hover:scale-110" />
-                         <span className="absolute -bottom-1 -right-1 h-4 w-4 bg-green-500 rounded-full border-4 border-background"></span>
+                        <ChevronLeft className="h-5 w-5 mb-1 transition-transform group-hover:scale-110" />
+                        <Bot className="h-5 w-5 transition-transform group-hover:scale-110" />
                     </button>
                 )}
             </main>
