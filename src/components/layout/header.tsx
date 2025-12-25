@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Bell, GraduationCap, LogOut, User, Settings } from 'lucide-react';
+import { Bell, GraduationCap, LogOut, User } from 'lucide-react';
 
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
@@ -89,9 +89,6 @@ export function Header() {
             <DropdownMenuSeparator />
             <DropdownMenuItem asChild>
               <Link href="/profile"><User className="ml-2 h-4 w-4" /> پروفایل</Link>
-            </DropdownMenuItem>
-            <DropdownMenuItem>
-              <Settings className="ml-2 h-4 w-4" /> تنظیمات
             </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem>
