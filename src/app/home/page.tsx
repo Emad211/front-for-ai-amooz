@@ -98,7 +98,7 @@ export default function StudentDashboard() {
                 </Button>
             </div>
             <div className="md:w-1/2 flex justify-center">
-                <Image src="/home.png" alt="AI Learning" width={400} height={300} className="rounded-lg object-cover" />
+                <Image src="/home.png" alt="AI Learning" width={1376} height={768} className="rounded-lg object-cover" />
             </div>
         </div>
         
