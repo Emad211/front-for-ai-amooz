@@ -15,6 +15,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
+import { ThemeToggle } from '../theme-toggle';
 
 const Logo = () => (
   <Link href="/" className="flex items-center gap-2">
@@ -89,6 +90,9 @@ export function Header() {
             <DropdownMenuSeparator />
             <DropdownMenuItem asChild>
               <Link href="/profile"><User className="ml-2 h-4 w-4" /> پروفایل</Link>
+            </DropdownMenuItem>
+            <DropdownMenuItem onSelect={(e) => e.preventDefault()}>
+              <ThemeToggle />
             </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem>
