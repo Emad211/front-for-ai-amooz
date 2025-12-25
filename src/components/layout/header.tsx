@@ -107,7 +107,7 @@ export function Header() {
 
       <nav className="hidden md:flex items-center gap-2 rounded-full bg-secondary p-1">
         <NavItem href="/home">
-          داشبورد
+          خانه
         </NavItem>
         <NavItem href="/classes">
           کلاس‌ها
