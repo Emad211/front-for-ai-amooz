@@ -20,7 +20,7 @@ import { Label } from "@/components/ui/label"
 
 
 const ExamHeader = ({ onToggle }) => (
-    <header className="flex items-center justify-between p-4 border-b border-border w-full">
+    <header className="flex items-center justify-between px-4 border-b border-border w-full h-[73px]">
         <Button variant="outline" asChild className="bg-card hover:bg-card/80 border-border text-muted-foreground hover:text-foreground rounded-xl p-3 flex items-center justify-between transition-all group h-12">
              <Link href="/exam-prep">
                 <ArrowLeft className="text-muted-foreground group-hover:text-foreground group-hover:-translate-x-1 transition-all h-5 w-5 ml-2" />
@@ -120,7 +120,7 @@ const ChatAssistant = ({ onToggle, isOpen }) => {
         "flex-shrink-0 flex-col bg-card border-l border-border rounded-l-2xl overflow-hidden shadow-xl h-full hidden md:flex transition-all duration-300 ease-in-out",
         isOpen ? "w-[36rem]" : "w-0 p-0 border-none"
      )}>
-        <div className={cn("p-3 border-b border-border flex items-center justify-between bg-secondary/30 backdrop-blur-sm h-[73px]", !isOpen && "hidden")}>
+        <div className={cn("p-4 border-b border-border flex items-center justify-between bg-secondary/30 backdrop-blur-sm h-[73px]", !isOpen && "hidden")}>
             <div className="flex items-center gap-3">
                 <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-primary/20 to-purple-500/20 flex items-center justify-center relative ring-1 ring-foreground/10">
                     <Bot className="text-primary h-5 w-5" />
