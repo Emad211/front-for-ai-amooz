@@ -61,11 +61,11 @@ const CourseSidebar = () => (
                 
                 <Accordion type="single" collapsible defaultValue="item-1" className="w-full">
                   <AccordionItem value="item-1" className="border-none">
-                    <AccordionTrigger className="p-3 rounded-xl hover:no-underline hover:bg-secondary/30 text-foreground data-[state=open]:bg-primary/10 data-[state=open]:text-primary group">
+                    <AccordionTrigger className="p-3 rounded-xl hover:no-underline hover:bg-secondary/30 text-foreground data-[state=open]:font-bold data-[state=open]:border data-[state=open]:border-border group">
                        <div className="flex items-center gap-3">
                             <Folder className="h-5 w-5 group-data-[state=open]:hidden" />
                             <FolderOpen className="h-5 w-5 hidden group-data-[state=open]:block" />
-                            <span className="text-sm font-bold">آشنایی با سهمی</span>
+                            <span className="text-sm">آشنایی با سهمی</span>
                         </div>
                     </AccordionTrigger>
                     <AccordionContent className="p-1 space-y-1">
@@ -73,7 +73,7 @@ const CourseSidebar = () => (
                        <SubmenuItem icon={<PlayCircle className="h-4 w-4" />} title="رأس سهمی: مهمترین نقطه" active />
                        <SubmenuItem icon={<FileText className="h-4 w-4" />} title="ارتباط رأس با نقاط متقارن" />
                        <SubmenuItem icon={<Book className="h-4 w-4" />} title="عرض از مبدأ و ریشه‌ها" />
-                       <SubmenuItem icon={<CheckCircle className="h-4 w-4 text-green-400" />} title="آزمون فصل" special />
+                       <SubmenuItem icon={<CheckCircle className="h-4 w-4" />} title="آزمون فصل" special />
                     </AccordionContent>
                   </AccordionItem>
                   <AccordionItem value="item-2" className="border-none">
@@ -142,11 +142,11 @@ const SidebarItem = ({ icon, title, disabled = false }) => (
 const SubmenuItem = ({ icon, title, active = false, special = false }) => (
     <div className={cn(
         "flex items-center gap-3 p-2 pr-4 rounded-lg cursor-pointer",
-        active ? "bg-primary/10 text-primary border border-primary/20" : "text-muted-foreground hover:text-foreground hover:bg-foreground/5",
-        special && "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 mt-1"
+        active ? "text-foreground" : "text-muted-foreground hover:text-foreground hover:bg-foreground/5",
+        special && "text-green-500",
     )}>
-        {React.cloneElement(icon, { className: cn("h-4 w-4", !active && !special && "text-muted-foreground") })}
-        <span className={cn("text-xs", (active || special) && "font-bold")}>{title}</span>
+        {React.cloneElement(icon, { className: cn("h-4 w-4", !active && !special ? "text-muted-foreground" : special ? "text-green-500" : "text-primary") })}
+        <span className={cn("text-xs", active ? "font-bold" : special ? "font-semibold" : "")}>{title}</span>
     </div>
 );
 
