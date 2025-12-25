@@ -12,8 +12,8 @@ import {
     Mic,
     Send,
     PanelRightClose,
-    ChevronRight,
     ChevronLeft,
+    ChevronRight,
     HelpCircle
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -33,9 +33,6 @@ const ExamHeader = ({ onToggle }) => (
             <h1 className="text-xl font-bold text-foreground">بررسی کنکور تیر 1403 - ریاضی</h1>
         </div>
         <div className="flex items-center gap-4">
-             <button onClick={onToggle} className="text-muted-foreground hover:text-primary md:hidden">
-                <HelpCircle className="h-6 w-6" />
-             </button>
             <div className="bg-card border border-border text-foreground font-semibold px-4 py-2 rounded-lg">
                 سوال ۱ از ۱۱
             </div>
@@ -124,7 +121,7 @@ const ChatAssistant = ({ onToggle, isOpen }) => {
 
     return (
      <aside className={cn(
-        "flex-shrink-0 flex-col bg-card border-l border-border rounded-l-2xl overflow-hidden shadow-xl h-full hidden md:flex transition-all duration-300 ease-in-out",
+        "flex-shrink-0 flex-col bg-card border-r border-border rounded-r-2xl overflow-hidden shadow-xl h-full hidden md:flex transition-all duration-300 ease-in-out",
         isOpen ? "w-96" : "w-0 p-0 border-none"
      )}>
         <div className={cn("p-3 border-b border-border flex items-center justify-between bg-secondary/30 backdrop-blur-sm h-[73px]", !isOpen && "hidden")}>
@@ -157,7 +154,7 @@ const ChatAssistant = ({ onToggle, isOpen }) => {
                     onChange={handleInputChange}
                     placeholder="سوالت رو بپرس... یا تصویر حل دستیت رو بفرست" 
                     rows={1}
-                    className="bg-background border-border rounded-xl text-sm text-foreground focus:ring-1 focus:ring-primary focus:border-primary placeholder:text-muted-foreground/50 py-3 pr-12 pl-20 resize-none overflow-y-hidden no-scrollbar" 
+                    className="bg-background border-border rounded-xl text-sm text-foreground focus:ring-1 focus:ring-primary focus:border-primary placeholder:text-muted-foreground/50 py-3 pr-20 pl-12 resize-none overflow-y-hidden no-scrollbar" 
                 />
                 <div className="absolute left-2 bottom-1.5 flex items-center gap-1">
                     <Button size="icon" className="h-9 w-9 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground transition-all shadow-lg shadow-primary/20 hover:scale-105 active:scale-95">
@@ -209,8 +206,6 @@ export default function ExamPage() {
             <Header />
             <main className="flex-grow w-full max-w-[1920px] mx-auto p-0 h-[calc(100vh-64px)] flex overflow-hidden relative">
                 
-                <ChatAssistant isOpen={isChatOpen} onToggle={toggleChat} />
-                
                 <div className={cn("flex-1 flex flex-col relative transition-all duration-300 ease-in-out", isChatOpen ? "w-[calc(100%-24rem)]" : "w-full")}>
                     <ExamHeader onToggle={toggleChat} />
                     <div className="flex-1 overflow-y-auto">
@@ -218,13 +213,15 @@ export default function ExamPage() {
                     </div>
                 </div>
 
+                <ChatAssistant isOpen={isChatOpen} onToggle={toggleChat} />
+
                 {!isChatOpen && (
                      <button 
                         onClick={toggleChat} 
-                        className="absolute top-1/2 -translate-y-1/2 right-0 h-28 w-10 bg-card/80 backdrop-blur-sm border-y border-r border-border rounded-r-2xl flex flex-col items-center justify-center text-primary shadow-lg hover:bg-card transition-all group z-50"
+                        className="absolute top-1/2 -translate-y-1/2 left-0 h-28 w-10 bg-card/80 backdrop-blur-sm border-y border-l border-border rounded-l-2xl flex flex-col items-center justify-center text-primary shadow-lg hover:bg-card transition-all group z-50"
                         title="باز کردن دستیار هوشمند"
                     >
-                        <ChevronRight className="h-6 w-6 mb-1 transition-transform group-hover:scale-110" />
+                        <ChevronLeft className="h-6 w-6 mb-1 transition-transform group-hover:scale-110" />
                         <Bot className="h-6 w-6 transition-transform group-hover:scale-110" />
                     </button>
                 )}
