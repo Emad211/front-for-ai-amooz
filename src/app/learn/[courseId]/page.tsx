@@ -147,7 +147,7 @@ const SubmenuItem = ({ icon, title, active = false, special = false }) => (
         active ? "bg-primary/10 text-primary border border-primary/20" : "text-muted-foreground hover:text-foreground hover:bg-foreground/5",
         special && "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 mt-1"
     )}>
-        {React.cloneElement(icon, { className: cn("h-4 w-4", !active && "text-muted-foreground") })}
+        {React.cloneElement(icon, { className: cn("h-4 w-4", !active && !special && "text-muted-foreground") })}
         <span className={cn("text-xs", (active || special) && "font-bold")}>{title}</span>
     </div>
 );
