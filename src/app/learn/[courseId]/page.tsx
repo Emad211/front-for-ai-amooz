@@ -30,7 +30,10 @@ import {
     MoreVertical,
     Paperclip,
     Mic,
-    Send
+    Send,
+    Signal,
+    Clock,
+    BarChart,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import '../learn.css';
@@ -128,8 +131,7 @@ const SubmenuItem = ({ icon, title, active = false, special = false }) => (
 const LessonContent = () => (
     <section className="flex-1 flex flex-col gap-3 overflow-y-auto no-scrollbar h-full rounded-2xl relative">
         <div className="bg-card border border-border rounded-2xl p-4 shadow-lg relative overflow-hidden flex-shrink-0">
-            <div className="absolute top-0 left-0 w-full h-0.5 bg-gradient-to-r from-primary to-purple-500"></div>
-            <div className="flex flex-col gap-3">
+             <div className="flex flex-col gap-4">
                 <div>
                     <h1 className="text-base font-bold text-foreground mb-1">
                         رسم نمودار توابع درجه دوم (سهمی)
@@ -138,16 +140,28 @@ const LessonContent = () => (
                         یادگیری چگونگی رسم دقیق نمودارهای توابع درجه دوم (سهمی) و تفسیر ویژگی‌های کلیدی آن‌ها.
                     </p>
                 </div>
-                <div className="flex flex-col gap-1.5">
-                    <div className="flex items-end justify-between text-[10px]">
-                        <span className="text-primary font-bold">۶۷٪ تکمیل شده</span>
-                        <div className="flex items-center gap-3 font-medium text-muted-foreground">
-                            <span>سطح: <span className="text-foreground">مبتدی</span></span>
-                            <span className="w-px h-2.5 bg-border"></span>
-                            <span>زمان: <span className="text-foreground">۴۵-۳۰ دقیقه</span></span>
+                <div className="grid grid-cols-3 gap-3">
+                    <div className="bg-primary/10 border border-primary/20 rounded-lg p-3 flex items-center gap-2.5">
+                        <BarChart className="h-5 w-5 text-primary"/>
+                        <div>
+                           <p className="text-xs text-primary font-bold">۶۷٪</p>
+                           <p className="text-[10px] text-muted-foreground">تکمیل</p>
                         </div>
                     </div>
-                    <Progress value={67} className="h-1" />
+                     <div className="bg-purple-500/10 border border-purple-500/20 rounded-lg p-3 flex items-center gap-2.5">
+                        <Signal className="h-5 w-5 text-purple-400"/>
+                        <div>
+                           <p className="text-xs text-purple-400 font-bold">مبتدی</p>
+                           <p className="text-[10px] text-muted-foreground">سطح</p>
+                        </div>
+                    </div>
+                     <div className="bg-orange-500/10 border border-orange-500/20 rounded-lg p-3 flex items-center gap-2.5">
+                        <Clock className="h-5 w-5 text-orange-400"/>
+                        <div>
+                           <p className="text-xs text-orange-400 font-bold">۳۰-۴۵</p>
+                           <p className="text-[10px] text-muted-foreground">دقیقه</p>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -168,7 +182,7 @@ const LessonContent = () => (
 );
 
 const ChatAssistant = () => (
-     <aside className="w-96 flex-shrink-0 flex flex-col bg-card border border-border rounded-2xl overflow-hidden shadow-xl h-full">
+     <aside className="w-96 flex-shrink-0 flex-col bg-card border border-border rounded-2xl overflow-hidden shadow-xl h-full hidden md:flex">
         <div className="p-3 border-b border-border flex items-center justify-between bg-secondary/30 backdrop-blur-sm h-14">
             <div className="flex items-center gap-3">
                 <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-primary/20 to-purple-500/20 flex items-center justify-center relative ring-1 ring-foreground/10">
