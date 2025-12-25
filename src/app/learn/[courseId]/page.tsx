@@ -44,7 +44,7 @@ const CourseSidebar = () => (
     <aside className="w-80 flex-shrink-0 flex-col gap-3 hidden lg:flex h-full">
         <Button variant="outline" asChild className="bg-card hover:bg-card/80 border-border text-muted-foreground hover:text-foreground rounded-xl p-3 flex items-center justify-between transition-all group h-12">
             <Link href="/classes">
-                <span className="text-sm font-medium pr-1">بازگشت به لیست دوره‌ها</span>
+                <span className="text-base font-medium pr-1">بازگشت به لیست دوره‌ها</span>
                 <ArrowLeft className="text-muted-foreground group-hover:text-foreground group-hover:-translate-x-1 transition-all h-5 w-5" />
             </Link>
         </Button>
@@ -65,7 +65,7 @@ const CourseSidebar = () => (
                        <div className="flex items-center gap-3">
                             <Folder className="h-5 w-5 group-data-[state=open]:hidden" />
                             <FolderOpen className="h-5 w-5 hidden group-data-[state=open]:block" />
-                            <span className="text-sm">آشنایی با سهمی</span>
+                            <span className="text-base">آشنایی با سهمی</span>
                         </div>
                     </AccordionTrigger>
                     <AccordionContent className="p-1 space-y-1">
@@ -77,11 +77,11 @@ const CourseSidebar = () => (
                     </AccordionContent>
                   </AccordionItem>
                   <AccordionItem value="item-2" className="border-none">
-                    <AccordionTrigger className="p-3 rounded-xl hover:no-underline hover:bg-secondary/30 text-muted-foreground hover:text-foreground group">
+                    <AccordionTrigger className="p-3 rounded-xl hover:no-underline hover:bg-secondary/30 text-muted-foreground hover:text-foreground group data-[state=open]:font-bold data-[state=open]:border data-[state=open]:border-border">
                        <div className="flex items-center gap-3">
                             <Folder className="h-5 w-5 group-data-[state=open]:hidden" />
                             <FolderOpen className="h-5 w-5 hidden group-data-[state=open]:block" />
-                            <span className="text-sm font-medium">گام به گام رسم نمودار</span>
+                            <span className="text-base font-medium">گام به گام رسم نمودار</span>
                         </div>
                     </AccordionTrigger>
                     <AccordionContent className="p-1 space-y-1">
@@ -91,11 +91,11 @@ const CourseSidebar = () => (
                     </AccordionContent>
                   </AccordionItem>
                   <AccordionItem value="item-3" className="border-none">
-                    <AccordionTrigger className="p-3 rounded-xl hover:no-underline hover:bg-secondary/30 text-muted-foreground hover:text-foreground group">
+                    <AccordionTrigger className="p-3 rounded-xl hover:no-underline hover:bg-secondary/30 text-muted-foreground hover:text-foreground group data-[state=open]:font-bold data-[state=open]:border data-[state=open]:border-border">
                         <div className="flex items-center gap-3">
                             <Folder className="h-5 w-5 group-data-[state=open]:hidden" />
                             <FolderOpen className="h-5 w-5 hidden group-data-[state=open]:block" />
-                            <span className="text-sm font-medium">حل مسائل مربوطه</span>
+                            <span className="text-base font-medium">حل مسائل مربوطه</span>
                         </div>
                     </AccordionTrigger>
                     <AccordionContent className="p-1 space-y-1">
@@ -111,16 +111,16 @@ const CourseSidebar = () => (
             </div>
             <div className="p-3 border-t border-border/50 space-y-2 bg-background/20">
                 <Button variant="outline" className="w-full justify-between p-2.5 h-auto bg-secondary/50 border-border text-primary hover:bg-primary/10 hover:border-primary/30 transition-all">
-                    <span className="text-xs font-bold">دانلود جزوه</span>
+                    <span className="text-sm font-bold">دانلود جزوه</span>
                     <BookOpen className="h-4 w-4" />
                 </Button>
                 <div className="flex gap-2">
                     <Button variant="outline" className="flex-1 justify-center gap-2 p-2.5 h-auto bg-secondary/50 border-border text-muted-foreground hover:text-foreground hover:bg-secondary">
-                        <span className="text-xs font-medium">تنظیمات</span>
+                        <span className="text-sm font-medium">تنظیمات</span>
                         <Settings className="h-4 w-4" />
                     </Button>
                      <Button variant="outline" className="flex-1 justify-center gap-2 p-2.5 h-auto bg-secondary/50 border-border text-muted-foreground hover:text-foreground hover:bg-secondary">
-                        <span className="text-xs font-medium">شروع مجدد</span>
+                        <span className="text-sm font-medium">شروع مجدد</span>
                         <RotateCcw className="h-4 w-4" />
                     </Button>
                 </div>
@@ -136,7 +136,7 @@ const SidebarItem = ({ icon, title, disabled = false }) => (
         )}>
             <div className="flex items-center gap-3">
                 {React.cloneElement(icon, { className: cn("h-5 w-5", disabled ? "text-muted-foreground/40" : "text-muted-foreground") })}
-                <span className="text-sm font-medium">{title}</span>
+                <span className="text-base font-medium">{title}</span>
             </div>
         </div>
     </div>
@@ -150,7 +150,7 @@ const SubmenuItem = ({ icon, title, active = false, special = false }) => (
         special && "text-green-500",
     )}>
         {React.cloneElement(icon, { className: cn("h-4 w-4", !active && !special ? "text-muted-foreground" : special ? "text-green-500" : "text-primary") })}
-        <span className={cn("text-xs", active ? "font-bold" : special ? "font-semibold" : "")}>{title}</span>
+        <span className={cn("text-sm", active ? "font-bold" : special ? "font-semibold" : "")}>{title}</span>
     </div>
 );
 
@@ -315,5 +315,3 @@ export default function LearnPage() {
         </div>
     );
 }
-
-    
