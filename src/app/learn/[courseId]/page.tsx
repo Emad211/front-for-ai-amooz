@@ -238,9 +238,9 @@ export default function LearnPage() {
         <div className="bg-background font-body text-foreground antialiased min-h-screen flex flex-col overflow-hidden">
             <Header />
             <main className="flex-grow w-full max-w-[1920px] mx-auto p-4 h-[calc(100vh-64px)] flex gap-4 overflow-hidden">
-                <ChatAssistant />
-                <LessonContent />
                 <CourseSidebar />
+                <LessonContent />
+                <ChatAssistant />
             </main>
         </div>
     );
