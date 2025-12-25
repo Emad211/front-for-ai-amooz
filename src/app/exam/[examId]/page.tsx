@@ -136,6 +136,8 @@ const ChatAssistant = ({ onToggle, isOpen }) => {
         </div>
         <div className={cn("flex-1 overflow-y-auto p-4 space-y-6 bg-background/30 no-scrollbar", !isOpen && "hidden")}>
             <ChatMessage sender="ai" time="۱۰:۳۲" message="سلام! 👋 من دستیار حل سوالت هستم.<br/>میتونی سوالت رو بخونی، گزینه انتخاب کنی، یا اگه جایی گیر کردی ازم راهنمایی بخوای. اگه روی کاغذ حل کردی، عکسش رو بفرست تا بررسی کنم." />
+            <ChatMessage sender="user" time="۱۰:۳۴" message="مطمئن نیستم چطوری باید از اطلاعات داده شده قدر نسبت رو پیدا کنم. میشه یه راهنمایی کلی بکنی؟" />
+            <ChatMessage sender="ai" time="۱۰:۳۵" message='حتماً! در یک دنباله هندسی، نسبت هر دو جمله متوالی برابر با قدر نسبت (r) به توان اختلاف جایگاهشونه. مثلاً: <br> <span class="font-mono px-1 rounded my-1 block text-center" dir="ltr">a₇ / a₅ = r²</span> <br> سعی کن از این رابطه برای جملاتی که داری استفاده کنی تا به یک معادله بر حسب x و r برسی.' />
         </div>
         <div className={cn("p-3 border-t border-border bg-card z-10", !isOpen && "hidden")}>
              <div className="flex gap-2 mb-2">
@@ -188,6 +190,7 @@ const ChatMessage = ({ sender, time, message }) => {
                     <p className="text-sm" dangerouslySetInnerHTML={{ __html: message }}></p>
                 </div>
             </div>
+            <span className={`text-[9px] text-muted-foreground ${isAI ? 'pr-11' : 'pl-1'}`}>{time}</span>
         </div>
     );
 };
