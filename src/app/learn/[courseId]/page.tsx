@@ -160,7 +160,7 @@ const LessonContent = () => (
                     <h1 className="text-lg font-bold text-foreground mb-1">
                         رسم نمودار توابع درجه دوم (سهمی)
                     </h1>
-                    <p className="text-muted-foreground text-sm leading-relaxed line-clamp-1">
+                    <p className="text-sm text-muted-foreground leading-relaxed line-clamp-1">
                         یادگیری چگونگی رسم دقیق نمودارهای توابع درجه دوم (سهمی) و تفسیر ویژگی‌های کلیدی آن‌ها.
                     </p>
                 </div>
@@ -241,7 +241,7 @@ const ChatAssistant = ({ onToggle, isOpen }) => {
                     onChange={handleInputChange}
                     placeholder="سوالت رو بنویس..." 
                     rows={1}
-                    className="bg-background border-border rounded-xl text-xs text-foreground focus:ring-1 focus:ring-primary focus:border-primary placeholder:text-muted-foreground/50 py-3 pr-20 pl-12 resize-none overflow-y-hidden no-scrollbar" 
+                    className="bg-background border-border rounded-xl text-sm text-foreground focus:ring-1 focus:ring-primary focus:border-primary placeholder:text-muted-foreground/50 py-3 pr-20 pl-12 resize-none overflow-y-hidden no-scrollbar" 
                 />
                 <div className="absolute right-2 bottom-1.5 flex items-center gap-1">
                     <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg text-muted-foreground hover:text-primary hover:bg-foreground/5" title="پیوست فایل">
@@ -276,7 +276,7 @@ const ChatMessage = ({ sender, time, message, isFormula=false }) => {
                     isAI ? "bg-card text-gray-200 rounded-tr-none border-border/50"
                          : "bg-primary/10 text-foreground rounded-tl-none border-primary/20"
                 )}>
-                    <p className="text-xs" dangerouslySetInnerHTML={{ __html: message }}></p>
+                    <p className="text-sm" dangerouslySetInnerHTML={{ __html: message }}></p>
                 </div>
             </div>
             <span className={`text-[9px] text-muted-foreground ${isAI ? 'pr-11' : 'pl-1'}`}>{time}</span>
