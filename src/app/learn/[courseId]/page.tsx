@@ -11,7 +11,7 @@ import {
     List, 
     Flag, 
     Hourglass, 
-    FolderOpen, b
+    FolderOpen,
     Book, 
     PlayCircle, 
     FileText, 
