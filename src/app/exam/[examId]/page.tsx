@@ -118,7 +118,7 @@ const ChatAssistant = ({ onToggle, isOpen }) => {
     return (
      <aside className={cn(
         "flex-shrink-0 flex-col bg-card border-l border-border rounded-l-2xl overflow-hidden shadow-xl h-full hidden md:flex transition-all duration-300 ease-in-out",
-        isOpen ? "w-96" : "w-0 p-0 border-none"
+        isOpen ? "w-[36rem]" : "w-0 p-0 border-none"
      )}>
         <div className={cn("p-3 border-b border-border flex items-center justify-between bg-secondary/30 backdrop-blur-sm h-[73px]", !isOpen && "hidden")}>
             <div className="flex items-center gap-3">
@@ -201,7 +201,7 @@ export default function ExamPage() {
         <div className="bg-background font-body text-foreground antialiased min-h-screen flex flex-col overflow-hidden">
             <main className="flex-grow w-full max-w-[1920px] mx-auto h-screen flex overflow-hidden relative">
                 
-                <div className={cn("flex-1 flex flex-col relative transition-all duration-300 ease-in-out", isChatOpen ? "w-[calc(100%-24rem)]" : "w-full")}>
+                <div className={cn("flex-1 flex flex-col relative transition-all duration-300 ease-in-out", isChatOpen ? "w-[calc(100%-36rem)]" : "w-full")}>
                     <ExamHeader onToggle={toggleChat} />
                     <div className="flex-1 overflow-y-auto">
                         <QuestionContent />
