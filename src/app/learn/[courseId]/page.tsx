@@ -140,27 +140,18 @@ const LessonContent = () => (
                         یادگیری چگونگی رسم دقیق نمودارهای توابع درجه دوم (سهمی) و تفسیر ویژگی‌های کلیدی آن‌ها.
                     </p>
                 </div>
-                <div className="grid grid-cols-3 gap-3">
-                    <div className="bg-primary/10 border border-primary/20 rounded-lg p-3 flex items-center gap-2.5">
-                        <BarChart className="h-5 w-5 text-primary"/>
-                        <div>
-                           <p className="text-xs text-primary font-bold">۶۷٪</p>
-                           <p className="text-[10px] text-muted-foreground">تکمیل</p>
-                        </div>
+                 <div className="flex items-center justify-between text-xs text-muted-foreground border-t border-border pt-3">
+                    <div className="flex items-center gap-2">
+                        <BarChart className="h-4 w-4 text-primary"/>
+                        <span>تکمیل: <span className="font-bold text-foreground">۶۷٪</span></span>
                     </div>
-                     <div className="bg-purple-500/10 border border-purple-500/20 rounded-lg p-3 flex items-center gap-2.5">
-                        <Signal className="h-5 w-5 text-purple-400"/>
-                        <div>
-                           <p className="text-xs text-purple-400 font-bold">مبتدی</p>
-                           <p className="text-[10px] text-muted-foreground">سطح</p>
-                        </div>
+                    <div className="flex items-center gap-2">
+                        <Signal className="h-4 w-4 text-primary"/>
+                        <span>سطح: <span className="font-bold text-foreground">مبتدی</span></span>
                     </div>
-                     <div className="bg-orange-500/10 border border-orange-500/20 rounded-lg p-3 flex items-center gap-2.5">
-                        <Clock className="h-5 w-5 text-orange-400"/>
-                        <div>
-                           <p className="text-xs text-orange-400 font-bold">۳۰-۴۵</p>
-                           <p className="text-[10px] text-muted-foreground">دقیقه</p>
-                        </div>
+                    <div className="flex items-center gap-2">
+                        <Clock className="h-4 w-4 text-primary"/>
+                        <span>زمان: <span className="font-bold text-foreground">۳۰-۴۵ دقیقه</span></span>
                     </div>
                 </div>
             </div>
