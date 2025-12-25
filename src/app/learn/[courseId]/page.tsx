@@ -59,15 +59,15 @@ const CourseSidebar = () => (
                 <SidebarItem icon={<Flag className="h-5 w-5" />} title="اهداف یادگیری" />
                 <SidebarItem icon={<Hourglass className="h-5 w-5" />} title="پیش نیازها" />
                 
-                <div className="rounded-xl bg-primary/10 border border-primary/20 overflow-hidden">
-                    <div className="flex items-center justify-between p-3 bg-primary/20 cursor-pointer text-foreground">
+                <div>
+                    <div className="flex items-center justify-between p-3 rounded-xl bg-primary/10 text-foreground cursor-pointer">
                         <div className="flex items-center gap-3">
                             <FolderOpen className="text-primary h-5 w-5" />
                             <span className="text-sm font-bold">آشنایی با سهمی</span>
                         </div>
                         <ChevronUp className="h-4 w-4" />
                     </div>
-                    <div className="bg-background/10 p-1 space-y-1">
+                    <div className="p-1 space-y-1">
                        <SubmenuItem icon={<FileText className="h-4 w-4" />} title="شکل کلی و جهت سهمی" />
                        <SubmenuItem icon={<PlayCircle className="h-4 w-4" />} title="رأس سهمی: مهمترین نقطه" active />
                        <SubmenuItem icon={<FileText className="h-4 w-4" />} title="ارتباط رأس با نقاط متقارن" />
