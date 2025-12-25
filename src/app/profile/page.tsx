@@ -7,7 +7,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Camera } from 'lucide-react';
+import { Camera, Monitor, Moon } from 'lucide-react';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 
 export default function ProfilePage() {
   const [profile, setProfile] = useState({
@@ -18,6 +19,7 @@ export default function ProfilePage() {
     phone: '09123456789',
     avatar: 'https://picsum.photos/seed/user/100/100',
   });
+  const [theme, setTheme] = useState('dark');
 
   const handleInputChange = (e) => {
     const { id, value } = e.target;
@@ -25,12 +27,14 @@ export default function ProfilePage() {
   };
 
   return (
-    <div className="bg-background text-text-light min-h-screen font-sans">
+    <div className="bg-background text-foreground min-h-screen font-sans">
       <Header />
       <main className="p-4 md:p-8">
-        <div className="max-w-4xl mx-auto">
-          <h1 className="text-4xl font-bold text-text-light mb-2">پروفایل کاربری</h1>
-          <p className="text-text-muted mb-8">اطلاعات حساب کاربری خود را مدیریت کنید.</p>
+        <div className="max-w-4xl mx-auto space-y-8">
+          <div>
+            <h1 className="text-4xl font-bold text-foreground mb-2">پروفایل کاربری</h1>
+            <p className="text-muted-foreground mb-8">اطلاعات حساب کاربری خود را مدیریت کنید.</p>
+          </div>
 
           <Card className="bg-card border-border">
             <CardHeader>
@@ -49,7 +53,7 @@ export default function ProfilePage() {
                   </Button>
                 </div>
                 <div className='flex-grow'>
-                    <Label htmlFor="username" className='text-text-muted'>نام کاربری</Label>
+                    <Label htmlFor="username" className='text-muted-foreground'>نام کاربری</Label>
                     <Input id="username" value={profile.username} onChange={handleInputChange} className="mt-2 bg-input border-border h-12" />
                 </div>
               </div>
@@ -77,6 +81,27 @@ export default function ProfilePage() {
               <Button variant="outline" className='h-11'>انصراف</Button>
               <Button className="bg-primary hover:bg-primary/90 h-11">ذخیره تغییرات</Button>
             </CardFooter>
+          </Card>
+          
+          <Card className="bg-card border-border">
+            <CardHeader>
+              <CardTitle>ظاهر</CardTitle>
+              <CardDescription>ظاهر برنامه را به سلیقه خود تغییر دهید.</CardDescription>
+            </CardHeader>
+            <CardContent>
+                <RadioGroup value={theme} onValueChange={setTheme} className="grid grid-cols-2 gap-4">
+                  <Label htmlFor="light-theme" className="border-2 border-border rounded-lg p-4 flex flex-col items-center justify-center gap-2 cursor-pointer has-[:checked]:border-primary has-[:checked]:bg-primary/5">
+                    <RadioGroupItem value="light" id="light-theme" className="sr-only" />
+                    <Monitor className="h-8 w-8 text-foreground" />
+                    <span className="font-semibold">روشن</span>
+                  </Label>
+                  <Label htmlFor="dark-theme" className="border-2 border-border rounded-lg p-4 flex flex-col items-center justify-center gap-2 cursor-pointer has-[:checked]:border-primary has-[:checked]:bg-primary/5">
+                    <RadioGroupItem value="dark" id="dark-theme" className="sr-only" />
+                    <Moon className="h-8 w-8 text-foreground" />
+                    <span className="font-semibold">تاریک</span>
+                  </Label>
+                </RadioGroup>
+            </CardContent>
           </Card>
         </div>
       </main>

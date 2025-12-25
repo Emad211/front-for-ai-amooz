@@ -9,39 +9,39 @@ body {
 
 @layer base {
   :root {
-    --background: 224 71% 4%; /* #050A19 */
-    --foreground: 210 40% 98%;
+    --background: 0 0% 100%; /* Light Background */
+    --foreground: 222 47% 11%; /* Dark Text */
 
-    --card: 224 33% 12%; /* #141B2D */
-    --card-foreground: 210 40% 98%;
+    --card: 0 0% 96%; /* Light Card */
+    --card-foreground: 222 47% 11%;
 
-    --popover: 224 71% 4%;
-    --popover-foreground: 210 40% 98%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 47% 11%;
     
-    --primary: 160 60% 50%; /* Mint Green */
-    --primary-foreground: 222 47% 11%;
+    --primary: 160 60% 40%; /* Darker Mint for contrast on light bg */
+    --primary-foreground: 210 40% 98%;
 
-    --secondary: 215 28% 17%;
-    --secondary-foreground: 210 40% 98%;
+    --secondary: 0 0% 94%;
+    --secondary-foreground: 222 47% 11%;
 
-    --muted: 215 28% 17%;
-    --muted-foreground: 215 20% 65%; /* #94a3b8 */
+    --muted: 0 0% 94%;
+    --muted-foreground: 215 20% 45%;
 
-    --accent: 215 28% 17%;
-    --accent-foreground: 210 40% 98%;
+    --accent: 0 0% 94%;
+    --accent-foreground: 222 47% 11%;
 
-    --destructive: 0 62.8% 30.6%;
+    --destructive: 0 84% 60%;
     --destructive-foreground: 0 0% 98%;
     
-    --border: 215 28% 20%; /* #293548 */
-    --input: 215 28% 17%;
-    --ring: 160 60% 50%;
+    --border: 0 0% 89%;
+    --input: 0 0% 92%;
+    --ring: 160 60% 40%;
     
     --radius: 0.75rem;
 
     /* Custom Palette */
-    --text-light: #F9FAFB;
-    --text-muted: #9CA3AF;
+    --text-light: #111827; /* Dark text for light theme */
+    --text-muted: #6B7280;   /* Gray text for light theme */
   }
 
   .dark {
@@ -72,6 +72,10 @@ body {
     --border: 215 28% 20%; /* #293548 */
     --input: 215 28% 17%;
     --ring: 160 60% 50%;
+
+    /* Custom Palette for dark theme */
+    --text-light: #F9FAFB;
+    --text-muted: #9CA3AF;
   }
 }
 
