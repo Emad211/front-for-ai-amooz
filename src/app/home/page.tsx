@@ -75,7 +75,7 @@ const EventCard = ({ title, status, icon, date, month }) => (
 
 export default function StudentDashboard() {
   return (
-    <div className="bg-background text-text-light min-h-screen font-sans">
+    <div className="bg-background text-text-light min-h-screen">
       <Header />
 
       <main className="p-4 md:p-8 grid gap-8">

@@ -25,7 +25,7 @@ export default function ProfilePage() {
   };
 
   return (
-    <div className="bg-background text-foreground min-h-screen font-sans">
+    <div className="bg-background text-foreground min-h-screen">
       <Header />
       <main className="p-4 md:p-8">
         <div className="max-w-4xl mx-auto space-y-8">
@@ -58,8 +58,7 @@ export default function ProfilePage() {
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div className="space-y-2">
-                  <Label htmlFor="grade">پایه تحصیلی</Label>
-                  <Input id="grade" value={profile.grade} onChange={handleInputChange} className="bg-input border-border h-12" />
+                  <Label htmlFor="grade">پایه تحصیلی</Label>                  <Input id="grade" value={profile.grade} onChange={handleInputChange} className="bg-input border-border h-12" />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="major">رشته</Label>

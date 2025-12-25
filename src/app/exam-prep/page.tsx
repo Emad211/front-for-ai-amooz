@@ -54,7 +54,7 @@ const ExamCard = ({ exam }) => {
 
 export default function ExamPrepPage() {
   return (
-    <div className="bg-background text-text-light min-h-screen font-sans">
+    <div className="bg-background text-text-light min-h-screen">
       <Header />
       <main className="p-4 md:p-8">
         <div className="max-w-7xl mx-auto">
