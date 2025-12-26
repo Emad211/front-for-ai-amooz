@@ -8,12 +8,12 @@ export default function AdminLayout({
 }) {
   return (
     <div className="flex min-h-screen w-full bg-background" dir="rtl">
-        <div className="flex flex-1 flex-row-reverse">
-            <AdminSidebar />
+        <div className="flex flex-1">
             <main className="flex-1 p-4 md:p-8">
                 <AdminHeader />
                 {children}
             </main>
+            <AdminSidebar />
         </div>
     </div>
   );
