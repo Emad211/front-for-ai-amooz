@@ -1,10 +1,9 @@
-// components/layout/admin-header.tsx
+// components/layout/header.tsx
 'use client';
 
-import { Bell, Search, Moon, Sun, Settings, Contact, LogOut, User } from 'lucide-react';
+import { Bell, Moon, Sun, Contact, LogOut, User, GraduationCap, ChevronDown } from 'lucide-react';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import {
   DropdownMenu,
@@ -16,26 +15,27 @@ import {
   DropdownMenuGroup,
 } from '@/components/ui/dropdown-menu';
 import { useTheme } from 'next-themes';
-import { ThemeToggle } from '../theme-toggle';
+import { usePathname } from 'next/navigation';
+import { cn } from '@/lib/utils';
 
 
-const Actions = () => (
-  <div className="flex items-center gap-4">
-      <ThemeToggle />
-      <Button variant="ghost" size="icon" className="relative">
-          <Bell className="h-5 w-5" />
-          <span className="absolute top-2.5 right-2.5 w-2 h-2 bg-primary rounded-full border-2 border-background"></span>
-      </Button>
-  </div>
-);
-
+const NavLink = ({ href, children }) => {
+    const pathname = usePathname();
+    const isActive = pathname.startsWith(href);
+    return (
+         <Link href={href} className={cn("text-sm font-medium transition-colors px-4 py-2 rounded-lg", 
+            isActive ? "bg-primary/10 text-primary" : "text-muted-foreground hover:text-foreground"
+        )}>
+            {children}
+        </Link>
+    );
+};
 
 const UserProfile = () => (
-  <div className="flex items-center gap-4">
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button variant="ghost" className="relative h-10 w-10 rounded-full">
-          <Avatar className="h-9 w-9">
+          <Avatar className="h-10 w-10">
             <AvatarImage
               src="https://picsum.photos/seed/user/100/100"
               alt="Alireza"
@@ -55,7 +55,7 @@ const UserProfile = () => (
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
         <DropdownMenuGroup>
-          <DropdownMenuItem asChild>
+           <DropdownMenuItem asChild>
             <Link href="/profile">
               <User className="ml-2 h-4 w-4" />
               <span>پروفایل</span>
@@ -68,32 +68,52 @@ const UserProfile = () => (
         </DropdownMenuGroup>
         <DropdownMenuSeparator />
         <DropdownMenuItem asChild>
-          <Link href="/login">
+           <Link href="/login">
             <LogOut className="ml-2 h-4 w-4" />
             <span>خروج</span>
           </Link>
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
-  </div>
 );
 
 
-export function AdminHeader() {
-  const { theme, setTheme } = useTheme();
+const ThemeToggle = () => {
+    const { theme, setTheme } = useTheme();
+    return (
+        <Button variant="ghost" size="icon" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}>
+            <Sun className="h-5 w-5 rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0" />
+            <Moon className="absolute h-5 w-5 rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100" />
+            <span className="sr-only">Toggle theme</span>
+        </Button>
+    )
+}
 
+export function AdminHeader() {
   return (
     <header dir="rtl" className="h-20 flex items-center justify-between px-6 md:px-10 bg-card border-b border-border sticky top-0 z-50">
-        <div className="flex-1 max-w-md relative">
-           <Input
-                type="search"
-                placeholder="جستجوی دوره، استاد یا مبحث..."
-                className="bg-background border-border h-11 pl-4 pr-10 rounded-lg focus:ring-primary focus:border-primary w-full"
-            />
-            <Search className="absolute right-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
+        {/* Logo */}
+        <div className="flex items-center gap-3">
+             <Link href="/home" className="flex items-center gap-2">
+                <GraduationCap className="h-7 w-7 text-primary" />
+                <span className="text-xl font-bold text-text-light">AI-Amooz</span>
+            </Link>
         </div>
-        <div className="flex items-center gap-4">
-            <Actions />
+
+        {/* Navigation */}
+        <nav className="hidden md:flex items-center bg-background/50 border border-border/50 p-1 rounded-xl">
+            <NavLink href="/classes">کلاس‌ها</NavLink>
+            <NavLink href="/exam-prep">آمادگی آزمون</NavLink>
+            <NavLink href="/home">صفحه اصلی</NavLink>
+        </nav>
+        
+        {/* Actions */}
+        <div className="flex items-center gap-2">
+            <ThemeToggle />
+            <Button variant="ghost" size="icon" className="relative">
+                <Bell className="h-5 w-5" />
+                <span className="absolute top-2.5 right-2.5 w-2 h-2 bg-primary rounded-full border-2 border-background"></span>
+            </Button>
             <div className="w-px h-8 bg-border mx-2"></div>
             <UserProfile />
         </div>
