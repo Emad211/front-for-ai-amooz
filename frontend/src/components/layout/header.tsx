@@ -3,6 +3,7 @@
 
 import { Bell, Moon, Sun, Contact, LogOut, User, GraduationCap, ChevronDown } from 'lucide-react';
 import Link from 'next/link';
+import Image from 'next/image';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import {
@@ -94,9 +95,18 @@ export function AdminHeader() {
     <header dir="rtl" className="h-20 flex items-center justify-between px-6 md:px-10 bg-card border-b border-border sticky top-0 z-50">
         {/* Logo */}
         <div className="flex items-center gap-3">
-             <Link href="/home" className="flex items-center gap-2">
-                <GraduationCap className="h-7 w-7 text-primary" />
-                <span className="text-xl font-bold text-text-light">AI-Amooz</span>
+             <Link href="/home" className="flex items-center gap-2 group relative">
+                <div className="relative h-12 w-16">
+                    <Image
+                        src="/logo (2).png"
+                        alt="AI-Amooz logo"
+                        fill
+                        sizes="128px"
+                        className="object-contain mix-blend-screen brightness-125 scale-[2.2] origin-center"
+                        priority
+                    />
+                </div>
+                <span className="text-xl font-bold text-text-light ml-2">AI-Amooz</span>
             </Link>
         </div>
 

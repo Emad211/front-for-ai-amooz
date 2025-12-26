@@ -2,6 +2,7 @@
 'use client';
 
 import Link from 'next/link';
+import Image from 'next/image';
 import { usePathname } from 'next/navigation';
 import { 
   GraduationCap, 
@@ -41,12 +42,19 @@ export function AdminSidebar() {
     <aside className="w-64 min-h-screen bg-card border-l border-border flex flex-col">
       {/* لوگو */}
       <div className="p-6">
-        <Link href="/admin" className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
-            <GraduationCap className="h-6 w-6 text-primary" />
+        <Link href="/admin" className="flex items-center gap-3 group relative">
+          <div className="relative h-12 w-16">
+            <Image
+              src="/logo (2).png"
+              alt="AI-Amooz logo"
+              fill
+              sizes="128px"
+              className="object-contain mix-blend-screen brightness-125 scale-[2.2] origin-center"
+              priority
+            />
           </div>
           <div>
-            <span className="text-lg font-bold text-foreground">AI-Amooz</span>
+            <span className="text-lg font-bold text-foreground ml-2">AI-Amooz</span>
             <p className="text-xs text-muted-foreground">پنل مدیریت</p>
           </div>
         </Link>

@@ -11,18 +11,18 @@ export function LandingFooter() {
         <div className="grid grid-cols-1 md:grid-cols-4 gap-12 md:gap-8">
           {/* Brand */}
           <div className="md:col-span-2">
-            <Link href="/" className="flex items-center gap-3 mb-4">
-              <span className="text-xl font-bold text-foreground whitespace-nowrap">AI-Amooz</span>
-              <div className="relative h-12 w-12 rounded-xl bg-card/80 border border-border/50 overflow-hidden">
+            <Link href="/" className="flex items-center gap-2 mb-6 group relative">
+              <div className="relative h-12 w-16">
                 <Image
                   src="/logo (2).png"
                   alt="AI-Amooz logo"
                   fill
-                  sizes="48px"
-                  className="object-contain p-2"
+                  sizes="128px"
+                  className="object-contain mix-blend-screen brightness-125 scale-[2.2] origin-center"
                   priority
                 />
               </div>
+              <span className="text-2xl font-bold text-foreground whitespace-nowrap tracking-tighter ml-2">AI-Amooz</span>
             </Link>
             <p className="text-muted-foreground max-w-sm leading-relaxed">
               پلتفرم آموزشی هوشمند که با کمک هوش مصنوعی، یادگیری را برای شما شخصی‌سازی می‌کند.

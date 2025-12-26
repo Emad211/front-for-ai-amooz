@@ -7,20 +7,20 @@ import { Button } from '@/components/ui/button';
 export const LandingHeader = () => (
   <header className="fixed top-0 left-0 right-0 z-50 transition-all duration-300">
     <div className="absolute inset-0 bg-background/80 backdrop-blur-md border-b border-border/50"></div>
-    <div className="container mx-auto px-4 py-4 relative">
+    <div className="container mx-auto px-4 py-2 relative">
       <div className="flex justify-between items-center">
-        <Link href="/" className="flex items-center gap-3 group">
-          <span className="text-lg font-semibold text-foreground whitespace-nowrap">AI-Amooz</span>
-          <div className="relative h-12 w-12 rounded-xl bg-card/80 border border-border/50 overflow-hidden">
+        <Link href="/" className="flex items-center gap-2 group relative">
+          <div className="relative h-12 w-16">
             <Image
               src="/logo (2).png"
               alt="AI-Amooz logo"
               fill
-              sizes="48px"
-              className="object-contain p-2"
+              sizes="128px"
+              className="object-contain mix-blend-screen brightness-125 scale-[2.2] origin-center"
               priority
             />
           </div>
+          <span className="text-2xl font-bold text-foreground whitespace-nowrap tracking-tighter ml-2">AI-Amooz</span>
         </Link>
         
         <nav className="hidden md:flex items-center gap-8">
