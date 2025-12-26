@@ -84,9 +84,9 @@ export default function LoginPage() {
                 </div>
 
                 <div className="mt-6 rounded-lg bg-card p-4 text-right">
-                    <h3 className="flex items-center justify-end gap-2 text-base font-bold text-foreground mb-2">
-                        کد دعوت ندارید؟
+                    <h3 className="flex items-center gap-2 text-base font-bold text-foreground mb-2">
                         <Info className="h-5 w-5 text-primary" />
+                        کد دعوت ندارید؟
                     </h3>
                     <p className="text-sm text-muted-foreground leading-6">
                         ممکن است معلم شما یک دعوتنامه ایمیلی یا یک لینک دعوت برایتان ارسال کرده باشد. اگر هیچ‌کدام از این‌ها را ندارید، از معلم خود بپرسید.
