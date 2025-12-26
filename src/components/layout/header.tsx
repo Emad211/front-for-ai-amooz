@@ -102,9 +102,9 @@ export function AdminHeader() {
 
         {/* Navigation */}
         <nav className="hidden md:flex items-center bg-background/50 border border-border/50 p-1 rounded-xl">
+            <NavLink href="/home">خانه</NavLink>
             <NavLink href="/classes">کلاس‌ها</NavLink>
             <NavLink href="/exam-prep">آمادگی آزمون</NavLink>
-            <NavLink href="/home">صفحه اصلی</NavLink>
         </nav>
         
         {/* Actions */}
