@@ -43,3 +43,15 @@ next-env.d.ts
 # firebase
 firebase-debug.log
 firestore-debug.log
+
+# Frontend (Next.js) specific - ignore build artifacts and local envs
+/frontend/.next/
+/frontend/.next/**
+/frontend/node_modules/
+/frontend/.env
+/frontend/.env.local
+/frontend/.vercel
+
+# Ignore local editor / OS files
+.vscode/
+.idea/
