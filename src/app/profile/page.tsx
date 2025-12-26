@@ -1,7 +1,8 @@
+
 'use client';
 
 import { useState } from 'react';
-import { Header } from '@/components/layout/header';
+import { AdminHeader as Header } from '@/components/layout/header';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';

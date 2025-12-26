@@ -1,65 +1,116 @@
+// components/layout/admin-sidebar.tsx
 'use client';
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import {
-  LayoutDashboard,
-  ClipboardList,
-  Users,
-  Plus,
-  Power,
+import { 
+  GraduationCap, 
+  PlusCircle, 
+  FolderOpen, 
+  Users, 
+  BarChart3, 
+  Settings,
+  LogOut,
+  ChevronLeft
 } from 'lucide-react';
-import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
+import { Button } from '@/components/ui/button';
+import { Separator } from '@/components/ui/separator';
 
-const NavItem = ({ href, icon: Icon, children }) => {
-  const pathname = usePathname();
-  const isActive = pathname === href;
-
-  return (
-    <Link
-      href={href}
-      className={cn(
-        'flex items-center gap-3 rounded-lg px-4 py-3 text-base font-medium transition-colors',
-        isActive
-          ? 'bg-primary/10 text-primary'
-          : 'text-muted-foreground hover:text-foreground'
-      )}
-    >
-      <Icon className="h-5 w-5" />
-      {children}
-    </Link>
-  );
-};
+const menuItems = [
+  {
+    title: 'مدیریت کلاس‌ها',
+    items: [
+      { label: 'ایجاد کلاس جدید', href: '/admin/create-class', icon: PlusCircle },
+      { label: 'کلاس‌های من', href: '/admin/my-classes', icon: FolderOpen },
+      { label: 'دانش‌آموزان', href: '/admin/students', icon: Users },
+    ]
+  },
+  {
+    title: 'گزارشات',
+    items: [
+      { label: 'آمار و تحلیل', href: '/admin/analytics', icon: BarChart3 },
+    ]
+  },
+];
 
 export function AdminSidebar() {
+  const pathname = usePathname();
+
   return (
-    <aside className="w-72 bg-card border-r border-border p-6 flex flex-col justify-between">
-      <div>
-        <h2 className="text-2xl font-bold text-foreground mb-10 text-right">Al amooz</h2>
-        <nav className="flex flex-col gap-3">
-          <NavItem href="/admin" icon={LayoutDashboard}>
-            داشبورد
-          </NavItem>
-          <NavItem href="/admin/tasks" icon={ClipboardList}>
-            لیست تسک ها
-          </NavItem>
-          <NavItem href="/admin/users" icon={Users}>
-            مدیریت کاربران
-          </NavItem>
-          <Button asChild className="w-full h-12 text-base justify-center mt-4 bg-primary text-primary-foreground hover:bg-primary/90">
-            <Link href="/admin/create-class">
-              <Plus className="ml-2 h-5 w-5" />
-              ایجاد کلاس مجازی
-            </Link>
-          </Button>
-        </nav>
+    <aside className="w-64 min-h-screen bg-card border-l border-border flex flex-col">
+      {/* لوگو */}
+      <div className="p-6">
+        <Link href="/admin" className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
+            <GraduationCap className="h-6 w-6 text-primary" />
+          </div>
+          <div>
+            <span className="text-lg font-bold text-foreground">AI-Amooz</span>
+            <p className="text-xs text-muted-foreground">پنل مدیریت</p>
+          </div>
+        </Link>
       </div>
-      <div className="flex flex-col gap-2">
-         <Button variant="ghost" className="w-full justify-end text-muted-foreground">
-           غیرفعال
-            <Power className="mr-2 h-5 w-5" />
-         </Button>
+
+      <Separator className="bg-border/50" />
+
+      {/* منوها */}
+      <nav className="flex-1 p-4 space-y-6">
+        {menuItems.map((section, idx) => (
+          <div key={idx}>
+            <h3 className="text-xs font-medium text-muted-foreground mb-3 px-3">
+              {section.title}
+            </h3>
+            <ul className="space-y-1">
+              {section.items.map((item) => {
+                const isActive = pathname === item.href;
+                return (
+                  <li key={item.href}>
+                    <Link
+                      href={item.href}
+                      className={cn(
+                        "flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200",
+                        isActive 
+                          ? "bg-primary text-primary-foreground shadow-md" 
+                          : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
+                      )}
+                    >
+                      <item.icon className="h-5 w-5" />
+                      <span className="flex-1">{item.label}</span>
+                      {isActive && <ChevronLeft className="h-4 w-4" />}
+                    </Link>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        ))}
+      </nav>
+
+      <Separator className="bg-border/50" />
+
+      {/* پایین سایدبار */}
+      <div className="p-4 space-y-1">
+        <Link
+          href="/admin/settings"
+          className={cn(
+            "flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200",
+            pathname === '/admin/settings'
+              ? "bg-primary text-primary-foreground"
+              : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
+          )}
+        >
+          <Settings className="h-5 w-5" />
+          <span>تنظیمات</span>
+        </Link>
+        
+        <Button 
+          variant="ghost" 
+          className="w-full justify-start gap-3 px-3 py-2.5 h-auto text-sm font-medium text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+        >
+          <LogOut className="h-5 w-5" />
+          <span>خروج از حساب</span>
+        </Button>
       </div>
     </aside>
   );

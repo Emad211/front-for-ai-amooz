@@ -1,3 +1,4 @@
+// app/admin/layout.tsx
 import { AdminHeader } from "@/components/layout/admin-header";
 import { AdminSidebar } from "@/components/layout/admin-sidebar";
 
@@ -8,13 +9,16 @@ export default function AdminLayout({
 }) {
   return (
     <div className="flex min-h-screen w-full bg-background" dir="rtl">
-        <div className="flex flex-1">
-            <main className="flex-1 p-4 md:p-8">
-                <AdminHeader />
-                {children}
-            </main>
-            <AdminSidebar />
-        </div>
+      {/* سایدبار - سمت راست */}
+      <AdminSidebar />
+      
+      {/* محتوای اصلی */}
+      <div className="flex-1 flex flex-col">
+        <AdminHeader />
+        <main className="flex-1 p-6 md:p-8 overflow-auto">
+          {children}
+        </main>
+      </div>
     </div>
   );
 }

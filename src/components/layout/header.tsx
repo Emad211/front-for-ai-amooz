@@ -1,140 +1,69 @@
+// components/layout/admin-header.tsx
 'use client';
 
-import Link from 'next/link';
-import { usePathname } from 'next/navigation';
-import {
-  Bell,
-  BookOpen,
-  Contact,
-  GraduationCap,
-  Home,
-  LogOut,
-  Moon,
-  Settings,
-  Sun,
-  User,
-} from 'lucide-react';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { Bell, Search, Moon, Sun } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import {
   DropdownMenu,
   DropdownMenuContent,
-  DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { cn } from '@/lib/utils';
-import { ThemeToggle } from '../theme-toggle';
 
-const Logo = () => (
-  <Link href="/" className="flex items-center gap-2">
-    <GraduationCap className="h-7 w-7 text-primary" />
-    <span className="text-xl font-bold text-text-light">AI-Amooz</span>
-  </Link>
-);
-
-const NavItem = ({ href, children }) => {
-  const pathname = usePathname();
-  const isActive = pathname === href;
-
+export function AdminHeader() {
   return (
-    <Link
-      href={href}
-      className={cn(
-        'rounded-full px-4 py-2 text-sm font-medium transition-colors',
-        isActive
-          ? 'bg-primary text-primary-foreground'
-          : 'text-muted-foreground hover:text-foreground'
-      )}
-    >
-      {children}
-    </Link>
-  );
-};
+    <header className="h-16 border-b border-border bg-card/50 backdrop-blur-sm sticky top-0 z-10">
+      <div className="flex items-center justify-between h-full px-6 md:px-8">
+        {/* جستجو */}
+        <div className="relative w-full max-w-md">
+          <Search className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Input 
+            placeholder="جستجو در کلاس‌ها..." 
+            className="pr-10 h-10 bg-background border-border/50 rounded-xl"
+          />
+        </div>
 
-const UserProfile = () => (
-  <div className="flex items-center gap-4">
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button variant="ghost" className="relative h-10 w-10 rounded-full">
-          <Avatar className="h-9 w-9">
-            <AvatarImage
-              src="https://picsum.photos/seed/user/100/100"
-              alt="Alireza"
-            />
-            <AvatarFallback>AR</AvatarFallback>
-          </Avatar>
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent className="w-56" align="end" forceMount>
-        <DropdownMenuLabel className="font-normal">
-          <div className="flex flex-col space-y-1">
-            <p className="text-sm font-medium leading-none">علیرضا رضایی</p>
-            <p className="text-xs leading-none text-muted-foreground">
-              ali.rezaei@example.com
-            </p>
-          </div>
-        </DropdownMenuLabel>
-        <DropdownMenuSeparator />
-        <DropdownMenuGroup>
-          <DropdownMenuItem asChild>
-            <Link href="/profile">
-              <User className="ml-2 h-4 w-4" />
-              <span>پروفایل</span>
-            </Link>
-          </DropdownMenuItem>
-          <DropdownMenuItem>
-            <Settings className="ml-2 h-4 w-4" />
-            <span>تنظیمات</span>
-          </DropdownMenuItem>
-          <DropdownMenuItem>
-            <Contact className="ml-2 h-4 w-4" />
-            <span>پشتیبانی</span>
-          </DropdownMenuItem>
-        </DropdownMenuGroup>
-        <DropdownMenuSeparator />
-        <DropdownMenuItem>
-          <ThemeToggle />
-        </DropdownMenuItem>
-        <DropdownMenuSeparator />
-        <DropdownMenuItem asChild>
-          <Link href="/login">
-            <LogOut className="ml-2 h-4 w-4" />
-            <span>خروج</span>
-          </Link>
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
+        {/* اکشن‌ها */}
+        <div className="flex items-center gap-2">
+          {/* تم */}
+          <Button variant="ghost" size="icon" className="rounded-xl">
+            <Sun className="h-5 w-5 text-muted-foreground" />
+          </Button>
 
-    <Button variant="ghost" size="icon" className="h-10 w-10 rounded-full">
-      <Bell className="h-5 w-5 text-text-muted" />
-      <span className="sr-only">Notifications</span>
-    </Button>
-  </div>
-);
+          {/* نوتیفیکیشن */}
+          <Button variant="ghost" size="icon" className="rounded-xl relative">
+            <Bell className="h-5 w-5 text-muted-foreground" />
+            <span className="absolute top-2 left-2 w-2 h-2 bg-primary rounded-full" />
+          </Button>
 
-export function Header() {
-  const pathname = usePathname();
-  if (pathname === '/login') {
-    return null;
-  }
-  
-  return (
-    <header className="flex h-16 items-center justify-between px-4 md:px-6 border-b border-border bg-card/50 backdrop-blur-sm">
-      <div className="flex items-center gap-6">
-        <Logo />
-      </div>
-
-      <nav className="hidden md:flex items-center gap-2 rounded-full bg-secondary p-1">
-        <NavItem href="/home">خانه</NavItem>
-        <NavItem href="/classes">کلاس‌ها</NavItem>
-        <NavItem href="/exam-prep">آمادگی آزمون</NavItem>
-      </nav>
-
-      <div className="flex items-center gap-4">
-        <UserProfile />
+          {/* پروفایل */}
+          <DropdownMenu dir="rtl">
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" className="gap-3 px-2 rounded-xl">
+                <Avatar className="h-8 w-8">
+                  <AvatarImage src="https://picsum.photos/seed/admin/100/100" />
+                  <AvatarFallback>AD</AvatarFallback>
+                </Avatar>
+                <div className="hidden md:block text-right">
+                  <p className="text-sm font-medium">علی محمدی</p>
+                  <p className="text-xs text-muted-foreground">مدرس</p>
+                </div>
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-48">
+              <DropdownMenuLabel>حساب کاربری</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem>پروفایل</DropdownMenuItem>
+              <DropdownMenuItem>تنظیمات</DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem className="text-destructive">خروج</DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
       </div>
     </header>
   );
