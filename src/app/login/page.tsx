@@ -23,6 +23,7 @@ const TEST_JOIN_CODE = 'AI-AMOOKHTAN';
 export default function LoginPage() {
   const [joinCode, setJoinCode] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [activeTab, setActiveTab] = useState('join-code');
   const router = useRouter();
   const { toast } = useToast();
 
@@ -52,15 +53,15 @@ export default function LoginPage() {
             <span className="text-xl font-bold text-text-light">AI-Amooz</span>
         </Link>
       </div>
-      <div className="w-full max-w-sm text-center">
-         <Tabs defaultValue="join-code" className="w-full">
+      <div className="w-full max-w-md text-center">
+         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
             <TabsList className="grid w-full grid-cols-2 bg-card border-border mb-8">
                 <TabsTrigger value="join-code" className="text-base">کد دعوت</TabsTrigger>
                 <TabsTrigger value="login" className="text-base">ورود</TabsTrigger>
             </TabsList>
             <TabsContent value="join-code">
                  <h1 className="text-3xl font-bold text-foreground mb-8">
-                    کد دعوت را وارد کنید
+                    به AI-Amooz خوش آمدید
                 </h1>
                 <div className="space-y-6 text-right">
                   <div className="space-y-2">
@@ -83,14 +84,20 @@ export default function LoginPage() {
                 </div>
 
                 <div className="mt-6 rounded-lg bg-card p-4 text-right">
-                    <h3 className="flex items-center gap-2 text-base font-bold text-foreground mb-2">
-                        <Info className="h-5 w-5 text-primary" />
+                    <h3 className="flex items-center justify-end gap-2 text-base font-bold text-foreground mb-2">
                         کد دعوت ندارید؟
+                        <Info className="h-5 w-5 text-primary" />
                     </h3>
                     <p className="text-sm text-muted-foreground leading-6">
                         ممکن است معلم شما یک دعوتنامه ایمیلی یا یک لینک دعوت برایتان ارسال کرده باشد. اگر هیچ‌کدام از این‌ها را ندارید، از معلم خود بپرسید.
                     </p>
                 </div>
+                <p className="mt-8 text-sm text-muted-foreground">
+                  حساب کاربری دارید؟{' '}
+                  <button onClick={() => setActiveTab('login')} className="font-semibold text-primary hover:underline focus:outline-none">
+                    ورود
+                  </button>
+                </p>
             </TabsContent>
              <TabsContent value="login">
                 <h1 className="text-3xl font-bold text-foreground mb-6">
