@@ -99,9 +99,11 @@ const UserProfile = () => (
           <ThemeToggle />
         </DropdownMenuItem>
         <DropdownMenuSeparator />
-        <DropdownMenuItem>
-          <LogOut className="ml-2 h-4 w-4" />
-          <span>خروج</span>
+        <DropdownMenuItem asChild>
+          <Link href="/login">
+            <LogOut className="ml-2 h-4 w-4" />
+            <span>خروج</span>
+          </Link>
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
@@ -114,6 +116,11 @@ const UserProfile = () => (
 );
 
 export function Header() {
+  const pathname = usePathname();
+  if (pathname === '/login') {
+    return null;
+  }
+  
   return (
     <header className="flex h-16 items-center justify-between px-4 md:px-6 border-b border-border bg-card/50 backdrop-blur-sm">
       <div className="flex items-center gap-6">
