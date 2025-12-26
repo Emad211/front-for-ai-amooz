@@ -32,7 +32,7 @@ export default function CreateClassPage() {
     { email: 'student1@example.com', avatar: 'https://picsum.photos/seed/s1/40/40' },
   ]);
   const [newStudent, setNewStudent] = useState('');
-  const [expandedSections, setExpandedSections] = useState<string[]>(['info', 'students']);
+  const [expandedSections, setExpandedSections] = useState<string[]>(['info', 'files', 'exercises', 'students']);
   const [copied, setCopied] = useState(false);
 
   const inviteCode = 'AI-AMOOZ-2024';
@@ -77,9 +77,6 @@ export default function CreateClassPage() {
             یک کلاس مجازی جدید بسازید و دانش‌آموزان را دعوت کنید
           </p>
         </div>
-        <Button className="bg-primary text-primary-foreground hover:bg-primary/90 rounded-xl h-11 px-6">
-          ذخیره و انتشار
-        </Button>
       </div>
 
       {/* بخش اطلاعات کلاس */}
