@@ -1,5 +1,12 @@
-# Firebase Studio
+# AI-Amooz
 
-This is a NextJS starter in Firebase Studio.
+این پروژه بخش فرانت‌اند پلتفرم آموزشی AI-Amooz است که با Next.js توسعه یافته است.
 
-To get started, take a look at src/app/page.tsx.
+## شروع به کار
+
+برای اجرای پروژه در محیط توسعه:
+
+```bash
+npm install
+npm run dev
+```
