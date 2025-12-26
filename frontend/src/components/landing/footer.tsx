@@ -84,4 +84,13 @@ export function LandingFooter() {
               <Link href="#" className="text-muted-foreground hover:text-primary transition-colors">
                 حریم خصوصی
               </Link>
-              <Link href="#" className="text-muted-foregrou
+              <Link href="#" className="text-muted-foreground hover:text-primary transition-colors">
+                قوانین استفاده
+              </Link>
+            </div>
+          </div>
+        </div>
+      </div>
+    </footer>
+  );
+}

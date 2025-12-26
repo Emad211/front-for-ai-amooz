@@ -1,7 +1,5 @@
 'use client';
 
-import { GraduationCap } from 'lucide-react';
-import Link from 'next/link';
 import { PlaceHolderImages } from '@/lib/placeholder-images';
 import { LandingHeader } from '@/components/landing/header';
 import { 

@@ -40,4 +40,10 @@ export const LandingHeader = () => (
             <Link href="/login">ورود</Link>
           </Button>
           <Button asChild size="sm" className="bg-primary text-primary-foreground hover:bg-primary/90 shadow-sm">
-       
+            <Link href="/login">شروع رایگان</Link>
+          </Button>
+        </div>
+      </div>
+    </div>
+  </header>
+);
