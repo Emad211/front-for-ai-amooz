@@ -8,6 +8,8 @@ import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
 import { GraduationCap, Info } from 'lucide-react';
 import Link from 'next/link';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+
 
 const TEST_JOIN_CODE = 'AI-AMOOKHTAN';
 
@@ -44,38 +46,52 @@ export default function LoginPage() {
         </Link>
       </div>
       <div className="w-full max-w-sm text-center">
-        <h1 className="text-4xl font-bold text-foreground mb-8">
-            کد دعوت را وارد کنید
-        </h1>
-        <div className="space-y-6 text-right">
-          <div className="space-y-2">
-            <Label htmlFor="join-code" className="text-sm font-medium text-muted-foreground">
-              کد دعوت
-            </Label>
-            <Input
-              id="join-code"
-              type="text"
-              value={joinCode}
-              onChange={(e) => setJoinCode(e.target.value)}
-              placeholder="مثال: AI-AMOOKHTAN"
-              className="h-12 bg-card border-border text-center text-lg tracking-widest"
-              dir="ltr"
-            />
-          </div>
-          <Button onClick={handleLogin} disabled={isLoading || !joinCode} className="w-full h-12 text-base bg-primary text-primary-foreground hover:bg-primary/90">
-            {isLoading ? 'در حال بررسی...' : 'ادامه'}
-          </Button>
-        </div>
+         <Tabs defaultValue="join-code" className="w-full">
+            <TabsList className="grid w-full grid-cols-2 bg-card border-border mb-8">
+                <TabsTrigger value="join-code" className="text-base">کد دعوت</TabsTrigger>
+                <TabsTrigger value="login" className="text-base">ورود</TabsTrigger>
+            </TabsList>
+            <TabsContent value="join-code">
+                 <h1 className="text-3xl font-bold text-foreground mb-8">
+                    کد دعوت را وارد کنید
+                </h1>
+                <div className="space-y-6 text-right">
+                  <div className="space-y-2">
+                    <Label htmlFor="join-code" className="text-sm font-medium text-muted-foreground">
+                      کد دعوت
+                    </Label>
+                    <Input
+                      id="join-code"
+                      type="text"
+                      value={joinCode}
+                      onChange={(e) => setJoinCode(e.target.value)}
+                      placeholder="مثال: AI-AMOOKHTAN"
+                      className="h-12 bg-card border-border text-center text-lg tracking-widest"
+                      dir="ltr"
+                    />
+                  </div>
+                  <Button onClick={handleLogin} disabled={isLoading || !joinCode} className="w-full h-12 text-base bg-primary text-primary-foreground hover:bg-primary/90">
+                    {isLoading ? 'در حال بررسی...' : 'ادامه'}
+                  </Button>
+                </div>
 
-        <div className="mt-6 rounded-lg bg-card p-4 text-right">
-            <h3 className="flex items-center gap-2 text-base font-bold text-foreground mb-2">
-                <Info className="h-5 w-5 text-primary" />
-                کد دعوت ندارید؟
-            </h3>
-            <p className="text-sm text-muted-foreground leading-6">
-                ممکن است معلم شما یک دعوتنامه ایمیلی یا یک لینک دعوت برایتان ارسال کرده باشد. اگر هیچ‌کدام از این‌ها را ندارید، از معلم خود بپرسید.
-            </p>
-        </div>
+                <div className="mt-6 rounded-lg bg-card p-4 text-right">
+                    <h3 className="flex items-center gap-2 text-base font-bold text-foreground mb-2">
+                        <Info className="h-5 w-5 text-primary" />
+                        کد دعوت ندارید؟
+                    </h3>
+                    <p className="text-sm text-muted-foreground leading-6">
+                        ممکن است معلم شما یک دعوتنامه ایمیلی یا یک لینک دعوت برایتان ارسال کرده باشد. اگر هیچ‌کدام از این‌ها را ندارید، از معلم خود بپرسید.
+                    </p>
+                </div>
+            </TabsContent>
+             <TabsContent value="login">
+                <div className="flex flex-col items-center justify-center rounded-lg bg-card p-10 text-center h-[348px]">
+                    <h2 className="text-2xl font-bold text-foreground">بخش ورود</h2>
+                    <p className="text-muted-foreground mt-4">این بخش به زودی اضافه خواهد شد.</p>
+                </div>
+            </TabsContent>
+        </Tabs>
       </div>
     </div>
   );
