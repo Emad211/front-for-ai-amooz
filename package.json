@@ -1,0 +1,12 @@
+{
+  "name": "ai-amooz-monorepo",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev:frontend": "npm run dev --prefix frontend",
+    "build:frontend": "npm run build --prefix frontend",
+    "start:frontend": "npm run start --prefix frontend",
+    "install:frontend": "npm install --prefix frontend",
+    "vercel-build": "npm run build --prefix frontend"
+  }
+}
