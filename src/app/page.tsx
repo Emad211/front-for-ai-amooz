@@ -18,7 +18,7 @@ const LandingHeader = () => (
         <span className="text-xl font-bold text-text-light">AI-Amooz</span>
       </Link>
       <Button asChild variant="outline" className="bg-card/80 backdrop-blur-sm border-border hover:bg-card">
-        <Link href="/home">ورود / ثبت نام</Link>
+        <Link href="/home">ورود</Link>
       </Button>
     </div>
   </header>
@@ -76,7 +76,7 @@ export default function LandingPage() {
                     AI-Amooz با تحلیل هوشمند و ارائه محتوای شخصی‌سازی شده، مسیر یادگیری شما را متحول می‌کند. برای موفقیت در هر درسی آماده شوید.
                 </p>
                 <Button asChild size="lg" className="bg-primary text-primary-foreground hover:bg-primary/90 shadow-lg shadow-primary/20 transition-all hover:scale-105 active:scale-95">
-                    <Link href="/home">ورود / ثبت نام <ArrowLeft className="mr-2 h-5 w-5" /></Link>
+                    <Link href="/home">ورود <ArrowLeft className="mr-2 h-5 w-5" /></Link>
                 </Button>
 
                 {heroImage && (
