@@ -101,7 +101,7 @@ export function AdminHeader() {
         </div>
 
         {/* Navigation */}
-        <nav className="hidden md:flex items-center bg-background/50 border border-border/50 p-1 rounded-xl">
+        <nav className="hidden md:flex items-center bg-background/50 border border-border/50 p-1 rounded-full">
             <NavLink href="/home">خانه</NavLink>
             <NavLink href="/classes">کلاس‌ها</NavLink>
             <NavLink href="/exam-prep">آمادگی آزمون</NavLink>
