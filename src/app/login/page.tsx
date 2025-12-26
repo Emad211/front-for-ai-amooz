@@ -37,7 +37,7 @@ export default function LoginPage() {
 
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-background p-4">
-      <div className="absolute top-8 left-8">
+      <div className="absolute top-8 right-8">
         <Link href="/" className="flex items-center gap-2">
             <GraduationCap className="h-7 w-7 text-primary" />
             <span className="text-xl font-bold text-text-light">AI-Amooz</span>
