@@ -60,7 +60,7 @@ export default function LoginPage() {
                 <TabsTrigger value="login" className="text-base">ورود</TabsTrigger>
             </TabsList>
             <TabsContent value="join-code">
-                 <h1 className="text-3xl font-bold text-foreground mb-8">
+                 <h1 className="text-3xl font-bold text-foreground mb-8 text-right">
                     به AI-Amooz خوش آمدید
                 </h1>
                 <div className="space-y-6 text-right">
@@ -84,7 +84,7 @@ export default function LoginPage() {
                 </div>
 
                 <div className="mt-6 rounded-lg bg-card p-4 text-right">
-                    <h3 className="flex items-center gap-2 text-base font-bold text-foreground mb-2">
+                    <h3 className="flex items-center gap-2 text-base font-bold text-foreground mb-2 flex-row-reverse justify-end">
                         <Info className="h-5 w-5 text-primary" />
                         کد دعوت ندارید؟
                     </h3>
