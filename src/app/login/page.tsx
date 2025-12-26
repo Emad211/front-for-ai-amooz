@@ -9,6 +9,13 @@ import { useToast } from '@/hooks/use-toast';
 import { GraduationCap, Info } from 'lucide-react';
 import Link from 'next/link';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Separator } from '@/components/ui/separator';
+
+const GoogleIcon = (props) => (
+    <svg role="img" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" {...props}>
+        <path d="M12.48 10.92v3.28h7.84c-.24 1.84-.85 3.18-1.73 4.1-1.05 1.05-2.36 1.95-4.25 1.95-3.37 0-6.13-2.8-6.13-6.13s2.76-6.13 6.13-6.13c1.9 0 3.1.8 3.8 1.5l2.6-2.6C16.99 3.2 14.9 2 12.48 2 7.23 2 3 6.23 3 11.5s4.23 9.5 9.48 9.5c5.05 0 8.85-3.57 8.85-9.1z" />
+    </svg>
+);
 
 
 const TEST_JOIN_CODE = 'AI-AMOOKHTAN';
@@ -86,9 +93,39 @@ export default function LoginPage() {
                 </div>
             </TabsContent>
              <TabsContent value="login">
-                <div className="flex flex-col items-center justify-center rounded-lg bg-card p-10 text-center h-[348px]">
-                    <h2 className="text-2xl font-bold text-foreground">بخش ورود</h2>
-                    <p className="text-muted-foreground mt-4">این بخش به زودی اضافه خواهد شد.</p>
+                <h1 className="text-3xl font-bold text-foreground mb-6">
+                    ورود به حساب کاربری
+                </h1>
+                <div className="space-y-4 text-right">
+                    <Button variant="outline" className="w-full h-12 text-base border-border bg-card">
+                         <GoogleIcon className="h-5 w-5 ml-2" />
+                        ورود با حساب گوگل
+                    </Button>
+                    
+                    <div className="flex items-center my-4">
+                        <Separator className="flex-1" />
+                        <span className="mx-4 text-xs text-muted-foreground">یا</span>
+                        <Separator className="flex-1" />
+                    </div>
+
+                    <div className="space-y-2">
+                        <Label htmlFor="username">نام کاربری یا ایمیل</Label>
+                        <Input id="username" type="text" placeholder="username@example.com" className="h-12 bg-card border-border" />
+                    </div>
+
+                    <div className="space-y-2">
+                         <div className="flex items-center justify-between">
+                            <Label htmlFor="password">رمز عبور</Label>
+                            <Link href="#" className="text-xs text-primary hover:underline">
+                                فراموشی رمز عبور
+                            </Link>
+                        </div>
+                        <Input id="password" type="password" placeholder="••••••••" className="h-12 bg-card border-border" />
+                    </div>
+
+                    <Button className="w-full h-12 text-base bg-primary text-primary-foreground hover:bg-primary/90">
+                        ورود
+                    </Button>
                 </div>
             </TabsContent>
         </Tabs>
