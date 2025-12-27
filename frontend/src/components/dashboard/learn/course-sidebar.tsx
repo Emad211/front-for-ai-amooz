@@ -18,11 +18,16 @@ import {
   Settings,
   RotateCcw,
 } from 'lucide-react';
+import { cn } from '@/lib/utils';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { SidebarItem, SubmenuItem } from './sidebar-items';
 
-export const CourseSidebar = () => (
-  <aside className="w-80 flex-shrink-0 flex-col gap-3 hidden lg:flex h-full">
+interface CourseSidebarProps {
+  className?: string;
+}
+
+export const CourseSidebar = ({ className }: CourseSidebarProps) => (
+  <aside className={cn("w-80 flex-shrink-0 flex-col gap-3 hidden lg:flex h-full", className)}>
     <Button
       variant="outline"
       asChild

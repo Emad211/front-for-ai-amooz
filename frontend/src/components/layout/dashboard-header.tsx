@@ -11,7 +11,12 @@ import { ThemeToggle } from '@/components/ui/theme-toggle';
 import { Logo } from '@/components/ui/logo';
 import { UserProfile } from '@/components/layout/user-profile';
 
-const NavLink = ({ href, children }) => {
+interface NavLinkProps {
+  href: string;
+  children: React.ReactNode;
+}
+
+const NavLink = ({ href, children }: NavLinkProps) => {
     const pathname = usePathname();
     const isActive = pathname.startsWith(href);
     return (
@@ -25,11 +30,12 @@ const NavLink = ({ href, children }) => {
 
 export function DashboardHeader() {
   return (
-    <header dir="rtl" className="h-20 flex items-center justify-between px-6 md:px-10 bg-card border-b border-border sticky top-0 z-50">
+    <header dir="rtl" className="h-16 md:h-20 flex items-center justify-between px-4 md:px-10 bg-card/80 backdrop-blur-md border-b border-border sticky top-0 z-50">
         {/* Logo */}
-        <Logo imageSize="lg" href="/home" />
+        <Logo imageSize="md" href="/home" className="md:hidden" showText={false} />
+        <Logo imageSize="lg" href="/home" className="hidden md:flex" />
 
-        {/* Navigation */}
+        {/* Navigation - Desktop Only */}
         <nav className="hidden md:flex items-center bg-background/50 border border-border/50 p-1 rounded-full">
             {DASHBOARD_NAV_LINKS.map((link) => (
                 <NavLink key={link.href} href={link.href}>{link.label}</NavLink>
@@ -37,13 +43,12 @@ export function DashboardHeader() {
         </nav>
         
         {/* Actions */}
-        <div className="flex items-center gap-2">
-            <ThemeToggle />
-            <Button variant="ghost" size="icon" className="relative">
+        <div className="flex items-center gap-1 md:gap-2">
+            <Button variant="ghost" size="icon" className="relative h-9 w-9 md:h-10 md:w-10">
                 <Bell className="h-5 w-5" />
                 <span className="absolute top-2.5 right-2.5 w-2 h-2 bg-primary rounded-full border-2 border-background"></span>
             </Button>
-            <div className="w-px h-8 bg-border mx-2"></div>
+            <div className="w-px h-6 md:h-8 bg-border mx-1 md:mx-2"></div>
             <UserProfile />
         </div>
     </header>

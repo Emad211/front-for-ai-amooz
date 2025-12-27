@@ -1,9 +1,11 @@
 'use client';
 
 import Link from 'next/link';
-import { Contact, LogOut, User } from 'lucide-react';
+import { Contact, LogOut, User, Moon, Sun } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { useTheme } from 'next-themes';
+import { useState, useEffect } from 'react';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -27,46 +29,78 @@ export function UserProfile({ user = {
   email: 'ali.rezaei@example.com',
   avatar: 'https://picsum.photos/seed/user/100/100'
 } }: UserProfileProps) {
+  const { theme, setTheme } = useTheme();
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="ghost" className="relative h-10 w-10 rounded-full">
-          <Avatar className="h-10 w-10">
+        <Button variant="ghost" className="relative h-10 w-10 rounded-full ring-offset-background transition-all hover:ring-2 hover:ring-primary/20">
+          <Avatar className="h-10 w-10 border border-border/50">
             <AvatarImage
               src={user.avatar}
               alt={user.name}
             />
-            <AvatarFallback>{user.name.substring(0, 2)}</AvatarFallback>
+            <AvatarFallback className="bg-primary/10 text-primary font-bold">{user.name.substring(0, 2)}</AvatarFallback>
           </Avatar>
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent className="w-56" align="end" forceMount>
-        <DropdownMenuLabel className="font-normal">
+      <DropdownMenuContent className="w-64 p-2 rounded-2xl shadow-2xl border-border/50" align="end" forceMount>
+        <DropdownMenuLabel className="font-normal p-3">
           <div className="flex flex-col space-y-1 text-right">
-            <p className="text-sm font-medium leading-none">{user.name}</p>
-            <p className="text-xs leading-none text-muted-foreground">
+            <p className="text-sm font-black leading-none text-foreground">{user.name}</p>
+            <p className="text-xs leading-none text-muted-foreground font-medium">
               {user.email}
             </p>
           </div>
         </DropdownMenuLabel>
-        <DropdownMenuSeparator />
-        <DropdownMenuGroup>
-          <DropdownMenuItem asChild className="justify-end">
+        <DropdownMenuSeparator className="bg-border/50" />
+        <DropdownMenuGroup className="space-y-1">
+          <DropdownMenuItem asChild className="justify-end rounded-xl h-11 cursor-pointer focus:bg-primary/5">
             <Link href="/profile" className="flex items-center w-full">
-              <span className="flex-1 text-right">پروفایل</span>
-              <User className="mr-2 h-4 w-4" />
+              <span className="flex-1 text-right font-bold text-sm">پروفایل کاربری</span>
+              <div className="p-1.5 bg-muted/50 rounded-lg mr-2">
+                <User className="h-4 w-4 text-muted-foreground" />
+              </div>
             </Link>
           </DropdownMenuItem>
-          <DropdownMenuItem className="justify-end">
-            <span className="flex-1 text-right">پشتیبانی</span>
-            <Contact className="mr-2 h-4 w-4" />
+          
+          {mounted && (
+            <DropdownMenuItem 
+              className="justify-end rounded-xl h-11 cursor-pointer focus:bg-primary/5"
+              onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+            >
+              <span className="flex-1 text-right font-bold text-sm">
+                {theme === 'dark' ? 'حالت روز' : 'حالت شب'}
+              </span>
+              <div className="p-1.5 bg-muted/50 rounded-lg mr-2">
+                {theme === 'dark' ? (
+                  <Sun className="h-4 w-4 text-orange-500" />
+                ) : (
+                  <Moon className="h-4 w-4 text-blue-500" />
+                )}
+              </div>
+            </DropdownMenuItem>
+          )}
+
+          <DropdownMenuItem className="justify-end rounded-xl h-11 cursor-pointer focus:bg-primary/5">
+            <span className="flex-1 text-right font-bold text-sm">پشتیبانی و تیکت</span>
+            <div className="p-1.5 bg-muted/50 rounded-lg mr-2">
+              <Contact className="h-4 w-4 text-muted-foreground" />
+            </div>
           </DropdownMenuItem>
         </DropdownMenuGroup>
-        <DropdownMenuSeparator />
-        <DropdownMenuItem asChild className="justify-end">
-           <Link href="/login" className="flex items-center w-full text-destructive">
-            <span className="flex-1 text-right">خروج</span>
-            <LogOut className="mr-2 h-4 w-4" />
+        <DropdownMenuSeparator className="bg-border/50" />
+        <DropdownMenuItem asChild className="justify-end rounded-xl h-11 cursor-pointer focus:bg-destructive/5 text-destructive">
+           <Link href="/login" className="flex items-center w-full">
+            <span className="flex-1 text-right font-bold text-sm">خروج از حساب</span>
+            <div className="p-1.5 bg-destructive/10 rounded-lg mr-2">
+              <LogOut className="h-4 w-4" />
+            </div>
           </Link>
         </DropdownMenuItem>
       </DropdownMenuContent>

@@ -17,33 +17,33 @@ export const ExamCard = ({ exam }: ExamCardProps) => {
   const isDiscreteMath = exam.id === 1;
 
   return (
-    <Card className="bg-card text-card-foreground overflow-hidden flex flex-col justify-between h-full rounded-2xl">
-      <CardContent className="p-6">
-        <div className="flex justify-start mb-4">
+    <Card className="group bg-card border-border/50 hover:border-primary/30 transition-all duration-300 overflow-hidden flex flex-col justify-between h-full rounded-3xl hover:shadow-2xl hover:shadow-primary/5">
+      <CardContent className="p-6 md:p-8">
+        <div className="flex justify-start mb-6">
           <TagBadge tag={exam.tags[0]} />
         </div>
-        <h3 className="font-bold text-xl text-text-light mb-2">{exam.title}</h3>
-        <p className="text-text-muted text-sm leading-relaxed mb-4">{exam.description}</p>
-        <div className="flex items-center text-text-muted text-sm">
-          <List className="ml-2 h-4 w-4" />
+        <h3 className="font-black text-xl md:text-2xl text-foreground mb-3 group-hover:text-primary transition-colors">{exam.title}</h3>
+        <p className="text-muted-foreground text-sm md:text-base leading-relaxed mb-6 font-medium">{exam.description}</p>
+        <div className="flex items-center text-muted-foreground text-sm font-bold bg-muted/50 w-fit px-3 py-1.5 rounded-xl border border-border/50">
+          <List className="ml-2 h-4 w-4 text-primary" />
           <span>{exam.questions} سوال</span>
         </div>
       </CardContent>
-      <div className="px-6 pb-6">
+      <div className="px-6 md:px-8 pb-6 md:pb-8">
         {isInProgress ? (
-          <Button asChild className="w-full bg-primary hover:bg-primary/90 text-primary-foreground rounded-lg">
+          <Button asChild className="w-full h-12 md:h-14 bg-primary hover:bg-primary/90 text-primary-foreground rounded-2xl font-bold text-base shadow-lg shadow-primary/20 transition-all group-hover:scale-[1.02]">
             <Link href={isDiscreteMath ? '/exam/1' : '#'}>
-              ادامه یادگیری <ArrowLeft className="mr-2 h-4 w-4" />
+              ادامه یادگیری <ArrowLeft className="mr-2 h-5 w-5" />
             </Link>
           </Button>
         ) : (
           <Button
             asChild
             variant="secondary"
-            className="w-full bg-secondary hover:bg-secondary/80 text-primary rounded-lg"
+            className="w-full h-12 md:h-14 bg-secondary/50 hover:bg-secondary text-primary rounded-2xl font-bold text-base transition-all group-hover:scale-[1.02]"
           >
             <Link href="#">
-              <Play className="h-4 w-4 ml-2 fill-current" /> شروع یادگیری
+              <Play className="h-5 w-5 ml-2 fill-current" /> شروع یادگیری
             </Link>
           </Button>
         )}

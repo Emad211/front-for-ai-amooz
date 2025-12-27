@@ -1,10 +1,11 @@
 'use client';
 
 import React from 'react';
-import { Bot, PanelRightClose, Send, Paperclip, Mic } from 'lucide-react';
+import { Bot, PanelRightClose, Send, Paperclip, Mic, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
+import { SheetClose } from '@/components/ui/sheet';
 
 interface ChatMessageProps {
   sender: 'ai' | 'user';
@@ -40,9 +41,11 @@ export const ChatMessage = ({ sender, time, message, isFormula = false }: ChatMe
 interface ChatAssistantProps {
   onToggle: () => void;
   isOpen: boolean;
+  className?: string;
+  isMobile?: boolean;
 }
 
-export const ChatAssistant = ({ onToggle, isOpen }: ChatAssistantProps) => {
+export const ChatAssistant = ({ onToggle, isOpen, className, isMobile = false }: ChatAssistantProps) => {
   const [message, setMessage] = React.useState('');
   const textareaRef = React.useRef<HTMLTextAreaElement>(null);
 
@@ -57,8 +60,11 @@ export const ChatAssistant = ({ onToggle, isOpen }: ChatAssistantProps) => {
   return (
     <aside
       className={cn(
-        'flex-shrink-0 flex-col bg-card border border-border rounded-2xl overflow-hidden shadow-xl h-full hidden md:flex transition-all duration-300 ease-in-out',
-        isOpen ? 'w-96' : 'w-0 p-0 border-none'
+        'flex-shrink-0 flex-col bg-card border border-border overflow-hidden h-full transition-all duration-300 ease-in-out',
+        isMobile ? 'rounded-none border-none' : 'rounded-2xl shadow-xl',
+        !isMobile && 'hidden md:flex',
+        isOpen ? (isMobile ? 'w-full' : 'w-96') : 'w-0 p-0 border-none',
+        className
       )}
     >
       <div
@@ -77,14 +83,27 @@ export const ChatAssistant = ({ onToggle, isOpen }: ChatAssistantProps) => {
             <p className="text-[10px] text-muted-foreground font-medium">پاسخگوی سوالات شما</p>
           </div>
         </div>
-        <Button
-          onClick={onToggle}
-          variant="ghost"
-          size="icon"
-          className="h-8 w-8 rounded-lg text-muted-foreground hover:text-foreground"
-        >
-          <PanelRightClose className="h-4 w-4" />
-        </Button>
+        {isMobile ? (
+          <SheetClose asChild>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-9 px-3 rounded-xl bg-secondary/50 hover:bg-secondary text-muted-foreground hover:text-foreground border border-border/50 transition-all flex items-center gap-2"
+            >
+              <span className="text-xs font-medium">بستن</span>
+              <X className="h-4 w-4" />
+            </Button>
+          </SheetClose>
+        ) : (
+          <Button
+            onClick={onToggle}
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8 rounded-lg text-muted-foreground hover:text-foreground"
+          >
+            <PanelRightClose className="h-4 w-4" />
+          </Button>
+        )}
       </div>
       <div className={cn('flex-1 overflow-y-auto p-4 space-y-6 bg-background/30 no-scrollbar', !isOpen && 'hidden')}>
         <ChatMessage

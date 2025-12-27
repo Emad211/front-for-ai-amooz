@@ -12,21 +12,21 @@ export const LessonContent = () => (
             یادگیری چگونگی رسم دقیق نمودارهای توابع درجه دوم (سهمی) و تفسیر ویژگی‌های کلیدی آن‌ها.
           </p>
         </div>
-        <div className="flex items-center justify-between text-sm text-muted-foreground border-t border-border pt-3">
+        <div className="flex flex-wrap items-center justify-between gap-y-3 gap-x-2 text-xs sm:text-sm text-muted-foreground border-t border-border pt-3">
           <div className="flex items-center gap-2">
-            <BarChart className="h-4 w-4 text-primary" />
+            <BarChart className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-primary" />
             <span>
               تکمیل: <span className="font-bold text-foreground">۶۷٪</span>
             </span>
           </div>
           <div className="flex items-center gap-2">
-            <Signal className="h-4 w-4 text-primary" />
+            <Signal className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-primary" />
             <span>
               سطح: <span className="font-bold text-foreground">مبتدی</span>
             </span>
           </div>
           <div className="flex items-center gap-2">
-            <Clock className="h-4 w-4 text-primary" />
+            <Clock className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-primary" />
             <span>
               زمان: <span className="font-bold text-foreground">۳۰-۴۵ دقیقه</span>
             </span>
