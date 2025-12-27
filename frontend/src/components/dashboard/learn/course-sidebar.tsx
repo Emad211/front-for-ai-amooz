@@ -17,27 +17,42 @@ import {
   BookOpen,
   Settings,
   RotateCcw,
+  X,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { SidebarItem, SubmenuItem } from './sidebar-items';
+import { SheetClose } from '@/components/ui/sheet';
 
 interface CourseSidebarProps {
   className?: string;
+  isMobile?: boolean;
 }
 
-export const CourseSidebar = ({ className }: CourseSidebarProps) => (
+export const CourseSidebar = ({ className, isMobile = false }: CourseSidebarProps) => (
   <aside className={cn("w-80 flex-shrink-0 flex-col gap-3 hidden lg:flex h-full", className)}>
-    <Button
-      variant="outline"
-      asChild
-      className="bg-card hover:bg-card/80 border-border text-muted-foreground hover:text-foreground rounded-xl p-3 flex items-center justify-between transition-all group h-12"
-    >
-      <Link href="/classes">
-        <span className="text-base font-medium pr-1">بازگشت به لیست دوره‌ها</span>
-        <ArrowLeft className="text-muted-foreground group-hover:text-foreground group-hover:-translate-x-1 transition-all h-5 w-5" />
-      </Link>
-    </Button>
+    {isMobile ? (
+      <SheetClose asChild>
+        <Button
+          variant="ghost"
+          className="bg-secondary/50 hover:bg-secondary border border-border/50 text-foreground rounded-xl p-3 flex items-center justify-between transition-all group h-12"
+        >
+          <span className="text-base font-medium pr-1">بستن فهرست</span>
+          <X className="h-5 w-5 text-muted-foreground group-hover:text-foreground transition-all" />
+        </Button>
+      </SheetClose>
+    ) : (
+      <Button
+        variant="outline"
+        asChild
+        className="bg-card hover:bg-card/80 border-border text-muted-foreground hover:text-foreground rounded-xl p-3 flex items-center justify-between transition-all group h-12"
+      >
+        <Link href="/classes">
+          <span className="text-base font-medium pr-1">بازگشت به لیست دوره‌ها</span>
+          <ArrowLeft className="text-muted-foreground group-hover:text-foreground group-hover:-translate-x-1 transition-all h-5 w-5" />
+        </Link>
+      </Button>
+    )}
     <div className="flex-1 bg-card border border-border rounded-2xl flex flex-col overflow-hidden shadow-lg">
       <div className="p-4 border-b border-border/50 flex items-center justify-between">
         <h3 className="font-bold text-foreground text-sm flex items-center gap-2">

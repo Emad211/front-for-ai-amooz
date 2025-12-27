@@ -48,6 +48,7 @@ interface ChatAssistantProps {
 export const ChatAssistant = ({ onToggle, isOpen, className, isMobile = false }: ChatAssistantProps) => {
   const [message, setMessage] = React.useState('');
   const textareaRef = React.useRef<HTMLTextAreaElement>(null);
+  const scrollRef = React.useRef<HTMLDivElement>(null);
 
   const handleInputChange = (event: React.ChangeEvent<HTMLTextAreaElement>) => {
     setMessage(event.target.value);
@@ -57,20 +58,27 @@ export const ChatAssistant = ({ onToggle, isOpen, className, isMobile = false }:
     }
   };
 
+  // Scroll to bottom on open or new messages
+  React.useEffect(() => {
+    if (isOpen && scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    }
+  }, [isOpen]);
+
   return (
     <aside
       className={cn(
-        'flex-shrink-0 flex-col bg-card border border-border overflow-hidden h-full transition-all duration-300 ease-in-out',
-        isMobile ? 'rounded-none border-none' : 'rounded-2xl shadow-xl',
+        'flex-shrink-0 flex-col bg-card border border-border overflow-hidden transition-all duration-300 ease-in-out',
+        isMobile ? 'fixed inset-0 z-[100] w-full h-[100dvh] rounded-none border-none flex' : 'rounded-2xl shadow-xl h-full',
         !isMobile && 'hidden md:flex',
-        isOpen ? (isMobile ? 'w-full' : 'w-96') : 'w-0 p-0 border-none',
+        !isMobile && (isOpen ? 'w-96' : 'w-0 p-0 border-none'),
         className
       )}
     >
       <div
         className={cn(
-          'p-3 border-b border-border flex items-center justify-between bg-secondary/30 backdrop-blur-sm h-14',
-          !isOpen && 'hidden'
+          'p-3 border-b border-border flex items-center justify-between bg-secondary/30 backdrop-blur-sm h-14 flex-shrink-0',
+          !isOpen && !isMobile && 'hidden'
         )}
       >
         <div className="flex items-center gap-3">
@@ -105,7 +113,13 @@ export const ChatAssistant = ({ onToggle, isOpen, className, isMobile = false }:
           </Button>
         )}
       </div>
-      <div className={cn('flex-1 overflow-y-auto p-4 space-y-6 bg-background/30 no-scrollbar', !isOpen && 'hidden')}>
+      <div 
+        ref={scrollRef}
+        className={cn(
+          'flex-1 overflow-y-auto p-4 space-y-6 bg-background/30 no-scrollbar min-h-0', 
+          !isOpen && !isMobile && 'hidden'
+        )}
+      >
         <ChatMessage
           sender="ai"
           time="۱۰:۳۲"
@@ -118,13 +132,23 @@ export const ChatAssistant = ({ onToggle, isOpen, className, isMobile = false }:
           isFormula
           message='فرمول محاسبه طول رأس سهمی برابر است با: <br/> <span class="font-mono px-1 rounded my-1 block text-center" dir="ltr">x = -b / 2a</span>'
         />
+        {/* Spacer for keyboard on mobile */}
+        <div className="h-4 flex-shrink-0" />
       </div>
-      <div className={cn('p-3 border-t border-border bg-card z-10', !isOpen && 'hidden')}>
+      <div className={cn('p-3 border-t border-border bg-card z-10 flex-shrink-0', !isOpen && !isMobile && 'hidden')}>
         <div className="relative">
           <Textarea
             ref={textareaRef}
             value={message}
             onChange={handleInputChange}
+            onFocus={() => {
+              // Small delay to allow keyboard to open and viewport to resize
+              setTimeout(() => {
+                if (scrollRef.current) {
+                  scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+                }
+              }, 300);
+            }}
             placeholder="سوالت رو بنویس..."
             rows={1}
             className="bg-background border-border rounded-xl text-sm text-foreground focus:ring-1 focus:ring-primary focus:border-primary placeholder:text-muted-foreground/50 py-3 pr-20 pl-12 resize-none overflow-y-hidden no-scrollbar"

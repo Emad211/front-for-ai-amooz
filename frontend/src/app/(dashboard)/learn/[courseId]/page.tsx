@@ -44,10 +44,10 @@ export default function LearnPage() {
                                 <List className="h-4 w-4" />
                             </Button>
                         </SheetTrigger>
-                        <SheetContent side="right" className="p-4 w-80 bg-background">
+                        <SheetContent side="right" className="!p-0 !w-full !h-full !max-w-none border-none [&>button]:hidden bg-background">
                             <SheetTitle className="sr-only">لیست دروس</SheetTitle>
                             <SheetDescription className="sr-only">نمایش سرفصل‌ها و دروس دوره</SheetDescription>
-                            <CourseSidebar className="w-full h-full border-none flex" />
+                            <CourseSidebar className="w-full h-full border-none flex" isMobile />
                         </SheetContent>
                     </Sheet>
 
@@ -57,7 +57,7 @@ export default function LearnPage() {
                                 <Bot className="h-4 w-4" />
                             </Button>
                         </SheetTrigger>
-                        <SheetContent side="left" className="!p-0 !w-full !max-w-none border-none [&>button]:hidden bg-card">
+                        <SheetContent side="left" className="!p-0 !w-full !h-full !max-w-none border-none [&>button]:hidden bg-card">
                             <SheetTitle className="sr-only">دستیار هوشمند</SheetTitle>
                             <SheetDescription className="sr-only">چت با هوش مصنوعی برای رفع اشکال</SheetDescription>
                             <ChatAssistant isOpen={true} onToggle={() => {}} isMobile className="!w-full !h-full" />
