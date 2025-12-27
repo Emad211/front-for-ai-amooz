@@ -128,7 +128,7 @@ const FeatureCardMobile = ({ icon, title, description, index }: { icon: React.Re
 );
 
 export const FeaturesSection = () => (
-    <section id="features" className="py-20 md:py-32 relative bg-primary/[0.03] dark:bg-primary/[0.02]">
+    <section id="features" className="py-20 md:py-32 relative bg-primary/10 dark:bg-primary/5">
         
         <div className="container mx-auto px-4 relative z-10">
             <div className="text-center max-w-2xl mx-auto mb-12 md:mb-20">
@@ -244,7 +244,7 @@ const StepItem = ({ number, title, description, align }: { number: string, title
 );
 
 export const HowItWorksSection = () => (
-    <section id="how-it-works" className="py-20 md:py-32 relative bg-muted/50 dark:bg-card/30">
+    <section id="how-it-works" className="py-20 md:py-32 relative bg-muted/80 dark:bg-card/80">
 
         <div className="container mx-auto px-4 relative z-10">
             <div className="text-center max-w-2xl mx-auto mb-12 md:mb-20">
@@ -351,7 +351,7 @@ export const TestimonialSection = ({ testimonialImage }: { testimonialImage: any
     ];
 
     return (
-        <section className="py-20 md:py-32 relative bg-primary/[0.03] dark:bg-primary/[0.02]">
+        <section className="py-20 md:py-32 relative bg-primary/10 dark:bg-primary/5">
             
             <div className="container mx-auto px-4 relative z-10">
                 <div className="text-center mb-12 md:mb-20">
@@ -385,7 +385,7 @@ export const TestimonialSection = ({ testimonialImage }: { testimonialImage: any
 };
 
 export const FAQSection = () => (
-    <section id="faq" className="py-20 md:py-32 bg-muted/50 dark:bg-card/30">
+    <section id="faq" className="py-20 md:py-32 bg-muted/80 dark:bg-card/80">
         <div className="container mx-auto px-4">
             <div className="text-center max-w-2xl mx-auto mb-12 md:mb-16">
                 <span className="text-primary font-semibold text-xs md:text-sm tracking-wider uppercase">سوالات متداول</span>
@@ -442,7 +442,7 @@ export const FAQSection = () => (
 );
 
 export const FinalCTASection = () => (
-    <section className="py-20 md:py-32 relative bg-primary/[0.03] dark:bg-primary/[0.02]">
+    <section className="py-20 md:py-32 relative bg-primary/10 dark:bg-primary/5">
         
         <div className="container mx-auto px-4 relative z-10">
             <div className="max-w-3xl mx-auto text-center">

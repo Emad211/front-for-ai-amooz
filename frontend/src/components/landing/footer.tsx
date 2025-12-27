@@ -7,7 +7,7 @@ import { Instagram, Send, Mail } from 'lucide-react';
 
 export function LandingFooter() {
   return (
-    <footer className="bg-muted/60 dark:bg-card/50">
+    <footer className="bg-muted/90 dark:bg-card/90">
       <div className="container mx-auto px-4 py-12 md:py-16">
         {/* Mobile Footer */}
         <div className="md:hidden">
