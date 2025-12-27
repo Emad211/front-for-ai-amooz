@@ -9,11 +9,11 @@ interface ExamHeaderProps {
 }
 
 export const ExamHeader = ({ onToggle }: ExamHeaderProps) => (
-  <header className="flex items-center justify-between px-4 border-b border-border w-full h-[73px]">
+  <header className="hidden lg:flex items-center justify-between px-4 border-b border-border w-full h-[73px]">
     <Button
       variant="outline"
       asChild
-      className="bg-card hover:bg-card/80 border-border text-muted-foreground hover:text-foreground rounded-xl p-3 flex items-center justify-between transition-all group h-12"
+      className="hidden md:flex bg-card hover:bg-card/80 border-border text-muted-foreground hover:text-foreground rounded-xl p-3 items-center justify-between transition-all group h-12"
     >
       <Link href="/exam-prep">
         <ArrowLeft className="text-muted-foreground group-hover:text-foreground group-hover:-translate-x-1 transition-all h-5 w-5 ml-2" />
@@ -28,7 +28,7 @@ export const ExamHeader = ({ onToggle }: ExamHeaderProps) => (
         onClick={onToggle}
         variant="ghost"
         size="icon"
-        className="h-12 w-12 rounded-lg text-muted-foreground hover:text-foreground md:hidden"
+        className="h-12 w-12 rounded-lg text-muted-foreground hover:text-foreground"
       >
         <PanelRightClose className="h-5 w-5" />
       </Button>

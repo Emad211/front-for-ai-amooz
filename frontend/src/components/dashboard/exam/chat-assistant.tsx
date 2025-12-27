@@ -1,10 +1,11 @@
 'use client';
 
 import React from 'react';
-import { Bot, PanelRightClose, Send, Paperclip, Mic } from 'lucide-react';
+import { Bot, PanelRightClose, Send, Paperclip, Mic, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
+import { SheetClose } from '@/components/ui/sheet';
 
 interface ChatMessageProps {
   sender: 'ai' | 'user';
@@ -39,11 +40,14 @@ export const ChatMessage = ({ sender, time, message }: ChatMessageProps) => {
 interface ChatAssistantProps {
   onToggle: () => void;
   isOpen: boolean;
+  isMobile?: boolean;
+  className?: string;
 }
 
-export const ChatAssistant = ({ onToggle, isOpen }: ChatAssistantProps) => {
+export const ChatAssistant = ({ onToggle, isOpen, isMobile = false, className }: ChatAssistantProps) => {
   const [message, setMessage] = React.useState('');
   const textareaRef = React.useRef<HTMLTextAreaElement>(null);
+  const scrollRef = React.useRef<HTMLDivElement>(null);
 
   const handleInputChange = (event: React.ChangeEvent<HTMLTextAreaElement>) => {
     setMessage(event.target.value);
@@ -53,17 +57,27 @@ export const ChatAssistant = ({ onToggle, isOpen }: ChatAssistantProps) => {
     }
   };
 
+  // Scroll to bottom on open or new messages
+  React.useEffect(() => {
+    if (isOpen && scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    }
+  }, [isOpen]);
+
   return (
     <aside
       className={cn(
-        'flex-shrink-0 flex-col bg-card border-l border-border rounded-l-2xl overflow-hidden shadow-xl h-full hidden md:flex transition-all duration-300 ease-in-out',
-        isOpen ? 'w-[36rem]' : 'w-0 p-0 border-none'
+        'flex-shrink-0 flex-col bg-card border-border overflow-hidden transition-all duration-300 ease-in-out',
+        isMobile ? 'flex w-full h-[100dvh] rounded-none border-none' : 'rounded-l-2xl shadow-xl h-full border-l',
+        !isMobile && 'hidden md:flex',
+        !isMobile && (isOpen ? 'w-[36rem]' : 'w-0 p-0 border-none'),
+        className
       )}
     >
       <div
         className={cn(
-          'p-4 border-b border-border flex items-center justify-between bg-secondary/30 backdrop-blur-sm h-[73px]',
-          !isOpen && 'hidden'
+          'p-4 border-b border-border flex items-center justify-between bg-secondary/30 backdrop-blur-sm h-[73px] flex-shrink-0',
+          !isOpen && !isMobile && 'hidden'
         )}
       >
         <div className="flex items-center gap-3">
@@ -75,14 +89,33 @@ export const ChatAssistant = ({ onToggle, isOpen }: ChatAssistantProps) => {
             <h3 className="text-sm font-bold text-foreground text-right">دستیار حل سوال</h3>
           </div>
         </div>
-        <button
-          onClick={onToggle}
-          className="h-8 w-8 rounded-lg text-muted-foreground hover:text-foreground flex items-center justify-center"
-        >
-          <PanelRightClose className="h-4 w-4" />
-        </button>
+        {isMobile ? (
+          <SheetClose asChild>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-9 px-3 rounded-xl bg-secondary/50 hover:bg-secondary text-muted-foreground hover:text-foreground border border-border/50 transition-all flex items-center gap-2"
+            >
+              <span className="text-xs font-medium">بستن</span>
+              <X className="h-4 w-4" />
+            </Button>
+          </SheetClose>
+        ) : (
+          <button
+            onClick={onToggle}
+            className="h-8 w-8 rounded-lg text-muted-foreground hover:text-foreground flex items-center justify-center"
+          >
+            <PanelRightClose className="h-4 w-4" />
+          </button>
+        )}
       </div>
-      <div className={cn('flex-1 overflow-y-auto p-4 space-y-6 bg-background/30 no-scrollbar', !isOpen && 'hidden')}>
+      <div 
+        ref={scrollRef}
+        className={cn(
+          'flex-1 overflow-y-auto p-4 space-y-6 bg-background/30 no-scrollbar min-h-0', 
+          !isOpen && !isMobile && 'hidden'
+        )}
+      >
         <ChatMessage
           sender="ai"
           time="۱۰:۳۲"
@@ -98,16 +131,18 @@ export const ChatAssistant = ({ onToggle, isOpen }: ChatAssistantProps) => {
           time="۱۰:۳۵"
           message='حتماً! در یک دنباله هندسی، نسبت هر دو جمله متوالی برابر با قدر نسبت (r) به توان اختلاف جایگاهشونه. مثلاً: <br> <span class="font-mono px-1 rounded my-1 block text-center" dir="ltr">a₇ / a₅ = r²</span> <br> سعی کن از این رابطه برای جملاتی که داری استفاده کنی تا به یک معادله بر حسب x و r برسی.'
         />
+        {/* Spacer for keyboard on mobile */}
+        <div className="h-4 flex-shrink-0" />
       </div>
-      <div className={cn('p-3 border-t border-border bg-card z-10', !isOpen && 'hidden')}>
-        <div className="flex gap-2 mb-2">
-          <Button variant="outline" className="text-xs h-8">
+      <div className={cn('p-3 border-t border-border bg-card z-10 flex-shrink-0', !isOpen && !isMobile && 'hidden')}>
+        <div className="flex gap-2 mb-2 overflow-x-auto no-scrollbar pb-1">
+          <Button variant="outline" className="text-xs h-8 flex-shrink-0">
             راهنماییم کن
           </Button>
-          <Button variant="outline" className="text-xs h-8">
+          <Button variant="outline" className="text-xs h-8 flex-shrink-0">
             اشتباهم کجاست؟
           </Button>
-          <Button variant="outline" className="text-xs h-8">
+          <Button variant="outline" className="text-xs h-8 flex-shrink-0">
             قدم اول را بگو
           </Button>
         </div>
@@ -116,6 +151,13 @@ export const ChatAssistant = ({ onToggle, isOpen }: ChatAssistantProps) => {
             ref={textareaRef}
             value={message}
             onChange={handleInputChange}
+            onFocus={() => {
+              setTimeout(() => {
+                if (scrollRef.current) {
+                  scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+                }
+              }, 300);
+            }}
             placeholder="سوالت رو بپرس... یا تصویر حل دستیت رو بفرست"
             rows={1}
             className="bg-background border-border rounded-xl text-sm text-foreground focus:ring-1 focus:ring-primary focus:border-primary placeholder:text-muted-foreground/50 py-3 pl-12 pr-20 resize-none overflow-y-hidden no-scrollbar"
