@@ -8,11 +8,9 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 
 export const HeroSection = ({ heroImage }: { heroImage: any }) => (
-    <section className="relative min-h-screen flex items-center justify-center overflow-hidden py-20 md:py-0">
-        {/* Background Effects */}
-        <div className="absolute inset-0 bg-gradient-to-b from-primary/5 via-background to-background"></div>
-        <div className="absolute top-1/4 right-1/4 w-64 h-64 md:w-96 md:h-96 bg-primary/10 rounded-full blur-3xl animate-pulse-glow"></div>
-        <div className="absolute bottom-1/4 left-1/4 w-48 h-48 md:w-64 md:h-64 bg-primary/5 rounded-full blur-3xl animate-pulse-glow" style={{ animationDelay: '2s' }}></div>
+    <section className="relative min-h-screen flex items-center justify-center overflow-hidden py-20 md:py-0 bg-background">
+        {/* Subtle Background */}
+        <div className="absolute top-0 right-0 w-1/2 h-1/2 bg-primary/5 rounded-full blur-[120px]"></div>
         
         <div className="container mx-auto px-4 pt-20 md:pt-24 pb-12 relative z-10">
             <div className="max-w-4xl mx-auto text-center">
@@ -130,13 +128,7 @@ const FeatureCardMobile = ({ icon, title, description, index }: { icon: React.Re
 );
 
 export const FeaturesSection = () => (
-    <section id="features" className="py-20 md:py-32 relative overflow-hidden">
-        {/* Animated Background Blobs */}
-        <div className="absolute inset-0 overflow-hidden">
-            <div className="absolute top-0 left-1/4 w-96 h-96 bg-primary/10 rounded-full blur-3xl animate-float"></div>
-            <div className="absolute bottom-0 right-1/4 w-80 h-80 bg-primary/5 rounded-full blur-3xl animate-float-delayed"></div>
-            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-gradient-radial from-primary/5 to-transparent rounded-full"></div>
-        </div>
+    <section id="features" className="py-20 md:py-32 relative bg-primary/[0.03] dark:bg-primary/[0.02]">
         
         <div className="container mx-auto px-4 relative z-10">
             <div className="text-center max-w-2xl mx-auto mb-12 md:mb-20">
@@ -252,12 +244,7 @@ const StepItem = ({ number, title, description, align }: { number: string, title
 );
 
 export const HowItWorksSection = () => (
-    <section id="how-it-works" className="py-20 md:py-32 relative overflow-hidden bg-gradient-to-b from-background via-primary/5 to-background">
-        {/* Animated Background */}
-        <div className="absolute inset-0 overflow-hidden">
-            <div className="absolute top-1/4 right-0 w-72 h-72 bg-primary/10 rounded-full blur-3xl animate-pulse-glow"></div>
-            <div className="absolute bottom-1/4 left-0 w-72 h-72 bg-primary/5 rounded-full blur-3xl animate-pulse-glow" style={{ animationDelay: '2s' }}></div>
-        </div>
+    <section id="how-it-works" className="py-20 md:py-32 relative bg-muted/50 dark:bg-card/30">
 
         <div className="container mx-auto px-4 relative z-10">
             <div className="text-center max-w-2xl mx-auto mb-12 md:mb-20">
@@ -364,10 +351,7 @@ export const TestimonialSection = ({ testimonialImage }: { testimonialImage: any
     ];
 
     return (
-        <section className="py-20 md:py-32 relative overflow-hidden bg-muted/20 dark:bg-muted/5">
-            <div className="absolute top-0 left-0 w-full h-full">
-                <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[300px] md:w-[600px] h-[300px] md:h-[600px] bg-primary/5 rounded-full blur-3xl"></div>
-            </div>
+        <section className="py-20 md:py-32 relative bg-primary/[0.03] dark:bg-primary/[0.02]">
             
             <div className="container mx-auto px-4 relative z-10">
                 <div className="text-center mb-12 md:mb-20">
@@ -401,7 +385,7 @@ export const TestimonialSection = ({ testimonialImage }: { testimonialImage: any
 };
 
 export const FAQSection = () => (
-    <section id="faq" className="py-20 md:py-32 bg-background border-y border-border/30">
+    <section id="faq" className="py-20 md:py-32 bg-muted/50 dark:bg-card/30">
         <div className="container mx-auto px-4">
             <div className="text-center max-w-2xl mx-auto mb-12 md:mb-16">
                 <span className="text-primary font-semibold text-xs md:text-sm tracking-wider uppercase">سوالات متداول</span>
@@ -458,8 +442,7 @@ export const FAQSection = () => (
 );
 
 export const FinalCTASection = () => (
-    <section className="py-20 md:py-32 relative overflow-hidden bg-gradient-to-b from-muted/30 to-background dark:from-muted/10">
-        <div className="absolute inset-0 bg-gradient-to-t from-primary/5 via-transparent to-transparent"></div>
+    <section className="py-20 md:py-32 relative bg-primary/[0.03] dark:bg-primary/[0.02]">
         
         <div className="container mx-auto px-4 relative z-10">
             <div className="max-w-3xl mx-auto text-center">
