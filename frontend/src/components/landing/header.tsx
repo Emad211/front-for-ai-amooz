@@ -63,7 +63,7 @@ export const LandingHeader = () => {
                 alt="AI-Amooz logo"
                 fill
                 sizes="(max-width: 768px) 100px, 128px"
-                className="object-contain transition-all duration-300 invert dark:invert-0 dark:mix-blend-screen dark:brightness-125 scale-[2] md:scale-[2.2] origin-center"
+                className="object-contain transition-all duration-300 scale-[2] md:scale-[2.2] origin-center"
                 priority
               />
             </div>
@@ -85,7 +85,9 @@ export const LandingHeader = () => {
           
           {/* Actions */}
           <div className="flex items-center gap-2 md:gap-3">
-            <ThemeToggle />
+            <div className="hidden md:block">
+              <ThemeToggle />
+            </div>
             <div className="hidden sm:flex items-center gap-2">
               <Button asChild variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground">
                 <Link href="/login">ورود</Link>
@@ -117,6 +119,12 @@ export const LandingHeader = () => {
                         {link.label}
                       </Link>
                     ))}
+                    <div className="h-px bg-border/50 my-2"></div>
+                    {/* Theme Toggle in Mobile Menu */}
+                    <div className="flex items-center justify-between py-2">
+                      <span className="text-lg font-medium text-foreground">تغییر تم</span>
+                      <ThemeToggle />
+                    </div>
                     <div className="h-px bg-border/50 my-2"></div>
                     <Button asChild variant="outline" className="w-full justify-center h-12 text-lg">
                       <Link href="/login">ورود به حساب</Link>
