@@ -57,7 +57,7 @@ export default function LearnPage() {
                                 <Bot className="h-4 w-4" />
                             </Button>
                         </SheetTrigger>
-                        <SheetContent side="left" className="!p-0 !w-full sm:!max-w-[400px] border-none [&>button]:hidden bg-card">
+                        <SheetContent side="left" className="!p-0 !w-full !max-w-none border-none [&>button]:hidden bg-card">
                             <SheetTitle className="sr-only">دستیار هوشمند</SheetTitle>
                             <SheetDescription className="sr-only">چت با هوش مصنوعی برای رفع اشکال</SheetDescription>
                             <ChatAssistant isOpen={true} onToggle={() => {}} isMobile className="!w-full !h-full" />

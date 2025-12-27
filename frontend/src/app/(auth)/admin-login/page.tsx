@@ -27,24 +27,27 @@ export default function AdminLoginPage() {
   };
 
   return (
-    <div dir="rtl" className="min-h-screen bg-gradient-to-br from-primary/5 via-background to-primary/10 flex items-center justify-center p-4">
+    <div dir="rtl" className="min-h-screen bg-gradient-to-br from-primary/5 via-background to-primary/10 flex flex-col items-center p-4 overflow-y-auto">
       {/* Background Effects */}
-      <div className="absolute inset-0 overflow-hidden">
+      <div className="absolute inset-0 overflow-hidden pointer-events-none">
         <div className="absolute top-0 right-0 w-72 h-72 bg-primary/10 rounded-full blur-3xl"></div>
         <div className="absolute bottom-0 left-0 w-96 h-96 bg-primary/5 rounded-full blur-3xl"></div>
         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-primary/3 rounded-full blur-[100px]"></div>
       </div>
 
       {/* Back to Landing */}
-      <Link 
-        href="/" 
-        className="absolute top-8 right-8 z-10 text-muted-foreground hover:text-primary transition-colors"
-      >
-        ← برگشت به صفحه اصلی
-      </Link>
+      <div className="w-full flex justify-end mb-8 z-10">
+        <Link 
+          href="/" 
+          className="text-muted-foreground hover:text-primary transition-colors"
+        >
+          ← برگشت به صفحه اصلی
+        </Link>
+      </div>
 
       {/* Main Card */}
-      <Card className="w-full max-w-md relative z-10 bg-card/80 backdrop-blur-xl border-border/50 shadow-2xl">
+      <div className="flex-1 flex items-center justify-center w-full z-10">
+        <Card className="w-full max-w-md bg-card/80 backdrop-blur-xl border-border/50 shadow-2xl">
         <CardHeader className="space-y-6 text-center pb-8">
           {/* Logo */}
           <div className="flex justify-center">

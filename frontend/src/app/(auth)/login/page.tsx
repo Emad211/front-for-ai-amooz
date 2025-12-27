@@ -12,9 +12,9 @@ export default function LoginPage() {
   const [activeTab, setActiveTab] = useState('join-code');
 
   return (
-    <div dir="rtl" className="flex min-h-screen flex-col items-center justify-center bg-background p-4">
-      {/* لوگو - موقعیت بالا چپ برای RTL */}
-      <div className="absolute top-8 start-8">
+    <div dir="rtl" className="flex min-h-screen flex-col items-center bg-background p-4 overflow-y-auto">
+      {/* لوگو - در جریان صفحه قرار می‌گیرد تا با کیبورد تداخل نداشته باشد */}
+      <div className="w-full flex justify-start mb-8 sm:absolute sm:top-8 sm:start-8 sm:mb-0 sm:w-auto">
         <Link href="/" className="flex items-center gap-2 group relative">
           <div className="relative h-12 w-16">
             <Image
@@ -30,7 +30,7 @@ export default function LoginPage() {
         </Link>
       </div>
 
-      <div className="w-full max-w-md">
+      <div className="w-full max-w-md flex-1 flex flex-col justify-center">
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full" dir="rtl">
           <TabsList className="grid w-full grid-cols-2 bg-card border-border mb-8">
             <TabsTrigger value="join-code" className="text-base">کد دعوت</TabsTrigger>
