@@ -115,6 +115,15 @@ export function AdminSidebar() {
         <Button 
           variant="ghost" 
           className="w-full justify-start gap-3 px-3 py-2.5 h-auto text-sm font-medium text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+          onClick={() => {
+            // Clear any stored auth tokens
+            if (typeof window !== 'undefined') {
+              localStorage.removeItem('authToken');
+              sessionStorage.removeItem('authToken');
+            }
+            // Redirect to landing page
+            window.location.href = '/';
+          }}
         >
           <LogOut className="h-5 w-5" />
           <span>خروج از حساب</span>
