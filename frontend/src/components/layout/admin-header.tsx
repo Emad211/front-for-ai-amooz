@@ -13,7 +13,7 @@ export function AdminHeader() {
   return (
     <header className="flex items-center justify-between">
       <div className="flex items-center gap-2 text-xl font-bold text-foreground">
-        <Link href="/home" className="text-primary hover:underline text-lg">
+        <Link href="/admin" className="text-primary hover:underline text-lg">
           AI Amooz
         </Link>
         <ChevronLeft className="h-5 w-5 text-muted-foreground rotate-180" />

@@ -1,7 +1,7 @@
 
 'use client';
 
-import { AdminHeader as Header } from '@/components/layout/header';
+import { DashboardHeader as Header } from '@/components/layout/dashboard-header';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';

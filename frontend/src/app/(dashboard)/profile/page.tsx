@@ -1,7 +1,7 @@
 
 'use client';
 
-import { AdminHeader as Header } from '@/components/layout/header';
+import { DashboardHeader as Header } from '@/components/layout/dashboard-header';
 import { ProfileForm } from '@/components/dashboard/profile/profile-form';
 
 export default function ProfilePage() {
