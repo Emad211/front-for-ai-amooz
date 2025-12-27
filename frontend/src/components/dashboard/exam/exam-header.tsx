@@ -23,15 +23,8 @@ export const ExamHeader = ({ onToggle }: ExamHeaderProps) => (
     <div className="text-center">
       <h1 className="text-xl font-bold text-foreground">بررسی کنکور تیر 1403 - ریاضی</h1>
     </div>
-    <div className="flex items-center gap-4">
-      <Button
-        onClick={onToggle}
-        variant="ghost"
-        size="icon"
-        className="h-12 w-12 rounded-lg text-muted-foreground hover:text-foreground"
-      >
-        <PanelRightClose className="h-5 w-5" />
-      </Button>
+    <div className="flex items-center gap-4 w-[100px] justify-end">
+      {/* Toggle button removed to avoid redundancy with ChatAssistant's own close button */}
     </div>
   </header>
 );

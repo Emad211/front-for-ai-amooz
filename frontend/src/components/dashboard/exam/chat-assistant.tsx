@@ -86,7 +86,8 @@ export const ChatAssistant = ({ onToggle, isOpen, isMobile = false, className }:
             <span className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 bg-green-500 rounded-full border-2 border-card"></span>
           </div>
           <div>
-            <h3 className="text-sm font-bold text-foreground text-right">دستیار حل سوال</h3>
+            <h3 className="text-sm font-bold text-foreground text-right">دستیار هوشمند</h3>
+            <p className="text-[10px] text-muted-foreground font-medium">پاسخگوی سوالات شما</p>
           </div>
         </div>
         {isMobile ? (
@@ -119,17 +120,17 @@ export const ChatAssistant = ({ onToggle, isOpen, isMobile = false, className }:
         <ChatMessage
           sender="ai"
           time="۱۰:۳۲"
-          message="سلام! 👋 من دستیار حل سوالت هستم.<br/>میتونی سوالت رو بخونی، گزینه انتخاب کنی، یا اگه جایی گیر کردی ازم راهنمایی بخوای. اگه روی کاغذ حل کردی، عکسش رو بفرست تا بررسی کنم."
+          message="سلام! 👋 من دستیار هوشمندت هستم.<br/>میتونی سوالت رو بپرسی، یا اگه توی مبحثی گیر کردی ازم راهنمایی بخوای. اگه روی کاغذ تمرین کردی، عکسش رو بفرست تا بررسی کنم."
         />
         <ChatMessage
           sender="user"
           time="۱۰:۳۴"
-          message="مطمئن نیستم چطوری باید از اطلاعات داده شده قدر نسبت رو پیدا کنم. میشه یه راهنمایی کلی بکنی؟"
+          message="مطمئن نیستم چطوری باید از اطلاعات داده شده برای حل این بخش استفاده کنم. میشه یه راهنمایی کلی بکنی؟"
         />
         <ChatMessage
           sender="ai"
           time="۱۰:۳۵"
-          message='حتماً! در یک دنباله هندسی، نسبت هر دو جمله متوالی برابر با قدر نسبت (r) به توان اختلاف جایگاهشونه. مثلاً: <br> <span class="font-mono px-1 rounded my-1 block text-center" dir="ltr">a₇ / a₅ = r²</span> <br> سعی کن از این رابطه برای جملاتی که داری استفاده کنی تا به یک معادله بر حسب x و r برسی.'
+          message='حتماً! برای حل این بخش، ابتدا باید متغیرهای اصلی رو شناسایی کنی. مثلاً در مورد سهمی: <br> <span class="font-mono px-1 rounded my-1 block text-center" dir="ltr">x = -b / 2a</span> <br> سعی کن مقادیر رو جایگذاری کنی تا به جواب برسی.'
         />
         {/* Spacer for keyboard on mobile */}
         <div className="h-4 flex-shrink-0" />
@@ -158,7 +159,7 @@ export const ChatAssistant = ({ onToggle, isOpen, isMobile = false, className }:
                 }
               }, 300);
             }}
-            placeholder="سوالت رو بپرس... یا تصویر حل دستیت رو بفرست"
+            placeholder="سوالت رو بپرس... یا تصویر تمرینت رو بفرست"
             rows={1}
             className="bg-background border-border rounded-xl text-sm text-foreground focus:ring-1 focus:ring-primary focus:border-primary placeholder:text-muted-foreground/50 py-3 pl-12 pr-20 resize-none overflow-y-hidden no-scrollbar"
           />

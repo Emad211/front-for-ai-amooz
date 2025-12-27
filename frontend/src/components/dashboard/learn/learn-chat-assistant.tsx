@@ -27,7 +27,7 @@ export const ChatMessage = ({ sender, time, message, isFormula = false }: ChatMe
         <div
           className={cn(
             'p-3 rounded-2xl leading-6 shadow-sm border max-w-[90%]',
-            isAI ? 'bg-card text-gray-200 rounded-tr-none border-border/50' : 'bg-primary/10 text-foreground rounded-tl-none border-primary/20'
+            isAI ? 'bg-card text-foreground rounded-tr-none border-border/50' : 'bg-primary/10 text-foreground rounded-tl-none border-primary/20'
           )}
         >
           <p className="text-sm" dangerouslySetInnerHTML={{ __html: message }}></p>
@@ -123,19 +123,33 @@ export const ChatAssistant = ({ onToggle, isOpen, className, isMobile = false }:
         <ChatMessage
           sender="ai"
           time="۱۰:۳۲"
-          message="سلام علی! 👋 <br/>من آماده‌ام تا در مورد «رأس سهمی» بهت کمک کنم. سوالی داری؟"
+          message="سلام! 👋 من دستیار هوشمندت هستم.<br/>میتونی سوالت رو بپرسی، یا اگه توی مبحثی گیر کردی ازم راهنمایی بخوای. اگه روی کاغذ تمرین کردی، عکسش رو بفرست تا بررسی کنم."
         />
-        <ChatMessage sender="user" time="۱۰:۳۴" message="فرمول x رأس سهمی بود؟" />
+        <ChatMessage
+          sender="user"
+          time="۱۰:۳۴"
+          message="مطمئن نیستم چطوری باید از اطلاعات داده شده برای حل این بخش استفاده کنم. میشه یه راهنمایی کلی بکنی؟"
+        />
         <ChatMessage
           sender="ai"
-          time="۱۰:۳۴"
-          isFormula
-          message='فرمول محاسبه طول رأس سهمی برابر است با: <br/> <span class="font-mono px-1 rounded my-1 block text-center" dir="ltr">x = -b / 2a</span>'
+          time="۱۰:۳۵"
+          message='حتماً! برای حل این بخش، ابتدا باید متغیرهای اصلی رو شناسایی کنی. مثلاً در مورد سهمی: <br> <span class="font-mono px-1 rounded my-1 block text-center" dir="ltr">x = -b / 2a</span> <br> سعی کن مقادیر رو جایگذاری کنی تا به جواب برسی.'
         />
         {/* Spacer for keyboard on mobile */}
         <div className="h-4 flex-shrink-0" />
       </div>
       <div className={cn('p-3 border-t border-border bg-card z-10 flex-shrink-0', !isOpen && !isMobile && 'hidden')}>
+        <div className="flex gap-2 mb-2 overflow-x-auto no-scrollbar pb-1">
+          <Button variant="outline" className="text-xs h-8 flex-shrink-0">
+            راهنماییم کن
+          </Button>
+          <Button variant="outline" className="text-xs h-8 flex-shrink-0">
+            اشتباهم کجاست؟
+          </Button>
+          <Button variant="outline" className="text-xs h-8 flex-shrink-0">
+            قدم اول را بگو
+          </Button>
+        </div>
         <div className="relative">
           <Textarea
             ref={textareaRef}
@@ -149,7 +163,7 @@ export const ChatAssistant = ({ onToggle, isOpen, className, isMobile = false }:
                 }
               }, 300);
             }}
-            placeholder="سوالت رو بنویس..."
+            placeholder="سوالت رو بپرس... یا تصویر تمرینت رو بفرست"
             rows={1}
             className="bg-background border-border rounded-xl text-sm text-foreground focus:ring-1 focus:ring-primary focus:border-primary placeholder:text-muted-foreground/50 py-3 pr-20 pl-12 resize-none overflow-y-hidden no-scrollbar"
           />

@@ -65,7 +65,7 @@ export default function LearnPage() {
                     </Sheet>
                 </div>
             </header>
-            <main className="flex-grow w-full max-w-[1920px] mx-auto lg:p-4 h-[calc(100vh-60px)] lg:h-screen flex gap-4 overflow-hidden relative">
+            <main className="flex-grow w-full max-w-[1920px] mx-auto lg:p-4 h-[calc(100dvh-60px)] lg:h-screen flex gap-4 overflow-hidden relative">
                 <CourseSidebar />
                 <div className={cn(
                     "flex-1 flex flex-col relative transition-all duration-300 ease-in-out", 
