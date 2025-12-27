@@ -167,14 +167,15 @@ export default function AdminLoginPage() {
           </div>
         </CardContent>
       </Card>
+    </div>
 
-      {/* Security Notice */}
-      <div className="absolute bottom-8 left-8 right-8 text-center z-10">
-        <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-card/60 backdrop-blur-sm border border-border/30 text-xs text-muted-foreground">
-          <Shield className="w-3 h-3" />
-          اتصال امن و رمزگذاری شده
-        </div>
+    {/* Security Notice */}
+    <div className="absolute bottom-8 left-8 right-8 text-center z-10">
+      <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-card/60 backdrop-blur-sm border border-border/30 text-xs text-muted-foreground">
+        <Shield className="w-3 h-3" />
+        اتصال امن و رمزگذاری شده
       </div>
     </div>
-  );
+  </div>
+);
 }
