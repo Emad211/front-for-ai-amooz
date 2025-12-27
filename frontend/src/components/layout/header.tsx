@@ -102,7 +102,7 @@ export function AdminHeader() {
                         alt="AI-Amooz logo"
                         fill
                         sizes="128px"
-                        className="object-contain mix-blend-screen brightness-125 scale-[2.2] origin-center"
+                        className="object-contain transition-all duration-300 invert dark:invert-0 dark:mix-blend-screen dark:brightness-125 scale-[2.2] origin-center"
                         priority
                     />
                 </div>
