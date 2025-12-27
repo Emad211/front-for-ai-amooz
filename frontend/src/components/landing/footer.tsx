@@ -4,6 +4,7 @@ import React from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { Instagram, Send, Mail } from 'lucide-react';
+import { SITE_CONFIG } from '@/constants/site';
 
 export function LandingFooter() {
   return (
@@ -33,13 +34,13 @@ export function LandingFooter() {
 
           {/* Social Links - Mobile */}
           <div className="flex justify-center gap-4 mb-8">
-            <a href="mailto:info@ai-amooz.ir" className="w-12 h-12 rounded-full bg-background border border-border flex items-center justify-center text-muted-foreground hover:text-primary hover:border-primary transition-colors">
+            <a href={`mailto:${SITE_CONFIG.links.email}`} className="w-12 h-12 rounded-full bg-background border border-border flex items-center justify-center text-muted-foreground hover:text-primary hover:border-primary transition-colors">
               <Mail className="w-5 h-5" />
             </a>
-            <Link href="#" className="w-12 h-12 rounded-full bg-background border border-border flex items-center justify-center text-muted-foreground hover:text-primary hover:border-primary transition-colors">
+            <Link href={SITE_CONFIG.links.instagram} className="w-12 h-12 rounded-full bg-background border border-border flex items-center justify-center text-muted-foreground hover:text-primary hover:border-primary transition-colors">
               <Instagram className="w-5 h-5" />
             </Link>
-            <Link href="#" className="w-12 h-12 rounded-full bg-background border border-border flex items-center justify-center text-muted-foreground hover:text-primary hover:border-primary transition-colors">
+            <Link href={SITE_CONFIG.links.telegram} className="w-12 h-12 rounded-full bg-background border border-border flex items-center justify-center text-muted-foreground hover:text-primary hover:border-primary transition-colors">
               <Send className="w-5 h-5" />
             </Link>
           </div>
@@ -123,19 +124,19 @@ export function LandingFooter() {
               <h4 className="font-semibold text-foreground mb-4">ارتباط با ما</h4>
               <ul className="space-y-3 text-sm">
                 <li>
-                  <a href="mailto:info@ai-amooz.ir" className="text-muted-foreground hover:text-primary transition-colors flex items-center gap-2">
+                  <a href={`mailto:${SITE_CONFIG.links.email}`} className="text-muted-foreground hover:text-primary transition-colors flex items-center gap-2">
                     <Mail className="w-4 h-4" />
-                    info@ai-amooz.ir
+                    {SITE_CONFIG.links.email}
                   </a>
                 </li>
                 <li>
-                  <Link href="#" className="text-muted-foreground hover:text-primary transition-colors flex items-center gap-2">
+                  <Link href={SITE_CONFIG.links.instagram} className="text-muted-foreground hover:text-primary transition-colors flex items-center gap-2">
                     <Instagram className="w-4 h-4" />
                     اینستاگرام
                   </Link>
                 </li>
                 <li>
-                  <Link href="#" className="text-muted-foreground hover:text-primary transition-colors flex items-center gap-2">
+                  <Link href={SITE_CONFIG.links.telegram} className="text-muted-foreground hover:text-primary transition-colors flex items-center gap-2">
                     <Send className="w-4 h-4" />
                     تلگرام
                   </Link>

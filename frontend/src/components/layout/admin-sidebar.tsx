@@ -5,11 +5,6 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { usePathname } from 'next/navigation';
 import { 
-  GraduationCap, 
-  PlusCircle, 
-  FolderOpen, 
-  Users, 
-  BarChart3, 
   Settings,
   LogOut,
   ChevronLeft
@@ -17,23 +12,8 @@ import {
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
-
-const menuItems = [
-  {
-    title: 'مدیریت کلاس‌ها',
-    items: [
-      { label: 'ایجاد کلاس جدید', href: '/admin/create-class', icon: PlusCircle },
-      { label: 'کلاس‌های من', href: '/admin/my-classes', icon: FolderOpen },
-      { label: 'دانش‌آموزان', href: '/admin/students', icon: Users },
-    ]
-  },
-  {
-    title: 'گزارشات',
-    items: [
-      { label: 'آمار و تحلیل', href: '/admin/analytics', icon: BarChart3 },
-    ]
-  },
-];
+import { ADMIN_NAV_MENU } from '@/constants/navigation';
+import { Logo } from '@/components/ui/logo';
 
 export function AdminSidebar() {
   const pathname = usePathname();
@@ -42,29 +22,19 @@ export function AdminSidebar() {
     <aside className="w-64 min-h-screen bg-card border-l border-border flex flex-col">
       {/* لوگو */}
       <div className="p-6">
-        <Link href="/admin" className="flex items-center gap-3 group relative">
-          <div className="relative h-12 w-16">
-            <Image
-              src="/logo (2).png"
-              alt="AI-Amooz logo"
-              fill
-              sizes="128px"
-              className="object-contain transition-all duration-300 scale-[2.2] origin-center"
-              priority
-            />
-          </div>
-          <div>
-            <span className="text-lg font-bold text-foreground ml-2">AI-Amooz</span>
-            <p className="text-xs text-muted-foreground">پنل مدیریت</p>
-          </div>
-        </Link>
+        <Logo 
+          href="/admin" 
+          imageSize="lg" 
+          textClassName="text-lg"
+        />
+        <p className="text-xs text-muted-foreground mr-14 -mt-1">پنل مدیریت</p>
       </div>
 
       <Separator className="bg-border/50" />
 
       {/* منوها */}
       <nav className="flex-1 p-4 space-y-6">
-        {menuItems.map((section, idx) => (
+        {ADMIN_NAV_MENU.map((section, idx) => (
           <div key={idx}>
             <h3 className="text-xs font-medium text-muted-foreground mb-3 px-3">
               {section.title}

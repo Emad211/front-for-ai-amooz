@@ -4,8 +4,9 @@ import { useState, useEffect } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
-import { Menu, X, Sun, Moon } from 'lucide-react';
-import { useTheme } from 'next-themes';
+import { Menu, X } from 'lucide-react';
+import { ThemeToggle } from '@/components/ui/theme-toggle';
+import { Logo } from '@/components/ui/logo';
 import {
   Sheet,
   SheetContent,
@@ -13,25 +14,7 @@ import {
   SheetTitle,
   SheetTrigger,
 } from "@/components/ui/sheet";
-
-const ThemeToggle = () => {
-  const { theme, setTheme } = useTheme();
-  const [mounted, setMounted] = useState(false);
-
-  useEffect(() => setMounted(true), []);
-  if (!mounted) return <div className="w-9 h-9" />;
-
-  return (
-    <Button 
-      variant="ghost" 
-      size="icon" 
-      onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
-      className="rounded-full w-9 h-9"
-    >
-      {theme === 'dark' ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
-    </Button>
-  );
-};
+import { LANDING_NAV_LINKS } from '@/constants/navigation';
 
 export const LandingHeader = () => {
   const [isScrolled, setIsScrolled] = useState(false);
@@ -44,35 +27,17 @@ export const LandingHeader = () => {
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
-  const navLinks = [
-    { href: "#features", label: "ویژگی‌ها" },
-    { href: "#how-it-works", label: "نحوه کار" },
-    { href: "#faq", label: "سوالات متداول" },
-  ];
-
   return (
     <header className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${isScrolled ? 'py-2' : 'py-4'}`}>
       <div className={`absolute inset-0 transition-all duration-300 ${isScrolled ? 'bg-background/90 backdrop-blur-lg border-b border-border/50 shadow-sm' : 'bg-transparent'}`}></div>
       <div className="container mx-auto px-4 relative">
         <div className="flex justify-between items-center">
           {/* Logo Section */}
-          <Link href="/" className="flex items-center gap-2 group relative">
-            <div className="relative h-10 w-14 md:h-12 md:w-16">
-              <Image
-                src="/logo (2).png"
-                alt="AI-Amooz logo"
-                fill
-                sizes="(max-width: 768px) 100px, 128px"
-                className="object-contain transition-all duration-300 scale-[2] md:scale-[2.2] origin-center"
-                priority
-              />
-            </div>
-            <span className="text-xl md:text-2xl font-bold text-foreground whitespace-nowrap tracking-tighter ml-2">AI-Amooz</span>
-          </Link>
+          <Logo imageSize={isScrolled ? 'sm' : 'md'} />
           
           {/* Desktop Navigation */}
           <nav className="hidden md:flex items-center gap-8">
-            {navLinks.map((link) => (
+            {LANDING_NAV_LINKS.map((link) => (
               <Link 
                 key={link.href}
                 href={link.href} 
@@ -107,10 +72,12 @@ export const LandingHeader = () => {
                 </SheetTrigger>
                 <SheetContent side="right" className="w-[300px] bg-background/95 backdrop-blur-xl border-l border-border/50">
                   <SheetHeader className="text-right mb-8">
-                    <SheetTitle className="text-2xl font-bold tracking-tighter text-primary">AI-Amooz</SheetTitle>
+                    <SheetTitle>
+                      <Logo />
+                    </SheetTitle>
                   </SheetHeader>
                   <nav className="flex flex-col gap-6 text-right">
-                    {navLinks.map((link) => (
+                    {LANDING_NAV_LINKS.map((link) => (
                       <Link 
                         key={link.href}
                         href={link.href} 

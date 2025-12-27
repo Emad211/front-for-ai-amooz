@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { ArrowLeft, Play } from 'lucide-react';
 import Link from 'next/link';
 import { Course } from '@/types';
+import { TagBadge } from '@/components/ui/tag-badge';
 
 interface CourseCardProps {
   course: Course;
@@ -18,27 +19,7 @@ export const CourseCard = ({ course }: CourseCardProps) => {
       <CardContent className="p-6">
         <div className="flex justify-start mb-4">
           {course.tags.map((tag) => (
-            <Badge
-              key={tag}
-              variant="secondary"
-              className={`bg-opacity-20 text-sm font-normal ${
-                tag === 'هوش مصنوعی'
-                  ? 'bg-green-500/20 text-green-400 border-green-500/30'
-                  : tag === 'ریاضیات'
-                  ? 'bg-purple-500/20 text-purple-400 border-purple-500/30'
-                  : tag === 'فیزیک'
-                  ? 'bg-blue-500/20 text-blue-400 border-blue-500/30'
-                  : tag === 'برنامه‌نویسی'
-                  ? 'bg-indigo-500/20 text-indigo-400 border-indigo-500/30'
-                  : tag === 'زبان'
-                  ? 'bg-pink-500/20 text-pink-400 border-pink-500/30'
-                  : tag === 'ادبیات'
-                  ? 'bg-purple-500/20 text-purple-400 border-purple-500/30'
-                  : 'bg-gray-500/20 text-gray-400 border-gray-500/30'
-              } border mr-2`}
-            >
-              {tag}
-            </Badge>
+            <TagBadge key={tag} tag={tag} />
           ))}
         </div>
         <h3 className="font-bold text-xl text-text-light mb-2">{course.title}</h3>

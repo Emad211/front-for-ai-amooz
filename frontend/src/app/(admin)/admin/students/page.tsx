@@ -6,100 +6,7 @@ import { Button } from '@/components/ui/button';
 import { StudentStats } from '@/components/admin/students/student-stats';
 import { StudentFilters } from '@/components/admin/students/student-filters';
 import { StudentTable } from '@/components/admin/students/student-table';
-
-// Mock data for students
-const mockStudents = [
-  {
-    id: '1',
-    name: 'علی احمدی',
-    email: 'ali.ahmadi@example.com',
-    phone: '09121234567',
-    avatar: '/api/placeholder/100/100',
-    enrolledClasses: 3,
-    completedLessons: 24,
-    totalLessons: 45,
-    averageScore: 85,
-    status: 'active',
-    joinDate: '2024-01-10',
-    lastActivity: '2024-01-22',
-    performance: 'excellent',
-  },
-  {
-    id: '2',
-    name: 'زهرا محمدی',
-    email: 'zahra.mohammadi@example.com',
-    phone: '09129876543',
-    avatar: '/api/placeholder/100/100',
-    enrolledClasses: 5,
-    completedLessons: 67,
-    totalLessons: 90,
-    averageScore: 92,
-    status: 'active',
-    joinDate: '2023-12-15',
-    lastActivity: '2024-01-23',
-    performance: 'excellent',
-  },
-  {
-    id: '3',
-    name: 'محمد رضایی',
-    email: 'mohammad.rezaei@example.com',
-    phone: '09135551234',
-    avatar: '/api/placeholder/100/100',
-    enrolledClasses: 2,
-    completedLessons: 15,
-    totalLessons: 30,
-    averageScore: 72,
-    status: 'active',
-    joinDate: '2024-01-18',
-    lastActivity: '2024-01-21',
-    performance: 'good',
-  },
-  {
-    id: '4',
-    name: 'فاطمه کریمی',
-    email: 'fatemeh.karimi@example.com',
-    phone: '09141239876',
-    avatar: '/api/placeholder/100/100',
-    enrolledClasses: 4,
-    completedLessons: 38,
-    totalLessons: 60,
-    averageScore: 78,
-    status: 'active',
-    joinDate: '2024-01-05',
-    lastActivity: '2024-01-20',
-    performance: 'good',
-  },
-  {
-    id: '5',
-    name: 'حسین نوری',
-    email: 'hossein.noori@example.com',
-    phone: '09151234567',
-    avatar: '/api/placeholder/100/100',
-    enrolledClasses: 2,
-    completedLessons: 8,
-    totalLessons: 30,
-    averageScore: 58,
-    status: 'inactive',
-    joinDate: '2023-12-20',
-    lastActivity: '2024-01-10',
-    performance: 'needs-improvement',
-  },
-  {
-    id: '6',
-    name: 'مریم صادقی',
-    email: 'maryam.sadeghi@example.com',
-    phone: '09161234567',
-    avatar: '/api/placeholder/100/100',
-    enrolledClasses: 6,
-    completedLessons: 89,
-    totalLessons: 100,
-    averageScore: 95,
-    status: 'active',
-    joinDate: '2023-11-10',
-    lastActivity: '2024-01-23',
-    performance: 'excellent',
-  },
-];
+import { MOCK_STUDENTS } from '@/constants/mock-data';
 
 export default function StudentsPage() {
   const [searchTerm, setSearchTerm] = useState('');
@@ -108,7 +15,7 @@ export default function StudentsPage() {
   const [sortBy, setSortBy] = useState('recent');
 
   // Filter and sort students
-  const filteredStudents = mockStudents
+  const filteredStudents = MOCK_STUDENTS
     .filter(student => {
       const matchesSearch = student.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
                            student.email.toLowerCase().includes(searchTerm.toLowerCase());
@@ -133,10 +40,10 @@ export default function StudentsPage() {
 
   // Statistics
   const stats = {
-    totalStudents: mockStudents.length,
-    activeStudents: mockStudents.filter(s => s.status === 'active').length,
-    averageScore: Math.round(mockStudents.reduce((sum, s) => sum + s.averageScore, 0) / mockStudents.length),
-    totalEnrollments: mockStudents.reduce((sum, s) => sum + s.enrolledClasses, 0),
+    totalStudents: MOCK_STUDENTS.length,
+    activeStudents: MOCK_STUDENTS.filter(s => s.status === 'active').length,
+    averageScore: Math.round(MOCK_STUDENTS.reduce((sum, s) => sum + s.averageScore, 0) / MOCK_STUDENTS.length),
+    totalEnrollments: MOCK_STUDENTS.reduce((sum, s) => sum + s.enrolledClasses, 0),
   };
 
   return (

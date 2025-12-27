@@ -9,7 +9,7 @@ import { Badge } from '@/components/ui/badge';
 import { Search, SlidersHorizontal, LayoutGrid, List, Play, ArrowLeft } from 'lucide-react';
 import examsData from '@/lib/exams.json';
 import Link from 'next/link';
-import { ExamCard } from '@/components/dashboard/exam-card';
+import { ExamCard } from '@/components/dashboard/ui/exam-card';
 
 export default function ExamPrepPage() {
   return (

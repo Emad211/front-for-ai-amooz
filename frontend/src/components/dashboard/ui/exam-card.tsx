@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { List, Play, ArrowLeft } from 'lucide-react';
 import Link from 'next/link';
 import { Exam } from '@/types';
+import { TagBadge } from '@/components/ui/tag-badge';
 
 interface ExamCardProps {
   exam: Exam;
@@ -19,26 +20,7 @@ export const ExamCard = ({ exam }: ExamCardProps) => {
     <Card className="bg-card text-card-foreground overflow-hidden flex flex-col justify-between h-full rounded-2xl">
       <CardContent className="p-6">
         <div className="flex justify-start mb-4">
-          <Badge
-            variant="secondary"
-            className={`bg-opacity-20 text-sm font-normal ${
-              exam.tags[0] === 'هوش مصنوعی'
-                ? 'bg-green-500/20 text-green-400 border-green-500/30'
-                : exam.tags[0] === 'ریاضیات'
-                ? 'bg-purple-500/20 text-purple-400 border-purple-500/30'
-                : exam.tags[0] === 'فیزیک'
-                ? 'bg-blue-500/20 text-blue-400 border-blue-500/30'
-                : exam.tags[0] === 'برنامه نویسی'
-                ? 'bg-indigo-500/20 text-indigo-400 border-indigo-500/30'
-                : exam.tags[0] === 'زبان'
-                ? 'bg-pink-500/20 text-pink-400 border-pink-500/30'
-                : exam.tags[0] === 'آمار'
-                ? 'bg-purple-500/20 text-purple-400 border-purple-500/30'
-                : 'bg-gray-500/20 text-gray-400 border-gray-500/30'
-            } border mr-2`}
-          >
-            {exam.tags[0]}
-          </Badge>
+          <TagBadge tag={exam.tags[0]} />
         </div>
         <h3 className="font-bold text-xl text-text-light mb-2">{exam.title}</h3>
         <p className="text-text-muted text-sm leading-relaxed mb-4">{exam.description}</p>

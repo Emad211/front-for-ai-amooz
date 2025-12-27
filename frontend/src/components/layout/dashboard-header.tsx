@@ -1,24 +1,15 @@
 // components/layout/header.tsx
 'use client';
 
-import { Bell, Moon, Sun, Contact, LogOut, User, GraduationCap, ChevronDown } from 'lucide-react';
+import { Bell } from 'lucide-react';
 import Link from 'next/link';
-import Image from 'next/image';
 import { Button } from '@/components/ui/button';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-  DropdownMenuGroup,
-} from '@/components/ui/dropdown-menu';
-import { useTheme } from 'next-themes';
 import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/utils';
-
+import { DASHBOARD_NAV_LINKS } from '@/constants/navigation';
+import { ThemeToggle } from '@/components/ui/theme-toggle';
+import { Logo } from '@/components/ui/logo';
+import { UserProfile } from '@/components/layout/user-profile';
 
 const NavLink = ({ href, children }) => {
     const pathname = usePathname();
@@ -32,89 +23,17 @@ const NavLink = ({ href, children }) => {
     );
 };
 
-const UserProfile = () => (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button variant="ghost" className="relative h-10 w-10 rounded-full">
-          <Avatar className="h-10 w-10">
-            <AvatarImage
-              src="https://picsum.photos/seed/user/100/100"
-              alt="Alireza"
-            />
-            <AvatarFallback>AR</AvatarFallback>
-          </Avatar>
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent className="w-56" align="end" forceMount>
-        <DropdownMenuLabel className="font-normal">
-          <div className="flex flex-col space-y-1">
-            <p className="text-sm font-medium leading-none">علیرضا رضایی</p>
-            <p className="text-xs leading-none text-muted-foreground">
-              ali.rezaei@example.com
-            </p>
-          </div>
-        </DropdownMenuLabel>
-        <DropdownMenuSeparator />
-        <DropdownMenuGroup>
-          <DropdownMenuItem asChild>
-            <Link href="/profile">
-              <User className="ml-2 h-4 w-4" />
-              <span>پروفایل</span>
-            </Link>
-          </DropdownMenuItem>
-          <DropdownMenuItem>
-            <Contact className="ml-2 h-4 w-4" />
-            <span>پشتیبانی</span>
-          </DropdownMenuItem>
-        </DropdownMenuGroup>
-        <DropdownMenuSeparator />
-        <DropdownMenuItem asChild>
-           <Link href="/login">
-            <LogOut className="ml-2 h-4 w-4" />
-            <span>خروج</span>
-          </Link>
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
-);
-
-
-const ThemeToggle = () => {
-    const { theme, setTheme } = useTheme();
-    return (
-        <Button variant="ghost" size="icon" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}>
-            <Sun className="h-5 w-5 rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0" />
-            <Moon className="absolute h-5 w-5 rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100" />
-            <span className="sr-only">Toggle theme</span>
-        </Button>
-    )
-}
-
 export function DashboardHeader() {
   return (
     <header dir="rtl" className="h-20 flex items-center justify-between px-6 md:px-10 bg-card border-b border-border sticky top-0 z-50">
         {/* Logo */}
-        <div className="flex items-center gap-3">
-             <Link href="/home" className="flex items-center gap-2 group relative">
-                <div className="relative h-12 w-16">
-                    <Image
-                        src="/logo (2).png"
-                        alt="AI-Amooz logo"
-                        fill
-                        sizes="128px"
-                        className="object-contain transition-all duration-300 scale-[2.2] origin-center"
-                        priority
-                    />
-                </div>
-                <span className="text-xl font-bold text-text-light ml-2">AI-Amooz</span>
-            </Link>
-        </div>
+        <Logo imageSize="lg" href="/home" />
 
         {/* Navigation */}
         <nav className="hidden md:flex items-center bg-background/50 border border-border/50 p-1 rounded-full">
-            <NavLink href="/home">خانه</NavLink>
-            <NavLink href="/classes">کلاس‌ها</NavLink>
-            <NavLink href="/exam-prep">آمادگی آزمون</NavLink>
+            {DASHBOARD_NAV_LINKS.map((link) => (
+                <NavLink key={link.href} href={link.href}>{link.label}</NavLink>
+            ))}
         </nav>
         
         {/* Actions */}

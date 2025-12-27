@@ -8,9 +8,9 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { DashboardHeader as Header } from '@/components/layout/dashboard-header';
 import Image from 'next/image';
-import { StatCard } from '@/components/dashboard/stat-card';
-import { EventCard } from '@/components/dashboard/event-card';
-import { ActivityCard } from '@/components/dashboard/activity-card';
+import { StatCard } from '@/components/dashboard/ui/stat-card';
+import { EventCard } from '@/components/dashboard/ui/event-card';
+import { ActivityCard } from '@/components/dashboard/ui/activity-card';
 import { DashboardHero } from '@/components/dashboard/dashboard-hero';
 
 

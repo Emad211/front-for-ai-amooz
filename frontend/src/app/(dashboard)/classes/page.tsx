@@ -9,7 +9,7 @@ import { Badge } from '@/components/ui/badge';
 import { Search, SlidersHorizontal, LayoutGrid, ArrowLeft, Play } from 'lucide-react';
 import coursesData from '@/lib/courses.json';
 import Link from 'next/link';
-import { CourseCard } from '@/components/dashboard/course-card';
+import { CourseCard } from '@/components/dashboard/ui/course-card';
 
 export default function ClassesPage() {
   return (

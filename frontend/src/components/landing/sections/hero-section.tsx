@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { ArrowLeft, Play, Sparkles } from 'lucide-react';
 import Link from 'next/link';
 import Image from 'next/image';
+import { SITE_CONFIG } from '@/constants/site';
 
 interface HeroSectionProps {
   heroImage: {
@@ -64,17 +65,17 @@ export const HeroSection = ({ heroImage }: HeroSectionProps) => (
         {/* Stats */}
         <div className="grid grid-cols-2 md:flex items-center justify-center gap-6 md:gap-16 text-center">
           <div className="col-span-1">
-            <div className="text-2xl md:text-4xl font-bold text-foreground">۵۰۰۰+</div>
+            <div className="text-2xl md:text-4xl font-bold text-foreground">{SITE_CONFIG.stats.students}</div>
             <div className="text-xs md:text-sm text-muted-foreground mt-1">دانش‌آموز فعال</div>
           </div>
           <div className="w-px h-12 bg-border hidden md:block"></div>
           <div className="col-span-1">
-            <div className="text-2xl md:text-4xl font-bold text-foreground">۹۸٪</div>
+            <div className="text-2xl md:text-4xl font-bold text-foreground">{SITE_CONFIG.stats.satisfaction}</div>
             <div className="text-xs md:text-sm text-muted-foreground mt-1">رضایت کاربران</div>
           </div>
           <div className="w-px h-12 bg-border hidden md:block"></div>
           <div className="col-span-2 md:col-span-1">
-            <div className="text-2xl md:text-4xl font-bold text-foreground">۲۴/۷</div>
+            <div className="text-2xl md:text-4xl font-bold text-foreground">{SITE_CONFIG.stats.support}</div>
             <div className="text-xs md:text-sm text-muted-foreground mt-1">پشتیبانی هوشمند</div>
           </div>
         </div>
