@@ -55,8 +55,8 @@ export function LandingFooter() {
             <Link href="#faq" className="py-3 px-4 rounded-xl bg-background border border-border text-sm text-muted-foreground hover:text-primary hover:border-primary transition-colors">
               سوالات متداول
             </Link>
-            <Link href="#" className="py-3 px-4 rounded-xl bg-background border border-border text-sm text-muted-foreground hover:text-primary hover:border-primary transition-colors">
-              حریم خصوصی
+            <Link href="/admin-login" className="py-3 px-4 rounded-xl bg-primary/10 border border-primary text-sm text-primary hover:bg-primary/20 hover:border-primary transition-colors">
+              پنل مدیریت
             </Link>
           </div>
 
@@ -108,6 +108,11 @@ export function LandingFooter() {
                 <li>
                   <Link href="#faq" className="text-muted-foreground hover:text-primary transition-colors">
                     سوالات متداول
+                  </Link>
+                </li>
+                <li>
+                  <Link href="/admin-login" className="text-primary font-medium hover:text-primary/80 transition-colors">
+                    پنل مدیریت
                   </Link>
                 </li>
               </ul>
