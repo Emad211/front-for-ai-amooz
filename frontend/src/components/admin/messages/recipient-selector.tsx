@@ -66,12 +66,12 @@ export function RecipientSelector({
           onValueChange={(v) => onRecipientTypeChange(v as 'all' | 'specific')}
           className="flex flex-col sm:flex-row gap-4"
         >
-          <div className="flex items-center space-x-2 space-x-reverse border rounded-lg p-4 flex-1 cursor-pointer hover:bg-secondary/50 transition-colors [&:has(:checked)]:border-primary [&:has(:checked)]:bg-primary/5">
+          <div className="flex items-center gap-3 border rounded-xl p-4 min-h-12 flex-1 cursor-pointer hover:bg-secondary/50 transition-colors [&:has(:checked)]:border-primary [&:has(:checked)]:bg-primary/5">
             <RadioGroupItem value="all" id="all" />
             <Label htmlFor="all" className="cursor-pointer flex-1">همه دانش‌آموزان</Label>
             <Users className="h-4 w-4 text-muted-foreground" />
           </div>
-          <div className="flex items-center space-x-2 space-x-reverse border rounded-lg p-4 flex-1 cursor-pointer hover:bg-secondary/50 transition-colors [&:has(:checked)]:border-primary [&:has(:checked)]:bg-primary/5">
+          <div className="flex items-center gap-3 border rounded-xl p-4 min-h-12 flex-1 cursor-pointer hover:bg-secondary/50 transition-colors [&:has(:checked)]:border-primary [&:has(:checked)]:bg-primary/5">
             <RadioGroupItem value="specific" id="specific" />
             <Label htmlFor="specific" className="cursor-pointer flex-1">انتخاب دانش‌آموزان</Label>
             <User className="h-4 w-4 text-muted-foreground" />
@@ -87,14 +87,14 @@ export function RecipientSelector({
               placeholder="جستجوی دانش‌آموز..." 
               value={searchQuery}
               onChange={(e) => onSearchChange(e.target.value)}
-              className="bg-background"
+              className="bg-background h-11 rounded-xl"
             />
           </div>
           
           <div className="flex items-center justify-between text-sm text-muted-foreground px-1">
             <span>{selectedStudents.length} نفر انتخاب شده</span>
             <Button variant="ghost" size="sm" onClick={handleSelectAllFiltered} className="h-auto p-0 hover:bg-transparent text-primary">
-              {selectedStudents.length === filteredStudents.length ? 'لغو انتخاب همه' : 'انتخاب همه'}
+              {allFilteredSelected ? 'لغو انتخاب همه' : 'انتخاب همه'}
             </Button>
           </div>
 
@@ -103,11 +103,20 @@ export function RecipientSelector({
               {filteredStudents.map((student) => (
                 <div 
                   key={student.id}
-                  className="flex items-center space-x-3 space-x-reverse p-2 rounded-lg hover:bg-secondary/50 transition-colors cursor-pointer"
+                  role="button"
+                  tabIndex={0}
+                  className="flex items-center gap-3 p-3 rounded-xl hover:bg-secondary/50 transition-colors cursor-pointer"
                   onClick={() => onSelectStudent(student.id)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      onSelectStudent(student.id);
+                    }
+                  }}
                 >
                   <Checkbox 
                     checked={selectedStudents.includes(student.id)}
+                    onClick={(e) => e.stopPropagation()}
                     onCheckedChange={() => onSelectStudent(student.id)}
                   />
                   <Avatar className="h-8 w-8">

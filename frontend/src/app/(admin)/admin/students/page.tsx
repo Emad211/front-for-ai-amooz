@@ -56,13 +56,13 @@ export default function StudentsPage() {
             مدیریت و پیگیری دانش‌آموزان
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" className="flex-1 md:flex-none h-9 rounded-xl">
-            <Download className="w-4 h-4 ml-2" />
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+          <Button variant="outline" size="sm" className="w-full sm:w-auto h-10 rounded-xl gap-2">
+            <Download className="w-4 h-4" />
             خروجی Excel
           </Button>
-          <Button size="sm" className="flex-1 md:flex-none h-9 rounded-xl">
-            <UserPlus className="w-4 h-4 ml-2" />
+          <Button size="sm" className="w-full sm:w-auto h-10 rounded-xl gap-2">
+            <UserPlus className="w-4 h-4" />
             افزودن دانش‌آموز
           </Button>
         </div>

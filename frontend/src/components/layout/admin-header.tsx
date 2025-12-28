@@ -14,7 +14,17 @@ export function AdminHeader() {
   const [isOpen, setIsOpen] = useState(false);
 
   // A simple way to get a readable title from the path
-  const pageTitle = pathname.split('/').pop()?.replace(/-/g, ' ') || 'Dashboard';
+  const lastSegment = pathname.split('/').filter(Boolean).pop() || 'admin';
+  const titleMap: Record<string, string> = {
+    admin: 'داشبورد',
+    analytics: 'آمار',
+    'create-class': 'ایجاد کلاس',
+    'my-classes': 'کلاس‌های من',
+    students: 'دانش‌آموزان',
+    messages: 'پیام‌ها',
+    settings: 'تنظیمات',
+  };
+  const pageTitle = titleMap[lastSegment] ?? titleMap.admin;
 
   return (
     <header className="flex items-center justify-between gap-4">
@@ -45,7 +55,7 @@ export function AdminHeader() {
         </div>
         
         <div className="flex items-center gap-2 text-lg md:text-xl font-black text-foreground">
-          <span className="capitalize text-foreground">{pageTitle}</span>
+          <span className="text-foreground">{pageTitle}</span>
         </div>
       </div>
 
