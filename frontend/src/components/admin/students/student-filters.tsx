@@ -48,7 +48,7 @@ export function StudentFilters({
 
           <div className="flex flex-wrap gap-3">
             <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger className="w-[140px] bg-background/50">
+              <SelectTrigger className="w-full sm:w-[140px] bg-background/50">
                 <SelectValue placeholder="وضعیت" />
               </SelectTrigger>
               <SelectContent>
@@ -59,7 +59,7 @@ export function StudentFilters({
             </Select>
 
             <Select value={performanceFilter} onValueChange={setPerformanceFilter}>
-              <SelectTrigger className="w-[140px] bg-background/50">
+              <SelectTrigger className="w-full sm:w-[140px] bg-background/50">
                 <SelectValue placeholder="عملکرد" />
               </SelectTrigger>
               <SelectContent>
@@ -71,7 +71,7 @@ export function StudentFilters({
             </Select>
 
             <Select value={sortBy} onValueChange={setSortBy}>
-              <SelectTrigger className="w-[140px] bg-background/50">
+              <SelectTrigger className="w-full sm:w-[140px] bg-background/50">
                 <SelectValue placeholder="مرتب‌سازی" />
               </SelectTrigger>
               <SelectContent>

@@ -6,7 +6,7 @@ import { Menu } from 'lucide-react';
 import { UserProfile } from '@/components/layout/user-profile';
 import { Logo } from '@/components/ui/logo';
 import { Button } from '@/components/ui/button';
-import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
+import { Sheet, SheetContent, SheetTrigger, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet';
 import { SidebarContent } from './sidebar-content';
 
 export function AdminHeader() {
