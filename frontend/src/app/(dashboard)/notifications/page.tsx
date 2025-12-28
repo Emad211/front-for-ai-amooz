@@ -36,7 +36,7 @@ export default function NotificationsPage() {
   };
 
   return (
-    <div className="max-w-3xl mx-auto space-y-6">
+    <div className="max-w-3xl mx-auto px-4 sm:px-0 space-y-4 sm:space-y-6">
       <NotificationHeader
         unreadCount={unreadCount}
         filter={filter}
@@ -45,7 +45,7 @@ export default function NotificationsPage() {
       />
 
       <Card className="rounded-2xl">
-        <CardContent className="p-4">
+        <CardContent className="p-3 sm:p-4">
           <NotificationList
             notifications={filteredNotifications}
             onMarkAsRead={handleMarkAsRead}

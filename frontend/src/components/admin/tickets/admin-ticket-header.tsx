@@ -28,33 +28,31 @@ export function AdminTicketHeader({
   onStatusFilterChange,
 }: AdminTicketHeaderProps) {
   return (
-    <div className="space-y-4 mb-6">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <div className="p-3 rounded-2xl bg-primary/10">
-            <Ticket className="w-6 h-6 text-primary" />
-          </div>
-          <div>
-            <h1 className="text-2xl font-bold text-foreground">مدیریت تیکت‌ها</h1>
-            <p className="text-sm text-muted-foreground">
-              {totalCount} تیکت • {openCount} باز
-            </p>
-          </div>
+    <div className="space-y-3 sm:space-y-4 mb-4 sm:mb-6">
+      <div className="flex items-center gap-3">
+        <div className="p-2.5 sm:p-3 rounded-xl sm:rounded-2xl bg-primary/10">
+          <Ticket className="w-5 h-5 sm:w-6 sm:h-6 text-primary" />
+        </div>
+        <div>
+          <h1 className="text-xl sm:text-2xl font-bold text-foreground">مدیریت تیکت‌ها</h1>
+          <p className="text-xs sm:text-sm text-muted-foreground">
+            {totalCount} تیکت • {openCount} باز
+          </p>
         </div>
       </div>
 
-      <div className="flex flex-col sm:flex-row gap-3">
+      <div className="flex flex-col sm:flex-row gap-2 sm:gap-3">
         <div className="relative flex-1">
           <Search className="absolute start-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <Input
             value={searchTerm}
             onChange={(e) => onSearchChange(e.target.value)}
             placeholder="جستجو در تیکت‌ها..."
-            className="ps-10 rounded-xl"
+            className="ps-10 rounded-xl h-9 sm:h-10 text-sm"
           />
         </div>
         <Select value={statusFilter} onValueChange={onStatusFilterChange}>
-          <SelectTrigger className="w-full sm:w-[160px] rounded-xl">
+          <SelectTrigger className="w-full sm:w-[160px] rounded-xl h-9 sm:h-10 text-xs sm:text-sm">
             <SelectValue placeholder="وضعیت" />
           </SelectTrigger>
           <SelectContent>

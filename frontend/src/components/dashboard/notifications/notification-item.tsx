@@ -40,21 +40,21 @@ export function NotificationItem({ notification, onMarkAsRead }: NotificationIte
   return (
     <div
       className={cn(
-        'flex items-start gap-4 p-4 rounded-xl transition-colors cursor-pointer',
+        'flex items-start gap-3 sm:gap-4 p-3 sm:p-4 rounded-xl transition-colors cursor-pointer',
         notification.isRead 
           ? 'bg-muted/30 hover:bg-muted/50' 
           : 'bg-card hover:bg-muted/30 border border-border/50'
       )}
       onClick={() => !notification.isRead && onMarkAsRead(notification.id)}
     >
-      <div className={cn('p-2 rounded-lg shrink-0', colorClass)}>
-        <Icon className="w-5 h-5" />
+      <div className={cn('p-1.5 sm:p-2 rounded-lg shrink-0', colorClass)}>
+        <Icon className="w-4 h-4 sm:w-5 sm:h-5" />
       </div>
       
       <div className="flex-1 min-w-0">
         <div className="flex items-center justify-between gap-2 mb-1">
           <h3 className={cn(
-            'font-medium truncate',
+            'font-medium truncate text-sm sm:text-base',
             notification.isRead ? 'text-muted-foreground' : 'text-foreground'
           )}>
             {notification.title}
@@ -63,10 +63,10 @@ export function NotificationItem({ notification, onMarkAsRead }: NotificationIte
             <span className="w-2 h-2 rounded-full bg-primary shrink-0" />
           )}
         </div>
-        <p className="text-sm text-muted-foreground line-clamp-2">
+        <p className="text-xs sm:text-sm text-muted-foreground line-clamp-2">
           {notification.message}
         </p>
-        <span className="text-xs text-muted-foreground mt-2 block">
+        <span className="text-[10px] sm:text-xs text-muted-foreground mt-1.5 sm:mt-2 block">
           {formatDate(notification.createdAt)}
         </span>
       </div>

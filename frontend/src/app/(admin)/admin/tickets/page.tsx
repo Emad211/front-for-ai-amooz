@@ -104,7 +104,7 @@ export default function AdminTicketsPage() {
   };
 
   return (
-    <div className="max-w-5xl mx-auto">
+    <div className="max-w-5xl mx-auto px-4 sm:px-0">
       <AdminTicketHeader
         totalCount={tickets.length}
         openCount={openCount}
@@ -115,7 +115,7 @@ export default function AdminTicketsPage() {
       />
 
       <Card className="rounded-2xl">
-        <CardContent className="p-4">
+        <CardContent className="p-3 sm:p-4">
           <AdminTicketList tickets={filteredTickets} onTicketClick={handleTicketClick} />
         </CardContent>
       </Card>

@@ -78,11 +78,11 @@ export default function TicketsPage() {
   };
 
   return (
-    <div className="max-w-4xl mx-auto">
+    <div className="max-w-4xl mx-auto px-4 sm:px-0">
       <TicketPageHeader onNewTicket={() => setIsNewTicketOpen(true)} />
 
       <Card className="rounded-2xl">
-        <CardContent className="p-4">
+        <CardContent className="p-3 sm:p-4">
           <TicketList
             tickets={tickets}
             onTicketClick={handleTicketClick}
