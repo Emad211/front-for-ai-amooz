@@ -64,30 +64,61 @@ export function RecipientSelector({
         <RadioGroup 
           value={recipientType} 
           onValueChange={(v) => onRecipientTypeChange(v as 'all' | 'specific')}
-          className="flex flex-col sm:flex-row gap-4"
+          className="grid grid-cols-1 sm:grid-cols-2 gap-4"
         >
-          <div className="flex items-center gap-3 border rounded-xl p-4 min-h-12 flex-1 cursor-pointer hover:bg-secondary/50 transition-colors [&:has(:checked)]:border-primary [&:has(:checked)]:bg-primary/5">
-            <RadioGroupItem value="all" id="all" />
-            <Label htmlFor="all" className="cursor-pointer flex-1">همه دانش‌آموزان</Label>
-            <Users className="h-4 w-4 text-muted-foreground" />
+          <div 
+            className={cn(
+              "flex items-center gap-3 border-2 rounded-2xl p-4 cursor-pointer transition-all duration-200 hover:border-primary/50",
+              recipientType === 'all' ? "border-primary bg-primary/5 shadow-sm" : "border-border bg-card"
+            )}
+            onClick={() => onRecipientTypeChange('all')}
+          >
+            <RadioGroupItem value="all" id="all" className="sr-only" />
+            <div className={cn(
+              "h-10 w-10 rounded-xl flex items-center justify-center transition-colors",
+              recipientType === 'all' ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"
+            )}>
+              <Users className="h-5 w-5" />
+            </div>
+            <div className="flex-1">
+              <Label htmlFor="all" className="cursor-pointer font-bold block">همه دانش‌آموزان</Label>
+              <p className="text-[10px] text-muted-foreground">ارسال به تمام کاربران فعال</p>
+            </div>
+            {recipientType === 'all' && <Check className="h-5 w-5 text-primary" />}
           </div>
-          <div className="flex items-center gap-3 border rounded-xl p-4 min-h-12 flex-1 cursor-pointer hover:bg-secondary/50 transition-colors [&:has(:checked)]:border-primary [&:has(:checked)]:bg-primary/5">
-            <RadioGroupItem value="specific" id="specific" />
-            <Label htmlFor="specific" className="cursor-pointer flex-1">انتخاب دانش‌آموزان</Label>
-            <User className="h-4 w-4 text-muted-foreground" />
+
+          <div 
+            className={cn(
+              "flex items-center gap-3 border-2 rounded-2xl p-4 cursor-pointer transition-all duration-200 hover:border-primary/50",
+              recipientType === 'specific' ? "border-primary bg-primary/5 shadow-sm" : "border-border bg-card"
+            )}
+            onClick={() => onRecipientTypeChange('specific')}
+          >
+            <RadioGroupItem value="specific" id="specific" className="sr-only" />
+            <div className={cn(
+              "h-10 w-10 rounded-xl flex items-center justify-center transition-colors",
+              recipientType === 'specific' ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"
+            )}>
+              <User className="h-5 w-5" />
+            </div>
+            <div className="flex-1">
+              <Label htmlFor="specific" className="cursor-pointer font-bold block">انتخاب دانش‌آموزان</Label>
+              <p className="text-[10px] text-muted-foreground">انتخاب دستی گیرندگان</p>
+            </div>
+            {recipientType === 'specific' && <Check className="h-5 w-5 text-primary" />}
           </div>
         </RadioGroup>
       </div>
 
       {recipientType === 'specific' && (
-        <div className="border rounded-xl p-4 space-y-4 bg-secondary/20 animate-in fade-in slide-in-from-top-4 duration-300">
-          <div className="flex items-center gap-2">
-            <Search className="h-4 w-4 text-muted-foreground" />
+        <div className="border-2 border-dashed rounded-2xl p-4 space-y-4 bg-muted/30 animate-in fade-in slide-in-from-top-4 duration-300">
+          <div className="relative">
+            <Search className="absolute start-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input 
               placeholder="جستجوی دانش‌آموز..." 
               value={searchQuery}
               onChange={(e) => onSearchChange(e.target.value)}
-              className="bg-background h-11 rounded-xl"
+              className="bg-background h-12 rounded-xl ps-10 border-none shadow-sm"
             />
           </div>
           

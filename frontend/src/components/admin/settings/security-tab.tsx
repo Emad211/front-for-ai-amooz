@@ -70,7 +70,7 @@ export function SecurityTab() {
           </div>
           <div className="pt-4 border-t">
             <Button variant="outline" className="w-full sm:w-auto text-destructive hover:text-destructive rounded-xl">
-              <LogOut className="w-4 h-4 ml-2" />
+              <LogOut className="w-4 h-4 me-2" />
               خروج از تمامی دستگاه‌ها
             </Button>
           </div>

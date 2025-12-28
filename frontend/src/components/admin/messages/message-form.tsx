@@ -26,21 +26,22 @@ export function MessageForm({
   return (
     <div className="space-y-6">
       <div className="space-y-2">
-        <Label htmlFor="subject">موضوع پیام</Label>
+        <Label htmlFor="subject" className="text-sm font-bold px-1">موضوع پیام</Label>
         <Input 
           id="subject" 
           placeholder="مثلاً: تغییر زمان کلاس ریاضی" 
           value={subject}
           onChange={(e) => onSubjectChange(e.target.value)}
+          className="h-12 rounded-xl bg-muted/30 border-none focus-visible:ring-primary/20"
         />
       </div>
 
       <div className="space-y-2">
-        <Label htmlFor="message">متن پیام</Label>
+        <Label htmlFor="message" className="text-sm font-bold px-1">متن پیام</Label>
         <Textarea 
           id="message" 
           placeholder="متن پیام خود را اینجا بنویسید..." 
-          className="min-h-[200px] resize-none"
+          className="min-h-[200px] resize-none rounded-xl bg-muted/30 border-none focus-visible:ring-primary/20 p-4"
           value={message}
           onChange={(e) => onMessageChange(e.target.value)}
         />
@@ -49,12 +50,15 @@ export function MessageForm({
       <div className="flex justify-end pt-4">
         <Button 
           size="lg" 
-          className="w-full sm:w-auto gap-2"
+          className="w-full sm:w-auto gap-2 h-12 px-8 rounded-xl shadow-lg shadow-primary/20 transition-all hover:scale-[1.02] active:scale-[0.98]"
           onClick={onSend}
           disabled={isSending}
         >
           {isSending ? (
-            <>در حال ارسال...</>
+            <>
+              <div className="h-4 w-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+              در حال ارسال...
+            </>
           ) : (
             <>
               <Send className="h-4 w-4 rtl:-rotate-180" />

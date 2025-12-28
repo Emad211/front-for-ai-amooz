@@ -53,9 +53,9 @@ export function UserProfile({
           </Avatar>
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent className="w-64 p-2 rounded-2xl shadow-2xl border-border/50" align="end" forceMount>
+      <DropdownMenuContent className="w-64 p-2 rounded-2xl shadow-2xl border-border/50" align="start" forceMount>
         <DropdownMenuLabel className="font-normal p-3">
-          <div className="flex flex-col space-y-1 text-right">
+          <div className="flex flex-col space-y-1 text-start">
             <p className="text-sm font-black leading-none text-foreground">{user.name}</p>
             <p className="text-xs leading-none text-muted-foreground font-medium">
               {user.email}
@@ -65,50 +65,50 @@ export function UserProfile({
         <DropdownMenuSeparator className="bg-border/50" />
         <DropdownMenuGroup className="space-y-1">
           {!isAdmin && (
-            <DropdownMenuItem asChild className="justify-end rounded-xl h-11 cursor-pointer focus:bg-primary/5">
+            <DropdownMenuItem asChild className="justify-start rounded-xl h-11 cursor-pointer focus:bg-primary/5">
               <Link href="/profile" className="flex items-center w-full">
-                <span className="flex-1 text-right font-bold text-sm">پروفایل کاربری</span>
-                <div className="p-1.5 bg-muted/50 rounded-lg mr-2">
+                <div className="p-1.5 bg-muted/50 rounded-lg ml-2">
                   <User className="h-4 w-4 text-muted-foreground" />
                 </div>
+                <span className="flex-1 text-start font-bold text-sm">پروفایل کاربری</span>
               </Link>
             </DropdownMenuItem>
           )}
           
           {mounted && (
             <DropdownMenuItem 
-              className="justify-end rounded-xl h-11 cursor-pointer focus:bg-primary/5"
+              className="justify-start rounded-xl h-11 cursor-pointer focus:bg-primary/5"
               onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
             >
-              <span className="flex-1 text-right font-bold text-sm">
-                {theme === 'dark' ? 'حالت روز' : 'حالت شب'}
-              </span>
-              <div className="p-1.5 bg-muted/50 rounded-lg mr-2">
+              <div className="p-1.5 bg-muted/50 rounded-lg ml-2">
                 {theme === 'dark' ? (
                   <Sun className="h-4 w-4 text-orange-500" />
                 ) : (
                   <Moon className="h-4 w-4 text-blue-500" />
                 )}
               </div>
+              <span className="flex-1 text-start font-bold text-sm">
+                {theme === 'dark' ? 'حالت روز' : 'حالت شب'}
+              </span>
             </DropdownMenuItem>
           )}
 
           {!isAdmin && (
-            <DropdownMenuItem className="justify-end rounded-xl h-11 cursor-pointer focus:bg-primary/5">
-              <span className="flex-1 text-right font-bold text-sm">پشتیبانی و تیکت</span>
-              <div className="p-1.5 bg-muted/50 rounded-lg mr-2">
+            <DropdownMenuItem className="justify-start rounded-xl h-11 cursor-pointer focus:bg-primary/5">
+              <div className="p-1.5 bg-muted/50 rounded-lg ml-2">
                 <Contact className="h-4 w-4 text-muted-foreground" />
               </div>
+              <span className="flex-1 text-start font-bold text-sm">پشتیبانی و تیکت</span>
             </DropdownMenuItem>
           )}
         </DropdownMenuGroup>
         <DropdownMenuSeparator className="bg-border/50" />
-        <DropdownMenuItem asChild className="justify-end rounded-xl h-11 cursor-pointer focus:bg-destructive/5 text-destructive">
+        <DropdownMenuItem asChild className="justify-start rounded-xl h-11 cursor-pointer focus:bg-destructive/5 text-destructive">
            <Link href="/" className="flex items-center w-full">
-            <span className="flex-1 text-right font-bold text-sm">خروج از حساب</span>
-            <div className="p-1.5 bg-destructive/10 rounded-lg mr-2">
+            <div className="p-1.5 bg-destructive/10 rounded-lg ml-2">
               <LogOut className="h-4 w-4" />
             </div>
+            <span className="flex-1 text-start font-bold text-sm">خروج از حساب</span>
           </Link>
         </DropdownMenuItem>
       </DropdownMenuContent>

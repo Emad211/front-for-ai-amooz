@@ -37,12 +37,12 @@ export function StudentFilters({
       <CardContent className="p-6">
         <div className="flex flex-col lg:flex-row gap-4">
           <div className="relative flex-1">
-            <Search className="absolute right-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
+            <Search className="absolute start-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
             <Input
               placeholder="جستجو بر اساس نام یا ایمیل..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="pr-10 bg-background/50"
+              className="ps-10 bg-background/50 h-11 rounded-xl border-none shadow-sm"
             />
           </div>
 

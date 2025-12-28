@@ -29,7 +29,7 @@ export function SidebarContent({ onItemClick }: SidebarContentProps) {
           imageSize="lg" 
           textClassName="text-lg"
         />
-        <p className="text-xs text-muted-foreground mr-[72px] -mt-1 font-medium">پنل مدیریت</p>
+        <p className="text-xs text-muted-foreground ms-[72px] -mt-1 font-medium">پنل مدیریت</p>
       </div>
 
       <Separator className="bg-border/50" />
