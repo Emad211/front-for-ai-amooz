@@ -25,7 +25,7 @@ export function ProfileTab() {
   return (
     <div className="space-y-6">
       <Card>
-        <CardHeader className="text-start">
+        <CardHeader>
           <CardTitle>تصویر پروفایل</CardTitle>
           <CardDescription>
             تصویر پروفایل خود را بارگذاری کنید
@@ -50,7 +50,7 @@ export function ProfileTab() {
       </Card>
 
       <Card>
-        <CardHeader className="text-start">
+        <CardHeader>
           <CardTitle>اطلاعات شخصی</CardTitle>
           <CardDescription>
             اطلاعات شخصی خود را ویرایش کنید
@@ -58,68 +58,68 @@ export function ProfileTab() {
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-2 text-start">
+            <div className="space-y-2">
               <Label htmlFor="name">نام و نام خانوادگی</Label>
               <div className="relative">
-                <User className="absolute start-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                 <Input
                   id="name"
                   value={profile.name}
                   onChange={(e) => setProfile({ ...profile, name: e.target.value })}
-                  className="ps-10 text-start"
+                  className="pl-10"
                 />
               </div>
             </div>
-            <div className="space-y-2 text-start">
+            <div className="space-y-2">
               <Label htmlFor="email">ایمیل</Label>
               <div className="relative">
-                <Mail className="absolute start-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                 <Input
                   id="email"
                   type="email"
                   value={profile.email}
                   onChange={(e) => setProfile({ ...profile, email: e.target.value })}
-                  className="ps-10 text-start"
+                  className="pl-10"
                 />
               </div>
             </div>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-2 text-start">
+            <div className="space-y-2">
               <Label htmlFor="phone">شماره تماس</Label>
               <div className="relative">
-                <Phone className="absolute start-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                 <Input
                   id="phone"
                   value={profile.phone}
                   onChange={(e) => setProfile({ ...profile, phone: e.target.value })}
-                  className="ps-10 text-start"
+                  className="pl-10"
                 />
               </div>
             </div>
-            <div className="space-y-2 text-start">
+            <div className="space-y-2">
               <Label htmlFor="location">موقعیت مکانی</Label>
               <div className="relative">
-                <MapPin className="absolute start-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                 <Input
                   id="location"
                   value={profile.location}
                   onChange={(e) => setProfile({ ...profile, location: e.target.value })}
-                  className="ps-10 text-start"
+                  className="pl-10"
                 />
               </div>
             </div>
           </div>
 
-          <div className="space-y-2 text-start">
+          <div className="space-y-2">
             <Label htmlFor="bio">درباره من</Label>
             <Textarea
               id="bio"
               value={profile.bio}
               onChange={(e) => setProfile({ ...profile, bio: e.target.value })}
               rows={4}
-              className="resize-none text-start"
+              className="resize-none"
             />
           </div>
 

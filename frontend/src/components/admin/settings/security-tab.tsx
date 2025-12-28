@@ -11,25 +11,25 @@ export function SecurityTab() {
   return (
     <div className="space-y-6">
       <Card>
-        <CardHeader className="text-start">
+        <CardHeader>
           <CardTitle>تغییر رمز عبور</CardTitle>
           <CardDescription>
             رمز عبور خود را به صورت دوره‌ای تغییر دهید
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="space-y-2 text-start">
+          <div className="space-y-2">
             <Label htmlFor="current-password">رمز عبور فعلی</Label>
-            <Input id="current-password" type="password" className="text-start" />
+            <Input id="current-password" type="password" />
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-2 text-start">
+            <div className="space-y-2">
               <Label htmlFor="new-password">رمز عبور جدید</Label>
-              <Input id="new-password" type="password" className="rounded-xl text-start" />
+              <Input id="new-password" type="password" className="rounded-xl" />
             </div>
-            <div className="space-y-2 text-start">
+            <div className="space-y-2">
               <Label htmlFor="confirm-password">تکرار رمز عبور جدید</Label>
-              <Input id="confirm-password" type="password" className="rounded-xl text-start" />
+              <Input id="confirm-password" type="password" className="rounded-xl" />
             </div>
           </div>
           <div className="flex justify-start">
@@ -39,7 +39,7 @@ export function SecurityTab() {
       </Card>
 
       <Card>
-        <CardHeader className="text-start">
+        <CardHeader>
           <CardTitle>امنیت حساب کاربری</CardTitle>
           <CardDescription>
             تنظیمات امنیتی پیشرفته
@@ -47,7 +47,7 @@ export function SecurityTab() {
         </CardHeader>
         <CardContent className="space-y-6">
           <div className="flex items-center justify-between gap-4">
-            <div className="space-y-0.5 text-start">
+            <div className="space-y-0.5">
               <div className="flex items-center gap-2">
                 <Smartphone className="w-4 h-4 text-muted-foreground" />
                 <Label className="text-base">تایید دو مرحله‌ای</Label>
@@ -59,7 +59,7 @@ export function SecurityTab() {
             <Switch />
           </div>
           <div className="flex items-center justify-between gap-4">
-            <div className="space-y-0.5 text-start">
+            <div className="space-y-0.5">
               <div className="flex items-center gap-2">
                 <Shield className="w-4 h-4 text-muted-foreground" />
                 <Label className="text-base">ورودهای ناشناس</Label>

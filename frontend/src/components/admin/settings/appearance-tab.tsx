@@ -10,14 +10,14 @@ export function AppearanceTab() {
   return (
     <div className="space-y-6">
       <Card>
-        <CardHeader className="text-start">
+        <CardHeader>
           <CardTitle>تم و ظاهر</CardTitle>
           <CardDescription>
             ظاهر پنل مدیریت را شخصی‌سازی کنید
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
-          <div className="space-y-4 text-start">
+          <div className="space-y-4">
             <Label>تم سیستم</Label>
             <RadioGroup defaultValue="system" className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <div>
@@ -54,7 +54,7 @@ export function AppearanceTab() {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4 border-t">
-            <div className="space-y-2 text-start">
+            <div className="space-y-2">
               <div className="flex items-center gap-2">
                 <Languages className="w-4 h-4 text-muted-foreground" />
                 <Label>زبان پنل</Label>
@@ -69,7 +69,7 @@ export function AppearanceTab() {
                 </SelectContent>
               </Select>
             </div>
-            <div className="space-y-2 text-start">
+            <div className="space-y-2">
               <div className="flex items-center gap-2">
                 <Type className="w-4 h-4 text-muted-foreground" />
                 <Label>اندازه فونت</Label>

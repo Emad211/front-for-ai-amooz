@@ -9,9 +9,9 @@ import { AppearanceTab } from '@/components/admin/settings/appearance-tab';
 
 export default function AdminSettingsPage() {
   return (
-    <div className="space-y-6 max-w-4xl mx-auto" dir="rtl">
+    <div className="space-y-6 max-w-4xl mx-auto text-right">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div className="text-start">
+        <div>
           <h1 className="text-2xl md:text-3xl font-black text-foreground">تنظیمات</h1>
           <p className="text-muted-foreground text-sm mt-1">
             مدیریت حساب کاربری و تنظیمات پنل مدیریت
