@@ -134,14 +134,14 @@ export default function MyClassesPage() {
   return (
     <div className="space-y-8">
       {/* Header Section */}
-      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold text-foreground">کلاس‌های من</h1>
-          <p className="text-muted-foreground mt-1">
+          <h1 className="text-2xl md:text-3xl font-black text-foreground">کلاس‌های من</h1>
+          <p className="text-muted-foreground text-sm mt-1">
             مدیریت و پیگیری کلاس‌های آموزشی شما
           </p>
         </div>
-        <Button asChild className="w-fit">
+        <Button asChild size="sm" className="w-full md:w-auto h-9 rounded-xl">
           <Link href="/admin/create-class">
             <Plus className="w-4 h-4 ml-2" />
             ایجاد کلاس جدید

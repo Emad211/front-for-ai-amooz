@@ -49,19 +49,19 @@ export default function StudentsPage() {
   return (
     <div className="space-y-8">
       {/* Header */}
-      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold text-foreground">دانش‌آموزان</h1>
-          <p className="text-muted-foreground mt-1">
+          <h1 className="text-2xl md:text-3xl font-black text-foreground">دانش‌آموزان</h1>
+          <p className="text-muted-foreground text-sm mt-1">
             مدیریت و پیگیری دانش‌آموزان
           </p>
         </div>
-        <div className="flex gap-2">
-          <Button variant="outline">
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" className="flex-1 md:flex-none h-9 rounded-xl">
             <Download className="w-4 h-4 ml-2" />
             خروجی Excel
           </Button>
-          <Button>
+          <Button size="sm" className="flex-1 md:flex-none h-9 rounded-xl">
             <UserPlus className="w-4 h-4 ml-2" />
             افزودن دانش‌آموز
           </Button>

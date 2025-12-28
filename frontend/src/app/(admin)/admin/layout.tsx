@@ -16,7 +16,7 @@ export default function AdminLayout({
       
       {/* محتوای اصلی */}
       <div className="flex-1 flex flex-col min-w-0">
-        <main className="flex-1 p-4 md:p-8 overflow-auto">
+        <main className="flex-1 p-4 md:p-6 lg:p-8 overflow-x-hidden">
           <AdminHeader />
           <div className="mt-6 md:mt-8">
             {children}

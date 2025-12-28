@@ -61,11 +61,11 @@ export default function MessagesPage() {
   };
 
   return (
-    <div className="container mx-auto p-6 space-y-8 max-w-5xl">
+    <div className="space-y-8 max-w-5xl mx-auto">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">ارسال پیام</h1>
-          <p className="text-muted-foreground mt-2">
+          <h1 className="text-2xl md:text-3xl font-black text-foreground">ارسال پیام</h1>
+          <p className="text-muted-foreground text-sm mt-1">
             ارسال اطلاعیه و پیام به دانش‌آموزان
           </p>
         </div>

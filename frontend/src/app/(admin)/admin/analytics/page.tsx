@@ -13,15 +13,15 @@ export default function AnalyticsPage() {
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-black text-foreground">آمار و تحلیل سیستم</h1>
+          <h1 className="text-2xl md:text-3xl font-black text-foreground">آمار و تحلیل سیستم</h1>
           <p className="text-muted-foreground text-sm mt-1">گزارش جامع از عملکرد کلاس‌ها و دانش‌آموزان</p>
         </div>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" className="h-9 rounded-xl gap-2">
+        <div className="flex flex-col sm:flex-row items-center gap-2">
+          <Button variant="outline" size="sm" className="w-full sm:w-auto h-9 rounded-xl gap-2">
             <Calendar className="w-4 h-4" />
             ۳۰ روز گذشته
           </Button>
-          <Button size="sm" className="h-9 rounded-xl gap-2">
+          <Button size="sm" className="w-full sm:w-auto h-9 rounded-xl gap-2">
             <Download className="w-4 h-4" />
             خروجی گزارش
           </Button>
