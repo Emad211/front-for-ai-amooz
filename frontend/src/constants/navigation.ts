@@ -5,7 +5,8 @@ import {
   BarChart3, 
   Home,
   BookOpen,
-  Target
+  Target,
+  MessageSquare
 } from 'lucide-react';
 import { NavSection, NavItem } from '@/types';
 
@@ -28,6 +29,12 @@ export const ADMIN_NAV_MENU: NavSection[] = [
       { label: 'ایجاد کلاس جدید', href: '/admin/create-class', icon: PlusCircle },
       { label: 'کلاس‌های من', href: '/admin/my-classes', icon: FolderOpen },
       { label: 'دانش‌آموزان', href: '/admin/students', icon: Users },
+    ]
+  },
+  {
+    title: 'ارتباطات',
+    items: [
+      { label: 'ارسال پیام', href: '/admin/messages', icon: MessageSquare },
     ]
   },
   {

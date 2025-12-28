@@ -10,6 +10,7 @@ import { DASHBOARD_NAV_LINKS } from '@/constants/navigation';
 import { ThemeToggle } from '@/components/ui/theme-toggle';
 import { Logo } from '@/components/ui/logo';
 import { UserProfile } from '@/components/layout/user-profile';
+import { NotificationPopover } from '@/components/dashboard/notification-popover';
 
 interface NavLinkProps {
   href: string;
@@ -44,10 +45,7 @@ export function DashboardHeader() {
         
         {/* Actions */}
         <div className="flex items-center gap-1 md:gap-2">
-            <Button variant="ghost" size="icon" className="relative h-9 w-9 md:h-10 md:w-10">
-                <Bell className="h-5 w-5" />
-                <span className="absolute top-2.5 right-2.5 w-2 h-2 bg-primary rounded-full border-2 border-background"></span>
-            </Button>
+            <NotificationPopover />
             <div className="w-px h-6 md:h-8 bg-border mx-1 md:mx-2"></div>
             <UserProfile />
         </div>

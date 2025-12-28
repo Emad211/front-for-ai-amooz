@@ -22,126 +22,107 @@ interface ClassCardProps {
     status: string;
     createdAt: string;
     lastActivity: string;
-    progress: number;
     category: string;
     level: string;
-    price: number;
     rating: number;
   };
 }
 
 const statusConfig: Record<string, { label: string; color: string }> = {
-  active: { label: 'فعال', color: 'bg-green-500/10 text-green-700 dark:text-green-400' },
-  draft: { label: 'پیش‌نویس', color: 'bg-yellow-500/10 text-yellow-700 dark:text-yellow-400' },
-  paused: { label: 'متوقف', color: 'bg-gray-500/10 text-gray-700 dark:text-gray-400' },
+  active: { label: 'فعال', color: 'bg-primary/10 text-primary border-primary/20' },
+  draft: { label: 'پیش‌نویس', color: 'bg-muted text-muted-foreground border-border' },
+  paused: { label: 'متوقف', color: 'bg-muted text-muted-foreground border-border' },
 };
 
 const levelConfig: Record<string, string> = {
-  'مبتدی': 'bg-blue-500/10 text-blue-700 dark:text-blue-400',
-  'متوسط': 'bg-purple-500/10 text-purple-700 dark:text-purple-400',
-  'پیشرفته': 'bg-red-500/10 text-red-700 dark:text-red-400',
+  'مبتدی': 'bg-muted text-muted-foreground border-border',
+  'متوسط': 'bg-muted text-muted-foreground border-border',
+  'پیشرفته': 'bg-muted text-muted-foreground border-border',
 };
 
 export function ClassCard({ cls }: ClassCardProps) {
   return (
-    <Card className="group hover:shadow-lg transition-all duration-300 hover:border-primary/20 bg-card/50 backdrop-blur-sm">
-      <CardHeader className="pb-3">
-        <div className="flex items-start justify-between">
-          <div className="space-y-1 flex-1">
-            <CardTitle className="text-lg font-semibold text-foreground group-hover:text-primary transition-colors line-clamp-1">
+    <Card className="group hover:shadow-md transition-all duration-300 border-border/60 bg-card hover:border-primary/50 overflow-hidden relative">
+      <div className="absolute top-0 right-0 w-1 h-full bg-primary/0 group-hover:bg-primary transition-all duration-300" />
+      
+      <CardHeader className="pb-3 pt-5 px-5">
+        <div className="flex items-start justify-between gap-4">
+          <div className="space-y-1.5 flex-1">
+            <div className="flex items-center gap-2 mb-1">
+              <Badge variant="outline" className={`rounded-md px-2 py-0.5 text-[10px] font-normal border ${statusConfig[cls.status]?.color || ''}`}>
+                {statusConfig[cls.status]?.label || cls.status}
+              </Badge>
+              <Badge variant="outline" className={`rounded-md px-2 py-0.5 text-[10px] font-normal border ${levelConfig[cls.level] || ''}`}>
+                {cls.level}
+              </Badge>
+            </div>
+            <CardTitle className="text-lg font-bold text-foreground group-hover:text-primary transition-colors line-clamp-1">
               {cls.title}
             </CardTitle>
-            <p className="text-sm text-muted-foreground line-clamp-2 leading-relaxed">
+            <p className="text-xs text-muted-foreground line-clamp-2 leading-relaxed h-9">
               {cls.description}
             </p>
           </div>
+          
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon" className="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity">
+              <Button variant="ghost" size="icon" className="h-8 w-8 -ml-2 text-muted-foreground hover:text-foreground">
                 <MoreVertical className="h-4 w-4" />
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-56">
+            <DropdownMenuContent align="end" className="w-48">
               <DropdownMenuItem>
                 <Eye className="w-4 h-4 ml-2" />
-                مشاهده کلاس
+                مشاهده جزئیات
               </DropdownMenuItem>
               <DropdownMenuItem>
                 <Edit className="w-4 h-4 ml-2" />
-                ویرایش
+                ویرایش محتوا
               </DropdownMenuItem>
               <DropdownMenuItem>
-                <Copy className="w-4 h-4 ml-2" />
-                کپی
-              </DropdownMenuItem>
-              <DropdownMenuItem>
-                <Share2 className="w-4 h-4 ml-2" />
-                اشتراک‌گذاری
+                <Users className="w-4 h-4 ml-2" />
+                مدیریت دانش‌آموزان
               </DropdownMenuItem>
               <DropdownMenuSeparator />
-              <DropdownMenuItem className="text-destructive">
+              <DropdownMenuItem className="text-destructive focus:text-destructive">
                 <Trash2 className="w-4 h-4 ml-2" />
-                حذف
+                حذف کلاس
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
-        
-        <div className="flex items-center gap-2 pt-2">
-          <Badge className={statusConfig[cls.status]?.color || ''}>
-            {statusConfig[cls.status]?.label || cls.status}
-          </Badge>
-          <Badge variant="outline" className={levelConfig[cls.level] || ''}>
-            {cls.level}
-          </Badge>
-        </div>
       </CardHeader>
       
-      <CardContent className="space-y-4">
-        <div className="space-y-2">
-          <div className="flex justify-between text-sm">
-            <span className="text-muted-foreground">پیشرفت</span>
-            <span className="font-medium text-foreground">{cls.progress}%</span>
+      <CardContent className="px-5 pb-5">
+        <div className="grid grid-cols-2 gap-3 mb-4">
+          <div className="flex items-center gap-2 bg-muted/50 p-2 rounded-lg">
+            <div className="h-8 w-8 rounded-full bg-background flex items-center justify-center text-muted-foreground">
+              <Users className="h-4 w-4" />
+            </div>
+            <div className="flex flex-col">
+              <span className="text-xs text-muted-foreground">دانش‌آموزان</span>
+              <span className="text-sm font-bold">{cls.studentsCount}</span>
+            </div>
           </div>
-          <div className="w-full bg-muted rounded-full h-2">
-            <div 
-              className="bg-primary rounded-full h-2 transition-all duration-500"
-              style={{ width: `${cls.progress}%` }}
-            ></div>
+          <div className="flex items-center gap-2 bg-muted/50 p-2 rounded-lg">
+            <div className="h-8 w-8 rounded-full bg-background flex items-center justify-center text-muted-foreground">
+              <BookOpen className="h-4 w-4" />
+            </div>
+            <div className="flex flex-col">
+              <span className="text-xs text-muted-foreground">تعداد دروس</span>
+              <span className="text-sm font-bold">{cls.lessonsCount}</span>
+            </div>
           </div>
         </div>
 
-        <div className="grid grid-cols-3 gap-4 pt-2">
-          <div className="text-center">
-            <div className="flex items-center justify-center w-8 h-8 mx-auto mb-1 bg-primary/10 rounded-lg">
-              <Users className="w-4 h-4 text-primary" />
-            </div>
-            <div className="text-lg font-semibold text-foreground">{cls.studentsCount}</div>
-            <div className="text-xs text-muted-foreground">دانش‌آموز</div>
+        <div className="flex items-center justify-between text-xs text-muted-foreground border-t border-border/50 pt-3 mt-2">
+          <div className="flex items-center gap-1">
+            <Calendar className="h-3 w-3" />
+            <span>آخرین فعالیت: {cls.lastActivity}</span>
           </div>
-          <div className="text-center">
-            <div className="flex items-center justify-center w-8 h-8 mx-auto mb-1 bg-blue-500/10 rounded-lg">
-              <BookOpen className="w-4 h-4 text-blue-500" />
-            </div>
-            <div className="text-lg font-semibold text-foreground">{cls.lessonsCount}</div>
-            <div className="text-xs text-muted-foreground">درس</div>
-          </div>
-          <div className="text-center">
-            <div className="flex items-center justify-center w-8 h-8 mx-auto mb-1 bg-yellow-500/10 rounded-lg">
-              <Star className="w-4 h-4 text-yellow-500" />
-            </div>
-            <div className="text-lg font-semibold text-foreground">{cls.rating}</div>
-            <div className="text-xs text-muted-foreground">امتیاز</div>
-          </div>
-        </div>
-
-        <div className="flex items-center justify-between pt-3 border-t border-border/50">
-          <div className="flex items-center gap-1 text-sm text-muted-foreground">
-            <Calendar className="w-3 h-3" />
-            {new Date(cls.lastActivity).toLocaleDateString('fa-IR')}
-          </div>
-          <div className="text-sm font-medium text-primary">
-            {cls.price.toLocaleString()} تومان
+          <div className="flex items-center gap-1">
+            <Star className="h-3 w-3 text-amber-500 fill-amber-500" />
+            <span>{cls.rating}</span>
           </div>
         </div>
       </CardContent>

@@ -22,13 +22,17 @@ interface UserProfileProps {
     email: string;
     avatar?: string;
   };
+  isAdmin?: boolean;
 }
 
-export function UserProfile({ user = {
-  name: 'علیرضا رضایی',
-  email: 'ali.rezaei@example.com',
-  avatar: 'https://picsum.photos/seed/user/100/100'
-} }: UserProfileProps) {
+export function UserProfile({ 
+  user = {
+    name: 'علیرضا رضایی',
+    email: 'ali.rezaei@example.com',
+    avatar: 'https://picsum.photos/seed/user/100/100'
+  },
+  isAdmin = false
+}: UserProfileProps) {
   const { theme, setTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
 
@@ -60,14 +64,16 @@ export function UserProfile({ user = {
         </DropdownMenuLabel>
         <DropdownMenuSeparator className="bg-border/50" />
         <DropdownMenuGroup className="space-y-1">
-          <DropdownMenuItem asChild className="justify-end rounded-xl h-11 cursor-pointer focus:bg-primary/5">
-            <Link href="/profile" className="flex items-center w-full">
-              <span className="flex-1 text-right font-bold text-sm">پروفایل کاربری</span>
-              <div className="p-1.5 bg-muted/50 rounded-lg mr-2">
-                <User className="h-4 w-4 text-muted-foreground" />
-              </div>
-            </Link>
-          </DropdownMenuItem>
+          {!isAdmin && (
+            <DropdownMenuItem asChild className="justify-end rounded-xl h-11 cursor-pointer focus:bg-primary/5">
+              <Link href="/profile" className="flex items-center w-full">
+                <span className="flex-1 text-right font-bold text-sm">پروفایل کاربری</span>
+                <div className="p-1.5 bg-muted/50 rounded-lg mr-2">
+                  <User className="h-4 w-4 text-muted-foreground" />
+                </div>
+              </Link>
+            </DropdownMenuItem>
+          )}
           
           {mounted && (
             <DropdownMenuItem 
@@ -87,16 +93,18 @@ export function UserProfile({ user = {
             </DropdownMenuItem>
           )}
 
-          <DropdownMenuItem className="justify-end rounded-xl h-11 cursor-pointer focus:bg-primary/5">
-            <span className="flex-1 text-right font-bold text-sm">پشتیبانی و تیکت</span>
-            <div className="p-1.5 bg-muted/50 rounded-lg mr-2">
-              <Contact className="h-4 w-4 text-muted-foreground" />
-            </div>
-          </DropdownMenuItem>
+          {!isAdmin && (
+            <DropdownMenuItem className="justify-end rounded-xl h-11 cursor-pointer focus:bg-primary/5">
+              <span className="flex-1 text-right font-bold text-sm">پشتیبانی و تیکت</span>
+              <div className="p-1.5 bg-muted/50 rounded-lg mr-2">
+                <Contact className="h-4 w-4 text-muted-foreground" />
+              </div>
+            </DropdownMenuItem>
+          )}
         </DropdownMenuGroup>
         <DropdownMenuSeparator className="bg-border/50" />
         <DropdownMenuItem asChild className="justify-end rounded-xl h-11 cursor-pointer focus:bg-destructive/5 text-destructive">
-           <Link href="/login" className="flex items-center w-full">
+           <Link href="/" className="flex items-center w-full">
             <span className="flex-1 text-right font-bold text-sm">خروج از حساب</span>
             <div className="p-1.5 bg-destructive/10 rounded-lg mr-2">
               <LogOut className="h-4 w-4" />
