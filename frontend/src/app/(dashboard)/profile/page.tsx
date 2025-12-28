@@ -1,21 +1,73 @@
 
 'use client';
 
-import { DashboardHeader as Header } from '@/components/layout/dashboard-header';
 import { ProfileForm } from '@/components/dashboard/profile/profile-form';
+import { User, Shield, Bell, Settings } from 'lucide-react';
+import { cn } from '@/lib/utils';
+import { useState } from 'react';
+
+const tabs = [
+  { id: 'personal', label: 'اطلاعات شخصی', icon: User },
+  { id: 'security', label: 'امنیت', icon: Shield },
+  { id: 'notifications', label: 'اطلاع‌رسانی', icon: Bell },
+  { id: 'settings', label: 'تنظیمات', icon: Settings },
+];
 
 export default function ProfilePage() {
+  const [activeTab, setActiveTab] = useState('personal');
+
   return (
-    <div className="bg-background text-foreground min-h-screen">
-      <Header />
-      <main className="p-4 md:p-8">
-        <div className="max-w-4xl mx-auto space-y-8">
-          <div>
-            <h1 className="text-4xl font-bold text-foreground mb-2">پروفایل کاربری</h1>
-            <p className="text-muted-foreground mb-8">اطلاعات حساب کاربری خود را مدیریت کنید.</p>
+    <div className="min-h-screen bg-background/50">
+      <main className="container max-w-6xl mx-auto px-4 py-8 md:py-12">
+        <div className="flex flex-col gap-8">
+          {/* Header Section */}
+          <div className="flex flex-col gap-2">
+            <h1 className="text-3xl md:text-4xl font-bold tracking-tight">تنظیمات حساب کاربری</h1>
+            <p className="text-muted-foreground text-lg">
+              اطلاعات شخصی و تنظیمات امنیتی خود را در این بخش مدیریت کنید.
+            </p>
           </div>
 
-          <ProfileForm />
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+            {/* Sidebar Navigation */}
+            <aside className="lg:col-span-3">
+              <nav className="flex lg:flex-col gap-1 overflow-x-auto pb-2 lg:pb-0 no-scrollbar">
+                {tabs.map((tab) => (
+                  <button
+                    key={tab.id}
+                    onClick={() => setActiveTab(tab.id)}
+                    className={cn(
+                      "flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all shrink-0",
+                      activeTab === tab.id
+                        ? "bg-primary text-primary-foreground shadow-lg shadow-primary/20"
+                        : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                    )}
+                  >
+                    <tab.icon className="w-4 h-4" />
+                    {tab.label}
+                  </button>
+                ))}
+              </nav>
+            </aside>
+
+            {/* Content Area */}
+            <div className="lg:col-span-9">
+              {activeTab === 'personal' && <ProfileForm />}
+              {activeTab !== 'personal' && (
+                <div className="bg-card border rounded-3xl p-12 flex flex-col items-center justify-center text-center gap-4 min-h-[400px]">
+                  <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center">
+                    <Settings className="w-8 h-8 text-muted-foreground" />
+                  </div>
+                  <div>
+                    <h3 className="text-xl font-semibold">این بخش به زودی اضافه می‌شود</h3>
+                    <p className="text-muted-foreground mt-1">
+                      در حال حاضر فقط بخش اطلاعات شخصی فعال است.
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
         </div>
       </main>
     </div>

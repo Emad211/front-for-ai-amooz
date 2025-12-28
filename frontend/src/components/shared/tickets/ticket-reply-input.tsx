@@ -48,11 +48,11 @@ export function TicketReplyInput({
   };
 
   return (
-    <div className={cn('p-3 sm:p-4 border-t bg-background/50 backdrop-blur-sm', className)}>
-      <div className="flex items-end gap-2 sm:gap-3">
+    <div className={cn('p-3 sm:p-4 border-t bg-background/80 backdrop-blur-md', className)}>
+      <div className="flex items-center gap-2 sm:gap-3 max-w-5xl mx-auto">
         {/* Text Input Container */}
         <div className="flex-1 relative">
-          <div className="flex items-end bg-muted/50 rounded-2xl border border-border/50 focus-within:border-primary/50 focus-within:ring-2 focus-within:ring-primary/10 transition-all">
+          <div className="flex items-center bg-muted/50 rounded-2xl border border-border/50 focus-within:border-primary/50 focus-within:ring-2 focus-within:ring-primary/10 transition-all">
             <textarea
               ref={textareaRef}
               value={message}
@@ -63,7 +63,7 @@ export function TicketReplyInput({
               rows={1}
               className={cn(
                 'flex-1 bg-transparent border-0 resize-none py-3 px-4',
-                'text-sm placeholder:text-muted-foreground/70',
+                'text-sm sm:text-base placeholder:text-muted-foreground/70',
                 'focus:outline-none focus:ring-0',
                 'min-h-[44px] max-h-[120px]',
                 'text-right',
@@ -72,7 +72,7 @@ export function TicketReplyInput({
               dir="rtl"
             />
           </div>
-          <p className="text-[10px] text-muted-foreground/60 mt-1 px-2 hidden sm:block">
+          <p className="text-[10px] text-muted-foreground/60 mt-1 px-2 hidden sm:block text-right">
             برای ارسال Enter بزنید • برای خط جدید Shift+Enter
           </p>
         </div>
@@ -83,13 +83,13 @@ export function TicketReplyInput({
           disabled={!message.trim() || disabled}
           size="icon"
           className={cn(
-            'h-11 w-11 rounded-xl shrink-0 transition-all',
-            'bg-primary hover:bg-primary/90',
+            'h-11 w-11 sm:h-12 sm:w-12 rounded-xl shrink-0 transition-all',
+            'bg-primary hover:bg-primary/90 text-primary-foreground',
             'disabled:opacity-50 disabled:cursor-not-allowed',
-            message.trim() && 'shadow-lg shadow-primary/25'
+            message.trim() && 'shadow-lg shadow-primary/25 scale-105'
           )}
         >
-          <Send className="w-4 h-4 rtl:rotate-180" />
+          <Send className="w-5 h-5 rtl:rotate-180" />
         </Button>
       </div>
     </div>

@@ -35,11 +35,11 @@ export function TicketMessageBubble({ message, isOwnMessage = false }: TicketMes
 
       {/* Message Bubble */}
       <div className={cn(
-        'max-w-[85%] sm:max-w-[75%] rounded-2xl p-3 sm:p-4',
+        'max-w-[85%] sm:max-w-[75%] rounded-2xl p-3 sm:p-4 text-right',
         isOwnMessage 
           ? 'bg-primary text-primary-foreground rounded-ee-md' 
           : 'bg-muted/70 rounded-es-md'
-      )}>
+      )} dir="rtl">
         {/* Sender Label */}
         <span className={cn(
           'text-[10px] sm:text-xs font-medium mb-1 block',
@@ -58,7 +58,7 @@ export function TicketMessageBubble({ message, isOwnMessage = false }: TicketMes
 
         {/* Time */}
         <span className={cn(
-          'text-[10px] mt-2 block',
+          'text-[10px] mt-2 block opacity-70',
           isOwnMessage ? 'text-primary-foreground/60' : 'text-muted-foreground/70'
         )}>
           {formatDate(message.createdAt)}
