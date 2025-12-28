@@ -94,7 +94,7 @@ export function ClassCard({ cls }: ClassCardProps) {
       </CardHeader>
       
       <CardContent className="px-5 pb-5">
-        <div className="grid grid-cols-1 xs:grid-cols-2 gap-3 mb-4">
+        <div className="grid grid-cols-2 gap-3 mb-4">
           <div className="flex items-center gap-2 bg-muted/50 p-2 rounded-lg">
             <div className="h-8 w-8 rounded-full bg-background flex items-center justify-center text-muted-foreground shrink-0">
               <Users className="h-4 w-4" />

@@ -38,7 +38,7 @@ export function Logo({
         />
       </div>
       {showText && (
-        <span className={cn("text-xl font-bold text-foreground whitespace-nowrap tracking-tighter ml-2", textClassName)}>
+        <span className={cn("text-xl font-bold text-foreground whitespace-nowrap tracking-tighter", textClassName)}>
           AI-Amooz
         </span>
       )}
