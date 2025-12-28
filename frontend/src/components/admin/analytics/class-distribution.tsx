@@ -9,20 +9,7 @@ import {
   Legend, 
   Tooltip 
 } from 'recharts';
-
-const data = [
-  { name: 'ریاضی', value: 35 },
-  { name: 'فیزیک', value: 25 },
-  { name: 'شیمی', value: 20 },
-  { name: 'زیست', value: 20 },
-];
-
-const COLORS = [
-  'hsl(var(--primary))',
-  '#6366f1',
-  '#8b5cf6',
-  '#ec4899',
-];
+import { MOCK_DISTRIBUTION_DATA, CHART_COLORS } from '@/constants/mock';
 
 export function ClassDistribution() {
   return (
@@ -36,7 +23,7 @@ export function ClassDistribution() {
           <ResponsiveContainer width="100%" height="100%">
             <PieChart>
               <Pie
-                data={data}
+                data={MOCK_DISTRIBUTION_DATA}
                 cx="50%"
                 cy="50%"
                 innerRadius={60}
@@ -44,8 +31,8 @@ export function ClassDistribution() {
                 paddingAngle={5}
                 dataKey="value"
               >
-                {data.map((entry, index) => (
-                  <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                {MOCK_DISTRIBUTION_DATA.map((entry, index) => (
+                  <Cell key={`cell-${index}`} fill={CHART_COLORS[index % CHART_COLORS.length]} />
                 ))}
               </Pie>
               <Tooltip 

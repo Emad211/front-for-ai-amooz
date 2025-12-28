@@ -9,7 +9,7 @@ import {
   AdminTicketList,
   AdminTicketDetail,
 } from '@/components/admin/tickets';
-import { MOCK_TICKETS, type Ticket, type TicketMessage, type TicketStatus, type TicketPriority } from '@/constants/tickets-data';
+import { MOCK_TICKETS, type Ticket, type TicketMessage, type TicketStatus, type TicketPriority } from '@/constants/mock';
 
 export default function AdminTicketsPage() {
   const [tickets, setTickets] = useState<Ticket[]>(MOCK_TICKETS);

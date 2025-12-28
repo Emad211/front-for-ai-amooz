@@ -1,7 +1,7 @@
 'use client';
 
 import { AdminTicketCard } from './admin-ticket-card';
-import type { Ticket } from '@/constants/tickets-data';
+import type { Ticket } from '@/constants/mock';
 
 interface AdminTicketListProps {
   tickets: Ticket[];

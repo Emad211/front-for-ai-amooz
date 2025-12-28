@@ -10,7 +10,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Badge } from '@/components/ui/badge';
-import { MOCK_NOTIFICATIONS, Notification } from '@/constants/notifications';
+import { MOCK_NOTIFICATIONS, type Notification } from '@/constants/mock';
 import { cn } from '@/lib/utils';
 
 export function NotificationPopover() {

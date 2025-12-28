@@ -7,7 +7,7 @@ import { toast } from 'sonner';
 import { VisuallyHidden } from '@radix-ui/react-visually-hidden';
 import { TicketPageHeader } from '@/components/dashboard/tickets';
 import { TicketList, TicketDetail, NewTicketDialog } from '@/components/shared/tickets';
-import { MOCK_TICKETS, type Ticket, type TicketMessage } from '@/constants/tickets-data';
+import { MOCK_TICKETS, type Ticket, type TicketMessage } from '@/constants/mock';
 
 export default function TicketsPage() {
   const [tickets, setTickets] = useState<Ticket[]>(

@@ -1,6 +1,25 @@
 'use client';
 
 import { Sparkles, Target, Zap, Brain, Bot, BookCheck, BarChart3 } from 'lucide-react';
+import { MOCK_FEATURES } from '@/constants/mock';
+
+const IconMap = {
+    Target: <Target className="h-8 w-8" />,
+    Zap: <Zap className="h-8 w-8" />,
+    Brain: <Brain className="h-8 w-8" />,
+    Bot: <Bot className="h-8 w-8" />,
+    BookCheck: <BookCheck className="h-8 w-8" />,
+    BarChart3: <BarChart3 className="h-8 w-8" />
+};
+
+const MobileIconMap = {
+    Target: <Target className="h-6 w-6" />,
+    Zap: <Zap className="h-6 w-6" />,
+    Brain: <Brain className="h-6 w-6" />,
+    Bot: <Bot className="h-6 w-6" />,
+    BookCheck: <BookCheck className="h-6 w-6" />,
+    BarChart3: <BarChart3 className="h-6 w-6" />
+};
 
 // Feature Card for Desktop - Bento Grid Style
 const FeatureCardLarge = ({ icon, title, description, className = "" }: { icon: React.ReactNode, title: string, description: string, className?: string }) => (
@@ -54,58 +73,28 @@ export const FeaturesSection = () => (
             
             {/* Desktop: Bento Grid */}
             <div className="hidden md:grid grid-cols-3 gap-6 max-w-6xl mx-auto">
-                <FeatureCardLarge 
-                    icon={<Target className="h-8 w-8" />}
-                    title="مسیر یادگیری شخصی"
-                    description="هوش مصنوعی سطح دانش شما را می‌سنجد و بهترین مسیر آموزشی را برای رسیدن به اهداف‌تان طراحی می‌کند."
-                    className="col-span-2 row-span-1"
-                />
-                <FeatureCardLarge 
-                    icon={<Zap className="h-8 w-8" />}
-                    title="یادگیری سریع"
-                    description="با متدهای هوشمند، سریع‌تر یاد بگیرید."
-                    className="col-span-1 row-span-1"
-                />
-                <FeatureCardLarge 
-                    icon={<Brain className="h-8 w-8" />}
-                    title="تحلیل پیشرفت"
-                    description="نقاط ضعف و قوت خود را بشناسید."
-                    className="col-span-1 row-span-1"
-                />
-                <FeatureCardLarge 
-                    icon={<Bot className="h-8 w-8" />}
-                    title="دستیار هوشمند ۲۴/۷"
-                    description="در هر لحظه سوالات درسی بپرسید، راه‌حل‌های مختلف را بررسی کنید و اشکالات خود را رفع کنید."
-                    className="col-span-2 row-span-1"
-                />
+                {MOCK_FEATURES.filter(f => f.id <= 4).map((feature) => (
+                    <FeatureCardLarge 
+                        key={feature.id}
+                        icon={IconMap[feature.icon as keyof typeof IconMap]}
+                        title={feature.title}
+                        description={feature.description}
+                        className={feature.large ? "col-span-2 row-span-1" : "col-span-1 row-span-1"}
+                    />
+                ))}
             </div>
 
             {/* Mobile: Horizontal Cards */}
             <div className="md:hidden space-y-4">
-                <FeatureCardMobile 
-                    icon={<Target className="h-6 w-6" />}
-                    title="مسیر یادگیری شخصی"
-                    description="هوش مصنوعی بهترین مسیر آموزشی را برای شما طراحی می‌کند."
-                    index={0}
-                />
-                <FeatureCardMobile 
-                    icon={<Bot className="h-6 w-6" />}
-                    title="دستیار هوشمند ۲۴/۷"
-                    description="در هر لحظه سوالات درسی بپرسید و اشکالات خود را رفع کنید."
-                    index={1}
-                />
-                <FeatureCardMobile 
-                    icon={<BookCheck className="h-6 w-6" />}
-                    title="آزمون‌های تطبیقی"
-                    description="آزمون‌هایی که بر اساس نقاط ضعف و قوت شما طراحی می‌شوند."
-                    index={2}
-                />
-                <FeatureCardMobile 
-                    icon={<BarChart3 className="h-6 w-6" />}
-                    title="تحلیل پیشرفت"
-                    description="نقاط ضعف و قوت خود را بشناسید و بهبود دهید."
-                    index={3}
-                />
+                {MOCK_FEATURES.map((feature, index) => (
+                    <FeatureCardMobile 
+                        key={feature.id}
+                        icon={MobileIconMap[feature.icon as keyof typeof MobileIconMap]}
+                        title={feature.title}
+                        description={feature.description}
+                        index={index}
+                    />
+                ))}
             </div>
         </div>
     </section>

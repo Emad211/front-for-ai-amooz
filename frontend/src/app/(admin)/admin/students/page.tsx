@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { StudentStats } from '@/components/admin/students/student-stats';
 import { StudentFilters } from '@/components/admin/students/student-filters';
 import { StudentTable } from '@/components/admin/students/student-table';
-import { MOCK_STUDENTS } from '@/constants/mock-data';
+import { MOCK_STUDENTS } from '@/constants/mock';
 
 export default function StudentsPage() {
   const [searchTerm, setSearchTerm] = useState('');
@@ -26,7 +26,7 @@ export default function StudentsPage() {
     .sort((a, b) => {
       switch (sortBy) {
         case 'recent':
-          return new Date(b.lastActivity).getTime() - new Date(a.lastActivity).getTime();
+          return new Date(b.lastActivity || 0).getTime() - new Date(a.lastActivity || 0).getTime();
         case 'name':
           return a.name.localeCompare(b.name, 'fa');
         case 'score':

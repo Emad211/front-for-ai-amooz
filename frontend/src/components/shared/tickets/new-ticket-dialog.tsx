@@ -20,7 +20,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { TICKET_DEPARTMENTS } from '@/constants/tickets-data';
+import { TICKET_DEPARTMENTS } from '@/constants/mock';
 
 interface NewTicketDialogProps {
   open: boolean;

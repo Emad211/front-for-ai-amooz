@@ -1,8 +1,20 @@
 export interface Course {
-  id: number;
+  id: string | number;
   title: string;
   description: string;
   tags: string[];
+  instructor?: string;
+  progress?: number;
+  image?: string;
+  studentsCount?: number;
+  lessonsCount?: number;
+  status?: 'active' | 'draft' | 'archived' | 'paused';
+  createdAt?: string;
+  lastActivity?: string;
+  category?: string;
+  level?: 'مبتدی' | 'متوسط' | 'پیشرفته';
+  rating?: number;
+  reviews?: number;
 }
 
 export interface Exam {

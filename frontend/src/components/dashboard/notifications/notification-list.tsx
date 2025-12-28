@@ -1,7 +1,7 @@
 'use client';
 
 import { NotificationItem } from './notification-item';
-import type { Notification } from '@/constants/notifications-data';
+import type { Notification } from '@/constants/mock';
 
 interface NotificationListProps {
   notifications: Notification[];

@@ -1,7 +1,7 @@
 'use client';
 
 import { cn } from '@/lib/utils';
-import type { TicketStatus, TicketPriority } from '@/constants/tickets-data';
+import type { TicketStatus, TicketPriority } from '@/constants/mock';
 
 interface TicketStatusBadgeProps {
   status: TicketStatus;

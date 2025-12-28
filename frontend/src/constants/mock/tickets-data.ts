@@ -1,4 +1,19 @@
-// Mock data for tickets
+/**
+ * =============================================================================
+ * TICKETS MOCK DATA - داده‌های آزمایشی تیکت‌ها
+ * =============================================================================
+ * 
+ * برای اتصال به Backend:
+ * این داده‌ها را با API call به endpoint زیر جایگزین کنید:
+ * GET /api/tickets
+ * GET /api/tickets/:id
+ * POST /api/tickets
+ * POST /api/tickets/:id/messages
+ * PUT /api/tickets/:id/status
+ * 
+ * =============================================================================
+ */
+
 export type TicketStatus = 'open' | 'pending' | 'answered' | 'closed';
 export type TicketPriority = 'low' | 'medium' | 'high';
 
@@ -132,3 +147,33 @@ export const TICKET_DEPARTMENTS = [
   'پیشنهادات',
   'سایر',
 ];
+
+export const TICKET_STATUS_CONFIG: Record<TicketStatus, { label: string; color: string; bgColor: string }> = {
+  open: { label: 'باز', color: 'text-blue-500', bgColor: 'bg-blue-500/10' },
+  pending: { label: 'در انتظار', color: 'text-orange-500', bgColor: 'bg-orange-500/10' },
+  answered: { label: 'پاسخ داده شده', color: 'text-green-500', bgColor: 'bg-green-500/10' },
+  closed: { label: 'بسته شده', color: 'text-gray-500', bgColor: 'bg-gray-500/10' },
+};
+
+export const TICKET_PRIORITY_CONFIG: Record<TicketPriority, { label: string; color: string; bgColor: string }> = {
+  low: { label: 'کم', color: 'text-gray-500', bgColor: 'bg-gray-500/10' },
+  medium: { label: 'متوسط', color: 'text-orange-500', bgColor: 'bg-orange-500/10' },
+  high: { label: 'زیاد', color: 'text-red-500', bgColor: 'bg-red-500/10' },
+};
+
+// توابع کمکی
+export function getTicketById(id: string): Ticket | undefined {
+  return MOCK_TICKETS.find(t => t.id === id);
+}
+
+export function getTicketsByStatus(status: TicketStatus): Ticket[] {
+  return MOCK_TICKETS.filter(t => t.status === status);
+}
+
+export function getOpenTicketsCount(): number {
+  return MOCK_TICKETS.filter(t => t.status === 'open' || t.status === 'pending').length;
+}
+
+export function getUserTickets(userId: string): Ticket[] {
+  return MOCK_TICKETS.filter(t => t.userId === userId);
+}

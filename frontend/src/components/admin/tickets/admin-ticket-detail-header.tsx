@@ -9,7 +9,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import type { Ticket, TicketStatus, TicketPriority } from '@/constants/tickets-data';
+import type { Ticket, TicketStatus, TicketPriority } from '@/constants/mock';
 
 interface AdminTicketDetailHeaderProps {
   ticket: Ticket;

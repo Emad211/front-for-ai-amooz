@@ -1,6 +1,5 @@
 'use client';
 
-import { PlaceHolderImages } from '@/lib/placeholder-images';
 import { LandingHeader } from '@/components/landing/header';
 import { 
     HeroSection, 
@@ -10,8 +9,7 @@ import {
     FAQSection, 
     FinalCTASection 
 } from '@/components/landing/sections';
-
-
+import { MOCK_PLACEHOLDER_IMAGES } from '@/constants/mock';
 import { LandingFooter } from '@/components/landing/footer';
 
 export default function LandingPage() {
@@ -19,7 +17,7 @@ export default function LandingPage() {
         imageUrl: '/landing.png',
         description: 'AI-Amooz Dashboard Preview'
     };
-    const testimonialImage = PlaceHolderImages.find(img => img.id === 'testimonial-avatar');
+    const testimonialImage = MOCK_PLACEHOLDER_IMAGES.find(img => img.id === 'testimonial-avatar');
 
   return (
     <div className="flex flex-col min-h-screen bg-background text-text-light">

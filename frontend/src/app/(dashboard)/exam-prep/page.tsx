@@ -6,9 +6,8 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Search, SlidersHorizontal, LayoutGrid, List, Play, ArrowLeft } from 'lucide-react';
-import examsData from '@/lib/exams.json';
-import Link from 'next/link';
+import { Search, SlidersHorizontal, LayoutGrid, ArrowLeft } from 'lucide-react';
+import { MOCK_EXAMS } from '@/constants/mock';
 import { ExamCard } from '@/components/dashboard/ui/exam-card';
 
 export default function ExamPrepPage() {
@@ -56,7 +55,7 @@ export default function ExamPrepPage() {
 
       {/* Exams Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 md:gap-8">
-        {examsData.exams.map((exam) => (
+        {MOCK_EXAMS.map((exam) => (
             <ExamCard key={exam.id} exam={exam} />
         ))}
       </div>

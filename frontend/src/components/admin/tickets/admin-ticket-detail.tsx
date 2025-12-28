@@ -3,7 +3,7 @@
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { AdminTicketDetailHeader } from './admin-ticket-detail-header';
 import { TicketMessageBubble, TicketReplyInput } from '@/components/shared/tickets';
-import type { Ticket, TicketStatus, TicketPriority } from '@/constants/tickets-data';
+import type { Ticket, TicketStatus, TicketPriority } from '@/constants/mock';
 
 interface AdminTicketDetailProps {
   ticket: Ticket;

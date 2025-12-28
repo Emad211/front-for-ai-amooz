@@ -2,7 +2,7 @@
 
 import { User, Headphones } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import type { TicketMessage } from '@/constants/tickets-data';
+import type { TicketMessage } from '@/constants/mock';
 
 interface TicketMessageBubbleProps {
   message: TicketMessage;

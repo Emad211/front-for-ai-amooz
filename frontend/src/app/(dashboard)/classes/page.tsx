@@ -6,9 +6,8 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Search, SlidersHorizontal, LayoutGrid, ArrowLeft, Play, BookOpen } from 'lucide-react';
-import coursesData from '@/lib/courses.json';
-import Link from 'next/link';
+import { Search, SlidersHorizontal, LayoutGrid, BookOpen } from 'lucide-react';
+import { MOCK_COURSES } from '@/constants/mock';
 import { CourseCard } from '@/components/dashboard/ui/course-card';
 
 export default function ClassesPage() {
@@ -56,7 +55,7 @@ export default function ClassesPage() {
 
       {/* Courses Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 md:gap-8">
-        {coursesData.courses.map((course) => (
+        {MOCK_COURSES.map((course) => (
             <CourseCard key={course.id} course={course} />
         ))}
       </div>

@@ -1,6 +1,7 @@
 'use client';
 
 import { Play } from 'lucide-react';
+import { MOCK_STEPS } from '@/constants/mock';
 
 // Step Card for Mobile - Completely different design
 const StepCardMobile = ({ number, title, description, isLast }: { number: string, title: string, description: string, isLast?: boolean }) => (
@@ -63,46 +64,30 @@ export const HowItWorksSection = () => (
                     <div className="absolute top-0 bottom-0 right-1/2 w-px bg-gradient-to-b from-primary via-primary/50 to-primary/20 z-0"></div>
                     
                     <div className="space-y-24">
-                        <StepItem 
-                            number="۱"
-                            title="ثبت‌نام و تعیین هدف"
-                            description="به ما بگویید در چه درسی و برای چه هدفی به کمک نیاز دارید. کنکور، امتحان نهایی یا تقویت پایه."
-                            align="right"
-                        />
-                        <StepItem 
-                            number="۲"
-                            title="دریافت نقشه راه"
-                            description="هوش مصنوعی یک مسیر یادگیری مخصوص شما شامل درسنامه، تمرین و آزمون ایجاد می‌کند."
-                            align="left"
-                        />
-                        <StepItem 
-                            number="۳"
-                            title="شروع یادگیری"
-                            description="با همراهی دستیار هوشمند مراحل را طی کنید و پیشرفت خود را لحظه به لحظه ببینید."
-                            align="right"
-                        />
+                        {MOCK_STEPS.map((step, index) => (
+                            <StepItem 
+                                key={step.id}
+                                number={step.number}
+                                title={step.title}
+                                description={step.description}
+                                align={index % 2 === 0 ? "right" : "left"}
+                            />
+                        ))}
                     </div>
                 </div>
             </div>
 
             {/* Mobile Layout - Vertical Timeline */}
             <div className="md:hidden max-w-md mx-auto">
-                <StepCardMobile 
-                    number="۱"
-                    title="ثبت‌نام و تعیین هدف"
-                    description="به ما بگویید در چه درسی و برای چه هدفی به کمک نیاز دارید."
-                />
-                <StepCardMobile 
-                    number="۲"
-                    title="دریافت نقشه راه"
-                    description="هوش مصنوعی یک مسیر یادگیری مخصوص شما ایجاد می‌کند."
-                />
-                <StepCardMobile 
-                    number="۳"
-                    title="شروع یادگیری"
-                    description="با همراهی دستیار هوشمند پیشرفت خود را ببینید."
-                    isLast
-                />
+                {MOCK_STEPS.map((step, index) => (
+                    <StepCardMobile 
+                        key={step.id}
+                        number={step.number}
+                        title={step.title}
+                        description={step.mobileDescription}
+                        isLast={index === MOCK_STEPS.length - 1}
+                    />
+                ))}
             </div>
         </div>
     </section>

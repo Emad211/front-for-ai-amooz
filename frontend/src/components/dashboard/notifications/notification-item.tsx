@@ -1,26 +1,30 @@
 'use client';
 
-import { Bell, Info, CheckCircle, AlertTriangle, XCircle } from 'lucide-react';
+import { Bell, Info, CheckCircle, AlertTriangle, XCircle, MessageCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import type { Notification } from '@/constants/notifications-data';
+import type { Notification, NotificationType } from '@/constants/mock';
 
 interface NotificationItemProps {
   notification: Notification;
   onMarkAsRead: (id: string) => void;
 }
 
-const iconMap = {
+const iconMap: Record<NotificationType, typeof Info> = {
   info: Info,
   success: CheckCircle,
   warning: AlertTriangle,
   error: XCircle,
+  message: MessageCircle,
+  alert: Bell,
 };
 
-const colorMap = {
+const colorMap: Record<NotificationType, string> = {
   info: 'text-blue-500 bg-blue-500/10',
   success: 'text-green-500 bg-green-500/10',
   warning: 'text-amber-500 bg-amber-500/10',
   error: 'text-red-500 bg-red-500/10',
+  message: 'text-purple-500 bg-purple-500/10',
+  alert: 'text-orange-500 bg-orange-500/10',
 };
 
 export function NotificationItem({ notification, onMarkAsRead }: NotificationItemProps) {

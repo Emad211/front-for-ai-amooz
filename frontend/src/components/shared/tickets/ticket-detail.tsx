@@ -4,7 +4,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { TicketStatusBadge, TicketPriorityBadge } from './ticket-badges';
 import { TicketMessageBubble } from './ticket-message-bubble';
 import { TicketReplyInput } from './ticket-reply-input';
-import type { Ticket } from '@/constants/tickets-data';
+import type { Ticket } from '@/constants/mock';
 
 interface TicketDetailProps {
   ticket: Ticket;

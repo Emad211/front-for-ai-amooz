@@ -5,13 +5,14 @@ import { ProfileForm } from '@/components/dashboard/profile/profile-form';
 import { User, Shield, Bell, Settings } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useState } from 'react';
+import { PROFILE_TABS } from '@/constants/mock';
 
-const tabs = [
-  { id: 'personal', label: 'اطلاعات شخصی', icon: User },
-  { id: 'security', label: 'امنیت', icon: Shield },
-  { id: 'notifications', label: 'اطلاع‌رسانی', icon: Bell },
-  { id: 'settings', label: 'تنظیمات', icon: Settings },
-];
+const TAB_ICONS = {
+  personal: User,
+  security: Shield,
+  notifications: Bell,
+  settings: Settings,
+};
 
 export default function ProfilePage() {
   const [activeTab, setActiveTab] = useState('personal');
@@ -32,21 +33,24 @@ export default function ProfilePage() {
             {/* Sidebar Navigation */}
             <aside className="lg:col-span-3">
               <nav className="flex lg:flex-col gap-1 overflow-x-auto pb-2 lg:pb-0 no-scrollbar">
-                {tabs.map((tab) => (
-                  <button
-                    key={tab.id}
-                    onClick={() => setActiveTab(tab.id)}
-                    className={cn(
-                      "flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all shrink-0",
-                      activeTab === tab.id
-                        ? "bg-primary text-primary-foreground shadow-lg shadow-primary/20"
-                        : "text-muted-foreground hover:bg-muted hover:text-foreground"
-                    )}
-                  >
-                    <tab.icon className="w-4 h-4" />
-                    {tab.label}
-                  </button>
-                ))}
+                {PROFILE_TABS.map((tab) => {
+                  const Icon = TAB_ICONS[tab.id as keyof typeof TAB_ICONS];
+                  return (
+                    <button
+                      key={tab.id}
+                      onClick={() => setActiveTab(tab.id)}
+                      className={cn(
+                        "flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all shrink-0",
+                        activeTab === tab.id
+                          ? "bg-primary text-primary-foreground shadow-lg shadow-primary/20"
+                          : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                      )}
+                    >
+                      <Icon className="w-4 h-4" />
+                      {tab.label}
+                    </button>
+                  );
+                })}
               </nav>
             </aside>
 

@@ -3,7 +3,7 @@
 import { ChevronLeft, Clock } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { TicketStatusBadge, TicketPriorityBadge } from './ticket-badges';
-import type { Ticket } from '@/constants/tickets-data';
+import type { Ticket } from '@/constants/mock';
 
 interface TicketCardProps {
   ticket: Ticket;

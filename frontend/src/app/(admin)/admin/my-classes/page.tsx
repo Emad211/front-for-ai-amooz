@@ -8,85 +8,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { ClassStats } from '@/components/admin/my-classes/class-stats';
 import { ClassFilters } from '@/components/admin/my-classes/class-filters';
 import { ClassCard } from '@/components/admin/my-classes/class-card';
-
-// Mock data for classes
-const mockClasses = [
-  {
-    id: '1',
-    title: 'ریاضی پیشرفته',
-    description: 'کلاس ریاضی برای دانش‌آموزان سال سوم دبیرستان',
-    studentsCount: 24,
-    lessonsCount: 12,
-    status: 'active',
-    createdAt: '2024-01-15',
-    lastActivity: '2024-01-20',
-    category: 'ریاضی',
-    level: 'پیشرفته',
-    thumbnail: '/api/placeholder/300/200',
-    rating: 4.8,
-    reviews: 15,
-  },
-  {
-    id: '2',
-    title: 'فیزیک کنکور',
-    description: 'آماده‌سازی برای کنکور فیزیک با تست‌های متنوع',
-    studentsCount: 45,
-    lessonsCount: 20,
-    status: 'active',
-    createdAt: '2024-01-10',
-    lastActivity: '2024-01-22',
-    category: 'فیزیک',
-    level: 'متوسط',
-    thumbnail: '/api/placeholder/300/200',
-    rating: 4.9,
-    reviews: 28,
-  },
-  {
-    id: '3',
-    title: 'شیمی آلی',
-    description: 'اصول و مبانی شیمی آلی برای دانشجویان',
-    studentsCount: 18,
-    lessonsCount: 8,
-    status: 'draft',
-    createdAt: '2024-01-18',
-    lastActivity: '2024-01-19',
-    category: 'شیمی',
-    level: 'مبتدی',
-    thumbnail: '/api/placeholder/300/200',
-    rating: 4.5,
-    reviews: 8,
-  },
-  {
-    id: '4',
-    title: 'زبان انگلیسی محاورات',
-    description: 'تقویت مهارت‌های مکالمه انگلیسی',
-    studentsCount: 32,
-    lessonsCount: 15,
-    status: 'active',
-    createdAt: '2024-01-05',
-    lastActivity: '2024-01-21',
-    category: 'زبان',
-    level: 'متوسط',
-    thumbnail: '/api/placeholder/300/200',
-    rating: 4.7,
-    reviews: 22,
-  },
-  {
-    id: '5',
-    title: 'برنامه‌نویسی پایتون',
-    description: 'آموزش کامل برنامه‌نویسی پایتون از صفر',
-    studentsCount: 67,
-    lessonsCount: 25,
-    status: 'paused',
-    createdAt: '2023-12-20',
-    lastActivity: '2024-01-15',
-    category: 'برنامه‌نویسی',
-    level: 'مبتدی',
-    thumbnail: '/api/placeholder/300/200',
-    rating: 4.6,
-    reviews: 41,
-  },
-];
+import { MOCK_COURSES } from '@/constants/mock';
 
 export default function MyClassesPage() {
   const [searchTerm, setSearchTerm] = useState('');
@@ -95,10 +17,10 @@ export default function MyClassesPage() {
   const [sortBy, setSortBy] = useState('recent');
 
   // Get unique categories
-  const categories = Array.from(new Set(mockClasses.map(cls => cls.category)));
+  const categories = Array.from(new Set(MOCK_COURSES.map(cls => cls.category)));
 
   // Filter and sort classes
-  const filteredClasses = mockClasses
+  const filteredClasses = MOCK_COURSES
     .filter(cls => {
       const matchesSearch = cls.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
                            cls.description.toLowerCase().includes(searchTerm.toLowerCase());
@@ -109,15 +31,15 @@ export default function MyClassesPage() {
     .sort((a, b) => {
       switch (sortBy) {
         case 'recent':
-          return new Date(b.lastActivity).getTime() - new Date(a.lastActivity).getTime();
+          return new Date(b.lastActivity || 0).getTime() - new Date(a.lastActivity || 0).getTime();
         case 'oldest':
-          return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+          return new Date(a.createdAt || 0).getTime() - new Date(b.createdAt || 0).getTime();
         case 'students':
-          return b.studentsCount - a.studentsCount;
+          return (b.studentsCount || 0) - (a.studentsCount || 0);
         case 'progress':
-          return b.progress - a.progress;
+          return (b.progress || 0) - (a.progress || 0);
         case 'rating':
-          return b.rating - a.rating;
+          return (b.rating || 0) - (a.rating || 0);
         default:
           return 0;
       }
@@ -125,10 +47,10 @@ export default function MyClassesPage() {
 
   // Statistics
   const stats = {
-    totalClasses: mockClasses.length,
-    activeClasses: mockClasses.filter(cls => cls.status === 'active').length,
-    totalStudents: mockClasses.reduce((sum, cls) => sum + cls.studentsCount, 0),
-    averageRating: (mockClasses.reduce((sum, cls) => sum + cls.rating, 0) / mockClasses.length).toFixed(1),
+    totalClasses: MOCK_COURSES.length,
+    activeClasses: MOCK_COURSES.filter(cls => cls.status === 'active').length,
+    totalStudents: MOCK_COURSES.reduce((sum, cls) => sum + (cls.studentsCount || 0), 0),
+    averageRating: (MOCK_COURSES.reduce((sum, cls) => sum + (cls.rating || 0), 0) / MOCK_COURSES.length).toFixed(1),
   };
 
   return (

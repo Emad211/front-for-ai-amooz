@@ -8,17 +8,7 @@ import { MessageForm } from '@/components/admin/messages/message-form';
 import { MessageStats } from '@/components/admin/messages/message-stats';
 import { MessageTips } from '@/components/admin/messages/message-tips';
 
-// Mock students data
-const mockStudents = [
-  { id: '1', name: 'علی محمدی', email: 'ali@example.com', avatar: '/avatars/01.png' },
-  { id: '2', name: 'سارا احمدی', email: 'sara@example.com', avatar: '/avatars/02.png' },
-  { id: '3', name: 'رضا کریمی', email: 'reza@example.com', avatar: '/avatars/03.png' },
-  { id: '4', name: 'مریم حسینی', email: 'maryam@example.com', avatar: '/avatars/04.png' },
-  { id: '5', name: 'امیر رضایی', email: 'amir@example.com', avatar: '/avatars/05.png' },
-  { id: '6', name: 'زهرا نوری', email: 'zahra@example.com', avatar: '/avatars/06.png' },
-  { id: '7', name: 'محمد کاظمی', email: 'mohammad@example.com', avatar: '/avatars/07.png' },
-  { id: '8', name: 'فاطمه موسوی', email: 'fatemeh@example.com', avatar: '/avatars/08.png' },
-];
+import { MOCK_MESSAGE_RECIPIENTS } from '@/constants/mock';
 
 export default function MessagesPage() {
   const [recipientType, setRecipientType] = useState<'all' | 'specific'>('all');
@@ -88,7 +78,7 @@ export default function MessagesPage() {
                 selectedStudents={selectedStudents}
                 onSelectStudent={handleSelectStudent}
                 onSelectAll={setSelectedStudents}
-                students={mockStudents}
+                students={MOCK_MESSAGE_RECIPIENTS}
                 searchQuery={searchQuery}
                 onSearchChange={setSearchQuery}
               />

@@ -1,7 +1,7 @@
 'use client';
 
 import { TicketCard } from './ticket-card';
-import type { Ticket } from '@/constants/tickets-data';
+import type { Ticket } from '@/constants/mock';
 
 interface TicketListProps {
   tickets: Ticket[];

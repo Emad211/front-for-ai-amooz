@@ -3,7 +3,7 @@
 import { useState, useMemo } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { NotificationHeader, NotificationList } from '@/components/dashboard/notifications';
-import { MOCK_NOTIFICATIONS, type Notification } from '@/constants/notifications-data';
+import { MOCK_NOTIFICATIONS, type Notification } from '@/constants/mock';
 
 export default function NotificationsPage() {
   const [notifications, setNotifications] = useState<Notification[]>(MOCK_NOTIFICATIONS);

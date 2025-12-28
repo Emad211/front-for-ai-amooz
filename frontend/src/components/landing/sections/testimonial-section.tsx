@@ -1,6 +1,7 @@
 'use client';
 
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { MOCK_TESTIMONIALS } from '@/constants/mock';
 
 const TestimonialCard = ({ name, role, content, image }: { name: string, role: string, content: string, image: string }) => (
     <div className="relative p-6 md:p-8 rounded-3xl bg-card/50 border border-border/50 backdrop-blur-sm transition-all duration-300 hover:border-primary/30 hover:-translate-y-1">
@@ -22,27 +23,6 @@ const TestimonialCard = ({ name, role, content, image }: { name: string, role: s
 );
 
 export const TestimonialSection = ({ testimonialImage }: { testimonialImage: any }) => {
-    const testimonials = [
-        {
-            name: "آرش راد",
-            role: "دانش‌آموز پایه دوازدهم • رتبه ۱۲۳ کنکور",
-            content: "با AI-Amooz تونستم مفاهیم پیچیده ریاضی رو به سادگی یاد بگیرم. دستیار هوشمندش همیشه برای رفع اشکال کنارم بود و باعث شد با اعتماد به نفس بیشتری برای کنکور آماده بشم.",
-            image: testimonialImage?.imageUrl || "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?q=80&w=200&h=200&auto=format&fit=crop"
-        },
-        {
-            name: "ثنا جاوید",
-            role: "دانش‌آموز پایه یازدهم تجربی",
-            content: "مسیر یادگیری شخصی‌سازی شده واقعاً به من کمک کرد تا روی نقاط ضعفم تمرکز کنم. قبلاً ساعت‌ها وقتم رو برای پیدا کردن منابع هدر می‌دادم، اما الان همه چیز آماده‌ست.",
-            image: "https://images.unsplash.com/photo-1494790108377-be9c29b29330?q=80&w=200&h=200&auto=format&fit=crop"
-        },
-        {
-            name: "بردیا نیک‌بین",
-            role: "دانش‌آموز پایه دهم ریاضی",
-            content: "آزمون‌های تطبیقی فوق‌العاده هستن. هر بار که اشتباه می‌کنم، هوش مصنوعی دقیقاً همون مبحث رو دوباره با مثال‌های ساده‌تر برام توضیح میده تا کاملاً یاد بگیرم.",
-            image: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?q=80&w=200&h=200&auto=format&fit=crop"
-        }
-    ];
-
     return (
         <section className="py-20 md:py-32 relative bg-primary/10 dark:bg-primary/5">
             
@@ -55,8 +35,12 @@ export const TestimonialSection = ({ testimonialImage }: { testimonialImage: any
                 </div>
                 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6 md:gap-8 max-w-6xl mx-auto">
-                    {testimonials.map((t, i) => (
-                        <TestimonialCard key={i} {...t} />
+                    {MOCK_TESTIMONIALS.map((t, i) => (
+                        <TestimonialCard 
+                            key={i} 
+                            {...t} 
+                            image={i === 0 && testimonialImage?.imageUrl ? testimonialImage.imageUrl : t.image}
+                        />
                     ))}
                 </div>
                 
