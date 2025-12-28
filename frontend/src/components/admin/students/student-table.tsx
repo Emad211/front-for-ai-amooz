@@ -35,7 +35,7 @@ interface StudentTableProps {
 export function StudentTable({ students }: StudentTableProps) {
   return (
     <Card>
-      <CardHeader>
+      <CardHeader className="text-start">
         <div className="flex items-center justify-between">
           <CardTitle>لیست دانش‌آموزان</CardTitle>
           <p className="text-sm text-muted-foreground">
@@ -49,14 +49,14 @@ export function StudentTable({ students }: StudentTableProps) {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead className="text-right">دانش‌آموز</TableHead>
-                <TableHead className="text-right">اطلاعات تماس</TableHead>
-                <TableHead className="text-right">کلاس‌ها</TableHead>
-                <TableHead className="text-right">نمره</TableHead>
-                <TableHead className="text-right">عملکرد</TableHead>
-                <TableHead className="text-right">وضعیت</TableHead>
-                <TableHead className="text-right">آخرین فعالیت</TableHead>
-                <TableHead className="text-right"></TableHead>
+                <TableHead className="text-start">دانش‌آموز</TableHead>
+                <TableHead className="text-start">اطلاعات تماس</TableHead>
+                <TableHead className="text-start">کلاس‌ها</TableHead>
+                <TableHead className="text-start">نمره</TableHead>
+                <TableHead className="text-start">عملکرد</TableHead>
+                <TableHead className="text-start">وضعیت</TableHead>
+                <TableHead className="text-start">آخرین فعالیت</TableHead>
+                <TableHead className="text-start"></TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -75,7 +75,7 @@ export function StudentTable({ students }: StudentTableProps) {
         </div>
 
         {/* Mobile Card View */}
-        <div className="md:hidden divide-y divide-border">
+        <div className="md:hidden divide-y divide-border text-start">
           {students.map((student) => (
             <div key={student.id} className="p-4 space-y-4">
               <div className="flex items-center justify-between">
@@ -83,7 +83,7 @@ export function StudentTable({ students }: StudentTableProps) {
                   <div className="h-12 w-12 rounded-full bg-muted flex items-center justify-center text-lg font-bold">
                     {student.name.charAt(0)}
                   </div>
-                  <div>
+                  <div className="text-start">
                     <p className="font-bold text-foreground">{student.name}</p>
                     <p className="text-xs text-muted-foreground">{student.email}</p>
                   </div>
@@ -92,11 +92,11 @@ export function StudentTable({ students }: StudentTableProps) {
               </div>
 
               <div className="grid grid-cols-2 gap-3">
-                <div className="bg-muted/30 p-2 rounded-lg">
+                <div className="bg-muted/30 p-2 rounded-lg text-start">
                   <p className="text-[10px] text-muted-foreground mb-1">کلاس‌ها</p>
                   <p className="text-sm font-bold">{student.enrolledClasses} کلاس</p>
                 </div>
-                <div className="bg-muted/30 p-2 rounded-lg">
+                <div className="bg-muted/30 p-2 rounded-lg text-start">
                   <p className="text-[10px] text-muted-foreground mb-1">میانگین نمره</p>
                   <p className="text-sm font-bold">{student.averageScore}</p>
                 </div>

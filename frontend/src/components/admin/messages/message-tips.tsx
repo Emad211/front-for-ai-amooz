@@ -5,10 +5,10 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 export function MessageTips() {
   return (
     <Card className="bg-primary/5 border-primary/20">
-      <CardHeader>
+      <CardHeader className="text-start">
         <CardTitle className="text-lg text-primary">نکات مهم</CardTitle>
       </CardHeader>
-      <CardContent className="space-y-4 text-sm text-muted-foreground">
+      <CardContent className="space-y-4 text-sm text-muted-foreground text-start">
         <ul className="space-y-3">
           <li className="flex items-start gap-2">
             <div className="h-1.5 w-1.5 rounded-full bg-primary mt-1.5 shrink-0" />

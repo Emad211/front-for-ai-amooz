@@ -63,7 +63,7 @@ export default function MessagesPage() {
   return (
     <div className="space-y-8 max-w-5xl mx-auto">
       <div className="flex items-center justify-between">
-        <div>
+        <div className="text-start">
           <h1 className="text-2xl md:text-3xl font-black text-foreground">ارسال پیام</h1>
           <p className="text-muted-foreground text-sm mt-1">
             ارسال اطلاعیه و پیام به دانش‌آموزان
@@ -75,7 +75,7 @@ export default function MessagesPage() {
         {/* Message Form */}
         <div className="lg:col-span-2 space-y-6">
           <Card>
-            <CardHeader>
+            <CardHeader className="text-start">
               <CardTitle>تنظیمات پیام</CardTitle>
               <CardDescription>
                 گیرندگان و محتوای پیام خود را مشخص کنید

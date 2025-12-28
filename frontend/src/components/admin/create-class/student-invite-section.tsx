@@ -73,11 +73,11 @@ export function StudentInviteSection({ isExpanded, onToggle }: StudentInviteSect
         </div>
       </CardHeader>
       {isExpanded && (
-        <CardContent className="pt-0 space-y-5">
+        <CardContent className="pt-0 space-y-5 text-start">
           {/* کد دعوت */}
           <div className="p-4 bg-muted/30 rounded-xl">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-              <div>
+              <div className="text-start">
                 <p className="text-sm font-medium text-foreground">کد دعوت کلاس</p>
                 <p className="text-xs text-muted-foreground mt-0.5">
                   این کد را با دانش‌آموزان به اشتراک بگذارید
@@ -104,21 +104,21 @@ export function StudentInviteSection({ isExpanded, onToggle }: StudentInviteSect
           </div>
 
           {/* افزودن دستی */}
-          <div className="space-y-2">
+          <div className="space-y-2 text-start">
             <Label>افزودن دستی</Label>
             <div className="flex flex-col sm:flex-row gap-3">
               <Input 
                 value={newStudent}
                 onChange={(e) => setNewStudent(e.target.value)}
                 placeholder="ایمیل یا شماره تلفن" 
-                className="h-11 bg-background rounded-xl flex-1" 
+                className="h-11 bg-background rounded-xl flex-1 text-start" 
                 onKeyDown={(e) => e.key === 'Enter' && handleAddStudent()}
               />
               <Button 
                 onClick={handleAddStudent} 
                 className="h-11 px-5 bg-primary text-primary-foreground hover:bg-primary/90 rounded-xl w-full sm:w-auto"
               >
-                <Plus className="h-4 w-4 ml-2" />
+                <Plus className="h-4 w-4 me-2" />
                 افزودن
               </Button>
             </div>
@@ -126,7 +126,7 @@ export function StudentInviteSection({ isExpanded, onToggle }: StudentInviteSect
 
           {/* لیست دانش‌آموزان */}
           {invitedStudents.length > 0 && (
-            <div className="space-y-2">
+            <div className="space-y-2 text-start">
               <Label>دانش‌آموزان دعوت شده</Label>
               <div className="space-y-2">
                 {invitedStudents.map((student, index) => (

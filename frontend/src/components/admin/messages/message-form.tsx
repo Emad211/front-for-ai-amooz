@@ -24,7 +24,7 @@ export function MessageForm({
   isSending,
 }: MessageFormProps) {
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 text-start">
       <div className="space-y-2">
         <Label htmlFor="subject" className="text-sm font-bold px-1">موضوع پیام</Label>
         <Input 
@@ -32,7 +32,7 @@ export function MessageForm({
           placeholder="مثلاً: تغییر زمان کلاس ریاضی" 
           value={subject}
           onChange={(e) => onSubjectChange(e.target.value)}
-          className="h-12 rounded-xl bg-muted/30 border-none focus-visible:ring-primary/20"
+          className="h-12 rounded-xl bg-muted/30 border-none focus-visible:ring-primary/20 text-start"
         />
       </div>
 
@@ -41,7 +41,7 @@ export function MessageForm({
         <Textarea 
           id="message" 
           placeholder="متن پیام خود را اینجا بنویسید..." 
-          className="min-h-[200px] resize-none rounded-xl bg-muted/30 border-none focus-visible:ring-primary/20 p-4"
+          className="min-h-[200px] resize-none rounded-xl bg-muted/30 border-none focus-visible:ring-primary/20 p-4 text-start"
           value={message}
           onChange={(e) => onMessageChange(e.target.value)}
         />

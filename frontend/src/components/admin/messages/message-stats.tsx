@@ -6,7 +6,7 @@ import { Badge } from '@/components/ui/badge';
 export function MessageStats() {
   return (
     <Card>
-      <CardHeader>
+      <CardHeader className="text-start">
         <CardTitle className="text-lg">آمار پیام‌ها</CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">

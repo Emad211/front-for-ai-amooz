@@ -33,13 +33,13 @@ export function ClassInfoForm({ isExpanded, onToggle }: ClassInfoFormProps) {
         </div>
       </CardHeader>
       {isExpanded && (
-        <CardContent className="pt-0 space-y-5">
+        <CardContent className="pt-0 space-y-5 text-start">
           <div className="space-y-2">
             <Label htmlFor="class-title">عنوان کلاس</Label>
             <Input 
               id="class-title" 
               placeholder="مثال: آموزش برنامه‌نویسی پایتون" 
-              className="h-12 bg-background rounded-xl"
+              className="h-12 bg-background rounded-xl text-start"
             />
           </div>
           <div className="space-y-2">
@@ -47,7 +47,7 @@ export function ClassInfoForm({ isExpanded, onToggle }: ClassInfoFormProps) {
             <Textarea 
               id="class-description" 
               placeholder="توضیحات مختصری درباره کلاس بنویسید..." 
-              className="min-h-[100px] bg-background rounded-xl resize-none" 
+              className="min-h-[100px] bg-background rounded-xl resize-none text-start" 
             />
           </div>
         </CardContent>

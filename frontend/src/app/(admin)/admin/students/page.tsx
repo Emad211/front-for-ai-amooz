@@ -50,7 +50,7 @@ export default function StudentsPage() {
     <div className="space-y-8">
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
+        <div className="text-start">
           <h1 className="text-2xl md:text-3xl font-black text-foreground">دانش‌آموزان</h1>
           <p className="text-muted-foreground text-sm mt-1">
             مدیریت و پیگیری دانش‌آموزان
