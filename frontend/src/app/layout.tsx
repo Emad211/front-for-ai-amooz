@@ -1,8 +1,16 @@
-import type {Metadata} from 'next';
+import type { Metadata } from 'next';
+import { Vazirmatn } from 'next/font/google';
 import './globals.css';
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as SonnerToaster } from "sonner";
 import { ThemeProvider } from "@/components/theme-provider";
+
+const vazirmatn = Vazirmatn({
+  subsets: ['arabic'],
+  weight: ['100', '200', '300', '400', '500', '600', '700', '800', '900'],
+  variable: '--font-vazirmatn',
+  display: 'swap',
+});
 
 export const metadata: Metadata = {
   title: 'AI-Amooz',
@@ -16,12 +24,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="fa" dir="rtl" suppressHydrationWarning>
-      <head>
-        <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="true" />
-        <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;700&display=swap" rel="stylesheet" />
-      </head>
-      <body className="font-body antialiased">
+      <body className={`${vazirmatn.variable} font-body antialiased`}>
         <ThemeProvider
           attribute="class"
           defaultTheme="system"
