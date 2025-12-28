@@ -11,33 +11,35 @@ export function SecurityTab() {
   return (
     <div className="space-y-6">
       <Card>
-        <CardHeader>
+        <CardHeader className="text-start">
           <CardTitle>تغییر رمز عبور</CardTitle>
           <CardDescription>
             رمز عبور خود را به صورت دوره‌ای تغییر دهید
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="space-y-2">
+          <div className="space-y-2 text-start">
             <Label htmlFor="current-password">رمز عبور فعلی</Label>
-            <Input id="current-password" type="password" />
+            <Input id="current-password" type="password" className="text-start" />
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-2">
+            <div className="space-y-2 text-start">
               <Label htmlFor="new-password">رمز عبور جدید</Label>
-              <Input id="new-password" type="password" className="rounded-xl" />
+              <Input id="new-password" type="password" className="rounded-xl text-start" />
             </div>
-            <div className="space-y-2">
+            <div className="space-y-2 text-start">
               <Label htmlFor="confirm-password">تکرار رمز عبور جدید</Label>
-              <Input id="confirm-password" type="password" className="rounded-xl" />
+              <Input id="confirm-password" type="password" className="rounded-xl text-start" />
             </div>
           </div>
-          <Button className="w-full sm:w-auto rounded-xl">به‌روزرسانی رمز عبور</Button>
+          <div className="flex justify-start">
+            <Button className="w-full sm:w-auto rounded-xl">به‌روزرسانی رمز عبور</Button>
+          </div>
         </CardContent>
       </Card>
 
       <Card>
-        <CardHeader>
+        <CardHeader className="text-start">
           <CardTitle>امنیت حساب کاربری</CardTitle>
           <CardDescription>
             تنظیمات امنیتی پیشرفته
@@ -45,7 +47,7 @@ export function SecurityTab() {
         </CardHeader>
         <CardContent className="space-y-6">
           <div className="flex items-center justify-between gap-4">
-            <div className="space-y-0.5">
+            <div className="space-y-0.5 text-start">
               <div className="flex items-center gap-2">
                 <Smartphone className="w-4 h-4 text-muted-foreground" />
                 <Label className="text-base">تایید دو مرحله‌ای</Label>
@@ -57,7 +59,7 @@ export function SecurityTab() {
             <Switch />
           </div>
           <div className="flex items-center justify-between gap-4">
-            <div className="space-y-0.5">
+            <div className="space-y-0.5 text-start">
               <div className="flex items-center gap-2">
                 <Shield className="w-4 h-4 text-muted-foreground" />
                 <Label className="text-base">ورودهای ناشناس</Label>
@@ -68,9 +70,9 @@ export function SecurityTab() {
             </div>
             <Switch defaultChecked />
           </div>
-          <div className="pt-4 border-t">
-            <Button variant="outline" className="w-full sm:w-auto text-destructive hover:text-destructive rounded-xl">
-              <LogOut className="w-4 h-4 me-2" />
+          <div className="pt-4 border-t flex justify-start">
+            <Button variant="outline" className="w-full sm:w-auto text-destructive hover:text-destructive rounded-xl gap-2">
+              <LogOut className="w-4 h-4" />
               خروج از تمامی دستگاه‌ها
             </Button>
           </div>

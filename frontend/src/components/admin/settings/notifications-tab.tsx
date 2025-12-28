@@ -9,7 +9,7 @@ export function NotificationsTab() {
   return (
     <div className="space-y-6">
       <Card>
-        <CardHeader>
+        <CardHeader className="text-start">
           <CardTitle>تنظیمات اعلان‌ها</CardTitle>
           <CardDescription>
             نحوه دریافت اعلان‌ها را مدیریت کنید
@@ -17,7 +17,7 @@ export function NotificationsTab() {
         </CardHeader>
         <CardContent className="space-y-6">
           <div className="flex items-center justify-between gap-4">
-            <div className="space-y-0.5">
+            <div className="space-y-0.5 text-start">
               <div className="flex items-center gap-2">
                 <Mail className="w-4 h-4 text-muted-foreground" />
                 <Label className="text-base">اعلان‌های ایمیلی</Label>
@@ -29,7 +29,7 @@ export function NotificationsTab() {
             <Switch defaultChecked />
           </div>
           <div className="flex items-center justify-between gap-4">
-            <div className="space-y-0.5">
+            <div className="space-y-0.5 text-start">
               <div className="flex items-center gap-2">
                 <Bell className="w-4 h-4 text-muted-foreground" />
                 <Label className="text-base">اعلان‌های مرورگر</Label>
@@ -41,7 +41,7 @@ export function NotificationsTab() {
             <Switch defaultChecked />
           </div>
           <div className="flex items-center justify-between gap-4">
-            <div className="space-y-0.5">
+            <div className="space-y-0.5 text-start">
               <div className="flex items-center gap-2">
                 <MessageSquare className="w-4 h-4 text-muted-foreground" />
                 <Label className="text-base">پیام‌های سیستمی</Label>
@@ -53,7 +53,7 @@ export function NotificationsTab() {
             <Switch />
           </div>
           <div className="flex items-center justify-between gap-4">
-            <div className="space-y-0.5">
+            <div className="space-y-0.5 text-start">
               <div className="flex items-center gap-2">
                 <Globe className="w-4 h-4 text-muted-foreground" />
                 <Label className="text-base">اعلان‌های بازاریابی</Label>
