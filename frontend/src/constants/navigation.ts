@@ -6,7 +6,9 @@ import {
   Home,
   BookOpen,
   Target,
-  MessageSquare
+  MessageSquare,
+  Bell,
+  Ticket
 } from 'lucide-react';
 import { NavSection, NavItem } from '@/types';
 
@@ -20,6 +22,8 @@ export const DASHBOARD_NAV_LINKS: NavItem[] = [
   { label: "خانه", href: "/home", icon: Home },
   { label: "کلاس‌ها", href: "/classes", icon: BookOpen },
   { label: "آمادگی آزمون", href: "/exam-prep", icon: Target },
+  { label: "اعلان‌ها", href: "/notifications", icon: Bell },
+  { label: "تیکت‌ها", href: "/tickets", icon: Ticket },
 ];
 
 export const ADMIN_NAV_MENU: NavSection[] = [
@@ -35,6 +39,7 @@ export const ADMIN_NAV_MENU: NavSection[] = [
     title: 'ارتباطات',
     items: [
       { label: 'ارسال پیام', href: '/admin/messages', icon: MessageSquare },
+      { label: 'تیکت‌ها', href: '/admin/tickets', icon: Ticket },
     ]
   },
   {

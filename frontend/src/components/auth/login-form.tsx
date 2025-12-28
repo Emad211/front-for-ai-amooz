@@ -20,7 +20,7 @@ interface LoginFormProps {
 export function LoginForm({ onSwitchToJoin }: LoginFormProps) {
   return (
     <>
-      <h1 className="text-3xl font-bold text-foreground mb-6">
+      <h1 className="text-3xl font-bold text-foreground mb-6 text-center">
         ورود به حساب کاربری
       </h1>
 

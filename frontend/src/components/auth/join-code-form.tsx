@@ -39,7 +39,7 @@ export function JoinCodeForm({ onSwitchToLogin }: JoinCodeFormProps) {
 
   return (
     <>
-      <h1 className="text-3xl font-bold text-foreground mb-8">
+      <h1 className="text-3xl font-bold text-foreground mb-8 text-center">
         کد دعوت را وارد کنید
       </h1>
 
