@@ -1,16 +1,26 @@
 
 'use client';
 
+import React from 'react';
 import { DashboardHeader as Header } from '@/components/layout/dashboard-header';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
 import { Search, SlidersHorizontal, LayoutGrid, ArrowLeft } from 'lucide-react';
-import { MOCK_EXAMS } from '@/constants/mock';
 import { ExamCard } from '@/components/dashboard/ui/exam-card';
+import { useExams } from '@/hooks/use-exams';
+import { Skeleton } from '@/components/ui/skeleton';
 
 export default function ExamPrepPage() {
+  const { exams, isLoading, error, filters } = useExams();
+
+  if (error) {
+    return (
+      <div className="flex items-center justify-center h-[60vh]">
+        <p className="text-destructive font-bold">{error}</p>
+      </div>
+    );
+  }
+
   return (
     <main className="p-4 md:p-8 max-w-7xl mx-auto space-y-6 md:space-y-10">
       {/* Header Section */}
@@ -26,6 +36,8 @@ export default function ExamPrepPage() {
             <Input
               type="search"
               placeholder="جستجوی آزمون، مبحث یا کلیدواژه..."
+              value={filters.searchTerm}
+              onChange={(e) => filters.setSearchTerm(e.target.value)}
               className="bg-card border-border/50 h-12 md:h-14 pl-12 pr-4 rounded-2xl focus:ring-primary/20 focus:border-primary transition-all shadow-sm group-hover:shadow-md"
             />
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground group-focus-within:text-primary transition-colors" />
@@ -55,9 +67,15 @@ export default function ExamPrepPage() {
 
       {/* Exams Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 md:gap-8">
-        {MOCK_EXAMS.map((exam) => (
+        {isLoading ? (
+          Array.from({ length: 6 }).map((_, i) => (
+            <Skeleton key={i} className="h-[250px] rounded-3xl" />
+          ))
+        ) : (
+          exams.map((exam) => (
             <ExamCard key={exam.id} exam={exam} />
-        ))}
+          ))
+        )}
       </div>
 
       {/* Bottom CTA */}

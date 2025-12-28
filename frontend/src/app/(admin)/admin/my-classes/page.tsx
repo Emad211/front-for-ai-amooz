@@ -8,50 +8,38 @@ import { Card, CardContent } from '@/components/ui/card';
 import { ClassStats } from '@/components/admin/my-classes/class-stats';
 import { ClassFilters } from '@/components/admin/my-classes/class-filters';
 import { ClassCard } from '@/components/admin/my-classes/class-card';
-import { MOCK_COURSES } from '@/constants/mock';
+import { useAdminCourses } from '@/hooks/use-admin-courses';
+import { Skeleton } from '@/components/ui/skeleton';
 
 export default function MyClassesPage() {
-  const [searchTerm, setSearchTerm] = useState('');
-  const [statusFilter, setStatusFilter] = useState('all');
-  const [categoryFilter, setCategoryFilter] = useState('all');
+  const { courses, categories, stats, isLoading, error, filters } = useAdminCourses();
   const [sortBy, setSortBy] = useState('recent');
 
-  // Get unique categories
-  const categories = Array.from(new Set(MOCK_COURSES.map(cls => cls.category)));
+  // Sort classes (logic kept here for now as it's specific to this view)
+  const sortedClasses = [...courses].sort((a, b) => {
+    switch (sortBy) {
+      case 'recent':
+        return new Date(b.lastActivity || 0).getTime() - new Date(a.lastActivity || 0).getTime();
+      case 'oldest':
+        return new Date(a.createdAt || 0).getTime() - new Date(b.createdAt || 0).getTime();
+      case 'students':
+        return (b.studentsCount || 0) - (a.studentsCount || 0);
+      case 'progress':
+        return (b.progress || 0) - (a.progress || 0);
+      case 'rating':
+        return (b.rating || 0) - (a.rating || 0);
+      default:
+        return 0;
+    }
+  });
 
-  // Filter and sort classes
-  const filteredClasses = MOCK_COURSES
-    .filter(cls => {
-      const matchesSearch = cls.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                           cls.description.toLowerCase().includes(searchTerm.toLowerCase());
-      const matchesStatus = statusFilter === 'all' || cls.status === statusFilter;
-      const matchesCategory = categoryFilter === 'all' || cls.category === categoryFilter;
-      return matchesSearch && matchesStatus && matchesCategory;
-    })
-    .sort((a, b) => {
-      switch (sortBy) {
-        case 'recent':
-          return new Date(b.lastActivity || 0).getTime() - new Date(a.lastActivity || 0).getTime();
-        case 'oldest':
-          return new Date(a.createdAt || 0).getTime() - new Date(b.createdAt || 0).getTime();
-        case 'students':
-          return (b.studentsCount || 0) - (a.studentsCount || 0);
-        case 'progress':
-          return (b.progress || 0) - (a.progress || 0);
-        case 'rating':
-          return (b.rating || 0) - (a.rating || 0);
-        default:
-          return 0;
-      }
-    });
-
-  // Statistics
-  const stats = {
-    totalClasses: MOCK_COURSES.length,
-    activeClasses: MOCK_COURSES.filter(cls => cls.status === 'active').length,
-    totalStudents: MOCK_COURSES.reduce((sum, cls) => sum + (cls.studentsCount || 0), 0),
-    averageRating: (MOCK_COURSES.reduce((sum, cls) => sum + (cls.rating || 0), 0) / MOCK_COURSES.length).toFixed(1),
-  };
+  if (error) {
+    return (
+      <div className="flex items-center justify-center h-[60vh]">
+        <p className="text-destructive font-bold">{error}</p>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-8">
@@ -72,16 +60,25 @@ export default function MyClassesPage() {
       </div>
 
       {/* Stats Cards */}
-      <ClassStats stats={stats} />
+      {isLoading ? (
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <Skeleton className="h-24 rounded-xl" />
+          <Skeleton className="h-24 rounded-xl" />
+          <Skeleton className="h-24 rounded-xl" />
+          <Skeleton className="h-24 rounded-xl" />
+        </div>
+      ) : (
+        <ClassStats stats={stats} />
+      )}
 
       {/* Filters and Search */}
       <ClassFilters 
-        searchTerm={searchTerm}
-        setSearchTerm={setSearchTerm}
-        statusFilter={statusFilter}
-        setStatusFilter={setStatusFilter}
-        categoryFilter={categoryFilter}
-        setCategoryFilter={setCategoryFilter}
+        searchTerm={filters.searchTerm}
+        setSearchTerm={filters.setSearchTerm}
+        statusFilter={filters.categoryFilter} // Reusing category filter as status for now or update hook
+        setStatusFilter={filters.setCategoryFilter}
+        categoryFilter={filters.categoryFilter}
+        setCategoryFilter={filters.setCategoryFilter}
         sortBy={sortBy}
         setSortBy={setSortBy}
         categories={categories}
@@ -91,13 +88,35 @@ export default function MyClassesPage() {
       <div className="space-y-4">
         <div className="flex items-center justify-between">
           <p className="text-sm text-muted-foreground">
-            {filteredClasses.length} کلاس یافت شد
+            {isLoading ? 'در حال بارگذاری...' : `${sortedClasses.length} کلاس یافت شد`}
           </p>
         </div>
 
         {/* Classes Grid */}
-        {filteredClasses.length > 0 ? (
+        {isLoading ? (
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+            <Skeleton className="h-64 rounded-2xl" />
+            <Skeleton className="h-64 rounded-2xl" />
+            <Skeleton className="h-64 rounded-2xl" />
+          </div>
+        ) : sortedClasses.length > 0 ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+            {sortedClasses.map((cls) => (
+              <ClassCard key={cls.id} classData={cls} />
+            ))}
+          </div>
+        ) : (
+          <div className="flex flex-col items-center justify-center py-12 border-2 border-dashed border-border/50 rounded-3xl bg-muted/10">
+            <div className="p-4 bg-background rounded-full shadow-xl mb-4">
+              <BookOpen className="h-8 w-8 text-primary/40" />
+            </div>
+            <p className="text-muted-foreground font-bold">کلاسی یافت نشد</p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
             {filteredClasses.map((cls) => (
               <ClassCard key={cls.id} cls={cls} />
             ))}

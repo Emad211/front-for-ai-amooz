@@ -2,7 +2,6 @@
 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { UserPlus, BookOpen, MessageSquare, Award } from 'lucide-react';
-import { MOCK_RECENT_ACTIVITIES } from '@/constants/mock';
 
 const ICON_MAP = {
   'user-plus': UserPlus,
@@ -11,7 +10,11 @@ const ICON_MAP = {
   'award': Award,
 };
 
-export function RecentActivity() {
+interface RecentActivityProps {
+  activities: any[];
+}
+
+export function RecentActivity({ activities }: RecentActivityProps) {
   return (
     <Card className="bg-card border-border/60 lg:col-span-1">
       <CardHeader>
@@ -19,7 +22,7 @@ export function RecentActivity() {
       </CardHeader>
       <CardContent>
         <div className="space-y-6">
-          {MOCK_RECENT_ACTIVITIES.map((activity) => {
+          {activities.map((activity) => {
             const Icon = ICON_MAP[activity.icon as keyof typeof ICON_MAP];
             return (
               <div key={activity.id} className="flex items-start gap-4">

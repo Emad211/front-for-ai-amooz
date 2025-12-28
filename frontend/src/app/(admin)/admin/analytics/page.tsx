@@ -6,8 +6,41 @@ import { ClassDistribution } from '@/components/admin/analytics/class-distributi
 import { RecentActivity } from '@/components/admin/analytics/recent-activity';
 import { Button } from '@/components/ui/button';
 import { Download, Calendar } from 'lucide-react';
+import { useAdminAnalytics } from '@/hooks/use-admin-analytics';
+import { Skeleton } from '@/components/ui/skeleton';
 
 export default function AnalyticsPage() {
+  const { stats, chartData, distributionData, activities, isLoading, error } = useAdminAnalytics();
+
+  if (isLoading) {
+    return (
+      <div className="space-y-8">
+        <div className="flex justify-between">
+          <Skeleton className="h-10 w-64" />
+          <Skeleton className="h-10 w-32" />
+        </div>
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          <Skeleton className="h-32 rounded-2xl" />
+          <Skeleton className="h-32 rounded-2xl" />
+          <Skeleton className="h-32 rounded-2xl" />
+          <Skeleton className="h-32 rounded-2xl" />
+        </div>
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <Skeleton className="h-[400px] lg:col-span-2 rounded-3xl" />
+          <Skeleton className="h-[400px] rounded-3xl" />
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex items-center justify-center h-[60vh]">
+        <p className="text-destructive font-bold">{error}</p>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-8">
       {/* Header */}
@@ -29,16 +62,16 @@ export default function AnalyticsPage() {
       </div>
 
       {/* Overview Stats */}
-      <OverviewCards />
+      <OverviewCards stats={stats} />
 
       {/* Charts Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <ActivityChart />
-        <RecentActivity />
+        <ActivityChart data={chartData} />
+        <RecentActivity activities={activities} />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <ClassDistribution />
+        <ClassDistribution data={distributionData} />
         {/* Placeholder for more analytics if needed */}
         <div className="lg:col-span-2 bg-muted/30 rounded-3xl border border-dashed border-border flex items-center justify-center p-12">
           <p className="text-muted-foreground text-sm">بخش‌های تحلیلی بیشتر در نسخه‌های آینده اضافه خواهد شد</p>

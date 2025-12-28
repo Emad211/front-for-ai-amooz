@@ -9,9 +9,13 @@ import {
   Legend, 
   Tooltip 
 } from 'recharts';
-import { MOCK_DISTRIBUTION_DATA, CHART_COLORS } from '@/constants/mock';
+import { CHART_COLORS } from '@/constants/mock';
 
-export function ClassDistribution() {
+interface ClassDistributionProps {
+  data: any[];
+}
+
+export function ClassDistribution({ data }: ClassDistributionProps) {
   return (
     <Card className="bg-card border-border/60 lg:col-span-1">
       <CardHeader>
@@ -23,7 +27,7 @@ export function ClassDistribution() {
           <ResponsiveContainer width="100%" height="100%">
             <PieChart>
               <Pie
-                data={MOCK_DISTRIBUTION_DATA}
+                data={data}
                 cx="50%"
                 cy="50%"
                 innerRadius={60}
@@ -31,7 +35,7 @@ export function ClassDistribution() {
                 paddingAngle={5}
                 dataKey="value"
               >
-                {MOCK_DISTRIBUTION_DATA.map((entry, index) => (
+                {data.map((entry, index) => (
                   <Cell key={`cell-${index}`} fill={CHART_COLORS[index % CHART_COLORS.length]} />
                 ))}
               </Pie>

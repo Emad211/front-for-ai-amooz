@@ -1,0 +1,46 @@
+'use client';
+
+import { useState, useEffect, useMemo } from 'react';
+import { DashboardService } from '@/services/dashboard-service';
+import { Exam } from '@/constants/mock/user-data';
+
+export function useExams() {
+  const [exams, setExams] = useState<Exam[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [searchTerm, setSearchTerm] = useState('');
+
+  useEffect(() => {
+    const fetchExams = async () => {
+      try {
+        setIsLoading(true);
+        const data = await DashboardService.getExams();
+        setExams(data);
+      } catch (err) {
+        setError('خطا در دریافت اطلاعات آزمون‌ها');
+        console.error(err);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchExams();
+  }, []);
+
+  const filteredExams = useMemo(() => {
+    return exams.filter(exam => 
+      exam.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      exam.subject.toLowerCase().includes(searchTerm.toLowerCase())
+    );
+  }, [exams, searchTerm]);
+
+  return {
+    exams: filteredExams,
+    isLoading,
+    error,
+    filters: {
+      searchTerm,
+      setSearchTerm
+    }
+  };
+}

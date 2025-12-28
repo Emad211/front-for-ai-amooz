@@ -9,10 +9,12 @@ import {
   AdminTicketList,
   AdminTicketDetail,
 } from '@/components/admin/tickets';
-import { MOCK_TICKETS, type Ticket, type TicketMessage, type TicketStatus, type TicketPriority } from '@/constants/mock';
+import { type Ticket, type TicketMessage, type TicketStatus, type TicketPriority } from '@/constants/mock';
+import { useTickets } from '@/hooks/use-tickets';
+import { Skeleton } from '@/components/ui/skeleton';
 
 export default function AdminTicketsPage() {
-  const [tickets, setTickets] = useState<Ticket[]>(MOCK_TICKETS);
+  const { tickets, setTickets, isLoading, error } = useTickets(true);
   const [selectedTicket, setSelectedTicket] = useState<Ticket | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
@@ -103,6 +105,14 @@ export default function AdminTicketsPage() {
     toast.success('اولویت تیکت تغییر کرد');
   };
 
+  if (error) {
+    return (
+      <div className="flex items-center justify-center h-[60vh]">
+        <p className="text-destructive font-bold">{error}</p>
+      </div>
+    );
+  }
+
   return (
     <div className="max-w-5xl mx-auto px-4 sm:px-0">
       <AdminTicketHeader
@@ -116,7 +126,15 @@ export default function AdminTicketsPage() {
 
       <Card className="rounded-2xl">
         <CardContent className="p-3 sm:p-4">
-          <AdminTicketList tickets={filteredTickets} onTicketClick={handleTicketClick} />
+          {isLoading ? (
+            <div className="space-y-4">
+              <Skeleton className="h-16 w-full rounded-xl" />
+              <Skeleton className="h-16 w-full rounded-xl" />
+              <Skeleton className="h-16 w-full rounded-xl" />
+            </div>
+          ) : (
+            <AdminTicketList tickets={filteredTickets} onTicketClick={handleTicketClick} />
+          )}
         </CardContent>
       </Card>
 

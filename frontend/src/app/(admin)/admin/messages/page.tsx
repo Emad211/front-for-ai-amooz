@@ -8,9 +8,11 @@ import { MessageForm } from '@/components/admin/messages/message-form';
 import { MessageStats } from '@/components/admin/messages/message-stats';
 import { MessageTips } from '@/components/admin/messages/message-tips';
 
-import { MOCK_MESSAGE_RECIPIENTS } from '@/constants/mock';
+import { useMessageRecipients } from '@/hooks/use-message-recipients';
+import { Skeleton } from '@/components/ui/skeleton';
 
 export default function MessagesPage() {
+  const { recipients, isLoading, error } = useMessageRecipients();
   const [recipientType, setRecipientType] = useState<'all' | 'specific'>('all');
   const [selectedStudents, setSelectedStudents] = useState<string[]>([]);
   const [subject, setSubject] = useState('');
@@ -50,6 +52,14 @@ export default function MessagesPage() {
     }, 1500);
   };
 
+  if (error) {
+    return (
+      <div className="flex items-center justify-center h-[60vh]">
+        <p className="text-destructive font-bold">{error}</p>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-8 max-w-5xl mx-auto">
       <div className="flex items-center justify-between">
@@ -72,16 +82,23 @@ export default function MessagesPage() {
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
-              <RecipientSelector 
-                recipientType={recipientType}
-                onRecipientTypeChange={setRecipientType}
-                selectedStudents={selectedStudents}
-                onSelectStudent={handleSelectStudent}
-                onSelectAll={setSelectedStudents}
-                students={MOCK_MESSAGE_RECIPIENTS}
-                searchQuery={searchQuery}
-                onSearchChange={setSearchQuery}
-              />
+              {isLoading ? (
+                <div className="space-y-4">
+                  <Skeleton className="h-10 w-full" />
+                  <Skeleton className="h-40 w-full" />
+                </div>
+              ) : (
+                <RecipientSelector 
+                  recipientType={recipientType}
+                  onRecipientTypeChange={setRecipientType}
+                  selectedStudents={selectedStudents}
+                  onSelectStudent={handleSelectStudent}
+                  onSelectAll={setSelectedStudents}
+                  students={recipients}
+                  searchQuery={searchQuery}
+                  onSearchChange={setSearchQuery}
+                />
+              )}
 
               <MessageForm 
                 subject={subject}

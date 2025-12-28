@@ -1,16 +1,26 @@
 
 'use client';
 
+import React from 'react';
 import { DashboardHeader as Header } from '@/components/layout/dashboard-header';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
 import { Search, SlidersHorizontal, LayoutGrid, BookOpen } from 'lucide-react';
-import { MOCK_COURSES } from '@/constants/mock';
 import { CourseCard } from '@/components/dashboard/ui/course-card';
+import { useCourses } from '@/hooks/use-courses';
+import { Skeleton } from '@/components/ui/skeleton';
 
 export default function ClassesPage() {
+  const { courses, isLoading, error, filters } = useCourses();
+
+  if (error) {
+    return (
+      <div className="flex items-center justify-center h-[60vh]">
+        <p className="text-destructive font-bold">{error}</p>
+      </div>
+    );
+  }
+
   return (
     <main className="p-4 md:p-8 max-w-7xl mx-auto space-y-6 md:space-y-10">
       {/* Header Section */}
@@ -26,6 +36,8 @@ export default function ClassesPage() {
             <Input
               type="search"
               placeholder="جستجوی دوره، استاد یا مبحث..."
+              value={filters.searchTerm}
+              onChange={(e) => filters.setSearchTerm(e.target.value)}
               className="bg-card border-border/50 h-12 md:h-14 pl-12 pr-4 rounded-2xl focus:ring-primary/20 focus:border-primary transition-all shadow-sm group-hover:shadow-md"
             />
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground group-focus-within:text-primary transition-colors" />
@@ -48,25 +60,45 @@ export default function ClassesPage() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-muted/30 p-3 md:p-4 rounded-2xl border border-border/50">
         <div className="flex items-center gap-2 overflow-x-auto no-scrollbar">
           <span className="text-xs md:text-sm text-muted-foreground font-bold whitespace-nowrap ml-2">مرتب‌سازی:</span>
-          <Button variant="secondary" className="rounded-xl h-8 md:h-9 px-4 text-xs font-bold shadow-sm">جدیدترین</Button>
-          <Button variant="ghost" className="rounded-xl h-8 md:h-9 px-4 text-xs font-bold text-muted-foreground hover:text-foreground">بیشترین پیشرفت</Button>
+          <Button 
+            variant={filters.sortBy === 'recent' ? 'secondary' : 'ghost'} 
+            onClick={() => filters.setSortBy('recent')}
+            className="rounded-xl h-8 md:h-9 px-4 text-xs font-bold shadow-sm"
+          >
+            جدیدترین
+          </Button>
+          <Button 
+            variant={filters.sortBy === 'progress' ? 'secondary' : 'ghost'} 
+            onClick={() => filters.setSortBy('progress')}
+            className="rounded-xl h-8 md:h-9 px-4 text-xs font-bold text-muted-foreground hover:text-foreground"
+          >
+            بیشترین پیشرفت
+          </Button>
         </div>
       </div>
 
       {/* Courses Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 md:gap-8">
-        {MOCK_COURSES.map((course) => (
+        {isLoading ? (
+          Array.from({ length: 6 }).map((_, i) => (
+            <Skeleton key={i} className="h-[350px] rounded-3xl" />
+          ))
+        ) : (
+          courses.map((course) => (
             <CourseCard key={course.id} course={course} />
-        ))}
+          ))
+        )}
       </div>
 
       {/* Empty State / Load More (Optional) */}
-      <div className="flex flex-col items-center justify-center py-12 border-2 border-dashed border-border/50 rounded-3xl bg-muted/10">
-        <div className="p-4 bg-background rounded-full shadow-xl mb-4">
-          <BookOpen className="h-8 w-8 text-primary/40" />
+      {!isLoading && courses.length === 0 && (
+        <div className="flex flex-col items-center justify-center py-12 border-2 border-dashed border-border/50 rounded-3xl bg-muted/10">
+          <div className="p-4 bg-background rounded-full shadow-xl mb-4">
+            <BookOpen className="h-8 w-8 text-primary/40" />
+          </div>
+          <p className="text-muted-foreground font-bold">دوره‌های بیشتری برای نمایش وجود ندارد</p>
         </div>
-        <p className="text-muted-foreground font-bold">دوره‌های بیشتری برای نمایش وجود ندارد</p>
-      </div>
+      )}
     </main>
   );
 }

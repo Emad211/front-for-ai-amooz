@@ -2,7 +2,6 @@
 
 import { Users, BookOpen, GraduationCap, TrendingUp } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
-import { MOCK_ANALYTICS_STATS } from '@/constants/mock';
 
 const ICON_MAP = {
   users: Users,
@@ -11,10 +10,14 @@ const ICON_MAP = {
   trending: TrendingUp,
 };
 
-export function OverviewCards() {
+interface OverviewCardsProps {
+  stats: any[];
+}
+
+export function OverviewCards({ stats }: OverviewCardsProps) {
   return (
     <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
-      {MOCK_ANALYTICS_STATS.map((stat, index) => {
+      {stats.map((stat, index) => {
         const Icon = ICON_MAP[stat.icon as keyof typeof ICON_MAP];
         return (
           <Card key={index} className="bg-card border-border/60 hover:border-primary/30 transition-all duration-300">

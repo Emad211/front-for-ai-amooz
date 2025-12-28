@@ -1,50 +1,45 @@
 'use client';
 
-import { useState } from 'react';
+import React from 'react';
 import { UserPlus, Download } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { StudentStats } from '@/components/admin/students/student-stats';
 import { StudentFilters } from '@/components/admin/students/student-filters';
 import { StudentTable } from '@/components/admin/students/student-table';
-import { MOCK_STUDENTS } from '@/constants/mock';
+import { useStudents } from '@/hooks/use-students';
+import { Skeleton } from '@/components/ui/skeleton';
 
 export default function StudentsPage() {
-  const [searchTerm, setSearchTerm] = useState('');
-  const [statusFilter, setStatusFilter] = useState('all');
-  const [performanceFilter, setPerformanceFilter] = useState('all');
-  const [sortBy, setSortBy] = useState('recent');
+  const { students, stats, isLoading, error, filters } = useStudents();
 
-  // Filter and sort students
-  const filteredStudents = MOCK_STUDENTS
-    .filter(student => {
-      const matchesSearch = student.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                           student.email.toLowerCase().includes(searchTerm.toLowerCase());
-      const matchesStatus = statusFilter === 'all' || student.status === statusFilter;
-      const matchesPerformance = performanceFilter === 'all' || student.performance === performanceFilter;
-      return matchesSearch && matchesStatus && matchesPerformance;
-    })
-    .sort((a, b) => {
-      switch (sortBy) {
-        case 'recent':
-          return new Date(b.lastActivity || 0).getTime() - new Date(a.lastActivity || 0).getTime();
-        case 'name':
-          return a.name.localeCompare(b.name, 'fa');
-        case 'score':
-          return b.averageScore - a.averageScore;
-        case 'progress':
-          return (b.completedLessons / b.totalLessons) - (a.completedLessons / a.totalLessons);
-        default:
-          return 0;
-      }
-    });
+  if (isLoading) {
+    return (
+      <div className="space-y-8">
+        <div className="flex justify-between">
+          <Skeleton className="h-10 w-48" />
+          <div className="flex gap-2">
+            <Skeleton className="h-10 w-32" />
+            <Skeleton className="h-10 w-32" />
+          </div>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <Skeleton className="h-24 rounded-xl" />
+          <Skeleton className="h-24 rounded-xl" />
+          <Skeleton className="h-24 rounded-xl" />
+          <Skeleton className="h-24 rounded-xl" />
+        </div>
+        <Skeleton className="h-[500px] w-full rounded-2xl" />
+      </div>
+    );
+  }
 
-  // Statistics
-  const stats = {
-    totalStudents: MOCK_STUDENTS.length,
-    activeStudents: MOCK_STUDENTS.filter(s => s.status === 'active').length,
-    averageScore: Math.round(MOCK_STUDENTS.reduce((sum, s) => sum + s.averageScore, 0) / MOCK_STUDENTS.length),
-    totalEnrollments: MOCK_STUDENTS.reduce((sum, s) => sum + s.enrolledClasses, 0),
-  };
+  if (error) {
+    return (
+      <div className="flex items-center justify-center h-[60vh]">
+        <p className="text-destructive font-bold">{error}</p>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-8">
@@ -73,18 +68,18 @@ export default function StudentsPage() {
 
       {/* Filters and Search */}
       <StudentFilters 
-        searchTerm={searchTerm}
-        setSearchTerm={setSearchTerm}
-        statusFilter={statusFilter}
-        setStatusFilter={setStatusFilter}
-        performanceFilter={performanceFilter}
-        setPerformanceFilter={setPerformanceFilter}
-        sortBy={sortBy}
-        setSortBy={setSortBy}
+        searchTerm={filters.searchTerm}
+        setSearchTerm={filters.setSearchTerm}
+        statusFilter={filters.statusFilter}
+        setStatusFilter={filters.setStatusFilter}
+        performanceFilter={filters.performanceFilter}
+        setPerformanceFilter={filters.setPerformanceFilter}
+        sortBy={filters.sortBy}
+        setSortBy={filters.setSortBy}
       />
 
       {/* Students Table */}
-      <StudentTable students={filteredStudents} />
+      <StudentTable students={students} />
     </div>
   );
 }

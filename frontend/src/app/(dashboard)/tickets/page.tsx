@@ -7,12 +7,12 @@ import { toast } from 'sonner';
 import { VisuallyHidden } from '@radix-ui/react-visually-hidden';
 import { TicketPageHeader } from '@/components/dashboard/tickets';
 import { TicketList, TicketDetail, NewTicketDialog } from '@/components/shared/tickets';
-import { MOCK_TICKETS, type Ticket, type TicketMessage } from '@/constants/mock';
+import { type Ticket, type TicketMessage } from '@/constants/mock';
+import { useTickets } from '@/hooks/use-tickets';
+import { Skeleton } from '@/components/ui/skeleton';
 
 export default function TicketsPage() {
-  const [tickets, setTickets] = useState<Ticket[]>(
-    MOCK_TICKETS.filter((t) => t.userId === 'user-1') // فیلتر تیکت‌های کاربر فعلی
-  );
+  const { tickets, setTickets, isLoading, error } = useTickets(false);
   const [selectedTicket, setSelectedTicket] = useState<Ticket | null>(null);
   const [isNewTicketOpen, setIsNewTicketOpen] = useState(false);
 
@@ -77,17 +77,33 @@ export default function TicketsPage() {
     }
   };
 
+  if (error) {
+    return (
+      <div className="flex items-center justify-center h-[60vh]">
+        <p className="text-destructive font-bold">{error}</p>
+      </div>
+    );
+  }
+
   return (
     <div className="max-w-4xl mx-auto px-4 sm:px-0">
       <TicketPageHeader onNewTicket={() => setIsNewTicketOpen(true)} />
 
       <Card className="rounded-2xl">
         <CardContent className="p-3 sm:p-4">
-          <TicketList
-            tickets={tickets}
-            onTicketClick={handleTicketClick}
-            emptyMessage="هنوز تیکتی ارسال نکرده‌اید"
-          />
+          {isLoading ? (
+            <div className="space-y-4">
+              <Skeleton className="h-16 w-full rounded-xl" />
+              <Skeleton className="h-16 w-full rounded-xl" />
+              <Skeleton className="h-16 w-full rounded-xl" />
+            </div>
+          ) : (
+            <TicketList
+              tickets={tickets}
+              onTicketClick={handleTicketClick}
+              emptyMessage="هنوز تیکتی ارسال نکرده‌اید"
+            />
+          )}
         </CardContent>
       </Card>
 

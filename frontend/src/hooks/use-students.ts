@@ -1,0 +1,89 @@
+import { useState, useEffect, useMemo } from 'react';
+import { AdminService } from '@/services/admin-service';
+import { Student } from '@/types';
+
+export function useStudents() {
+  const [students, setStudents] = useState<Student[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const [searchTerm, setSearchTerm] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [performanceFilter, setPerformanceFilter] = useState('all');
+  const [sortBy, setSortBy] = useState('recent');
+
+  useEffect(() => {
+    const fetchStudents = async () => {
+      try {
+        setIsLoading(true);
+        const data = await AdminService.getStudents();
+        setStudents(data);
+      } catch (err) {
+        setError('خطا در دریافت لیست دانش‌آموزان');
+        console.error(err);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchStudents();
+  }, []);
+
+  const filteredStudents = useMemo(() => {
+    return students
+      .filter(student => {
+        const matchesSearch = student.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                             student.email.toLowerCase().includes(searchTerm.toLowerCase());
+        const matchesStatus = statusFilter === 'all' || student.status === statusFilter;
+        const matchesPerformance = performanceFilter === 'all' || student.performance === performanceFilter;
+        return matchesSearch && matchesStatus && matchesPerformance;
+      })
+      .sort((a, b) => {
+        switch (sortBy) {
+          case 'recent':
+            return new Date(b.lastActivity || 0).getTime() - new Date(a.lastActivity || 0).getTime();
+          case 'name':
+            return a.name.localeCompare(b.name, 'fa');
+          case 'score':
+            return b.averageScore - a.averageScore;
+          case 'progress':
+            return (b.completedLessons / b.totalLessons) - (a.completedLessons / a.totalLessons);
+          default:
+            return 0;
+        }
+      });
+  }, [students, searchTerm, statusFilter, performanceFilter, sortBy]);
+
+  const stats = useMemo(() => {
+    if (students.length === 0) return {
+      totalStudents: 0,
+      activeStudents: 0,
+      averageScore: 0,
+      totalEnrollments: 0,
+    };
+
+    return {
+      totalStudents: students.length,
+      activeStudents: students.filter(s => s.status === 'active').length,
+      averageScore: Math.round(students.reduce((sum, s) => sum + s.averageScore, 0) / students.length),
+      totalEnrollments: students.reduce((sum, s) => sum + s.enrolledClasses, 0),
+    };
+  }, [students]);
+
+  return {
+    students: filteredStudents,
+    stats,
+    isLoading,
+    error,
+    filters: {
+      searchTerm,
+      setSearchTerm,
+      statusFilter,
+      setStatusFilter,
+      performanceFilter,
+      setPerformanceFilter,
+      sortBy,
+      setSortBy
+    }
+  };
+}
