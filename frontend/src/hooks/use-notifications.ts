@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { DashboardService } from '@/services/dashboard-service';
-import { Notification } from '@/constants/mock/user-data';
+import { Notification } from '@/types';
 
 export function useNotifications() {
   const [notifications, setNotifications] = useState<Notification[]>([]);

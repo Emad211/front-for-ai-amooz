@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { DashboardService } from '@/services/dashboard-service';
-import { Course } from '@/constants/mock/user-data';
+import { Course } from '@/types';
 
 export function useCourses() {
   const [courses, setCourses] = useState<Course[]>([]);
@@ -32,14 +32,14 @@ export function useCourses() {
     return courses
       .filter(course => 
         course.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        course.instructor.toLowerCase().includes(searchTerm.toLowerCase())
+        (course.instructor?.toLowerCase().includes(searchTerm.toLowerCase()) ?? false)
       )
       .sort((a, b) => {
         if (sortBy === 'progress') {
-          return b.progress - a.progress;
+          return (b.progress || 0) - (a.progress || 0);
         }
         // Default to recent (assuming higher ID or some other logic if no date)
-        return b.id.localeCompare(a.id);
+        return String(b.id).localeCompare(String(a.id));
       });
   }, [courses, searchTerm, sortBy]);
 

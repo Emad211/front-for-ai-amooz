@@ -9,13 +9,7 @@ import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-
-interface Student {
-  id: string;
-  name: string;
-  email: string;
-  avatar?: string;
-}
+import { MessageRecipient } from '@/types';
 
 interface RecipientSelectorProps {
   recipientType: 'all' | 'specific';
@@ -23,7 +17,7 @@ interface RecipientSelectorProps {
   selectedStudents: string[];
   onSelectStudent: (id: string) => void;
   onSelectAll: (ids: string[]) => void;
-  students: Student[];
+  students: MessageRecipient[];
   searchQuery: string;
   onSearchChange: (query: string) => void;
 }

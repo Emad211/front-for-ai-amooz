@@ -9,7 +9,7 @@ import {
   AdminTicketList,
   AdminTicketDetail,
 } from '@/components/admin/tickets';
-import { type Ticket, type TicketMessage, type TicketStatus, type TicketPriority } from '@/constants/mock';
+import { Ticket, TicketMessage, TicketStatus, TicketPriority } from '@/types';
 import { useTickets } from '@/hooks/use-tickets';
 import { Skeleton } from '@/components/ui/skeleton';
 

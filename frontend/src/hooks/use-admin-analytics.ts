@@ -1,11 +1,17 @@
 import { useState, useEffect } from 'react';
 import { AdminService } from '@/services/admin-service';
+import { 
+  AdminAnalyticsStat, 
+  AdminChartData, 
+  AdminDistributionData, 
+  AdminRecentActivity 
+} from '@/types';
 
 export function useAdminAnalytics() {
-  const [stats, setStats] = useState<any[]>([]);
-  const [chartData, setChartData] = useState<any[]>([]);
-  const [distributionData, setDistributionData] = useState<any[]>([]);
-  const [activities, setActivities] = useState<any[]>([]);
+  const [stats, setStats] = useState<AdminAnalyticsStat[]>([]);
+  const [chartData, setChartData] = useState<AdminChartData[]>([]);
+  const [distributionData, setDistributionData] = useState<AdminDistributionData[]>([]);
+  const [activities, setActivities] = useState<AdminRecentActivity[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 

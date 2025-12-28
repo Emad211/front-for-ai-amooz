@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { EventCard } from '@/components/dashboard/ui/event-card';
 import Link from 'next/link';
-import { DashboardEvent } from '@/constants/mock/dashboard-data';
+import { DashboardEvent } from '@/types';
 
 interface UpcomingEventsProps {
   events: DashboardEvent[];

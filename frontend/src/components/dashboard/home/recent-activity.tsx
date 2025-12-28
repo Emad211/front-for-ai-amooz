@@ -4,7 +4,7 @@ import { History, ArrowLeft, FileText, Video, BookOpen } from 'lucide-react';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ActivityCard } from '@/components/dashboard/ui/activity-card';
-import { DashboardActivity } from '@/constants/mock/dashboard-data';
+import { DashboardActivity } from '@/types';
 
 interface RecentActivityProps {
   activities: DashboardActivity[];

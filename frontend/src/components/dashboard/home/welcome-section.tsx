@@ -1,6 +1,6 @@
 'use client';
 
-import { UserProfile } from '@/constants/mock/user-data';
+import { UserProfile } from '@/types';
 
 interface WelcomeSectionProps {
   profile: UserProfile | null;

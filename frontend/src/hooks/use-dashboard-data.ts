@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
 import { DashboardService } from '@/services/dashboard-service';
-import { DashboardStats, DashboardActivity, DashboardEvent } from '@/constants/mock/dashboard-data';
-import { UserProfile } from '@/constants/mock/user-data';
+import { DashboardStats, DashboardActivity, DashboardEvent, UserProfile } from '@/types';
 
 export function useDashboardData() {
   const [stats, setStats] = useState<DashboardStats | null>(null);

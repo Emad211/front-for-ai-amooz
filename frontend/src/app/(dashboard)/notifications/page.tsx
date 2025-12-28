@@ -3,7 +3,7 @@
 import { useState, useMemo } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { NotificationHeader, NotificationList } from '@/components/dashboard/notifications';
-import { type Notification } from '@/constants/mock';
+import { Notification } from '@/types';
 import { useNotifications } from '@/hooks/use-notifications';
 import { Skeleton } from '@/components/ui/skeleton';
 

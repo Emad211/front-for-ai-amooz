@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { DashboardService } from '@/services/dashboard-service';
-import { Exam } from '@/constants/mock/user-data';
+import { Exam } from '@/types';
 
 export function useExams() {
   const [exams, setExams] = useState<Exam[]>([]);
@@ -30,7 +30,8 @@ export function useExams() {
   const filteredExams = useMemo(() => {
     return exams.filter(exam => 
       exam.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      exam.subject.toLowerCase().includes(searchTerm.toLowerCase())
+      exam.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      exam.tags.some(tag => tag.toLowerCase().includes(searchTerm.toLowerCase()))
     );
   }, [exams, searchTerm]);
 

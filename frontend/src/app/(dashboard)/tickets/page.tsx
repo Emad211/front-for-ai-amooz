@@ -7,7 +7,7 @@ import { toast } from 'sonner';
 import { VisuallyHidden } from '@radix-ui/react-visually-hidden';
 import { TicketPageHeader } from '@/components/dashboard/tickets';
 import { TicketList, TicketDetail, NewTicketDialog } from '@/components/shared/tickets';
-import { type Ticket, type TicketMessage } from '@/constants/mock';
+import { Ticket, TicketMessage } from '@/types';
 import { useTickets } from '@/hooks/use-tickets';
 import { Skeleton } from '@/components/ui/skeleton';
 

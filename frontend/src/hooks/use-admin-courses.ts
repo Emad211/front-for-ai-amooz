@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { AdminService } from '@/services/admin-service';
-import { Course } from '@/constants/mock/user-data';
+import { Course } from '@/types';
 
 export function useAdminCourses() {
   const [courses, setCourses] = useState<Course[]>([]);
@@ -35,7 +35,7 @@ export function useAdminCourses() {
   const filteredCourses = useMemo(() => {
     return courses.filter(course => {
       const matchesSearch = course.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                           course.instructor.toLowerCase().includes(searchTerm.toLowerCase());
+                           (course.instructor?.toLowerCase().includes(searchTerm.toLowerCase()) ?? false);
       const matchesCategory = categoryFilter === 'all' || course.category === categoryFilter;
       return matchesSearch && matchesCategory;
     });

@@ -2,7 +2,7 @@
 
 import { BookOpen, Target, Clock } from 'lucide-react';
 import { StatCard } from '@/components/dashboard/ui/stat-card';
-import { DashboardStats } from '@/constants/mock/dashboard-data';
+import { DashboardStats } from '@/types';
 
 interface StatsGridProps {
   stats: DashboardStats | null;

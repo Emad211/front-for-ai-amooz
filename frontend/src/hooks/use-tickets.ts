@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { DashboardService } from '@/services/dashboard-service';
 import { AdminService } from '@/services/admin-service';
-import { Ticket } from '@/constants/mock/user-data';
+import { Ticket } from '@/types';
 
 export function useTickets(isAdmin = false) {
   const [tickets, setTickets] = useState<Ticket[]>([]);
