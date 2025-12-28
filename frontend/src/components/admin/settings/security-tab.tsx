@@ -25,14 +25,14 @@ export function SecurityTab() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label htmlFor="new-password">رمز عبور جدید</Label>
-              <Input id="new-password" type="password" />
+              <Input id="new-password" type="password" className="rounded-xl" />
             </div>
             <div className="space-y-2">
               <Label htmlFor="confirm-password">تکرار رمز عبور جدید</Label>
-              <Input id="confirm-password" type="password" />
+              <Input id="confirm-password" type="password" className="rounded-xl" />
             </div>
           </div>
-          <Button>به‌روزرسانی رمز عبور</Button>
+          <Button className="w-full sm:w-auto rounded-xl">به‌روزرسانی رمز عبور</Button>
         </CardContent>
       </Card>
 
@@ -44,7 +44,7 @@ export function SecurityTab() {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between gap-4">
             <div className="space-y-0.5">
               <div className="flex items-center gap-2">
                 <Smartphone className="w-4 h-4 text-muted-foreground" />
@@ -56,7 +56,7 @@ export function SecurityTab() {
             </div>
             <Switch />
           </div>
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between gap-4">
             <div className="space-y-0.5">
               <div className="flex items-center gap-2">
                 <Shield className="w-4 h-4 text-muted-foreground" />
@@ -69,7 +69,7 @@ export function SecurityTab() {
             <Switch defaultChecked />
           </div>
           <div className="pt-4 border-t">
-            <Button variant="outline" className="text-destructive">
+            <Button variant="outline" className="w-full sm:w-auto text-destructive hover:text-destructive rounded-xl">
               <LogOut className="w-4 h-4 ml-2" />
               خروج از تمامی دستگاه‌ها
             </Button>

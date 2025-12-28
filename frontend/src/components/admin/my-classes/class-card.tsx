@@ -94,23 +94,23 @@ export function ClassCard({ cls }: ClassCardProps) {
       </CardHeader>
       
       <CardContent className="px-5 pb-5">
-        <div className="grid grid-cols-2 gap-3 mb-4">
+        <div className="grid grid-cols-1 xs:grid-cols-2 gap-3 mb-4">
           <div className="flex items-center gap-2 bg-muted/50 p-2 rounded-lg">
-            <div className="h-8 w-8 rounded-full bg-background flex items-center justify-center text-muted-foreground">
+            <div className="h-8 w-8 rounded-full bg-background flex items-center justify-center text-muted-foreground shrink-0">
               <Users className="h-4 w-4" />
             </div>
-            <div className="flex flex-col">
-              <span className="text-xs text-muted-foreground">دانش‌آموزان</span>
-              <span className="text-sm font-bold">{cls.studentsCount}</span>
+            <div className="flex flex-col min-w-0">
+              <span className="text-[10px] text-muted-foreground leading-none mb-0.5">دانش‌آموزان</span>
+              <span className="text-xs font-bold truncate">{cls.studentsCount}</span>
             </div>
           </div>
           <div className="flex items-center gap-2 bg-muted/50 p-2 rounded-lg">
-            <div className="h-8 w-8 rounded-full bg-background flex items-center justify-center text-muted-foreground">
+            <div className="h-8 w-8 rounded-full bg-background flex items-center justify-center text-muted-foreground shrink-0">
               <BookOpen className="h-4 w-4" />
             </div>
-            <div className="flex flex-col">
-              <span className="text-xs text-muted-foreground">تعداد دروس</span>
-              <span className="text-sm font-bold">{cls.lessonsCount}</span>
+            <div className="flex flex-col min-w-0">
+              <span className="text-[10px] text-muted-foreground leading-none mb-0.5">تعداد دروس</span>
+              <span className="text-xs font-bold truncate">{cls.lessonsCount}</span>
             </div>
           </div>
         </div>

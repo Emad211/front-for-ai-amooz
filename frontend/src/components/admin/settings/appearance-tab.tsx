@@ -19,35 +19,35 @@ export function AppearanceTab() {
         <CardContent className="space-y-6">
           <div className="space-y-4">
             <Label>تم سیستم</Label>
-            <RadioGroup defaultValue="system" className="grid grid-cols-3 gap-4">
+            <RadioGroup defaultValue="system" className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <div>
                 <RadioGroupItem value="light" id="light" className="peer sr-only" />
                 <Label
                   htmlFor="light"
-                  className="flex flex-col items-center justify-between rounded-md border-2 border-muted bg-popover p-4 hover:bg-accent hover:text-accent-foreground peer-data-[state=checked]:border-primary [&:has([data-state=checked])]:border-primary"
+                  className="flex flex-col items-center justify-between rounded-xl border-2 border-muted bg-popover p-4 hover:bg-accent hover:text-accent-foreground peer-data-[state=checked]:border-primary [&:has([data-state=checked])]:border-primary cursor-pointer transition-all"
                 >
                   <Sun className="mb-3 h-6 w-6" />
-                  روشن
+                  <span className="font-medium">روشن</span>
                 </Label>
               </div>
               <div>
                 <RadioGroupItem value="dark" id="dark" className="peer sr-only" />
                 <Label
                   htmlFor="dark"
-                  className="flex flex-col items-center justify-between rounded-md border-2 border-muted bg-popover p-4 hover:bg-accent hover:text-accent-foreground peer-data-[state=checked]:border-primary [&:has([data-state=checked])]:border-primary"
+                  className="flex flex-col items-center justify-between rounded-xl border-2 border-muted bg-popover p-4 hover:bg-accent hover:text-accent-foreground peer-data-[state=checked]:border-primary [&:has([data-state=checked])]:border-primary cursor-pointer transition-all"
                 >
                   <Moon className="mb-3 h-6 w-6" />
-                  تاریک
+                  <span className="font-medium">تاریک</span>
                 </Label>
               </div>
               <div>
                 <RadioGroupItem value="system" id="system" className="peer sr-only" />
                 <Label
                   htmlFor="system"
-                  className="flex flex-col items-center justify-between rounded-md border-2 border-muted bg-popover p-4 hover:bg-accent hover:text-accent-foreground peer-data-[state=checked]:border-primary [&:has([data-state=checked])]:border-primary"
+                  className="flex flex-col items-center justify-between rounded-xl border-2 border-muted bg-popover p-4 hover:bg-accent hover:text-accent-foreground peer-data-[state=checked]:border-primary [&:has([data-state=checked])]:border-primary cursor-pointer transition-all"
                 >
                   <Monitor className="mb-3 h-6 w-6" />
-                  سیستم
+                  <span className="font-medium">سیستم</span>
                 </Label>
               </div>
             </RadioGroup>
@@ -60,10 +60,10 @@ export function AppearanceTab() {
                 <Label>زبان پنل</Label>
               </div>
               <Select defaultValue="fa">
-                <SelectTrigger>
+                <SelectTrigger className="rounded-xl">
                   <SelectValue placeholder="انتخاب زبان" />
                 </SelectTrigger>
-                <SelectContent>
+                <SelectContent className="rounded-xl">
                   <SelectItem value="fa">فارسی (RTL)</SelectItem>
                   <SelectItem value="en">English (LTR)</SelectItem>
                 </SelectContent>
@@ -75,10 +75,10 @@ export function AppearanceTab() {
                 <Label>اندازه فونت</Label>
               </div>
               <Select defaultValue="medium">
-                <SelectTrigger>
+                <SelectTrigger className="rounded-xl">
                   <SelectValue placeholder="اندازه فونت" />
                 </SelectTrigger>
-                <SelectContent>
+                <SelectContent className="rounded-xl">
                   <SelectItem value="small">کوچک</SelectItem>
                   <SelectItem value="medium">متوسط</SelectItem>
                   <SelectItem value="large">بزرگ</SelectItem>

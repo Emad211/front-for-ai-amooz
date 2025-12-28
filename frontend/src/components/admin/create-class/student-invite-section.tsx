@@ -76,21 +76,21 @@ export function StudentInviteSection({ isExpanded, onToggle }: StudentInviteSect
         <CardContent className="pt-0 space-y-5">
           {/* کد دعوت */}
           <div className="p-4 bg-muted/30 rounded-xl">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div>
                 <p className="text-sm font-medium text-foreground">کد دعوت کلاس</p>
                 <p className="text-xs text-muted-foreground mt-0.5">
                   این کد را با دانش‌آموزان به اشتراک بگذارید
                 </p>
               </div>
-              <div className="flex items-center gap-2">
-                <code className="px-3 py-2 bg-background rounded-lg text-sm font-mono font-bold tracking-wider">
+              <div className="flex items-center gap-2 justify-between sm:justify-end">
+                <code className="px-3 py-2 bg-background rounded-lg text-sm font-mono font-bold tracking-wider border border-border/50">
                   {inviteCode}
                 </code>
                 <Button 
                   variant="outline" 
                   size="icon" 
-                  className="rounded-lg h-9 w-9"
+                  className="rounded-lg h-9 w-9 shrink-0"
                   onClick={handleCopyCode}
                 >
                   {copied ? (
@@ -106,7 +106,7 @@ export function StudentInviteSection({ isExpanded, onToggle }: StudentInviteSect
           {/* افزودن دستی */}
           <div className="space-y-2">
             <Label>افزودن دستی</Label>
-            <div className="flex gap-3">
+            <div className="flex flex-col sm:flex-row gap-3">
               <Input 
                 value={newStudent}
                 onChange={(e) => setNewStudent(e.target.value)}
@@ -116,7 +116,7 @@ export function StudentInviteSection({ isExpanded, onToggle }: StudentInviteSect
               />
               <Button 
                 onClick={handleAddStudent} 
-                className="h-11 px-5 bg-primary text-primary-foreground hover:bg-primary/90 rounded-xl"
+                className="h-11 px-5 bg-primary text-primary-foreground hover:bg-primary/90 rounded-xl w-full sm:w-auto"
               >
                 <Plus className="h-4 w-4 ml-2" />
                 افزودن

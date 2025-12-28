@@ -63,11 +63,11 @@ export default function CreateClassPage() {
       />
 
       {/* دکمه‌های پایین */}
-      <div className="flex items-center justify-end gap-3 pt-4">
-        <Button variant="outline" className="rounded-xl h-11 px-6">
+      <div className="flex flex-col sm:flex-row items-center justify-end gap-3 pt-4">
+        <Button variant="outline" className="w-full sm:w-auto rounded-xl h-11 px-6">
           انصراف
         </Button>
-        <Button className="bg-primary text-primary-foreground hover:bg-primary/90 rounded-xl h-11 px-8">
+        <Button className="w-full sm:w-auto bg-primary text-primary-foreground hover:bg-primary/90 rounded-xl h-11 px-8">
           ذخیره و انتشار
         </Button>
       </div>

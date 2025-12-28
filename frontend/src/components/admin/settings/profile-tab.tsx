@@ -31,17 +31,17 @@ export function ProfileTab() {
             تصویر پروفایل خود را بارگذاری کنید
           </CardDescription>
         </CardHeader>
-        <CardContent className="flex items-center gap-6">
-          <Avatar className="h-24 w-24">
-            <AvatarImage src="/api/placeholder/100/100" alt="Profile" />
-            <AvatarFallback className="text-2xl">م</AvatarFallback>
+        <CardContent className="flex flex-col sm:flex-row items-center gap-6">
+          <Avatar className="h-24 w-24 border-2 border-muted">
+            <AvatarImage src="" alt="Profile" />
+            <AvatarFallback className="text-2xl bg-primary/5 text-primary">م</AvatarFallback>
           </Avatar>
-          <div className="flex gap-2">
-            <Button variant="outline">
+          <div className="flex flex-wrap justify-center sm:justify-start gap-2">
+            <Button variant="outline" size="sm" className="rounded-xl">
               <Camera className="w-4 h-4 ml-2" />
               انتخاب تصویر
             </Button>
-            <Button variant="outline" className="text-destructive">
+            <Button variant="outline" size="sm" className="text-destructive hover:text-destructive rounded-xl">
               <Trash2 className="w-4 h-4 ml-2" />
               حذف
             </Button>

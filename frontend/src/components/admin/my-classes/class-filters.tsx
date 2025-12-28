@@ -50,10 +50,10 @@ export function ClassFilters({
 
           <div className="flex flex-wrap gap-3">
             <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger className="w-[140px] bg-background/50">
+              <SelectTrigger className="w-full sm:w-[140px] bg-background/50 rounded-xl">
                 <SelectValue placeholder="وضعیت" />
               </SelectTrigger>
-              <SelectContent>
+              <SelectContent className="rounded-xl">
                 <SelectItem value="all">همه وضعیت‌ها</SelectItem>
                 <SelectItem value="active">فعال</SelectItem>
                 <SelectItem value="draft">پیش‌نویس</SelectItem>
@@ -62,10 +62,10 @@ export function ClassFilters({
             </Select>
 
             <Select value={categoryFilter} onValueChange={setCategoryFilter}>
-              <SelectTrigger className="w-[140px] bg-background/50">
+              <SelectTrigger className="w-full sm:w-[140px] bg-background/50 rounded-xl">
                 <SelectValue placeholder="دسته‌بندی" />
               </SelectTrigger>
-              <SelectContent>
+              <SelectContent className="rounded-xl">
                 <SelectItem value="all">همه دسته‌ها</SelectItem>
                 {categories.map(category => (
                   <SelectItem key={category} value={category}>{category}</SelectItem>
@@ -74,10 +74,10 @@ export function ClassFilters({
             </Select>
 
             <Select value={sortBy} onValueChange={setSortBy}>
-              <SelectTrigger className="w-[140px] bg-background/50">
+              <SelectTrigger className="w-full sm:w-[140px] bg-background/50 rounded-xl">
                 <SelectValue placeholder="مرتب‌سازی" />
               </SelectTrigger>
-              <SelectContent>
+              <SelectContent className="rounded-xl">
                 <SelectItem value="recent">جدیدترین</SelectItem>
                 <SelectItem value="oldest">قدیمی‌ترین</SelectItem>
                 <SelectItem value="students">تعداد دانش‌آموز</SelectItem>

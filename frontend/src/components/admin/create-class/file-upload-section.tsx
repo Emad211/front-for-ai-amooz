@@ -56,7 +56,7 @@ export function FileUploadSection({
               type === 'lesson' ? "h-40" : "h-32"
             )}
           >
-            <div className="flex flex-col items-center gap-2">
+            <div className="flex flex-col items-center gap-2 px-4 text-center">
               {type === 'lesson' ? (
                 <>
                   <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center">
@@ -65,7 +65,7 @@ export function FileUploadSection({
                   <p className="text-sm text-muted-foreground">
                     فایل‌ها را بکشید و رها کنید یا <span className="text-primary font-medium">کلیک کنید</span>
                   </p>
-                  <p className="text-xs text-muted-foreground">
+                  <p className="text-[10px] sm:text-xs text-muted-foreground">
                     PDF, DOCX, PPTX تا ۵۰ مگابایت
                   </p>
                 </>

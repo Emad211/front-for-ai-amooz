@@ -28,6 +28,12 @@ export function AdminHeader() {
               </Button>
             </SheetTrigger>
             <SheetContent side="right" className="p-0 w-72 border-l-border">
+              <div className="sr-only">
+                <SheetHeader>
+                  <SheetTitle>منوی مدیریت</SheetTitle>
+                  <SheetDescription>دسترسی به بخش‌های مختلف پنل مدیریت</SheetDescription>
+                </SheetHeader>
+              </div>
               <SidebarContent onItemClick={() => setIsOpen(false)} />
             </SheetContent>
           </Sheet>
@@ -48,7 +54,7 @@ export function AdminHeader() {
           <UserProfile user={{
             name: 'مدیر سیستم',
             email: 'admin@example.com',
-            avatar: '/avatars/admin.png'
+            avatar: ''
           }} isAdmin={true} />
         </div>
       </div>
