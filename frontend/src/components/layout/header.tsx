@@ -1,7 +1,7 @@
 // components/layout/header.tsx
 'use client';
 
-import { Bell, Moon, Sun, Contact, LogOut, User, GraduationCap, ChevronDown } from 'lucide-react';
+import { Bell, Moon, Sun, Contact, LogOut, User, GraduationCap, ChevronDown, Ticket } from 'lucide-react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { Button } from '@/components/ui/button';
@@ -57,14 +57,22 @@ const UserProfile = () => (
         <DropdownMenuSeparator />
         <DropdownMenuGroup>
           <DropdownMenuItem asChild>
-            <Link href="/profile">
+            <Link href="/profile" className="flex items-center w-full">
               <User className="ml-2 h-4 w-4" />
               <span>پروفایل</span>
             </Link>
           </DropdownMenuItem>
-          <DropdownMenuItem>
-            <Contact className="ml-2 h-4 w-4" />
-            <span>پشتیبانی</span>
+          <DropdownMenuItem asChild>
+            <Link href="/notifications" className="flex items-center w-full">
+              <Bell className="ml-2 h-4 w-4" />
+              <span>اعلان‌ها</span>
+            </Link>
+          </DropdownMenuItem>
+          <DropdownMenuItem asChild>
+            <Link href="/tickets" className="flex items-center w-full">
+              <Ticket className="ml-2 h-4 w-4" />
+              <span>پشتیبانی و تیکت</span>
+            </Link>
           </DropdownMenuItem>
         </DropdownMenuGroup>
         <DropdownMenuSeparator />
@@ -120,10 +128,6 @@ export function DashboardHeader() {
         {/* Actions */}
         <div className="flex items-center gap-2">
             <ThemeToggle />
-            <Button variant="ghost" size="icon" className="relative">
-                <Bell className="h-5 w-5" />
-                <span className="absolute top-2.5 right-2.5 w-2 h-2 bg-primary rounded-full border-2 border-background"></span>
-            </Button>
             <div className="w-px h-8 bg-border mx-2"></div>
             <UserProfile />
         </div>

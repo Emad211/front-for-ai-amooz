@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { Contact, LogOut, User, Moon, Sun } from 'lucide-react';
+import { Contact, LogOut, User, Moon, Sun, Bell, Ticket } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { useTheme } from 'next-themes';
@@ -94,12 +94,25 @@ export function UserProfile({
           )}
 
           {!isAdmin && (
-            <DropdownMenuItem className="justify-start rounded-xl h-11 cursor-pointer focus:bg-primary/5">
-              <div className="p-1.5 bg-muted/50 rounded-lg ml-2">
-                <Contact className="h-4 w-4 text-muted-foreground" />
-              </div>
-              <span className="flex-1 text-start font-bold text-sm">پشتیبانی و تیکت</span>
-            </DropdownMenuItem>
+            <>
+              <DropdownMenuItem asChild className="justify-start rounded-xl h-11 cursor-pointer focus:bg-primary/5">
+                <Link href="/notifications" className="flex items-center w-full">
+                  <div className="p-1.5 bg-muted/50 rounded-lg ml-2">
+                    <Bell className="h-4 w-4 text-muted-foreground" />
+                  </div>
+                  <span className="flex-1 text-start font-bold text-sm">اعلان‌ها</span>
+                </Link>
+              </DropdownMenuItem>
+
+              <DropdownMenuItem asChild className="justify-start rounded-xl h-11 cursor-pointer focus:bg-primary/5">
+                <Link href="/tickets" className="flex items-center w-full">
+                  <div className="p-1.5 bg-muted/50 rounded-lg ml-2">
+                    <Ticket className="h-4 w-4 text-muted-foreground" />
+                  </div>
+                  <span className="flex-1 text-start font-bold text-sm">پشتیبانی و تیکت</span>
+                </Link>
+              </DropdownMenuItem>
+            </>
           )}
         </DropdownMenuGroup>
         <DropdownMenuSeparator className="bg-border/50" />
