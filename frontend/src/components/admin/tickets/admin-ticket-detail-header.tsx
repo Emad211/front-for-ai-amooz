@@ -1,6 +1,6 @@
 'use client';
 
-import { X, CheckCircle } from 'lucide-react';
+import { CheckCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   Select,
@@ -37,9 +37,6 @@ export function AdminTicketDetailHeader({
             {ticket.userName} • {ticket.userEmail}
           </p>
         </div>
-        <Button variant="ghost" size="icon" onClick={onClose} className="shrink-0">
-          <X className="w-5 h-5" />
-        </Button>
       </div>
 
       <div className="flex flex-wrap items-center gap-3">

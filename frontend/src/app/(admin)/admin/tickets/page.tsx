@@ -2,7 +2,7 @@
 
 import { useState, useMemo } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
-import { Sheet, SheetContent } from '@/components/ui/sheet';
+import { Sheet, SheetContent, SheetTitle, SheetDescription } from '@/components/ui/sheet';
 import { toast } from 'sonner';
 import {
   AdminTicketHeader,
@@ -122,6 +122,8 @@ export default function AdminTicketsPage() {
 
       <Sheet open={!!selectedTicket} onOpenChange={() => setSelectedTicket(null)}>
         <SheetContent side="left" className="w-full sm:max-w-xl p-0">
+          <SheetTitle className="sr-only">مدیریت تیکت</SheetTitle>
+          <SheetDescription className="sr-only">بررسی و پاسخ به تیکت کاربر</SheetDescription>
           {selectedTicket && (
             <AdminTicketDetail
               ticket={selectedTicket}

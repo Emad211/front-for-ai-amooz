@@ -2,8 +2,9 @@
 
 import { useState } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
-import { Sheet, SheetContent } from '@/components/ui/sheet';
+import { Sheet, SheetContent, SheetTitle, SheetDescription } from '@/components/ui/sheet';
 import { toast } from 'sonner';
+import { VisuallyHidden } from '@radix-ui/react-visually-hidden';
 import { TicketPageHeader } from '@/components/dashboard/tickets';
 import { TicketList, TicketDetail, NewTicketDialog } from '@/components/shared/tickets';
 import { MOCK_TICKETS, type Ticket, type TicketMessage } from '@/constants/tickets-data';
@@ -100,6 +101,8 @@ export default function TicketsPage() {
       {/* Ticket Detail Sheet */}
       <Sheet open={!!selectedTicket} onOpenChange={() => setSelectedTicket(null)}>
         <SheetContent side="left" className="w-full sm:max-w-lg p-0">
+          <SheetTitle className="sr-only">جزئیات تیکت</SheetTitle>
+          <SheetDescription className="sr-only">مشاهده پیام‌ها و پاسخ به تیکت</SheetDescription>
           {selectedTicket && (
             <TicketDetail
               ticket={selectedTicket}

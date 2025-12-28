@@ -1,6 +1,6 @@
 'use client';
 
-import { X, Send, User, Headphones } from 'lucide-react';
+import { Send, User, Headphones } from 'lucide-react';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -83,9 +83,6 @@ export function TicketDetail({ ticket, onClose, onReply, isAdmin = false }: Tick
           <h2 className="font-bold text-foreground">{ticket.subject}</h2>
           <p className="text-xs text-muted-foreground mt-1">{ticket.department}</p>
         </div>
-        <Button variant="ghost" size="icon" onClick={onClose} className="shrink-0">
-          <X className="w-5 h-5" />
-        </Button>
       </div>
 
       {/* Messages */}
