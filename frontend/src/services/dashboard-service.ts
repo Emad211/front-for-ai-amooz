@@ -6,7 +6,11 @@ import {
   MOCK_COURSES,
   MOCK_EXAMS,
   MOCK_TICKETS,
-  MOCK_NOTIFICATIONS
+  MOCK_NOTIFICATIONS,
+  MOCK_CALENDAR_EVENTS,
+  MOCK_COURSE_CONTENT,
+  MOCK_LESSON_DETAIL,
+  MOCK_USER_PROFILE
 } from '@/constants/mock';
 
 /**
@@ -54,5 +58,30 @@ export const DashboardService = {
   getNotifications: async () => {
     await new Promise(resolve => setTimeout(resolve, 400));
     return MOCK_NOTIFICATIONS;
+  },
+
+  getCalendarEvents: async () => {
+    await new Promise(resolve => setTimeout(resolve, 500));
+    return MOCK_CALENDAR_EVENTS;
+  },
+
+  getCourseContent: async (courseId?: string) => {
+    await new Promise(resolve => setTimeout(resolve, 800));
+    return MOCK_COURSE_CONTENT;
+  },
+
+  getLessonDetail: async (lessonId: string) => {
+    await new Promise(resolve => setTimeout(resolve, 500));
+    return MOCK_LESSON_DETAIL;
+  },
+
+  getUserProfile: async () => {
+    await new Promise(resolve => setTimeout(resolve, 500));
+    return MOCK_USER_PROFILE;
+  },
+
+  updateUserProfile: async (data: any) => {
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    return { success: true, data };
   }
 };

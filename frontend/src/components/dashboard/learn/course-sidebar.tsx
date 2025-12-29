@@ -12,7 +12,6 @@ import {
   FileText,
   PlayCircle,
   CheckCircle,
-  Book,
   Lock,
   BookOpen,
   Settings,
@@ -23,13 +22,21 @@ import { cn } from '@/lib/utils';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { SidebarItem, SubmenuItem } from './sidebar-items';
 import { SheetClose } from '@/components/ui/sheet';
+import { CourseContent } from '@/constants/mock/course-content-data';
 
 interface CourseSidebarProps {
   className?: string;
   isMobile?: boolean;
+  content: CourseContent;
 }
 
-export const CourseSidebar = ({ className, isMobile = false }: CourseSidebarProps) => (
+const ICON_MAP = {
+  video: PlayCircle,
+  text: FileText,
+  quiz: CheckCircle,
+};
+
+export const CourseSidebar = ({ className, isMobile = false, content }: CourseSidebarProps) => (
   <aside className={cn("w-80 flex-shrink-0 flex-col gap-3 hidden lg:flex h-full", className)}>
     {isMobile ? (
       <SheetClose asChild>
@@ -64,51 +71,32 @@ export const CourseSidebar = ({ className, isMobile = false }: CourseSidebarProp
         <SidebarItem icon={<Flag className="h-5 w-5" />} title="اهداف یادگیری" />
         <SidebarItem icon={<Hourglass className="h-5 w-5" />} title="پیش نیازها" />
 
-        <Accordion type="single" collapsible defaultValue="item-1" className="w-full">
-          <AccordionItem value="item-1" className="border-none">
-            <AccordionTrigger className="p-3 rounded-xl hover:no-underline hover:bg-secondary/30 text-foreground data-[state=open]:font-bold data-[state=open]:border data-[state=open]:border-border group">
-              <div className="flex items-center gap-3">
-                <Folder className="h-5 w-5 group-data-[state=open]:hidden" />
-                <FolderOpen className="h-5 w-5 hidden group-data-[state=open]:block" />
-                <span className="text-base">آشنایی با سهمی</span>
-              </div>
-            </AccordionTrigger>
-            <AccordionContent className="p-1 space-y-1">
-              <SubmenuItem icon={<FileText className="h-4 w-4" />} title="شکل کلی و جهت سهمی" />
-              <SubmenuItem icon={<PlayCircle className="h-4 w-4" />} title="رأس سهمی: مهمترین نقطه" active />
-              <SubmenuItem icon={<FileText className="h-4 w-4" />} title="ارتباط رأس با نقاط متقارن" />
-              <SubmenuItem icon={<FileText className="h-4 w-4" />} title="عرض از مبدأ و ریشه‌ها" />
-              <SubmenuItem icon={<CheckCircle className="h-4 w-4" />} title="آزمون فصل" special />
-            </AccordionContent>
-          </AccordionItem>
-          <AccordionItem value="item-2" className="border-none">
-            <AccordionTrigger className="p-3 rounded-xl hover:no-underline hover:bg-secondary/30 text-muted-foreground hover:text-foreground group data-[state=open]:font-bold data-[state=open]:border data-[state=open]:border-border">
-              <div className="flex items-center gap-3">
-                <Folder className="h-5 w-5 group-data-[state=open]:hidden" />
-                <FolderOpen className="h-5 w-5 hidden group-data-[state=open]:block" />
-                <span className="text-base font-medium">گام به گام رسم نمودار</span>
-              </div>
-            </AccordionTrigger>
-            <AccordionContent className="p-1 space-y-1">
-              <SubmenuItem icon={<FileText className="h-4 w-4" />} title="مثال عملی رسم سهمی با a>0" />
-              <SubmenuItem icon={<FileText className="h-4 w-4" />} title="مثال عملی رسم سهمی با a<0" />
-              <SubmenuItem icon={<CheckCircle className="h-4 w-4" />} title="آزمون فصل" special />
-            </AccordionContent>
-          </AccordionItem>
-          <AccordionItem value="item-3" className="border-none">
-            <AccordionTrigger className="p-3 rounded-xl hover:no-underline hover:bg-secondary/30 text-muted-foreground hover:text-foreground group data-[state=open]:font-bold data-[state=open]:border data-[state=open]:border-border">
-              <div className="flex items-center gap-3">
-                <Folder className="h-5 w-5 group-data-[state=open]:hidden" />
-                <FolderOpen className="h-5 w-5 hidden group-data-[state=open]:block" />
-                <span className="text-base font-medium">حل مسائل مربوطه</span>
-              </div>
-            </AccordionTrigger>
-            <AccordionContent className="p-1 space-y-1">
-              <SubmenuItem icon={<FileText className="h-4 w-4" />} title="یافتن ضرایب با استفاده از رأس سهمی" />
-              <SubmenuItem icon={<FileText className="h-4 w-4" />} title="یافتن ضریب با استفاده از مقدار مینیمم" />
-              <SubmenuItem icon={<Book className="h-4 w-4" />} title="آزمون فصل" />
-            </AccordionContent>
-          </AccordionItem>
+        <Accordion type="single" collapsible defaultValue={content.chapters[0]?.id} className="w-full">
+          {content.chapters.map((chapter) => (
+            <AccordionItem key={chapter.id} value={chapter.id} className="border-none">
+              <AccordionTrigger className="p-3 rounded-xl hover:no-underline hover:bg-secondary/30 text-foreground data-[state=open]:font-bold data-[state=open]:border data-[state=open]:border-border group">
+                <div className="flex items-center gap-3">
+                  <Folder className="h-5 w-5 group-data-[state=open]:hidden" />
+                  <FolderOpen className="h-5 w-5 hidden group-data-[state=open]:block" />
+                  <span className="text-base">{chapter.title}</span>
+                </div>
+              </AccordionTrigger>
+              <AccordionContent className="p-1 space-y-1">
+                {chapter.lessons.map((lesson) => {
+                  const Icon = ICON_MAP[lesson.type as keyof typeof ICON_MAP] || FileText;
+                  return (
+                    <SubmenuItem 
+                      key={lesson.id}
+                      icon={<Icon className="h-4 w-4" />} 
+                      title={lesson.title} 
+                      active={lesson.isActive}
+                      special={lesson.isSpecial}
+                    />
+                  );
+                })}
+              </AccordionContent>
+            </AccordionItem>
+          ))}
         </Accordion>
 
         <SidebarItem icon={<Lock className="h-5 w-5" />} title="آزمون نهایی دوره" disabled />

@@ -1,7 +1,7 @@
 'use client';
 
 import { Play } from 'lucide-react';
-import { MOCK_STEPS } from '@/constants/mock';
+import { useLanding } from '@/hooks/use-landing';
 
 // Step Card for Mobile - Completely different design
 const StepCardMobile = ({ number, title, description, isLast }: { number: string, title: string, description: string, isLast?: boolean }) => (
@@ -43,52 +43,55 @@ const StepItem = ({ number, title, description, align }: { number: string, title
     </div>
 );
 
-export const HowItWorksSection = () => (
-    <section id="how-it-works" className="py-20 md:py-32 relative bg-muted/80 dark:bg-card/80">
+export const HowItWorksSection = () => {
+    const { steps } = useLanding();
 
-        <div className="container mx-auto px-4 relative z-10">
-            <div className="text-center max-w-2xl mx-auto mb-12 md:mb-20">
-                <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-primary/10 border border-primary/20 mb-6">
-                    <Play className="w-4 h-4 text-primary" />
-                    <span className="text-sm font-medium text-primary">نحوه کار</span>
+    return (
+        <section id="how-it-works" className="py-20 md:py-32 relative bg-muted/80 dark:bg-card/80">
+            <div className="container mx-auto px-4 relative z-10">
+                <div className="text-center max-w-2xl mx-auto mb-12 md:mb-20">
+                    <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-primary/10 border border-primary/20 mb-6">
+                        <Play className="w-4 h-4 text-primary" />
+                        <span className="text-sm font-medium text-primary">نحوه کار</span>
+                    </div>
+                    <h2 className="text-2xl md:text-5xl font-bold text-foreground">
+                        شروع در ۳ مرحله ساده
+                    </h2>
                 </div>
-                <h2 className="text-2xl md:text-5xl font-bold text-foreground">
-                    شروع در ۳ مرحله ساده
-                </h2>
-            </div>
-            
-            {/* Desktop Layout */}
-            <div className="hidden md:block max-w-4xl mx-auto">
-                <div className="relative">
-                    {/* Connection Line */}
-                    <div className="absolute top-0 bottom-0 right-1/2 w-px bg-gradient-to-b from-primary via-primary/50 to-primary/20 z-0"></div>
-                    
-                    <div className="space-y-24">
-                        {MOCK_STEPS.map((step, index) => (
-                            <StepItem 
-                                key={step.id}
-                                number={step.number}
-                                title={step.title}
-                                description={step.description}
-                                align={index % 2 === 0 ? "right" : "left"}
-                            />
-                        ))}
+                
+                {/* Desktop Layout */}
+                <div className="hidden md:block max-w-4xl mx-auto">
+                    <div className="relative">
+                        {/* Connection Line */}
+                        <div className="absolute top-0 bottom-0 right-1/2 w-px bg-gradient-to-b from-primary via-primary/50 to-primary/20 z-0"></div>
+                        
+                        <div className="space-y-24">
+                            {steps.map((step, index) => (
+                                <StepItem 
+                                    key={step.id}
+                                    number={step.number}
+                                    title={step.title}
+                                    description={step.description}
+                                    align={index % 2 === 0 ? "right" : "left"}
+                                />
+                            ))}
+                        </div>
                     </div>
                 </div>
-            </div>
 
-            {/* Mobile Layout - Vertical Timeline */}
-            <div className="md:hidden max-w-md mx-auto">
-                {MOCK_STEPS.map((step, index) => (
-                    <StepCardMobile 
-                        key={step.id}
-                        number={step.number}
-                        title={step.title}
-                        description={step.mobileDescription}
-                        isLast={index === MOCK_STEPS.length - 1}
-                    />
-                ))}
+                {/* Mobile Layout - Vertical Timeline */}
+                <div className="md:hidden max-w-md mx-auto">
+                    {steps.map((step, index) => (
+                        <StepCardMobile 
+                            key={step.id}
+                            number={step.number}
+                            title={step.title}
+                            description={step.mobileDescription}
+                            isLast={index === steps.length - 1}
+                        />
+                    ))}
+                </div>
             </div>
-        </div>
-    </section>
-);
+        </section>
+    );
+};

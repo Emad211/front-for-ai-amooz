@@ -18,11 +18,56 @@ export interface Course {
 }
 
 export interface Exam {
-  id: number;
+  id: string | number;
   title: string;
   description: string;
   tags: string[];
   questions: number;
+  subject?: string;
+  totalQuestions?: number;
+  currentQuestionIndex?: number;
+  questionsList?: Question[];
+  timeRemaining?: number; // in seconds
+}
+
+export interface Question {
+  id: string;
+  number: number;
+  text: string;
+  options: {
+    id: string;
+    label: string;
+    text: string;
+  }[];
+  correctOptionId?: string;
+  userAnswerId?: string;
+}
+
+export interface Lesson {
+  id: string;
+  title: string;
+  duration: string;
+  isActive: boolean;
+  isCompleted: boolean;
+  content?: string;
+  formulas?: { label: string; formula: string }[];
+  tips?: string[];
+}
+
+export interface Chapter {
+  id: string;
+  title: string;
+  lessons: Lesson[];
+}
+
+export interface CourseContent {
+  id: string;
+  title: string;
+  description: string;
+  progress: number;
+  level: string;
+  duration: string;
+  chapters: Chapter[];
 }
 
 export interface Activity {
@@ -181,4 +226,29 @@ export interface AdminChartData {
 export interface AdminDistributionData {
   name: string;
   value: number;
+}
+
+export type EventType = 'exam' | 'assignment' | 'class' | 'holiday' | 'reminder';
+export type EventPriority = 'high' | 'medium' | 'low';
+
+export interface CalendarEvent {
+  id: string;
+  title: string;
+  description?: string;
+  date: string; // Format: YYYY-MM-DD (Jalali)
+  time?: string; // Format: HH:MM
+  endTime?: string;
+  type: EventType;
+  priority: EventPriority;
+  subject?: string;
+  location?: string;
+  isCompleted?: boolean;
+}
+
+export interface CalendarDay {
+  day: number;
+  isCurrentMonth: boolean;
+  isToday: boolean;
+  isWeekend: boolean;
+  events: CalendarEvent[];
 }

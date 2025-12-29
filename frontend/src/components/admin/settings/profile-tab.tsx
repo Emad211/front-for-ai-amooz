@@ -1,6 +1,5 @@
 'use client';
 
-import { useState } from 'react';
 import { User, Mail, Phone, MapPin, Camera, Trash2, Save } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -9,17 +8,13 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Textarea } from '@/components/ui/textarea';
 
+import { useAdminSettings } from '@/hooks/use-admin-settings';
+
 export function ProfileTab() {
-  const [profile, setProfile] = useState({
-    name: 'مدیر سیستم',
-    email: 'admin@ai-amooz.ir',
-    phone: '09121234567',
-    bio: 'مدیر و مدرس پلتفرم AI-Amooz',
-    location: 'تهران، ایران',
-  });
+  const { profile, updateProfile, isLoading } = useAdminSettings();
 
   const handleSaveProfile = () => {
-    console.log('Saving profile:', profile);
+    updateProfile(profile);
   };
 
   return (
@@ -33,8 +28,10 @@ export function ProfileTab() {
         </CardHeader>
         <CardContent className="flex flex-col sm:flex-row items-center gap-6">
           <Avatar className="h-24 w-24 border-2 border-muted">
-            <AvatarImage src="" alt="Profile" />
-            <AvatarFallback className="text-2xl bg-primary/5 text-primary">م</AvatarFallback>
+            <AvatarImage src={profile.avatar} alt="Profile" />
+            <AvatarFallback className="text-2xl bg-primary/5 text-primary">
+              {profile.name[0]}
+            </AvatarFallback>
           </Avatar>
           <div className="flex flex-wrap justify-center sm:justify-start gap-2">
             <Button variant="outline" size="sm" className="rounded-xl">
@@ -65,7 +62,7 @@ export function ProfileTab() {
                 <Input
                   id="name"
                   value={profile.name}
-                  onChange={(e) => setProfile({ ...profile, name: e.target.value })}
+                  onChange={(e) => updateProfile({ name: e.target.value })}
                   className="pl-10"
                 />
               </div>
@@ -78,7 +75,7 @@ export function ProfileTab() {
                   id="email"
                   type="email"
                   value={profile.email}
-                  onChange={(e) => setProfile({ ...profile, email: e.target.value })}
+                  onChange={(e) => updateProfile({ email: e.target.value })}
                   className="pl-10"
                 />
               </div>
@@ -93,7 +90,7 @@ export function ProfileTab() {
                 <Input
                   id="phone"
                   value={profile.phone}
-                  onChange={(e) => setProfile({ ...profile, phone: e.target.value })}
+                  onChange={(e) => updateProfile({ phone: e.target.value })}
                   className="pl-10"
                 />
               </div>
@@ -105,7 +102,7 @@ export function ProfileTab() {
                 <Input
                   id="location"
                   value={profile.location}
-                  onChange={(e) => setProfile({ ...profile, location: e.target.value })}
+                  onChange={(e) => updateProfile({ location: e.target.value })}
                   className="pl-10"
                 />
               </div>
@@ -117,16 +114,16 @@ export function ProfileTab() {
             <Textarea
               id="bio"
               value={profile.bio}
-              onChange={(e) => setProfile({ ...profile, bio: e.target.value })}
+              onChange={(e) => updateProfile({ bio: e.target.value })}
               rows={4}
               className="resize-none"
             />
           </div>
 
           <div className="flex justify-start">
-            <Button onClick={handleSaveProfile} className="w-full md:w-auto gap-2">
+            <Button onClick={handleSaveProfile} disabled={isLoading} className="w-full md:w-auto gap-2">
               <Save className="w-4 h-4" />
-              ذخیره تغییرات
+              {isLoading ? 'در حال ذخیره...' : 'ذخیره تغییرات'}
             </Button>
           </div>
         </CardContent>

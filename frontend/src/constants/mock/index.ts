@@ -15,4 +15,8 @@ export * from './analytics-data';
 export * from './landing-data';
 export * from './courses-data';
 export * from './exams-data';
+export * from './course-content-data';
+export * from './profile-data';
+export * from './exam-data';
+export * from './admin-data';
 

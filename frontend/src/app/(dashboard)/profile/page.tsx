@@ -2,20 +2,12 @@
 'use client';
 
 import { ProfileForm } from '@/components/dashboard/profile/profile-form';
-import { User, Shield, Bell, Settings } from 'lucide-react';
+import { Settings } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { useState } from 'react';
-import { PROFILE_TABS } from '@/constants/mock';
-
-const TAB_ICONS = {
-  personal: User,
-  security: Shield,
-  notifications: Bell,
-  settings: Settings,
-};
+import { useProfile } from '@/hooks/use-profile';
 
 export default function ProfilePage() {
-  const [activeTab, setActiveTab] = useState('personal');
+  const { activeTab, setActiveTab, tabs } = useProfile();
 
   return (
     <div className="min-h-screen bg-background/50">
@@ -33,8 +25,8 @@ export default function ProfilePage() {
             {/* Sidebar Navigation */}
             <aside className="lg:col-span-3">
               <nav className="flex lg:flex-col gap-1 overflow-x-auto pb-2 lg:pb-0 no-scrollbar">
-                {PROFILE_TABS.map((tab) => {
-                  const Icon = TAB_ICONS[tab.id as keyof typeof TAB_ICONS];
+                {tabs.map((tab) => {
+                  const Icon = tab.icon;
                   return (
                     <button
                       key={tab.id}

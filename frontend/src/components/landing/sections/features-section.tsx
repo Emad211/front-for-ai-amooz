@@ -1,7 +1,7 @@
 'use client';
 
 import { Sparkles, Target, Zap, Brain, Bot, BookCheck, BarChart3 } from 'lucide-react';
-import { MOCK_FEATURES } from '@/constants/mock';
+import { useLanding } from '@/hooks/use-landing';
 
 const IconMap = {
     Target: <Target className="h-8 w-8" />,
@@ -54,48 +54,52 @@ const FeatureCardMobile = ({ icon, title, description, index }: { icon: React.Re
     </div>
 );
 
-export const FeaturesSection = () => (
-    <section id="features" className="py-20 md:py-32 relative bg-primary/10 dark:bg-primary/5">
-        
-        <div className="container mx-auto px-4 relative z-10">
-            <div className="text-center max-w-2xl mx-auto mb-12 md:mb-20">
-                <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-primary/10 border border-primary/20 mb-6">
-                    <Sparkles className="w-4 h-4 text-primary" />
-                    <span className="text-sm font-medium text-primary">ویژگی‌ها</span>
-                </div>
-                <h2 className="text-2xl md:text-5xl font-bold text-foreground">
-                    چرا AI-Amooz متفاوت است؟
-                </h2>
-                <p className="text-sm md:text-lg text-muted-foreground mt-4 md:mt-6">
-                    ابزارهای هوشمندی که یادگیری را برای شما شخصی‌سازی می‌کنند
-                </p>
-            </div>
-            
-            {/* Desktop: Bento Grid */}
-            <div className="hidden md:grid grid-cols-3 gap-6 max-w-6xl mx-auto">
-                {MOCK_FEATURES.filter(f => f.id <= 4).map((feature) => (
-                    <FeatureCardLarge 
-                        key={feature.id}
-                        icon={IconMap[feature.icon as keyof typeof IconMap]}
-                        title={feature.title}
-                        description={feature.description}
-                        className={feature.large ? "col-span-2 row-span-1" : "col-span-1 row-span-1"}
-                    />
-                ))}
-            </div>
+export const FeaturesSection = () => {
+    const { features } = useLanding();
 
-            {/* Mobile: Horizontal Cards */}
-            <div className="md:hidden space-y-4">
-                {MOCK_FEATURES.map((feature, index) => (
-                    <FeatureCardMobile 
-                        key={feature.id}
-                        icon={MobileIconMap[feature.icon as keyof typeof MobileIconMap]}
-                        title={feature.title}
-                        description={feature.description}
-                        index={index}
-                    />
-                ))}
+    return (
+        <section id="features" className="py-20 md:py-32 relative bg-primary/10 dark:bg-primary/5">
+            <div className="container mx-auto px-4 relative z-10">
+                <div className="text-center max-w-2xl mx-auto mb-12 md:mb-20">
+                    <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-primary/10 border border-primary/20 mb-6">
+                        <Sparkles className="w-4 h-4 text-primary" />
+                        <span className="text-sm font-medium text-primary">ویژگی‌ها</span>
+                    </div>
+                    <h2 className="text-2xl md:text-5xl font-bold text-foreground">
+                        چرا AI-Amooz متفاوت است؟
+                    </h2>
+                    <p className="text-sm md:text-lg text-muted-foreground mt-4 md:mt-6">
+                        ابزارهای هوشمندی که یادگیری را برای شما شخصی‌سازی می‌کنند
+                    </p>
+                </div>
+                
+                {/* Desktop: Bento Grid */}
+                <div className="hidden md:grid grid-cols-3 gap-6 max-w-6xl mx-auto">
+                    {features.filter(f => f.id <= 4).map((feature) => (
+                        <FeatureCardLarge 
+                            key={feature.id}
+                            icon={IconMap[feature.icon as keyof typeof IconMap]}
+                            title={feature.title}
+                            description={feature.description}
+                            className={feature.large ? "col-span-2 row-span-1" : "col-span-1 row-span-1"}
+                        />
+                    ))}
+                </div>
+
+                {/* Mobile: Horizontal Cards */}
+                <div className="md:hidden space-y-4">
+                    {features.map((feature, index) => (
+                        <FeatureCardMobile 
+                            key={feature.id}
+                            icon={MobileIconMap[feature.icon as keyof typeof MobileIconMap]}
+                            title={feature.title}
+                            description={feature.description}
+                            index={index}
+                        />
+                    ))}
+                </div>
             </div>
-        </div>
-    </section>
+        </section>
+    );
+};
 );

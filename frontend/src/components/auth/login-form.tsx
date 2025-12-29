@@ -2,10 +2,15 @@
 
 import React from 'react';
 import Link from 'next/link';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
+import { loginSchema, type LoginFormValues } from '@/lib/validations/auth';
+import { toast } from 'sonner';
+import { Loader2 } from 'lucide-react';
 
 const GoogleIcon = (props: React.SVGProps<SVGSVGElement>) => (
     <svg role="img" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" {...props}>
@@ -18,15 +23,44 @@ interface LoginFormProps {
 }
 
 export function LoginForm({ onSwitchToJoin }: LoginFormProps) {
+  const [isLoading, setIsLoading] = React.useState(false);
+
+  const {
+    register,
+    handleSubmit,
+    formState: { errors },
+  } = useForm<LoginFormValues>({
+    resolver: zodResolver(loginSchema),
+    defaultValues: {
+      username: '',
+      password: '',
+    },
+  });
+
+  const onSubmit = async (data: LoginFormValues) => {
+    setIsLoading(true);
+    // شبیه‌سازی درخواست به سرور
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+    setIsLoading(false);
+    
+    console.log('Login data:', data);
+    toast.success('ورود با موفقیت انجام شد');
+  };
+
   return (
     <>
       <h1 className="text-3xl font-bold text-foreground mb-6 text-center">
         ورود به حساب کاربری
       </h1>
 
-      <div className="space-y-4">
+      <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
         {/* دکمه ورود با گوگل */}
-        <Button variant="outline" className="w-full h-12 text-base border-border bg-card">
+        <Button 
+          type="button"
+          variant="outline" 
+          className="w-full h-12 text-base border-border bg-card"
+          disabled={isLoading}
+        >
           <GoogleIcon className="h-5 w-5 ms-2" />
           ورود با حساب گوگل
         </Button>
@@ -45,9 +79,14 @@ export function LoginForm({ onSwitchToJoin }: LoginFormProps) {
             id="username" 
             type="text" 
             placeholder="username@example.com" 
-            className="h-12 bg-card border-border"
+            className={`h-12 bg-card border-border ${errors.username ? 'border-destructive focus-visible:ring-destructive' : ''}`}
             dir="ltr"
+            disabled={isLoading}
+            {...register('username')}
           />
+          {errors.username && (
+            <p className="text-xs text-destructive mt-1">{errors.username.message}</p>
+          )}
         </div>
 
         {/* فیلد رمز عبور */}
@@ -62,21 +101,39 @@ export function LoginForm({ onSwitchToJoin }: LoginFormProps) {
             id="password" 
             type="password" 
             placeholder="••••••••" 
-            className="h-12 bg-card border-border"
+            className={`h-12 bg-card border-border ${errors.password ? 'border-destructive focus-visible:ring-destructive' : ''}`}
             dir="ltr"
+            disabled={isLoading}
+            {...register('password')}
           />
+          {errors.password && (
+            <p className="text-xs text-destructive mt-1">{errors.password.message}</p>
+          )}
         </div>
 
-        <Button className="w-full h-12 text-base bg-primary text-primary-foreground hover:bg-primary/90">
-          ورود
+        <Button 
+          type="submit"
+          className="w-full h-12 text-base bg-primary text-primary-foreground hover:bg-primary/90"
+          disabled={isLoading}
+        >
+          {isLoading ? (
+            <>
+              <Loader2 className="ms-2 h-4 w-4 animate-spin" />
+              در حال بررسی...
+            </>
+          ) : (
+            'ورود'
+          )}
         </Button>
-      </div>
+      </form>
 
       <p className="mt-8 text-sm text-muted-foreground text-center">
         حساب کاربری ندارید؟{' '}
         <button 
+          type="button"
           onClick={onSwitchToJoin} 
           className="font-semibold text-primary hover:underline focus:outline-none"
+          disabled={isLoading}
         >
           ثبت‌نام با کد دعوت
         </button>

@@ -7,7 +7,10 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Switch } from '@/components/ui/switch';
 
+import { useAdminSettings } from '@/hooks/use-admin-settings';
+
 export function SecurityTab() {
+  const { security, updateSecurity, isLoading } = useAdminSettings();
   return (
     <div className="space-y-6">
       <Card>
@@ -33,7 +36,9 @@ export function SecurityTab() {
             </div>
           </div>
           <div className="flex justify-start">
-            <Button className="w-full sm:w-auto rounded-xl">به‌روزرسانی رمز عبور</Button>
+            <Button disabled={isLoading} className="w-full sm:w-auto rounded-xl">
+              {isLoading ? 'در حال به‌روزرسانی...' : 'به‌روزرسانی رمز عبور'}
+            </Button>
           </div>
         </CardContent>
       </Card>
@@ -56,7 +61,10 @@ export function SecurityTab() {
                 امنیت حساب خود را با تایید دو مرحله‌ای افزایش دهید
               </p>
             </div>
-            <Switch />
+            <Switch 
+              checked={security.twoFactorEnabled} 
+              onCheckedChange={(checked) => updateSecurity({ twoFactorEnabled: checked })}
+            />
           </div>
           <div className="flex items-center justify-between gap-4">
             <div className="space-y-0.5">

@@ -5,7 +5,10 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 
+import { useAdminSettings } from '@/hooks/use-admin-settings';
+
 export function NotificationsTab() {
+  const { notifications, updateNotifications } = useAdminSettings();
   return (
     <div className="space-y-6">
       <Card>
@@ -26,7 +29,10 @@ export function NotificationsTab() {
                 دریافت گزارش‌های هفتگی و اخبار مهم از طریق ایمیل
               </p>
             </div>
-            <Switch defaultChecked />
+            <Switch 
+              checked={notifications.emailNotifications} 
+              onCheckedChange={(checked) => updateNotifications({ emailNotifications: checked })}
+            />
           </div>
           <div className="flex items-center justify-between gap-4">
             <div className="space-y-0.5">
@@ -38,7 +44,10 @@ export function NotificationsTab() {
                 نمایش اعلان‌های آنی در مرورگر
               </p>
             </div>
-            <Switch defaultChecked />
+            <Switch 
+              checked={notifications.browserNotifications} 
+              onCheckedChange={(checked) => updateNotifications({ browserNotifications: checked })}
+            />
           </div>
           <div className="flex items-center justify-between gap-4">
             <div className="space-y-0.5">
@@ -50,7 +59,10 @@ export function NotificationsTab() {
                 دریافت پیام‌های مربوط به وضعیت سرور و آپدیت‌ها
               </p>
             </div>
-            <Switch />
+            <Switch 
+              checked={notifications.smsNotifications} 
+              onCheckedChange={(checked) => updateNotifications({ smsNotifications: checked })}
+            />
           </div>
           <div className="flex items-center justify-between gap-4">
             <div className="space-y-0.5">
@@ -62,7 +74,10 @@ export function NotificationsTab() {
                 دریافت پیشنهادات ویژه و تخفیف‌ها
               </p>
             </div>
-            <Switch />
+            <Switch 
+              checked={notifications.marketingEmails} 
+              onCheckedChange={(checked) => updateNotifications({ marketingEmails: checked })}
+            />
           </div>
         </CardContent>
       </Card>

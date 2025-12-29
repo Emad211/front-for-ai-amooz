@@ -15,11 +15,39 @@ import { ChatAssistant } from '@/components/dashboard/learn/learn-chat-assistant
 import { Sheet, SheetContent, SheetTrigger, SheetTitle, SheetDescription } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import Link from 'next/link';
+import { useCourseContent } from '@/hooks/use-course-content';
+import { Skeleton } from '@/components/ui/skeleton';
 
-export default function LearnPage() {
+export default function LearnPage({ params }: { params: { courseId: string } }) {
+    const { content, currentLesson, isLoading, error } = useCourseContent(params.courseId);
     const [isChatOpen, setIsChatOpen] = React.useState(true);
 
     const toggleChat = () => setIsChatOpen(!isChatOpen);
+
+    if (isLoading) {
+        return (
+            <div className="h-screen flex items-center justify-center bg-background">
+                <div className="flex flex-col items-center gap-4">
+                    <Skeleton className="h-12 w-12 rounded-full" />
+                    <Skeleton className="h-4 w-48" />
+                </div>
+            </div>
+        );
+    }
+
+    if (error || !content) {
+        return (
+            <div className="h-screen flex items-center justify-center bg-background">
+                <div className="text-center">
+                    <h2 className="text-xl font-bold text-destructive mb-2">خطا</h2>
+                    <p className="text-muted-foreground">{error || 'محتوا یافت نشد'}</p>
+                    <Link href="/classes">
+                        <Button className="mt-4">بازگشت به کلاس‌ها</Button>
+                    </Link>
+                </div>
+            </div>
+        );
+    }
 
     return (
         <div className="bg-background font-body text-foreground antialiased min-h-screen flex flex-col overflow-hidden">
@@ -32,8 +60,8 @@ export default function LearnPage() {
                         </Button>
                     </Link>
                     <div className="flex flex-col">
-                        <span className="text-[10px] text-muted-foreground">دوره آموزش جامع</span>
-                        <span className="text-xs font-bold truncate max-w-[150px]">درس اول: مقدمات</span>
+                        <span className="text-[10px] text-muted-foreground">{content.title}</span>
+                        <span className="text-xs font-bold truncate max-w-[150px]">{currentLesson?.title}</span>
                     </div>
                 </div>
                 
@@ -47,7 +75,7 @@ export default function LearnPage() {
                         <SheetContent side="right" className="!p-0 !w-full !h-full !max-w-none border-none [&>button]:hidden bg-background">
                             <SheetTitle className="sr-only">لیست دروس</SheetTitle>
                             <SheetDescription className="sr-only">نمایش سرفصل‌ها و دروس دوره</SheetDescription>
-                            <CourseSidebar className="w-full h-full border-none flex" isMobile />
+                            <CourseSidebar content={content} className="w-full h-full border-none flex" isMobile />
                         </SheetContent>
                     </Sheet>
 
@@ -66,12 +94,12 @@ export default function LearnPage() {
                 </div>
             </header>
             <main className="flex-grow w-full max-w-[1920px] mx-auto lg:p-4 h-[calc(100dvh-60px)] lg:h-screen flex gap-4 overflow-hidden relative">
-                <CourseSidebar />
+                <CourseSidebar content={content} />
                 <div className={cn(
                     "flex-1 flex flex-col relative transition-all duration-300 ease-in-out", 
                     isChatOpen ? "lg:w-[calc(100%-20rem-24rem)]" : "w-full"
                 )}>
-                    <LessonContent />
+                    <LessonContent content={content} lesson={currentLesson} />
                 </div>
                 <ChatAssistant isOpen={isChatOpen} onToggle={toggleChat} />
                 

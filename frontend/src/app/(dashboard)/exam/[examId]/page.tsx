@@ -3,7 +3,6 @@
 import React from 'react';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
-import { Textarea } from '@/components/ui/textarea';
 import { 
     Bot,
     ChevronRight,
@@ -13,12 +12,17 @@ import { ExamHeader } from '@/components/dashboard/exam/exam-header';
 import { QuestionContent } from '@/components/dashboard/exam/question-content';
 import { ChatAssistant } from '@/components/dashboard/exam/chat-assistant';
 import { Sheet, SheetContent, SheetTrigger, SheetTitle, SheetDescription } from "@/components/ui/sheet";
-
+import { useExam } from '@/hooks/use-exam';
+import { useParams } from 'next/navigation';
 
 export default function ExamPage() {
-    const [isChatOpen, setIsChatOpen] = React.useState(true);
+    const params = useParams();
+    const examId = params.examId as string;
+    const { exam, currentQuestion, isChatOpen, toggleChat, isLoading, goToNextQuestion, goToPrevQuestion, submitAnswer } = useExam(examId);
 
-    const toggleChat = () => setIsChatOpen(!isChatOpen);
+    if (isLoading || !exam) {
+        return <div className="flex items-center justify-center h-screen">در حال بارگذاری...</div>;
+    }
 
     return (
         <div className="bg-background font-body text-foreground antialiased min-h-screen flex flex-col overflow-hidden">
@@ -31,8 +35,8 @@ export default function ExamPage() {
                         </Button>
                     </Link>
                     <div className="flex flex-col">
-                        <span className="text-[10px] text-muted-foreground">کنکور تیر 1403</span>
-                        <span className="text-xs font-bold truncate max-w-[150px]">ریاضی - سوال 12</span>
+                        <span className="text-[10px] text-muted-foreground">{exam.title}</span>
+                        <span className="text-xs font-bold truncate max-w-[150px]">{exam.subject} - سوال {currentQuestion?.number}</span>
                     </div>
                 </div>
                 
@@ -59,7 +63,13 @@ export default function ExamPage() {
                 )}>
                     <ExamHeader onToggle={toggleChat} />
                     <div className="flex-1 overflow-y-auto">
-                        <QuestionContent />
+                        <QuestionContent 
+                            question={currentQuestion} 
+                            totalQuestions={exam.totalQuestions || 0}
+                            onNext={goToNextQuestion}
+                            onPrev={goToPrevQuestion}
+                            onSubmit={submitAnswer}
+                        />
                     </div>
                 </div>
 

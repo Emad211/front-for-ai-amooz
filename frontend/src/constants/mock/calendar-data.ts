@@ -14,30 +14,7 @@
  * =============================================================================
  */
 
-export type EventType = 'exam' | 'assignment' | 'class' | 'holiday' | 'reminder';
-export type EventPriority = 'high' | 'medium' | 'low';
-
-export interface CalendarEvent {
-  id: string;
-  title: string;
-  description?: string;
-  date: string; // Format: YYYY-MM-DD (Jalali)
-  time?: string; // Format: HH:MM
-  endTime?: string;
-  type: EventType;
-  priority: EventPriority;
-  subject?: string;
-  location?: string;
-  isCompleted?: boolean;
-}
-
-export interface CalendarDay {
-  day: number;
-  isCurrentMonth: boolean;
-  isToday: boolean;
-  isWeekend: boolean;
-  events: CalendarEvent[];
-}
+import { CalendarEvent, CalendarDay, EventType, EventPriority } from "@/types";
 
 export const EVENT_TYPE_CONFIG: Record<EventType, { label: string; color: string; bgColor: string }> = {
   exam: { 
@@ -182,19 +159,19 @@ export const MOCK_CALENDAR_EVENTS: CalendarEvent[] = [
 ];
 
 // توابع کمکی
-export function getEventsForDate(date: string): CalendarEvent[] {
-  return MOCK_CALENDAR_EVENTS.filter(event => event.date === date);
+export function getEventsForDate(date: string, events: CalendarEvent[] = MOCK_CALENDAR_EVENTS): CalendarEvent[] {
+  return events.filter(event => event.date === date);
 }
 
-export function getUpcomingEvents(limit: number = 5): CalendarEvent[] {
+export function getUpcomingEvents(limit: number = 5, events: CalendarEvent[] = MOCK_CALENDAR_EVENTS): CalendarEvent[] {
   const today = '1404-10-07'; // Current date for mock
-  return MOCK_CALENDAR_EVENTS
+  return events
     .filter(event => event.date >= today)
     .sort((a, b) => a.date.localeCompare(b.date))
     .slice(0, limit);
 }
 
-export function generateMonthDays(year: number, month: number): CalendarDay[] {
+export function generateMonthDays(year: number, month: number, events: CalendarEvent[] = MOCK_CALENDAR_EVENTS): CalendarDay[] {
   const daysInMonth = month <= 6 ? 31 : month <= 11 ? 30 : 29;
   const days: CalendarDay[] = [];
   
@@ -224,7 +201,7 @@ export function generateMonthDays(year: number, month: number): CalendarDay[] {
       isCurrentMonth: true,
       isToday: day === 7, // Today is 7th of دی
       isWeekend: dayIndex === 6, // جمعه
-      events: getEventsForDate(dateStr),
+      events: getEventsForDate(dateStr, events),
     });
   }
   

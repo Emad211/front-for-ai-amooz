@@ -1,6 +1,5 @@
 'use client';
 
-import { useState } from 'react';
 import {
   CalendarHeader,
   CalendarGrid,
@@ -8,68 +7,26 @@ import {
   CalendarMobileEvents,
   CalendarEventModal,
 } from '@/components/dashboard/calendar';
-import { generateMonthDays, type CalendarEvent } from '@/constants/mock';
+import { useCalendar } from '@/hooks/use-calendar';
 
 export default function CalendarPage() {
-  // State for current month/year
-  const [currentMonth, setCurrentMonth] = useState(10); // دی
-  const [currentYear, setCurrentYear] = useState(1404);
-  
-  // State for selected day and events
-  const [selectedDay, setSelectedDay] = useState<number | undefined>();
-  const [selectedEvents, setSelectedEvents] = useState<CalendarEvent[]>([]);
-  const [showMobileEvents, setShowMobileEvents] = useState(false);
-  
-  // State for event modal
-  const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
-  const [isModalOpen, setIsModalOpen] = useState(false);
-
-  // Generate calendar days
-  const calendarDays = generateMonthDays(currentYear, currentMonth);
-
-  // Navigation handlers
-  const handlePrevMonth = () => {
-    if (currentMonth === 1) {
-      setCurrentMonth(12);
-      setCurrentYear(currentYear - 1);
-    } else {
-      setCurrentMonth(currentMonth - 1);
-    }
-  };
-
-  const handleNextMonth = () => {
-    if (currentMonth === 12) {
-      setCurrentMonth(1);
-      setCurrentYear(currentYear + 1);
-    } else {
-      setCurrentMonth(currentMonth + 1);
-    }
-  };
-
-  const handleToday = () => {
-    setCurrentMonth(10); // دی
-    setCurrentYear(1404);
-  };
-
-  // Day click handler
-  const handleDayClick = (day: number, events: CalendarEvent[]) => {
-    setSelectedDay(day);
-    setSelectedEvents(events);
-    setShowMobileEvents(true);
-  };
-
-  // Event click handler
-  const handleEventClick = (event: CalendarEvent) => {
-    setSelectedEvent(event);
-    setIsModalOpen(true);
-  };
-
-  // Back from mobile events
-  const handleBackFromEvents = () => {
-    setSelectedDay(undefined);
-    setSelectedEvents([]);
-    setShowMobileEvents(false);
-  };
+  const {
+    currentMonth,
+    currentYear,
+    calendarDays,
+    selectedDay,
+    selectedEvents,
+    showMobileEvents,
+    selectedEvent,
+    isModalOpen,
+    setIsModalOpen,
+    handlePrevMonth,
+    handleNextMonth,
+    handleToday,
+    handleDayClick,
+    handleEventClick,
+    handleBackFromEvents,
+  } = useCalendar();
 
   return (
     <main className="min-h-screen bg-background/50" dir="rtl">
@@ -98,6 +55,34 @@ export default function CalendarPage() {
               
               {/* Mobile Events Section - Below Calendar */}
               <div className="mt-6">
+                <CalendarMobileEvents
+                  selectedDay={selectedDay}
+                  events={selectedEvents}
+                  onBack={handleBackFromEvents}
+                  onEventClick={handleEventClick}
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Sidebar - Desktop Only */}
+          <CalendarSidebar
+            selectedDay={selectedDay}
+            events={selectedEvents}
+            onEventClick={handleEventClick}
+          />
+        </div>
+      </div>
+
+      {/* Event Detail Modal */}
+      <CalendarEventModal
+        event={selectedEvent}
+        isOpen={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
+      />
+    </main>
+  );
+}
                 <CalendarMobileEvents
                   selectedDay={selectedDay}
                   selectedEvents={selectedEvents}
