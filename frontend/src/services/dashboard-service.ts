@@ -5,6 +5,7 @@ import {
   MOCK_STUDENT_PROFILE,
   MOCK_COURSES,
   MOCK_EXAMS,
+  MOCK_EXAM,
   MOCK_TICKETS,
   MOCK_NOTIFICATIONS,
   MOCK_CALENDAR_EVENTS,
@@ -48,6 +49,14 @@ export const DashboardService = {
   getExams: async () => {
     await new Promise(resolve => setTimeout(resolve, 700));
     return MOCK_EXAMS;
+  },
+
+  getExam: async (examId: string) => {
+    await new Promise(resolve => setTimeout(resolve, 500));
+    const fromList = MOCK_EXAMS.find(e => String(e.id) === String(examId));
+    if (fromList) return fromList;
+    if (String(MOCK_EXAM.id) === String(examId)) return MOCK_EXAM;
+    return MOCK_EXAM;
   },
 
   getTickets: async () => {

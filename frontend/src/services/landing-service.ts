@@ -1,5 +1,5 @@
+import { SITE_CONFIG } from '@/constants/site';
 import { 
-  SITE_CONFIG,
   MOCK_FEATURES, 
   MOCK_TESTIMONIALS, 
   MOCK_FAQS, 

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { CourseContent } from '@/constants/mock/course-content-data';
+import { CourseContent } from '@/types';
 import { DashboardService } from '@/services/dashboard-service';
 
 export function useCourseContent(courseId?: string) {

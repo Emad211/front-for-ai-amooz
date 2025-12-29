@@ -43,7 +43,7 @@ export const MOCK_STUDENT_PROFILE: UserProfile = {
 };
 
 // پروفایل ادمین
-export const MOCK_ADMIN_PROFILE: UserProfile = {
+export const MOCK_ADMIN_USER_PROFILE: UserProfile = {
   id: 'admin-1',
   username: 'admin',
   name: 'مدیر سیستم',
@@ -54,14 +54,6 @@ export const MOCK_ADMIN_PROFILE: UserProfile = {
   joinDate: '1401-01-01',
   isVerified: true,
 };
-
-// تنظیمات تب‌های پروفایل
-export const PROFILE_TABS = [
-  { id: 'personal', label: 'اطلاعات شخصی' },
-  { id: 'security', label: 'امنیت' },
-  { id: 'notifications', label: 'اطلاع‌رسانی' },
-  { id: 'settings', label: 'تنظیمات' },
-] as const;
 
 // اطلاعات نمایشی کاربر در هدر
 export interface UserDisplay {

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { MOCK_EXAM } from '@/constants/mock/exam-data';
+import { DashboardService } from '@/services/dashboard-service';
 import { Exam, Question } from '@/types';
 
 export const useExam = (examId: string) => {
@@ -7,17 +7,26 @@ export const useExam = (examId: string) => {
   const [currentQuestion, setCurrentQuestion] = useState<Question | null>(null);
   const [isChatOpen, setIsChatOpen] = useState(true);
   const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchExam = async () => {
-      setIsLoading(true);
-      // Simulate API call
-      await new Promise((resolve) => setTimeout(resolve, 500));
-      setExam(MOCK_EXAM);
-      if (MOCK_EXAM.questionsList && MOCK_EXAM.questionsList.length > 0) {
-        setCurrentQuestion(MOCK_EXAM.questionsList[0]);
+      try {
+        setIsLoading(true);
+        setError(null);
+        const data = await DashboardService.getExam(examId);
+        setExam(data);
+        if (data.questionsList && data.questionsList.length > 0) {
+          setCurrentQuestion(data.questionsList[0]);
+        } else {
+          setCurrentQuestion(null);
+        }
+      } catch (err) {
+        console.error(err);
+        setError('خطا در دریافت اطلاعات آزمون');
+      } finally {
+        setIsLoading(false);
       }
-      setIsLoading(false);
     };
 
     fetchExam();
@@ -52,6 +61,7 @@ export const useExam = (examId: string) => {
     isChatOpen,
     toggleChat,
     isLoading,
+    error,
     goToNextQuestion,
     goToPrevQuestion,
     submitAnswer,

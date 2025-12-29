@@ -117,30 +117,3 @@ export default function MyClassesPage() {
     </div>
   );
 }
-            {filteredClasses.map((cls) => (
-              <ClassCard key={cls.id} cls={cls} />
-            ))}
-          </div>
-        ) : (
-          <Card className="border-dashed border-2 border-muted-foreground/25">
-            <CardContent className="flex flex-col items-center justify-center py-12">
-              <BookOpen className="w-12 h-12 text-muted-foreground/50 mb-4" />
-              <h3 className="text-lg font-semibold text-muted-foreground mb-2">
-                هیچ کلاسی یافت نشد
-              </h3>
-              <p className="text-muted-foreground text-center max-w-sm">
-                بر اساس فیلترهای اعمال شده، کلاسی پیدا نشد. فیلترها را تغییر دهید یا کلاس جدید ایجاد کنید.
-              </p>
-              <Button asChild className="mt-4">
-                <Link href="/admin/create-class">
-                  <Plus className="w-4 h-4 ml-2" />
-                  ایجاد کلاس جدید
-                </Link>
-              </Button>
-            </CardContent>
-          </Card>
-        )}
-      </div>
-    </div>
-  );
-}

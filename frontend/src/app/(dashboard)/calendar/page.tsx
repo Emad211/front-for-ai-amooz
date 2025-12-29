@@ -83,39 +83,3 @@ export default function CalendarPage() {
     </main>
   );
 }
-                <CalendarMobileEvents
-                  selectedDay={selectedDay}
-                  selectedEvents={selectedEvents}
-                  onEventClick={handleEventClick}
-                  onBack={handleBackFromEvents}
-                />
-              </div>
-            </div>
-
-            {/* Mobile Events Full View */}
-            {showMobileEvents && (
-              <div className="lg:hidden">
-                <CalendarMobileEvents
-                  selectedDay={selectedDay}
-                  selectedEvents={selectedEvents}
-                  onEventClick={handleEventClick}
-                  onBack={handleBackFromEvents}
-                />
-              </div>
-            )}
-          </div>
-
-          {/* Desktop Sidebar */}
-          <CalendarSidebar onEventClick={handleEventClick} />
-        </div>
-      </div>
-
-      {/* Event Detail Modal */}
-      <CalendarEventModal
-        event={selectedEvent}
-        isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
-      />
-    </main>
-  );
-}

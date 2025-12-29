@@ -109,4 +109,5 @@ export const HeroSection = ({ heroImage }: HeroSectionProps) => {
       )}
     </div>
   </section>
-);
+  );
+};

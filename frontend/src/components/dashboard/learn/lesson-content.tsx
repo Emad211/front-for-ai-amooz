@@ -1,7 +1,7 @@
 'use client';
 
 import { BarChart, Signal, Clock, PlayCircle } from 'lucide-react';
-import { CourseContent } from '@/constants/mock/course-content-data';
+import type { CourseContent } from '@/types';
 
 interface LessonContentProps {
   content: CourseContent;

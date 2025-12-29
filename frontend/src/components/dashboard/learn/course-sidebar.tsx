@@ -22,7 +22,7 @@ import { cn } from '@/lib/utils';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { SidebarItem, SubmenuItem } from './sidebar-items';
 import { SheetClose } from '@/components/ui/sheet';
-import { CourseContent } from '@/constants/mock/course-content-data';
+import type { CourseContent } from '@/types';
 
 interface CourseSidebarProps {
   className?: string;
