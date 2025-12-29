@@ -2,7 +2,7 @@
 
 import { Bell, Info, CheckCircle, AlertTriangle, XCircle, MessageCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import type { Notification, NotificationType } from '@/constants/mock';
+import type { Notification, NotificationType } from '@/types';
 
 interface NotificationItemProps {
   notification: Notification;

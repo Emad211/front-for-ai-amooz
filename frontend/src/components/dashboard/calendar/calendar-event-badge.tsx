@@ -1,7 +1,8 @@
 'use client';
 
 import { cn } from '@/lib/utils';
-import { EVENT_TYPE_CONFIG, type CalendarEvent } from '@/constants/mock';
+import { EVENT_TYPE_CONFIG } from '@/constants/mock';
+import type { CalendarEvent } from '@/types';
 
 interface CalendarEventBadgeProps {
   event: CalendarEvent;

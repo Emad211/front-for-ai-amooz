@@ -27,7 +27,11 @@ export function useNotifications() {
   }, []);
 
   const markAsRead = (id: string) => {
-    setNotifications(prev => prev.map(n => n.id === id ? { ...n, read: true } : n));
+    setNotifications(prev => prev.map(n => n.id === id ? { ...n, isRead: true } : n));
+  };
+
+  const markAllAsRead = () => {
+    setNotifications(prev => prev.map(n => ({ ...n, isRead: true })));
   };
 
   const deleteNotification = (id: string) => {
@@ -39,6 +43,7 @@ export function useNotifications() {
     isLoading,
     error,
     markAsRead,
+    markAllAsRead,
     deleteNotification
   };
 }

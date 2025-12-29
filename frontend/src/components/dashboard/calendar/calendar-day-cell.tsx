@@ -1,7 +1,7 @@
 'use client';
 
 import { cn } from '@/lib/utils';
-import type { CalendarDay, CalendarEvent } from '@/constants/mock';
+import type { CalendarDay, CalendarEvent } from '@/types';
 import { CalendarEventBadge } from './calendar-event-badge';
 
 interface CalendarDayCellProps {

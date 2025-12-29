@@ -2,7 +2,8 @@
 
 import { CalendarDays } from 'lucide-react';
 import { CalendarEventCard } from './calendar-event-card';
-import { getUpcomingEvents, type CalendarEvent } from '@/constants/mock';
+import { getUpcomingEvents } from '@/constants/mock';
+import type { CalendarEvent } from '@/types';
 
 interface CalendarSidebarProps {
   onEventClick: (event: CalendarEvent) => void;

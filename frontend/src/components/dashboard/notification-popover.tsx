@@ -1,6 +1,5 @@
 'use client';
 
-import { useState } from 'react';
 import { Bell, Check, MessageSquare, Info, AlertTriangle, Trash2 } from 'lucide-react';
 import {
   Popover,
@@ -10,26 +9,13 @@ import {
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Badge } from '@/components/ui/badge';
-import { MOCK_NOTIFICATIONS, type Notification } from '@/constants/mock';
 import { cn } from '@/lib/utils';
+import { useNotifications } from '@/hooks/use-notifications';
+import type { Notification } from '@/types';
 
 export function NotificationPopover() {
-  const [notifications, setNotifications] = useState<Notification[]>(MOCK_NOTIFICATIONS);
+  const { notifications, isLoading, markAsRead, markAllAsRead, deleteNotification } = useNotifications();
   const unreadCount = notifications.filter(n => !n.isRead).length;
-
-  const markAsRead = (id: string) => {
-    setNotifications(prev => 
-      prev.map(n => n.id === id ? { ...n, isRead: true } : n)
-    );
-  };
-
-  const markAllAsRead = () => {
-    setNotifications(prev => prev.map(n => ({ ...n, isRead: true })));
-  };
-
-  const deleteNotification = (id: string) => {
-    setNotifications(prev => prev.filter(n => n.id !== id));
-  };
 
   const getIcon = (type: Notification['type']) => {
     switch (type) {
@@ -72,7 +58,12 @@ export function NotificationPopover() {
         </div>
         
         <ScrollArea className="h-[350px]">
-          {notifications.length > 0 ? (
+          {isLoading ? (
+            <div className="flex flex-col items-center justify-center h-[300px] text-muted-foreground space-y-2">
+              <Bell className="h-8 w-8 opacity-20" />
+              <p className="text-sm">در حال بارگذاری...</p>
+            </div>
+          ) : notifications.length > 0 ? (
             <div className="flex flex-col">
               {notifications.map((notification) => (
                 <div 

@@ -3,7 +3,8 @@
 import { CalendarDays, ChevronLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { CalendarEventCard } from './calendar-event-card';
-import { getUpcomingEvents, type CalendarEvent } from '@/constants/mock';
+import { getUpcomingEvents } from '@/constants/mock';
+import type { CalendarEvent } from '@/types';
 
 interface CalendarMobileEventsProps {
   selectedDay?: number;
