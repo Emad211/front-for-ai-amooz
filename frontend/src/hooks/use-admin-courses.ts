@@ -32,7 +32,10 @@ export function useAdminCourses() {
   }, [reload]);
 
   const categories = useMemo(() => {
-    return Array.from(new Set(courses.map(c => c.category)));
+    const definedCategories = courses
+      .map((c) => c.category)
+      .filter((category): category is string => Boolean(category));
+    return Array.from(new Set(definedCategories));
   }, [courses]);
 
   const filteredCourses = useMemo(() => {

@@ -4,7 +4,9 @@
  * =============================================================================
  */
 
-export const MOCK_ANALYTICS_STATS = [
+import type { AdminAnalyticsStat } from "@/types";
+
+export const MOCK_ANALYTICS_STATS: AdminAnalyticsStat[] = [
   {
     title: 'کل دانش‌آموزان',
     value: '۱,۲۸۴',

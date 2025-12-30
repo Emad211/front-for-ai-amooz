@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { DashboardService } from '@/services/dashboard-service';
 import { Exam, Question } from '@/types';
 
-export const useExam = (examId: string) => {
+export const useExam = (examId?: string) => {
   const [exam, setExam] = useState<Exam | null>(null);
   const [currentQuestion, setCurrentQuestion] = useState<Question | null>(null);
   const [isChatOpen, setIsChatOpen] = useState(true);

@@ -1,6 +1,7 @@
 // components/layout/header.tsx
 'use client';
 
+import type { ReactNode } from 'react';
 import { Bell, Moon, Sun, Contact, LogOut, User, GraduationCap, ChevronDown, Ticket } from 'lucide-react';
 import Link from 'next/link';
 import Image from 'next/image';
@@ -19,8 +20,12 @@ import { useTheme } from 'next-themes';
 import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/utils';
 
+type NavLinkProps = {
+  href: string;
+  children: ReactNode;
+};
 
-const NavLink = ({ href, children }) => {
+const NavLink = ({ href, children }: NavLinkProps) => {
     const pathname = usePathname();
     const isActive = pathname.startsWith(href);
     return (

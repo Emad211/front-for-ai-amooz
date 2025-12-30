@@ -18,7 +18,7 @@ export function StudentTableActions({ studentId }: { studentId: string }) {
           <MoreVertical className="h-4 w-4" />
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-48" dir="rtl">
+      <DropdownMenuContent align="end" className="w-48 text-right">
         <DropdownMenuItem className="gap-2">
           <Eye className="h-4 w-4" />
           مشاهده پروفایل
