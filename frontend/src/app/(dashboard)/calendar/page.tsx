@@ -57,7 +57,7 @@ export default function CalendarPage() {
               <div className="mt-6">
                 <CalendarMobileEvents
                   selectedDay={selectedDay}
-                  events={selectedEvents}
+                  selectedEvents={selectedEvents ?? []}
                   onBack={handleBackFromEvents}
                   onEventClick={handleEventClick}
                 />
@@ -66,11 +66,7 @@ export default function CalendarPage() {
           </div>
 
           {/* Sidebar - Desktop Only */}
-          <CalendarSidebar
-            selectedDay={selectedDay}
-            events={selectedEvents}
-            onEventClick={handleEventClick}
-          />
+          <CalendarSidebar onEventClick={handleEventClick} />
         </div>
       </div>
 

@@ -8,7 +8,7 @@ import type { CalendarEvent } from '@/types';
 
 interface CalendarMobileEventsProps {
   selectedDay?: number;
-  selectedEvents: CalendarEvent[];
+  selectedEvents?: CalendarEvent[];
   onEventClick: (event: CalendarEvent) => void;
   onBack: () => void;
 }
@@ -20,7 +20,8 @@ export function CalendarMobileEvents({
   onBack,
 }: CalendarMobileEventsProps) {
   const upcomingEvents = getUpcomingEvents(10);
-  const eventsToShow = selectedDay ? selectedEvents : upcomingEvents;
+  const safeSelectedEvents = selectedEvents ?? [];
+  const eventsToShow = selectedDay ? safeSelectedEvents : upcomingEvents;
   const title = selectedDay ? `رویدادهای ${selectedDay}ام` : 'رویدادهای پیش رو';
 
   return (

@@ -17,10 +17,11 @@ import { useParams } from 'next/navigation';
 
 export default function ExamPage() {
     const params = useParams();
-    const examId = params.examId as string;
+    const rawExamId = (params as any)?.examId as string | string[] | undefined;
+    const examId = Array.isArray(rawExamId) ? rawExamId[0] : rawExamId;
     const { exam, currentQuestion, isChatOpen, toggleChat, isLoading, goToNextQuestion, goToPrevQuestion, submitAnswer } = useExam(examId);
 
-    if (isLoading || !exam) {
+    if (!examId || isLoading || !exam) {
         return <div className="flex items-center justify-center h-screen">در حال بارگذاری...</div>;
     }
 

@@ -12,6 +12,12 @@ export const useExam = (examId: string) => {
   useEffect(() => {
     const fetchExam = async () => {
       try {
+        if (!examId) {
+          setExam(null);
+          setCurrentQuestion(null);
+          setIsLoading(false);
+          return;
+        }
         setIsLoading(true);
         setError(null);
         const data = await DashboardService.getExam(examId);

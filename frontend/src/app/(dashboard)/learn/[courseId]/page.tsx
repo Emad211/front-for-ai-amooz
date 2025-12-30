@@ -1,6 +1,7 @@
 'use client';
 
 import React from 'react';
+import { useParams } from 'next/navigation';
 import { 
     Bot,
     ChevronLeft,
@@ -18,8 +19,11 @@ import Link from 'next/link';
 import { useCourseContent } from '@/hooks/use-course-content';
 import { Skeleton } from '@/components/ui/skeleton';
 
-export default function LearnPage({ params }: { params: { courseId: string } }) {
-    const { content, currentLesson, isLoading, error } = useCourseContent(params.courseId);
+export default function LearnPage() {
+    const params = useParams();
+    const rawCourseId = (params as any)?.courseId as string | string[] | undefined;
+    const courseId = Array.isArray(rawCourseId) ? rawCourseId[0] : rawCourseId;
+    const { content, currentLesson, isLoading, error } = useCourseContent(courseId);
     const [isChatOpen, setIsChatOpen] = React.useState(true);
 
     const toggleChat = () => setIsChatOpen(!isChatOpen);
