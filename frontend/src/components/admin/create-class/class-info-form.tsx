@@ -14,9 +14,9 @@ interface ClassInfoFormProps {
 
 export function ClassInfoForm({ isExpanded, onToggle }: ClassInfoFormProps) {
   return (
-    <Card className="border-border/50 rounded-2xl overflow-hidden">
+    <Card className="border-border/40 rounded-2xl overflow-hidden bg-card/70 backdrop-blur">
       <CardHeader 
-        className="cursor-pointer hover:bg-muted/30 transition-colors"
+        className="cursor-pointer hover:bg-primary/5 transition-colors"
         onClick={onToggle}
       >
         <div className="flex items-center justify-between">
@@ -24,7 +24,10 @@ export function ClassInfoForm({ isExpanded, onToggle }: ClassInfoFormProps) {
             <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
               <BookOpen className="h-5 w-5 text-primary" />
             </div>
-            <CardTitle className="text-lg">اطلاعات کلاس</CardTitle>
+            <div className="flex flex-col">
+              <CardTitle className="text-lg">اطلاعات کلاس</CardTitle>
+              <span className="text-xs text-muted-foreground">عنوان و توضیحات کلاس را وارد کنید</span>
+            </div>
           </div>
           <ChevronDown className={cn(
             "h-5 w-5 text-muted-foreground transition-transform duration-200",
@@ -39,7 +42,7 @@ export function ClassInfoForm({ isExpanded, onToggle }: ClassInfoFormProps) {
             <Input 
               id="class-title" 
               placeholder="مثال: آموزش برنامه‌نویسی پایتون" 
-              className="h-12 bg-background rounded-xl text-start"
+              className="h-12 bg-background/80 rounded-xl text-start border-border/60"
             />
           </div>
           <div className="space-y-2">
@@ -47,7 +50,7 @@ export function ClassInfoForm({ isExpanded, onToggle }: ClassInfoFormProps) {
             <Textarea 
               id="class-description" 
               placeholder="توضیحات مختصری درباره کلاس بنویسید..." 
-              className="min-h-[100px] bg-background rounded-xl resize-none text-start" 
+              className="min-h-[110px] bg-background/80 rounded-xl resize-none text-start border-border/60" 
             />
           </div>
         </CardContent>

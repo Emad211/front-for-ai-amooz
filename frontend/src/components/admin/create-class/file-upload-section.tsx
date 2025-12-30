@@ -22,13 +22,13 @@ export function FileUploadSection({
   type 
 }: FileUploadSectionProps) {
   const Icon = icon === 'upload' ? Upload : FileText;
-  const iconColor = type === 'lesson' ? 'text-blue-500' : 'text-amber-500';
-  const bgColor = type === 'lesson' ? 'bg-blue-500/10' : 'bg-amber-500/10';
+  const iconColor = type === 'lesson' ? 'text-primary' : 'text-muted-foreground';
+  const bgColor = type === 'lesson' ? 'bg-primary/10' : 'bg-muted';
 
   return (
-    <Card className="border-border/50 rounded-2xl overflow-hidden">
+    <Card className="border-border/40 rounded-2xl overflow-hidden bg-card/70 backdrop-blur">
       <CardHeader 
-        className="cursor-pointer hover:bg-muted/30 transition-colors"
+        className="cursor-pointer hover:bg-primary/5 transition-colors"
         onClick={onToggle}
       >
         <div className="flex items-center justify-between">
@@ -52,15 +52,15 @@ export function FileUploadSection({
           <label 
             htmlFor={`dropzone-${type}`} 
             className={cn(
-              "flex flex-col items-center justify-center w-full border-2 border-dashed border-border/50 rounded-xl cursor-pointer bg-muted/20 hover:bg-muted/40 transition-colors",
-              type === 'lesson' ? "h-40" : "h-32"
+              "flex flex-col items-center justify-center w-full border-2 border-dashed border-primary/30 rounded-2xl cursor-pointer bg-primary/5 hover:bg-primary/10 transition-colors",
+              type === 'lesson' ? "h-44" : "h-36"
             )}
           >
             <div className="flex flex-col items-center gap-2 px-4 text-center">
               {type === 'lesson' ? (
                 <>
-                  <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center">
-                    <FileText className="h-6 w-6 text-muted-foreground" />
+                  <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center">
+                    <FileText className="h-6 w-6 text-primary" />
                   </div>
                   <p className="text-sm text-muted-foreground">
                     فایل‌ها را بکشید و رها کنید یا <span className="text-primary font-medium">کلیک کنید</span>
