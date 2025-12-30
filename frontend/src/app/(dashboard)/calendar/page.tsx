@@ -45,23 +45,42 @@ export default function CalendarPage() {
           {/* Calendar Section */}
           <div className="flex-1">
             {/* Desktop: Always show calendar */}
-            {/* Mobile: Show calendar or events based on state */}
-            <div className={showMobileEvents ? 'hidden lg:block' : 'block'}>
+            <div className="hidden lg:block">
               <CalendarGrid
                 days={calendarDays}
                 onDayClick={handleDayClick}
                 onEventClick={handleEventClick}
               />
-              
-              {/* Mobile Events Section - Below Calendar */}
-              <div className="mt-6">
+            </div>
+
+            {/* Mobile: Toggle between calendar and events view */}
+            <div className="lg:hidden">
+              {showMobileEvents ? (
                 <CalendarMobileEvents
                   selectedDay={selectedDay}
                   selectedEvents={selectedEvents ?? []}
                   onBack={handleBackFromEvents}
                   onEventClick={handleEventClick}
                 />
-              </div>
+              ) : (
+                <>
+                  <CalendarGrid
+                    days={calendarDays}
+                    onDayClick={handleDayClick}
+                    onEventClick={handleEventClick}
+                  />
+
+                  {/* Mobile Events Section - Below Calendar */}
+                  <div className="mt-6">
+                    <CalendarMobileEvents
+                      selectedDay={selectedDay}
+                      selectedEvents={selectedEvents ?? []}
+                      onBack={handleBackFromEvents}
+                      onEventClick={handleEventClick}
+                    />
+                  </div>
+                </>
+              )}
             </div>
           </div>
 

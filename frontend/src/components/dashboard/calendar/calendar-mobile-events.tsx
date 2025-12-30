@@ -28,7 +28,7 @@ export function CalendarMobileEvents({
     <div className="lg:hidden">
       {/* Header */}
       <div className="flex items-center gap-3 mb-4">
-        {selectedDay && (
+        {selectedDay !== undefined && (
           <Button
             variant="ghost"
             size="icon"

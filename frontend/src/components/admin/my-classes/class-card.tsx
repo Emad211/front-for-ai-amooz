@@ -41,6 +41,7 @@ const levelConfig: Record<string, string> = {
 };
 
 export function ClassCard({ cls }: ClassCardProps) {
+  if (!cls) return null;
   return (
     <Card className="group hover:shadow-md transition-all duration-300 border-border/60 bg-card hover:border-primary/50 overflow-hidden relative">
       <div className="absolute top-0 right-0 w-1 h-full bg-primary/0 group-hover:bg-primary transition-all duration-300" />
