@@ -1,0 +1,185 @@
+'use client';
+
+import { useState } from 'react';
+import { Search, MoreHorizontal, Mail, Trash2, Eye, MessageSquare } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Badge } from '@/components/ui/badge';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { Progress } from '@/components/ui/progress';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import type { ClassStudent } from '@/types';
+
+interface ClassStudentsTableProps {
+  students: ClassStudent[];
+  onRemove?: (studentId: string) => void;
+  onViewProfile?: (studentId: string) => void;
+  onSendMessage?: (studentId: string) => void;
+}
+
+const statusConfig: Record<string, { label: string; color: string }> = {
+  active: { label: 'فعال', color: 'bg-emerald-500/10 text-emerald-600' },
+  inactive: { label: 'غیرفعال', color: 'bg-gray-500/10 text-gray-600' },
+  completed: { label: 'تکمیل شده', color: 'bg-blue-500/10 text-blue-600' },
+};
+
+export function ClassStudentsTable({ 
+  students, 
+  onRemove,
+  onViewProfile,
+  onSendMessage,
+}: ClassStudentsTableProps) {
+  const [searchQuery, setSearchQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState<string>('all');
+
+  const filteredStudents = students.filter(student => {
+    const matchesSearch = student.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                         student.email.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesStatus = statusFilter === 'all' || student.status === statusFilter;
+    return matchesSearch && matchesStatus;
+  });
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+          <CardTitle className="text-lg">لیست دانش‌آموزان</CardTitle>
+          <div className="flex items-center gap-3 w-full sm:w-auto">
+            <div className="relative flex-1 sm:w-64">
+              <Search className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="جستجوی دانش‌آموز..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pr-10"
+              />
+            </div>
+            <Select value={statusFilter} onValueChange={setStatusFilter}>
+              <SelectTrigger className="w-32">
+                <SelectValue placeholder="وضعیت" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">همه</SelectItem>
+                <SelectItem value="active">فعال</SelectItem>
+                <SelectItem value="inactive">غیرفعال</SelectItem>
+                <SelectItem value="completed">تکمیل شده</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent>
+        <div className="rounded-lg border overflow-hidden">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="text-right">دانش‌آموز</TableHead>
+                <TableHead className="text-right">پیشرفت</TableHead>
+                <TableHead className="text-right">وضعیت</TableHead>
+                <TableHead className="text-right">تاریخ عضویت</TableHead>
+                <TableHead className="text-right">آخرین فعالیت</TableHead>
+                <TableHead className="w-[60px]"></TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {filteredStudents.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
+                    دانش‌آموزی یافت نشد
+                  </TableCell>
+                </TableRow>
+              ) : (
+                filteredStudents.map((student) => (
+                  <TableRow key={student.id}>
+                    <TableCell>
+                      <div className="flex items-center gap-3">
+                        <Avatar className="h-9 w-9">
+                          <AvatarImage src={student.avatar} alt={student.name} />
+                          <AvatarFallback>{student.name.charAt(0)}</AvatarFallback>
+                        </Avatar>
+                        <div>
+                          <p className="font-medium text-sm">{student.name}</p>
+                          <p className="text-xs text-muted-foreground">{student.email}</p>
+                        </div>
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-2">
+                        <Progress value={student.progress} className="h-2 w-20" />
+                        <span className="text-sm font-medium">{student.progress}%</span>
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant="outline" className={statusConfig[student.status]?.color}>
+                        {statusConfig[student.status]?.label}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-sm text-muted-foreground">
+                      {student.joinDate}
+                    </TableCell>
+                    <TableCell className="text-sm text-muted-foreground">
+                      {student.lastActivity || '-'}
+                    </TableCell>
+                    <TableCell>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="ghost" size="icon" className="h-8 w-8">
+                            <MoreHorizontal className="h-4 w-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem onClick={() => onViewProfile?.(student.id)}>
+                            <Eye className="h-4 w-4 ml-2" />
+                            مشاهده پروفایل
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => onSendMessage?.(student.id)}>
+                            <MessageSquare className="h-4 w-4 ml-2" />
+                            ارسال پیام
+                          </DropdownMenuItem>
+                          <DropdownMenuItem>
+                            <Mail className="h-4 w-4 ml-2" />
+                            ارسال ایمیل
+                          </DropdownMenuItem>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem 
+                            className="text-destructive"
+                            onClick={() => onRemove?.(student.id)}
+                          >
+                            <Trash2 className="h-4 w-4 ml-2" />
+                            حذف از کلاس
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
