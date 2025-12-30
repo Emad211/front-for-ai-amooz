@@ -38,10 +38,10 @@ export function ClassStudentsPreview({ classId, students, maxDisplay = 5 }: Clas
 
   return (
     <Card>
-      <CardHeader className="flex flex-row items-center justify-between">
+      <CardHeader className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
           <CardTitle className="text-lg flex items-center gap-2">
-            <Users className="h-5 w-5" />
+            <Users className="h-5 w-5 text-primary" />
             دانش‌آموزان
           </CardTitle>
           <CardDescription>{students.length} دانش‌آموز ثبت‌نام شده</CardDescription>
@@ -61,19 +61,19 @@ export function ClassStudentsPreview({ classId, students, maxDisplay = 5 }: Clas
       <CardContent>
         <div className="space-y-3">
           {displayedStudents.map(student => (
-            <div key={student.id} className="flex items-center justify-between p-3 rounded-lg border hover:bg-muted/50 transition-colors">
+            <div key={student.id} className="flex flex-col sm:flex-row sm:items-center justify-between p-3 rounded-lg border hover:bg-muted/50 transition-colors gap-3">
               <div className="flex items-center gap-3">
-                <Avatar className="h-10 w-10">
-                  <AvatarFallback>{student.name.charAt(0)}</AvatarFallback>
+                <Avatar className="h-10 w-10 shrink-0">
+                  <AvatarFallback className="bg-primary/10 text-primary">{student.name.charAt(0)}</AvatarFallback>
                 </Avatar>
-                <div>
-                  <p className="font-medium text-sm">{student.name}</p>
-                  <p className="text-xs text-muted-foreground">{student.email}</p>
+                <div className="min-w-0">
+                  <p className="font-medium text-sm truncate">{student.name}</p>
+                  <p className="text-xs text-muted-foreground truncate">{student.email}</p>
                 </div>
               </div>
-              <div className="flex items-center gap-3">
+              <div className="flex items-center justify-between sm:justify-end gap-3 mr-[52px] sm:mr-0">
                 <div className="text-left">
-                  <p className="text-sm font-medium">{student.progress}%</p>
+                  <p className="text-sm font-medium text-primary">{student.progress}%</p>
                   <p className="text-xs text-muted-foreground">پیشرفت</p>
                 </div>
                 <Badge variant="outline" className={statusColors[student.status]}>

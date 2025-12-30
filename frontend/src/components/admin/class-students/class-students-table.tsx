@@ -40,9 +40,9 @@ interface ClassStudentsTableProps {
 }
 
 const statusConfig: Record<string, { label: string; color: string }> = {
-  active: { label: 'فعال', color: 'bg-emerald-500/10 text-emerald-600' },
-  inactive: { label: 'غیرفعال', color: 'bg-gray-500/10 text-gray-600' },
-  completed: { label: 'تکمیل شده', color: 'bg-blue-500/10 text-blue-600' },
+  active: { label: 'فعال', color: 'bg-primary/10 text-primary' },
+  inactive: { label: 'غیرفعال', color: 'bg-muted text-muted-foreground' },
+  completed: { label: 'تکمیل شده', color: 'bg-primary/10 text-primary' },
 };
 
 export function ClassStudentsTable({ 
@@ -91,7 +91,72 @@ export function ClassStudentsTable({
         </div>
       </CardHeader>
       <CardContent>
-        <div className="rounded-lg border overflow-hidden">
+        {/* Mobile View - Cards */}
+        <div className="md:hidden space-y-3">
+          {filteredStudents.length === 0 ? (
+            <div className="text-center py-8 text-muted-foreground">
+              دانش‌آموزی یافت نشد
+            </div>
+          ) : (
+            filteredStudents.map((student) => (
+              <div key={student.id} className="p-4 rounded-xl border bg-card hover:bg-muted/50 transition-colors">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex items-center gap-3 min-w-0 flex-1">
+                    <Avatar className="h-10 w-10 shrink-0">
+                      <AvatarImage src={student.avatar} alt={student.name} />
+                      <AvatarFallback className="bg-primary/10 text-primary">{student.name.charAt(0)}</AvatarFallback>
+                    </Avatar>
+                    <div className="min-w-0">
+                      <p className="font-medium text-sm truncate">{student.name}</p>
+                      <p className="text-xs text-muted-foreground truncate">{student.email}</p>
+                    </div>
+                  </div>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0">
+                        <MoreHorizontal className="h-4 w-4" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem onClick={() => onViewProfile?.(student.id)}>
+                        <Eye className="h-4 w-4 ml-2" />
+                        مشاهده پروفایل
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => onSendMessage?.(student.id)}>
+                        <MessageSquare className="h-4 w-4 ml-2" />
+                        ارسال پیام
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem 
+                        className="text-destructive"
+                        onClick={() => onRemove?.(student.id)}
+                      >
+                        <Trash2 className="h-4 w-4 ml-2" />
+                        حذف از کلاس
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
+                <div className="flex items-center justify-between mt-3 pt-3 border-t">
+                  <div className="flex items-center gap-2">
+                    <Progress value={student.progress} className="h-2 w-16" />
+                    <span className="text-sm font-medium text-primary">{student.progress}%</span>
+                  </div>
+                  <Badge variant="outline" className={statusConfig[student.status]?.color}>
+                    {statusConfig[student.status]?.label}
+                  </Badge>
+                </div>
+                <div className="flex items-center justify-between mt-2 text-xs text-muted-foreground">
+                  <span>عضویت: {student.joinDate}</span>
+                  <span>آخرین فعالیت: {student.lastActivity || '-'}</span>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+
+        {/* Desktop View - Table */}
+        <div className="hidden md:block rounded-lg border overflow-hidden">
           <Table>
             <TableHeader>
               <TableRow>
@@ -117,7 +182,7 @@ export function ClassStudentsTable({
                       <div className="flex items-center gap-3">
                         <Avatar className="h-9 w-9">
                           <AvatarImage src={student.avatar} alt={student.name} />
-                          <AvatarFallback>{student.name.charAt(0)}</AvatarFallback>
+                          <AvatarFallback className="bg-primary/10 text-primary">{student.name.charAt(0)}</AvatarFallback>
                         </Avatar>
                         <div>
                           <p className="font-medium text-sm">{student.name}</p>
@@ -128,7 +193,7 @@ export function ClassStudentsTable({
                     <TableCell>
                       <div className="flex items-center gap-2">
                         <Progress value={student.progress} className="h-2 w-20" />
-                        <span className="text-sm font-medium">{student.progress}%</span>
+                        <span className="text-sm font-medium text-primary">{student.progress}%</span>
                       </div>
                     </TableCell>
                     <TableCell>

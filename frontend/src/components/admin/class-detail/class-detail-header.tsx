@@ -31,33 +31,33 @@ export function ClassDetailHeader({
   const router = useRouter();
   
   return (
-    <div className="flex items-center justify-between">
-      <div className="flex items-center gap-4">
-        <Button variant="ghost" size="icon" onClick={() => router.back()} className="rounded-full">
+    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div className="flex items-center gap-3 sm:gap-4">
+        <Button variant="ghost" size="icon" onClick={() => router.back()} className="rounded-full shrink-0">
           <ArrowRight className="h-5 w-5" />
         </Button>
-        <div>
-          <div className="flex items-center gap-2 mb-1">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 mb-1">
             <Badge variant="outline" className={statusConfig[status]?.color}>
               {statusConfig[status]?.label}
             </Badge>
             {level && <Badge variant="outline">{level}</Badge>}
             {category && <Badge variant="secondary">{category}</Badge>}
           </div>
-          <h1 className="text-2xl font-bold">{title}</h1>
+          <h1 className="text-xl sm:text-2xl font-bold truncate">{title}</h1>
         </div>
       </div>
-      <div className="flex items-center gap-2">
-        <Button variant="outline" asChild>
+      <div className="flex items-center gap-2 mr-10 sm:mr-0">
+        <Button variant="outline" size="sm" className="sm:size-default" asChild>
           <Link href={`/admin/my-classes/${classId}/students`}>
-            <Users className="h-4 w-4 ml-2" />
-            مدیریت دانش‌آموزان
+            <Users className="h-4 w-4 sm:ml-2" />
+            <span className="hidden sm:inline">مدیریت دانش‌آموزان</span>
           </Link>
         </Button>
-        <Button asChild>
+        <Button size="sm" className="sm:size-default" asChild>
           <Link href={`/admin/my-classes/${classId}/edit`}>
-            <Edit className="h-4 w-4 ml-2" />
-            ویرایش محتوا
+            <Edit className="h-4 w-4 sm:ml-2" />
+            <span className="hidden sm:inline">ویرایش محتوا</span>
           </Link>
         </Button>
       </div>

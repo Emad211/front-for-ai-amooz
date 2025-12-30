@@ -27,9 +27,9 @@ interface ClassAnnouncementsCardProps {
 }
 
 const priorityStyles: Record<string, string> = {
-  high: 'bg-red-500/10 text-red-600 border-red-200',
-  medium: 'bg-amber-500/10 text-amber-600 border-amber-200',
-  low: 'bg-blue-500/10 text-blue-600 border-blue-200',
+  high: 'bg-destructive/10 text-destructive border-destructive/20',
+  medium: 'bg-muted text-muted-foreground border-border',
+  low: 'bg-primary/10 text-primary border-primary/20',
 };
 
 const priorityLabels: Record<string, string> = {
@@ -63,14 +63,14 @@ export function ClassAnnouncementsCard({
 }: ClassAnnouncementsCardProps) {
   return (
     <Card>
-      <CardHeader className="flex flex-row items-center justify-between">
-        <CardTitle className="text-lg flex items-center gap-2">
+      <CardHeader className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+        <CardTitle className="text-base sm:text-lg flex items-center gap-2">
           <Megaphone className="h-5 w-5" />
           اطلاعیه‌ها
         </CardTitle>
         <Button size="sm" variant="outline" onClick={onAdd}>
-          <Plus className="h-4 w-4 ml-2" />
-          اطلاعیه جدید
+          <Plus className="h-4 w-4 sm:ml-2" />
+          <span className="hidden sm:inline">اطلاعیه جدید</span>
         </Button>
       </CardHeader>
       <CardContent>

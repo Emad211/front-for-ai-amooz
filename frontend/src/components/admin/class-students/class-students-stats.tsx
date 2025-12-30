@@ -20,25 +20,25 @@ export function ClassStudentsStats({ students }: ClassStudentsStatsProps) {
       icon: Users,
       label: 'کل دانش‌آموزان',
       value: students.length,
-      color: 'text-blue-600 bg-blue-100 dark:bg-blue-900/30',
+      color: 'text-primary bg-primary/10',
     },
     {
       icon: UserCheck,
       label: 'دانش‌آموزان فعال',
       value: activeCount,
-      color: 'text-emerald-600 bg-emerald-100 dark:bg-emerald-900/30',
+      color: 'text-primary bg-primary/10',
     },
     {
       icon: UserX,
       label: 'غیرفعال',
       value: inactiveCount,
-      color: 'text-purple-600 bg-purple-100 dark:bg-purple-900/30',
+      color: 'text-muted-foreground bg-muted',
     },
     {
       icon: TrendingUp,
       label: 'میانگین پیشرفت',
       value: `${avgProgress}%`,
-      color: 'text-amber-600 bg-amber-100 dark:bg-amber-900/30',
+      color: 'text-primary bg-primary/10',
     },
   ];
 

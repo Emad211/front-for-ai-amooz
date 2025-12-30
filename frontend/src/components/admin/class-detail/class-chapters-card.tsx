@@ -28,15 +28,15 @@ export function ClassChaptersCard({ classId, chapters }: ClassChaptersCardProps)
 
   return (
     <Card>
-      <CardHeader className="flex flex-row items-center justify-between">
+      <CardHeader className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
         <div>
-          <CardTitle className="text-lg">سرفصل‌ها و دروس</CardTitle>
-          <CardDescription>{publishedLessons} از {totalLessons} درس منتشر شده</CardDescription>
+          <CardTitle className="text-base sm:text-lg">سرفصل‌ها و دروس</CardTitle>
+          <CardDescription className="text-xs sm:text-sm">{publishedLessons} از {totalLessons} درس منتشر شده</CardDescription>
         </div>
         <Button variant="outline" size="sm" asChild>
           <Link href={`/admin/my-classes/${classId}/edit`}>
-            <Edit className="h-4 w-4 ml-2" />
-            ویرایش
+            <Edit className="h-4 w-4 sm:ml-2" />
+            <span className="hidden sm:inline">ویرایش</span>
           </Link>
         </Button>
       </CardHeader>
@@ -57,9 +57,9 @@ export function ClassChaptersCard({ classId, chapters }: ClassChaptersCardProps)
                   <div className="flex items-center gap-2">
                     <span className="text-xs text-muted-foreground">{lesson.duration}</span>
                     {lesson.isPublished ? (
-                      <Badge variant="outline" className="text-[10px] bg-emerald-500/10 text-emerald-600">منتشر شده</Badge>
+                      <Badge variant="outline" className="text-[10px] bg-primary/10 text-primary">منتشر شده</Badge>
                     ) : (
-                      <Badge variant="outline" className="text-[10px]">پیش‌نویس</Badge>
+                      <Badge variant="outline" className="text-[10px] bg-muted text-muted-foreground">پیش‌نویس</Badge>
                     )}
                   </div>
                 </div>
