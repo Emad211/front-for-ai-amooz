@@ -28,6 +28,7 @@ export function StudentInviteSection({ isExpanded, onToggle }: StudentInviteSect
   }]);
   const [newPhone, setNewPhone] = useState('');
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const normalizePhone = (input: string) => {
     const digits = input.replace(/\D/g, '');
@@ -51,8 +52,16 @@ export function StudentInviteSection({ isExpanded, onToggle }: StudentInviteSect
 
   const handleAddStudent = () => {
     const normalized = normalizePhone(newPhone.trim());
-    if (!isValidPhone(normalized)) return;
-    if (invitedStudents.find(s => s.phone === normalized)) return;
+
+    if (!isValidPhone(normalized)) {
+      setErrorMessage('شماره تلفن نامعتبر است. مثال: 09120000000');
+      return;
+    }
+
+    if (invitedStudents.find(s => s.phone === normalized)) {
+      setErrorMessage('برای این شماره قبلاً کد دعوت ثبت شده است.');
+      return;
+    }
 
     setInvitedStudents([...invitedStudents, { 
       phone: normalized, 
@@ -60,6 +69,7 @@ export function StudentInviteSection({ isExpanded, onToggle }: StudentInviteSect
       inviteCode: generateStableInviteCode(normalized),
     }]);
     setNewPhone('');
+    setErrorMessage(null);
   };
 
   const handleRemoveStudent = (phone: string) => {
@@ -104,8 +114,11 @@ export function StudentInviteSection({ isExpanded, onToggle }: StudentInviteSect
             <div className="flex flex-col sm:flex-row gap-3">
               <Input 
                 value={newPhone}
-                onChange={(e) => setNewPhone(e.target.value)}
-                  placeholder="شماره تلفن دانش‌آموز (مثلاً 09120000000)" 
+                onChange={(e) => {
+                  setNewPhone(e.target.value);
+                  if (errorMessage) setErrorMessage(null);
+                }}
+                placeholder="شماره تلفن دانش‌آموز (مثلاً 09120000000)" 
                 className="h-11 bg-background rounded-xl flex-1 text-start" 
                 onKeyDown={(e) => e.key === 'Enter' && handleAddStudent()}
               />
@@ -117,6 +130,11 @@ export function StudentInviteSection({ isExpanded, onToggle }: StudentInviteSect
                 افزودن
               </Button>
             </div>
+            {errorMessage ? (
+              <p className="text-sm text-destructive flex items-center gap-2">
+                {errorMessage}
+              </p>
+            ) : null}
           </div>
 
           {/* لیست دانش‌آموزان */}
