@@ -1,12 +1,12 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { CourseContent } from '@/types';
+import { CourseContent, Lesson } from '@/types';
 import { DashboardService } from '@/services/dashboard-service';
 
 export function useCourseContent(courseId?: string) {
   const [content, setContent] = useState<CourseContent | null>(null);
-  const [currentLesson, setCurrentLesson] = useState<any>(null);
+  const [currentLesson, setCurrentLesson] = useState<Lesson | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 

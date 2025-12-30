@@ -1,34 +1,44 @@
 import { useState, useEffect } from 'react';
-import { PROFILE_TABS, ProfileTabId } from '@/constants/mock/profile-data';
+import { PROFILE_TABS, ProfileTabId } from '@/constants/profile-tabs';
 import { DashboardService } from '@/services/dashboard-service';
+import type { UserProfile } from '@/types';
 
 export const useProfile = () => {
   const [activeTab, setActiveTab] = useState<ProfileTabId>('personal');
-  const [user, setUser] = useState<any>(null);
+  const [user, setUser] = useState<UserProfile | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    let cancelled = false;
     const fetchProfile = async () => {
       try {
         setIsLoading(true);
+        setError(null);
         const data = await DashboardService.getUserProfile();
-        setUser(data);
+        if (!cancelled) setUser(data);
       } catch (error) {
         console.error('Error fetching profile:', error);
+        if (!cancelled) setError('خطا در دریافت اطلاعات پروفایل');
       } finally {
-        setIsLoading(false);
+        if (!cancelled) setIsLoading(false);
       }
     };
     fetchProfile();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
-  const updateProfile = async (data: any) => {
+  const updateProfile = async (data: Partial<UserProfile>) => {
     setIsLoading(true);
     try {
       await DashboardService.updateUserProfile(data);
-      setUser((prev: any) => ({ ...prev, ...data }));
+      setUser((prev) => (prev ? { ...prev, ...data } : prev));
     } catch (error) {
       console.error('Error updating profile:', error);
+      setError('خطا در بروزرسانی اطلاعات پروفایل');
     } finally {
       setIsLoading(false);
     }
@@ -41,5 +51,6 @@ export const useProfile = () => {
     user,
     updateProfile,
     isLoading,
+    error,
   };
 };

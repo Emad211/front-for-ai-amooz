@@ -2,16 +2,14 @@
 
 import { CalendarDays } from 'lucide-react';
 import { CalendarEventCard } from './calendar-event-card';
-import { getUpcomingEvents } from '@/constants/mock';
 import type { CalendarEvent } from '@/types';
 
 interface CalendarSidebarProps {
+  upcomingEvents: CalendarEvent[];
   onEventClick: (event: CalendarEvent) => void;
 }
 
-export function CalendarSidebar({ onEventClick }: CalendarSidebarProps) {
-  const upcomingEvents = getUpcomingEvents(5);
-
+export function CalendarSidebar({ upcomingEvents, onEventClick }: CalendarSidebarProps) {
   return (
     <aside className="hidden lg:block w-80 xl:w-96 shrink-0">
       <div className="bg-card rounded-3xl border border-border/50 p-5 sticky top-24">

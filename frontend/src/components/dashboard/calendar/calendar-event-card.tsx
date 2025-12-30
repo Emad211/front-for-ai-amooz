@@ -2,7 +2,7 @@
 
 import { Clock, MapPin, BookOpen } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { EVENT_TYPE_CONFIG, PERSIAN_MONTHS } from '@/constants/mock';
+import { EVENT_TYPE_CONFIG, PERSIAN_MONTHS } from '@/constants/calendar';
 import type { CalendarEvent } from '@/types';
 
 interface CalendarEventCardProps {

@@ -2,7 +2,7 @@
 
 import { useState, useMemo, useEffect } from 'react';
 import { CalendarEvent, CalendarDay } from '@/types';
-import { generateMonthDays } from '@/constants/mock/calendar-data';
+import { generateMonthDays, getUpcomingEvents } from '@/lib/calendar';
 import { DashboardService } from '@/services/dashboard-service';
 
 export function useCalendar() {
@@ -16,6 +16,8 @@ export function useCalendar() {
   const [selectedDay, setSelectedDay] = useState<number | undefined>();
   const [selectedEvents, setSelectedEvents] = useState<CalendarEvent[]>([]);
   const [showMobileEvents, setShowMobileEvents] = useState(false);
+
+  const upcomingEvents = useMemo(() => getUpcomingEvents(events, 10), [events]);
   
   // State for event modal
   const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
@@ -91,6 +93,7 @@ export function useCalendar() {
     currentMonth,
     currentYear,
     calendarDays,
+    upcomingEvents,
     selectedDay,
     selectedEvents,
     showMobileEvents,

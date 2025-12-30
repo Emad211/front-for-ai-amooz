@@ -46,9 +46,12 @@ export interface Question {
 export interface Lesson {
   id: string;
   title: string;
-  duration: string;
-  isActive: boolean;
-  isCompleted: boolean;
+  type?: 'video' | 'text' | 'quiz';
+  duration?: string;
+  isActive?: boolean;
+  isCompleted?: boolean;
+  isLocked?: boolean;
+  isSpecial?: boolean;
   content?: string;
   formulas?: { label: string; formula: string }[];
   tips?: string[];
@@ -251,4 +254,25 @@ export interface CalendarDay {
   isToday: boolean;
   isWeekend: boolean;
   events: CalendarEvent[];
+}
+
+export interface AdminProfileSettings {
+  name: string;
+  email: string;
+  phone: string;
+  bio: string;
+  location: string;
+  avatar: string;
+}
+
+export interface AdminSecuritySettings {
+  twoFactorEnabled: boolean;
+  lastPasswordChange: string;
+}
+
+export interface AdminNotificationSettings {
+  emailNotifications: boolean;
+  browserNotifications: boolean;
+  smsNotifications: boolean;
+  marketingEmails: boolean;
 }

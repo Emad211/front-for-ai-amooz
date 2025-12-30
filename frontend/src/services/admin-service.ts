@@ -6,8 +6,12 @@ import {
   MOCK_STUDENTS,
   MOCK_COURSES,
   MOCK_TICKETS,
-  MOCK_MESSAGE_RECIPIENTS
+  MOCK_MESSAGE_RECIPIENTS,
+  MOCK_ADMIN_PROFILE,
+  MOCK_ADMIN_SECURITY,
+  MOCK_ADMIN_NOTIFICATIONS
 } from '@/constants/mock';
+import type { AdminNotificationSettings, AdminProfileSettings, AdminSecuritySettings } from '@/types';
 
 /**
  * Admin Service
@@ -36,7 +40,8 @@ export const AdminService = {
 
   getStudents: async () => {
     await new Promise(resolve => setTimeout(resolve, 500));
-    return MOCK_STUDENTS;  },
+    return MOCK_STUDENTS;
+  },
 
   getCourses: async () => {
     await new Promise(resolve => setTimeout(resolve, 600));
@@ -50,5 +55,36 @@ export const AdminService = {
 
   getMessageRecipients: async () => {
     await new Promise(resolve => setTimeout(resolve, 500));
-    return MOCK_MESSAGE_RECIPIENTS;  }
+    return MOCK_MESSAGE_RECIPIENTS;
+  },
+
+  getProfileSettings: async (): Promise<AdminProfileSettings> => {
+    await new Promise(resolve => setTimeout(resolve, 400));
+    return MOCK_ADMIN_PROFILE;
+  },
+
+  getSecuritySettings: async (): Promise<AdminSecuritySettings> => {
+    await new Promise(resolve => setTimeout(resolve, 400));
+    return MOCK_ADMIN_SECURITY;
+  },
+
+  getNotificationSettings: async (): Promise<AdminNotificationSettings> => {
+    await new Promise(resolve => setTimeout(resolve, 400));
+    return MOCK_ADMIN_NOTIFICATIONS;
+  },
+
+  updateProfileSettings: async (data: Partial<AdminProfileSettings>) => {
+    await new Promise(resolve => setTimeout(resolve, 800));
+    return { success: true, data };
+  },
+
+  updateSecuritySettings: async (data: Partial<AdminSecuritySettings>) => {
+    await new Promise(resolve => setTimeout(resolve, 800));
+    return { success: true, data };
+  },
+
+  updateNotificationSettings: async (data: Partial<AdminNotificationSettings>) => {
+    await new Promise(resolve => setTimeout(resolve, 800));
+    return { success: true, data };
+  },
 };

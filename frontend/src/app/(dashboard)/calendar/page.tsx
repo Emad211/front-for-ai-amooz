@@ -14,6 +14,7 @@ export default function CalendarPage() {
     currentMonth,
     currentYear,
     calendarDays,
+    upcomingEvents,
     selectedDay,
     selectedEvents,
     showMobileEvents,
@@ -59,6 +60,7 @@ export default function CalendarPage() {
                 <CalendarMobileEvents
                   selectedDay={selectedDay}
                   selectedEvents={selectedEvents ?? []}
+                  upcomingEvents={upcomingEvents}
                   onBack={handleBackFromEvents}
                   onEventClick={handleEventClick}
                 />
@@ -75,6 +77,7 @@ export default function CalendarPage() {
                     <CalendarMobileEvents
                       selectedDay={selectedDay}
                       selectedEvents={selectedEvents ?? []}
+                      upcomingEvents={upcomingEvents}
                       onBack={handleBackFromEvents}
                       onEventClick={handleEventClick}
                     />
@@ -85,7 +88,7 @@ export default function CalendarPage() {
           </div>
 
           {/* Sidebar - Desktop Only */}
-          <CalendarSidebar onEventClick={handleEventClick} />
+          <CalendarSidebar upcomingEvents={upcomingEvents} onEventClick={handleEventClick} />
         </div>
       </div>
 

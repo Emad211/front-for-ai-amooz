@@ -2,7 +2,7 @@
 
 import { ChevronRight, ChevronLeft, Calendar } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { PERSIAN_MONTHS } from '@/constants/mock';
+import { PERSIAN_MONTHS } from '@/constants/calendar';
 
 interface CalendarHeaderProps {
   currentMonth: number;

@@ -3,12 +3,12 @@
 import { CalendarDays, ChevronLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { CalendarEventCard } from './calendar-event-card';
-import { getUpcomingEvents } from '@/constants/mock';
 import type { CalendarEvent } from '@/types';
 
 interface CalendarMobileEventsProps {
   selectedDay?: number;
   selectedEvents?: CalendarEvent[];
+  upcomingEvents?: CalendarEvent[];
   onEventClick: (event: CalendarEvent) => void;
   onBack: () => void;
 }
@@ -16,12 +16,13 @@ interface CalendarMobileEventsProps {
 export function CalendarMobileEvents({
   selectedDay,
   selectedEvents,
+  upcomingEvents,
   onEventClick,
   onBack,
 }: CalendarMobileEventsProps) {
-  const upcomingEvents = getUpcomingEvents(10);
   const safeSelectedEvents = selectedEvents ?? [];
-  const eventsToShow = selectedDay ? safeSelectedEvents : upcomingEvents;
+  const safeUpcomingEvents = upcomingEvents ?? [];
+  const eventsToShow = selectedDay ? safeSelectedEvents : safeUpcomingEvents;
   const title = selectedDay ? `رویدادهای ${selectedDay}ام` : 'رویدادهای پیش رو';
 
   return (

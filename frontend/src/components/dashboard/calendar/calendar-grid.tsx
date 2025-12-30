@@ -1,6 +1,6 @@
 'use client';
 
-import { PERSIAN_WEEKDAYS_SHORT } from '@/constants/mock';
+import { PERSIAN_WEEKDAYS_SHORT } from '@/constants/calendar';
 import type { CalendarDay, CalendarEvent } from '@/types';
 import { CalendarDayCell } from './calendar-day-cell';
 import { cn } from '@/lib/utils';

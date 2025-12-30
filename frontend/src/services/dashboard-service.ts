@@ -11,8 +11,8 @@ import {
   MOCK_CALENDAR_EVENTS,
   MOCK_COURSE_CONTENT,
   MOCK_LESSON_DETAIL,
-  MOCK_USER_PROFILE
 } from '@/constants/mock';
+import type { UserProfile } from '@/types';
 
 /**
  * Dashboard Service
@@ -141,10 +141,10 @@ export const DashboardService = {
 
   getUserProfile: async () => {
     await new Promise(resolve => setTimeout(resolve, 500));
-    return MOCK_USER_PROFILE;
+    return MOCK_STUDENT_PROFILE;
   },
 
-  updateUserProfile: async (data: any) => {
+  updateUserProfile: async (data: Partial<UserProfile>) => {
     await new Promise(resolve => setTimeout(resolve, 1000));
     return { success: true, data };
   }
