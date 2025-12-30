@@ -9,9 +9,10 @@ import {
   MOCK_MESSAGE_RECIPIENTS,
   MOCK_ADMIN_PROFILE,
   MOCK_ADMIN_SECURITY,
-  MOCK_ADMIN_NOTIFICATIONS
+  MOCK_ADMIN_NOTIFICATIONS,
+  MOCK_CLASS_DETAILS
 } from '@/constants/mock';
-import type { AdminNotificationSettings, AdminProfileSettings, AdminSecuritySettings } from '@/types';
+import type { AdminNotificationSettings, AdminProfileSettings, AdminSecuritySettings, ClassDetail, Course } from '@/types';
 
 /**
  * Admin Service
@@ -86,5 +87,42 @@ export const AdminService = {
   updateNotificationSettings: async (data: Partial<AdminNotificationSettings>) => {
     await new Promise(resolve => setTimeout(resolve, 800));
     return { success: true, data };
+  },
+
+  // ============================================================================
+  // Class Detail Methods - متدهای جزئیات کلاس
+  // ============================================================================
+
+  getClassDetail: async (classId: string): Promise<ClassDetail | null> => {
+    await new Promise(resolve => setTimeout(resolve, 500));
+    return MOCK_CLASS_DETAILS[classId] || null;
+  },
+
+  getClassStudents: async (classId: string) => {
+    await new Promise(resolve => setTimeout(resolve, 400));
+    const classDetail = MOCK_CLASS_DETAILS[classId];
+    return classDetail?.enrolledStudents || [];
+  },
+
+  updateClass: async (classId: string, data: Partial<Course>) => {
+    await new Promise(resolve => setTimeout(resolve, 800));
+    // In real implementation, this would update the class in the database
+    return { success: true, data: { id: classId, ...data } };
+  },
+
+  deleteClass: async (classId: string) => {
+    await new Promise(resolve => setTimeout(resolve, 600));
+    // In real implementation, this would delete the class from the database
+    return { success: true, classId };
+  },
+
+  removeStudentFromClass: async (classId: string, studentId: string) => {
+    await new Promise(resolve => setTimeout(resolve, 400));
+    return { success: true, classId, studentId };
+  },
+
+  addStudentToClass: async (classId: string, studentEmail: string) => {
+    await new Promise(resolve => setTimeout(resolve, 500));
+    return { success: true, classId, studentEmail };
   },
 };

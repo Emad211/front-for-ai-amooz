@@ -1,6 +1,9 @@
 'use client';
 
-import { MoreVertical, Users, BookOpen, Star, Calendar, Edit, Trash2, Eye, Copy, Share2 } from 'lucide-react';
+import { useState } from 'react';
+import Link from 'next/link';
+import { useRouter } from 'next/navigation';
+import { MoreVertical, Users, BookOpen, Star, Calendar, Edit, Trash2, Eye } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -11,6 +14,18 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import { AdminService } from '@/services/admin-service';
+import { toast } from 'sonner';
 
 interface ClassCardProps {
   cls: {
@@ -41,9 +56,28 @@ const levelConfig: Record<string, string> = {
 };
 
 export function ClassCard({ cls }: ClassCardProps) {
+  const router = useRouter();
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  const handleDelete = async () => {
+    try {
+      setIsDeleting(true);
+      await AdminService.deleteClass(String(cls.id));
+      toast.success('کلاس با موفقیت حذف شد');
+      setIsDeleteDialogOpen(false);
+      router.refresh();
+    } catch {
+      toast.error('خطا در حذف کلاس');
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
   if (!cls) return null;
   return (
-    <Card className="group hover:shadow-md transition-all duration-300 border-border/60 bg-card hover:border-primary/50 overflow-hidden relative">
+    <>
+      <Card className="group hover:shadow-md transition-all duration-300 border-border/60 bg-card hover:border-primary/50 overflow-hidden relative">
       <div className="absolute top-0 right-0 w-1 h-full bg-primary/0 group-hover:bg-primary transition-all duration-300" />
       
       <CardHeader className="pb-3 pt-5 px-5">
@@ -72,20 +106,29 @@ export function ClassCard({ cls }: ClassCardProps) {
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-48">
-              <DropdownMenuItem>
-                <Eye className="w-4 h-4 ml-2" />
-                مشاهده جزئیات
+              <DropdownMenuItem asChild>
+                <Link href={`/admin/my-classes/${cls.id}`}>
+                  <Eye className="w-4 h-4 ml-2" />
+                  مشاهده جزئیات
+                </Link>
               </DropdownMenuItem>
-              <DropdownMenuItem>
-                <Edit className="w-4 h-4 ml-2" />
-                ویرایش محتوا
+              <DropdownMenuItem asChild>
+                <Link href={`/admin/my-classes/${cls.id}/edit`}>
+                  <Edit className="w-4 h-4 ml-2" />
+                  ویرایش محتوا
+                </Link>
               </DropdownMenuItem>
-              <DropdownMenuItem>
-                <Users className="w-4 h-4 ml-2" />
-                مدیریت دانش‌آموزان
+              <DropdownMenuItem asChild>
+                <Link href={`/admin/my-classes/${cls.id}/students`}>
+                  <Users className="w-4 h-4 ml-2" />
+                  مدیریت دانش‌آموزان
+                </Link>
               </DropdownMenuItem>
               <DropdownMenuSeparator />
-              <DropdownMenuItem className="text-destructive focus:text-destructive">
+              <DropdownMenuItem 
+                className="text-destructive focus:text-destructive"
+                onClick={() => setIsDeleteDialogOpen(true)}
+              >
                 <Trash2 className="w-4 h-4 ml-2" />
                 حذف کلاس
               </DropdownMenuItem>
@@ -128,5 +171,28 @@ export function ClassCard({ cls }: ClassCardProps) {
         </div>
       </CardContent>
     </Card>
+
+    {/* Delete Confirmation Dialog */}
+    <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>حذف کلاس</AlertDialogTitle>
+          <AlertDialogDescription>
+            آیا از حذف کلاس «{cls.title}» مطمئن هستید؟ این عملیات قابل بازگشت نیست و تمام محتوا و اطلاعات دانش‌آموزان از بین می‌رود.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>انصراف</AlertDialogCancel>
+          <AlertDialogAction
+            onClick={handleDelete}
+            disabled={isDeleting}
+            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+          >
+            {isDeleting ? 'در حال حذف...' : 'حذف کلاس'}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+    </>
   );
 }

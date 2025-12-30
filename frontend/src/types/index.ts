@@ -276,3 +276,42 @@ export interface AdminNotificationSettings {
   smsNotifications: boolean;
   marketingEmails: boolean;
 }
+
+// ============================================================================
+// Class Detail Types - تایپ‌های جزئیات کلاس
+// ============================================================================
+
+export interface ClassStudent {
+  id: string;
+  name: string;
+  email: string;
+  avatar: string;
+  joinDate: string;
+  progress: number;
+  lastActivity: string;
+  status: 'active' | 'inactive';
+  grade?: number;
+}
+
+export interface ClassLesson {
+  id: string;
+  title: string;
+  type: 'video' | 'text' | 'quiz' | 'assignment';
+  duration: string;
+  order: number;
+  isPublished: boolean;
+}
+
+export interface ClassChapter {
+  id: string;
+  title: string;
+  order: number;
+  lessons: ClassLesson[];
+}
+
+export interface ClassDetail extends Course {
+  chapters?: ClassChapter[];
+  enrolledStudents?: ClassStudent[];
+  announcements?: { id: string; title: string; content: string; createdAt: string }[];
+  schedule?: { day: string; time: string }[];
+}

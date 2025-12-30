@@ -19,4 +19,5 @@ export * from './course-content-data';
 export * from './profile-data';
 export * from './exam-data';
 export * from './admin-data';
+export * from './class-detail-data';
 
