@@ -48,6 +48,10 @@ firestore-debug.log
 /frontend/.next/
 /frontend/.next/**
 /frontend/node_modules/
+
+# Ignore accidental root-level npm files (this repo's app lives in /frontend)
+/package.json
+/package-lock.json
 /frontend/.env
 /frontend/.env.local
 /frontend/.vercel
