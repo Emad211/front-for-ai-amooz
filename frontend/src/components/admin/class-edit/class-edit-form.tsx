@@ -43,13 +43,22 @@ export function ClassEditForm({ classDetail, onSave, isSaving }: ClassEditFormPr
     level: classDetail.level || 'مبتدی' as const,
     status: (classDetail.status || 'draft') as 'draft' | 'active' | 'paused' | 'archived',
     tags: classDetail.tags.join('، '),
+    scheduleDay: classDetail.schedule?.[0]?.day || '',
+    scheduleTime: classDetail.schedule?.[0]?.time || '',
   });
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     await onSave({
-      ...formData,
+      title: formData.title,
+      description: formData.description,
+      category: formData.category,
+      level: formData.level,
+      status: formData.status,
       tags: formData.tags.split('،').map(t => t.trim()).filter(Boolean),
+      schedule: formData.scheduleDay && formData.scheduleTime
+        ? [{ day: formData.scheduleDay, time: formData.scheduleTime }]
+        : classDetail.schedule,
     });
   };
 
@@ -62,7 +71,7 @@ export function ClassEditForm({ classDetail, onSave, isSaving }: ClassEditFormPr
         <form onSubmit={handleSubmit} className="space-y-6">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="space-y-2">
-              <Label htmlFor="title">عنوان کلاس</Label>
+              <Label htmlFor="title">عنوان کلاس (الزامی)</Label>
               <Input
                 id="title"
                 value={formData.title}
@@ -82,7 +91,7 @@ export function ClassEditForm({ classDetail, onSave, isSaving }: ClassEditFormPr
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="level">سطح</Label>
+              <Label htmlFor="level">سطح (الزامی)</Label>
               <Select
                 value={formData.level}
                 onValueChange={(value: 'مبتدی' | 'متوسط' | 'پیشرفته') => setFormData(prev => ({ ...prev, level: value }))}
@@ -113,6 +122,24 @@ export function ClassEditForm({ classDetail, onSave, isSaving }: ClassEditFormPr
                   ))}
                 </SelectContent>
               </Select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="schedule">زمان‌بندی کلاس (الزامی)</Label>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <Input
+                  id="schedule-day"
+                  value={formData.scheduleDay}
+                  onChange={e => setFormData(prev => ({ ...prev, scheduleDay: e.target.value }))}
+                  placeholder="مثلاً دوشنبه"
+                />
+                <Input
+                  id="schedule-time"
+                  value={formData.scheduleTime}
+                  onChange={e => setFormData(prev => ({ ...prev, scheduleTime: e.target.value }))}
+                  placeholder="مثلاً 10:00 تا 12:00"
+                />
+              </div>
+              <p className="text-xs text-muted-foreground">استاد باید زمان برگزاری را مشخص کند.</p>
             </div>
           </div>
 

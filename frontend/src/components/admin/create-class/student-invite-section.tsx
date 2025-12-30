@@ -10,8 +10,9 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { cn } from '@/lib/utils';
 
 interface Student {
-  email: string;
+  phone: string;
   avatar: string;
+  inviteCode: string;
 }
 
 interface StudentInviteSectionProps {
@@ -20,32 +21,55 @@ interface StudentInviteSectionProps {
 }
 
 export function StudentInviteSection({ isExpanded, onToggle }: StudentInviteSectionProps) {
-  const [invitedStudents, setInvitedStudents] = useState<Student[]>([
-    { email: 'student1@example.com', avatar: 'https://picsum.photos/seed/s1/40/40' },
-  ]);
-  const [newStudent, setNewStudent] = useState('');
-  const [copied, setCopied] = useState(false);
+  const [invitedStudents, setInvitedStudents] = useState<Student[]>([{
+    phone: '09120000001',
+    avatar: 'https://picsum.photos/seed/s1/40/40',
+    inviteCode: generateStableInviteCode('09120000001'),
+  }]);
+  const [newPhone, setNewPhone] = useState('');
+  const [copiedCode, setCopiedCode] = useState<string | null>(null);
 
-  const inviteCode = 'AI-AMOOZ-2024';
+  const normalizePhone = (input: string) => {
+    const digits = input.replace(/\D/g, '');
+    if (digits.startsWith('98') && digits.length === 12) return `0${digits.slice(2)}`;
+    if (digits.length === 10 && digits.startsWith('9')) return `0${digits}`;
+    return digits;
+  };
+
+  const isValidPhone = (phone: string) => /^09\d{9}$/.test(phone);
+
+  function generateStableInviteCode(phone: string) {
+    const digits = phone.replace(/\D/g, '');
+    const suffix = digits.slice(-6).padStart(6, '0');
+    const hashSeed = digits
+      .split('')
+      .reduce((acc, cur, idx) => (acc + (parseInt(cur, 10) + idx * 7)) % 100000, 0)
+      .toString()
+      .padStart(5, '0');
+    return `INV-${suffix}-${hashSeed}`.toUpperCase();
+  }
 
   const handleAddStudent = () => {
-    if (newStudent && !invitedStudents.find(s => s.email === newStudent)) {
-      setInvitedStudents([...invitedStudents, { 
-        email: newStudent, 
-        avatar: `https://picsum.photos/seed/${newStudent}/40/40` 
-      }]);
-      setNewStudent('');
-    }
+    const normalized = normalizePhone(newPhone.trim());
+    if (!isValidPhone(normalized)) return;
+    if (invitedStudents.find(s => s.phone === normalized)) return;
+
+    setInvitedStudents([...invitedStudents, { 
+      phone: normalized, 
+      avatar: `https://picsum.photos/seed/${normalized}/40/40`,
+      inviteCode: generateStableInviteCode(normalized),
+    }]);
+    setNewPhone('');
   };
 
-  const handleRemoveStudent = (email: string) => {
-    setInvitedStudents(invitedStudents.filter(s => s.email !== email));
+  const handleRemoveStudent = (phone: string) => {
+    setInvitedStudents(invitedStudents.filter(s => s.phone !== phone));
   };
 
-  const handleCopyCode = () => {
-    navigator.clipboard.writeText(inviteCode);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+  const handleCopyCode = (code: string) => {
+    navigator.clipboard.writeText(code);
+    setCopiedCode(code);
+    setTimeout(() => setCopiedCode(null), 2000);
   };
 
   return (
@@ -74,43 +98,14 @@ export function StudentInviteSection({ isExpanded, onToggle }: StudentInviteSect
       </CardHeader>
       {isExpanded && (
         <CardContent className="pt-0 space-y-5 text-start">
-          {/* کد دعوت */}
-          <div className="p-4 bg-muted/30 rounded-xl">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-              <div className="text-start">
-                <p className="text-sm font-medium text-foreground">کد دعوت کلاس</p>
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  این کد را با دانش‌آموزان به اشتراک بگذارید
-                </p>
-              </div>
-              <div className="flex items-center gap-2 justify-between sm:justify-end">
-                <code className="px-3 py-2 bg-background rounded-lg text-sm font-mono font-bold tracking-wider border border-border/50">
-                  {inviteCode}
-                </code>
-                <Button 
-                  variant="outline" 
-                  size="icon" 
-                  className="rounded-lg h-9 w-9 shrink-0"
-                  onClick={handleCopyCode}
-                >
-                  {copied ? (
-                    <Check className="h-4 w-4 text-green-500" />
-                  ) : (
-                    <Copy className="h-4 w-4" />
-                  )}
-                </Button>
-              </div>
-            </div>
-          </div>
-
           {/* افزودن دستی */}
           <div className="space-y-2 text-start">
-            <Label>افزودن دستی</Label>
+            <Label>افزودن دستی (شماره تلفن اجباری)</Label>
             <div className="flex flex-col sm:flex-row gap-3">
               <Input 
-                value={newStudent}
-                onChange={(e) => setNewStudent(e.target.value)}
-                placeholder="ایمیل یا شماره تلفن" 
+                value={newPhone}
+                onChange={(e) => setNewPhone(e.target.value)}
+                  placeholder="شماره تلفن دانش‌آموز (مثلاً 09120000000)" 
                 className="h-11 bg-background rounded-xl flex-1 text-start" 
                 onKeyDown={(e) => e.key === 'Enter' && handleAddStudent()}
               />
@@ -131,7 +126,7 @@ export function StudentInviteSection({ isExpanded, onToggle }: StudentInviteSect
               <div className="space-y-2">
                 {invitedStudents.map((student, index) => (
                   <div 
-                    key={student.email} 
+                    key={student.phone} 
                     className="flex items-center justify-between p-3 bg-muted/30 rounded-xl group hover:bg-muted/50 transition-colors"
                   >
                     <div className="flex items-center gap-3">
@@ -144,14 +139,31 @@ export function StudentInviteSection({ isExpanded, onToggle }: StudentInviteSect
                           <User className="h-4 w-4" />
                         </AvatarFallback>
                       </Avatar>
-                      <span className="text-sm font-medium text-foreground">
-                        {student.email}
-                      </span>
+                      <div className="flex flex-col">
+                        <span className="text-sm font-medium text-foreground">{student.phone}</span>
+                        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                          <code className="px-2 py-1 rounded-md bg-background border border-border/50 font-mono tracking-tight">
+                            {student.inviteCode}
+                          </code>
+                          <Button 
+                            variant="ghost" 
+                            size="icon" 
+                            className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                            onClick={() => handleCopyCode(student.inviteCode)}
+                          >
+                            {copiedCode === student.inviteCode ? (
+                              <Check className="h-4 w-4 text-green-500" />
+                            ) : (
+                              <Copy className="h-4 w-4" />
+                            )}
+                          </Button>
+                        </div>
+                      </div>
                     </div>
                     <Button 
                       variant="ghost" 
                       size="icon" 
-                      onClick={() => handleRemoveStudent(student.email)} 
+                      onClick={() => handleRemoveStudent(student.phone)} 
                       className="opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-lg"
                     >
                       <Trash2 className="h-4 w-4" />
