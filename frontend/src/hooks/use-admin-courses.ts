@@ -1,32 +1,35 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { AdminService } from '@/services/admin-service';
 import { Course } from '@/types';
+import { useMountedRef } from '@/hooks/use-mounted-ref';
 
 export function useAdminCourses() {
+  const mountedRef = useMountedRef();
   const [courses, setCourses] = useState<Course[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('all');
 
-  useEffect(() => {
-    const fetchCourses = async () => {
-      try {
-        setIsLoading(true);
-        const data = await AdminService.getCourses();
-        setCourses(data);
-      } catch (err) {
-        setError('خطا در دریافت اطلاعات کلاس‌ها');
-        console.error(err);
-      } finally {
-        setIsLoading(false);
-      }
-    };
+  const reload = useCallback(async () => {
+    try {
+      setError(null);
+      setIsLoading(true);
+      const data = await AdminService.getCourses();
+      if (mountedRef.current) setCourses(data);
+    } catch (err) {
+      console.error(err);
+      if (mountedRef.current) setError('خطا در دریافت اطلاعات کلاس‌ها');
+    } finally {
+      if (mountedRef.current) setIsLoading(false);
+    }
+  }, [mountedRef]);
 
-    fetchCourses();
-  }, []);
+  useEffect(() => {
+    reload();
+  }, [reload]);
 
   const categories = useMemo(() => {
     return Array.from(new Set(courses.map(c => c.category)));
@@ -57,6 +60,7 @@ export function useAdminCourses() {
     stats,
     isLoading,
     error,
+    reload,
     filters: {
       searchTerm,
       setSearchTerm,

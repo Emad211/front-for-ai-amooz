@@ -6,9 +6,10 @@ import { NotificationHeader, NotificationList } from '@/components/dashboard/not
 import { Notification } from '@/types';
 import { useNotifications } from '@/hooks/use-notifications';
 import { Skeleton } from '@/components/ui/skeleton';
+import { ErrorState } from '@/components/shared/error-state';
 
 export default function NotificationsPage() {
-  const { notifications, isLoading, error, markAsRead } = useNotifications();
+  const { notifications, isLoading, error, reload, markAsRead } = useNotifications();
   const [filter, setFilter] = useState('all');
 
   const unreadCount = useMemo(
@@ -38,8 +39,8 @@ export default function NotificationsPage() {
 
   if (error) {
     return (
-      <div className="flex items-center justify-center h-[60vh]">
-        <p className="text-destructive font-bold">{error}</p>
+      <div className="max-w-3xl mx-auto px-4 sm:px-0 py-10">
+        <ErrorState title="خطا در دریافت اعلان‌ها" description={error} onRetry={reload} />
       </div>
     );
   }

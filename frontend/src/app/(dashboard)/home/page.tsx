@@ -10,9 +10,10 @@ import { useDashboardData } from '@/hooks/use-dashboard-data';
 import { Skeleton } from '@/components/ui/skeleton';
 import { StatsSkeleton } from '@/components/dashboard/stats-skeleton';
 import { PageTransition } from '@/components/ui/page-transition';
+import { ErrorState } from '@/components/shared/error-state';
 
 export default function StudentDashboard() {
-  const { stats, activities, events, profile, isLoading, error } = useDashboardData();
+  const { stats, activities, events, profile, isLoading, error, reload } = useDashboardData();
 
   if (isLoading) {
     return (
@@ -43,9 +44,8 @@ export default function StudentDashboard() {
     return (
       <PageTransition>
         <main className="p-4 md:p-8 max-w-7xl mx-auto flex items-center justify-center h-[60vh]">
-          <div className="text-center">
-            <h2 className="text-2xl font-bold text-destructive mb-2">خطا در بارگذاری</h2>
-            <p className="text-muted-foreground">{error}</p>
+          <div className="w-full max-w-2xl">
+            <ErrorState title="خطا در بارگذاری" description={error} onRetry={reload} />
           </div>
         </main>
       </PageTransition>

@@ -12,9 +12,10 @@ import {
 import { Ticket, TicketMessage, TicketStatus, TicketPriority } from '@/types';
 import { useTickets } from '@/hooks/use-tickets';
 import { Skeleton } from '@/components/ui/skeleton';
+import { ErrorState } from '@/components/shared/error-state';
 
 export default function AdminTicketsPage() {
-  const { tickets, setTickets, isLoading, error } = useTickets(true);
+  const { tickets, setTickets, isLoading, error, reload } = useTickets(true);
   const [selectedTicket, setSelectedTicket] = useState<Ticket | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
@@ -107,8 +108,10 @@ export default function AdminTicketsPage() {
 
   if (error) {
     return (
-      <div className="flex items-center justify-center h-[60vh]">
-        <p className="text-destructive font-bold">{error}</p>
+      <div className="flex items-center justify-center h-[60vh] px-4">
+        <div className="w-full max-w-2xl">
+          <ErrorState title="خطا در دریافت تیکت‌ها" description={error} onRetry={reload} />
+        </div>
       </div>
     );
   }

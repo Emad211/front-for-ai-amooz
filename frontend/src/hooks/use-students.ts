@@ -1,8 +1,12 @@
-import { useState, useEffect, useMemo } from 'react';
+"use client";
+
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { AdminService } from '@/services/admin-service';
 import { Student } from '@/types';
+import { useMountedRef } from '@/hooks/use-mounted-ref';
 
 export function useStudents() {
+  const mountedRef = useMountedRef();
   const [students, setStudents] = useState<Student[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -12,22 +16,23 @@ export function useStudents() {
   const [performanceFilter, setPerformanceFilter] = useState('all');
   const [sortBy, setSortBy] = useState('recent');
 
-  useEffect(() => {
-    const fetchStudents = async () => {
-      try {
-        setIsLoading(true);
-        const data = await AdminService.getStudents();
-        setStudents(data);
-      } catch (err) {
-        setError('خطا در دریافت لیست دانش‌آموزان');
-        console.error(err);
-      } finally {
-        setIsLoading(false);
-      }
-    };
+  const reload = useCallback(async () => {
+    try {
+      setError(null);
+      setIsLoading(true);
+      const data = await AdminService.getStudents();
+      if (mountedRef.current) setStudents(data);
+    } catch (err) {
+      console.error(err);
+      if (mountedRef.current) setError('خطا در دریافت لیست دانش‌آموزان');
+    } finally {
+      if (mountedRef.current) setIsLoading(false);
+    }
+  }, [mountedRef]);
 
-    fetchStudents();
-  }, []);
+  useEffect(() => {
+    reload();
+  }, [reload]);
 
   const filteredStudents = useMemo(() => {
     return students
@@ -75,6 +80,7 @@ export function useStudents() {
     stats,
     isLoading,
     error,
+    reload,
     filters: {
       searchTerm,
       setSearchTerm,

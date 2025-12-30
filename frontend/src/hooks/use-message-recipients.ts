@@ -1,34 +1,38 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { AdminService } from '@/services/admin-service';
 import { MessageRecipient } from '@/types';
+import { useMountedRef } from '@/hooks/use-mounted-ref';
 
 export function useMessageRecipients() {
+  const mountedRef = useMountedRef();
   const [recipients, setRecipients] = useState<MessageRecipient[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    const fetchRecipients = async () => {
-      try {
-        setIsLoading(true);
-        const data = await AdminService.getMessageRecipients();
-        setRecipients(data);
-      } catch (err) {
-        setError('خطا در دریافت لیست مخاطبین');
-        console.error(err);
-      } finally {
-        setIsLoading(false);
-      }
-    };
+  const reload = useCallback(async () => {
+    try {
+      setError(null);
+      setIsLoading(true);
+      const data = await AdminService.getMessageRecipients();
+      if (mountedRef.current) setRecipients(data);
+    } catch (err) {
+      console.error(err);
+      if (mountedRef.current) setError('خطا در دریافت لیست مخاطبین');
+    } finally {
+      if (mountedRef.current) setIsLoading(false);
+    }
+  }, [mountedRef]);
 
-    fetchRecipients();
-  }, []);
+  useEffect(() => {
+    reload();
+  }, [reload]);
 
   return {
     recipients,
     isLoading,
-    error
+    error,
+    reload
   };
 }

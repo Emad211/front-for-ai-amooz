@@ -10,9 +10,10 @@ import { TicketList, TicketDetail, NewTicketDialog } from '@/components/shared/t
 import { Ticket, TicketMessage } from '@/types';
 import { useTickets } from '@/hooks/use-tickets';
 import { Skeleton } from '@/components/ui/skeleton';
+import { ErrorState } from '@/components/shared/error-state';
 
 export default function TicketsPage() {
-  const { tickets, setTickets, isLoading, error } = useTickets(false);
+  const { tickets, setTickets, isLoading, error, reload } = useTickets(false);
   const [selectedTicket, setSelectedTicket] = useState<Ticket | null>(null);
   const [isNewTicketOpen, setIsNewTicketOpen] = useState(false);
 
@@ -79,8 +80,8 @@ export default function TicketsPage() {
 
   if (error) {
     return (
-      <div className="flex items-center justify-center h-[60vh]">
-        <p className="text-destructive font-bold">{error}</p>
+      <div className="max-w-4xl mx-auto px-4 sm:px-0 py-10">
+        <ErrorState title="خطا در دریافت تیکت‌ها" description={error} onRetry={reload} />
       </div>
     );
   }

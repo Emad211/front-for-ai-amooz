@@ -10,9 +10,10 @@ import { MessageTips } from '@/components/admin/messages/message-tips';
 
 import { useMessageRecipients } from '@/hooks/use-message-recipients';
 import { Skeleton } from '@/components/ui/skeleton';
+import { ErrorState } from '@/components/shared/error-state';
 
 export default function MessagesPage() {
-  const { recipients, isLoading, error } = useMessageRecipients();
+  const { recipients, isLoading, error, reload } = useMessageRecipients();
   const [recipientType, setRecipientType] = useState<'all' | 'specific'>('all');
   const [selectedStudents, setSelectedStudents] = useState<string[]>([]);
   const [subject, setSubject] = useState('');
@@ -54,8 +55,10 @@ export default function MessagesPage() {
 
   if (error) {
     return (
-      <div className="flex items-center justify-center h-[60vh]">
-        <p className="text-destructive font-bold">{error}</p>
+      <div className="flex items-center justify-center h-[60vh] px-4">
+        <div className="w-full max-w-2xl">
+          <ErrorState title="خطا در دریافت مخاطبین" description={error} onRetry={reload} />
+        </div>
       </div>
     );
   }

@@ -1,8 +1,12 @@
-import { useState, useEffect } from 'react';
+"use client";
+
+import { useCallback, useEffect, useState } from 'react';
 import { DashboardService } from '@/services/dashboard-service';
 import { DashboardStats, DashboardActivity, DashboardEvent, UserProfile } from '@/types';
+import { useMountedRef } from '@/hooks/use-mounted-ref';
 
 export function useDashboardData() {
+  const mountedRef = useMountedRef();
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [activities, setActivities] = useState<DashboardActivity[]>([]);
   const [events, setEvents] = useState<DashboardEvent[]>([]);
@@ -10,31 +14,33 @@ export function useDashboardData() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  const reload = useCallback(async () => {
+    try {
+      setError(null);
+      setIsLoading(true);
+      const [statsData, activitiesData, eventsData, profileData] = await Promise.all([
+        DashboardService.getStats(),
+        DashboardService.getActivities(),
+        DashboardService.getUpcomingEvents(),
+        DashboardService.getStudentProfile()
+      ]);
+
+      if (!mountedRef.current) return;
+      setStats(statsData);
+      setActivities(activitiesData);
+      setEvents(eventsData);
+      setProfile(profileData);
+    } catch (err) {
+      console.error(err);
+      if (mountedRef.current) setError('خطا در دریافت اطلاعات داشبورد');
+    } finally {
+      if (mountedRef.current) setIsLoading(false);
+    }
+  }, [mountedRef]);
+
   useEffect(() => {
-    const fetchData = async () => {
-      try {
-        setIsLoading(true);
-        const [statsData, activitiesData, eventsData, profileData] = await Promise.all([
-          DashboardService.getStats(),
-          DashboardService.getActivities(),
-          DashboardService.getUpcomingEvents(),
-          DashboardService.getStudentProfile()
-        ]);
-
-        setStats(statsData);
-        setActivities(activitiesData);
-        setEvents(eventsData);
-        setProfile(profileData);
-      } catch (err) {
-        setError('خطا در دریافت اطلاعات داشبورد');
-        console.error(err);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    fetchData();
-  }, []);
+    reload();
+  }, [reload]);
 
   return {
     stats,
@@ -42,6 +48,7 @@ export function useDashboardData() {
     events,
     profile,
     isLoading,
-    error
+    error,
+    reload
   };
 }

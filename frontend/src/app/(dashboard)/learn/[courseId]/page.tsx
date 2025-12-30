@@ -18,12 +18,13 @@ import { Button } from "@/components/ui/button";
 import Link from 'next/link';
 import { useCourseContent } from '@/hooks/use-course-content';
 import { Skeleton } from '@/components/ui/skeleton';
+import { ErrorState } from '@/components/shared/error-state';
 
 export default function LearnPage() {
     const params = useParams();
     const rawCourseId = (params as any)?.courseId as string | string[] | undefined;
     const courseId = Array.isArray(rawCourseId) ? rawCourseId[0] : rawCourseId;
-    const { content, currentLesson, isLoading, error } = useCourseContent(courseId);
+    const { content, currentLesson, isLoading, error, reload } = useCourseContent(courseId);
     const [isChatOpen, setIsChatOpen] = React.useState(true);
 
     const toggleChat = () => setIsChatOpen(!isChatOpen);
@@ -40,14 +41,19 @@ export default function LearnPage() {
     }
 
     if (error || !content) {
+        const title = error ? 'خطا در دریافت محتوا' : 'محتوا یافت نشد';
+        const description = error || 'محتوای این دوره در دسترس نیست.';
         return (
             <div className="h-screen flex items-center justify-center bg-background">
-                <div className="text-center">
-                    <h2 className="text-xl font-bold text-destructive mb-2">خطا</h2>
-                    <p className="text-muted-foreground">{error || 'محتوا یافت نشد'}</p>
-                    <Link href="/classes">
-                        <Button className="mt-4">بازگشت به کلاس‌ها</Button>
-                    </Link>
+                <div className="w-full max-w-2xl px-4">
+                    <ErrorState
+                        title={title}
+                        description={description}
+                        variant={error ? 'error' : 'not-found'}
+                        onRetry={reload}
+                        primaryAction={{ label: 'بازگشت به کلاس‌ها', href: '/classes' }}
+                        secondaryAction={{ label: 'خانه', href: '/home' }}
+                    />
                 </div>
             </div>
         );

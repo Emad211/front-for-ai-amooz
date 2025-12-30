@@ -9,15 +9,18 @@ import { Search, SlidersHorizontal, LayoutGrid, BookOpen } from 'lucide-react';
 import { CourseCard } from '@/components/dashboard/ui/course-card';
 import { useCourses } from '@/hooks/use-courses';
 import { Skeleton } from '@/components/ui/skeleton';
+import { ErrorState } from '@/components/shared/error-state';
 
 export default function ClassesPage() {
-  const { courses, isLoading, error, filters } = useCourses();
+  const { courses, isLoading, error, reload, filters } = useCourses();
 
   if (error) {
     return (
-      <div className="flex items-center justify-center h-[60vh]">
-        <p className="text-destructive font-bold">{error}</p>
-      </div>
+      <main className="p-4 md:p-8 max-w-7xl mx-auto flex items-center justify-center h-[60vh]">
+        <div className="w-full max-w-2xl">
+          <ErrorState title="خطا در بارگذاری کلاس‌ها" description={error} onRetry={reload} />
+        </div>
+      </main>
     );
   }
 

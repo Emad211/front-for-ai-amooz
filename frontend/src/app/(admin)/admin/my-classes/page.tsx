@@ -10,9 +10,10 @@ import { ClassFilters } from '@/components/admin/my-classes/class-filters';
 import { ClassCard } from '@/components/admin/my-classes/class-card';
 import { useAdminCourses } from '@/hooks/use-admin-courses';
 import { Skeleton } from '@/components/ui/skeleton';
+import { ErrorState } from '@/components/shared/error-state';
 
 export default function MyClassesPage() {
-  const { courses, categories, stats, isLoading, error, filters } = useAdminCourses();
+  const { courses, categories, stats, isLoading, error, reload, filters } = useAdminCourses();
   const [sortBy, setSortBy] = useState('recent');
 
   // Sort classes (logic kept here for now as it's specific to this view)
@@ -35,8 +36,10 @@ export default function MyClassesPage() {
 
   if (error) {
     return (
-      <div className="flex items-center justify-center h-[60vh]">
-        <p className="text-destructive font-bold">{error}</p>
+      <div className="flex items-center justify-center h-[60vh] px-4">
+        <div className="w-full max-w-2xl">
+          <ErrorState title="خطا در دریافت کلاس‌ها" description={error} onRetry={reload} />
+        </div>
       </div>
     );
   }

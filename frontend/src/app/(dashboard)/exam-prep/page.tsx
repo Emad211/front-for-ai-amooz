@@ -9,15 +9,18 @@ import { Search, SlidersHorizontal, LayoutGrid, ArrowLeft } from 'lucide-react';
 import { ExamCard } from '@/components/dashboard/ui/exam-card';
 import { useExams } from '@/hooks/use-exams';
 import { Skeleton } from '@/components/ui/skeleton';
+import { ErrorState } from '@/components/shared/error-state';
 
 export default function ExamPrepPage() {
-  const { exams, isLoading, error, filters } = useExams();
+  const { exams, isLoading, error, reload, filters } = useExams();
 
   if (error) {
     return (
-      <div className="flex items-center justify-center h-[60vh]">
-        <p className="text-destructive font-bold">{error}</p>
-      </div>
+      <main className="p-4 md:p-8 max-w-7xl mx-auto flex items-center justify-center h-[60vh]">
+        <div className="w-full max-w-2xl">
+          <ErrorState title="خطا در بارگذاری آزمون‌ها" description={error} onRetry={reload} />
+        </div>
+      </main>
     );
   }
 

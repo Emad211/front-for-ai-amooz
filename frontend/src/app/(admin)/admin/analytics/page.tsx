@@ -10,9 +10,10 @@ import { useAdminAnalytics } from '@/hooks/use-admin-analytics';
 import { Skeleton } from '@/components/ui/skeleton';
 import { StatsSkeleton } from '@/components/dashboard/stats-skeleton';
 import { PageTransition } from '@/components/ui/page-transition';
+import { ErrorState } from '@/components/shared/error-state';
 
 export default function AnalyticsPage() {
-  const { stats, chartData, distributionData, activities, isLoading, error } = useAdminAnalytics();
+  const { stats, chartData, distributionData, activities, isLoading, error, reload } = useAdminAnalytics();
 
   if (isLoading) {
     return (
@@ -41,8 +42,10 @@ export default function AnalyticsPage() {
   if (error) {
     return (
       <PageTransition>
-        <div className="flex items-center justify-center h-[60vh]">
-          <p className="text-destructive font-bold">{error}</p>
+        <div className="flex items-center justify-center h-[60vh] px-4">
+          <div className="w-full max-w-2xl">
+            <ErrorState title="خطا در دریافت اطلاعات تحلیلی" description={error} onRetry={reload} />
+          </div>
         </div>
       </PageTransition>
     );

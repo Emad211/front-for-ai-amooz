@@ -8,9 +8,10 @@ import { StudentFilters } from '@/components/admin/students/student-filters';
 import { StudentTable } from '@/components/admin/students/student-table';
 import { useStudents } from '@/hooks/use-students';
 import { Skeleton } from '@/components/ui/skeleton';
+import { ErrorState } from '@/components/shared/error-state';
 
 export default function StudentsPage() {
-  const { students, stats, isLoading, error, filters } = useStudents();
+  const { students, stats, isLoading, error, reload, filters } = useStudents();
 
   if (isLoading) {
     return (
@@ -35,8 +36,10 @@ export default function StudentsPage() {
 
   if (error) {
     return (
-      <div className="flex items-center justify-center h-[60vh]">
-        <p className="text-destructive font-bold">{error}</p>
+      <div className="flex items-center justify-center h-[60vh] px-4">
+        <div className="w-full max-w-2xl">
+          <ErrorState title="خطا در دریافت دانش‌آموزان" description={error} onRetry={reload} />
+        </div>
       </div>
     );
   }

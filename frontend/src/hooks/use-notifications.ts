@@ -1,30 +1,33 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { DashboardService } from '@/services/dashboard-service';
 import { Notification } from '@/types';
+import { useMountedRef } from '@/hooks/use-mounted-ref';
 
 export function useNotifications() {
+  const mountedRef = useMountedRef();
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    const fetchNotifications = async () => {
-      try {
-        setIsLoading(true);
-        const data = await DashboardService.getNotifications();
-        setNotifications(data);
-      } catch (err) {
-        setError('خطا در دریافت اعلان‌ها');
-        console.error(err);
-      } finally {
-        setIsLoading(false);
-      }
-    };
+  const reload = useCallback(async () => {
+    try {
+      setError(null);
+      setIsLoading(true);
+      const data = await DashboardService.getNotifications();
+      if (mountedRef.current) setNotifications(data);
+    } catch (err) {
+      console.error(err);
+      if (mountedRef.current) setError('خطا در دریافت اعلان‌ها');
+    } finally {
+      if (mountedRef.current) setIsLoading(false);
+    }
+  }, [mountedRef]);
 
-    fetchNotifications();
-  }, []);
+  useEffect(() => {
+    reload();
+  }, [reload]);
 
   const markAsRead = (id: string) => {
     setNotifications(prev => prev.map(n => n.id === id ? { ...n, isRead: true } : n));
@@ -42,6 +45,7 @@ export function useNotifications() {
     notifications,
     isLoading,
     error,
+    reload,
     markAsRead,
     markAllAsRead,
     deleteNotification
