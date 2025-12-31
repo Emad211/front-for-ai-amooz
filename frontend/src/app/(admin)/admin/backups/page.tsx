@@ -43,7 +43,7 @@ export default function BackupsPage() {
             Array.from({ length: 5 }).map((_, idx) => <Skeleton key={idx} className="h-14 rounded-xl" />)
           ) : items.length ? (
             items.map((b) => (
-              <div key={b.id} className="p-4 rounded-xl border bg-muted/40 flex items-center justify-between gap-3">
+              <div key={b.id} className="p-4 rounded-xl border bg-muted/40 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                 <div>
                   <p className="text-sm text-muted-foreground">{b.createdAt}</p>
                   <p className="text-base font-bold text-foreground">{b.type === 'full' ? 'بک‌آپ کامل' : 'بک‌آپ افزایشی'}</p>

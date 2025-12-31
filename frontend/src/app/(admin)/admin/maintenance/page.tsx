@@ -39,7 +39,7 @@ export default function MaintenancePage() {
           <CardTitle>شاخص‌های سلامت</CardTitle>
           <CardDescription>نمای کلی مصرف منابع و آپتایم</CardDescription>
         </CardHeader>
-        <CardContent className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <CardContent className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
           {isLoading || !health ? (
             Array.from({ length: 4 }).map((_, idx) => <Skeleton key={idx} className="h-20 rounded-xl" />)
           ) : (

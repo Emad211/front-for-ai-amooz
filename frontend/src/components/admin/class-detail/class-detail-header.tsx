@@ -12,6 +12,7 @@ interface ClassDetailHeaderProps {
   status?: string;
   level?: string;
   category?: string;
+  basePath?: string;
 }
 
 const statusConfig: Record<string, { label: string; color: string }> = {
@@ -27,6 +28,7 @@ export function ClassDetailHeader({
   status = 'draft', 
   level, 
   category,
+  basePath = '/admin',
 }: ClassDetailHeaderProps) {
   const router = useRouter();
   
@@ -49,13 +51,13 @@ export function ClassDetailHeader({
       </div>
       <div className="flex items-center gap-2 mr-10 sm:mr-0">
         <Button variant="outline" size="sm" className="sm:size-default" asChild>
-          <Link href={`/admin/my-classes/${classId}/students`}>
+          <Link href={`${basePath}/my-classes/${classId}/students`}>
             <Users className="h-4 w-4 sm:ml-2" />
             <span className="hidden sm:inline">مدیریت دانش‌آموزان</span>
           </Link>
         </Button>
         <Button size="sm" className="sm:size-default" asChild>
-          <Link href={`/admin/my-classes/${classId}/edit`}>
+          <Link href={`${basePath}/my-classes/${classId}/edit`}>
             <Edit className="h-4 w-4 sm:ml-2" />
             <span className="hidden sm:inline">ویرایش محتوا</span>
           </Link>

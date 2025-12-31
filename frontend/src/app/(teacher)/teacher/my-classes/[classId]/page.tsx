@@ -2,7 +2,7 @@
 
 import { use } from 'react';
 import { Loader2 } from 'lucide-react';
-import { useClassDetail } from '@/hooks/use-class-detail';
+import { useTeacherClassDetail } from '@/hooks/use-teacher-class-detail';
 import {
   ClassDetailHeader,
   ClassInfoCard,
@@ -16,9 +16,9 @@ interface PageProps {
   params: Promise<{ classId: string }>;
 }
 
-export default function ClassDetailPage({ params }: PageProps) {
+export default function TeacherClassDetailPage({ params }: PageProps) {
   const { classId } = use(params);
-  const { classDetail, students, isLoading, error } = useClassDetail(classId);
+  const { detail, students, isLoading, error } = useTeacherClassDetail(classId);
 
   if (isLoading) {
     return (
@@ -28,7 +28,7 @@ export default function ClassDetailPage({ params }: PageProps) {
     );
   }
 
-  if (error || !classDetail) {
+  if (error || !detail) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
         <p className="text-destructive">خطا در بارگذاری اطلاعات کلاس</p>
@@ -38,41 +38,25 @@ export default function ClassDetailPage({ params }: PageProps) {
 
   return (
     <div className="space-y-6">
-      <ClassDetailHeader 
+      <ClassDetailHeader
         classId={classId}
-        title={classDetail.title}
-        category={classDetail.category}
-        level={classDetail.level}
-        status={classDetail.status}
+        title={detail.title}
+        category={detail.category}
+        level={detail.level}
+        status={detail.status}
+        basePath="/teacher"
       />
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Main Content */}
         <div className="lg:col-span-2 space-y-6">
-          <ClassInfoCard 
-            description={classDetail.description}
-            tags={classDetail.tags}
-          />
-          
-          <ClassChaptersCard 
-            classId={classId}
-            chapters={classDetail.chapters || []}
-          />
-          
-          <ClassStudentsPreview 
-            classId={classId}
-            students={students}
-          />
-          
+          <ClassInfoCard description={detail.description} tags={detail.tags} />
+          <ClassChaptersCard classId={classId} chapters={detail.chapters || []} basePath="/teacher" />
+          <ClassStudentsPreview classId={classId} students={students} basePath="/teacher" />
           <ClassAnnouncementsCard />
         </div>
 
-        {/* Sidebar */}
         <div className="lg:col-span-1">
-          <ClassStatsSidebar 
-            classDetail={classDetail}
-            totalStudents={students.length}
-          />
+          <ClassStatsSidebar classDetail={detail} totalStudents={students.length} />
         </div>
       </div>
     </div>

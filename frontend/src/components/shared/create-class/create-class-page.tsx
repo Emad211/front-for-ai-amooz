@@ -7,20 +7,17 @@ import { FileUploadSection } from '@/components/admin/create-class/file-upload-s
 import { StudentInviteSection } from '@/components/admin/create-class/student-invite-section';
 import { Card } from '@/components/ui/card';
 
-export default function CreateClassPage() {
+export function CreateClassPage() {
   const [expandedSections, setExpandedSections] = useState<string[]>(['info', 'files', 'exercises', 'students']);
 
   const toggleSection = (section: string) => {
-    setExpandedSections(prev => 
-      prev.includes(section) 
-        ? prev.filter(s => s !== section)
-        : [...prev, section]
+    setExpandedSections((prev) =>
+      prev.includes(section) ? prev.filter((s) => s !== section) : [...prev, section]
     );
   };
 
   return (
     <div className="space-y-8" dir="rtl">
-      {/* هدر صفحه با گرادیان */}
       <Card className="relative overflow-hidden border-border/40 bg-gradient-to-l from-primary/10 via-background to-background rounded-3xl shadow-xl shadow-primary/5">
         <div className="absolute inset-y-0 left-0 w-40 bg-primary/10 blur-3xl" />
         <div className="relative p-6 sm:p-8 flex flex-col gap-3">
@@ -40,14 +37,9 @@ export default function CreateClassPage() {
         </div>
       </Card>
 
-      {/* بخش اطلاعات کلاس */}
-      <ClassInfoForm 
-        isExpanded={expandedSections.includes('info')} 
-        onToggle={() => toggleSection('info')} 
-      />
+      <ClassInfoForm isExpanded={expandedSections.includes('info')} onToggle={() => toggleSection('info')} />
 
-      {/* بخش بارگذاری فایل */}
-      <FileUploadSection 
+      <FileUploadSection
         title="بارگذاری فایل درسی"
         icon="upload"
         type="lesson"
@@ -55,8 +47,7 @@ export default function CreateClassPage() {
         onToggle={() => toggleSection('files')}
       />
 
-      {/* بخش بارگذاری تمرین */}
-      <FileUploadSection 
+      <FileUploadSection
         title="بارگذاری تمرین"
         description="اختیاری"
         icon="exercise"
@@ -65,13 +56,8 @@ export default function CreateClassPage() {
         onToggle={() => toggleSection('exercises')}
       />
 
-      {/* بخش دعوت دانش‌آموزان */}
-      <StudentInviteSection 
-        isExpanded={expandedSections.includes('students')}
-        onToggle={() => toggleSection('students')}
-      />
+      <StudentInviteSection isExpanded={expandedSections.includes('students')} onToggle={() => toggleSection('students')} />
 
-      {/* دکمه‌های پایین */}
       <div className="flex flex-col sm:flex-row items-center justify-end gap-3 pt-4">
         <Button variant="outline" className="w-full sm:w-auto rounded-xl h-11 px-6">
           انصراف

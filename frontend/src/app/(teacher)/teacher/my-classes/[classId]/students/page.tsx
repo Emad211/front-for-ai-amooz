@@ -2,8 +2,9 @@
 
 import { use } from 'react';
 import { Loader2 } from 'lucide-react';
-import { useClassDetail } from '@/hooks/use-class-detail';
 import { toast } from 'sonner';
+import { useTeacherClassDetail } from '@/hooks/use-teacher-class-detail';
+import { useTeacherClassActions } from '@/hooks/use-teacher-class-actions';
 import {
   ClassStudentsHeader,
   ClassStudentsStats,
@@ -14,15 +15,17 @@ interface PageProps {
   params: Promise<{ classId: string }>;
 }
 
-export default function ClassStudentsPage({ params }: PageProps) {
+export default function TeacherClassStudentsPage({ params }: PageProps) {
   const { classId } = use(params);
-  const { classDetail, students, isLoading, error, removeStudent } = useClassDetail(classId);
+  const { detail, students, isLoading, error, reload } = useTeacherClassDetail(classId);
+  const { removeStudent } = useTeacherClassActions(classId);
 
   const handleRemoveStudent = async (studentId: string) => {
-    try {
-      await removeStudent(studentId);
+    const ok = await removeStudent(studentId);
+    if (ok) {
       toast.success('دانش‌آموز از کلاس حذف شد');
-    } catch {
+      reload();
+    } else {
       toast.error('خطا در حذف دانش‌آموز');
     }
   };
@@ -35,7 +38,7 @@ export default function ClassStudentsPage({ params }: PageProps) {
     );
   }
 
-  if (error || !classDetail) {
+  if (error || !detail) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
         <p className="text-destructive">خطا در بارگذاری اطلاعات</p>
@@ -45,17 +48,11 @@ export default function ClassStudentsPage({ params }: PageProps) {
 
   return (
     <div className="space-y-6">
-      <ClassStudentsHeader 
-        title={classDetail.title}
-        studentsCount={students.length}
-      />
+      <ClassStudentsHeader title={detail.title} studentsCount={students.length} />
 
       <ClassStudentsStats students={students} />
 
-      <ClassStudentsTable 
-        students={students}
-        onRemove={handleRemoveStudent}
-      />
+      <ClassStudentsTable students={students} onRemove={handleRemoveStudent} />
     </div>
   );
 }

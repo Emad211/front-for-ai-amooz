@@ -41,6 +41,7 @@ interface ClassCardProps {
     level: string;
     rating: number;
   };
+  basePath?: string;
 }
 
 const statusConfig: Record<string, { label: string; color: string }> = {
@@ -55,7 +56,7 @@ const levelConfig: Record<string, string> = {
   'پیشرفته': 'bg-muted text-muted-foreground border-border',
 };
 
-export function ClassCard({ cls }: ClassCardProps) {
+export function ClassCard({ cls, basePath = '/admin' }: ClassCardProps) {
   const router = useRouter();
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -107,19 +108,19 @@ export function ClassCard({ cls }: ClassCardProps) {
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-48">
               <DropdownMenuItem asChild>
-                <Link href={`/admin/my-classes/${cls.id}`}>
+                <Link href={`${basePath}/my-classes/${cls.id}`}>
                   <Eye className="w-4 h-4 ml-2" />
                   مشاهده جزئیات
                 </Link>
               </DropdownMenuItem>
               <DropdownMenuItem asChild>
-                <Link href={`/admin/my-classes/${cls.id}/edit`}>
+                <Link href={`${basePath}/my-classes/${cls.id}/edit`}>
                   <Edit className="w-4 h-4 ml-2" />
                   ویرایش محتوا
                 </Link>
               </DropdownMenuItem>
               <DropdownMenuItem asChild>
-                <Link href={`/admin/my-classes/${cls.id}/students`}>
+                <Link href={`${basePath}/my-classes/${cls.id}/students`}>
                   <Users className="w-4 h-4 ml-2" />
                   مدیریت دانش‌آموزان
                 </Link>

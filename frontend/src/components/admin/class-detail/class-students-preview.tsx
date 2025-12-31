@@ -18,6 +18,7 @@ interface ClassStudentsPreviewProps {
   classId: string;
   students: ClassStudent[];
   maxDisplay?: number;
+  basePath?: string;
 }
 
 const statusColors: Record<string, string> = {
@@ -32,7 +33,7 @@ const statusLabels: Record<string, string> = {
   completed: 'تکمیل شده',
 };
 
-export function ClassStudentsPreview({ classId, students, maxDisplay = 5 }: ClassStudentsPreviewProps) {
+export function ClassStudentsPreview({ classId, students, maxDisplay = 5, basePath = '/admin' }: ClassStudentsPreviewProps) {
   const displayedStudents = students.slice(0, maxDisplay);
   const remainingCount = students.length - maxDisplay;
 
@@ -48,7 +49,7 @@ export function ClassStudentsPreview({ classId, students, maxDisplay = 5 }: Clas
         </div>
         <div className="flex items-center gap-2">
           <Button variant="outline" size="sm" asChild>
-            <Link href={`/admin/my-classes/${classId}/students`}>
+            <Link href={`${basePath}/my-classes/${classId}/students`}>
               مشاهده همه
             </Link>
           </Button>
@@ -99,7 +100,7 @@ export function ClassStudentsPreview({ classId, students, maxDisplay = 5 }: Clas
           ))}
           {remainingCount > 0 && (
             <Link 
-              href={`/admin/my-classes/${classId}/students`}
+              href={`${basePath}/my-classes/${classId}/students`}
               className="block text-center text-sm text-primary hover:underline py-2"
             >
               و {remainingCount} دانش‌آموز دیگر...

@@ -10,6 +10,7 @@ import type { ClassChapter } from '@/types';
 interface ClassChaptersCardProps {
   classId: string;
   chapters: ClassChapter[];
+  basePath?: string;
 }
 
 const lessonTypeIcon: Record<string, React.ReactNode> = {
@@ -19,7 +20,7 @@ const lessonTypeIcon: Record<string, React.ReactNode> = {
   assignment: <ClipboardList className="h-4 w-4" />,
 };
 
-export function ClassChaptersCard({ classId, chapters }: ClassChaptersCardProps) {
+export function ClassChaptersCard({ classId, chapters, basePath = '/admin' }: ClassChaptersCardProps) {
   const totalLessons = chapters.reduce((acc, ch) => acc + ch.lessons.length, 0);
   const publishedLessons = chapters.reduce(
     (acc, ch) => acc + ch.lessons.filter(l => l.isPublished).length, 
@@ -34,7 +35,7 @@ export function ClassChaptersCard({ classId, chapters }: ClassChaptersCardProps)
           <CardDescription className="text-xs sm:text-sm">{publishedLessons} از {totalLessons} درس منتشر شده</CardDescription>
         </div>
         <Button variant="outline" size="sm" asChild>
-          <Link href={`/admin/my-classes/${classId}/edit`}>
+          <Link href={`${basePath}/my-classes/${classId}/edit`}>
             <Edit className="h-4 w-4 sm:ml-2" />
             <span className="hidden sm:inline">ویرایش</span>
           </Link>

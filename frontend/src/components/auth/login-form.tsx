@@ -11,6 +11,7 @@ import { Separator } from '@/components/ui/separator';
 import { loginSchema, type LoginFormValues } from '@/lib/validations/auth';
 import { toast } from 'sonner';
 import { Loader2 } from 'lucide-react';
+import { useRouter, useSearchParams } from 'next/navigation';
 
 const GoogleIcon = (props: React.SVGProps<SVGSVGElement>) => (
     <svg role="img" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" {...props}>
@@ -24,6 +25,8 @@ interface LoginFormProps {
 
 export function LoginForm({ onSwitchToJoin }: LoginFormProps) {
   const [isLoading, setIsLoading] = React.useState(false);
+  const router = useRouter();
+  const searchParams = useSearchParams();
 
   const {
     register,
@@ -45,6 +48,14 @@ export function LoginForm({ onSwitchToJoin }: LoginFormProps) {
     
     console.log('Login data:', data);
     toast.success('ورود با موفقیت انجام شد');
+
+    const next = searchParams.get('next');
+    const safeNext =
+      next && next.startsWith('/') && !next.startsWith('//') && !next.includes('://')
+        ? next
+        : '/home';
+
+    router.push(safeNext);
   };
 
   return (

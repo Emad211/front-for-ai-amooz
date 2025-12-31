@@ -96,7 +96,7 @@ export default function TeacherMyClassesPage() {
 				) : sortedClasses.length > 0 ? (
 					<div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
 						{sortedClasses.map((cls) => (
-							<ClassCard key={cls.id} cls={cls as any} />
+							<ClassCard key={cls.id} cls={cls as any} basePath="/teacher" />
 						))}
 					</div>
 				) : (

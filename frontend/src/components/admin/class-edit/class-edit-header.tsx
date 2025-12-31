@@ -10,6 +10,7 @@ interface ClassEditHeaderProps {
   classId: string;
   title: string;
   status?: string;
+  basePath?: string;
 }
 
 const statusConfig: Record<string, { label: string; color: string }> = {
@@ -19,7 +20,7 @@ const statusConfig: Record<string, { label: string; color: string }> = {
   archived: { label: 'آرشیو شده', color: 'bg-destructive/10 text-destructive' },
 };
 
-export function ClassEditHeader({ classId, title, status = 'draft' }: ClassEditHeaderProps) {
+export function ClassEditHeader({ classId, title, status = 'draft', basePath = '/admin' }: ClassEditHeaderProps) {
   const router = useRouter();
 
   return (
@@ -38,7 +39,7 @@ export function ClassEditHeader({ classId, title, status = 'draft' }: ClassEditH
         </div>
       </div>
       <Button variant="outline" asChild className="w-full sm:w-auto">
-        <Link href={`/admin/my-classes/${classId}`}>
+        <Link href={`${basePath}/my-classes/${classId}`}>
           مشاهده کلاس
         </Link>
       </Button>

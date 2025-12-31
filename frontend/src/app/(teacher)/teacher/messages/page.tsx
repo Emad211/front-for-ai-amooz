@@ -62,15 +62,15 @@ export default function TeacherMessagesPage() {
 	}
 
 	return (
-		<div className="space-y-8 max-w-5xl mx-auto">
-			<div className="flex items-center justify-between">
+		<div className="space-y-8 max-w-5xl mx-auto px-1 sm:px-0">
+			<div className="flex flex-col gap-2 sm:gap-3 sm:flex-row sm:items-center sm:justify-between">
 				<div className="text-start">
 					<h1 className="text-2xl md:text-3xl font-black text-foreground">ارسال پیام</h1>
 					<p className="text-muted-foreground text-sm mt-1">ارسال اطلاعیه به دانش‌آموزان</p>
 				</div>
 			</div>
 
-			<div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+			<div className="grid grid-cols-1 lg:grid-cols-3 gap-6 lg:gap-8">
 				<div className="lg:col-span-2 space-y-6">
 					<Card>
 						<CardHeader className="text-start">

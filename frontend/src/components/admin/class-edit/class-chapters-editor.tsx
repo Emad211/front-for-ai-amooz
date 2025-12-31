@@ -160,36 +160,40 @@ export function ClassChaptersEditor({ chapters, onChange }: ClassChaptersEditorP
                 {chapter.lessons.map(lesson => (
                   <div 
                     key={lesson.id} 
-                    className="flex items-center justify-between p-3 rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors"
+                    className="flex flex-col sm:flex-row sm:items-center justify-between p-3 rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors gap-3"
                   >
-                    <div className="flex items-center gap-3">
-                      <GripVertical className="h-4 w-4 text-muted-foreground" />
-                      <span className="text-muted-foreground">{lessonTypeIcon[lesson.type]}</span>
-                      <span className="text-sm">{lesson.title}</span>
-                      <span className="text-xs text-muted-foreground">{lesson.duration}</span>
+                    <div className="flex items-center gap-3 min-w-0">
+                      <GripVertical className="h-4 w-4 text-muted-foreground shrink-0" />
+                      <span className="text-muted-foreground shrink-0">{lessonTypeIcon[lesson.type]}</span>
+                      <div className="min-w-0 flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3">
+                        <span className="text-sm font-medium truncate">{lesson.title}</span>
+                        <span className="text-[10px] sm:text-xs text-muted-foreground shrink-0">{lesson.duration}</span>
+                      </div>
                     </div>
-                    <div className="flex items-center gap-3">
+                    <div className="flex items-center justify-between sm:justify-end gap-3">
                       <div className="flex items-center gap-2">
                         <Switch 
                           checked={lesson.isPublished}
                           onCheckedChange={() => toggleLessonPublish(chapter.id, lesson.id)}
                           className="scale-75"
                         />
-                        <span className="text-xs text-muted-foreground">
+                        <span className="text-[10px] sm:text-xs text-muted-foreground">
                           {lesson.isPublished ? 'منتشر شده' : 'پیش‌نویس'}
                         </span>
                       </div>
-                      <Button variant="ghost" size="icon" className="h-7 w-7">
-                        <Edit className="h-3.5 w-3.5" />
-                      </Button>
-                      <Button 
-                        variant="ghost" 
-                        size="icon" 
-                        className="h-7 w-7"
-                        onClick={() => deleteLesson(chapter.id, lesson.id)}
-                      >
-                        <Trash2 className="h-3.5 w-3.5 text-destructive" />
-                      </Button>
+                      <div className="flex items-center gap-1">
+                        <Button variant="ghost" size="icon" className="h-8 w-8">
+                          <Edit className="h-4 w-4" />
+                        </Button>
+                        <Button 
+                          variant="ghost" 
+                          size="icon" 
+                          className="h-8 w-8"
+                          onClick={() => deleteLesson(chapter.id, lesson.id)}
+                        >
+                          <Trash2 className="h-4 w-4 text-destructive" />
+                        </Button>
+                      </div>
                     </div>
                   </div>
                 ))}

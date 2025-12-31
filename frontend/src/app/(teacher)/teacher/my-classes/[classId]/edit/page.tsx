@@ -1,9 +1,10 @@
 'use client';
 
-import { use, useState, useEffect } from 'react';
+import { use, useEffect, useState } from 'react';
 import { Loader2 } from 'lucide-react';
-import { useClassDetail } from '@/hooks/use-class-detail';
 import { toast } from 'sonner';
+import { useTeacherClassDetail } from '@/hooks/use-teacher-class-detail';
+import { useTeacherClassActions } from '@/hooks/use-teacher-class-actions';
 import {
   ClassEditHeader,
   ClassEditForm,
@@ -15,23 +16,24 @@ interface PageProps {
   params: Promise<{ classId: string }>;
 }
 
-export default function ClassEditPage({ params }: PageProps) {
+export default function TeacherClassEditPage({ params }: PageProps) {
   const { classId } = use(params);
-  const { classDetail, isLoading, error, updateClass, isUpdating } = useClassDetail(classId);
+  const { detail, isLoading, error, reload } = useTeacherClassDetail(classId);
+  const { updateClass, isLoading: isSaving } = useTeacherClassActions(classId);
   const [chapters, setChapters] = useState<ClassChapter[]>([]);
 
-  // Initialize chapters when classDetail loads
   useEffect(() => {
-    if (classDetail?.chapters && chapters.length === 0) {
-      setChapters(classDetail.chapters);
+    if (detail?.chapters && chapters.length === 0) {
+      setChapters(detail.chapters);
     }
-  }, [classDetail, chapters.length]);
+  }, [detail, chapters.length]);
 
   const handleSave = async (data: Partial<ClassDetail>) => {
-    try {
-      await updateClass(data);
+    const ok = await updateClass(data);
+    if (ok) {
       toast.success('تغییرات با موفقیت ذخیره شد');
-    } catch {
+      reload();
+    } else {
       toast.error('خطا در ذخیره تغییرات');
     }
   };
@@ -44,7 +46,7 @@ export default function ClassEditPage({ params }: PageProps) {
     );
   }
 
-  if (error || !classDetail) {
+  if (error || !detail) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
         <p className="text-destructive">خطا در بارگذاری اطلاعات کلاس</p>
@@ -54,21 +56,13 @@ export default function ClassEditPage({ params }: PageProps) {
 
   return (
     <div className="space-y-6">
-      <ClassEditHeader 
-        classId={classId}
-        title={classDetail.title}
-        status={classDetail.status}
-      />
+      <ClassEditHeader classId={classId} title={detail.title} status={detail.status} basePath="/teacher" />
 
       <div className="space-y-6">
-        <ClassEditForm 
-          classDetail={classDetail}
-          onSave={handleSave}
-          isSaving={isUpdating}
-        />
+        <ClassEditForm classDetail={detail} onSave={handleSave} isSaving={isSaving} />
 
-        <ClassChaptersEditor 
-          chapters={chapters.length > 0 ? chapters : (classDetail.chapters || [])}
+        <ClassChaptersEditor
+          chapters={chapters.length > 0 ? chapters : detail.chapters || []}
           onChange={setChapters}
         />
       </div>
