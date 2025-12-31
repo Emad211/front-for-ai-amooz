@@ -1,6 +1,6 @@
 'use client';
 
-import { Bell, Check, MessageSquare, Info, AlertTriangle, Trash2 } from 'lucide-react';
+import { Bell, Check, MessageSquare, Info, AlertTriangle, Trash2, ExternalLink } from 'lucide-react';
 import {
   Popover,
   PopoverContent,
@@ -12,9 +12,15 @@ import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { useNotifications } from '@/hooks/use-notifications';
 import type { Notification } from '@/types';
+import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 
 export function NotificationPopover() {
   const { notifications, isLoading, markAsRead, markAllAsRead, deleteNotification } = useNotifications();
+  const pathname = usePathname();
+  const isTeacher = pathname.startsWith('/teacher');
+  const notificationsLink = isTeacher ? '/teacher/notifications' : '/notifications';
+  
   const unreadCount = notifications.filter(n => !n.isRead).length;
 
   const getIcon = (type: Notification['type']) => {
@@ -126,9 +132,17 @@ export function NotificationPopover() {
           )}
         </ScrollArea>
         
-        <div className="p-2 border-t">
-          <Button variant="ghost" className="w-full text-xs h-8" asChild>
-            <a href="/notifications">مشاهده همه اعلان‌ها</a>
+        <div className="p-2 border-t bg-muted/20">
+          <Button 
+            variant="ghost" 
+            size="sm" 
+            className="w-full text-xs font-bold text-primary hover:bg-primary/5"
+            asChild
+          >
+            <Link href={notificationsLink} className="flex items-center justify-center gap-2">
+              مشاهده همه اعلان‌ها
+              <ExternalLink className="w-3 h-3" />
+            </Link>
           </Button>
         </div>
       </PopoverContent>

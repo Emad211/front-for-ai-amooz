@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { useTheme } from 'next-themes';
 import { useState, useEffect } from 'react';
+import { usePathname } from 'next/navigation';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -35,10 +36,18 @@ export function UserProfile({
 }: UserProfileProps) {
   const { theme, setTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
+  const pathname = usePathname();
+  const isTeacher = pathname.startsWith('/teacher');
+  const isStudent = pathname.startsWith('/home') || pathname.startsWith('/classes') || pathname.startsWith('/exam') || pathname.startsWith('/tickets') || pathname.startsWith('/profile');
+  const isDashboard = isStudent || isTeacher;
 
   useEffect(() => {
     setMounted(true);
   }, []);
+
+  const profileHref = isTeacher ? '/teacher/settings' : '/profile';
+  const ticketsHref = isTeacher ? '/teacher/tickets' : '/tickets';
+  const notificationsHref = isTeacher ? '/teacher/notifications' : '/notifications';
 
   return (
     <DropdownMenu>
@@ -66,11 +75,13 @@ export function UserProfile({
         <DropdownMenuGroup className="space-y-1">
           {!isAdmin && (
             <DropdownMenuItem asChild className="justify-start rounded-xl h-11 cursor-pointer focus:bg-primary/5">
-              <Link href="/profile" className="flex items-center w-full">
+              <Link href={profileHref} className="flex items-center w-full">
                 <div className="p-1.5 bg-muted/50 rounded-lg ml-2">
                   <User className="h-4 w-4 text-muted-foreground" />
                 </div>
-                <span className="flex-1 text-start font-bold text-sm">پروفایل کاربری</span>
+                <span className="flex-1 text-start font-bold text-sm">
+                  {isTeacher ? 'تنظیمات حساب' : 'پروفایل کاربری'}
+                </span>
               </Link>
             </DropdownMenuItem>
           )}
@@ -95,7 +106,18 @@ export function UserProfile({
 
           {!isAdmin && (
             <DropdownMenuItem asChild className="justify-start rounded-xl h-11 cursor-pointer focus:bg-primary/5">
-              <Link href="/tickets" className="flex items-center w-full">
+              <Link href={notificationsHref} className="flex items-center w-full">
+                <div className="p-1.5 bg-muted/50 rounded-lg ml-2">
+                  <Bell className="h-4 w-4 text-muted-foreground" />
+                </div>
+                <span className="flex-1 text-start font-bold text-sm">اعلان‌ها</span>
+              </Link>
+            </DropdownMenuItem>
+          )}
+
+          {!isAdmin && (
+            <DropdownMenuItem asChild className="justify-start rounded-xl h-11 cursor-pointer focus:bg-primary/5">
+              <Link href={ticketsHref} className="flex items-center w-full">
                 <div className="p-1.5 bg-muted/50 rounded-lg ml-2">
                   <Ticket className="h-4 w-4 text-muted-foreground" />
                 </div>

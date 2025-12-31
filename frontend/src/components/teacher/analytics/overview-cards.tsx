@@ -2,12 +2,13 @@
 
 import { Users, BookOpen, GraduationCap, TrendingUp } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
+import { motion } from 'framer-motion';
 
 const ICON_MAP = {
-  users: Users,
-  book: BookOpen,
-  graduation: GraduationCap,
-  trending: TrendingUp,
+  users: { icon: Users, color: 'text-blue-500', bg: 'bg-blue-500/10' },
+  book: { icon: BookOpen, color: 'text-purple-500', bg: 'bg-purple-500/10' },
+  graduation: { icon: GraduationCap, color: 'text-emerald-500', bg: 'bg-emerald-500/10' },
+  trending: { icon: TrendingUp, color: 'text-amber-500', bg: 'bg-amber-500/10' },
 };
 
 interface OverviewCardsProps {
@@ -16,28 +17,49 @@ interface OverviewCardsProps {
 
 export function OverviewCards({ stats }: OverviewCardsProps) {
   return (
-    <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
+    <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
       {stats.map((stat, index) => {
-        const Icon = ICON_MAP[stat.icon as keyof typeof ICON_MAP];
+        const config = ICON_MAP[stat.icon as keyof typeof ICON_MAP] || ICON_MAP.users;
+        const Icon = config.icon;
+        
         return (
-          <Card key={index} className="bg-card border-border/60 hover:border-primary/30 transition-all duration-300">
-            <CardContent className="p-4 sm:p-6">
-              <div className="flex items-center justify-between mb-3 sm:mb-4">
-                <div className="p-1.5 sm:p-2 bg-muted rounded-lg">
-                  <Icon className="w-4 h-4 sm:w-5 sm:h-5 text-muted-foreground" />
+          <motion.div
+            key={index}
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: index * 0.1 }}
+          >
+            <Card className="group relative overflow-hidden bg-card border-border/40 hover:border-primary/40 hover:shadow-xl hover:shadow-primary/5 transition-all duration-500 rounded-3xl">
+              <div className="absolute top-0 right-0 w-24 h-24 bg-primary/5 rounded-full -mr-12 -mt-12 transition-transform group-hover:scale-150 duration-700" />
+              
+              <CardContent className="p-5 sm:p-7 relative z-10">
+                <div className="flex items-center justify-between mb-5">
+                  <div className={`p-3 ${config.bg} rounded-2xl group-hover:scale-110 transition-transform duration-300`}>
+                    <Icon className={`w-5 h-5 sm:w-6 sm:h-6 ${config.color}`} />
+                  </div>
+                  <div className={`flex items-center gap-1 text-[10px] sm:text-xs font-bold px-2.5 py-1 rounded-xl ${
+                    stat.trend === 'up' 
+                      ? 'bg-emerald-500/10 text-emerald-600' 
+                      : 'bg-rose-500/10 text-rose-600'
+                  }`}>
+                    {stat.trend === 'up' ? '↑' : '↓'} {stat.change}
+                  </div>
                 </div>
-                <span className={`text-[10px] sm:text-xs font-medium px-1.5 sm:px-2 py-0.5 sm:py-1 rounded-full ${
-                  stat.trend === 'up' ? 'bg-emerald-500/10 text-emerald-600' : 'bg-rose-500/10 text-rose-600'
-                }`}>
-                  {stat.change}
-                </span>
-              </div>
-              <div>
-                <p className="text-[10px] sm:text-sm font-medium text-muted-foreground">{stat.title}</p>
-                <h3 className="text-lg sm:text-2xl font-bold text-foreground mt-0.5 sm:mt-1">{stat.value}</h3>
-              </div>
-            </CardContent>
-          </Card>
+                
+                <div className="space-y-1">
+                  <p className="text-xs sm:text-sm font-bold text-muted-foreground/80 tracking-tight">
+                    {stat.title}
+                  </p>
+                  <div className="flex items-baseline gap-1">
+                    <h3 className="text-2xl sm:text-3xl font-black text-foreground tracking-tighter">
+                      {stat.value}
+                    </h3>
+                    <span className="text-[10px] font-bold text-muted-foreground/50">واحد</span>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </motion.div>
         );
       })}
     </div>

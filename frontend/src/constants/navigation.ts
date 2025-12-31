@@ -61,9 +61,10 @@ export const TEACHER_NAV_MENU: NavSection[] = [
     ]
   },
   {
-    title: 'ارتباطات',
+    title: 'ارتباطات و پشتیبانی',
     items: [
       { label: 'ارسال پیام', href: '/teacher/messages', icon: MessageSquare },
+      { label: 'تیکت‌های پشتیبانی', href: '/teacher/tickets', icon: Ticket },
     ]
   },
   {
