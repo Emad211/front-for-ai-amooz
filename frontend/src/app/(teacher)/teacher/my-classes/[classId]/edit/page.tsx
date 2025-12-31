@@ -9,7 +9,7 @@ import {
   ClassEditHeader,
   ClassEditForm,
   ClassChaptersEditor,
-} from '@/components/admin/class-edit';
+} from '@/components/teacher/class-edit';
 import type { ClassChapter, ClassDetail } from '@/types';
 
 interface PageProps {

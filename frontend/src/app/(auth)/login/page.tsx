@@ -1,5 +1,6 @@
 'use client';
 
+import React, { Suspense } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { LoginForm } from '@/components/auth/login-form';
@@ -24,7 +25,9 @@ export default function LoginPage() {
       </div>
 
       <div className="w-full max-w-md flex-1 flex flex-col justify-center">
-        <LoginForm />
+        <Suspense fallback={<div className="h-96 flex items-center justify-center">در حال بارگذاری...</div>}>
+          <LoginForm />
+        </Suspense>
         <p className="mt-6 text-sm text-center text-muted-foreground">
           تازه هستید؟ <Link href="/start" className="font-semibold text-primary hover:underline">شروع رایگان</Link>
         </p>

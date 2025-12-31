@@ -5,7 +5,7 @@ import type { UserProfile } from '@/types';
 
 type ProfileService = {
   getUserProfile: () => Promise<UserProfile>;
-  updateUserProfile: (data: Partial<UserProfile>) => Promise<void>;
+  updateUserProfile: (data: Partial<UserProfile>) => Promise<any>;
 };
 
 export const useProfile = (service: ProfileService = DashboardService) => {

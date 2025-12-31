@@ -9,7 +9,7 @@ import {
   ClassStudentsHeader,
   ClassStudentsStats,
   ClassStudentsTable,
-} from '@/components/admin/class-students';
+} from '@/components/teacher/class-students';
 
 interface PageProps {
   params: Promise<{ classId: string }>;

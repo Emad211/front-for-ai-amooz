@@ -2,9 +2,9 @@
 
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
-import { ClassInfoForm } from '@/components/admin/create-class/class-info-form';
-import { FileUploadSection } from '@/components/admin/create-class/file-upload-section';
-import { StudentInviteSection } from '@/components/admin/create-class/student-invite-section';
+import { ClassInfoForm } from './class-info-form';
+import { FileUploadSection } from './file-upload-section';
+import { StudentInviteSection } from './student-invite-section';
 import { Card } from '@/components/ui/card';
 
 export function CreateClassPage() {

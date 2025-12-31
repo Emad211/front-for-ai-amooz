@@ -4,9 +4,9 @@ import { useState } from 'react';
 import { Plus, BookOpen } from 'lucide-react';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
-import { ClassStats } from '@/components/admin/my-classes/class-stats';
-import { ClassFilters } from '@/components/admin/my-classes/class-filters';
-import { ClassCard } from '@/components/admin/my-classes/class-card';
+import { ClassStats } from '@/components/teacher/my-classes/class-stats';
+import { ClassFilters } from '@/components/teacher/my-classes/class-filters';
+import { ClassCard } from '@/components/teacher/my-classes/class-card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ErrorState } from '@/components/shared/error-state';
 import { useTeacherCourses } from '@/hooks/use-teacher-courses';
@@ -111,3 +111,4 @@ export default function TeacherMyClassesPage() {
 		</div>
 	);
 }
+

@@ -19,7 +19,7 @@ export function useAdminBackups(service = AdminService) {
       setError(null);
       setIsLoading(true);
       const res = await service.getBackups();
-      setItems(res);
+      setItems(res as BackupItem[]);
     } catch (e) {
       console.error(e);
       setError('خطا در دریافت لیست بک‌آپ‌ها');

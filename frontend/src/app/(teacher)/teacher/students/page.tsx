@@ -3,9 +3,9 @@
 import React from 'react';
 import { UserPlus, Download } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { StudentStats } from '@/components/admin/students/student-stats';
-import { StudentFilters } from '@/components/admin/students/student-filters';
-import { StudentTable } from '@/components/admin/students/student-table';
+import { StudentStats } from '@/components/teacher/students/student-stats';
+import { StudentFilters } from '@/components/teacher/students/student-filters';
+import { StudentTable } from '@/components/teacher/students/student-table';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ErrorState } from '@/components/shared/error-state';
 import { useTeacherStudents } from '@/hooks/use-teacher-students';
@@ -82,3 +82,4 @@ export default function TeacherStudentsPage() {
 		</div>
 	);
 }
+

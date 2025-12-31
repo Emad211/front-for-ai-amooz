@@ -24,7 +24,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { AdminService } from '@/services/admin-service';
+import { TeacherService } from '@/services/teacher-service';
 import { toast } from 'sonner';
 
 interface ClassCardProps {
@@ -64,7 +64,7 @@ export function ClassCard({ cls, basePath = '/admin' }: ClassCardProps) {
   const handleDelete = async () => {
     try {
       setIsDeleting(true);
-      await AdminService.deleteClass(String(cls.id));
+      await TeacherService.deleteClass(String(cls.id));
       toast.success('کلاس با موفقیت حذف شد');
       setIsDeleteDialogOpen(false);
       router.refresh();

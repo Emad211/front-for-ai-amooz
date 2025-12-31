@@ -10,7 +10,7 @@ import {
   ClassStudentsPreview,
   ClassStatsSidebar,
   ClassAnnouncementsCard,
-} from '@/components/admin/class-detail';
+} from '@/components/teacher/class-detail';
 
 interface PageProps {
   params: Promise<{ classId: string }>;

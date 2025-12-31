@@ -1,9 +1,9 @@
 "use client";
 
-import { OverviewCards } from '@/components/admin/analytics/overview-cards';
-import { ActivityChart } from '@/components/admin/analytics/activity-chart';
-import { ClassDistribution } from '@/components/admin/analytics/class-distribution';
-import { RecentActivity } from '@/components/admin/analytics/recent-activity';
+import { OverviewCards } from '@/components/teacher/analytics/overview-cards';
+import { ActivityChart } from '@/components/teacher/analytics/activity-chart';
+import { ClassDistribution } from '@/components/teacher/analytics/class-distribution';
+import { RecentActivity } from '@/components/teacher/analytics/recent-activity';
 import { Button } from '@/components/ui/button';
 import { Download, Calendar } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -88,3 +88,4 @@ export default function TeacherAnalyticsPage() {
 		</PageTransition>
 	);
 }
+

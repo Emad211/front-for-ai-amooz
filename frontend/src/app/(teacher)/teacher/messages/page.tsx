@@ -3,10 +3,10 @@
 import { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { toast } from 'sonner';
-import { RecipientSelector } from '@/components/admin/messages/recipient-selector';
-import { MessageForm } from '@/components/admin/messages/message-form';
-import { MessageStats } from '@/components/admin/messages/message-stats';
-import { MessageTips } from '@/components/admin/messages/message-tips';
+import { RecipientSelector } from '@/components/teacher/messages/recipient-selector';
+import { MessageForm } from '@/components/teacher/messages/message-form';
+import { MessageStats } from '@/components/teacher/messages/message-stats';
+import { MessageTips } from '@/components/teacher/messages/message-tips';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ErrorState } from '@/components/shared/error-state';
 import { useTeacherMessageRecipients } from '@/hooks/use-teacher-message-recipients';
@@ -119,3 +119,4 @@ export default function TeacherMessagesPage() {
 		</div>
 	);
 }
+

@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { AdminService } from '@/services/admin-service';
 import { Student } from '@/types';
 import { useMountedRef } from '@/hooks/use-mounted-ref';
 
@@ -9,7 +8,7 @@ type StudentsService = {
   getStudents: () => Promise<Student[]>;
 };
 
-export function useStudents(service: StudentsService = AdminService) {
+export function useStudents(service: StudentsService) {
   const mountedRef = useMountedRef();
   const [students, setStudents] = useState<Student[]>([]);
   const [isLoading, setIsLoading] = useState(true);

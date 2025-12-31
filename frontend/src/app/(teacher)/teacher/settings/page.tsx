@@ -2,10 +2,10 @@
 
 import { Settings, User, Shield, Bell, Palette } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { ProfileTab } from '@/components/admin/settings/profile-tab';
-import { SecurityTab } from '@/components/admin/settings/security-tab';
-import { NotificationsTab } from '@/components/admin/settings/notifications-tab';
-import { AppearanceTab } from '@/components/admin/settings/appearance-tab';
+import { ProfileTab } from '@/components/teacher/settings/profile-tab';
+import { SecurityTab } from '@/components/teacher/settings/security-tab';
+import { NotificationsTab } from '@/components/teacher/settings/notifications-tab';
+import { AppearanceTab } from '@/components/teacher/settings/appearance-tab';
 import { useTeacherSettings } from '@/hooks/use-teacher-settings';
 
 export default function TeacherSettingsPage() {
@@ -62,3 +62,4 @@ export default function TeacherSettingsPage() {
 		</div>
 	);
 }
+
