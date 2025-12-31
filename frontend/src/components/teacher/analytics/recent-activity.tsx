@@ -4,6 +4,14 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { UserPlus, BookOpen, MessageSquare, Award, ArrowLeft } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import { ScrollArea } from "@/components/ui/scroll-area";
 
 const ICON_MAP = {
   'user-plus': UserPlus,
@@ -27,9 +35,50 @@ export function RecentActivity({ activities }: RecentActivityProps) {
       <Card className="bg-card border-border/40 shadow-sm rounded-3xl h-full flex flex-col">
         <CardHeader className="flex flex-row items-center justify-between pb-2">
           <CardTitle className="text-xl font-black text-foreground">فعالیت‌های اخیر</CardTitle>
-          <Button variant="ghost" size="sm" className="text-xs font-bold text-primary hover:bg-primary/5 rounded-xl">
-            مشاهده همه
-          </Button>
+          <Dialog>
+            <DialogTrigger asChild>
+              <Button variant="ghost" size="sm" className="text-xs font-bold text-primary hover:bg-primary/5 rounded-xl">
+                مشاهده همه
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="sm:max-w-[500px] rounded-3xl">
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2 text-xl font-black">
+                  همه فعالیت‌ها
+                </DialogTitle>
+              </DialogHeader>
+              <ScrollArea className="h-[500px] pr-4">
+                <div className="space-y-5 py-4">
+                  {activities.map((activity, idx) => {
+                    const Icon = ICON_MAP[activity.icon as keyof typeof ICON_MAP] || BookOpen;
+                    return (
+                      <div 
+                        key={activity.id} 
+                        className="flex items-start gap-4 group cursor-pointer"
+                      >
+                        <div className={`p-3 rounded-2xl ${activity.bg} group-hover:scale-110 transition-transform duration-300 shadow-sm`}>
+                          <Icon className={`w-4 h-4 ${activity.color}`} />
+                        </div>
+                        <div className="flex-1 space-y-1 border-b border-border/40 pb-4 group-last:border-0">
+                          <div className="flex items-center justify-between">
+                            <p className="text-sm font-bold text-foreground group-hover:text-primary transition-colors">
+                              {activity.user}
+                            </p>
+                            <span className="text-[10px] font-bold text-muted-foreground/60 bg-muted/50 px-2 py-0.5 rounded-lg">
+                              {activity.time}
+                            </span>
+                          </div>
+                          <p className="text-xs font-medium text-muted-foreground leading-relaxed">
+                            {activity.action}
+                          </p>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </ScrollArea>
+            </DialogContent>
+          </Dialog>
         </CardHeader>
         <CardContent className="flex-1">
           <div className="space-y-5 mt-2">
