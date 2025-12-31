@@ -18,7 +18,6 @@ export function StatsGrid({ stats }: StatsGridProps) {
         value={`${stats.activeCourses} / ${stats.totalCourses}`} 
         subValue="دوره فعال در این ترم" 
         icon={<BookOpen className="h-5 w-5 md:h-6 md:w-6"/>} 
-        progress={Math.round((stats.activeCourses / stats.totalCourses) * 100)}
       />
       <StatCard 
         title="درصد تکمیل" 
@@ -26,7 +25,6 @@ export function StatsGrid({ stats }: StatsGridProps) {
         subValue="میانگین نمرات کل" 
         icon={<Target className="h-5 w-5 md:h-6 md:w-6"/>} 
         tag="ترم جاری" 
-        progress={stats.completionPercent}
       />
       <StatCard 
         title="زمان مطالعه" 
@@ -34,7 +32,6 @@ export function StatsGrid({ stats }: StatsGridProps) {
         subValue="ساعت مطالعه مفید" 
         icon={<Clock className="h-5 w-5 md:h-6 md:w-6"/>} 
         tag="این هفته" 
-        progress={60}
       />
     </div>
   );
