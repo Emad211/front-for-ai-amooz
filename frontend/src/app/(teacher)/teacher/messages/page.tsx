@@ -109,8 +109,11 @@ export default function TeacherMessagesPage() {
 				</div>
 
 				<div className="space-y-6">
+					<MessageStats 
+						totalRecipients={recipients.length}
+						selectedCount={recipientType === 'all' ? recipients.length : selectedStudents.length}
+					/>
 					<MessageTips />
-					<MessageStats />
 				</div>
 			</div>
 		</div>
