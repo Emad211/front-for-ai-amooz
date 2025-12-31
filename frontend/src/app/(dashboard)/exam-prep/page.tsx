@@ -88,9 +88,8 @@ export default function ExamPrepPage() {
             <h2 className="text-xl md:text-3xl font-black mb-2">آزمون اختصاصی خودت رو بساز!</h2>
             <p className="text-sm md:text-lg opacity-90 font-medium">با انتخاب مباحث دلخواه، یک آزمون شبیه‌ساز شخصی‌سازی شده داشته باش.</p>
           </div>
-          <Button size="lg" className="bg-white text-primary hover:bg-white/90 rounded-2xl font-black px-8 h-12 md:h-14 shadow-xl transition-all hover:scale-105">
-            شروع ساخت آزمون
-            <ArrowLeft className="mr-2 h-5 w-5" />
+          <Button size="lg" disabled className="bg-white/80 text-primary/60 cursor-not-allowed rounded-2xl font-black px-8 h-12 md:h-14 shadow-xl">
+            به زودی اضافه می شود
           </Button>
         </div>
         {/* Decorative circles */}
