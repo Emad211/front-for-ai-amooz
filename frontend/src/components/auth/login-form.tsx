@@ -19,7 +19,7 @@ const GoogleIcon = (props: React.SVGProps<SVGSVGElement>) => (
 );
 
 interface LoginFormProps {
-  onSwitchToJoin: () => void;
+  onSwitchToJoin?: () => void;
 }
 
 export function LoginForm({ onSwitchToJoin }: LoginFormProps) {
@@ -127,17 +127,19 @@ export function LoginForm({ onSwitchToJoin }: LoginFormProps) {
         </Button>
       </form>
 
-      <p className="mt-8 text-sm text-muted-foreground text-center">
-        حساب کاربری ندارید؟{' '}
-        <button 
-          type="button"
-          onClick={onSwitchToJoin} 
-          className="font-semibold text-primary hover:underline focus:outline-none"
-          disabled={isLoading}
-        >
-          ثبت‌نام با کد دعوت
-        </button>
-      </p>
+      {onSwitchToJoin && (
+        <p className="mt-8 text-sm text-muted-foreground text-center">
+          حساب کاربری ندارید؟{' '}
+          <button 
+            type="button"
+            onClick={onSwitchToJoin} 
+            className="font-semibold text-primary hover:underline focus:outline-none"
+            disabled={isLoading}
+          >
+            ثبت‌نام با کد دعوت
+          </button>
+        </p>
+      )}
     </>
   );
 }

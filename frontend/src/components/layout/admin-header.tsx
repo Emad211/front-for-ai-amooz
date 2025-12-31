@@ -18,10 +18,11 @@ export function AdminHeader() {
   const titleMap: Record<string, string> = {
     admin: 'داشبورد',
     analytics: 'آمار',
-    'create-class': 'ایجاد کلاس',
-    'my-classes': 'کلاس‌های من',
-    students: 'دانش‌آموزان',
-    messages: 'پیام‌ها',
+    maintenance: 'نگهداری سرور',
+    backups: 'بک‌آپ‌ها',
+    'server-settings': 'تنظیمات سرور',
+    broadcast: 'پیام همگانی',
+    tickets: 'تیکت‌ها',
     settings: 'تنظیمات',
   };
   const pageTitle = titleMap[lastSegment] ?? titleMap.admin;

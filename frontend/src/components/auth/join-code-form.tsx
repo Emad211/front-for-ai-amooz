@@ -14,7 +14,7 @@ import { Loader2, Info } from 'lucide-react';
 const TEST_JOIN_CODE = 'AI-AMOOKHTAN';
 
 interface JoinCodeFormProps {
-  onSwitchToLogin: () => void;
+  onSwitchToLogin?: () => void;
 }
 
 export function JoinCodeForm({ onSwitchToLogin }: JoinCodeFormProps) {
@@ -99,17 +99,19 @@ export function JoinCodeForm({ onSwitchToLogin }: JoinCodeFormProps) {
         </p>
       </div>
 
-      <p className="mt-8 text-sm text-muted-foreground text-center">
-        حساب کاربری دارید؟{' '}
-        <button 
-          type="button"
-          onClick={onSwitchToLogin} 
-          className="font-semibold text-primary hover:underline focus:outline-none"
-          disabled={isLoading}
-        >
-          ورود
-        </button>
-      </p>
+      {onSwitchToLogin && (
+        <p className="mt-8 text-sm text-muted-foreground text-center">
+          حساب کاربری دارید؟{' '}
+          <button 
+            type="button"
+            onClick={onSwitchToLogin} 
+            className="font-semibold text-primary hover:underline focus:outline-none"
+            disabled={isLoading}
+          >
+            ورود
+          </button>
+        </p>
+      )}
     </>
   );
 }

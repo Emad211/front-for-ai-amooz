@@ -10,7 +10,14 @@ import {
 } from '@/types';
 import { useMountedRef } from '@/hooks/use-mounted-ref';
 
-export function useAdminAnalytics() {
+type AnalyticsService = {
+  getAnalyticsStats: () => Promise<AdminAnalyticsStat[]>;
+  getChartData: () => Promise<AdminChartData[]>;
+  getDistributionData: () => Promise<AdminDistributionData[]>;
+  getRecentActivities: () => Promise<AdminRecentActivity[]>;
+};
+
+export function useAdminAnalytics(service: AnalyticsService = AdminService) {
   const mountedRef = useMountedRef();
   const [stats, setStats] = useState<AdminAnalyticsStat[]>([]);
   const [chartData, setChartData] = useState<AdminChartData[]>([]);
@@ -24,10 +31,10 @@ export function useAdminAnalytics() {
       setError(null);
       setIsLoading(true);
       const [statsData, chartDataRes, distributionDataRes, activitiesData] = await Promise.all([
-        AdminService.getAnalyticsStats(),
-        AdminService.getChartData(),
-        AdminService.getDistributionData(),
-        AdminService.getRecentActivities(),
+        service.getAnalyticsStats(),
+        service.getChartData(),
+        service.getDistributionData(),
+        service.getRecentActivities(),
       ]);
 
       if (!mountedRef.current) return;

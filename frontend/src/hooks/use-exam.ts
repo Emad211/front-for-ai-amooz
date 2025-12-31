@@ -2,7 +2,11 @@ import { useState, useEffect } from 'react';
 import { DashboardService } from '@/services/dashboard-service';
 import { Exam, Question } from '@/types';
 
-export const useExam = (examId?: string) => {
+type ExamService = {
+  getExam: (examId: string) => Promise<Exam>;
+};
+
+export const useExam = (examId?: string, service: ExamService = DashboardService) => {
   const [exam, setExam] = useState<Exam | null>(null);
   const [currentQuestion, setCurrentQuestion] = useState<Question | null>(null);
   const [isChatOpen, setIsChatOpen] = useState(true);
@@ -20,7 +24,7 @@ export const useExam = (examId?: string) => {
         }
         setIsLoading(true);
         setError(null);
-        const data = await DashboardService.getExam(examId);
+        const data = await service.getExam(examId);
         setExam(data);
         if (data.questionsList && data.questionsList.length > 0) {
           setCurrentQuestion(data.questionsList[0]);
@@ -36,7 +40,7 @@ export const useExam = (examId?: string) => {
     };
 
     fetchExam();
-  }, [examId]);
+  }, [examId, service]);
 
   const toggleChat = () => setIsChatOpen(!isChatOpen);
 

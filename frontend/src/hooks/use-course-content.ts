@@ -5,7 +5,12 @@ import { CourseContent, Lesson } from '@/types';
 import { DashboardService } from '@/services/dashboard-service';
 import { useMountedRef } from '@/hooks/use-mounted-ref';
 
-export function useCourseContent(courseId?: string) {
+type CourseContentService = {
+  getCourseContent: (courseId?: string) => Promise<CourseContent>;
+  getLessonDetail: (lessonId: string) => Promise<Lesson>;
+};
+
+export function useCourseContent(courseId?: string, service: CourseContentService = DashboardService) {
   const mountedRef = useMountedRef();
   const [content, setContent] = useState<CourseContent | null>(null);
   const [currentLesson, setCurrentLesson] = useState<Lesson | null>(null);
@@ -17,8 +22,8 @@ export function useCourseContent(courseId?: string) {
       setError(null);
       setIsLoading(true);
       const [contentData, lessonData] = await Promise.all([
-        DashboardService.getCourseContent(courseId),
-        DashboardService.getLessonDetail('1'), // Default lesson for mock
+        service.getCourseContent(courseId),
+        service.getLessonDetail('1'), // Default lesson for mock
       ]);
       if (!mountedRef.current) return;
       setContent(contentData);
@@ -29,7 +34,7 @@ export function useCourseContent(courseId?: string) {
     } finally {
       if (mountedRef.current) setIsLoading(false);
     }
-  }, [courseId, mountedRef]);
+  }, [courseId, mountedRef, service]);
 
   useEffect(() => {
     reload();

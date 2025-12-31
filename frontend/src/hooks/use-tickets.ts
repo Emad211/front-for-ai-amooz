@@ -6,7 +6,20 @@ import { AdminService } from '@/services/admin-service';
 import { Ticket } from '@/types';
 import { useMountedRef } from '@/hooks/use-mounted-ref';
 
-export function useTickets(isAdmin = false) {
+type TicketService = {
+  getTickets: () => Promise<Ticket[]>;
+};
+
+type TicketsOptions = {
+  isAdmin?: boolean;
+  userId?: string;
+  userService?: TicketService;
+  adminService?: TicketService;
+};
+
+export function useTickets(options: boolean | TicketsOptions = {}) {
+  const { isAdmin = false, userId = 'user-1', userService = DashboardService, adminService = AdminService } =
+    typeof options === 'boolean' ? { isAdmin: options } : options;
   const mountedRef = useMountedRef();
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -17,9 +30,9 @@ export function useTickets(isAdmin = false) {
       setError(null);
       setIsLoading(true);
       const data = isAdmin 
-        ? await AdminService.getTickets() 
-        : await DashboardService.getTickets();
-      const filteredData = isAdmin ? data : data.filter(t => t.userId === 'user-1');
+        ? await adminService.getTickets() 
+        : await userService.getTickets();
+      const filteredData = isAdmin ? data : data.filter(t => t.userId === userId);
       if (mountedRef.current) setTickets(filteredData);
     } catch (err) {
       console.error(err);
@@ -27,7 +40,7 @@ export function useTickets(isAdmin = false) {
     } finally {
       if (mountedRef.current) setIsLoading(false);
     }
-  }, [mountedRef, isAdmin]);
+  }, [adminService, isAdmin, mountedRef, userId, userService]);
 
   useEffect(() => {
     reload();

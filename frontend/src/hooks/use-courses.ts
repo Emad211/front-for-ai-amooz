@@ -5,7 +5,11 @@ import { DashboardService } from '@/services/dashboard-service';
 import { Course } from '@/types';
 import { useMountedRef } from '@/hooks/use-mounted-ref';
 
-export function useCourses() {
+type CoursesService = {
+  getCourses: () => Promise<Course[]>;
+};
+
+export function useCourses(service: CoursesService = DashboardService) {
   const mountedRef = useMountedRef();
   const [courses, setCourses] = useState<Course[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -17,7 +21,7 @@ export function useCourses() {
     try {
       setError(null);
       setIsLoading(true);
-      const data = await DashboardService.getCourses();
+      const data = await service.getCourses();
       if (mountedRef.current) setCourses(data);
     } catch (err) {
       console.error(err);
@@ -25,7 +29,7 @@ export function useCourses() {
     } finally {
       if (mountedRef.current) setIsLoading(false);
     }
-  }, [mountedRef]);
+  }, [mountedRef, service]);
 
   useEffect(() => {
     reload();

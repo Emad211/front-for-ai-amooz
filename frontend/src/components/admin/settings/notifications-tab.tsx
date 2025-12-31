@@ -7,8 +7,14 @@ import { Label } from '@/components/ui/label';
 
 import { useAdminSettings } from '@/hooks/use-admin-settings';
 
-export function NotificationsTab() {
-  const { notifications, updateNotifications } = useAdminSettings();
+type UseSettingsHook = typeof useAdminSettings;
+
+interface NotificationsTabProps {
+  useSettings?: UseSettingsHook;
+}
+
+export function NotificationsTab({ useSettings = useAdminSettings }: NotificationsTabProps) {
+  const { notifications, updateNotifications } = useSettings();
   return (
     <div className="space-y-6">
       <Card>

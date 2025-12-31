@@ -1,14 +1,17 @@
 import { 
-  PlusCircle, 
-  FolderOpen, 
-  Users, 
   BarChart3, 
   Home,
   BookOpen,
   Target,
   MessageSquare,
-  Bell,
-  Ticket
+  Ticket,
+  ServerCog,
+  HardDriveDownload,
+  ShieldCheck,
+  Radio,
+  PlusCircle,
+  FolderOpen,
+  Users
 } from 'lucide-react';
 import { NavSection, NavItem } from '@/types';
 
@@ -26,24 +29,47 @@ export const DASHBOARD_NAV_LINKS: NavItem[] = [
 
 export const ADMIN_NAV_MENU: NavSection[] = [
   {
-    title: 'مدیریت کلاس‌ها',
+    title: 'ارتباطات',
     items: [
-      { label: 'ایجاد کلاس جدید', href: '/admin/create-class', icon: PlusCircle },
-      { label: 'کلاس‌های من', href: '/admin/my-classes', icon: FolderOpen },
-      { label: 'دانش‌آموزان', href: '/admin/students', icon: Users },
+      { label: 'پیام همگانی', href: '/admin/broadcast', icon: Radio },
+      { label: 'تیکت‌ها', href: '/admin/tickets', icon: Ticket },
     ]
   },
   {
-    title: 'ارتباطات',
+    title: 'عملیات سرور',
     items: [
-      { label: 'ارسال پیام', href: '/admin/messages', icon: MessageSquare },
-      { label: 'تیکت‌ها', href: '/admin/tickets', icon: Ticket },
+      { label: 'نگهداری و سلامت', href: '/admin/maintenance', icon: ShieldCheck },
+      { label: 'بک‌آپ‌ها', href: '/admin/backups', icon: HardDriveDownload },
+      { label: 'تنظیمات کلی سرور', href: '/admin/server-settings', icon: ServerCog },
     ]
   },
   {
     title: 'گزارشات',
     items: [
       { label: 'آمار و تحلیل', href: '/admin/analytics', icon: BarChart3 },
+    ]
+  },
+];
+
+export const TEACHER_NAV_MENU: NavSection[] = [
+  {
+    title: 'مدیریت کلاس‌ها',
+    items: [
+      { label: 'ایجاد کلاس جدید', href: '/teacher/create-class', icon: PlusCircle },
+      { label: 'کلاس‌های من', href: '/teacher/my-classes', icon: FolderOpen },
+      { label: 'دانش‌آموزان', href: '/teacher/students', icon: Users },
+    ]
+  },
+  {
+    title: 'ارتباطات',
+    items: [
+      { label: 'ارسال پیام', href: '/teacher/messages', icon: MessageSquare },
+    ]
+  },
+  {
+    title: 'گزارشات',
+    items: [
+      { label: 'آمار و تحلیل', href: '/teacher/analytics', icon: BarChart3 },
     ]
   },
 ];

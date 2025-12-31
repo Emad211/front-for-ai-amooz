@@ -5,7 +5,16 @@ import { AdminService } from '@/services/admin-service';
 import type { ClassDetail, ClassStudent, Course } from '@/types';
 import { useMountedRef } from '@/hooks/use-mounted-ref';
 
-export function useClassDetail(classId: string) {
+type ClassDetailService = {
+  getClassDetail: (classId: string) => Promise<ClassDetail>;
+  getClassStudents: (classId: string) => Promise<ClassStudent[]>;
+  updateClass: (classId: string, data: Partial<Course>) => Promise<{ success: boolean }>;
+  deleteClass: (classId: string) => Promise<{ success: boolean }>;
+  removeStudentFromClass: (classId: string, studentId: string) => Promise<{ success: boolean }>;
+  addStudentToClass: (classId: string, email: string) => Promise<{ success: boolean }>;
+};
+
+export function useClassDetail(classId: string, service: ClassDetailService = AdminService) {
   const mountedRef = useMountedRef();
   const [classDetail, setClassDetail] = useState<ClassDetail | null>(null);
   const [students, setStudents] = useState<ClassStudent[]>([]);
@@ -20,8 +29,8 @@ export function useClassDetail(classId: string) {
       setError(null);
       setIsLoading(true);
       const [detail, studentList] = await Promise.all([
-        AdminService.getClassDetail(classId),
-        AdminService.getClassStudents(classId),
+        service.getClassDetail(classId),
+        service.getClassStudents(classId),
       ]);
       if (mountedRef.current) {
         setClassDetail(detail);
@@ -33,7 +42,7 @@ export function useClassDetail(classId: string) {
     } finally {
       if (mountedRef.current) setIsLoading(false);
     }
-  }, [classId, mountedRef]);
+  }, [classId, mountedRef, service]);
 
   useEffect(() => {
     reload();
@@ -42,7 +51,7 @@ export function useClassDetail(classId: string) {
   const updateClass = useCallback(async (data: Partial<Course>) => {
     try {
       setIsUpdating(true);
-      const result = await AdminService.updateClass(classId, data);
+      const result = await service.updateClass(classId, data);
       if (mountedRef.current && result.success) {
         await reload();
       }
@@ -53,12 +62,12 @@ export function useClassDetail(classId: string) {
     } finally {
       if (mountedRef.current) setIsUpdating(false);
     }
-  }, [classId, mountedRef, reload]);
+  }, [classId, mountedRef, reload, service]);
 
   const deleteClass = useCallback(async () => {
     try {
       setIsDeleting(true);
-      const result = await AdminService.deleteClass(classId);
+      const result = await service.deleteClass(classId);
       return result;
     } catch (err) {
       console.error(err);
@@ -66,11 +75,11 @@ export function useClassDetail(classId: string) {
     } finally {
       if (mountedRef.current) setIsDeleting(false);
     }
-  }, [classId, mountedRef]);
+  }, [classId, mountedRef, service]);
 
   const removeStudent = useCallback(async (studentId: string) => {
     try {
-      const result = await AdminService.removeStudentFromClass(classId, studentId);
+      const result = await service.removeStudentFromClass(classId, studentId);
       if (mountedRef.current && result.success) {
         setStudents(prev => prev.filter(s => s.id !== studentId));
       }
@@ -79,11 +88,11 @@ export function useClassDetail(classId: string) {
       console.error(err);
       throw new Error('خطا در حذف دانش‌آموز');
     }
-  }, [classId, mountedRef]);
+  }, [classId, mountedRef, service]);
 
   const addStudent = useCallback(async (email: string) => {
     try {
-      const result = await AdminService.addStudentToClass(classId, email);
+      const result = await service.addStudentToClass(classId, email);
       if (mountedRef.current && result.success) {
         await reload();
       }
@@ -92,7 +101,7 @@ export function useClassDetail(classId: string) {
       console.error(err);
       throw new Error('خطا در افزودن دانش‌آموز');
     }
-  }, [classId, mountedRef, reload]);
+  }, [classId, mountedRef, reload, service]);
 
   return {
     classDetail,

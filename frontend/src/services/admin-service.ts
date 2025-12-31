@@ -12,6 +12,12 @@ import {
   MOCK_ADMIN_NOTIFICATIONS,
   MOCK_CLASS_DETAILS
 } from '@/constants/mock';
+import { 
+  MOCK_SERVER_HEALTH,
+  MOCK_BACKUPS,
+  MOCK_MAINTENANCE_TASKS,
+  MOCK_SERVER_SETTINGS,
+} from '@/constants/mock';
 import type { AdminNotificationSettings, AdminProfileSettings, AdminSecuritySettings, ClassDetail, Course } from '@/types';
 
 /**
@@ -124,5 +130,39 @@ export const AdminService = {
   addStudentToClass: async (classId: string, studentEmail: string) => {
     await new Promise(resolve => setTimeout(resolve, 500));
     return { success: true, classId, studentEmail };
+  },
+
+  // ============================================================================
+  // Ops & Maintenance
+  // ============================================================================
+
+  getServerHealth: async () => {
+    await new Promise(resolve => setTimeout(resolve, 300));
+    return MOCK_SERVER_HEALTH;
+  },
+
+  getMaintenanceTasks: async () => {
+    await new Promise(resolve => setTimeout(resolve, 400));
+    return MOCK_MAINTENANCE_TASKS;
+  },
+
+  getBackups: async () => {
+    await new Promise(resolve => setTimeout(resolve, 350));
+    return MOCK_BACKUPS;
+  },
+
+  triggerBackup: async (type: 'full' | 'incremental') => {
+    await new Promise(resolve => setTimeout(resolve, 600));
+    return { success: true, type, id: `new-${Date.now()}` };
+  },
+
+  getServerSettings: async () => {
+    await new Promise(resolve => setTimeout(resolve, 300));
+    return MOCK_SERVER_SETTINGS;
+  },
+
+  updateServerSettings: async (data: Partial<typeof MOCK_SERVER_SETTINGS>) => {
+    await new Promise(resolve => setTimeout(resolve, 500));
+    return { success: true, data: { ...MOCK_SERVER_SETTINGS, ...data } };
   },
 };

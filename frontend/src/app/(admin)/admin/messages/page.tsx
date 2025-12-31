@@ -67,10 +67,8 @@ export default function MessagesPage() {
     <div className="space-y-8 max-w-5xl mx-auto">
       <div className="flex items-center justify-between">
         <div className="text-start">
-          <h1 className="text-2xl md:text-3xl font-black text-foreground">ارسال پیام</h1>
-          <p className="text-muted-foreground text-sm mt-1">
-            ارسال اطلاعیه و پیام به دانش‌آموزان
-          </p>
+          <h1 className="text-2xl md:text-3xl font-black text-foreground">پیام همگانی</h1>
+          <p className="text-muted-foreground text-sm mt-1">ارسال اعلان سراسری به کاربران</p>
         </div>
       </div>
 

@@ -10,8 +10,14 @@ import { Textarea } from '@/components/ui/textarea';
 
 import { useAdminSettings } from '@/hooks/use-admin-settings';
 
-export function ProfileTab() {
-  const { profile, updateProfile, isLoading } = useAdminSettings();
+type UseSettingsHook = typeof useAdminSettings;
+
+interface ProfileTabProps {
+  useSettings?: UseSettingsHook;
+}
+
+export function ProfileTab({ useSettings = useAdminSettings }: ProfileTabProps) {
+  const { profile, updateProfile, isLoading } = useSettings();
 
   const handleSaveProfile = () => {
     updateProfile(profile);

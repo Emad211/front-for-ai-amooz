@@ -5,7 +5,11 @@ import { DashboardService } from '@/services/dashboard-service';
 import { Notification } from '@/types';
 import { useMountedRef } from '@/hooks/use-mounted-ref';
 
-export function useNotifications() {
+type NotificationsService = {
+  getNotifications: () => Promise<Notification[]>;
+};
+
+export function useNotifications(service: NotificationsService = DashboardService) {
   const mountedRef = useMountedRef();
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -15,7 +19,7 @@ export function useNotifications() {
     try {
       setError(null);
       setIsLoading(true);
-      const data = await DashboardService.getNotifications();
+      const data = await service.getNotifications();
       if (mountedRef.current) setNotifications(data);
     } catch (err) {
       console.error(err);
@@ -23,7 +27,7 @@ export function useNotifications() {
     } finally {
       if (mountedRef.current) setIsLoading(false);
     }
-  }, [mountedRef]);
+  }, [mountedRef, service]);
 
   useEffect(() => {
     reload();

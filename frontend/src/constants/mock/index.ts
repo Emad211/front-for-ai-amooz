@@ -1,8 +1,3 @@
-/**
- * =============================================================================
- * MOCK DATA INDEX - مرکز داده‌های آزمایشی
- * =============================================================================
- */
 
 export * from './students-data';
 export * from './notifications-data';
@@ -20,4 +15,5 @@ export * from './profile-data';
 export * from './exam-data';
 export * from './admin-data';
 export * from './class-detail-data';
+export * from './admin-ops-data';
 

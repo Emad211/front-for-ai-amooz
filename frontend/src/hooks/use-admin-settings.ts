@@ -29,7 +29,16 @@ const DEFAULT_NOTIFICATIONS: AdminNotificationSettings = {
  * 
  * @returns {Object} Settings state and update functions.
  */
-export const useAdminSettings = () => {
+type SettingsService = {
+  getProfileSettings: () => Promise<AdminProfileSettings>;
+  getSecuritySettings: () => Promise<AdminSecuritySettings>;
+  getNotificationSettings: () => Promise<AdminNotificationSettings>;
+  updateProfileSettings: (data: Partial<AdminProfileSettings>) => Promise<any>;
+  updateSecuritySettings: (data: Partial<AdminSecuritySettings>) => Promise<any>;
+  updateNotificationSettings: (data: Partial<AdminNotificationSettings>) => Promise<any>;
+};
+
+export const useAdminSettings = (service: SettingsService = AdminService) => {
   const [profile, setProfile] = useState<AdminProfileSettings>(DEFAULT_PROFILE);
   const [security, setSecurity] = useState<AdminSecuritySettings>(DEFAULT_SECURITY);
   const [notifications, setNotifications] = useState<AdminNotificationSettings>(DEFAULT_NOTIFICATIONS);
@@ -45,9 +54,9 @@ export const useAdminSettings = () => {
         setError(null);
 
         const [profileSettings, securitySettings, notificationSettings] = await Promise.all([
-          AdminService.getProfileSettings(),
-          AdminService.getSecuritySettings(),
-          AdminService.getNotificationSettings(),
+          service.getProfileSettings(),
+          service.getSecuritySettings(),
+          service.getNotificationSettings(),
         ]);
 
         if (cancelled) return;
@@ -76,7 +85,7 @@ export const useAdminSettings = () => {
     setIsLoading(true);
     try {
       setError(null);
-      await AdminService.updateProfileSettings(data);
+      await service.updateProfileSettings(data);
       setProfile((prev) => ({ ...prev, ...data }));
     } catch (e) {
       console.error('Error updating admin profile settings:', e);
@@ -90,7 +99,7 @@ export const useAdminSettings = () => {
     setIsLoading(true);
     try {
       setError(null);
-      await AdminService.updateSecuritySettings(data);
+      await service.updateSecuritySettings(data);
       setSecurity((prev) => ({ ...prev, ...data }));
     } catch (e) {
       console.error('Error updating admin security settings:', e);
@@ -104,7 +113,7 @@ export const useAdminSettings = () => {
     setIsLoading(true);
     try {
       setError(null);
-      await AdminService.updateNotificationSettings(data);
+      await service.updateNotificationSettings(data);
       setNotifications((prev) => ({ ...prev, ...data }));
     } catch (e) {
       console.error('Error updating admin notification settings:', e);

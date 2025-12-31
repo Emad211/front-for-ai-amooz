@@ -10,33 +10,38 @@ import {
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
-import { ADMIN_NAV_MENU } from '@/constants/navigation';
+import { ADMIN_NAV_MENU, TEACHER_NAV_MENU } from '@/constants/navigation';
 import { Logo } from '@/components/ui/logo';
 
 interface SidebarContentProps {
   onItemClick?: () => void;
+  navMenu?: typeof ADMIN_NAV_MENU | typeof TEACHER_NAV_MENU;
+  panelLabel?: string;
+  logoHref?: string;
+  settingsHref?: string;
 }
 
-export function SidebarContent({ onItemClick }: SidebarContentProps) {
+export function SidebarContent({ onItemClick, navMenu = ADMIN_NAV_MENU, panelLabel = 'پنل مدیریت', logoHref = '/admin', settingsHref }: SidebarContentProps) {
   const pathname = usePathname();
+  const resolvedSettingsHref = settingsHref ?? `${logoHref}/settings`;
 
   return (
     <div className="flex flex-col h-full">
       {/* لوگو */}
       <div className="p-6">
         <Logo 
-          href="/admin" 
+          href={logoHref} 
           imageSize="lg" 
           textClassName="text-lg"
         />
-        <p className="text-xs text-muted-foreground ms-[72px] -mt-1 font-medium">پنل مدیریت</p>
+        <p className="text-xs text-muted-foreground ms-[72px] -mt-1 font-medium">{panelLabel}</p>
       </div>
 
       <Separator className="bg-border/50" />
 
       {/* منوها */}
       <nav className="flex-1 p-4 space-y-6 overflow-y-auto">
-        {ADMIN_NAV_MENU.map((section, idx) => (
+        {navMenu.map((section, idx) => (
           <div key={idx}>
             <h3 className="text-xs font-bold text-muted-foreground/60 mb-3 px-3 uppercase tracking-wider">
               {section.title}
@@ -73,11 +78,11 @@ export function SidebarContent({ onItemClick }: SidebarContentProps) {
       {/* پایین سایدبار */}
       <div className="p-4 space-y-1">
         <Link
-          href="/admin/settings"
+          href={resolvedSettingsHref}
           onClick={onItemClick}
           className={cn(
             "flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-bold transition-all duration-200",
-            pathname === '/admin/settings'
+            pathname === resolvedSettingsHref
               ? "bg-primary text-primary-foreground shadow-lg shadow-primary/20"
               : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
           )}

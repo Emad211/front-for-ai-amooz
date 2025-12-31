@@ -5,7 +5,11 @@ import { CalendarEvent, CalendarDay } from '@/types';
 import { generateMonthDays, getUpcomingEvents } from '@/lib/calendar';
 import { DashboardService } from '@/services/dashboard-service';
 
-export function useCalendar() {
+type CalendarService = {
+  getCalendarEvents: () => Promise<CalendarEvent[]>;
+};
+
+export function useCalendar(service: CalendarService = DashboardService) {
   // State for current month/year (Jalali)
   const [currentMonth, setCurrentMonth] = useState(10); // دی
   const [currentYear, setCurrentYear] = useState(1404);
@@ -24,19 +28,24 @@ export function useCalendar() {
   const [isModalOpen, setIsModalOpen] = useState(false);
 
   useEffect(() => {
+    let cancelled = false;
     const fetchEvents = async () => {
       try {
         setIsLoading(true);
-        const data = await DashboardService.getCalendarEvents();
-        setEvents(data);
+        const data = await service.getCalendarEvents();
+        if (!cancelled) setEvents(data);
       } catch (error) {
         console.error('Error fetching calendar events:', error);
       } finally {
-        setIsLoading(false);
+        if (!cancelled) setIsLoading(false);
       }
     };
     fetchEvents();
-  }, []);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [service]);
 
   // Generate calendar days
   const calendarDays = useMemo(() => 

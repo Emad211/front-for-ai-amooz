@@ -5,7 +5,11 @@ import { AdminService } from '@/services/admin-service';
 import { Course } from '@/types';
 import { useMountedRef } from '@/hooks/use-mounted-ref';
 
-export function useAdminCourses() {
+type CoursesService = {
+  getCourses: () => Promise<Course[]>;
+};
+
+export function useAdminCourses(service: CoursesService = AdminService) {
   const mountedRef = useMountedRef();
   const [courses, setCourses] = useState<Course[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -17,7 +21,7 @@ export function useAdminCourses() {
     try {
       setError(null);
       setIsLoading(true);
-      const data = await AdminService.getCourses();
+      const data = await service.getCourses();
       if (mountedRef.current) setCourses(data);
     } catch (err) {
       console.error(err);

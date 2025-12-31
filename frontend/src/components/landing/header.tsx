@@ -58,7 +58,7 @@ export const LandingHeader = () => {
                 <Link href="/login">ورود</Link>
               </Button>
               <Button asChild size="sm" className="bg-primary text-primary-foreground hover:bg-primary/90 shadow-sm">
-                <Link href="/login">شروع رایگان</Link>
+                <Link href="/start">شروع رایگان</Link>
               </Button>
             </div>
 
@@ -97,7 +97,7 @@ export const LandingHeader = () => {
                       <Link href="/login">ورود به حساب</Link>
                     </Button>
                     <Button asChild className="w-full justify-center h-12 text-lg bg-primary text-primary-foreground">
-                      <Link href="/login">شروع رایگان</Link>
+                      <Link href="/start">شروع رایگان</Link>
                     </Button>
                   </nav>
                 </SheetContent>

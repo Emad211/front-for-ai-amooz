@@ -5,7 +5,11 @@ import { AdminService } from '@/services/admin-service';
 import { MessageRecipient } from '@/types';
 import { useMountedRef } from '@/hooks/use-mounted-ref';
 
-export function useMessageRecipients() {
+type MessageService = {
+  getMessageRecipients: () => Promise<MessageRecipient[]>;
+};
+
+export function useMessageRecipients(service: MessageService = AdminService) {
   const mountedRef = useMountedRef();
   const [recipients, setRecipients] = useState<MessageRecipient[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -15,7 +19,7 @@ export function useMessageRecipients() {
     try {
       setError(null);
       setIsLoading(true);
-      const data = await AdminService.getMessageRecipients();
+      const data = await service.getMessageRecipients();
       if (mountedRef.current) setRecipients(data);
     } catch (err) {
       console.error(err);

@@ -5,7 +5,11 @@ import { AdminService } from '@/services/admin-service';
 import { Student } from '@/types';
 import { useMountedRef } from '@/hooks/use-mounted-ref';
 
-export function useStudents() {
+type StudentsService = {
+  getStudents: () => Promise<Student[]>;
+};
+
+export function useStudents(service: StudentsService = AdminService) {
   const mountedRef = useMountedRef();
   const [students, setStudents] = useState<Student[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -20,7 +24,7 @@ export function useStudents() {
     try {
       setError(null);
       setIsLoading(true);
-      const data = await AdminService.getStudents();
+      const data = await service.getStudents();
       if (mountedRef.current) setStudents(data);
     } catch (err) {
       console.error(err);

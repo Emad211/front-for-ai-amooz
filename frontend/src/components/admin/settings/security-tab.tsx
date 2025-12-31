@@ -9,8 +9,14 @@ import { Switch } from '@/components/ui/switch';
 
 import { useAdminSettings } from '@/hooks/use-admin-settings';
 
-export function SecurityTab() {
-  const { security, updateSecurity, isLoading } = useAdminSettings();
+type UseSettingsHook = typeof useAdminSettings;
+
+interface SecurityTabProps {
+  useSettings?: UseSettingsHook;
+}
+
+export function SecurityTab({ useSettings = useAdminSettings }: SecurityTabProps) {
+  const { security, updateSecurity, isLoading } = useSettings();
   return (
     <div className="space-y-6">
       <Card>

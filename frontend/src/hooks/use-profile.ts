@@ -3,7 +3,12 @@ import { PROFILE_TABS, ProfileTabId } from '@/constants/profile-tabs';
 import { DashboardService } from '@/services/dashboard-service';
 import type { UserProfile } from '@/types';
 
-export const useProfile = () => {
+type ProfileService = {
+  getUserProfile: () => Promise<UserProfile>;
+  updateUserProfile: (data: Partial<UserProfile>) => Promise<void>;
+};
+
+export const useProfile = (service: ProfileService = DashboardService) => {
   const [activeTab, setActiveTab] = useState<ProfileTabId>('personal');
   const [user, setUser] = useState<UserProfile | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -15,7 +20,7 @@ export const useProfile = () => {
       try {
         setIsLoading(true);
         setError(null);
-        const data = await DashboardService.getUserProfile();
+        const data = await service.getUserProfile();
         if (!cancelled) setUser(data);
       } catch (error) {
         console.error('Error fetching profile:', error);
@@ -29,12 +34,12 @@ export const useProfile = () => {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [service]);
 
   const updateProfile = async (data: Partial<UserProfile>) => {
     setIsLoading(true);
     try {
-      await DashboardService.updateUserProfile(data);
+      await service.updateUserProfile(data);
       setUser((prev) => (prev ? { ...prev, ...data } : prev));
     } catch (error) {
       console.error('Error updating profile:', error);

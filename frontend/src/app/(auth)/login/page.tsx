@@ -1,19 +1,12 @@
 'use client';
 
-import { useState } from 'react';
-import { GraduationCap } from 'lucide-react';
 import Link from 'next/link';
 import Image from 'next/image';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { JoinCodeForm } from '@/components/auth/join-code-form';
 import { LoginForm } from '@/components/auth/login-form';
 
 export default function LoginPage() {
-  const [activeTab, setActiveTab] = useState('join-code');
-
   return (
     <div dir="rtl" className="flex min-h-screen flex-col items-center bg-background p-4 overflow-y-auto">
-      {/* لوگو - در جریان صفحه قرار می‌گیرد تا با کیبورد تداخل نداشته باشد */}
       <div className="w-full flex justify-start mb-8 sm:absolute sm:top-8 sm:start-8 sm:mb-0 sm:w-auto">
         <Link href="/" className="flex items-center gap-2 group relative">
           <div className="relative h-12 w-16">
@@ -31,22 +24,10 @@ export default function LoginPage() {
       </div>
 
       <div className="w-full max-w-md flex-1 flex flex-col justify-center">
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full" dir="rtl">
-          <TabsList className="grid w-full grid-cols-2 bg-card border-border mb-8">
-            <TabsTrigger value="join-code" className="text-base">کد دعوت</TabsTrigger>
-            <TabsTrigger value="login" className="text-base">ورود</TabsTrigger>
-          </TabsList>
-
-          {/* تب کد دعوت */}
-          <TabsContent value="join-code">
-            <JoinCodeForm onSwitchToLogin={() => setActiveTab('login')} />
-          </TabsContent>
-
-          {/* تب ورود */}
-          <TabsContent value="login">
-            <LoginForm onSwitchToJoin={() => setActiveTab('join-code')} />
-          </TabsContent>
-        </Tabs>
+        <LoginForm />
+        <p className="mt-6 text-sm text-center text-muted-foreground">
+          تازه هستید؟ <Link href="/start" className="font-semibold text-primary hover:underline">شروع رایگان</Link>
+        </p>
       </div>
     </div>
   );
