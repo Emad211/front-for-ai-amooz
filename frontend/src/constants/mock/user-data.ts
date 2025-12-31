@@ -55,6 +55,20 @@ export const MOCK_ADMIN_USER_PROFILE: UserProfile = {
   isVerified: true,
 };
 
+// پروفایل معلم
+export const MOCK_TEACHER_PROFILE: UserProfile = {
+  id: 'teacher-1',
+  username: 'teacher',
+  name: 'استاد محمدی',
+  email: 'teacher@ai-amooz.ir',
+  phone: '09111111111',
+  avatar: 'https://picsum.photos/seed/teacher/100/100',
+  role: 'teacher',
+  bio: 'دبیر ریاضی با ۱۰ سال سابقه تدریس',
+  joinDate: '1401-06-01',
+  isVerified: true,
+};
+
 // اطلاعات نمایشی کاربر در هدر
 export interface UserDisplay {
   name: string;

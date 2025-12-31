@@ -49,11 +49,26 @@ export function LoginForm({ onSwitchToJoin }: LoginFormProps) {
     console.log('Login data:', data);
     toast.success('ورود با موفقیت انجام شد');
 
+    // تشخیص نقش کاربر بر اساس ایمیل/نام کاربری (Mock)
+    // در پیاده‌سازی واقعی، این اطلاعات از پاسخ API دریافت می‌شود
+    const username = data.username.toLowerCase();
+    let defaultRedirect = '/home'; // پیش‌فرض: داشبورد دانش‌آموز
+    
+    if (username.includes('teacher') || username.includes('معلم')) {
+      defaultRedirect = '/teacher';
+      localStorage.setItem('userRole', 'teacher');
+    } else if (username.includes('admin') || username.includes('ادمین')) {
+      defaultRedirect = '/admin';
+      localStorage.setItem('userRole', 'admin');
+    } else {
+      localStorage.setItem('userRole', 'student');
+    }
+
     const next = searchParams.get('next');
     const safeNext =
       next && next.startsWith('/') && !next.startsWith('//') && !next.includes('://')
         ? next
-        : '/home';
+        : defaultRedirect;
 
     router.push(safeNext);
   };

@@ -32,8 +32,13 @@ export default function TeacherSignupPage() {
   async function onSubmit(data: TeacherSignupFormValues) {
     setIsLoading(true);
     await new Promise((resolve) => setTimeout(resolve, 1200));
+    
+    // ذخیره نقش معلم در localStorage برای شناسایی پس از لاگین
+    localStorage.setItem('pendingRole', 'teacher');
+    localStorage.setItem('pendingEmail', data.email);
+    
     toast.success('حساب معلم با موفقیت ساخته شد. اکنون وارد شوید.');
-    router.push('/login');
+    router.push('/login?next=/teacher');
   }
 
   return (
