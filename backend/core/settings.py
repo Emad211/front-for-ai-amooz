@@ -1,5 +1,6 @@
 from pathlib import Path
 import os
+from urllib.parse import urlparse
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -10,7 +11,11 @@ SECRET_KEY = os.getenv('DJANGO_SECRET_KEY', 'django-insecure-change-me-in-produc
 
 DEBUG = os.getenv('DEBUG', 'True') == 'True'
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = [
+    host.strip()
+    for host in os.getenv('ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',')
+    if host.strip()
+]
 
 INSTALLED_APPS = [
     'django.contrib.admin',
@@ -21,10 +26,19 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'rest_framework',
     'corsheaders',
+    'rest_framework_simplejwt.token_blacklist',
     # Local apps
-    'apps.users',
-    'apps.courses',
+    'apps.accounts',
+    'apps.authentication',
+    'apps.core',
+    'apps.comments',
+    'apps.classes',
+    'apps.notification',
+    'apps.chatbot',
+    'apps.material',
 ]
+
+AUTH_USER_MODEL = 'accounts.User'
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
@@ -57,12 +71,35 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'core.wsgi.application'
 
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
-    }
-}
+def _build_databases_from_url(database_url: str):
+    parsed = urlparse(database_url)
+
+    if parsed.scheme in {'postgres', 'postgresql'}:
+        return {
+            'default': {
+                'ENGINE': 'django.db.backends.postgresql',
+                'NAME': (parsed.path or '').lstrip('/'),
+                'USER': parsed.username or '',
+                'PASSWORD': parsed.password or '',
+                'HOST': parsed.hostname or 'localhost',
+                'PORT': str(parsed.port or 5432),
+            }
+        }
+
+    if parsed.scheme == 'sqlite':
+        # sqlite:///db.sqlite3 -> /db.sqlite3
+        sqlite_path = (parsed.path or '').lstrip('/') or 'db.sqlite3'
+        return {
+            'default': {
+                'ENGINE': 'django.db.backends.sqlite3',
+                'NAME': BASE_DIR / sqlite_path,
+            }
+        }
+
+    raise ValueError(f'Unsupported DATABASE_URL scheme: {parsed.scheme}')
+
+
+DATABASES = _build_databases_from_url(os.getenv('DATABASE_URL', 'postgresql://ai_amooz:ai_amooz_password@localhost:5432/ai_amooz'))
 
 AUTH_PASSWORD_VALIDATORS = [
     {
@@ -100,10 +137,10 @@ SIMPLE_JWT = {
     'ACCESS_TOKEN_LIFETIME': timedelta(minutes=60),
     'REFRESH_TOKEN_LIFETIME': timedelta(days=1),
     'AUTH_HEADER_TYPES': ('Bearer',),
+    'ROTATE_REFRESH_TOKENS': True,
+    'BLACKLIST_AFTER_ROTATION': True,
 }
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
-
-AUTH_USER_MODEL = 'users.User'
 
 CORS_ALLOW_ALL_ORIGINS = True # For development only

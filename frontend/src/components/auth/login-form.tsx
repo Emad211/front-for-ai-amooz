@@ -12,6 +12,7 @@ import { loginSchema, type LoginFormValues } from '@/lib/validations/auth';
 import { toast } from 'sonner';
 import { Loader2 } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
+import { fetchMe, login as loginRequest, persistUser, persistTokens } from '@/services/auth-service';
 
 const GoogleIcon = (props: React.SVGProps<SVGSVGElement>) => (
     <svg role="img" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" {...props}>
@@ -42,35 +43,37 @@ export function LoginForm({ onSwitchToJoin }: LoginFormProps) {
 
   const onSubmit = async (data: LoginFormValues) => {
     setIsLoading(true);
-    // شبیه‌سازی درخواست به سرور
-    await new Promise((resolve) => setTimeout(resolve, 1500));
-    setIsLoading(false);
-    
-    console.log('Login data:', data);
-    toast.success('ورود با موفقیت انجام شد');
 
-    // تشخیص نقش کاربر بر اساس ایمیل/نام کاربری (Mock)
-    // در پیاده‌سازی واقعی، این اطلاعات از پاسخ API دریافت می‌شود
-    const username = data.username.toLowerCase();
-    let defaultRedirect = '/home'; // پیش‌فرض: داشبورد دانش‌آموز
-    
-    if (username.includes('teacher') || username.includes('معلم')) {
-      defaultRedirect = '/teacher';
-      localStorage.setItem('userRole', 'teacher');
-    } else if (username.includes('admin') || username.includes('ادمین')) {
-      defaultRedirect = '/admin';
-      localStorage.setItem('userRole', 'admin');
-    } else {
-      localStorage.setItem('userRole', 'student');
+    try {
+      const tokens = await loginRequest(data);
+      persistTokens(tokens);
+
+      const me = await fetchMe(tokens.access);
+      persistUser(me);
+
+      toast.success('ورود با موفقیت انجام شد');
+
+      const roleRedirectMap: Record<string, string> = {
+        teacher: '/teacher',
+        admin: '/admin',
+        student: '/home',
+      };
+
+      const normalizedRole = me.role?.toLowerCase() ?? 'student';
+      const defaultRedirect = roleRedirectMap[normalizedRole] ?? '/home';
+      const next = searchParams.get('next');
+      const safeNext =
+        next && next.startsWith('/') && !next.startsWith('//') && !next.includes('://')
+          ? next
+          : defaultRedirect;
+
+      router.push(safeNext);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'مشکلی در ورود رخ داده است';
+      toast.error(message);
+    } finally {
+      setIsLoading(false);
     }
-
-    const next = searchParams.get('next');
-    const safeNext =
-      next && next.startsWith('/') && !next.startsWith('//') && !next.includes('://')
-        ? next
-        : defaultRedirect;
-
-    router.push(safeNext);
   };
 
   return (

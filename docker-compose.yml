@@ -1,0 +1,21 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: ai_amooz_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ai_amooz
+      POSTGRES_USER: ai_amooz
+      POSTGRES_PASSWORD: ai_amooz_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - ai_amooz_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ai_amooz -d ai_amooz"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  ai_amooz_postgres_data:

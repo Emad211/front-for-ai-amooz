@@ -13,6 +13,7 @@ import { Separator } from '@/components/ui/separator';
 import { teacherSignupSchema, type TeacherSignupFormValues } from '@/lib/validations/auth';
 import { toast } from 'sonner';
 import { Loader2 } from 'lucide-react';
+import { persistTokens, persistUser, register as registerRequest } from '@/services/auth-service';
 
 export default function TeacherSignupPage() {
   const router = useRouter();
@@ -31,14 +32,26 @@ export default function TeacherSignupPage() {
 
   async function onSubmit(data: TeacherSignupFormValues) {
     setIsLoading(true);
-    await new Promise((resolve) => setTimeout(resolve, 1200));
-    
-    // ذخیره نقش معلم در localStorage برای شناسایی پس از لاگین
-    localStorage.setItem('pendingRole', 'teacher');
-    localStorage.setItem('pendingEmail', data.email);
-    
-    toast.success('حساب معلم با موفقیت ساخته شد. اکنون وارد شوید.');
-    router.push('/login?next=/teacher');
+
+    try {
+      const response = await registerRequest({
+        username: data.email,
+        email: data.email,
+        password: data.password,
+        role: 'TEACHER',
+      });
+
+      persistTokens(response.tokens);
+      persistUser(response.user);
+
+      toast.success('حساب معلم با موفقیت ساخته شد. به پنل هدایت می‌شوید.');
+      router.push('/teacher');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'ثبت‌نام با خطا مواجه شد';
+      toast.error(message);
+    } finally {
+      setIsLoading(false);
+    }
   }
 
   return (
