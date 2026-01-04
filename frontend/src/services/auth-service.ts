@@ -26,9 +26,15 @@ export type RegisterResponse = {
   tokens: TokenResponse;
 };
 
-const API_URL = (process.env.NEXT_PUBLIC_API_URL ?? '').replace(/\/$/, '');
+const RAW_API_URL = (process.env.NEXT_PUBLIC_API_URL ?? '').replace(/\/$/, '');
 
-if (!API_URL) {
+// We want all requests to target the Django API root: `${BACKEND}/api`.
+// Allow either:
+// - NEXT_PUBLIC_API_URL="https://example.com"  -> https://example.com/api
+// - NEXT_PUBLIC_API_URL="https://example.com/api" -> https://example.com/api
+const API_URL = RAW_API_URL.endsWith('/api') ? RAW_API_URL : `${RAW_API_URL}/api`;
+
+if (!RAW_API_URL) {
   console.warn('NEXT_PUBLIC_API_URL is not defined. Auth requests may fail.');
 }
 

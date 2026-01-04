@@ -4,6 +4,7 @@ django-cors-headers
 python-dotenv
 psycopg2-binary
 djangorestframework-simplejwt
+drf-spectacular
 Pillow
 pytest
 pytest-django

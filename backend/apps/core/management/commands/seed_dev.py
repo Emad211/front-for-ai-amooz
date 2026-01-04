@@ -16,8 +16,46 @@ class Command(BaseCommand):
         self._seed_admin(password=options['admin_password'])
         self._seed_teacher(password=options['teacher_password'])
         self._seed_student(password=options['student_password'])
+        
+        # Add more variety
+        self._seed_extra_users(options['student_password'])
 
         self.stdout.write(self.style.SUCCESS('Seed completed.'))
+
+    def _seed_extra_users(self, password):
+        extra_students = [
+            ('alice', 'alice@example.com'),
+            ('bob', 'bob@example.com'),
+            ('charlie', 'charlie@example.com'),
+        ]
+        for username, email in extra_students:
+            user, created = User.objects.get_or_create(
+                username=username,
+                defaults={'email': email, 'role': User.Role.STUDENT}
+            )
+            if created:
+                user.set_password(password)
+                user.save()
+            self._ensure_single_profile(user)
+            self.stdout.write(f"Created/updated student: {username}")
+
+        extra_teachers = [
+            ('sara', 'sara@example.com', 'Physics'),
+            ('james', 'james@example.com', 'Chemistry'),
+        ]
+        for username, email, expertise in extra_teachers:
+            user, created = User.objects.get_or_create(
+                username=username,
+                defaults={'email': email, 'role': User.Role.TEACHER}
+            )
+            if created:
+                user.set_password(password)
+                user.save()
+            self._ensure_single_profile(user)
+            if hasattr(user, 'teacherprofile'):
+                user.teacherprofile.expertise = expertise
+                user.teacherprofile.save()
+            self.stdout.write(f"Created/updated teacher: {username}")
 
     def _ensure_single_profile(self, user):
         """Ensure only the correct role profile exists (safety for repeated runs)."""

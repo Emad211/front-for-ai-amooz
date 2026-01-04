@@ -6,10 +6,25 @@ User = get_user_model()
 
 
 class RegisterSerializer(serializers.Serializer):
-    username = serializers.CharField(max_length=150)
-    email = serializers.EmailField(required=False, allow_blank=True)
-    password = serializers.CharField(write_only=True, min_length=8)
-    role = serializers.ChoiceField(choices=User.Role.choices, required=False)
+    username = serializers.CharField(
+        max_length=150,
+        help_text="Unique username for the account."
+    )
+    email = serializers.EmailField(
+        required=False, 
+        allow_blank=True,
+        help_text="Optional email address."
+    )
+    password = serializers.CharField(
+        write_only=True, 
+        min_length=8,
+        help_text="Strong password (min 8 characters)."
+    )
+    role = serializers.ChoiceField(
+        choices=[(User.Role.STUDENT, 'Student'), (User.Role.TEACHER, 'Teacher')],
+        required=False,
+        help_text="User role: 'student' or 'teacher'. Defaults to 'student'."
+    )
 
     def validate_username(self, value: str) -> str:
         if User.objects.filter(username=value).exists():
@@ -39,4 +54,20 @@ class RegisterSerializer(serializers.Serializer):
 
 
 class LogoutSerializer(serializers.Serializer):
-    refresh = serializers.CharField()
+    refresh = serializers.CharField(help_text="The refresh token to be blacklisted.")
+
+
+class PasswordChangeSerializer(serializers.Serializer):
+    old_password = serializers.CharField(
+        required=True,
+        help_text="Current password of the user."
+    )
+    new_password = serializers.CharField(
+        required=True, 
+        min_length=8,
+        help_text="New strong password."
+    )
+
+    def validate_new_password(self, value):
+        validate_password(value)
+        return value

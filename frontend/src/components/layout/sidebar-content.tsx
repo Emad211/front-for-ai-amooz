@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { ADMIN_NAV_MENU, TEACHER_NAV_MENU } from '@/constants/navigation';
 import { Logo } from '@/components/ui/logo';
+import { clearAuthStorage } from '@/services/auth-service';
 
 interface SidebarContentProps {
   onItemClick?: () => void;
@@ -97,8 +98,7 @@ export function SidebarContent({ onItemClick, navMenu = ADMIN_NAV_MENU, panelLab
           onClick={() => {
             if (onItemClick) onItemClick();
             if (typeof window !== 'undefined') {
-              localStorage.removeItem('authToken');
-              sessionStorage.removeItem('authToken');
+              clearAuthStorage();
             }
             window.location.href = '/';
           }}

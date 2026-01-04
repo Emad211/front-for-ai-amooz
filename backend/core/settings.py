@@ -13,7 +13,7 @@ DEBUG = os.getenv('DEBUG', 'True') == 'True'
 
 ALLOWED_HOSTS = [
     host.strip()
-    for host in os.getenv('ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',')
+    for host in os.getenv('ALLOWED_HOSTS', 'localhost,127.0.0.1,0.0.0.0').split(',')
     if host.strip()
 ]
 
@@ -27,11 +27,12 @@ INSTALLED_APPS = [
     'rest_framework',
     'corsheaders',
     'rest_framework_simplejwt.token_blacklist',
+    'drf_spectacular',
     # Local apps
     'apps.accounts',
     'apps.authentication',
     'apps.core',
-    'apps.comments',
+    'apps.commons',
     'apps.classes',
     'apps.notification',
     'apps.chatbot',
@@ -129,7 +130,38 @@ STATIC_URL = 'static/'
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
         'rest_framework_simplejwt.authentication.JWTAuthentication',
-    )
+    ),
+    'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
+    'EXCEPTION_HANDLER': 'core.exception_handlers.api_exception_handler',
+}
+
+SPECTACULAR_SETTINGS = {
+    'TITLE': 'AI_AMOOZ API',
+    'DESCRIPTION': 'Comprehensive API documentation for AI_AMOOZ Educational Platform',
+    'VERSION': '1.0.0',
+    'SERVE_INCLUDE_SCHEMA': False,
+    'COMPONENT_SPLIT_PATCH': True,
+    'COMPONENT_SPLIT_REQUEST': True,
+    'COMPONENT_NO_READ_ONLY_REQUIRED': True,
+    'SWAGGER_UI_SETTINGS': {
+        'deepLinking': True,
+        'persistAuthorization': True,
+        'displayOperationId': True,
+    },
+    'SECURITY': [
+        {
+            'jwtAuth': [],
+        }
+    ],
+    'APPEND_COMPONENTS': {
+        'securitySchemes': {
+            'jwtAuth': {
+                'type': 'http',
+                'scheme': 'bearer',
+                'bearerFormat': 'JWT',
+            }
+        }
+    },
 }
 
 from datetime import timedelta
