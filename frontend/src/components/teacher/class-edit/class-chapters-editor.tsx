@@ -80,6 +80,8 @@ export function ClassChaptersEditor({ chapters, onChange }: ClassChaptersEditorP
       duration: newLessonData.duration || '۰ دقیقه',
       isPublished: newLessonData.isPublished || false,
       order: (chapters.find(ch => ch.id === chapterId)?.lessons.length || 0) + 1,
+      contentMarkdown: '',
+      teachingMarkdown: '',
     };
     onChange(chapters.map(ch => 
       ch.id === chapterId 
@@ -103,6 +105,14 @@ export function ClassChaptersEditor({ chapters, onChange }: ClassChaptersEditorP
         ? { ...ch, lessons: ch.lessons.map(l => l.id === lessonId ? { ...l, ...data } : l) }
         : ch
     ));
+  };
+
+  const closeEditLesson = () => setEditingLesson(null);
+
+  const saveEditLesson = () => {
+    if (!editingLesson) return;
+    updateLesson(editingLesson.chapterId, editingLesson.lesson.id, editingLesson.lesson);
+    closeEditLesson();
   };
 
   const toggleLessonPublish = (chapterId: string, lessonId: string) => {
@@ -182,7 +192,15 @@ export function ClassChaptersEditor({ chapters, onChange }: ClassChaptersEditorP
                         </span>
                       </div>
                       <div className="flex items-center gap-1">
-                        <Button variant="ghost" size="icon" className="h-8 w-8">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setEditingLesson({ chapterId: chapter.id, lesson });
+                          }}
+                        >
                           <Edit className="h-4 w-4" />
                         </Button>
                         <Button 
@@ -197,6 +215,85 @@ export function ClassChaptersEditor({ chapters, onChange }: ClassChaptersEditorP
                     </div>
                   </div>
                 ))}
+
+                <Dialog open={Boolean(editingLesson)} onOpenChange={(open) => !open && closeEditLesson()}>
+                  <DialogContent>
+                    <DialogHeader>
+                      <DialogTitle>ویرایش زیرسرفصل</DialogTitle>
+                    </DialogHeader>
+
+                    <div className="space-y-4 py-4">
+                      <div className="space-y-2">
+                        <Label>عنوان زیرسرفصل</Label>
+                        <Input
+                          value={editingLesson?.lesson.title ?? ''}
+                          onChange={(e) =>
+                            setEditingLesson((prev) =>
+                              prev
+                                ? {
+                                    ...prev,
+                                    lesson: {
+                                      ...prev.lesson,
+                                      title: e.target.value,
+                                    },
+                                  }
+                                : prev
+                            )
+                          }
+                        />
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label>متن زیرسرفصل (Markdown)</Label>
+                        <textarea
+                          className="w-full min-h-[140px] rounded-xl border border-border/60 bg-background/80 p-3 text-sm text-start"
+                          value={editingLesson?.lesson.contentMarkdown ?? ''}
+                          onChange={(e) =>
+                            setEditingLesson((prev) =>
+                              prev
+                                ? {
+                                    ...prev,
+                                    lesson: {
+                                      ...prev.lesson,
+                                      contentMarkdown: e.target.value,
+                                    },
+                                  }
+                                : prev
+                            )
+                          }
+                        />
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label>راهنمای تدریس (Markdown)</Label>
+                        <textarea
+                          className="w-full min-h-[120px] rounded-xl border border-border/60 bg-background/80 p-3 text-sm text-start"
+                          value={editingLesson?.lesson.teachingMarkdown ?? ''}
+                          onChange={(e) =>
+                            setEditingLesson((prev) =>
+                              prev
+                                ? {
+                                    ...prev,
+                                    lesson: {
+                                      ...prev.lesson,
+                                      teachingMarkdown: e.target.value,
+                                    },
+                                  }
+                                : prev
+                            )
+                          }
+                        />
+                      </div>
+                    </div>
+
+                    <DialogFooter>
+                      <Button variant="outline" onClick={closeEditLesson}>
+                        انصراف
+                      </Button>
+                      <Button onClick={saveEditLesson}>ذخیره</Button>
+                    </DialogFooter>
+                  </DialogContent>
+                </Dialog>
 
                 {/* Add Lesson */}
                 <Dialog>

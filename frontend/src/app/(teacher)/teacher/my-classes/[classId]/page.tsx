@@ -14,7 +14,7 @@ import {
 import { Card } from '@/components/ui/card';
 import { Textarea } from '@/components/ui/textarea';
 import { getClassCreationSessionDetail, type ClassCreationSessionDetail } from '@/services/classes-service';
-import { courseStructureToMarkdown, parseCourseStructure } from '@/lib/classes/course-structure';
+import { StructuredContentView } from '@/components/teacher/class-detail/structured-content-view';
 
 interface PageProps {
   params: Promise<{ classId: string }>;
@@ -50,7 +50,7 @@ export default function TeacherClassDetailPage({ params }: PageProps) {
       }
     );
 
-    const shouldPoll = ['transcribing', 'structuring'].includes(detail.pipelineStatus ?? '');
+    const shouldPoll = ['transcribing', 'structuring', 'prereq_extracting', 'prereq_teaching'].includes(detail.pipelineStatus ?? '');
     if (!shouldPoll) return;
 
     if (pollTimer.current) window.clearInterval(pollTimer.current);
@@ -59,7 +59,7 @@ export default function TeacherClassDetailPage({ params }: PageProps) {
         const next = await getClassCreationSessionDetail(sessionId);
         setSessionDetail(next);
 
-        if (!['transcribing', 'structuring'].includes(next.status)) {
+        if (!['transcribing', 'structuring', 'prereq_extracting', 'prereq_teaching'].includes(next.status)) {
           if (pollTimer.current) {
             window.clearInterval(pollTimer.current);
             pollTimer.current = null;
@@ -135,12 +135,9 @@ export default function TeacherClassDetailPage({ params }: PageProps) {
 
                 <div className="space-y-2">
                   <div className="text-sm font-bold">ساختار (مرحله ۲)</div>
-                  <Textarea
-                    readOnly
-                    value={courseStructureToMarkdown(parseCourseStructure(sessionDetail?.structure_json || detail.structureJson || ''))}
-                    placeholder="هنوز خروجی مرحله ۲ تولید نشده است."
-                    className="min-h-[200px] bg-background/80 rounded-xl resize-none text-start border-border/60"
-                  />
+                  <div className="rounded-xl border border-border/60 bg-background/80 p-4">
+                    <StructuredContentView structureJson={sessionDetail?.structure_json || detail.structureJson || ''} />
+                  </div>
                 </div>
               </div>
             </div>

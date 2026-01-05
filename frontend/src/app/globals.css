@@ -75,6 +75,61 @@
   }
 }
 
+@layer components {
+  .md-p {
+    @apply text-sm leading-7 text-foreground;
+  }
+
+  .md-h2 {
+    @apply text-lg md:text-xl font-black mt-3 mb-2;
+  }
+
+  .md-h3 {
+    @apply text-base md:text-lg font-bold mt-3 mb-2;
+  }
+
+  .md-h4 {
+    @apply text-sm md:text-base font-bold mt-3 mb-2;
+  }
+
+  .md-h5 {
+    @apply text-sm font-semibold mt-2 mb-1;
+  }
+
+  .md-ul {
+    @apply list-disc pr-6 space-y-1;
+  }
+
+  .md-ol {
+    @apply list-decimal pr-6 space-y-1;
+  }
+
+  .md-li,
+  .md-li-num {
+    @apply text-sm leading-7;
+  }
+
+  .md-pre {
+    @apply rounded-xl border border-border/60 bg-background/80 p-3 overflow-auto;
+  }
+
+  .inline-code {
+    @apply rounded-md border border-border/60 bg-muted/30 px-1 py-0.5 text-[0.85em];
+  }
+
+  .md-hr {
+    @apply my-3 border-border/60;
+  }
+
+  .md-link {
+    @apply underline underline-offset-4 text-primary;
+  }
+
+  .math-block {
+    @apply my-3;
+  }
+}
+
 @layer base {
   * {
     @apply border-border;

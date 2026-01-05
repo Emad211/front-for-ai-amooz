@@ -300,6 +300,10 @@ export interface ClassLesson {
   duration: string;
   order: number;
   isPublished: boolean;
+
+  // Optional rich content (derived from Step 2 structure_json units)
+  contentMarkdown?: string;
+  teachingMarkdown?: string;
 }
 
 export interface ClassChapter {

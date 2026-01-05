@@ -11,7 +11,16 @@ export type Step1TranscribeResponse = {
 
 export type Step2StructureResponse = {
   id: number;
-  status: 'structuring' | 'structured' | 'failed' | 'transcribed' | 'transcribing';
+  status:
+    | 'structuring'
+    | 'structured'
+    | 'failed'
+    | 'transcribed'
+    | 'transcribing'
+    | 'prereq_extracting'
+    | 'prereq_extracted'
+    | 'prereq_teaching'
+    | 'prereq_taught';
   title: string;
   description: string;
   structure_json: string;

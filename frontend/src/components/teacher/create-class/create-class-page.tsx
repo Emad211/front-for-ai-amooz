@@ -19,7 +19,7 @@ import {
   type Step2StructureResponse,
   updateClassCreationSession,
 } from '@/services/classes-service';
-import { courseStructureToMarkdown, parseCourseStructure } from '@/lib/classes/course-structure';
+import { StructuredContentView } from '@/components/teacher/class-detail/structured-content-view';
 
 const ACTIVE_SESSION_STORAGE_KEY = 'ai_amooz_active_class_creation_session_id';
 
@@ -343,13 +343,9 @@ export function CreateClassPage() {
               {step2Error && <div className="text-sm text-destructive">{step2Error}</div>}
 
               {step2Result && (
-                <Textarea
-                  readOnly
-                  value={courseStructureToMarkdown(
-                    parseCourseStructure(sessionDetail?.structure_json ?? step2Result.structure_json)
-                  )}
-                  className="min-h-[220px] bg-background/80 rounded-xl resize-none text-start border-border/60"
-                />
+                <div className="rounded-xl border border-border/60 bg-background/80 p-4">
+                  <StructuredContentView structureJson={sessionDetail?.structure_json ?? step2Result.structure_json ?? ''} />
+                </div>
               )}
             </div>
           )}

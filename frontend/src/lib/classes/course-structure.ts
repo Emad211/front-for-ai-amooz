@@ -77,6 +77,8 @@ export function courseStructureToChapters(structure: CourseStructure | null, opt
           duration: '—',
           order: unitIndex + 1,
           isPublished,
+          contentMarkdown: (unit?.content_markdown || '').toString(),
+          teachingMarkdown: (unit?.teaching_markdown || '').toString(),
         };
       }),
     };
@@ -142,8 +144,8 @@ export function applyChaptersToCourseStructure(
         title: lesson.title,
         merrill_type: existingUnit?.merrill_type || 'Concept',
         source_markdown: existingUnit?.source_markdown || '',
-        content_markdown: existingUnit?.content_markdown || '',
-        teaching_markdown: existingUnit?.teaching_markdown || '',
+        content_markdown: (lesson.contentMarkdown ?? existingUnit?.content_markdown ?? '').toString(),
+        teaching_markdown: (lesson.teachingMarkdown ?? existingUnit?.teaching_markdown ?? '').toString(),
         image_ideas: existingUnit?.image_ideas || [],
       };
     });

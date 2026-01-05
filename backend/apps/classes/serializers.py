@@ -1,7 +1,7 @@
 from rest_framework import serializers
 import json
 
-from .models import ClassCreationSession, ClassInvitation
+from .models import ClassCreationSession, ClassInvitation, ClassPrerequisite
 
 
 class Step1TranscribeRequestSerializer(serializers.Serializer):
@@ -52,6 +52,45 @@ class Step2StructureResponseSerializer(serializers.ModelSerializer):
             'structure_json',
             'created_at',
         ]
+
+
+class Step3PrerequisitesRequestSerializer(serializers.Serializer):
+    session_id = serializers.IntegerField(min_value=1)
+
+
+class PrerequisiteSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ClassPrerequisite
+        fields = ['id', 'order', 'name', 'teaching_markdown']
+
+
+class Step3PrerequisitesResponseSerializer(serializers.ModelSerializer):
+    prerequisites = serializers.SerializerMethodField()
+
+    def get_prerequisites(self, obj: ClassCreationSession):
+        qs = obj.prerequisites.order_by('order')
+        return PrerequisiteSerializer(qs, many=True).data
+
+    class Meta:
+        model = ClassCreationSession
+        fields = ['id', 'status', 'title', 'description', 'created_at', 'prerequisites']
+
+
+class Step4PrerequisiteTeachingRequestSerializer(serializers.Serializer):
+    session_id = serializers.IntegerField(min_value=1)
+    prerequisite_name = serializers.CharField(max_length=255, required=False, allow_blank=True)
+
+
+class Step4PrerequisiteTeachingResponseSerializer(serializers.ModelSerializer):
+    prerequisites = serializers.SerializerMethodField()
+
+    def get_prerequisites(self, obj: ClassCreationSession):
+        qs = obj.prerequisites.order_by('order')
+        return PrerequisiteSerializer(qs, many=True).data
+
+    class Meta:
+        model = ClassCreationSession
+        fields = ['id', 'status', 'title', 'description', 'created_at', 'prerequisites']
 
 
 class ClassCreationSessionListSerializer(serializers.ModelSerializer):

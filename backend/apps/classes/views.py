@@ -16,7 +16,7 @@ from rest_framework.views import APIView
 
 from drf_spectacular.utils import extend_schema
 
-from .models import ClassCreationSession
+from .models import ClassCreationSession, ClassPrerequisite
 from .models import ClassInvitation
 from .permissions import IsTeacherUser
 from .serializers import (
@@ -33,10 +33,17 @@ from .serializers import (
     Step1TranscribeResponseSerializer,
     Step2StructureRequestSerializer,
     Step2StructureResponseSerializer,
+    Step3PrerequisitesRequestSerializer,
+    Step3PrerequisitesResponseSerializer,
+    Step4PrerequisiteTeachingRequestSerializer,
+    Step4PrerequisiteTeachingResponseSerializer,
+    PrerequisiteSerializer,
 )
 from .services.transcription import transcribe_media_bytes
 from .services.structure import structure_transcript_markdown
+from .services.prerequisites import extract_prerequisites, generate_prerequisite_teaching
 from .services.background import run_in_background
+from .services.sync_structure import sync_structure_from_session
 
 
 def _process_step1_transcription(session_id: int) -> None:
@@ -89,6 +96,88 @@ def _process_step2_structure(session_id: int) -> None:
         session.llm_model = model_name
         session.status = ClassCreationSession.Status.STRUCTURED
         session.save(update_fields=['structure_json', 'llm_provider', 'llm_model', 'status', 'updated_at'])
+        sync_structure_from_session(session=session)
+    except Exception as exc:
+        session.status = ClassCreationSession.Status.FAILED
+        session.error_detail = str(exc)
+        session.save(update_fields=['status', 'error_detail', 'updated_at'])
+
+
+def _upsert_prerequisites(*, session: ClassCreationSession, prerequisites: list[str]) -> None:
+    keep_ids: list[int] = []
+    for idx, name in enumerate(prerequisites):
+        s = (name or '').strip()
+        if not s:
+            continue
+        obj, _ = ClassPrerequisite.objects.update_or_create(
+            session=session,
+            order=idx + 1,
+            defaults={'name': s},
+        )
+        keep_ids.append(obj.id)
+
+    ClassPrerequisite.objects.filter(session=session).exclude(id__in=keep_ids).delete()
+
+
+def _process_step3_prerequisites(session_id: int) -> None:
+    session = ClassCreationSession.objects.filter(id=session_id).first()
+    if session is None:
+        return
+    if session.status != ClassCreationSession.Status.PREREQ_EXTRACTING:
+        return
+    if not (session.transcript_markdown or '').strip():
+        session.status = ClassCreationSession.Status.FAILED
+        session.error_detail = 'برای این جلسه هنوز متن درس آماده نیست.'
+        session.save(update_fields=['status', 'error_detail', 'updated_at'])
+        return
+
+    try:
+        prereq_obj, provider, model_name = extract_prerequisites(transcript_markdown=session.transcript_markdown)
+        raw_list = prereq_obj.get('prerequisites') if isinstance(prereq_obj, dict) else None
+        prereqs = [str(x).strip() for x in (raw_list or []) if str(x).strip()]
+        _upsert_prerequisites(session=session, prerequisites=prereqs)
+
+        session.llm_provider = provider
+        session.llm_model = model_name
+        session.status = ClassCreationSession.Status.PREREQ_EXTRACTED
+        session.save(update_fields=['llm_provider', 'llm_model', 'status', 'updated_at'])
+    except Exception as exc:
+        session.status = ClassCreationSession.Status.FAILED
+        session.error_detail = str(exc)
+        session.save(update_fields=['status', 'error_detail', 'updated_at'])
+
+
+def _process_step4_prereq_teaching(session_id: int, prerequisite_name: str | None = None) -> None:
+    session = ClassCreationSession.objects.filter(id=session_id).first()
+    if session is None:
+        return
+    if session.status != ClassCreationSession.Status.PREREQ_TEACHING:
+        return
+
+    qs = ClassPrerequisite.objects.filter(session=session).order_by('order')
+    if prerequisite_name:
+        qs = qs.filter(name=prerequisite_name)
+
+    if not qs.exists():
+        session.status = ClassCreationSession.Status.FAILED
+        session.error_detail = 'پیش نیازها یافت نشدند. ابتدا مرحله پیش نیازها را اجرا کنید.'
+        session.save(update_fields=['status', 'error_detail', 'updated_at'])
+        return
+
+    try:
+        provider: str = ''
+        model_name: str = ''
+        for prereq in qs:
+            teaching, provider, model_name = generate_prerequisite_teaching(prerequisite_name=prereq.name)
+            prereq.teaching_markdown = teaching
+            prereq.save(update_fields=['teaching_markdown'])
+
+        if provider:
+            session.llm_provider = provider
+        if model_name:
+            session.llm_model = model_name
+        session.status = ClassCreationSession.Status.PREREQ_TAUGHT
+        session.save(update_fields=['llm_provider', 'llm_model', 'status', 'updated_at'])
     except Exception as exc:
         session.status = ClassCreationSession.Status.FAILED
         session.error_detail = str(exc)
@@ -219,6 +308,7 @@ class Step2StructureView(APIView):
             session.llm_model = model_name
             session.status = ClassCreationSession.Status.STRUCTURED
             session.save(update_fields=['structure_json', 'llm_provider', 'llm_model', 'status', 'updated_at'])
+            sync_structure_from_session(session=session)
             return Response(Step2StructureResponseSerializer(session).data, status=status.HTTP_200_OK)
         except Exception as exc:
             session.status = ClassCreationSession.Status.FAILED
@@ -233,6 +323,102 @@ class Step2StructureView(APIView):
                 },
                 status=status.HTTP_502_BAD_GATEWAY,
             )
+
+
+class Step3PrerequisitesView(APIView):
+    permission_classes = [IsAuthenticated, IsTeacherUser]
+
+    @extend_schema(
+        tags=['Classes'],
+        summary='Step 3: Build prerequisites from transcript',
+        request=Step3PrerequisitesRequestSerializer,
+        responses={202: Step3PrerequisitesResponseSerializer, 200: Step3PrerequisitesResponseSerializer},
+    )
+    def post(self, request):
+        serializer = Step3PrerequisitesRequestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        session_id = serializer.validated_data['session_id']
+        session = ClassCreationSession.objects.filter(id=session_id, teacher=request.user).first()
+        if session is None:
+            return Response({'detail': 'جلسه پیدا نشد.'}, status=status.HTTP_404_NOT_FOUND)
+
+        if session.status == ClassCreationSession.Status.PREREQ_EXTRACTED and session.prerequisites.exists():
+            return Response(Step3PrerequisitesResponseSerializer(session).data, status=status.HTTP_200_OK)
+
+        if session.status == ClassCreationSession.Status.PREREQ_EXTRACTING:
+            return Response(Step3PrerequisitesResponseSerializer(session).data, status=status.HTTP_202_ACCEPTED)
+
+        if not (session.transcript_markdown or '').strip():
+            return Response({'detail': 'برای این جلسه هنوز متن درس آماده نیست.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        session.status = ClassCreationSession.Status.PREREQ_EXTRACTING
+        session.save(update_fields=['status', 'updated_at'])
+
+        if getattr(settings, 'CLASS_PIPELINE_ASYNC', False):
+            run_in_background(lambda: _process_step3_prerequisites(session.id), name=f'class-step3-{session.id}')
+            return Response(Step3PrerequisitesResponseSerializer(session).data, status=status.HTTP_202_ACCEPTED)
+
+        _process_step3_prerequisites(session.id)
+        session.refresh_from_db()
+        return Response(Step3PrerequisitesResponseSerializer(session).data, status=status.HTTP_200_OK)
+
+
+class Step4PrerequisiteTeachingView(APIView):
+    permission_classes = [IsAuthenticated, IsTeacherUser]
+
+    @extend_schema(
+        tags=['Classes'],
+        summary='Step 4: Build teaching notes for each prerequisite',
+        request=Step4PrerequisiteTeachingRequestSerializer,
+        responses={202: Step4PrerequisiteTeachingResponseSerializer, 200: Step4PrerequisiteTeachingResponseSerializer},
+    )
+    def post(self, request):
+        serializer = Step4PrerequisiteTeachingRequestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        session_id = serializer.validated_data['session_id']
+        prerequisite_name = (serializer.validated_data.get('prerequisite_name') or '').strip() or None
+
+        session = ClassCreationSession.objects.filter(id=session_id, teacher=request.user).first()
+        if session is None:
+            return Response({'detail': 'جلسه پیدا نشد.'}, status=status.HTTP_404_NOT_FOUND)
+
+        if session.status == ClassCreationSession.Status.PREREQ_TEACHING:
+            return Response(Step4PrerequisiteTeachingResponseSerializer(session).data, status=status.HTTP_202_ACCEPTED)
+
+        if not session.prerequisites.exists():
+            return Response({'detail': 'ابتدا مرحله پیش نیازها را اجرا کنید.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        session.status = ClassCreationSession.Status.PREREQ_TEACHING
+        session.save(update_fields=['status', 'updated_at'])
+
+        if getattr(settings, 'CLASS_PIPELINE_ASYNC', False):
+            run_in_background(
+                lambda: _process_step4_prereq_teaching(session.id, prerequisite_name),
+                name=f'class-step4-{session.id}',
+            )
+            return Response(Step4PrerequisiteTeachingResponseSerializer(session).data, status=status.HTTP_202_ACCEPTED)
+
+        _process_step4_prereq_teaching(session.id, prerequisite_name)
+        session.refresh_from_db()
+        return Response(Step4PrerequisiteTeachingResponseSerializer(session).data, status=status.HTTP_200_OK)
+
+
+class ClassPrerequisiteListView(APIView):
+    permission_classes = [IsAuthenticated, IsTeacherUser]
+
+    @extend_schema(
+        tags=['Classes'],
+        summary='List prerequisites for a session (teacher)',
+        responses={200: PrerequisiteSerializer(many=True)},
+    )
+    def get(self, request, session_id: int):
+        session = ClassCreationSession.objects.filter(id=session_id, teacher=request.user).first()
+        if session is None:
+            return Response({'detail': 'جلسه پیدا نشد.'}, status=status.HTTP_404_NOT_FOUND)
+        qs = session.prerequisites.order_by('order')
+        return Response(PrerequisiteSerializer(qs, many=True).data)
 
 
 class ClassCreationSessionListView(APIView):
@@ -293,6 +479,9 @@ class ClassCreationSessionDetailView(APIView):
         if updated_fields:
             updated_fields.append('updated_at')
             session.save(update_fields=updated_fields)
+
+        if 'structure_json' in serializer.validated_data:
+            sync_structure_from_session(session=session)
 
         return Response(ClassCreationSessionDetailSerializer(session).data)
 

@@ -8,6 +8,7 @@ import '@fontsource/vazirmatn/600.css';
 import '@fontsource/vazirmatn/700.css';
 import '@fontsource/vazirmatn/800.css';
 import '@fontsource/vazirmatn/900.css';
+import 'katex/dist/katex.min.css';
 import './globals.css';
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as SonnerToaster } from "sonner";
