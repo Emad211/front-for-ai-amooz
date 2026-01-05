@@ -1,16 +1,17 @@
 import type { Metadata } from 'next';
-import { Vazirmatn } from 'next/font/google';
+import '@fontsource/vazirmatn/100.css';
+import '@fontsource/vazirmatn/200.css';
+import '@fontsource/vazirmatn/300.css';
+import '@fontsource/vazirmatn/400.css';
+import '@fontsource/vazirmatn/500.css';
+import '@fontsource/vazirmatn/600.css';
+import '@fontsource/vazirmatn/700.css';
+import '@fontsource/vazirmatn/800.css';
+import '@fontsource/vazirmatn/900.css';
 import './globals.css';
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as SonnerToaster } from "sonner";
 import { ThemeProvider } from "@/components/theme-provider";
-
-const vazirmatn = Vazirmatn({
-  subsets: ['arabic'],
-  weight: ['100', '200', '300', '400', '500', '600', '700', '800', '900'],
-  variable: '--font-vazirmatn',
-  display: 'swap',
-});
 
 export const metadata: Metadata = {
   title: 'AI-Amooz',
@@ -24,7 +25,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="fa" dir="rtl" suppressHydrationWarning>
-      <body className={`${vazirmatn.variable} font-body antialiased`}>
+      <body className="font-body antialiased">
         <ThemeProvider
           attribute="class"
           defaultTheme="system"

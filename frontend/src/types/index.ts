@@ -314,4 +314,13 @@ export interface ClassDetail extends Course {
   enrolledStudents?: ClassStudent[];
   announcements?: { id: string; title: string; content: string; createdAt: string }[];
   schedule?: { day: string; time: string }[];
+
+  // Derived from `structureJson` (Step 2)
+  objectives?: string[];
+
+  // Class creation pipeline outputs (backed by ClassCreationSession)
+  pipelineStatus?: string;
+  transcriptMarkdown?: string;
+  structureJson?: string;
+  pipelineErrorDetail?: string;
 }

@@ -22,7 +22,8 @@ export const joinCodeSchema = z.object({
 });
 
 export const teacherSignupSchema = z.object({
-  fullName: z.string().min(3, { message: 'نام و نام خانوادگی الزامی است' }),
+  firstName: z.string().min(1, { message: 'نام الزامی است' }),
+  lastName: z.string().min(1, { message: 'نام خانوادگی الزامی است' }),
   email: z.string().email({ message: 'ایمیل معتبر وارد کنید' }),
   phone: z.string().min(10, { message: 'شماره تماس معتبر نیست' }),
   password: z.string().min(6, { message: 'رمز عبور باید حداقل ۶ کاراکتر باشد' }),

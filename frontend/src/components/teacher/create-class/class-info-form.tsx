@@ -10,9 +10,20 @@ import { cn } from '@/lib/utils';
 interface ClassInfoFormProps {
   isExpanded: boolean;
   onToggle: () => void;
+  title: string;
+  description: string;
+  onTitleChange: (value: string) => void;
+  onDescriptionChange: (value: string) => void;
 }
 
-export function ClassInfoForm({ isExpanded, onToggle }: ClassInfoFormProps) {
+export function ClassInfoForm({
+  isExpanded,
+  onToggle,
+  title,
+  description,
+  onTitleChange,
+  onDescriptionChange,
+}: ClassInfoFormProps) {
   return (
     <Card className="border-border/40 rounded-2xl overflow-hidden bg-card/70 backdrop-blur">
       <CardHeader 
@@ -43,6 +54,8 @@ export function ClassInfoForm({ isExpanded, onToggle }: ClassInfoFormProps) {
               id="class-title" 
               placeholder="مثال: آموزش برنامه‌نویسی پایتون" 
               className="h-12 bg-background/80 rounded-xl text-start border-border/60"
+              value={title}
+              onChange={(e) => onTitleChange(e.target.value)}
             />
           </div>
           <div className="space-y-2">
@@ -51,6 +64,8 @@ export function ClassInfoForm({ isExpanded, onToggle }: ClassInfoFormProps) {
               id="class-description" 
               placeholder="توضیحات مختصری درباره کلاس بنویسید..." 
               className="min-h-[110px] bg-background/80 rounded-xl resize-none text-start border-border/60" 
+              value={description}
+              onChange={(e) => onDescriptionChange(e.target.value)}
             />
           </div>
         </CardContent>

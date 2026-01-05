@@ -30,11 +30,17 @@ class TestAccountsUnit:
         assert set(data.keys()) == {
             'id',
             'username',
+            'first_name',
             'email',
+            'phone',
+            'avatar',
             'role',
             'is_profile_completed',
         }
         assert data['username'] == 'serializer_user'
+        assert data['first_name'] == ''
         assert data['email'] == 'teacher@example.com'
+        assert data['phone'] in ('', None)
+        assert data['avatar'] is None
         assert data['role'] == User.Role.TEACHER
         assert data['is_profile_completed'] is False

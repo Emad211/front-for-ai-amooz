@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Users, ChevronDown, Copy, Check, Plus, User, Trash2 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -8,8 +8,10 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { cn } from '@/lib/utils';
+import { addClassInvites, deleteClassInvite, listClassInvites } from '@/services/classes-service';
 
 interface Student {
+  id: number;
   phone: string;
   avatar: string;
   inviteCode: string;
@@ -18,14 +20,11 @@ interface Student {
 interface StudentInviteSectionProps {
   isExpanded: boolean;
   onToggle: () => void;
+  sessionId: number | null;
 }
 
-export function StudentInviteSection({ isExpanded, onToggle }: StudentInviteSectionProps) {
-  const [invitedStudents, setInvitedStudents] = useState<Student[]>([{
-    phone: '09120000001',
-    avatar: 'https://picsum.photos/seed/s1/40/40',
-    inviteCode: generateStableInviteCode('09120000001'),
-  }]);
+export function StudentInviteSection({ isExpanded, onToggle, sessionId }: StudentInviteSectionProps) {
+  const [invitedStudents, setInvitedStudents] = useState<Student[]>([]);
   const [newPhone, setNewPhone] = useState('');
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -39,18 +38,32 @@ export function StudentInviteSection({ isExpanded, onToggle }: StudentInviteSect
 
   const isValidPhone = (phone: string) => /^09\d{9}$/.test(phone);
 
-  function generateStableInviteCode(phone: string) {
-    const digits = phone.replace(/\D/g, '');
-    const suffix = digits.slice(-6).padStart(6, '0');
-    const hashSeed = digits
-      .split('')
-      .reduce((acc, cur, idx) => (acc + (parseInt(cur, 10) + idx * 7)) % 100000, 0)
-      .toString()
-      .padStart(5, '0');
-    return `INV-${suffix}-${hashSeed}`.toUpperCase();
-  }
+  const loadInvites = async (sid: number) => {
+    const invites = await listClassInvites(sid);
+    setInvitedStudents(
+      invites.map((inv) => ({
+        id: inv.id,
+        phone: inv.phone,
+        avatar: `https://picsum.photos/seed/${inv.phone}/40/40`,
+        inviteCode: inv.invite_code,
+      }))
+    );
+  };
 
-  const handleAddStudent = () => {
+  useEffect(() => {
+    if (!sessionId) return;
+    loadInvites(sessionId).catch(() => {
+      // keep silent; UI can still work locally
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionId]);
+
+  const handleAddStudent = async () => {
+    if (!sessionId) {
+      setErrorMessage('ابتدا مرحله ۱ را انجام دهید تا «جلسه ساخت کلاس» ایجاد شود.');
+      return;
+    }
+
     const normalized = normalizePhone(newPhone.trim());
 
     if (!isValidPhone(normalized)) {
@@ -63,17 +76,34 @@ export function StudentInviteSection({ isExpanded, onToggle }: StudentInviteSect
       return;
     }
 
-    setInvitedStudents([...invitedStudents, { 
-      phone: normalized, 
-      avatar: `https://picsum.photos/seed/${normalized}/40/40`,
-      inviteCode: generateStableInviteCode(normalized),
-    }]);
-    setNewPhone('');
-    setErrorMessage(null);
+    try {
+      const nextInvites = await addClassInvites(sessionId, [normalized]);
+      setInvitedStudents(
+        nextInvites.map((inv) => ({
+          id: inv.id,
+          phone: inv.phone,
+          avatar: `https://picsum.photos/seed/${inv.phone}/40/40`,
+          inviteCode: inv.invite_code,
+        }))
+      );
+      setNewPhone('');
+      setErrorMessage(null);
+    } catch (e) {
+      setErrorMessage(e instanceof Error ? e.message : 'خطا در افزودن دانش‌آموز');
+    }
   };
 
-  const handleRemoveStudent = (phone: string) => {
-    setInvitedStudents(invitedStudents.filter(s => s.phone !== phone));
+  const handleRemoveStudent = async (student: Student) => {
+    if (!sessionId) {
+      setInvitedStudents(invitedStudents.filter(s => s.phone !== student.phone));
+      return;
+    }
+    try {
+      await deleteClassInvite(sessionId, student.id);
+      await loadInvites(sessionId);
+    } catch (e) {
+      setErrorMessage(e instanceof Error ? e.message : 'خطا در حذف دانش‌آموز');
+    }
   };
 
   const handleCopyCode = (code: string) => {
@@ -181,7 +211,7 @@ export function StudentInviteSection({ isExpanded, onToggle }: StudentInviteSect
                     <Button 
                       variant="ghost" 
                       size="icon" 
-                      onClick={() => handleRemoveStudent(student.phone)} 
+                      onClick={() => handleRemoveStudent(student)} 
                       className="opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-lg"
                     >
                       <Trash2 className="h-4 w-4" />

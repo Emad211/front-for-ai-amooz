@@ -45,7 +45,7 @@ export function ClassStudentsPreview({ classId, students, maxDisplay = 5, basePa
             <Users className="h-5 w-5 text-primary" />
             دانش‌آموزان
           </CardTitle>
-          <CardDescription>{students.length} دانش‌آموز ثبت‌نام شده</CardDescription>
+            <CardDescription>{students.length} دانش‌آموز دعوت‌شده</CardDescription>
         </div>
         <div className="flex items-center gap-2">
           <Button variant="outline" size="sm" asChild>

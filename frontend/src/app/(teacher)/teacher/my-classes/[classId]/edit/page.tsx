@@ -11,6 +11,7 @@ import {
   ClassChaptersEditor,
 } from '@/components/teacher/class-edit';
 import type { ClassChapter, ClassDetail } from '@/types';
+import { applyChaptersToCourseStructure, parseCourseStructure } from '@/lib/classes/course-structure';
 
 interface PageProps {
   params: Promise<{ classId: string }>;
@@ -29,7 +30,14 @@ export default function TeacherClassEditPage({ params }: PageProps) {
   }, [detail, chapters.length]);
 
   const handleSave = async (data: Partial<ClassDetail>) => {
-    const ok = await updateClass(data);
+    const baseStructure = parseCourseStructure(detail?.structureJson ?? '');
+    const nextStructure = applyChaptersToCourseStructure(baseStructure, chapters);
+    const nextStructureJson = JSON.stringify(nextStructure, null, 2);
+
+    const ok = await updateClass({
+      ...data,
+      structureJson: nextStructureJson,
+    } as any);
     if (ok) {
       toast.success('تغییرات با موفقیت ذخیره شد');
       reload();

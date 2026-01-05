@@ -154,6 +154,19 @@ export function ClassEditForm({ classDetail, onSave, isSaving }: ClassEditFormPr
             />
           </div>
 
+          {Array.isArray(classDetail.objectives) && classDetail.objectives.length > 0 && (
+            <div className="space-y-2">
+              <Label>اهداف کلاس (از خروجی ساختاردهی)</Label>
+              <div className="rounded-lg border bg-muted/30 p-4">
+                <ul className="list-disc pr-5 text-sm text-muted-foreground space-y-1">
+                  {classDetail.objectives.map((item, idx) => (
+                    <li key={`${idx}-${item}`}>{item}</li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+          )}
+
           <div className="space-y-2">
             <Label htmlFor="tags">برچسب‌ها (با ویرگول جدا کنید)</Label>
             <Input

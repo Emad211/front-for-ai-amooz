@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { usePathname } from 'next/navigation';
 import { Menu } from 'lucide-react';
 import { UserProfile } from '@/components/layout/user-profile';
@@ -11,11 +11,58 @@ import { SidebarContent } from './sidebar-content';
 import { TEACHER_NAV_MENU } from '@/constants/navigation';
 import { NotificationPopover } from '@/components/dashboard/notification-popover';
 import { ThemeToggle } from '@/components/ui/theme-toggle';
-import { MOCK_TEACHER_PROFILE } from '@/constants/mock/user-data';
+import { fetchMe, getStoredTokens, getStoredUser, persistUser } from '@/services/auth-service';
 
 export function TeacherHeader() {
   const pathname = usePathname();
   const [isOpen, setIsOpen] = useState(false);
+
+  // Avoid SSR/CSR hydration mismatch by not reading localStorage during the initial render.
+  const [me, setMe] = useState<ReturnType<typeof getStoredUser>>(null);
+  const [hasMounted, setHasMounted] = useState(false);
+
+  useEffect(() => {
+    setHasMounted(true);
+
+    const stored = getStoredUser();
+    if (stored) setMe(stored);
+
+    const tokens = getStoredTokens();
+    if (!tokens?.access) return;
+
+    // Best-effort refresh from backend; keep UI responsive with stored user.
+    fetchMe(tokens.access)
+      .then((fresh) => {
+        persistUser(fresh);
+        setMe(fresh);
+      })
+      .catch(() => {
+        // Ignore; header can still render from local storage.
+      });
+  }, []);
+
+  const displayName = useMemo(() => {
+    const anyMe = me as any;
+    const first = (anyMe?.first_name as string | undefined)?.trim() || '';
+    const last = (anyMe?.last_name as string | undefined)?.trim() || '';
+    const full = `${first} ${last}`.trim();
+    return (
+      full ||
+      first ||
+      (anyMe?.username as string | undefined)?.trim() ||
+      'کاربر'
+    );
+  }, [me]);
+
+  const displayEmail = useMemo(() => {
+    const anyMe = me as any;
+    return (anyMe?.email as string | undefined) || '';
+  }, [me]);
+
+  const displayAvatar = useMemo(() => {
+    const anyMe = me as any;
+    return (anyMe?.avatar as string | undefined) || '';
+  }, [me]);
 
   const lastSegment = pathname.split('/').filter(Boolean).pop() || 'teacher';
   const titleMap: Record<string, string> = {
@@ -66,7 +113,7 @@ export function TeacherHeader() {
             {pageTitle}
           </h1>
           <p className="text-[10px] text-muted-foreground font-medium mt-1 hidden md:block">
-            خوش آمدید، {MOCK_TEACHER_PROFILE.name} عزیز
+            خوش آمدید، {hasMounted ? displayName : 'کاربر'} عزیز
           </p>
         </div>
       </div>
@@ -78,9 +125,9 @@ export function TeacherHeader() {
           <div className="w-px h-6 bg-border/50 mx-1"></div>
           <UserProfile 
             user={{
-              name: MOCK_TEACHER_PROFILE.name,
-              email: MOCK_TEACHER_PROFILE.email,
-              avatar: MOCK_TEACHER_PROFILE.avatar
+              name: displayName,
+              email: displayEmail,
+              avatar: displayAvatar
             }} 
             isAdmin={false} 
           />

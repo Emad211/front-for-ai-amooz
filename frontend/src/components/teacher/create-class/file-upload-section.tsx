@@ -3,6 +3,7 @@
 import { Upload, FileText, Plus, ChevronDown } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
+import type { ReactNode } from 'react';
 
 interface FileUploadSectionProps {
   title: string;
@@ -11,6 +12,10 @@ interface FileUploadSectionProps {
   isExpanded: boolean;
   onToggle: () => void;
   type: 'lesson' | 'exercise';
+  accept?: string;
+  multiple?: boolean;
+  onFilesSelected?: (files: FileList | null) => void;
+  children?: ReactNode;
 }
 
 export function FileUploadSection({ 
@@ -19,7 +24,11 @@ export function FileUploadSection({
   icon, 
   isExpanded, 
   onToggle,
-  type 
+  type,
+  accept,
+  multiple,
+  onFilesSelected,
+  children,
 }: FileUploadSectionProps) {
   const Icon = icon === 'upload' ? Upload : FileText;
   const iconColor = type === 'lesson' ? 'text-primary' : 'text-muted-foreground';
@@ -66,7 +75,7 @@ export function FileUploadSection({
                     فایل‌ها را بکشید و رها کنید یا <span className="text-primary font-medium">کلیک کنید</span>
                   </p>
                   <p className="text-[10px] sm:text-xs text-muted-foreground">
-                    PDF, DOCX, PPTX تا ۵۰ مگابایت
+                    Audio/Video تا ۵۰ مگابایت
                   </p>
                 </>
               ) : (
@@ -76,8 +85,17 @@ export function FileUploadSection({
                 </>
               )}
             </div>
-            <input id={`dropzone-${type}`} type="file" className="hidden" multiple={type === 'lesson'} />
+            <input
+              id={`dropzone-${type}`}
+              type="file"
+              className="hidden"
+              accept={accept}
+              multiple={multiple ?? type === 'lesson'}
+              onChange={(e) => onFilesSelected?.(e.target.files)}
+            />
           </label>
+
+          {children}
         </CardContent>
       )}
     </Card>

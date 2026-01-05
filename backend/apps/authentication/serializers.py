@@ -10,10 +10,28 @@ class RegisterSerializer(serializers.Serializer):
         max_length=150,
         help_text="Unique username for the account."
     )
+    first_name = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        max_length=150,
+        help_text="User's full name or first name."
+    )
+    last_name = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        max_length=150,
+        help_text="User's last name (optional)."
+    )
     email = serializers.EmailField(
         required=False, 
         allow_blank=True,
         help_text="Optional email address."
+    )
+    phone = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        max_length=15,
+        help_text="Optional phone number."
     )
     password = serializers.CharField(
         write_only=True, 
@@ -49,7 +67,13 @@ class RegisterSerializer(serializers.Serializer):
             email=validated_data.get('email') or '',
             password=validated_data['password'],
             role=role,
+            first_name=validated_data.get('first_name') or '',
+            last_name=validated_data.get('last_name') or '',
         )
+        phone = (validated_data.get('phone') or '').strip()
+        if phone:
+            user.phone = phone
+            user.save(update_fields=['phone'])
         return user
 
 

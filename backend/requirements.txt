@@ -6,6 +6,7 @@ psycopg2-binary
 djangorestframework-simplejwt
 drf-spectacular
 Pillow
+google-genai
 pytest
 pytest-django
 model-bakery

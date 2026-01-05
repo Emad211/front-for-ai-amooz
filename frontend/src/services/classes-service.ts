@@ -1,0 +1,298 @@
+export type Step1TranscribeResponse = {
+  id: number;
+  status: 'transcribing' | 'transcribed' | 'failed';
+  title: string;
+  description: string;
+  source_mime_type: string;
+  source_original_name: string;
+  transcript_markdown: string;
+  created_at: string;
+};
+
+export type Step2StructureResponse = {
+  id: number;
+  status: 'structuring' | 'structured' | 'failed' | 'transcribed' | 'transcribing';
+  title: string;
+  description: string;
+  structure_json: string;
+  created_at: string;
+};
+export type ClassCreationSessionDetail = {
+  id: number;
+  status: string;
+  title: string;
+  description: string;
+  source_mime_type: string;
+  source_original_name: string;
+  transcript_markdown: string;
+  structure_json: string;
+  error_detail: string;
+  is_published?: boolean;
+  published_at?: string | null;
+  invites_count?: number;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ClassInvite = {
+  id: number;
+  phone: string;
+  invite_code: string;
+  created_at: string;
+};
+
+const RAW_API_URL = (process.env.NEXT_PUBLIC_API_URL ?? '').replace(/\/$/, '');
+
+// We want all requests to target the Django API root: `${BACKEND}/api`.
+// Allow either:
+// - NEXT_PUBLIC_API_URL="https://example.com"  -> https://example.com/api
+// - NEXT_PUBLIC_API_URL="https://example.com/api" -> https://example.com/api
+const API_URL = RAW_API_URL.endsWith('/api') ? RAW_API_URL : `${RAW_API_URL}/api`;
+
+async function parseJson(response: Response) {
+  const text = await response.text();
+  if (!text) return null;
+
+  try {
+    return JSON.parse(text);
+  } catch {
+    return text;
+  }
+}
+
+async function requestJson<T>(url: string, options: RequestInit): Promise<T> {
+  let response: Response;
+  try {
+    response = await fetch(url, options);
+  } catch {
+    throw new Error(
+      `ارتباط با سرور برقرار نشد. (آدرس فعلی API: ${RAW_API_URL})` +
+        ' معمولاً یکی از این‌هاست: بک‌اند اجرا نیست، آدرس/پورت اشتباه است، یا مرورگر به خاطر CORS/Mixed Content درخواست را بلاک کرده.'
+    );
+  }
+
+  const payload = await parseJson(response);
+  if (!response.ok) {
+    throw new Error(extractErrorMessage(payload, response.statusText));
+  }
+  return payload as T;
+}
+export async function getClassCreationSessionDetail(sessionId: number): Promise<ClassCreationSessionDetail> {
+  const url = `${API_URL}/classes/creation-sessions/${sessionId}/`;
+
+  return requestJson<ClassCreationSessionDetail>(url, {
+    method: 'GET',
+    headers: {
+      Authorization: `Bearer ${getAccessToken()}`,
+    },
+  });
+}
+
+export async function updateClassCreationSession(
+  sessionId: number,
+  data: { title?: string; description?: string; structure_json?: string | object | null }
+): Promise<ClassCreationSessionDetail> {
+  if (!RAW_API_URL) {
+    throw new Error('NEXT_PUBLIC_API_URL تنظیم نشده است.');
+  }
+
+  const url = `${API_URL}/classes/creation-sessions/${sessionId}/`;
+  return requestJson<ClassCreationSessionDetail>(url, {
+    method: 'PATCH',
+    headers: {
+      Authorization: `Bearer ${getAccessToken()}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(data),
+  });
+}
+
+export async function publishClassCreationSession(sessionId: number): Promise<ClassCreationSessionDetail> {
+  if (!RAW_API_URL) {
+    throw new Error('NEXT_PUBLIC_API_URL تنظیم نشده است.');
+  }
+
+  const url = `${API_URL}/classes/creation-sessions/${sessionId}/publish/`;
+  return requestJson<ClassCreationSessionDetail>(url, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${getAccessToken()}`,
+    },
+  });
+}
+
+export async function listClassInvites(sessionId: number): Promise<ClassInvite[]> {
+  if (!RAW_API_URL) {
+    throw new Error('NEXT_PUBLIC_API_URL تنظیم نشده است.');
+  }
+  const url = `${API_URL}/classes/creation-sessions/${sessionId}/invites/`;
+  return requestJson<ClassInvite[]>(url, {
+    method: 'GET',
+    headers: {
+      Authorization: `Bearer ${getAccessToken()}`,
+    },
+  });
+}
+
+export async function addClassInvites(sessionId: number, phones: string[]): Promise<ClassInvite[]> {
+  if (!RAW_API_URL) {
+    throw new Error('NEXT_PUBLIC_API_URL تنظیم نشده است.');
+  }
+  const url = `${API_URL}/classes/creation-sessions/${sessionId}/invites/`;
+  return requestJson<ClassInvite[]>(url, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${getAccessToken()}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ phones }),
+  });
+}
+
+export async function deleteClassInvite(sessionId: number, inviteId: number): Promise<void> {
+  if (!RAW_API_URL) {
+    throw new Error('NEXT_PUBLIC_API_URL تنظیم نشده است.');
+  }
+  const url = `${API_URL}/classes/creation-sessions/${sessionId}/invites/${inviteId}/`;
+  await requestJson<void>(url, {
+    method: 'DELETE',
+    headers: {
+      Authorization: `Bearer ${getAccessToken()}`,
+    },
+  });
+}
+
+function extractErrorMessage(payload: unknown, fallback: string) {
+  if (payload && typeof payload === 'object') {
+    const obj = payload as Record<string, unknown>;
+
+    // Our API sometimes returns: { detail: "Validation error.", errors: { field: [..] } }
+    if (obj.errors && typeof obj.errors === 'object') {
+      const entries = Object.entries(obj.errors as Record<string, unknown>)
+        .map(([field, messages]) => {
+          if (Array.isArray(messages)) {
+            const joined = messages.map((m) => String(m)).join(', ');
+            return field === 'non_field_errors' ? joined : `${field}: ${joined}`;
+          }
+          return `${field}: ${String(messages)}`;
+        })
+        .filter(Boolean);
+      if (entries.length) return entries.join(' | ');
+    }
+
+    if (typeof obj.detail === 'string') return obj.detail;
+    if (typeof obj.message === 'string') return obj.message;
+
+    const entries = Object.entries(obj)
+      .map(([key, value]) => {
+        if (typeof value === 'string') return `${key}: ${value}`;
+        if (Array.isArray(value)) {
+          const joined = value
+            .map((v) => (typeof v === 'string' ? v : JSON.stringify(v)))
+            .filter(Boolean)
+            .join(', ');
+          return joined ? `${key}: ${joined}` : null;
+        }
+        if (value && typeof value === 'object') return `${key}: ${JSON.stringify(value)}`;
+        return null;
+      })
+      .filter((x): x is string => Boolean(x));
+
+    if (entries.length) return entries.join(' | ');
+  }
+  if (Array.isArray(payload)) {
+    return payload.map((item) => String(item)).join(', ');
+  }
+  if (typeof payload === 'string' && payload.trim()) return payload;
+  return fallback;
+}
+
+function getAccessToken(): string {
+  if (typeof window === 'undefined') {
+    throw new Error('This action must run in the browser.');
+  }
+  const access = window.localStorage.getItem('ai_amooz_access');
+  if (!access) {
+    throw new Error('ابتدا وارد حساب کاربری شوید.');
+  }
+  return access;
+}
+
+export async function transcribeClassCreationStep1(params: {
+  title: string;
+  description?: string;
+  file: File;
+  clientRequestId?: string;
+}): Promise<Step1TranscribeResponse> {
+  if (!RAW_API_URL) {
+    throw new Error('NEXT_PUBLIC_API_URL تنظیم نشده است.');
+  }
+
+  const formData = new FormData();
+  formData.append('title', params.title);
+  formData.append('description', params.description ?? '');
+  formData.append('file', params.file, params.file.name);
+  if (params.clientRequestId) {
+    formData.append('client_request_id', params.clientRequestId);
+  }
+
+  const url = `${API_URL}/classes/creation-sessions/step-1/`;
+
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${getAccessToken()}`,
+      },
+      body: formData,
+    });
+  } catch (error) {
+    throw new Error(
+      `ارتباط با سرور برقرار نشد. (آدرس فعلی API: ${RAW_API_URL})` +
+        ' معمولاً یکی از این‌هاست: بک‌اند اجرا نیست، آدرس/پورت اشتباه است، یا مرورگر به خاطر CORS/Mixed Content درخواست را بلاک کرده.'
+    );
+  }
+
+  const payload = await parseJson(response);
+
+  if (!response.ok) {
+    throw new Error(extractErrorMessage(payload, response.statusText));
+  }
+
+  return payload as Step1TranscribeResponse;
+}
+
+export async function structureClassCreationStep2(params: {
+  sessionId: number;
+}): Promise<Step2StructureResponse> {
+  if (!RAW_API_URL) {
+    throw new Error('NEXT_PUBLIC_API_URL تنظیم نشده است.');
+  }
+
+  const url = `${API_URL}/classes/creation-sessions/step-2/`;
+
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${getAccessToken()}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ session_id: params.sessionId }),
+    });
+  } catch {
+    throw new Error(
+      `ارتباط با سرور برقرار نشد. (آدرس فعلی API: ${RAW_API_URL})` +
+        ' معمولاً یکی از این‌هاست: بک‌اند اجرا نیست، آدرس/پورت اشتباه است، یا مرورگر به خاطر CORS/Mixed Content درخواست را بلاک کرده.'
+    );
+  }
+
+  const payload = await parseJson(response);
+  if (!response.ok) {
+    throw new Error(extractErrorMessage(payload, response.statusText));
+  }
+
+  return payload as Step2StructureResponse;
+}

@@ -71,4 +71,5 @@ urlpatterns = [
     # New App Endpoints
     path('api/accounts/', include('apps.accounts.urls')),
     path('api/auth/', include('apps.authentication.urls')),
+    path('api/classes/', include('apps.classes.urls')),
 ]

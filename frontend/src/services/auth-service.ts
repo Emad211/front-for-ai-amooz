@@ -6,7 +6,11 @@ type TokenResponse = {
 export type AuthMeResponse = {
   id: number;
   username: string;
+  first_name?: string;
+  last_name?: string;
   email: string;
+  phone?: string | null;
+  avatar?: string | null;
   role: string;
   is_profile_completed: boolean;
 };
@@ -19,6 +23,9 @@ export type LoginPayload = {
 export type RegisterPayload = LoginPayload & {
   email?: string;
   role?: string;
+  first_name?: string;
+  last_name?: string;
+  phone?: string;
 };
 
 export type RegisterResponse = {
@@ -55,27 +62,91 @@ async function parseJson(response: Response) {
   }
 }
 
+function stringifyErrorPayload(payload: unknown): string | null {
+  if (!payload) return null;
+  if (typeof payload === 'string') return payload;
+
+  if (Array.isArray(payload)) {
+    const parts = payload
+      .map((item) => (typeof item === 'string' ? item : JSON.stringify(item)))
+      .filter(Boolean);
+    return parts.length ? parts.join(', ') : null;
+  }
+
+  if (typeof payload === 'object') {
+    const obj = payload as Record<string, unknown>;
+
+    // 1. Handle our unified validation error structure: {"detail": "...", "errors": {...}}
+    if (obj.errors && typeof obj.errors === 'object') {
+      const errorEntries = Object.entries(obj.errors as Record<string, string[]>)
+        .map(([field, messages]) => {
+          const msg = Array.isArray(messages) ? messages.join(', ') : String(messages);
+          // Map common field names to Persian for better UX if needed, 
+          // but for now just show the message.
+          return field === 'non_field_errors' ? msg : `${field}: ${msg}`;
+        })
+        .filter(Boolean);
+      
+      if (errorEntries.length > 0) return errorEntries.join(' | ');
+    }
+
+    // 2. Fallback to detail or message
+    if (typeof obj.detail === 'string' && obj.detail.trim()) return obj.detail;
+    if (typeof obj.message === 'string' && obj.message.trim()) return obj.message;
+
+    // 3. Generic object iteration
+    const entries = Object.entries(obj)
+      .filter(([key]) => key !== 'detail' && key !== 'errors') // skip already handled
+      .map(([key, value]) => {
+        if (typeof value === 'string') return `${key}: ${value}`;
+        if (Array.isArray(value)) {
+          const joined = value
+            .map((v) => (typeof v === 'string' ? v : JSON.stringify(v)))
+            .filter(Boolean)
+            .join(', ');
+          return joined ? `${key}: ${joined}` : null;
+        }
+        if (value && typeof value === 'object') return `${key}: ${JSON.stringify(value)}`;
+        return null;
+      })
+      .filter((x): x is string => Boolean(x));
+
+    return entries.length ? entries.join(' | ') : null;
+  }
+
+  return null;
+}
+
 async function request<T>(path: string, options: RequestInit = {}) {
   const headers = new Headers(options.headers);
   if (!headers.has('Content-Type')) {
     headers.set('Content-Type', 'application/json');
   }
 
-  const response = await fetch(`${API_URL}${path}`, {
-    ...options,
-    headers,
-  });
+  const url = `${API_URL}${path}`;
+
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      ...options,
+      headers,
+    });
+  } catch (error) {
+    const hint = RAW_API_URL
+      ? `آدرس فعلی API: ${RAW_API_URL}`
+      : 'NEXT_PUBLIC_API_URL تنظیم نشده است.';
+
+    throw new Error(
+      `ارتباط با سرور برقرار نشد. (${hint})` +
+        ' معمولاً یکی از این‌هاست: بک‌اند اجرا نیست، آدرس/پورت اشتباه است، یا مرورگر به خاطر CORS/Mixed Content درخواست را بلاک کرده.'
+    );
+  }
 
   const payload = await parseJson(response);
 
   if (!response.ok) {
-    const message =
-      (payload && typeof payload === 'object' && 'detail' in payload && payload.detail) ||
-      (payload && typeof payload === 'object' && 'message' in payload && payload.message) ||
-      (Array.isArray(payload) && payload.join(', ')) ||
-      response.statusText;
-
-    throw new Error(typeof message === 'string' ? message : 'خطا در ارتباط با سرور');
+    const message = stringifyErrorPayload(payload) || response.statusText || 'خطا در ارتباط با سرور';
+    throw new Error(message);
   }
 
   return payload as T;

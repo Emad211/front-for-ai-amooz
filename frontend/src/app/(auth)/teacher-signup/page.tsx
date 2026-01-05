@@ -20,7 +20,8 @@ export default function TeacherSignupPage() {
   const { register, handleSubmit, formState: { errors } } = useForm<TeacherSignupFormValues>({
     resolver: zodResolver(teacherSignupSchema),
     defaultValues: {
-      fullName: '',
+      firstName: '',
+      lastName: '',
       email: '',
       phone: '',
       password: '',
@@ -39,6 +40,9 @@ export default function TeacherSignupPage() {
         email: data.email,
         password: data.password,
         role: 'TEACHER',
+        first_name: data.firstName,
+        last_name: data.lastName,
+        phone: data.phone,
       });
 
       persistTokens(response.tokens);
@@ -79,10 +83,17 @@ export default function TeacherSignupPage() {
         </div>
 
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4 bg-card/60 border border-border/80 rounded-2xl p-6 shadow-sm">
-          <div className="space-y-2">
-            <Label htmlFor="fullName">نام و نام خانوادگی</Label>
-            <Input id="fullName" disabled={isLoading} {...register('fullName')} />
-            {errors.fullName && <p className="text-xs text-destructive">{errors.fullName.message}</p>}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="firstName">نام</Label>
+              <Input id="firstName" disabled={isLoading} {...register('firstName')} />
+              {errors.firstName && <p className="text-xs text-destructive">{errors.firstName.message}</p>}
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="lastName">نام خانوادگی</Label>
+              <Input id="lastName" disabled={isLoading} {...register('lastName')} />
+              {errors.lastName && <p className="text-xs text-destructive">{errors.lastName.message}</p>}
+            </div>
           </div>
 
           <div className="space-y-2">

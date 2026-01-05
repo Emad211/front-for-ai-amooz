@@ -33,7 +33,7 @@ INSTALLED_APPS = [
     'apps.authentication',
     'apps.core',
     'apps.commons',
-    'apps.classes',
+    'apps.classes.apps.ClassesConfig',
     'apps.notification',
     'apps.chatbot',
     'apps.material',
@@ -127,6 +127,9 @@ USE_TZ = True
 
 STATIC_URL = 'static/'
 
+MEDIA_URL = 'media/'
+MEDIA_ROOT = BASE_DIR / 'media'
+
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
         'rest_framework_simplejwt.authentication.JWTAuthentication',
@@ -176,3 +179,7 @@ SIMPLE_JWT = {
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 CORS_ALLOW_ALL_ORIGINS = True # For development only
+
+# Pipeline execution: when enabled, Step 1/2 return quickly and work continues in background.
+# Default is disabled to keep request/response deterministic (and test-friendly).
+CLASS_PIPELINE_ASYNC = os.getenv('CLASS_PIPELINE_ASYNC', 'False') == 'True'

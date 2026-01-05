@@ -1,0 +1,515 @@
+from __future__ import annotations
+
+import json
+import uuid
+from datetime import timedelta
+
+from django.utils import timezone
+from django.conf import settings
+
+from rest_framework import status
+from rest_framework import serializers
+from rest_framework.generics import GenericAPIView
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+from rest_framework.views import APIView
+
+from drf_spectacular.utils import extend_schema
+
+from .models import ClassCreationSession
+from .models import ClassInvitation
+from .permissions import IsTeacherUser
+from .serializers import (
+    ClassCreationSessionDetailSerializer,
+    ClassCreationSessionListSerializer,
+    ClassCreationSessionUpdateSerializer,
+    ClassInvitationCreateSerializer,
+    ClassInvitationSerializer,
+    TeacherAnalyticsActivitySerializer,
+    TeacherAnalyticsChartPointSerializer,
+    TeacherAnalyticsDistributionItemSerializer,
+    TeacherAnalyticsStatSerializer,
+    Step1TranscribeRequestSerializer,
+    Step1TranscribeResponseSerializer,
+    Step2StructureRequestSerializer,
+    Step2StructureResponseSerializer,
+)
+from .services.transcription import transcribe_media_bytes
+from .services.structure import structure_transcript_markdown
+from .services.background import run_in_background
+
+
+def _process_step1_transcription(session_id: int) -> None:
+    session = ClassCreationSession.objects.filter(id=session_id).first()
+    if session is None:
+        return
+    if session.status != ClassCreationSession.Status.TRANSCRIBING:
+        return
+
+    try:
+        session.source_file.open('rb')
+        try:
+            data = session.source_file.read()
+        finally:
+            session.source_file.close()
+
+        transcript, provider, model_name = transcribe_media_bytes(
+            data=data,
+            mime_type=session.source_mime_type or 'application/octet-stream',
+        )
+        session.transcript_markdown = transcript
+        session.llm_provider = provider
+        session.llm_model = model_name
+        session.status = ClassCreationSession.Status.TRANSCRIBED
+        session.save(update_fields=['transcript_markdown', 'llm_provider', 'llm_model', 'status', 'updated_at'])
+    except Exception as exc:
+        session.status = ClassCreationSession.Status.FAILED
+        session.error_detail = str(exc)
+        session.save(update_fields=['status', 'error_detail', 'updated_at'])
+
+
+def _process_step2_structure(session_id: int) -> None:
+    session = ClassCreationSession.objects.filter(id=session_id).first()
+    if session is None:
+        return
+    if session.status != ClassCreationSession.Status.STRUCTURING:
+        return
+    if not (session.transcript_markdown or '').strip():
+        session.status = ClassCreationSession.Status.FAILED
+        session.error_detail = 'برای این جلسه هنوز متن درس آماده نیست.'
+        session.save(update_fields=['status', 'error_detail', 'updated_at'])
+        return
+
+    try:
+        structure_obj, provider, model_name = structure_transcript_markdown(
+            transcript_markdown=session.transcript_markdown,
+        )
+        session.structure_json = json.dumps(structure_obj, ensure_ascii=False)
+        session.llm_provider = provider
+        session.llm_model = model_name
+        session.status = ClassCreationSession.Status.STRUCTURED
+        session.save(update_fields=['structure_json', 'llm_provider', 'llm_model', 'status', 'updated_at'])
+    except Exception as exc:
+        session.status = ClassCreationSession.Status.FAILED
+        session.error_detail = str(exc)
+        session.save(update_fields=['status', 'error_detail', 'updated_at'])
+
+
+class Step1TranscribeView(APIView):
+    permission_classes = [IsAuthenticated, IsTeacherUser]
+
+    @extend_schema(
+        tags=['Classes'],
+        summary='Step 1: Transcription & Vision (Gemini/AvalAI)',
+        request=Step1TranscribeRequestSerializer,
+        responses={202: Step1TranscribeResponseSerializer, 200: Step1TranscribeResponseSerializer},
+    )
+    def post(self, request):
+        serializer = Step1TranscribeRequestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        upload = serializer.validated_data['file']
+        title = serializer.validated_data['title']
+        description = serializer.validated_data.get('description', '')
+        client_request_id = serializer.validated_data.get('client_request_id')
+
+        if client_request_id is not None:
+            existing = ClassCreationSession.objects.filter(
+                teacher=request.user,
+                client_request_id=client_request_id,
+            ).first()
+            if existing is not None:
+                # Idempotency: return the same session on retries.
+                payload = Step1TranscribeResponseSerializer(existing).data
+                http_status = (
+                    status.HTTP_202_ACCEPTED
+                    if getattr(settings, 'CLASS_PIPELINE_ASYNC', False) and existing.status == ClassCreationSession.Status.TRANSCRIBING
+                    else status.HTTP_200_OK
+                )
+                return Response(payload, status=http_status)
+
+        session = ClassCreationSession.objects.create(
+            teacher=request.user,
+            title=title,
+            description=description,
+            source_file=upload,
+            source_mime_type=getattr(upload, 'content_type', '') or '',
+            source_original_name=getattr(upload, 'name', '') or '',
+            status=ClassCreationSession.Status.TRANSCRIBING,
+            client_request_id=client_request_id,
+        )
+
+        if getattr(settings, 'CLASS_PIPELINE_ASYNC', False):
+            # Run in background so the teacher can navigate away without breaking the pipeline.
+            run_in_background(lambda: _process_step1_transcription(session.id), name=f'class-step1-{session.id}')
+            return Response(Step1TranscribeResponseSerializer(session).data, status=status.HTTP_202_ACCEPTED)
+
+        try:
+            session.source_file.open('rb')
+            try:
+                data = session.source_file.read()
+            finally:
+                session.source_file.close()
+
+            transcript, provider, model_name = transcribe_media_bytes(
+                data=data,
+                mime_type=session.source_mime_type or 'application/octet-stream',
+            )
+            session.transcript_markdown = transcript
+            session.llm_provider = provider
+            session.llm_model = model_name
+            session.status = ClassCreationSession.Status.TRANSCRIBED
+            session.save(update_fields=['transcript_markdown', 'llm_provider', 'llm_model', 'status', 'updated_at'])
+            return Response(Step1TranscribeResponseSerializer(session).data, status=status.HTTP_201_CREATED)
+        except Exception as exc:
+            session.status = ClassCreationSession.Status.FAILED
+            session.error_detail = str(exc)
+            session.save(update_fields=['status', 'error_detail', 'updated_at'])
+            return Response(
+                {
+                    'detail': 'Transcription provider failed.',
+                    'session_id': session.id,
+                    'status': session.status,
+                    'error_detail': session.error_detail,
+                },
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+
+
+class Step2StructureView(APIView):
+    permission_classes = [IsAuthenticated, IsTeacherUser]
+
+    @extend_schema(
+        tags=['Classes'],
+        summary='Step 2: Structure (outline/units) from transcript',
+        request=Step2StructureRequestSerializer,
+        responses={202: Step2StructureResponseSerializer, 200: Step2StructureResponseSerializer},
+    )
+    def post(self, request):
+        serializer = Step2StructureRequestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        session_id = serializer.validated_data['session_id']
+        session = ClassCreationSession.objects.filter(id=session_id, teacher=request.user).first()
+        if session is None:
+            return Response({'detail': 'جلسه پیدا نشد.'}, status=status.HTTP_404_NOT_FOUND)
+
+        if session.status == ClassCreationSession.Status.STRUCTURED and (session.structure_json or '').strip():
+            return Response(Step2StructureResponseSerializer(session).data, status=status.HTTP_200_OK)
+
+        if session.status == ClassCreationSession.Status.STRUCTURING:
+            return Response(Step2StructureResponseSerializer(session).data, status=status.HTTP_202_ACCEPTED)
+
+        if not session.transcript_markdown.strip():
+            return Response({'detail': 'برای این جلسه هنوز متن درس آماده نیست.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        session.status = ClassCreationSession.Status.STRUCTURING
+        session.save(update_fields=['status', 'updated_at'])
+
+        if getattr(settings, 'CLASS_PIPELINE_ASYNC', False):
+            run_in_background(lambda: _process_step2_structure(session.id), name=f'class-step2-{session.id}')
+            return Response(Step2StructureResponseSerializer(session).data, status=status.HTTP_202_ACCEPTED)
+
+        try:
+            structure_obj, provider, model_name = structure_transcript_markdown(
+                transcript_markdown=session.transcript_markdown,
+            )
+            session.structure_json = json.dumps(structure_obj, ensure_ascii=False)
+            session.llm_provider = provider
+            session.llm_model = model_name
+            session.status = ClassCreationSession.Status.STRUCTURED
+            session.save(update_fields=['structure_json', 'llm_provider', 'llm_model', 'status', 'updated_at'])
+            return Response(Step2StructureResponseSerializer(session).data, status=status.HTTP_200_OK)
+        except Exception as exc:
+            session.status = ClassCreationSession.Status.FAILED
+            session.error_detail = str(exc)
+            session.save(update_fields=['status', 'error_detail', 'updated_at'])
+            return Response(
+                {
+                    'detail': 'Structuring provider failed.',
+                    'session_id': session.id,
+                    'status': session.status,
+                    'error_detail': session.error_detail,
+                },
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+
+
+class ClassCreationSessionListView(APIView):
+    permission_classes = [IsAuthenticated, IsTeacherUser]
+
+    @extend_schema(
+        tags=['Classes'],
+        summary='List class creation sessions (teacher)',
+        operation_id='classes_creation_sessions_list',
+        responses={200: ClassCreationSessionListSerializer(many=True)},
+    )
+    def get(self, request):
+        qs = ClassCreationSession.objects.filter(teacher=request.user).order_by('-created_at')
+        return Response(ClassCreationSessionListSerializer(qs, many=True).data)
+
+
+class ClassCreationSessionDetailView(APIView):
+    permission_classes = [IsAuthenticated, IsTeacherUser]
+
+    @extend_schema(
+        tags=['Classes'],
+        summary='Get class creation session detail (teacher)',
+        operation_id='classes_creation_sessions_detail',
+        responses={200: ClassCreationSessionDetailSerializer},
+    )
+    def get(self, request, session_id: int):
+        session = ClassCreationSession.objects.filter(id=session_id, teacher=request.user).first()
+        if session is None:
+            return Response({'detail': 'جلسه پیدا نشد.'}, status=status.HTTP_404_NOT_FOUND)
+        return Response(ClassCreationSessionDetailSerializer(session).data)
+
+    @extend_schema(
+        tags=['Classes'],
+        summary='Update a class creation session (teacher)',
+        operation_id='classes_creation_sessions_update',
+        request=ClassCreationSessionUpdateSerializer,
+        responses={200: ClassCreationSessionDetailSerializer},
+    )
+    def patch(self, request, session_id: int):
+        session = ClassCreationSession.objects.filter(id=session_id, teacher=request.user).first()
+        if session is None:
+            return Response({'detail': 'جلسه پیدا نشد.'}, status=status.HTTP_404_NOT_FOUND)
+
+        serializer = ClassCreationSessionUpdateSerializer(data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+
+        updated_fields: list[str] = []
+        if 'title' in serializer.validated_data:
+            session.title = serializer.validated_data['title']
+            updated_fields.append('title')
+        if 'description' in serializer.validated_data:
+            session.description = serializer.validated_data['description']
+            updated_fields.append('description')
+        if 'structure_json' in serializer.validated_data:
+            session.structure_json = serializer.validated_data['structure_json']
+            updated_fields.append('structure_json')
+
+        if updated_fields:
+            updated_fields.append('updated_at')
+            session.save(update_fields=updated_fields)
+
+        return Response(ClassCreationSessionDetailSerializer(session).data)
+
+    @extend_schema(
+        tags=['Classes'],
+        summary='Delete a class creation session (teacher)',
+        operation_id='classes_creation_sessions_delete',
+        responses={204: None},
+    )
+    def delete(self, request, session_id: int):
+        session = ClassCreationSession.objects.filter(id=session_id, teacher=request.user).first()
+        if session is None:
+            return Response({'detail': 'جلسه پیدا نشد.'}, status=status.HTTP_404_NOT_FOUND)
+        session.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class ClassCreationSessionPublishView(GenericAPIView):
+    permission_classes = [IsAuthenticated, IsTeacherUser]
+    serializer_class = ClassCreationSessionDetailSerializer
+
+    @extend_schema(
+        tags=['Classes'],
+        summary='Publish a class creation session (teacher)',
+        operation_id='classes_creation_sessions_publish',
+        request=None,
+        responses={200: ClassCreationSessionDetailSerializer},
+    )
+    def post(self, request, session_id: int):
+        session = ClassCreationSession.objects.filter(id=session_id, teacher=request.user).first()
+        if session is None:
+            return Response({'detail': 'جلسه پیدا نشد.'}, status=status.HTTP_404_NOT_FOUND)
+
+        if session.status != ClassCreationSession.Status.STRUCTURED or not (session.structure_json or '').strip():
+            return Response({'detail': 'برای انتشار، ابتدا ساختاردهی را کامل کنید.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        if not session.is_published:
+            session.is_published = True
+            session.published_at = timezone.now()
+            session.save(update_fields=['is_published', 'published_at', 'updated_at'])
+
+        return Response(ClassCreationSessionDetailSerializer(session).data)
+
+
+class ClassInvitationListCreateView(APIView):
+    permission_classes = [IsAuthenticated, IsTeacherUser]
+
+    @extend_schema(
+        tags=['Classes'],
+        summary='List class invitations for a session (teacher)',
+        operation_id='classes_creation_sessions_invites_list',
+        responses={200: ClassInvitationSerializer(many=True)},
+    )
+    def get(self, request, session_id: int):
+        session = ClassCreationSession.objects.filter(id=session_id, teacher=request.user).first()
+        if session is None:
+            return Response({'detail': 'جلسه پیدا نشد.'}, status=status.HTTP_404_NOT_FOUND)
+        qs = ClassInvitation.objects.filter(session=session).order_by('-created_at')
+        return Response(ClassInvitationSerializer(qs, many=True).data)
+
+    @extend_schema(
+        tags=['Classes'],
+        summary='Create class invitations for a session (teacher)',
+        operation_id='classes_creation_sessions_invites_create',
+        request=ClassInvitationCreateSerializer,
+        responses={200: ClassInvitationSerializer(many=True)},
+    )
+    def post(self, request, session_id: int):
+        session = ClassCreationSession.objects.filter(id=session_id, teacher=request.user).first()
+        if session is None:
+            return Response({'detail': 'جلسه پیدا نشد.'}, status=status.HTTP_404_NOT_FOUND)
+
+        serializer = ClassInvitationCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        phones: list[str] = serializer.validated_data['phones']
+
+        for phone in phones:
+            existing = ClassInvitation.objects.filter(session=session, phone=phone).first()
+            if existing is not None:
+                continue
+
+            # Generate a short code; join-code flow is not wired yet.
+            code = f"INV-{uuid.uuid4().hex[:10].upper()}"
+            tries = 0
+            while ClassInvitation.objects.filter(session=session, invite_code=code).exists() and tries < 5:
+                code = f"INV-{uuid.uuid4().hex[:10].upper()}"
+                tries += 1
+
+            ClassInvitation.objects.create(session=session, phone=phone, invite_code=code)
+
+        qs = ClassInvitation.objects.filter(session=session).order_by('-created_at')
+        return Response(ClassInvitationSerializer(qs, many=True).data)
+
+
+class ClassInvitationDetailView(APIView):
+    permission_classes = [IsAuthenticated, IsTeacherUser]
+
+    @extend_schema(
+        tags=['Classes'],
+        summary='Delete a class invitation (teacher)',
+        operation_id='classes_creation_sessions_invites_delete',
+        responses={204: None},
+    )
+    def delete(self, request, session_id: int, invite_id: int):
+        session = ClassCreationSession.objects.filter(id=session_id, teacher=request.user).first()
+        if session is None:
+            return Response({'detail': 'جلسه پیدا نشد.'}, status=status.HTTP_404_NOT_FOUND)
+        invite = ClassInvitation.objects.filter(id=invite_id, session=session).first()
+        if invite is None:
+            return Response({'detail': 'دعوت نامه پیدا نشد.'}, status=status.HTTP_404_NOT_FOUND)
+        invite.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class TeacherAnalyticsStatsView(APIView):
+    permission_classes = [IsAuthenticated, IsTeacherUser]
+
+    @extend_schema(
+        tags=['Classes'],
+        summary='Teacher analytics: overview stats',
+        operation_id='teacher_analytics_stats',
+        responses={200: TeacherAnalyticsStatSerializer(many=True)},
+    )
+    def get(self, request):
+        now = timezone.now()
+        start_7 = now - timedelta(days=7)
+        start_14 = now - timedelta(days=14)
+
+        qs = ClassCreationSession.objects.filter(teacher=request.user)
+        total = qs.count()
+        transcribed = qs.filter(status=ClassCreationSession.Status.TRANSCRIBED).count()
+        structured = qs.filter(status=ClassCreationSession.Status.STRUCTURED).count()
+
+        last7 = qs.filter(created_at__gte=start_7).count()
+        prev7 = qs.filter(created_at__gte=start_14, created_at__lt=start_7).count()
+
+        def _pct_change(cur: int, prev: int) -> str:
+            if prev <= 0:
+                return '—' if cur == 0 else '+100%'
+            return f"{round(((cur - prev) / prev) * 100)}%"
+
+        change = _pct_change(last7, prev7)
+        trend = 'up' if last7 >= prev7 else 'down'
+
+        return Response(
+            [
+                {'title': 'کل جلسات ساخت کلاس', 'value': str(total), 'change': change, 'trend': trend, 'icon': 'book'},
+                {'title': 'تبدیل به متن موفق', 'value': str(transcribed), 'change': '—', 'trend': 'up', 'icon': 'trending'},
+                {'title': 'ساختاردهی شده', 'value': str(structured), 'change': '—', 'trend': 'up', 'icon': 'graduation'},
+                {'title': 'دانش‌آموزان', 'value': '0', 'change': '—', 'trend': 'up', 'icon': 'users'},
+            ]
+        )
+
+
+class TeacherAnalyticsChartView(APIView):
+    permission_classes = [IsAuthenticated, IsTeacherUser]
+
+    @extend_schema(
+        tags=['Classes'],
+        summary='Teacher analytics: chart data (last 7 days)',
+        operation_id='teacher_analytics_chart',
+        responses={200: TeacherAnalyticsChartPointSerializer(many=True)},
+    )
+    def get(self, request):
+        # No enrollment model yet; keep it real (0). Chart keys must exist.
+        today = timezone.localdate()
+        data = []
+        for i in range(6, -1, -1):
+            d = today - timedelta(days=i)
+            data.append({'name': d.strftime('%m/%d'), 'students': 0})
+        return Response(data)
+
+
+class TeacherAnalyticsDistributionView(APIView):
+    permission_classes = [IsAuthenticated, IsTeacherUser]
+
+    @extend_schema(
+        tags=['Classes'],
+        summary='Teacher analytics: distribution data',
+        operation_id='teacher_analytics_distribution',
+        responses={200: TeacherAnalyticsDistributionItemSerializer(many=True)},
+    )
+    def get(self, request):
+        qs = ClassCreationSession.objects.filter(teacher=request.user)
+        return Response(
+            [
+                {'name': 'Transcribed', 'value': qs.filter(status=ClassCreationSession.Status.TRANSCRIBED).count()},
+                {'name': 'Structured', 'value': qs.filter(status=ClassCreationSession.Status.STRUCTURED).count()},
+                {'name': 'Failed', 'value': qs.filter(status=ClassCreationSession.Status.FAILED).count()},
+                {'name': 'In progress', 'value': qs.filter(status__in=[ClassCreationSession.Status.TRANSCRIBING, ClassCreationSession.Status.STRUCTURING]).count()},
+            ]
+        )
+
+
+class TeacherAnalyticsActivitiesView(APIView):
+    permission_classes = [IsAuthenticated, IsTeacherUser]
+
+    @extend_schema(
+        tags=['Classes'],
+        summary='Teacher analytics: recent activity',
+        operation_id='teacher_analytics_activities',
+        responses={200: TeacherAnalyticsActivitySerializer(many=True)},
+    )
+    def get(self, request):
+        qs = ClassCreationSession.objects.filter(teacher=request.user).order_by('-created_at')[:10]
+        items = []
+        for s in qs:
+            items.append(
+                {
+                    'id': s.id,
+                    'type': 'class_creation',
+                    'user': request.user.first_name or request.user.username,
+                    'action': f"Session {s.id}: {s.status}",
+                    'time': s.created_at.isoformat(),
+                    'icon': 'book',
+                    'color': 'text-primary',
+                    'bg': 'bg-primary/10',
+                }
+            )
+        return Response(items)
