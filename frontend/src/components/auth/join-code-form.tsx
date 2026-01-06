@@ -10,8 +10,10 @@ import { Label } from '@/components/ui/label';
 import { joinCodeSchema, type JoinCodeFormValues } from '@/lib/validations/auth';
 import { toast } from 'sonner';
 import { Loader2, Info } from 'lucide-react';
+import { inviteLogin, persistTokens, persistUser } from '@/services/auth-service';
 
-const TEST_JOIN_CODE = 'AI-AMOOKHTAN';
+const RAW_API_URL = (process.env.NEXT_PUBLIC_API_URL ?? '').replace(/\/$/, '');
+const API_URL = RAW_API_URL.endsWith('/api') ? RAW_API_URL : `${RAW_API_URL}/api`;
 
 interface JoinCodeFormProps {
   onSwitchToLogin?: () => void;
@@ -29,20 +31,27 @@ export function JoinCodeForm({ onSwitchToLogin }: JoinCodeFormProps) {
     resolver: zodResolver(joinCodeSchema),
     defaultValues: {
       code: '',
+      phone: '',
     },
   });
 
   const onSubmit = async (data: JoinCodeFormValues) => {
     setIsLoading(true);
-    
-    // شبیه‌سازی درخواست به سرور
-    await new Promise((resolve) => setTimeout(resolve, 1000));
-    
-    if (data.code === TEST_JOIN_CODE) {
-      toast.success('کد دعوت تایید شد');
+
+    try {
+      if (!RAW_API_URL) {
+        throw new Error('NEXT_PUBLIC_API_URL تنظیم نشده است.');
+      }
+
+      const resp = await inviteLogin({ code: data.code, phone: data.phone });
+      persistTokens(resp.tokens);
+      persistUser(resp.user);
+
+      toast.success('ورود با کد دعوت انجام شد');
       router.push('/home');
-    } else {
-      toast.error('کد دعوت وارد شده معتبر نیست');
+    } catch (err) {
+      console.error(err);
+      toast.error(err instanceof Error ? err.message : 'خطا در ورود با کد دعوت');
       setIsLoading(false);
     }
   };
@@ -54,6 +63,24 @@ export function JoinCodeForm({ onSwitchToLogin }: JoinCodeFormProps) {
       </h1>
 
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
+        <div className="space-y-2">
+          <Label htmlFor="phone" className="text-sm font-medium text-muted-foreground">
+            شماره تماس
+          </Label>
+          <Input
+            id="phone"
+            type="tel"
+            className={`h-12 bg-card border-border text-center text-lg tracking-widest ${errors.phone ? 'border-destructive focus-visible:ring-destructive' : ''}`}
+            dir="ltr"
+            placeholder="09123456789"
+            disabled={isLoading}
+            {...register('phone')}
+          />
+          {errors.phone && (
+            <p className="text-xs text-destructive mt-1 text-center">{errors.phone.message}</p>
+          )}
+        </div>
+
         <div className="space-y-2">
           <Label htmlFor="code" className="text-sm font-medium text-muted-foreground">
             کد دعوت
@@ -79,7 +106,7 @@ export function JoinCodeForm({ onSwitchToLogin }: JoinCodeFormProps) {
           {isLoading ? (
             <>
               <Loader2 className="ms-2 h-4 w-4 animate-spin" />
-              در حال بررسی...
+              در حال ورود...
             </>
           ) : (
             'ادامه'

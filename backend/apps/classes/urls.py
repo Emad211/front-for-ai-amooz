@@ -16,6 +16,11 @@ from .views import (
     TeacherAnalyticsChartView,
     TeacherAnalyticsDistributionView,
     TeacherAnalyticsStatsView,
+    StudentCourseListView,
+    StudentCourseContentView,
+    StudentChapterQuizView,
+    StudentFinalExamView,
+    InviteCodeVerifyView,
 )
 
 urlpatterns = [
@@ -36,4 +41,11 @@ urlpatterns = [
     path('teacher/analytics/chart/', TeacherAnalyticsChartView.as_view(), name='teacher_analytics_chart'),
     path('teacher/analytics/distribution/', TeacherAnalyticsDistributionView.as_view(), name='teacher_analytics_distribution'),
     path('teacher/analytics/activities/', TeacherAnalyticsActivitiesView.as_view(), name='teacher_analytics_activities'),
+
+    path('student/courses/', StudentCourseListView.as_view(), name='student_courses_list'),
+    path('student/courses/<int:session_id>/content/', StudentCourseContentView.as_view(), name='student_course_content'),
+    path('student/courses/<int:session_id>/chapters/<str:chapter_id>/quiz/', StudentChapterQuizView.as_view(), name='student_chapter_quiz'),
+    path('student/courses/<int:session_id>/final-exam/', StudentFinalExamView.as_view(), name='student_final_exam'),
+
+    path('invites/verify/', InviteCodeVerifyView.as_view(), name='invite_code_verify'),
 ]

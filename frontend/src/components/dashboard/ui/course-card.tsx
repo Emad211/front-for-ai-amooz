@@ -14,6 +14,7 @@ interface CourseCardProps {
 
 export const CourseCard = ({ course }: CourseCardProps) => {
   const isFeatured = course.tags.includes('ریاضیات') || course.tags.includes('برنامه‌نویسی');
+  const courseId = encodeURIComponent(String(course.id));
   return (
     <Card className="group bg-card border-border/50 hover:border-primary/30 transition-all duration-300 overflow-hidden flex flex-col justify-between h-full rounded-3xl hover:shadow-2xl hover:shadow-primary/5">
       <CardContent className="p-6 md:p-8">
@@ -28,13 +29,13 @@ export const CourseCard = ({ course }: CourseCardProps) => {
       <div className="px-6 md:px-8 pb-6 md:pb-8">
         {isFeatured ? (
           <Button asChild className="w-full h-12 md:h-14 bg-primary hover:bg-primary/90 text-primary-foreground rounded-2xl font-bold text-base shadow-lg shadow-primary/20 transition-all group-hover:scale-[1.02]">
-            <Link href="/learn/1">
+            <Link href={`/learn/${courseId}`}>
               ادامه یادگیری <ArrowLeft className="mr-2 h-5 w-5" />
             </Link>
           </Button>
         ) : (
           <Button asChild variant="secondary" className="w-full h-12 md:h-14 bg-secondary/50 hover:bg-secondary text-primary rounded-2xl font-bold text-base transition-all group-hover:scale-[1.02]">
-            <Link href="/learn/1">
+            <Link href={`/learn/${courseId}`}>
               <Play className="h-5 w-5 ml-2 fill-current" /> شروع دوره
             </Link>
           </Button>

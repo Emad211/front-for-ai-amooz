@@ -142,6 +142,8 @@ class ClassCreationSessionDetailSerializer(serializers.ModelSerializer):
             'status',
             'title',
             'description',
+            'level',
+            'duration',
             'source_mime_type',
             'source_original_name',
             'transcript_markdown',
@@ -159,6 +161,8 @@ class ClassCreationSessionDetailSerializer(serializers.ModelSerializer):
 class ClassCreationSessionUpdateSerializer(serializers.Serializer):
     title = serializers.CharField(max_length=255, required=False)
     description = serializers.CharField(required=False, allow_blank=True)
+    level = serializers.CharField(required=False, allow_blank=True, max_length=64)
+    duration = serializers.CharField(required=False, allow_blank=True, max_length=64)
     structure_json = serializers.JSONField(required=False)
 
     def validate_structure_json(self, value):
@@ -242,3 +246,127 @@ class TeacherAnalyticsActivitySerializer(serializers.Serializer):
     icon = serializers.CharField()
     color = serializers.CharField()
     bg = serializers.CharField()
+
+
+class StudentCourseSerializer(serializers.Serializer):
+    id = serializers.IntegerField()
+    title = serializers.CharField()
+    description = serializers.CharField(allow_blank=True)
+    tags = serializers.ListField(child=serializers.CharField(), allow_empty=True)
+
+    instructor = serializers.CharField(required=False, allow_blank=True)
+    progress = serializers.IntegerField(required=False)
+    studentsCount = serializers.IntegerField(required=False)
+    lessonsCount = serializers.IntegerField(required=False)
+    status = serializers.CharField(required=False)
+    createdAt = serializers.CharField(required=False, allow_blank=True)
+    lastActivity = serializers.CharField(required=False, allow_blank=True)
+
+
+class StudentLessonSerializer(serializers.Serializer):
+    id = serializers.CharField()
+    title = serializers.CharField()
+    type = serializers.CharField(required=False, allow_blank=True)
+    isActive = serializers.BooleanField(required=False)
+    isCompleted = serializers.BooleanField(required=False)
+    isLocked = serializers.BooleanField(required=False)
+    isSpecial = serializers.BooleanField(required=False)
+    content = serializers.CharField(required=False, allow_blank=True)
+
+
+class StudentChapterSerializer(serializers.Serializer):
+    id = serializers.CharField()
+    title = serializers.CharField()
+    lessons = StudentLessonSerializer(many=True)
+
+
+class StudentCourseContentSerializer(serializers.Serializer):
+    id = serializers.CharField()
+    title = serializers.CharField()
+    description = serializers.CharField(allow_blank=True)
+    progress = serializers.IntegerField()
+    level = serializers.CharField()
+    duration = serializers.CharField()
+    recapMarkdown = serializers.CharField(required=False, allow_blank=True)
+    learningObjectives = serializers.ListField(child=serializers.CharField(), required=False, allow_empty=True)
+    prerequisites = PrerequisiteSerializer(many=True, required=False)
+    chapters = StudentChapterSerializer(many=True)
+
+
+class StudentChapterQuizQuestionSerializer(serializers.Serializer):
+    id = serializers.CharField()
+    type = serializers.CharField()
+    question = serializers.CharField()
+    options = serializers.ListField(child=serializers.CharField(), required=False, allow_empty=True)
+    difficulty = serializers.CharField(required=False, allow_blank=True)
+
+
+class StudentChapterQuizResponseSerializer(serializers.Serializer):
+    quiz_id = serializers.IntegerField()
+    session_id = serializers.IntegerField()
+    chapter_id = serializers.CharField()
+    chapter_title = serializers.CharField()
+    passing_score = serializers.IntegerField()
+    questions = StudentChapterQuizQuestionSerializer(many=True)
+    last_score_0_100 = serializers.IntegerField(required=False, allow_null=True)
+    last_passed = serializers.BooleanField(required=False, allow_null=True)
+
+
+class StudentChapterQuizSubmitRequestSerializer(serializers.Serializer):
+    answers = serializers.DictField(child=serializers.CharField(allow_blank=True), allow_empty=False)
+
+
+class StudentChapterQuizSubmitResponseSerializer(serializers.Serializer):
+    score_0_100 = serializers.IntegerField()
+    passed = serializers.BooleanField()
+    passing_score = serializers.IntegerField()
+    per_question = serializers.ListField(child=serializers.DictField(), allow_empty=True)
+    course_progress = serializers.IntegerField(required=False)
+
+
+class StudentFinalExamQuestionSerializer(serializers.Serializer):
+    id = serializers.CharField()
+    type = serializers.CharField()
+    question = serializers.CharField()
+    options = serializers.ListField(child=serializers.CharField(), required=False, allow_empty=True)
+    points = serializers.IntegerField(required=False)
+    chapter = serializers.CharField(required=False, allow_blank=True)
+
+
+class StudentFinalExamResponseSerializer(serializers.Serializer):
+    exam_id = serializers.IntegerField()
+    session_id = serializers.IntegerField()
+    exam_title = serializers.CharField()
+    time_limit = serializers.IntegerField()
+    passing_score = serializers.IntegerField()
+    questions = StudentFinalExamQuestionSerializer(many=True)
+    last_score_0_100 = serializers.IntegerField(required=False, allow_null=True)
+    last_passed = serializers.BooleanField(required=False, allow_null=True)
+
+
+class StudentFinalExamSubmitRequestSerializer(serializers.Serializer):
+    answers = serializers.DictField(child=serializers.CharField(allow_blank=True), allow_empty=False)
+
+
+class StudentFinalExamSubmitResponseSerializer(serializers.Serializer):
+    score_0_100 = serializers.IntegerField()
+    passed = serializers.BooleanField()
+    passing_score = serializers.IntegerField()
+    per_question = serializers.ListField(child=serializers.DictField(), allow_empty=True)
+    course_progress = serializers.IntegerField(required=False)
+
+
+class InviteCodeVerifySerializer(serializers.Serializer):
+    code = serializers.CharField(max_length=64)
+
+    def validate_code(self, value: str) -> str:
+        s = (value or '').strip()
+        if not s:
+            raise serializers.ValidationError('کد دعوت الزامی است.')
+        return s
+
+
+class InviteCodeVerifyResponseSerializer(serializers.Serializer):
+    valid = serializers.BooleanField()
+    session_id = serializers.IntegerField(required=False)
+    title = serializers.CharField(required=False, allow_blank=True)

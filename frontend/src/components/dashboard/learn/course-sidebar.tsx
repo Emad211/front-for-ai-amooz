@@ -12,7 +12,6 @@ import {
   FileText,
   PlayCircle,
   CheckCircle,
-  Lock,
   BookOpen,
   Settings,
   RotateCcw,
@@ -28,6 +27,13 @@ interface CourseSidebarProps {
   className?: string;
   isMobile?: boolean;
   content: CourseContent;
+  activeLessonId?: string | null;
+  onSelectLesson?: (lessonId: string) => void;
+  onSelectChapterQuiz?: (chapterId: string) => void;
+  onSelectFinalExam?: () => void;
+  onSelectLearningObjectives?: () => void;
+  onSelectPrerequisites?: () => void;
+  onSelectRecap?: () => void;
 }
 
 const ICON_MAP = {
@@ -36,7 +42,18 @@ const ICON_MAP = {
   quiz: CheckCircle,
 };
 
-export const CourseSidebar = ({ className, isMobile = false, content }: CourseSidebarProps) => (
+export const CourseSidebar = ({
+  className,
+  isMobile = false,
+  content,
+  activeLessonId,
+  onSelectLesson,
+  onSelectChapterQuiz,
+  onSelectFinalExam,
+  onSelectLearningObjectives,
+  onSelectPrerequisites,
+  onSelectRecap,
+}: CourseSidebarProps) => (
   <aside className={cn("w-80 flex-shrink-0 flex-col gap-3 hidden lg:flex h-full", className)}>
     {isMobile ? (
       <SheetClose asChild>
@@ -44,7 +61,7 @@ export const CourseSidebar = ({ className, isMobile = false, content }: CourseSi
           variant="ghost"
           className="bg-secondary/50 hover:bg-secondary border border-border/50 text-foreground rounded-xl p-3 flex items-center justify-between transition-all group h-12"
         >
-          <span className="text-base font-medium pr-1">بستن فهرست</span>
+          <span className="text-sm font-medium pr-1">بستن فهرست</span>
           <X className="h-5 w-5 text-muted-foreground group-hover:text-foreground transition-all" />
         </Button>
       </SheetClose>
@@ -55,7 +72,7 @@ export const CourseSidebar = ({ className, isMobile = false, content }: CourseSi
         className="bg-card hover:bg-card/80 border-border text-muted-foreground hover:text-foreground rounded-xl p-3 flex items-center justify-between transition-all group h-12"
       >
         <Link href="/classes">
-          <span className="text-base font-medium pr-1">بازگشت به لیست دوره‌ها</span>
+          <span className="text-sm font-medium pr-1">بازگشت به لیست دوره‌ها</span>
           <ArrowLeft className="text-muted-foreground group-hover:text-foreground group-hover:-translate-x-1 transition-all h-5 w-5" />
         </Link>
       </Button>
@@ -68,8 +85,8 @@ export const CourseSidebar = ({ className, isMobile = false, content }: CourseSi
         </h3>
       </div>
       <div className="flex-1 overflow-y-auto p-2 space-y-1 no-scrollbar">
-        <SidebarItem icon={<Flag className="h-5 w-5" />} title="اهداف یادگیری" />
-        <SidebarItem icon={<Hourglass className="h-5 w-5" />} title="پیش نیازها" />
+        <SidebarItem icon={<Flag className="h-5 w-5" />} title="اهداف یادگیری" active={activeLessonId === 'learning-objectives'} onClick={onSelectLearningObjectives} />
+        <SidebarItem icon={<Hourglass className="h-5 w-5" />} title="پیش نیازها" active={activeLessonId === 'prerequisites'} onClick={onSelectPrerequisites} />
 
         <Accordion type="single" collapsible defaultValue={content.chapters[0]?.id} className="w-full">
           {content.chapters.map((chapter) => (
@@ -78,7 +95,7 @@ export const CourseSidebar = ({ className, isMobile = false, content }: CourseSi
                 <div className="flex items-center gap-3">
                   <Folder className="h-5 w-5 group-data-[state=open]:hidden" />
                   <FolderOpen className="h-5 w-5 hidden group-data-[state=open]:block" />
-                  <span className="text-base">{chapter.title}</span>
+                  <span className="text-sm">{chapter.title}</span>
                 </div>
               </AccordionTrigger>
               <AccordionContent className="p-1 space-y-1">
@@ -89,18 +106,37 @@ export const CourseSidebar = ({ className, isMobile = false, content }: CourseSi
                       key={lesson.id}
                       icon={<Icon className="h-4 w-4" />} 
                       title={lesson.title} 
-                      active={lesson.isActive}
+                      active={(activeLessonId ? lesson.id === activeLessonId : !!lesson.isActive)}
                       special={lesson.isSpecial}
+                      onClick={() => onSelectLesson?.(lesson.id)}
                     />
                   );
                 })}
+
+                <SubmenuItem
+                  key={`chapter-quiz:${chapter.id}`}
+                  icon={<CheckCircle className="h-4 w-4" />}
+                  title="آزمون فصل"
+                  active={activeLessonId ? activeLessonId === `chapter-quiz:${chapter.id}` : false}
+                  onClick={() => onSelectChapterQuiz?.(chapter.id)}
+                />
               </AccordionContent>
             </AccordionItem>
           ))}
         </Accordion>
 
-        <SidebarItem icon={<Lock className="h-5 w-5" />} title="آزمون نهایی دوره" disabled />
-        <SidebarItem icon={<BookOpen className="h-5 w-5" />} title="خلاصه و نکات" />
+        <SidebarItem
+          icon={<CheckCircle className="h-5 w-5" />}
+          title="آزمون نهایی دوره"
+          active={activeLessonId === 'final-exam'}
+          onClick={onSelectFinalExam}
+        />
+        <SidebarItem
+          icon={<BookOpen className="h-5 w-5" />}
+          title="خلاصه و نکات"
+          active={activeLessonId === 'recap'}
+          onClick={onSelectRecap}
+        />
       </div>
       <div className="p-3 border-t border-border/50 space-y-2 bg-background/20">
         <Button

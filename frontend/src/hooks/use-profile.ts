@@ -5,7 +5,7 @@ import type { UserProfile } from '@/types';
 
 type ProfileService = {
   getUserProfile: () => Promise<UserProfile>;
-  updateUserProfile: (data: Partial<UserProfile>) => Promise<any>;
+  updateUserProfile: (data: any) => Promise<UserProfile>;
 };
 
 export const useProfile = (service: ProfileService = DashboardService) => {
@@ -24,7 +24,8 @@ export const useProfile = (service: ProfileService = DashboardService) => {
         if (!cancelled) setUser(data);
       } catch (error) {
         console.error('Error fetching profile:', error);
-        if (!cancelled) setError('خطا در دریافت اطلاعات پروفایل');
+        const msg = error instanceof Error ? error.message : 'خطا در دریافت اطلاعات پروفایل';
+        if (!cancelled) setError(msg);
       } finally {
         if (!cancelled) setIsLoading(false);
       }
@@ -36,14 +37,15 @@ export const useProfile = (service: ProfileService = DashboardService) => {
     };
   }, [service]);
 
-  const updateProfile = async (data: Partial<UserProfile>) => {
+  const updateProfile = async (data: any) => {
     setIsLoading(true);
     try {
-      await service.updateUserProfile(data);
-      setUser((prev) => (prev ? { ...prev, ...data } : prev));
+      const updated = await service.updateUserProfile(data);
+      setUser(updated);
     } catch (error) {
       console.error('Error updating profile:', error);
-      setError('خطا در بروزرسانی اطلاعات پروفایل');
+      const msg = error instanceof Error ? error.message : 'خطا در بروزرسانی اطلاعات پروفایل';
+      setError(msg);
     } finally {
       setIsLoading(false);
     }

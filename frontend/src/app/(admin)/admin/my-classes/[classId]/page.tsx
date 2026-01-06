@@ -11,6 +11,7 @@ import {
   ClassStatsSidebar,
   ClassAnnouncementsCard,
 } from '@/components/teacher/class-detail';
+import { StudentInviteSection } from '@/components/teacher/create-class/student-invite-section';
 import { Card } from '@/components/ui/card';
 import { MarkdownWithMath } from '@/components/content/markdown-with-math';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
@@ -33,6 +34,7 @@ export default function ClassDetailPage({ params }: PageProps) {
   const [sessionDetail, setSessionDetail] = useState<ClassCreationSessionDetail | null>(null);
   const [prereqs, setPrereqs] = useState<ClassPrerequisite[] | null>(null);
   const pollTimer = useRef<number | null>(null);
+  const [isInviteExpanded, setIsInviteExpanded] = useState(false);
 
   useEffect(() => {
     if (!classDetail) return;
@@ -56,6 +58,12 @@ export default function ClassDetailPage({ params }: PageProps) {
         updated_at: classDetail.lastActivity ?? '',
       }
     );
+
+    void getClassCreationSessionDetail(sessionId)
+      .then((next) => setSessionDetail(next))
+      .catch(() => {
+        // ignore transient failures
+      });
 
     const shouldPoll = ['transcribing', 'structuring', 'prereq_extracting', 'prereq_teaching', 'recapping'].includes(classDetail.pipelineStatus ?? '');
     if (!shouldPoll) return;
@@ -247,9 +255,16 @@ export default function ClassDetailPage({ params }: PageProps) {
             chapters={classDetail.chapters || []}
           />
           
-          <ClassStudentsPreview 
+          <ClassStudentsPreview
             classId={classId}
             students={students}
+            onAddClick={() => setIsInviteExpanded(true)}
+          />
+
+          <StudentInviteSection
+            isExpanded={isInviteExpanded}
+            onToggle={() => setIsInviteExpanded((p) => !p)}
+            sessionId={Number(classDetail.id)}
           />
           
           <ClassAnnouncementsCard />

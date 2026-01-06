@@ -62,10 +62,19 @@ export function LoginForm({ onSwitchToJoin }: LoginFormProps) {
       const normalizedRole = me.role?.toLowerCase() ?? 'student';
       const defaultRedirect = roleRedirectMap[normalizedRole] ?? '/home';
       const next = searchParams.get('next');
+
+      const isSafePath = (path: string) =>
+        path.startsWith('/') && !path.startsWith('//') && !path.includes('://');
+
+      const isAllowedByRole = (path: string) => {
+        if (normalizedRole === 'teacher') return path.startsWith('/teacher');
+        if (normalizedRole === 'admin') return path.startsWith('/admin');
+        // student
+        return !path.startsWith('/teacher') && !path.startsWith('/admin');
+      };
+
       const safeNext =
-        next && next.startsWith('/') && !next.startsWith('//') && !next.includes('://')
-          ? next
-          : defaultRedirect;
+        next && isSafePath(next) && isAllowedByRole(next) ? next : defaultRedirect;
 
       router.push(safeNext);
     } catch (error) {

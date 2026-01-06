@@ -21,6 +21,8 @@ from apps.authentication.openapi import (
     ValidationErrorResponseSerializer,
 )
 
+from apps.authentication.serializers import TokenObtainPairByIdentifierSerializer
+
 from apps.core.views import HealthCheckView
 
 
@@ -37,7 +39,7 @@ from apps.core.views import HealthCheckView
     )
 )
 class TokenObtainPairViewDocs(TokenObtainPairView):
-    pass
+    serializer_class = TokenObtainPairByIdentifierSerializer
 
 
 @extend_schema_view(

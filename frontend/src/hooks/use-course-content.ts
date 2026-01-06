@@ -7,7 +7,6 @@ import { useMountedRef } from '@/hooks/use-mounted-ref';
 
 type CourseContentService = {
   getCourseContent: (courseId?: string) => Promise<CourseContent>;
-  getLessonDetail: (lessonId: string) => Promise<Lesson>;
 };
 
 export function useCourseContent(courseId?: string, service: CourseContentService = DashboardService) {
@@ -21,13 +20,13 @@ export function useCourseContent(courseId?: string, service: CourseContentServic
     try {
       setError(null);
       setIsLoading(true);
-      const [contentData, lessonData] = await Promise.all([
-        service.getCourseContent(courseId),
-        service.getLessonDetail('1'), // Default lesson for mock
-      ]);
+      const contentData = await service.getCourseContent(courseId);
       if (!mountedRef.current) return;
       setContent(contentData);
-      setCurrentLesson(lessonData);
+
+      const allLessons = contentData.chapters.flatMap((c) => c.lessons);
+      const activeLesson = allLessons.find((l) => l.isActive) ?? allLessons[0] ?? null;
+      setCurrentLesson(activeLesson as Lesson | null);
     } catch (err) {
       console.error(err);
       if (mountedRef.current) setError('خطا در دریافت محتوای دوره');
@@ -45,6 +44,8 @@ export function useCourseContent(courseId?: string, service: CourseContentServic
     currentLesson,
     isLoading,
     error,
-    reload
+    reload,
+    setCurrentLesson,
+    setContent,
   };
 }

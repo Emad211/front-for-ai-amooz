@@ -150,13 +150,12 @@ class TestCompleteAuthenticationFlows:
         assert username_login.status_code == 200
         
         # Test login with email (Django's default auth doesn't support this without custom backend)
-        # So this should fail unless we implement email authentication
+        # We support this via a custom SimpleJWT serializer that maps email -> username.
         email_login = client.post('/api/token/', {
             'username': 'login@test.com',
             'password': 'TestPass123!@#'
         }, format='json')
-        # This will likely fail (401) unless we have custom authentication backend
-        assert email_login.status_code == 401
+        assert email_login.status_code == 200
 
     def test_token_lifecycle_and_blacklisting(self):
         """Test complete token lifecycle with blacklisting"""

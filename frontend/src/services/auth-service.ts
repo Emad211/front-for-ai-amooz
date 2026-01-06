@@ -33,6 +33,11 @@ export type RegisterResponse = {
   tokens: TokenResponse;
 };
 
+export type InviteLoginPayload = {
+  code: string;
+  phone: string;
+};
+
 const RAW_API_URL = (process.env.NEXT_PUBLIC_API_URL ?? '').replace(/\/$/, '');
 
 // We want all requests to target the Django API root: `${BACKEND}/api`.
@@ -161,6 +166,13 @@ export async function login(payload: LoginPayload): Promise<TokenResponse> {
 
 export async function register(payload: RegisterPayload): Promise<RegisterResponse> {
   return request<RegisterResponse>('/auth/register/', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function inviteLogin(payload: InviteLoginPayload): Promise<RegisterResponse> {
+  return request<RegisterResponse>('/auth/invite-login/', {
     method: 'POST',
     body: JSON.stringify(payload),
   });

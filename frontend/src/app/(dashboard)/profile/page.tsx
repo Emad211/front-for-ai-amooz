@@ -7,7 +7,7 @@ import { cn } from '@/lib/utils';
 import { useProfile } from '@/hooks/use-profile';
 
 export default function ProfilePage() {
-  const { activeTab, setActiveTab, tabs } = useProfile();
+  const { activeTab, setActiveTab, tabs, user, updateProfile, isLoading, error } = useProfile();
 
   return (
     <div className="min-h-screen bg-background/50">
@@ -48,7 +48,14 @@ export default function ProfilePage() {
 
             {/* Content Area */}
             <div className="lg:col-span-9">
-              {activeTab === 'personal' && <ProfileForm />}
+              {activeTab === 'personal' && (
+                <ProfileForm
+                  user={user}
+                  isLoading={isLoading}
+                  error={error}
+                  onSave={updateProfile}
+                />
+              )}
               {activeTab !== 'personal' && (
                 <div className="bg-card border rounded-3xl p-12 flex flex-col items-center justify-center text-center gap-4 min-h-[400px]">
                   <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center">

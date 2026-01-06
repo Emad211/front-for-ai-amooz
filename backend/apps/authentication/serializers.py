@@ -1,6 +1,7 @@
 from django.contrib.auth import get_user_model
 from django.contrib.auth.password_validation import validate_password
 from rest_framework import serializers
+from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 
 User = get_user_model()
 
@@ -95,3 +96,51 @@ class PasswordChangeSerializer(serializers.Serializer):
     def validate_new_password(self, value):
         validate_password(value)
         return value
+
+
+class InviteCodeLoginSerializer(serializers.Serializer):
+    code = serializers.CharField(max_length=64)
+    phone = serializers.CharField(max_length=32)
+
+    def _normalize_phone(self, raw: str) -> str:
+        digits = ''.join(ch for ch in str(raw or '') if ch.isdigit())
+        if digits.startswith('98') and len(digits) == 12:
+            digits = '0' + digits[2:]
+        if len(digits) == 10 and digits.startswith('9'):
+            digits = '0' + digits
+        return digits
+
+    def validate_code(self, value: str) -> str:
+        s = (value or '').strip()
+        if not s:
+            raise serializers.ValidationError('کد دعوت الزامی است.')
+        return s
+
+    def validate_phone(self, value: str) -> str:
+        digits = self._normalize_phone(value)
+        if not digits.startswith('09') or len(digits) != 11:
+            raise serializers.ValidationError('شماره تماس معتبر نیست.')
+        return digits
+
+
+class TokenObtainPairByIdentifierSerializer(TokenObtainPairSerializer):
+    """Allow SimpleJWT login with either username or email.
+
+    Keeps the request payload compatible with the default SimpleJWT contract:
+    {"username": "...", "password": "..."}
+    """
+
+    def validate(self, attrs):
+        identifier = attrs.get(self.username_field)
+
+        if identifier and isinstance(identifier, str) and '@' in identifier:
+            matches = User.objects.filter(email__iexact=identifier)
+            if matches.count() > 1:
+                raise serializers.ValidationError({
+                    self.username_field: ['این ایمیل به چند حساب کاربری متصل است.'],
+                })
+            user = matches.first()
+            if user is not None:
+                attrs[self.username_field] = getattr(user, User.USERNAME_FIELD)
+
+        return super().validate(attrs)

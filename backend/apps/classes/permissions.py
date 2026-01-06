@@ -9,3 +9,11 @@ class IsTeacherUser(BasePermission):
     def has_permission(self, request, view) -> bool:
         user = getattr(request, 'user', None)
         return bool(user and user.is_authenticated and user.role == User.Role.TEACHER)
+
+
+class IsStudentUser(BasePermission):
+    message = 'Only students can perform this action.'
+
+    def has_permission(self, request, view) -> bool:
+        user = getattr(request, 'user', None)
+        return bool(user and user.is_authenticated and user.role == User.Role.STUDENT)

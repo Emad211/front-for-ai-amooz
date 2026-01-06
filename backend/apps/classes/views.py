@@ -10,15 +10,16 @@ from django.conf import settings
 from rest_framework import status
 from rest_framework import serializers
 from rest_framework.generics import GenericAPIView
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from drf_spectacular.utils import extend_schema
 
-from .models import ClassCreationSession, ClassPrerequisite
-from .models import ClassInvitation
-from .permissions import IsTeacherUser
+from .models import ClassCreationSession, ClassInvitation, ClassPrerequisite
+from .models import ClassSection, ClassSectionQuiz, ClassSectionQuizAttempt
+from .models import ClassFinalExam, ClassFinalExamAttempt
+from .permissions import IsTeacherUser, IsStudentUser
 from .serializers import (
     ClassCreationSessionDetailSerializer,
     ClassCreationSessionListSerializer,
@@ -40,6 +41,16 @@ from .serializers import (
     Step5RecapRequestSerializer,
     Step5RecapResponseSerializer,
     PrerequisiteSerializer,
+    StudentCourseSerializer,
+    StudentCourseContentSerializer,
+    StudentChapterQuizResponseSerializer,
+    StudentChapterQuizSubmitRequestSerializer,
+    StudentChapterQuizSubmitResponseSerializer,
+    StudentFinalExamResponseSerializer,
+    StudentFinalExamSubmitRequestSerializer,
+    StudentFinalExamSubmitResponseSerializer,
+    InviteCodeVerifySerializer,
+    InviteCodeVerifyResponseSerializer,
 )
 from .services.transcription import transcribe_media_bytes
 from .services.structure import structure_transcript_markdown
@@ -48,6 +59,7 @@ from .services.recap import generate_recap_from_structure, recap_json_to_markdow
 from .services.background import run_in_background
 from .services.sync_structure import sync_structure_from_session
 from .services.mediana_sms import send_publish_sms_for_session
+from .services.quizzes import generate_final_exam_pool, generate_section_quiz_questions, grade_open_text_answer
 
 
 def _process_step1_transcription(session_id: int) -> None:
@@ -211,6 +223,33 @@ def _process_step5_recap(session_id: int) -> None:
         session.status = ClassCreationSession.Status.FAILED
         session.error_detail = str(exc)
         session.save(update_fields=['status', 'error_detail', 'updated_at'])
+
+
+def _compute_student_course_progress(*, session: ClassCreationSession, student) -> int:
+    """Compute completion percent for a student in a session.
+
+    MVP rule: each chapter quiz passed counts equally + final exam passed counts equally.
+    """
+
+    try:
+        total_sections = session.sections.count()
+    except Exception:
+        total_sections = 0
+
+    total_parts = total_sections + 1
+    if total_parts <= 0:
+        return 0
+
+    passed_sections = (
+        ClassSectionQuiz.objects.filter(session=session, student=student, last_passed=True).count()
+        if total_sections > 0
+        else 0
+    )
+    passed_final = ClassFinalExam.objects.filter(session=session, student=student, last_passed=True).exists()
+    passed_parts = passed_sections + (1 if passed_final else 0)
+
+    pct = int(round((passed_parts / total_parts) * 100))
+    return max(0, min(100, pct))
 
 
 def _process_full_pipeline(session_id: int) -> None:
@@ -600,6 +639,12 @@ class ClassCreationSessionDetailView(APIView):
         if 'description' in serializer.validated_data:
             session.description = serializer.validated_data['description']
             updated_fields.append('description')
+        if 'level' in serializer.validated_data:
+            session.level = serializer.validated_data['level']
+            updated_fields.append('level')
+        if 'duration' in serializer.validated_data:
+            session.duration = serializer.validated_data['duration']
+            updated_fields.append('duration')
         if 'structure_json' in serializer.validated_data:
             session.structure_json = serializer.validated_data['structure_json']
             updated_fields.append('structure_json')
@@ -655,10 +700,7 @@ class ClassCreationSessionPublishView(GenericAPIView):
             session.save(update_fields=['is_published', 'published_at', 'updated_at'])
 
             def _send_sms() -> None:
-                try:
-                    send_publish_sms_for_session(session.id)
-                except Exception:
-                    return
+                send_publish_sms_for_session(session.id)
 
             run_in_background(lambda: _send_sms(), name=f'class-publish-sms-{session.id}')
 
@@ -841,3 +883,665 @@ class TeacherAnalyticsActivitiesView(APIView):
                 }
             )
         return Response(items)
+
+
+class StudentCourseListView(APIView):
+    permission_classes = [IsAuthenticated, IsStudentUser]
+
+    @extend_schema(
+        tags=['Classes'],
+        summary='List student courses (published classes accessible to the student)',
+        operation_id='student_courses_list',
+        responses={200: StudentCourseSerializer(many=True)},
+    )
+    def get(self, request):
+        user = request.user
+        phone = (getattr(user, 'phone', None) or '').strip()
+        if not phone:
+            return Response([], status=status.HTTP_200_OK)
+
+        qs = (
+            ClassCreationSession.objects.filter(is_published=True, invites__phone=phone)
+            .select_related('teacher')
+            .prefetch_related('sections__units', 'invites')
+            .distinct()
+            .order_by('-published_at', '-updated_at')
+        )
+
+        out: list[dict] = []
+        for session in qs:
+            teacher = session.teacher
+            instructor = ''
+            if teacher is not None:
+                instructor = (teacher.get_full_name() or getattr(teacher, 'username', '') or '').strip()
+
+            lessons_count = 0
+            try:
+                lessons_count = sum(s.units.count() for s in session.sections.all())
+            except Exception:
+                lessons_count = 0
+
+            out.append(
+                {
+                    'id': session.id,
+                    'title': session.title,
+                    'description': session.description or '',
+                    'tags': [],
+                    'instructor': instructor,
+                    'progress': _compute_student_course_progress(session=session, student=user),
+                    'studentsCount': session.invites.count(),
+                    'lessonsCount': lessons_count,
+                    'status': 'active',
+                    'createdAt': (session.published_at or session.created_at).date().isoformat(),
+                    'lastActivity': (session.updated_at or session.created_at).date().isoformat(),
+                }
+            )
+
+        return Response(StudentCourseSerializer(out, many=True).data)
+
+
+class StudentCourseContentView(APIView):
+    permission_classes = [IsAuthenticated, IsStudentUser]
+
+    @extend_schema(
+        tags=['Classes'],
+        summary='Get student course content (chapters/lessons) for a published class',
+        operation_id='student_course_content',
+        responses={200: StudentCourseContentSerializer},
+    )
+    def get(self, request, session_id: int):
+        user = request.user
+        phone = (getattr(user, 'phone', None) or '').strip()
+        if not phone:
+            return Response({'detail': 'شماره موبایل برای حساب کاربری ثبت نشده است.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        session = (
+            ClassCreationSession.objects.filter(id=session_id, is_published=True, invites__phone=phone)
+            .prefetch_related('sections__units', 'learning_objectives', 'prerequisites')
+            .first()
+        )
+        if session is None:
+            return Response({'detail': 'کلاس پیدا نشد.'}, status=status.HTTP_404_NOT_FOUND)
+
+        chapters: list[dict] = []
+        first_lesson_marked = False
+        for section in session.sections.order_by('order'):
+            lessons: list[dict] = []
+            for unit in section.units.order_by('order'):
+                lesson_content = (unit.content_markdown or unit.source_markdown or '').strip()
+                is_active = False
+                if not first_lesson_marked:
+                    is_active = True
+                    first_lesson_marked = True
+
+                lessons.append(
+                    {
+                        'id': str(unit.id),
+                        'title': unit.title,
+                        'type': 'text',
+                        'isActive': is_active,
+                        'content': lesson_content,
+                    }
+                )
+
+            chapters.append(
+                {
+                    'id': section.external_id or str(section.id),
+                    'title': section.title,
+                    'lessons': lessons,
+                }
+            )
+
+        payload = {
+            'id': str(session.id),
+            'title': session.title,
+            'description': session.description or '',
+            'progress': _compute_student_course_progress(session=session, student=user),
+            'level': (session.level or '').strip() or '—',
+            'duration': (session.duration or '').strip() or '—',
+            'recapMarkdown': (session.recap_markdown or '').strip(),
+            'learningObjectives': [o.text for o in session.learning_objectives.order_by('order')],
+            'prerequisites': PrerequisiteSerializer(session.prerequisites.order_by('order'), many=True).data,
+            'chapters': chapters,
+        }
+
+        return Response(StudentCourseContentSerializer(payload).data)
+
+
+class StudentChapterQuizView(APIView):
+    permission_classes = [IsAuthenticated, IsStudentUser]
+
+    @extend_schema(
+        tags=['Classes'],
+        summary='Get a chapter-end quiz for a published class chapter (section)',
+        operation_id='student_chapter_quiz_get',
+        responses={200: StudentChapterQuizResponseSerializer},
+    )
+    def get(self, request, session_id: int, chapter_id: str):
+        user = request.user
+        phone = (getattr(user, 'phone', None) or '').strip()
+        if not phone:
+            return Response({'detail': 'شماره موبایل برای حساب کاربری ثبت نشده است.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        session = (
+            ClassCreationSession.objects.filter(id=session_id, is_published=True, invites__phone=phone)
+            .prefetch_related('sections__units')
+            .first()
+        )
+        if session is None:
+            return Response({'detail': 'کلاس پیدا نشد.'}, status=status.HTTP_404_NOT_FOUND)
+
+        chapter_key = (chapter_id or '').strip()
+        if not chapter_key:
+            return Response({'detail': 'شناسه فصل نامعتبر است.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        section = session.sections.filter(external_id=chapter_key).first()
+        if section is None:
+            try:
+                section_id_int = int(chapter_key)
+            except Exception:
+                section_id_int = None
+            if section_id_int:
+                section = session.sections.filter(id=section_id_int).first()
+
+        if section is None:
+            return Response({'detail': 'فصل پیدا نشد.'}, status=status.HTTP_404_NOT_FOUND)
+
+        quiz = ClassSectionQuiz.objects.filter(session=session, section=section, student=user).first()
+        if quiz is None or not isinstance(quiz.questions, dict) or not quiz.questions.get('questions'):
+            units = list(section.units.order_by('order'))
+            combined = "\n\n".join(
+                [
+                    (u.content_markdown or u.source_markdown or '').strip()
+                    for u in units
+                    if (u.content_markdown or u.source_markdown or '').strip()
+                ]
+            ).strip()
+            # Keep prompt payload bounded to avoid runaway token usage.
+            combined = combined[:8000]
+
+            quiz_obj, _provider, _model = generate_section_quiz_questions(section_content=combined, count=5)
+            quiz, _created = ClassSectionQuiz.objects.update_or_create(
+                session=session,
+                section=section,
+                student=user,
+                defaults={'questions': quiz_obj},
+            )
+
+        raw_questions = quiz.questions.get('questions') if isinstance(quiz.questions, dict) else None
+        if not isinstance(raw_questions, list):
+            raw_questions = []
+
+        sanitized: list[dict] = []
+        for q in raw_questions:
+            if not isinstance(q, dict):
+                continue
+            qid = str(q.get('id') or '').strip()
+            qtype = str(q.get('type') or '').strip()
+            qtext = str(q.get('question') or '').strip()
+            if not qid or not qtype or not qtext:
+                continue
+            options = q.get('options')
+            if not isinstance(options, list):
+                options = []
+            sanitized.append(
+                {
+                    'id': qid,
+                    'type': qtype,
+                    'question': qtext,
+                    'options': [str(o) for o in options if str(o).strip()],
+                    'difficulty': str(q.get('difficulty') or '').strip(),
+                }
+            )
+
+        payload = {
+            'quiz_id': quiz.id,
+            'session_id': session.id,
+            'chapter_id': section.external_id or str(section.id),
+            'chapter_title': section.title,
+            'passing_score': 70,
+            'questions': sanitized,
+            'last_score_0_100': quiz.last_score_0_100,
+            'last_passed': quiz.last_passed,
+        }
+        return Response(StudentChapterQuizResponseSerializer(payload).data)
+
+    @extend_schema(
+        tags=['Classes'],
+        summary='Submit answers for a chapter-end quiz and get score',
+        operation_id='student_chapter_quiz_submit',
+        request=StudentChapterQuizSubmitRequestSerializer,
+        responses={200: StudentChapterQuizSubmitResponseSerializer},
+    )
+    def post(self, request, session_id: int, chapter_id: str):
+        user = request.user
+        phone = (getattr(user, 'phone', None) or '').strip()
+        if not phone:
+            return Response({'detail': 'شماره موبایل برای حساب کاربری ثبت نشده است.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        session = (
+            ClassCreationSession.objects.filter(id=session_id, is_published=True, invites__phone=phone)
+            .prefetch_related('sections__units')
+            .first()
+        )
+        if session is None:
+            return Response({'detail': 'کلاس پیدا نشد.'}, status=status.HTTP_404_NOT_FOUND)
+
+        chapter_key = (chapter_id or '').strip()
+        section = session.sections.filter(external_id=chapter_key).first()
+        if section is None:
+            try:
+                section_id_int = int(chapter_key)
+            except Exception:
+                section_id_int = None
+            if section_id_int:
+                section = session.sections.filter(id=section_id_int).first()
+
+        if section is None:
+            return Response({'detail': 'فصل پیدا نشد.'}, status=status.HTTP_404_NOT_FOUND)
+
+        serializer = StudentChapterQuizSubmitRequestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        answers = serializer.validated_data['answers']
+
+        quiz = ClassSectionQuiz.objects.filter(session=session, section=section, student=user).first()
+        if quiz is None or not isinstance(quiz.questions, dict) or not quiz.questions.get('questions'):
+            return Response({'detail': 'ابتدا آزمون را دریافت کنید.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        raw_questions = quiz.questions.get('questions')
+        if not isinstance(raw_questions, list) or not raw_questions:
+            return Response({'detail': 'ساختار آزمون نامعتبر است.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        per_question: list[dict] = []
+        total = 0
+        count = 0
+
+        for q in raw_questions:
+            if not isinstance(q, dict):
+                continue
+            qid = str(q.get('id') or '').strip()
+            qtype = str(q.get('type') or '').strip()
+            qtext = str(q.get('question') or '').strip()
+            correct = q.get('correct_answer')
+            if not qid or not qtype or not qtext:
+                continue
+
+            student_answer = str(answers.get(qid, '') or '').strip()
+            score = 0
+            feedback = ''
+            label = ''
+
+            if qtype in ('multiple_choice', 'fill_blank', 'true_false'):
+                expected = str(correct).strip()
+                if qtype == 'true_false':
+                    expected = 'true' if bool(correct) else 'false'
+                    sa = student_answer.lower().strip()
+                    if sa in ('true', '1', 'yes', 'درست', 'صحیح'):
+                        sa_norm = 'true'
+                    elif sa in ('false', '0', 'no', 'نادرست', 'غلط'):
+                        sa_norm = 'false'
+                    else:
+                        sa_norm = sa
+                    is_ok = sa_norm == expected
+                else:
+                    is_ok = student_answer == expected
+                score = 100 if is_ok else 0
+                label = 'correct' if is_ok else 'incorrect'
+                feedback = 'آفرین! درست بود.' if is_ok else 'هنوز دقیق نیست. دوباره مرور کن.'
+            else:
+                grading_obj, _provider, _model = grade_open_text_answer(
+                    question=qtext,
+                    reference_answer=str(correct or ''),
+                    student_answer=student_answer,
+                )
+                try:
+                    score = int(grading_obj.get('score_0_100') or 0)
+                except Exception:
+                    score = 0
+                label = str(grading_obj.get('label') or '').strip()
+                feedback = str(grading_obj.get('feedback') or '').strip()
+
+            score = max(0, min(100, score))
+            total += score
+            count += 1
+
+            per_question.append(
+                {
+                    'id': qid,
+                    'type': qtype,
+                    'question': qtext,
+                    'student_answer': student_answer,
+                    'correct_answer': correct,
+                    'score_0_100': score,
+                    'label': label,
+                    'feedback': feedback,
+                }
+            )
+
+        if count == 0:
+            return Response({'detail': 'سوالی برای نمره‌دهی پیدا نشد.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        final_score = int(round(total / count))
+        passing_score = 70
+        passed = final_score >= passing_score
+
+        quiz.last_score_0_100 = final_score
+        quiz.last_passed = passed
+        quiz.save(update_fields=['last_score_0_100', 'last_passed', 'updated_at'])
+
+        attempt_result = {
+            'per_question': per_question,
+            'passing_score': passing_score,
+        }
+        ClassSectionQuizAttempt.objects.create(
+            quiz=quiz,
+            answers=answers,
+            result=attempt_result,
+            score_0_100=final_score,
+            passed=passed,
+        )
+
+        payload = {
+            'score_0_100': final_score,
+            'passed': passed,
+            'passing_score': passing_score,
+            'per_question': per_question,
+            'course_progress': _compute_student_course_progress(session=session, student=user),
+        }
+        return Response(StudentChapterQuizSubmitResponseSerializer(payload).data, status=status.HTTP_200_OK)
+
+
+class StudentFinalExamView(APIView):
+    permission_classes = [IsAuthenticated, IsStudentUser]
+
+    @extend_schema(
+        tags=['Classes'],
+        summary='Get final exam for a published class (per-student)',
+        operation_id='student_final_exam_get',
+        responses={200: StudentFinalExamResponseSerializer},
+    )
+    def get(self, request, session_id: int):
+        user = request.user
+        phone = (getattr(user, 'phone', None) or '').strip()
+        if not phone:
+            return Response({'detail': 'شماره موبایل برای حساب کاربری ثبت نشده است.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        session = (
+            ClassCreationSession.objects.filter(id=session_id, is_published=True, invites__phone=phone)
+            .prefetch_related('sections__units')
+            .first()
+        )
+        if session is None:
+            return Response({'detail': 'کلاس پیدا نشد.'}, status=status.HTTP_404_NOT_FOUND)
+
+        exam = ClassFinalExam.objects.filter(session=session, student=user).first()
+        if exam is None or not isinstance(exam.exam, dict) or not exam.exam.get('questions'):
+            combined_parts: list[str] = []
+            for section in session.sections.order_by('order'):
+                combined_parts.append(str(section.title or '').strip())
+                for unit in section.units.order_by('order'):
+                    txt = (unit.content_markdown or unit.source_markdown or '').strip()
+                    if txt:
+                        combined_parts.append(txt)
+
+            combined = "\n\n".join([p for p in combined_parts if p]).strip()
+            combined = combined[:12000]
+
+            exam_obj, _provider, _model = generate_final_exam_pool(combined_content=combined, pool_size=12)
+            exam, _created = ClassFinalExam.objects.update_or_create(
+                session=session,
+                student=user,
+                defaults={'exam': exam_obj},
+            )
+
+        raw_questions = exam.exam.get('questions') if isinstance(exam.exam, dict) else None
+        if not isinstance(raw_questions, list):
+            raw_questions = []
+
+        sanitized: list[dict] = []
+        for q in raw_questions:
+            if not isinstance(q, dict):
+                continue
+            qid = str(q.get('id') or '').strip()
+            qtype = str(q.get('type') or '').strip()
+            qtext = str(q.get('question') or '').strip()
+            if not qid or not qtype or not qtext:
+                continue
+
+            options = q.get('options')
+            if not isinstance(options, list):
+                options = []
+
+            pts_raw = q.get('points')
+            try:
+                pts = int(pts_raw) if pts_raw is not None else 5
+            except Exception:
+                pts = 5
+            pts = max(1, min(100, pts))
+
+            sanitized.append(
+                {
+                    'id': qid,
+                    'type': qtype,
+                    'question': qtext,
+                    'options': [str(o) for o in options if str(o).strip()],
+                    'points': pts,
+                    'chapter': str(q.get('chapter') or '').strip(),
+                }
+            )
+
+        exam_title = str(exam.exam.get('exam_title') or 'آزمون نهایی')
+        try:
+            time_limit = int(exam.exam.get('time_limit') or 45)
+        except Exception:
+            time_limit = 45
+
+        try:
+            passing_score = int(exam.exam.get('passing_score') or 70)
+        except Exception:
+            passing_score = 70
+        passing_score = max(0, min(100, passing_score))
+
+        payload = {
+            'exam_id': exam.id,
+            'session_id': session.id,
+            'exam_title': exam_title,
+            'time_limit': time_limit,
+            'passing_score': passing_score,
+            'questions': sanitized,
+            'last_score_0_100': exam.last_score_0_100,
+            'last_passed': exam.last_passed,
+        }
+        return Response(StudentFinalExamResponseSerializer(payload).data)
+
+    @extend_schema(
+        tags=['Classes'],
+        summary='Submit final exam answers and get score',
+        operation_id='student_final_exam_submit',
+        request=StudentFinalExamSubmitRequestSerializer,
+        responses={200: StudentFinalExamSubmitResponseSerializer},
+    )
+    def post(self, request, session_id: int):
+        user = request.user
+        phone = (getattr(user, 'phone', None) or '').strip()
+        if not phone:
+            return Response({'detail': 'شماره موبایل برای حساب کاربری ثبت نشده است.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        session = (
+            ClassCreationSession.objects.filter(id=session_id, is_published=True, invites__phone=phone)
+            .prefetch_related('sections__units')
+            .first()
+        )
+        if session is None:
+            return Response({'detail': 'کلاس پیدا نشد.'}, status=status.HTTP_404_NOT_FOUND)
+
+        serializer = StudentFinalExamSubmitRequestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        answers = serializer.validated_data['answers']
+
+        exam = ClassFinalExam.objects.filter(session=session, student=user).first()
+        if exam is None or not isinstance(exam.exam, dict) or not exam.exam.get('questions'):
+            return Response({'detail': 'ابتدا آزمون را دریافت کنید.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        raw_questions = exam.exam.get('questions')
+        if not isinstance(raw_questions, list) or not raw_questions:
+            return Response({'detail': 'ساختار آزمون نامعتبر است.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            passing_score = int(exam.exam.get('passing_score') or 70)
+        except Exception:
+            passing_score = 70
+        passing_score = max(0, min(100, passing_score))
+
+        earned_points = 0
+        total_points = 0
+        per_question: list[dict] = []
+
+        for q in raw_questions:
+            if not isinstance(q, dict):
+                continue
+            qid = str(q.get('id') or '').strip()
+            qtype = str(q.get('type') or '').strip()
+            qtext = str(q.get('question') or '').strip()
+            correct = q.get('correct_answer')
+            expl = str(q.get('explanation') or '').strip()
+
+            pts_raw = q.get('points')
+            try:
+                pts = int(pts_raw) if pts_raw is not None else 5
+            except Exception:
+                pts = 5
+            pts = max(1, min(100, pts))
+
+            if not qid or not qtype or not qtext:
+                continue
+
+            total_points += pts
+            student_answer = str(answers.get(qid, '') or '').strip()
+
+            got = 0
+            label = ''
+            feedback = ''
+
+            if qtype in ('multiple_choice', 'fill_blank', 'true_false'):
+                expected = str(correct).strip()
+                if qtype == 'true_false':
+                    expected = 'true' if bool(correct) else 'false'
+                    sa = student_answer.lower().strip()
+                    if sa in ('true', '1', 'yes', 'درست', 'صحیح'):
+                        sa_norm = 'true'
+                    elif sa in ('false', '0', 'no', 'نادرست', 'غلط'):
+                        sa_norm = 'false'
+                    else:
+                        sa_norm = sa
+                    is_ok = sa_norm == expected
+                else:
+                    is_ok = student_answer == expected
+
+                if is_ok:
+                    got = pts
+                    label = 'correct'
+                    feedback = 'آفرین! درست بود.'
+                else:
+                    got = 0
+                    label = 'incorrect'
+                    feedback = 'پاسخ درست نبود.'
+                    if expl:
+                        feedback = f"{feedback} {expl}".strip()
+            else:
+                grading_obj, _provider, _model = grade_open_text_answer(
+                    question=qtext,
+                    reference_answer=str(correct or ''),
+                    student_answer=student_answer,
+                )
+                try:
+                    score_0_100 = int(grading_obj.get('score_0_100') or 0)
+                except Exception:
+                    score_0_100 = 0
+                score_0_100 = max(0, min(100, score_0_100))
+
+                got = int(round((score_0_100 / 100) * pts))
+                label = str(grading_obj.get('label') or '').strip()
+                feedback = str(grading_obj.get('feedback') or '').strip()
+
+            earned_points += max(0, min(pts, got))
+
+            per_question.append(
+                {
+                    'id': qid,
+                    'type': qtype,
+                    'question': qtext,
+                    'student_answer': student_answer,
+                    'score_points': got,
+                    'max_points': pts,
+                    'label': label,
+                    'feedback': feedback,
+                }
+            )
+
+        if total_points <= 0:
+            return Response({'detail': 'سوالی برای نمره‌دهی پیدا نشد.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        score_0_100 = int(round((earned_points / total_points) * 100))
+        score_0_100 = max(0, min(100, score_0_100))
+        passed = score_0_100 >= passing_score
+
+        exam.last_score_0_100 = score_0_100
+        exam.last_passed = passed
+        exam.save(update_fields=['last_score_0_100', 'last_passed', 'updated_at'])
+
+        attempt_result = {
+            'per_question': per_question,
+            'passing_score': passing_score,
+        }
+        ClassFinalExamAttempt.objects.create(
+            exam=exam,
+            answers=answers,
+            result=attempt_result,
+            score_0_100=score_0_100,
+            passed=passed,
+        )
+
+        payload = {
+            'score_0_100': score_0_100,
+            'passed': passed,
+            'passing_score': passing_score,
+            'per_question': per_question,
+            'course_progress': _compute_student_course_progress(session=session, student=user),
+        }
+        return Response(StudentFinalExamSubmitResponseSerializer(payload).data, status=status.HTTP_200_OK)
+
+
+class InviteCodeVerifyView(APIView):
+    permission_classes = [AllowAny]
+
+    @extend_schema(
+        tags=['Classes'],
+        summary='Verify invite code (public)',
+        operation_id='invite_code_verify',
+        request=InviteCodeVerifySerializer,
+        responses={200: InviteCodeVerifyResponseSerializer},
+    )
+    def post(self, request):
+        serializer = InviteCodeVerifySerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        code = serializer.validated_data['code']
+
+        inv = (
+            ClassInvitation.objects.filter(invite_code=code)
+            .select_related('session')
+            .first()
+        )
+        if inv is None or inv.session is None:
+            return Response({'valid': False}, status=status.HTTP_200_OK)
+        if not inv.session.is_published:
+            return Response({'valid': False}, status=status.HTTP_200_OK)
+
+        return Response(
+            {
+                'valid': True,
+                'session_id': inv.session_id,
+                'title': inv.session.title,
+            },
+            status=status.HTTP_200_OK,
+        )

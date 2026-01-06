@@ -19,6 +19,7 @@ interface ClassStudentsPreviewProps {
   students: ClassStudent[];
   maxDisplay?: number;
   basePath?: string;
+  onAddClick?: () => void;
 }
 
 const statusColors: Record<string, string> = {
@@ -33,7 +34,7 @@ const statusLabels: Record<string, string> = {
   completed: 'تکمیل شده',
 };
 
-export function ClassStudentsPreview({ classId, students, maxDisplay = 5, basePath = '/admin' }: ClassStudentsPreviewProps) {
+export function ClassStudentsPreview({ classId, students, maxDisplay = 5, basePath = '/admin', onAddClick }: ClassStudentsPreviewProps) {
   const displayedStudents = students.slice(0, maxDisplay);
   const remainingCount = students.length - maxDisplay;
 
@@ -53,7 +54,7 @@ export function ClassStudentsPreview({ classId, students, maxDisplay = 5, basePa
               مشاهده همه
             </Link>
           </Button>
-          <Button size="sm">
+          <Button size="sm" type="button" onClick={onAddClick} disabled={!onAddClick}>
             <UserPlus className="h-4 w-4 ml-2" />
             افزودن
           </Button>

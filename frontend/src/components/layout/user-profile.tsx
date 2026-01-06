@@ -7,6 +7,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { useTheme } from 'next-themes';
 import { useState, useEffect } from 'react';
 import { usePathname } from 'next/navigation';
+import { getStoredUser } from '@/services/auth-service';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -27,15 +28,12 @@ interface UserProfileProps {
 }
 
 export function UserProfile({ 
-  user = {
-    name: 'علیرضا رضایی',
-    email: 'ali.rezaei@example.com',
-    avatar: 'https://picsum.photos/seed/user/100/100'
-  },
+  user,
   isAdmin = false
 }: UserProfileProps) {
   const { theme, setTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
+  const [stored, setStored] = useState<ReturnType<typeof getStoredUser> | null>(null);
   const pathname = usePathname();
   const isTeacher = pathname.startsWith('/teacher');
   const isStudent = pathname.startsWith('/home') || pathname.startsWith('/classes') || pathname.startsWith('/exam') || pathname.startsWith('/tickets') || pathname.startsWith('/profile');
@@ -43,7 +41,23 @@ export function UserProfile({
 
   useEffect(() => {
     setMounted(true);
+    setStored(getStoredUser());
   }, []);
+
+  const displayName = (() => {
+    if (user?.name) return user.name;
+    const first = String(stored?.first_name ?? '').trim();
+    const last = String(stored?.last_name ?? '').trim();
+    const combined = `${first} ${last}`.trim();
+    return combined || String(stored?.username ?? '').trim() || 'کاربر';
+  })();
+
+  const displayEmail = (() => {
+    if (user?.email) return user.email;
+    return String(stored?.email ?? '').trim() || '';
+  })();
+
+  const displayAvatar = user?.avatar ?? (stored?.avatar ?? undefined) ?? undefined;
 
   const profileHref = isTeacher ? '/teacher/settings' : '/profile';
   const ticketsHref = isTeacher ? '/teacher/tickets' : '/tickets';
@@ -55,19 +69,19 @@ export function UserProfile({
         <Button variant="ghost" className="relative h-10 w-10 rounded-full ring-offset-background transition-all hover:ring-2 hover:ring-primary/20">
           <Avatar className="h-10 w-10 border border-border/50">
             <AvatarImage
-              src={user.avatar}
-              alt={user.name}
+              src={displayAvatar}
+              alt={displayName}
             />
-            <AvatarFallback className="bg-primary/10 text-primary font-bold">{user.name.substring(0, 2)}</AvatarFallback>
+            <AvatarFallback className="bg-primary/10 text-primary font-bold">{displayName.substring(0, 2)}</AvatarFallback>
           </Avatar>
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent className="w-64 p-2 rounded-2xl shadow-2xl border-border/50" align="start" forceMount>
         <DropdownMenuLabel className="font-normal p-3">
           <div className="flex flex-col space-y-1 text-start">
-            <p className="text-sm font-black leading-none text-foreground">{user.name}</p>
+            <p className="text-sm font-black leading-none text-foreground">{displayName}</p>
             <p className="text-xs leading-none text-muted-foreground font-medium">
-              {user.email}
+              {displayEmail}
             </p>
           </div>
         </DropdownMenuLabel>

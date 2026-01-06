@@ -11,6 +11,7 @@ import {
   ClassStatsSidebar,
   ClassAnnouncementsCard,
 } from '@/components/teacher/class-detail';
+import { StudentInviteSection } from '@/components/teacher/create-class/student-invite-section';
 import { Card } from '@/components/ui/card';
 import { MarkdownWithMath } from '@/components/content/markdown-with-math';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
@@ -33,6 +34,7 @@ export default function TeacherClassDetailPage({ params }: PageProps) {
   const [sessionDetail, setSessionDetail] = useState<ClassCreationSessionDetail | null>(null);
   const [prereqs, setPrereqs] = useState<ClassPrerequisite[] | null>(null);
   const pollTimer = useRef<number | null>(null);
+  const [isInviteExpanded, setIsInviteExpanded] = useState(false);
 
   useEffect(() => {
     if (!detail) return;
@@ -57,6 +59,13 @@ export default function TeacherClassDetailPage({ params }: PageProps) {
         updated_at: detail.lastActivity ?? '',
       }
     );
+
+    // Always fetch once to load fields not present in the detail hook (e.g., recap_markdown).
+    void getClassCreationSessionDetail(sessionId)
+      .then((next) => setSessionDetail(next))
+      .catch(() => {
+        // ignore transient failures
+      });
 
     const shouldPoll = ['transcribing', 'structuring', 'prereq_extracting', 'prereq_teaching', 'recapping'].includes(detail.pipelineStatus ?? '');
     if (!shouldPoll) return;
@@ -240,7 +249,17 @@ export default function TeacherClassDetailPage({ params }: PageProps) {
 
           <ClassInfoCard description={detail.description} tags={detail.tags} objectives={detail.objectives} />
           <ClassChaptersCard classId={classId} chapters={detail.chapters || []} basePath="/teacher" />
-          <ClassStudentsPreview classId={classId} students={students} basePath="/teacher" />
+          <ClassStudentsPreview
+            classId={classId}
+            students={students}
+            basePath="/teacher"
+            onAddClick={() => setIsInviteExpanded(true)}
+          />
+          <StudentInviteSection
+            isExpanded={isInviteExpanded}
+            onToggle={() => setIsInviteExpanded((p) => !p)}
+            sessionId={Number(detail.id)}
+          />
           <ClassAnnouncementsCard />
         </div>
 

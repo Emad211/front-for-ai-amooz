@@ -65,11 +65,15 @@ def send_publish_sms_for_session(session_id: int) -> None:
 
     session = ClassCreationSession.objects.filter(id=session_id).prefetch_related('invites').first()
     if session is None:
+        logger.info('Publish SMS skipped: session not found session=%s', session_id)
         return
 
     invites = list(session.invites.all())
     if not invites:
+        logger.info('Publish SMS skipped: no invites session=%s', session_id)
         return
+
+    logger.info('Publish SMS starting: invites=%s session=%s', len(invites), session_id)
 
     sms_requests: list[dict] = []
     for inv in invites:

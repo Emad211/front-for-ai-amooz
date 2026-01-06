@@ -39,7 +39,8 @@ export function useDashboardData(service: DashboardDataService = DashboardServic
       setProfile(profileData);
     } catch (err) {
       console.error(err);
-      if (mountedRef.current) setError('خطا در دریافت اطلاعات داشبورد');
+      const msg = err instanceof Error ? err.message : 'خطا در دریافت اطلاعات داشبورد';
+      if (mountedRef.current) setError(msg);
     } finally {
       if (mountedRef.current) setIsLoading(false);
     }

@@ -25,7 +25,8 @@ export function useCourses(service: CoursesService = DashboardService) {
       if (mountedRef.current) setCourses(data);
     } catch (err) {
       console.error(err);
-      if (mountedRef.current) setError('خطا در دریافت اطلاعات کلاس‌ها');
+      const msg = err instanceof Error ? err.message : 'خطا در دریافت اطلاعات کلاس‌ها';
+      if (mountedRef.current) setError(msg);
     } finally {
       if (mountedRef.current) setIsLoading(false);
     }

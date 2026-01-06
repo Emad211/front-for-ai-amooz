@@ -26,7 +26,7 @@ class ValidationErrorResponseSerializer(serializers.Serializer):
 
 
 class TokenObtainPairRequestSerializer(serializers.Serializer):
-    username = serializers.CharField(help_text="Username")
+    username = serializers.CharField(help_text="Username or email")
     password = serializers.CharField(help_text="Password")
 
 

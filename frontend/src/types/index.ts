@@ -55,12 +55,25 @@ export interface Lesson {
   content?: string;
   formulas?: { label: string; formula: string }[];
   tips?: string[];
+
+  // Used for chapter-end quiz pseudo-lessons in Learn UI.
+  chapterId?: string;
+
+  // Used for course final exam pseudo-lesson in Learn UI.
+  finalExam?: boolean;
 }
 
 export interface Chapter {
   id: string;
   title: string;
   lessons: Lesson[];
+}
+
+export interface Prerequisite {
+  id: number;
+  order: number;
+  name: string;
+  teaching_text: string;
 }
 
 export interface CourseContent {
@@ -70,6 +83,9 @@ export interface CourseContent {
   progress: number;
   level: string;
   duration: string;
+  recapMarkdown?: string;
+  learningObjectives?: string[];
+  prerequisites?: Prerequisite[];
   chapters: Chapter[];
 }
 

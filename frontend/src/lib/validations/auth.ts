@@ -19,6 +19,19 @@ export const joinCodeSchema = z.object({
   }).max(20, {
     message: "کد دعوت نمی‌تواند بیشتر از ۲۰ کاراکتر باشد",
   }),
+  phone: z
+    .string()
+    .min(10, { message: 'شماره تماس معتبر نیست' })
+    .max(32, { message: 'شماره تماس معتبر نیست' })
+    .transform((raw) => {
+      const digits = String(raw ?? '').replace(/\D/g, '');
+      if (digits.startsWith('98') && digits.length === 12) return `0${digits.slice(2)}`;
+      if (digits.length === 10 && digits.startsWith('9')) return `0${digits}`;
+      return digits;
+    })
+    .refine((digits) => digits.startsWith('09') && digits.length === 11, {
+      message: 'شماره تماس معتبر نیست',
+    }),
 });
 
 export const teacherSignupSchema = z.object({

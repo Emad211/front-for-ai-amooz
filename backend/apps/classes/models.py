@@ -27,6 +27,10 @@ class ClassCreationSession(models.Model):
     title = models.CharField(max_length=255)
     description = models.TextField(blank=True)
 
+    # Course metadata set by teacher (shown in student Learn header).
+    level = models.CharField(max_length=64, blank=True, default='')
+    duration = models.CharField(max_length=64, blank=True, default='')
+
     source_file = models.FileField(upload_to='class_creation/source/')
     source_mime_type = models.CharField(max_length=127, blank=True)
     source_original_name = models.CharField(max_length=255, blank=True)
@@ -172,3 +176,98 @@ class ClassPrerequisite(models.Model):
                 name='uniq_class_prereq_session_name',
             ),
         ]
+
+
+class ClassSectionQuiz(models.Model):
+    session = models.ForeignKey(
+        ClassCreationSession,
+        on_delete=models.CASCADE,
+        related_name='section_quizzes',
+    )
+    section = models.ForeignKey(
+        ClassSection,
+        on_delete=models.CASCADE,
+        related_name='quizzes',
+    )
+    student = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='class_section_quizzes',
+    )
+
+    questions = models.JSONField(default=dict, blank=True)
+
+    last_score_0_100 = models.PositiveIntegerField(null=True, blank=True)
+    last_passed = models.BooleanField(null=True, blank=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            UniqueConstraint(
+                fields=['session', 'section', 'student'],
+                name='uniq_class_section_quiz_session_section_student',
+            ),
+        ]
+
+
+class ClassSectionQuizAttempt(models.Model):
+    quiz = models.ForeignKey(
+        ClassSectionQuiz,
+        on_delete=models.CASCADE,
+        related_name='attempts',
+    )
+
+    answers = models.JSONField(default=dict, blank=True)
+    result = models.JSONField(default=dict, blank=True)
+
+    score_0_100 = models.PositiveIntegerField()
+    passed = models.BooleanField(default=False)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+
+
+class ClassFinalExam(models.Model):
+    session = models.ForeignKey(
+        ClassCreationSession,
+        on_delete=models.CASCADE,
+        related_name='final_exams',
+    )
+    student = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='class_final_exams',
+    )
+
+    exam = models.JSONField(default=dict, blank=True)
+
+    last_score_0_100 = models.PositiveIntegerField(null=True, blank=True)
+    last_passed = models.BooleanField(null=True, blank=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            UniqueConstraint(
+                fields=['session', 'student'],
+                name='uniq_class_final_exam_session_student',
+            ),
+        ]
+
+
+class ClassFinalExamAttempt(models.Model):
+    exam = models.ForeignKey(
+        ClassFinalExam,
+        on_delete=models.CASCADE,
+        related_name='attempts',
+    )
+
+    answers = models.JSONField(default=dict, blank=True)
+    result = models.JSONField(default=dict, blank=True)
+
+    score_0_100 = models.PositiveIntegerField()
+    passed = models.BooleanField(default=False)
+
+    created_at = models.DateTimeField(auto_now_add=True)

@@ -1,4 +1,8 @@
-from rest_framework.permissions import IsAuthenticated
+import secrets
+
+from django.contrib.auth import get_user_model
+
+from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.views import APIView
@@ -7,14 +11,18 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from drf_spectacular.utils import extend_schema, OpenApiResponse, OpenApiExample
 
 from apps.accounts.serializers import MeSerializer
+from apps.accounts.models import StudentProfile
+from apps.classes.models import ClassInvitation
 
-from .serializers import RegisterSerializer, LogoutSerializer, PasswordChangeSerializer
+from .serializers import RegisterSerializer, LogoutSerializer, PasswordChangeSerializer, InviteCodeLoginSerializer
 from .openapi import (
     RegisterResponseSerializer,
     ErrorDetailSerializer,
     ValidationErrorResponseSerializer,
     PasswordChangeResponseSerializer,
 )
+
+User = get_user_model()
 
 
 class RegisterView(APIView):
@@ -148,3 +156,65 @@ class PasswordChangeView(APIView):
         user.set_password(serializer.validated_data['new_password'])
         user.save()
         return Response({'detail': 'Password updated successfully.'}, status=status.HTTP_200_OK)
+
+
+class InviteCodeLoginView(APIView):
+    authentication_classes = []
+    permission_classes = [AllowAny]
+
+    @extend_schema(
+        summary='Login via invite code (student)',
+        description='Logs in (or creates) a student user via invite code + phone and returns JWT tokens.',
+        request=InviteCodeLoginSerializer,
+        responses={200: RegisterResponseSerializer, 400: OpenApiResponse(response=ErrorDetailSerializer)},
+        tags=['Authentication'],
+    )
+    def post(self, request):
+        serializer = InviteCodeLoginSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        code = serializer.validated_data['code']
+        phone = serializer.validated_data['phone']
+
+        inv = (
+            ClassInvitation.objects.filter(invite_code=code, phone=phone)
+            .select_related('session')
+            .first()
+        )
+        if inv is None or inv.session is None or not inv.session.is_published:
+            return Response({'detail': 'کد دعوت یا شماره تماس معتبر نیست.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        qs = User.objects.filter(phone=phone)
+        if qs.count() > 1:
+            return Response({'detail': 'برای این شماره بیش از یک حساب وجود دارد.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        user = qs.first()
+        if user is None:
+            base_username = f"student_{phone}"
+            username = base_username
+            # Guarantee uniqueness even if another user already uses this username.
+            if User.objects.filter(username=username).exists():
+                username = f"{base_username}_{secrets.token_hex(3)}"
+
+            user = User(username=username, role=User.Role.STUDENT, phone=phone)
+            user.set_unusable_password()
+            user.save()
+            StudentProfile.objects.get_or_create(user=user)
+        else:
+            if getattr(user, 'role', None) != User.Role.STUDENT:
+                return Response({'detail': 'فقط دانش آموز می تواند با کد دعوت وارد شود.'}, status=status.HTTP_403_FORBIDDEN)
+            if (getattr(user, 'phone', None) or '').strip() != phone:
+                user.phone = phone
+                user.save(update_fields=['phone'])
+            StudentProfile.objects.get_or_create(user=user)
+
+        refresh = RefreshToken.for_user(user)
+        return Response(
+            {
+                'user': MeSerializer(user).data,
+                'tokens': {
+                    'access': str(refresh.access_token),
+                    'refresh': str(refresh),
+                },
+            },
+            status=status.HTTP_200_OK,
+        )
