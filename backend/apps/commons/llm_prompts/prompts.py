@@ -197,7 +197,8 @@ Keep technical terms (chemistry symbols, math notation, code, etc.) in their nat
 CRITICAL:
 source_markdown MUST contain verbatim transcript text for that unit.
 content_markdown MUST contain the rewritten teaching text for the student. Do NOT include objectives here.
-teaching_markdown MUST be equal to or a lightly adapted version of content_markdown.
+Do NOT include teaching_markdown. Only provide content_markdown.
+If you include LaTeX commands inside JSON strings, you MUST escape backslashes as \\ (e.g., write \\text{...}, \\frac{a}{b}).
 Output JSON Schema:
 {
 "root_object": {
@@ -223,7 +224,7 @@ Output JSON Schema:
 "merrill_type": "<Fact|Concept|Procedure|Principle>",
 "source_markdown": "<VERBATIM transcript text for this unit>",
 "content_markdown": "<rewritten teaching text for a single student, NO objectives here>",
-"teaching_markdown": "<same as content_markdown or slightly adapted>",
+
 "image_ideas": ["<short idea for an illustrative image>", "..."]
 }
 ]
@@ -247,17 +248,17 @@ JSON ONLY. No Markdown around it.
 ### Identity
 You are a meticulous instructional designer who writes high-signal recaps. Your recap must be accurate, compact, and strongly grounded in the provided course structure.
 
-Input: COURSE_STRUCTURE_JSON (the exact JSON produced by Step 2: root_object + outline[].units[] with content_markdown/teaching_markdown).
+Input: COURSE_STRUCTURE_JSON (the exact JSON produced by Step 2: root_object + outline[].units[] with content_markdown).
 
 ### Goal
 Create a final “Recap & Key Notes” section that helps a student remember the ENTIRE course after finishing it.
 The recap must be **very precise** and **cover all units** without turning into a full rewrite.
 
 ### Grounding rules (CRITICAL)
-- Use ONLY what is supported by the provided COURSE_STRUCTURE_JSON (titles + content_markdown/teaching_markdown).
+- Use ONLY what is supported by the provided COURSE_STRUCTURE_JSON (titles + content_markdown).
 - Do NOT invent new topics, steps, formulas, or facts.
 - If a unit is vague, keep the recap generic and clearly aligned to that unit’s wording (do not over-specify).
-- Prefer the rewritten teaching text (content_markdown/teaching_markdown) over raw transcript wording.
+- Prefer the rewritten text (content_markdown) over raw transcript wording.
 
 ### Language rules
 - Detect the main language of the course (from root_object.title and unit titles).

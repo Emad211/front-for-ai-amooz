@@ -122,8 +122,8 @@ class TestClassCreationStep3AndStep4Prerequisites:
         assert session.status == ClassCreationSession.Status.PREREQ_TAUGHT
 
         rows = list(ClassPrerequisite.objects.filter(session=session).order_by('order'))
-        assert rows[0].teaching_markdown.startswith('# P1')
-        assert rows[1].teaching_markdown.startswith('# P2')
+        assert rows[0].teaching_text.startswith('# P1')
+        assert rows[1].teaching_text.startswith('# P2')
 
 
 @pytest.mark.django_db
@@ -180,4 +180,5 @@ class TestNormalizedStructureSync:
         unit = ClassUnit.objects.get(session=session)
         assert unit.title == 'U1'
         assert unit.content_markdown == 'c1'
-        assert unit.teaching_markdown == 't1'
+        # teaching_markdown is ignored/removed; only content_markdown is persisted
+        assert unit.content_markdown == 'c1'

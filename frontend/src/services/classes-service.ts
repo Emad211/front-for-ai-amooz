@@ -50,6 +50,13 @@ export type ClassInvite = {
   created_at: string;
 };
 
+export type ClassPrerequisite = {
+  id: number;
+  order: number;
+  name: string;
+  teaching_text: string;
+};
+
 const RAW_API_URL = (process.env.NEXT_PUBLIC_API_URL ?? '').replace(/\/$/, '');
 
 // We want all requests to target the Django API root: `${BACKEND}/api`.
@@ -168,6 +175,49 @@ export async function deleteClassInvite(sessionId: number, inviteId: number): Pr
     headers: {
       Authorization: `Bearer ${getAccessToken()}`,
     },
+  });
+}
+
+export async function listClassPrerequisites(sessionId: number): Promise<ClassPrerequisite[]> {
+  if (!RAW_API_URL) {
+    throw new Error('NEXT_PUBLIC_API_URL تنظیم نشده است.');
+  }
+  const url = `${API_URL}/classes/creation-sessions/${sessionId}/prerequisites/`;
+  return requestJson<ClassPrerequisite[]>(url, {
+    method: 'GET',
+    headers: {
+      Authorization: `Bearer ${getAccessToken()}`,
+    },
+  });
+}
+
+export async function runStep3Prerequisites(sessionId: number): Promise<void> {
+  if (!RAW_API_URL) {
+    throw new Error('NEXT_PUBLIC_API_URL تنظیم نشده است.');
+  }
+  const url = `${API_URL}/classes/creation-sessions/step-3/`;
+  await requestJson(url, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${getAccessToken()}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ session_id: sessionId }),
+  });
+}
+
+export async function runStep4PrerequisiteTeaching(sessionId: number): Promise<void> {
+  if (!RAW_API_URL) {
+    throw new Error('NEXT_PUBLIC_API_URL تنظیم نشده است.');
+  }
+  const url = `${API_URL}/classes/creation-sessions/step-4/`;
+  await requestJson(url, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${getAccessToken()}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ session_id: sessionId }),
   });
 }
 

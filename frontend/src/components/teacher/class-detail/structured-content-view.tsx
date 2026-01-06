@@ -27,7 +27,9 @@ export function StructuredContentView({ structureJson }: StructuredContentViewPr
         {objectives.length ? (
           <ul className="list-disc pr-6 space-y-1 text-sm">
             {objectives.map((obj, i) => (
-              <li key={`${i}-${obj}`}>{obj}</li>
+              <li key={`${i}-${obj}`}>
+                <MarkdownWithMath markdown={String(obj)} />
+              </li>
             ))}
           </ul>
         ) : (
@@ -43,11 +45,13 @@ export function StructuredContentView({ structureJson }: StructuredContentViewPr
               const units = Array.isArray(section?.units) ? section.units : [];
               return (
                 <li key={String(section?.id || sectionIndex)} className="space-y-1">
-                  <div>{String(section?.title || `فصل ${sectionIndex + 1}`)}</div>
+                  <MarkdownWithMath markdown={String(section?.title || `فصل ${sectionIndex + 1}`)} />
                   {units.length ? (
                     <ol className="list-decimal pr-6 space-y-1 text-sm">
                       {units.map((unit, unitIndex) => (
-                        <li key={String(unit?.id || unitIndex)}>{String(unit?.title || `درس ${unitIndex + 1}`)}</li>
+                        <li key={String(unit?.id || unitIndex)}>
+                          <MarkdownWithMath markdown={String(unit?.title || `درس ${unitIndex + 1}`)} />
+                        </li>
                       ))}
                     </ol>
                   ) : (
@@ -72,21 +76,21 @@ export function StructuredContentView({ structureJson }: StructuredContentViewPr
 
               return (
                 <div key={String(section?.id || sectionIndex)} className="space-y-3">
-                  <div className="text-base font-black">{sectionIndex + 1}. {sectionTitle}</div>
+                  <div className="text-base font-black">
+                    <MarkdownWithMath markdown={`${sectionIndex + 1}. ${sectionTitle}`} />
+                  </div>
 
                   {units.length ? (
                     <div className="space-y-4">
                       {units.map((unit, unitIndex) => {
                         const unitTitle = String(unit?.title || `درس ${unitIndex + 1}`);
                         const content = String(unit?.content_markdown || '').trim();
-                        const teaching = String(unit?.teaching_markdown || '').trim();
                         const combined = [
                           content ? `# ${unitTitle}\n\n${content}` : `# ${unitTitle}\n\n(متن این زیرسرفصل هنوز ثبت نشده است.)`,
-                          teaching ? `\n\n## راهنمای تدریس\n\n${teaching}` : '',
                         ].join('');
 
                         return (
-                          <div key={String(unit?.id || unitIndex)} className="rounded-2xl border border-border/60 bg-background/80 p-4">
+                          <div key={String(unit?.id || unitIndex)} className="rounded-2xl border border-border/60 bg-background/80 p-4 max-h-[70vh] overflow-y-auto">
                             <MarkdownWithMath markdown={combined} className="space-y-2" />
                           </div>
                         );

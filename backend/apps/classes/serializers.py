@@ -1,6 +1,8 @@
 from rest_framework import serializers
 import json
 
+from drf_spectacular.utils import extend_schema_field
+
 from .models import ClassCreationSession, ClassInvitation, ClassPrerequisite
 
 
@@ -61,12 +63,13 @@ class Step3PrerequisitesRequestSerializer(serializers.Serializer):
 class PrerequisiteSerializer(serializers.ModelSerializer):
     class Meta:
         model = ClassPrerequisite
-        fields = ['id', 'order', 'name', 'teaching_markdown']
+        fields = ['id', 'order', 'name', 'teaching_text']
 
 
 class Step3PrerequisitesResponseSerializer(serializers.ModelSerializer):
     prerequisites = serializers.SerializerMethodField()
 
+    @extend_schema_field(PrerequisiteSerializer(many=True))
     def get_prerequisites(self, obj: ClassCreationSession):
         qs = obj.prerequisites.order_by('order')
         return PrerequisiteSerializer(qs, many=True).data
@@ -84,6 +87,7 @@ class Step4PrerequisiteTeachingRequestSerializer(serializers.Serializer):
 class Step4PrerequisiteTeachingResponseSerializer(serializers.ModelSerializer):
     prerequisites = serializers.SerializerMethodField()
 
+    @extend_schema_field(PrerequisiteSerializer(many=True))
     def get_prerequisites(self, obj: ClassCreationSession):
         qs = obj.prerequisites.order_by('order')
         return PrerequisiteSerializer(qs, many=True).data

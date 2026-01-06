@@ -11,7 +11,14 @@ import {
   ClassChaptersEditor,
 } from '@/components/teacher/class-edit';
 import type { ClassChapter, ClassDetail } from '@/types';
-import { applyChaptersToCourseStructure, parseCourseStructure } from '@/lib/classes/course-structure';
+import {
+  applyChaptersToCourseStructure,
+  applyObjectivesToCourseStructure,
+  courseStructureToObjectives,
+  parseCourseStructure,
+} from '@/lib/classes/course-structure';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 
 interface PageProps {
   params: Promise<{ classId: string }>;
@@ -22,6 +29,7 @@ export default function TeacherClassEditPage({ params }: PageProps) {
   const { detail, isLoading, error, reload } = useTeacherClassDetail(classId);
   const { updateClass, isLoading: isSaving } = useTeacherClassActions(classId);
   const [chapters, setChapters] = useState<ClassChapter[]>([]);
+  const [objectives, setObjectives] = useState<string[]>([]);
 
   useEffect(() => {
     if (detail?.chapters && chapters.length === 0) {
@@ -29,9 +37,16 @@ export default function TeacherClassEditPage({ params }: PageProps) {
     }
   }, [detail, chapters.length]);
 
+  useEffect(() => {
+    if (!detail) return;
+    const structure = parseCourseStructure(detail.structureJson ?? '');
+    setObjectives(courseStructureToObjectives(structure));
+  }, [detail?.structureJson]);
+
   const handleSave = async (data: Partial<ClassDetail>) => {
     const baseStructure = parseCourseStructure(detail?.structureJson ?? '');
-    const nextStructure = applyChaptersToCourseStructure(baseStructure, chapters);
+    const withObjectives = applyObjectivesToCourseStructure(baseStructure, objectives);
+    const nextStructure = applyChaptersToCourseStructure(withObjectives, chapters);
     const nextStructureJson = JSON.stringify(nextStructure, null, 2);
 
     const ok = await updateClass({
@@ -68,6 +83,47 @@ export default function TeacherClassEditPage({ params }: PageProps) {
 
       <div className="space-y-6">
         <ClassEditForm classDetail={detail} onSave={handleSave} isSaving={isSaving} />
+
+        <div className="rounded-3xl border border-border/60 p-4 md:p-6 space-y-3">
+          <div className="flex items-center justify-between gap-2">
+            <div className="text-base font-black">اهداف یادگیری</div>
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={() => setObjectives((prev) => [...prev, ''])}
+            >
+              افزودن هدف
+            </Button>
+          </div>
+
+          {objectives.length === 0 ? (
+            <div className="text-xs text-muted-foreground">—</div>
+          ) : (
+            <div className="space-y-2">
+              {objectives.map((obj, idx) => (
+                <div key={idx} className="flex items-center gap-2">
+                  <Input
+                    value={obj}
+                    onChange={(e) =>
+                      setObjectives((prev) => prev.map((x, i) => (i === idx ? e.target.value : x)))
+                    }
+                    className="text-start"
+                    placeholder={`هدف ${idx + 1}`}
+                  />
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setObjectives((prev) => prev.filter((_, i) => i !== idx))}
+                  >
+                    حذف
+                  </Button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
 
         <ClassChaptersEditor
           chapters={chapters.length > 0 ? chapters : detail.chapters || []}

@@ -22,20 +22,25 @@ function escapeHtml(text: string): string {
 function formatMarkdown(md: string): string {
 	if (!md) return '';
 
-	let html = String(md);
+	let html = String(md)
+		// Repair common LaTeX commands that break when embedded in JSON strings.
+		// Example: "\text" can become "<TAB>ext" after JSON parsing.
+		.replaceAll('\t', '\\t')
+		.replaceAll('\b', '\\b')
+		.replaceAll('\f', '\\f');
 
 	// ============ STEP 1: Protect LaTeX from processing ============
 	const latexBlocks: string[] = [];
 	const latexInlines: string[] = [];
 
 	// Protect block LaTeX $$...$$
-	html = html.replace(/\$\$([^$]+)\$\$/g, (_match, content) => {
+	html = html.replace(/\$\$([\s\S]*?)\$\$/g, (_match, content) => {
 		latexBlocks.push(String(content));
 		return `%%LATEXBLOCK${latexBlocks.length - 1}%%`;
 	});
 
 	// Protect inline LaTeX $...$
-	html = html.replace(/\$([^$]+)\$/g, (_match, content) => {
+	html = html.replace(/\$([^\n$]+?)\$/g, (_match, content) => {
 		latexInlines.push(String(content));
 		return `%%LATEXINLINE${latexInlines.length - 1}%%`;
 	});
@@ -147,7 +152,8 @@ export function MarkdownWithMath({ markdown, className }: MarkdownWithMathProps)
 	return (
 		<div
 			ref={containerRef}
-			className={className}
+			dir="rtl"
+			className={['text-right leading-7', className].filter(Boolean).join(' ')}
 			// eslint-disable-next-line react/no-danger
 			dangerouslySetInnerHTML={{ __html: html }}
 		/>

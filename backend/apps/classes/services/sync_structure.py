@@ -96,7 +96,6 @@ def sync_structure_from_session(*, session: ClassCreationSession) -> None:
                     'merrill_type': _safe_str(unit.get('merrill_type')),
                     'source_markdown': _safe_str(unit.get('source_markdown')),
                     'content_markdown': _safe_str(unit.get('content_markdown')),
-                    'teaching_markdown': _safe_str(unit.get('teaching_markdown')),
                     'image_ideas': unit.get('image_ideas') if isinstance(unit.get('image_ideas'), list) else [],
                 },
             )

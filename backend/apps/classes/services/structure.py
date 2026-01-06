@@ -66,7 +66,9 @@ def structure_transcript_markdown(*, transcript_markdown: str) -> tuple[dict[str
         try:
             resp = gemini_client.models.generate_content(model=model, contents=contents)
             txt = _extract_text(resp)
-            return extract_json_object(txt), 'gemini', model
+            obj = extract_json_object(txt)
+            obj = _restore_latex_escapes(obj)
+            return obj, 'gemini', model
         except Exception as exc:
             last_error = exc
 
@@ -74,7 +76,9 @@ def structure_transcript_markdown(*, transcript_markdown: str) -> tuple[dict[str
         try:
             resp = avalai_client.models.generate_content(model=model, contents=contents)
             txt = _extract_text(resp)
-            return extract_json_object(txt), 'avalai', model
+            obj = extract_json_object(txt)
+            obj = _restore_latex_escapes(obj)
+            return obj, 'avalai', model
         except Exception as exc:
             last_error = exc
 
@@ -82,3 +86,25 @@ def structure_transcript_markdown(*, transcript_markdown: str) -> tuple[dict[str
         raise last_error
 
     raise RuntimeError('No LLM credentials configured. Set GEMINI_API_KEY and/or AVALAI_API_KEY.')
+
+
+def _restore_latex_escapes(value: Any) -> Any:
+    """Repair LaTeX commands inside JSON strings.
+
+    LLMs often emit JSON strings containing LaTeX like "\text{...}".
+    In JSON, sequences like \t, \b, \f are parsed into control characters
+    (TAB, BACKSPACE, FORMFEED), causing "\text" -> "<TAB>ext".
+    This traverses the parsed object and restores those characters back into
+    backslash sequences so KaTeX can render properly.
+    """
+
+    if isinstance(value, str):
+        return value.replace('\t', '\\t').replace('\b', '\\b').replace('\f', '\\f')
+
+    if isinstance(value, list):
+        return [_restore_latex_escapes(v) for v in value]
+
+    if isinstance(value, dict):
+        return {k: _restore_latex_escapes(v) for k, v in value.items()}
+
+    return value

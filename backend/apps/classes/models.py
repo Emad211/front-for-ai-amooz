@@ -136,7 +136,6 @@ class ClassUnit(models.Model):
     merrill_type = models.CharField(max_length=64, blank=True)
     source_markdown = models.TextField(blank=True)
     content_markdown = models.TextField(blank=True)
-    teaching_markdown = models.TextField(blank=True)
     image_ideas = models.JSONField(default=list, blank=True)
 
     class Meta:
@@ -156,7 +155,7 @@ class ClassPrerequisite(models.Model):
     )
     order = models.PositiveIntegerField()
     name = models.CharField(max_length=255)
-    teaching_markdown = models.TextField(blank=True)
+    teaching_text = models.TextField(blank=True)
 
     class Meta:
         constraints = [

@@ -15,7 +15,6 @@ export type CourseStructureUnit = {
   merrill_type?: 'Fact' | 'Concept' | 'Procedure' | 'Principle' | string;
   source_markdown?: string;
   content_markdown?: string;
-  teaching_markdown?: string;
   image_ideas?: string[];
 };
 
@@ -78,7 +77,6 @@ export function courseStructureToChapters(structure: CourseStructure | null, opt
           order: unitIndex + 1,
           isPublished,
           contentMarkdown: (unit?.content_markdown || '').toString(),
-          teachingMarkdown: (unit?.teaching_markdown || '').toString(),
         };
       }),
     };
@@ -145,7 +143,6 @@ export function applyChaptersToCourseStructure(
         merrill_type: existingUnit?.merrill_type || 'Concept',
         source_markdown: existingUnit?.source_markdown || '',
         content_markdown: (lesson.contentMarkdown ?? existingUnit?.content_markdown ?? '').toString(),
-        teaching_markdown: (lesson.teachingMarkdown ?? existingUnit?.teaching_markdown ?? '').toString(),
         image_ideas: existingUnit?.image_ideas || [],
       };
     });
@@ -159,5 +156,16 @@ export function applyChaptersToCourseStructure(
   });
 
   base.outline = nextOutline;
+  return base;
+}
+
+export function applyObjectivesToCourseStructure(original: CourseStructure | null, objectives: string[]): CourseStructure {
+  const base: CourseStructure = original ? JSON.parse(JSON.stringify(original)) : { root_object: {}, outline: [] };
+  if (!base.root_object) base.root_object = {};
+
+  base.root_object.what_you_will_learn = (objectives || [])
+    .map((x) => String(x).trim())
+    .filter(Boolean);
+
   return base;
 }

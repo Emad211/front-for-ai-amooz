@@ -169,8 +169,8 @@ def _process_step4_prereq_teaching(session_id: int, prerequisite_name: str | Non
         model_name: str = ''
         for prereq in qs:
             teaching, provider, model_name = generate_prerequisite_teaching(prerequisite_name=prereq.name)
-            prereq.teaching_markdown = teaching
-            prereq.save(update_fields=['teaching_markdown'])
+            prereq.teaching_text = teaching
+            prereq.save(update_fields=['teaching_text'])
 
         if provider:
             session.llm_provider = provider

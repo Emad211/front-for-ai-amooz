@@ -8,13 +8,17 @@ import { ClassInfoForm } from './class-info-form';
 import { FileUploadSection } from './file-upload-section';
 import { StudentInviteSection } from './student-invite-section';
 import { Card } from '@/components/ui/card';
-import { Textarea } from '@/components/ui/textarea';
+import { MarkdownWithMath } from '@/components/content/markdown-with-math';
 import {
   getClassCreationSessionDetail,
   type ClassCreationSessionDetail,
+  listClassPrerequisites,
   publishClassCreationSession,
+  runStep3Prerequisites,
+  runStep4PrerequisiteTeaching,
   structureClassCreationStep2,
   transcribeClassCreationStep1,
+  type ClassPrerequisite,
   type Step1TranscribeResponse,
   type Step2StructureResponse,
   updateClassCreationSession,
@@ -22,6 +26,8 @@ import {
 import { StructuredContentView } from '@/components/teacher/class-detail/structured-content-view';
 
 const ACTIVE_SESSION_STORAGE_KEY = 'ai_amooz_active_class_creation_session_id';
+
+const PROCESSING_STATUSES = new Set(['transcribing', 'structuring', 'prereq_extracting', 'prereq_teaching']);
 
 export function CreateClassPage() {
   const router = useRouter();
@@ -38,6 +44,12 @@ export function CreateClassPage() {
   const [step2Result, setStep2Result] = useState<Step2StructureResponse | null>(null);
   const [step2Error, setStep2Error] = useState<string | null>(null);
   const [isStep2Loading, setIsStep2Loading] = useState(false);
+
+  const [prereqs, setPrereqs] = useState<ClassPrerequisite[] | null>(null);
+  const [prereqError, setPrereqError] = useState<string | null>(null);
+  const [isPrereqLoading, setIsPrereqLoading] = useState(false);
+  const [isStep3Loading, setIsStep3Loading] = useState(false);
+  const [isStep4Loading, setIsStep4Loading] = useState(false);
 
   const pollTimer = useRef<number | null>(null);
 
@@ -78,7 +90,7 @@ export function CreateClassPage() {
           });
         }
 
-        if (detail.status === 'structured') {
+        if (String(detail.structure_json || '').trim()) {
           setStep2Result({
             id: detail.id,
             status: 'structured',
@@ -87,12 +99,32 @@ export function CreateClassPage() {
             structure_json: detail.structure_json,
             created_at: detail.created_at,
           });
+        }
+
+        if (!PROCESSING_STATUSES.has(detail.status)) {
           stopPolling();
+          if (detail.status === 'prereq_extracted' || detail.status === 'prereq_taught' || detail.status === 'structured') {
+            void refreshPrereqs(detail.id);
+          }
         }
       } catch (e) {
         // Keep polling; network may be flaky.
       }
     }, 1500);
+  };
+
+  const refreshPrereqs = async (sessionId: number) => {
+    setIsPrereqLoading(true);
+    setPrereqError(null);
+    try {
+      const items = await listClassPrerequisites(sessionId);
+      setPrereqs(items);
+    } catch (e) {
+      setPrereqs([]);
+      setPrereqError(e instanceof Error ? e.message : 'خطا در بارگذاری پیش‌نیازها');
+    } finally {
+      setIsPrereqLoading(false);
+    }
   };
 
   const resumeSession = async (sessionId: number) => {
@@ -113,7 +145,7 @@ export function CreateClassPage() {
         created_at: detail.created_at,
       });
 
-      if (detail.status === 'structured') {
+      if (String(detail.structure_json || '').trim()) {
         setStep2Result({
           id: detail.id,
           status: 'structured',
@@ -123,6 +155,8 @@ export function CreateClassPage() {
           created_at: detail.created_at,
         });
       }
+
+      await refreshPrereqs(detail.id);
 
       startPolling(sessionId);
     } catch {
@@ -161,6 +195,8 @@ export function CreateClassPage() {
     setStep1Result(null);
     setStep2Error(null);
     setStep2Result(null);
+    setPrereqs(null);
+    setPrereqError(null);
 
     try {
       const result = await transcribeClassCreationStep1({
@@ -199,10 +235,44 @@ export function CreateClassPage() {
       setStep2Result(result);
       window.localStorage.setItem(ACTIVE_SESSION_STORAGE_KEY, String(sessionIdForActions));
       startPolling(sessionIdForActions);
+      await refreshPrereqs(sessionIdForActions);
     } catch (error) {
       setStep2Error(error instanceof Error ? error.message : 'خطا در ارتباط با سرور');
     } finally {
       setIsStep2Loading(false);
+    }
+  };
+
+  const canRunStep3 = Boolean(sessionIdForActions) && Boolean(String(sessionDetail?.structure_json ?? step2Result?.structure_json ?? '').trim());
+  const canRunStep4 = Boolean(sessionIdForActions) && Boolean(prereqs && prereqs.length > 0);
+
+  const runStep3 = async () => {
+    if (!sessionIdForActions) return;
+    setIsStep3Loading(true);
+    setPrereqError(null);
+    try {
+      await runStep3Prerequisites(sessionIdForActions);
+      startPolling(sessionIdForActions);
+      await refreshPrereqs(sessionIdForActions);
+    } catch (e) {
+      setPrereqError(e instanceof Error ? e.message : 'خطا در ساخت پیش‌نیازها');
+    } finally {
+      setIsStep3Loading(false);
+    }
+  };
+
+  const runStep4 = async () => {
+    if (!sessionIdForActions) return;
+    setIsStep4Loading(true);
+    setPrereqError(null);
+    try {
+      await runStep4PrerequisiteTeaching(sessionIdForActions);
+      startPolling(sessionIdForActions);
+      await refreshPrereqs(sessionIdForActions);
+    } catch (e) {
+      setPrereqError(e instanceof Error ? e.message : 'خطا در ساخت متن تدریس پیش‌نیازها');
+    } finally {
+      setIsStep4Loading(false);
     }
   };
 
@@ -314,11 +384,9 @@ export function CreateClassPage() {
                 </div>
               )}
 
-              <Textarea
-                readOnly
-                value={sessionDetail?.transcript_markdown ?? step1Result?.transcript_markdown ?? ''}
-                className="min-h-[220px] bg-background/80 rounded-xl resize-none text-start border-border/60"
-              />
+              <div className="rounded-xl border border-border/60 bg-background/80 p-4 max-h-[60vh] overflow-y-auto">
+                <MarkdownWithMath markdown={sessionDetail?.transcript_markdown ?? step1Result?.transcript_markdown ?? ''} />
+              </div>
 
               <div className="pt-2 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
                 <Button
@@ -344,7 +412,61 @@ export function CreateClassPage() {
 
               {step2Result && (
                 <div className="rounded-xl border border-border/60 bg-background/80 p-4">
-                  <StructuredContentView structureJson={sessionDetail?.structure_json ?? step2Result.structure_json ?? ''} />
+                  <div className="max-h-[70vh] overflow-y-auto pr-1">
+                    <StructuredContentView structureJson={sessionDetail?.structure_json ?? step2Result.structure_json ?? ''} />
+                  </div>
+
+                  <div className="mt-6 space-y-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="text-sm font-bold">پیش‌نیازها (مرحله ۳ و ۴)</div>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          size="sm"
+                          onClick={runStep3}
+                          disabled={!canRunStep3 || isStep3Loading || isStep4Loading}
+                        >
+                          {isStep3Loading ? 'در حال ساخت…' : 'ساخت پیش‌نیازها'}
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          size="sm"
+                          onClick={runStep4}
+                          disabled={!canRunStep4 || isStep3Loading || isStep4Loading}
+                        >
+                          {isStep4Loading ? 'در حال ساخت…' : 'ساخت متن تدریس'}
+                        </Button>
+                      </div>
+                    </div>
+
+                    {prereqError && <div className="text-sm text-destructive">{prereqError}</div>}
+
+                    {prereqs === null || isPrereqLoading ? (
+                      <div className="text-xs text-muted-foreground">در حال بارگذاری…</div>
+                    ) : prereqs.length === 0 ? (
+                      <div className="text-xs text-muted-foreground">—</div>
+                    ) : (
+                      <div className="space-y-3">
+                        {prereqs
+                          .slice()
+                          .sort((a, b) => a.order - b.order)
+                          .map((p) => (
+                            <div key={p.id} className="rounded-2xl border border-border/60 bg-background/80 p-4 space-y-2">
+                              <div className="text-sm font-black">{p.order}. {p.name}</div>
+                              {p.teaching_text?.trim() ? (
+                                <div className="max-h-[45vh] overflow-y-auto pr-1">
+                                  <MarkdownWithMath markdown={p.teaching_text} />
+                                </div>
+                              ) : (
+                                <div className="text-xs text-muted-foreground">(متن تدریس هنوز ساخته نشده است.)</div>
+                              )}
+                            </div>
+                          ))}
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
             </div>

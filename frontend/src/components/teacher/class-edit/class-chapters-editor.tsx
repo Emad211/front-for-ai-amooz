@@ -81,7 +81,6 @@ export function ClassChaptersEditor({ chapters, onChange }: ClassChaptersEditorP
       isPublished: newLessonData.isPublished || false,
       order: (chapters.find(ch => ch.id === chapterId)?.lessons.length || 0) + 1,
       contentMarkdown: '',
-      teachingMarkdown: '',
     };
     onChange(chapters.map(ch => 
       ch.id === chapterId 
@@ -256,27 +255,6 @@ export function ClassChaptersEditor({ chapters, onChange }: ClassChaptersEditorP
                                     lesson: {
                                       ...prev.lesson,
                                       contentMarkdown: e.target.value,
-                                    },
-                                  }
-                                : prev
-                            )
-                          }
-                        />
-                      </div>
-
-                      <div className="space-y-2">
-                        <Label>راهنمای تدریس (Markdown)</Label>
-                        <textarea
-                          className="w-full min-h-[120px] rounded-xl border border-border/60 bg-background/80 p-3 text-sm text-start"
-                          value={editingLesson?.lesson.teachingMarkdown ?? ''}
-                          onChange={(e) =>
-                            setEditingLesson((prev) =>
-                              prev
-                                ? {
-                                    ...prev,
-                                    lesson: {
-                                      ...prev.lesson,
-                                      teachingMarkdown: e.target.value,
                                     },
                                   }
                                 : prev
