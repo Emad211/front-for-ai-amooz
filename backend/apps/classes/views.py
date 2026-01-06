@@ -37,11 +37,14 @@ from .serializers import (
     Step3PrerequisitesResponseSerializer,
     Step4PrerequisiteTeachingRequestSerializer,
     Step4PrerequisiteTeachingResponseSerializer,
+    Step5RecapRequestSerializer,
+    Step5RecapResponseSerializer,
     PrerequisiteSerializer,
 )
 from .services.transcription import transcribe_media_bytes
 from .services.structure import structure_transcript_markdown
 from .services.prerequisites import extract_prerequisites, generate_prerequisite_teaching
+from .services.recap import generate_recap_from_structure, recap_json_to_markdown
 from .services.background import run_in_background
 from .services.sync_structure import sync_structure_from_session
 
@@ -184,6 +187,86 @@ def _process_step4_prereq_teaching(session_id: int, prerequisite_name: str | Non
         session.save(update_fields=['status', 'error_detail', 'updated_at'])
 
 
+def _process_step5_recap(session_id: int) -> None:
+    session = ClassCreationSession.objects.filter(id=session_id).first()
+    if session is None:
+        return
+    if session.status != ClassCreationSession.Status.RECAPPING:
+        return
+    if not (session.structure_json or '').strip():
+        session.status = ClassCreationSession.Status.FAILED
+        session.error_detail = 'برای این جلسه هنوز ساختار مرحله ۲ آماده نیست.'
+        session.save(update_fields=['status', 'error_detail', 'updated_at'])
+        return
+
+    try:
+        recap_obj, provider, model_name = generate_recap_from_structure(structure_json=session.structure_json)
+        session.recap_markdown = recap_json_to_markdown(recap_obj)
+        session.llm_provider = provider
+        session.llm_model = model_name
+        session.status = ClassCreationSession.Status.RECAPPED
+        session.save(update_fields=['recap_markdown', 'llm_provider', 'llm_model', 'status', 'updated_at'])
+    except Exception as exc:
+        session.status = ClassCreationSession.Status.FAILED
+        session.error_detail = str(exc)
+        session.save(update_fields=['status', 'error_detail', 'updated_at'])
+
+
+def _process_full_pipeline(session_id: int) -> None:
+    """Run steps 1..5 sequentially.
+
+    Intended for the one-click "run pipeline" action.
+    """
+
+    session = ClassCreationSession.objects.filter(id=session_id).first()
+    if session is None:
+        return
+
+    # Step 1
+    if session.status == ClassCreationSession.Status.TRANSCRIBING:
+        _process_step1_transcription(session_id)
+
+    session.refresh_from_db()
+    if session.status == ClassCreationSession.Status.FAILED:
+        return
+
+    # Step 2
+    if session.status == ClassCreationSession.Status.TRANSCRIBED:
+        session.status = ClassCreationSession.Status.STRUCTURING
+        session.save(update_fields=['status', 'updated_at'])
+        _process_step2_structure(session_id)
+
+    session.refresh_from_db()
+    if session.status == ClassCreationSession.Status.FAILED:
+        return
+
+    # Step 3
+    if session.status == ClassCreationSession.Status.STRUCTURED:
+        session.status = ClassCreationSession.Status.PREREQ_EXTRACTING
+        session.save(update_fields=['status', 'updated_at'])
+        _process_step3_prerequisites(session_id)
+
+    session.refresh_from_db()
+    if session.status == ClassCreationSession.Status.FAILED:
+        return
+
+    # Step 4
+    if session.status == ClassCreationSession.Status.PREREQ_EXTRACTED:
+        session.status = ClassCreationSession.Status.PREREQ_TEACHING
+        session.save(update_fields=['status', 'updated_at'])
+        _process_step4_prereq_teaching(session_id)
+
+    session.refresh_from_db()
+    if session.status == ClassCreationSession.Status.FAILED:
+        return
+
+    # Step 5
+    if session.status == ClassCreationSession.Status.PREREQ_TAUGHT:
+        session.status = ClassCreationSession.Status.RECAPPING
+        session.save(update_fields=['status', 'updated_at'])
+        _process_step5_recap(session_id)
+
+
 class Step1TranscribeView(APIView):
     permission_classes = [IsAuthenticated, IsTeacherUser]
 
@@ -201,6 +284,7 @@ class Step1TranscribeView(APIView):
         title = serializer.validated_data['title']
         description = serializer.validated_data.get('description', '')
         client_request_id = serializer.validated_data.get('client_request_id')
+        run_full_pipeline = bool(serializer.validated_data.get('run_full_pipeline', False))
 
         if client_request_id is not None:
             existing = ClassCreationSession.objects.filter(
@@ -227,6 +311,10 @@ class Step1TranscribeView(APIView):
             status=ClassCreationSession.Status.TRANSCRIBING,
             client_request_id=client_request_id,
         )
+
+        if run_full_pipeline:
+            run_in_background(lambda: _process_full_pipeline(session.id), name=f'class-pipeline-1to5-{session.id}')
+            return Response(Step1TranscribeResponseSerializer(session).data, status=status.HTTP_202_ACCEPTED)
 
         if getattr(settings, 'CLASS_PIPELINE_ASYNC', False):
             # Run in background so the teacher can navigate away without breaking the pipeline.
@@ -403,6 +491,45 @@ class Step4PrerequisiteTeachingView(APIView):
         _process_step4_prereq_teaching(session.id, prerequisite_name)
         session.refresh_from_db()
         return Response(Step4PrerequisiteTeachingResponseSerializer(session).data, status=status.HTTP_200_OK)
+
+
+class Step5RecapView(APIView):
+    permission_classes = [IsAuthenticated, IsTeacherUser]
+
+    @extend_schema(
+        tags=['Classes'],
+        summary='Step 5: Build end-of-course recap from structured content',
+        request=Step5RecapRequestSerializer,
+        responses={202: Step5RecapResponseSerializer, 200: Step5RecapResponseSerializer},
+    )
+    def post(self, request):
+        serializer = Step5RecapRequestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        session_id = serializer.validated_data['session_id']
+        session = ClassCreationSession.objects.filter(id=session_id, teacher=request.user).first()
+        if session is None:
+            return Response({'detail': 'جلسه پیدا نشد.'}, status=status.HTTP_404_NOT_FOUND)
+
+        if session.status == ClassCreationSession.Status.RECAPPED and (session.recap_markdown or '').strip():
+            return Response(Step5RecapResponseSerializer(session).data, status=status.HTTP_200_OK)
+
+        if session.status == ClassCreationSession.Status.RECAPPING:
+            return Response(Step5RecapResponseSerializer(session).data, status=status.HTTP_202_ACCEPTED)
+
+        if not (session.structure_json or '').strip():
+            return Response({'detail': 'برای این جلسه هنوز ساختار مرحله ۲ آماده نیست.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        session.status = ClassCreationSession.Status.RECAPPING
+        session.save(update_fields=['status', 'updated_at'])
+
+        if getattr(settings, 'CLASS_PIPELINE_ASYNC', False):
+            run_in_background(lambda: _process_step5_recap(session.id), name=f'class-step5-{session.id}')
+            return Response(Step5RecapResponseSerializer(session).data, status=status.HTTP_202_ACCEPTED)
+
+        _process_step5_recap(session.id)
+        session.refresh_from_db()
+        return Response(Step5RecapResponseSerializer(session).data, status=status.HTTP_200_OK)
 
 
 class ClassPrerequisiteListView(APIView):

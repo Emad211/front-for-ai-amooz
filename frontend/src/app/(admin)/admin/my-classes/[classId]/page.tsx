@@ -49,13 +49,14 @@ export default function ClassDetailPage({ params }: PageProps) {
         source_original_name: '',
         transcript_markdown: classDetail.transcriptMarkdown ?? '',
         structure_json: classDetail.structureJson ?? '',
+        recap_markdown: '',
         error_detail: classDetail.pipelineErrorDetail ?? '',
         created_at: classDetail.createdAt ?? '',
         updated_at: classDetail.lastActivity ?? '',
       }
     );
 
-    const shouldPoll = ['transcribing', 'structuring', 'prereq_extracting', 'prereq_teaching'].includes(classDetail.pipelineStatus ?? '');
+    const shouldPoll = ['transcribing', 'structuring', 'prereq_extracting', 'prereq_teaching', 'recapping'].includes(classDetail.pipelineStatus ?? '');
     if (!shouldPoll) return;
 
     if (pollTimer.current) window.clearInterval(pollTimer.current);
@@ -64,7 +65,7 @@ export default function ClassDetailPage({ params }: PageProps) {
         const next = await getClassCreationSessionDetail(sessionId);
         setSessionDetail(next);
 
-        if (!['transcribing', 'structuring', 'prereq_extracting', 'prereq_teaching'].includes(next.status)) {
+        if (!['transcribing', 'structuring', 'prereq_extracting', 'prereq_teaching', 'recapping'].includes(next.status)) {
           if (pollTimer.current) {
             window.clearInterval(pollTimer.current);
             pollTimer.current = null;
@@ -185,6 +186,13 @@ export default function ClassDetailPage({ params }: PageProps) {
                         ))}
                     </div>
                   )}
+                </div>
+
+                <div className="space-y-2">
+                  <div className="text-sm font-bold">جمع‌بندی (مرحله ۵)</div>
+                  <div className="rounded-xl border border-border/60 bg-background/80 p-4 max-h-[60vh] overflow-y-auto">
+                    <MarkdownWithMath markdown={sessionDetail?.recap_markdown || ''} />
+                  </div>
                 </div>
               </div>
             </div>

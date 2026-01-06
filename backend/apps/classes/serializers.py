@@ -11,6 +11,7 @@ class Step1TranscribeRequestSerializer(serializers.Serializer):
     description = serializers.CharField(required=False, allow_blank=True)
     file = serializers.FileField()
     client_request_id = serializers.UUIDField(required=False)
+    run_full_pipeline = serializers.BooleanField(required=False, default=False)
 
     def validate_file(self, value):
         max_bytes = 50 * 1024 * 1024
@@ -97,6 +98,16 @@ class Step4PrerequisiteTeachingResponseSerializer(serializers.ModelSerializer):
         fields = ['id', 'status', 'title', 'description', 'created_at', 'prerequisites']
 
 
+class Step5RecapRequestSerializer(serializers.Serializer):
+    session_id = serializers.IntegerField(min_value=1)
+
+
+class Step5RecapResponseSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ClassCreationSession
+        fields = ['id', 'status', 'title', 'description', 'created_at', 'recap_markdown']
+
+
 class ClassCreationSessionListSerializer(serializers.ModelSerializer):
     invites_count = serializers.SerializerMethodField()
 
@@ -135,6 +146,7 @@ class ClassCreationSessionDetailSerializer(serializers.ModelSerializer):
             'source_original_name',
             'transcript_markdown',
             'structure_json',
+            'recap_markdown',
             'error_detail',
             'is_published',
             'published_at',

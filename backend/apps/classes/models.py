@@ -14,6 +14,8 @@ class ClassCreationSession(models.Model):
         PREREQ_EXTRACTED = 'prereq_extracted', 'Prerequisites: Extracted'
         PREREQ_TEACHING = 'prereq_teaching', 'Prerequisites: Teaching'
         PREREQ_TAUGHT = 'prereq_taught', 'Prerequisites: Taught'
+        RECAPPING = 'recapping', 'Recap: Generating'
+        RECAPPED = 'recapped', 'Recap: Ready'
         FAILED = 'failed', 'Failed'
 
     teacher = models.ForeignKey(
@@ -37,6 +39,8 @@ class ClassCreationSession(models.Model):
     client_request_id = models.UUIDField(null=True, blank=True, default=None)
 
     structure_json = models.TextField(blank=True)
+
+    recap_markdown = models.TextField(blank=True)
     llm_provider = models.CharField(max_length=32, blank=True)
     llm_model = models.CharField(max_length=128, blank=True)
 

@@ -1,6 +1,6 @@
 export type Step1TranscribeResponse = {
   id: number;
-  status: 'transcribing' | 'transcribed' | 'failed';
+  status: 'transcribing' | 'transcribed' | 'failed' | 'structuring' | 'structured' | 'prereq_extracting' | 'prereq_extracted' | 'prereq_teaching' | 'prereq_taught' | 'recapping' | 'recapped';
   title: string;
   description: string;
   source_mime_type: string;
@@ -20,7 +20,9 @@ export type Step2StructureResponse = {
     | 'prereq_extracting'
     | 'prereq_extracted'
     | 'prereq_teaching'
-    | 'prereq_taught';
+    | 'prereq_taught'
+    | 'recapping'
+    | 'recapped';
   title: string;
   description: string;
   structure_json: string;
@@ -35,6 +37,7 @@ export type ClassCreationSessionDetail = {
   source_original_name: string;
   transcript_markdown: string;
   structure_json: string;
+  recap_markdown?: string;
   error_detail: string;
   is_published?: boolean;
   published_at?: string | null;
@@ -282,6 +285,7 @@ export async function transcribeClassCreationStep1(params: {
   description?: string;
   file: File;
   clientRequestId?: string;
+  runFullPipeline?: boolean;
 }): Promise<Step1TranscribeResponse> {
   if (!RAW_API_URL) {
     throw new Error('NEXT_PUBLIC_API_URL تنظیم نشده است.');
@@ -293,6 +297,9 @@ export async function transcribeClassCreationStep1(params: {
   formData.append('file', params.file, params.file.name);
   if (params.clientRequestId) {
     formData.append('client_request_id', params.clientRequestId);
+  }
+  if (params.runFullPipeline) {
+    formData.append('run_full_pipeline', 'true');
   }
 
   const url = `${API_URL}/classes/creation-sessions/step-1/`;

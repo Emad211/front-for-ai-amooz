@@ -11,6 +11,7 @@ from .views import (
     Step2StructureView,
     Step3PrerequisitesView,
     Step4PrerequisiteTeachingView,
+    Step5RecapView,
     TeacherAnalyticsActivitiesView,
     TeacherAnalyticsChartView,
     TeacherAnalyticsDistributionView,
@@ -22,6 +23,7 @@ urlpatterns = [
     path('creation-sessions/step-2/', Step2StructureView.as_view(), name='class_creation_step2'),
     path('creation-sessions/step-3/', Step3PrerequisitesView.as_view(), name='class_creation_step3'),
     path('creation-sessions/step-4/', Step4PrerequisiteTeachingView.as_view(), name='class_creation_step4'),
+    path('creation-sessions/step-5/', Step5RecapView.as_view(), name='class_creation_step5'),
 
     path('creation-sessions/', ClassCreationSessionListView.as_view(), name='class_creation_session_list'),
     path('creation-sessions/<int:session_id>/', ClassCreationSessionDetailView.as_view(), name='class_creation_session_detail'),
