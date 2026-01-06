@@ -13,6 +13,7 @@ import {
 } from '@/components/teacher/class-detail';
 import { Card } from '@/components/ui/card';
 import { MarkdownWithMath } from '@/components/content/markdown-with-math';
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import {
   getClassCreationSessionDetail,
   listClassPrerequisites,
@@ -119,6 +120,14 @@ export default function TeacherClassDetailPage({ params }: PageProps) {
     );
   }
 
+  const sortedPrereqs = (prereqs ?? []).slice().sort((a, b) => a.order - b.order);
+  const prereqListMarkdown =
+    prereqs === null
+      ? ''
+      : sortedPrereqs.length
+        ? sortedPrereqs.map((p) => `- ${p.order}. ${p.name}`).join('\n')
+        : '—';
+
   return (
     <div className="space-y-6">
       <ClassDetailHeader
@@ -133,7 +142,7 @@ export default function TeacherClassDetailPage({ params }: PageProps) {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 space-y-6">
           <Card className="p-4 md:p-6 rounded-3xl border border-border/60">
-            <div className="flex flex-col gap-2">
+            <div className="flex flex-col gap-3" dir="rtl">
               <div className="flex items-center justify-between">
                 <h2 className="text-base md:text-lg font-black">خروجی پایپ‌لاین</h2>
                 <span className="text-xs text-muted-foreground">
@@ -147,56 +156,85 @@ export default function TeacherClassDetailPage({ params }: PageProps) {
                 </div>
               )}
 
-              <div className="grid grid-cols-1 gap-4">
-                <div className="space-y-2">
-                  <div className="text-sm font-bold">متن (مرحله ۱)</div>
-                  <div className="rounded-xl border border-border/60 bg-background/80 p-4 max-h-[60vh] overflow-y-auto">
-                    <MarkdownWithMath markdown={sessionDetail?.transcript_markdown || detail.transcriptMarkdown || ''} />
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <div className="text-sm font-bold">ساختار (مرحله ۲)</div>
-                  <div className="rounded-xl border border-border/60 bg-background/80 p-4 max-h-[70vh] overflow-y-auto">
-                    <StructuredContentView structureJson={sessionDetail?.structure_json || detail.structureJson || ''} />
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <div className="text-sm font-bold">پیش نیازها (مرحله ۳ و ۴)</div>
-
-                  {prereqs === null ? (
-                    <div className="text-xs text-muted-foreground">در حال بارگذاری…</div>
-                  ) : prereqs.length === 0 ? (
-                    <div className="text-xs text-muted-foreground">—</div>
-                  ) : (
-                    <div className="space-y-3">
-                      {prereqs
-                        .slice()
-                        .sort((a, b) => a.order - b.order)
-                        .map((p) => (
-                          <div key={p.id} className="rounded-2xl border border-border/60 bg-background/80 p-4 space-y-2">
-                            <div className="text-sm font-black">{p.order}. {p.name}</div>
-                            {p.teaching_text?.trim() ? (
-                              <div className="max-h-[45vh] overflow-y-auto pr-1">
-                                <MarkdownWithMath markdown={p.teaching_text} />
-                              </div>
-                            ) : (
-                              <div className="text-xs text-muted-foreground">(متن تدریس هنوز ساخته نشده است.)</div>
-                            )}
-                          </div>
-                        ))}
+              <Accordion type="multiple" className="space-y-3">
+                <AccordionItem value="step-1" className="border-b-0 rounded-2xl border border-border/60 bg-background/50 px-4">
+                  <AccordionTrigger className="hover:no-underline">
+                    <span className="text-sm font-bold">مرحله ۱: متن</span>
+                  </AccordionTrigger>
+                  <AccordionContent className="pt-2">
+                    <div className="rounded-xl border border-border/60 bg-background/80 p-4 max-h-[45vh] overflow-y-auto">
+                      <MarkdownWithMath markdown={sessionDetail?.transcript_markdown || detail.transcriptMarkdown || '—'} />
                     </div>
-                  )}
-                </div>
+                  </AccordionContent>
+                </AccordionItem>
 
-                <div className="space-y-2">
-                  <div className="text-sm font-bold">جمع‌بندی (مرحله ۵)</div>
-                  <div className="rounded-xl border border-border/60 bg-background/80 p-4 max-h-[60vh] overflow-y-auto">
-                    <MarkdownWithMath markdown={sessionDetail?.recap_markdown || ''} />
-                  </div>
-                </div>
-              </div>
+                <AccordionItem value="step-2" className="border-b-0 rounded-2xl border border-border/60 bg-background/50 px-4">
+                  <AccordionTrigger className="hover:no-underline">
+                    <span className="text-sm font-bold">مرحله ۲: ساختار</span>
+                  </AccordionTrigger>
+                  <AccordionContent className="pt-2">
+                    <div className="rounded-xl border border-border/60 bg-background/80 p-4 max-h-[45vh] overflow-y-auto">
+                      <StructuredContentView structureJson={sessionDetail?.structure_json || detail.structureJson || ''} />
+                    </div>
+                  </AccordionContent>
+                </AccordionItem>
+
+                <AccordionItem value="step-3" className="border-b-0 rounded-2xl border border-border/60 bg-background/50 px-4">
+                  <AccordionTrigger className="hover:no-underline">
+                    <span className="text-sm font-bold">مرحله ۳: پیش‌نیازها</span>
+                  </AccordionTrigger>
+                  <AccordionContent className="pt-2">
+                    <div className="rounded-xl border border-border/60 bg-background/80 p-4 max-h-[45vh] overflow-y-auto">
+                      {prereqs === null ? (
+                        <div className="text-xs text-muted-foreground">در حال بارگذاری…</div>
+                      ) : (
+                        <MarkdownWithMath markdown={prereqListMarkdown} />
+                      )}
+                    </div>
+                  </AccordionContent>
+                </AccordionItem>
+
+                <AccordionItem value="step-4" className="border-b-0 rounded-2xl border border-border/60 bg-background/50 px-4">
+                  <AccordionTrigger className="hover:no-underline">
+                    <span className="text-sm font-bold">مرحله ۴: تدریس پیش‌نیازها</span>
+                  </AccordionTrigger>
+                  <AccordionContent className="pt-2">
+                    <div className="rounded-xl border border-border/60 bg-background/80 p-4 max-h-[45vh] overflow-y-auto">
+                      {prereqs === null ? (
+                        <div className="text-xs text-muted-foreground">در حال بارگذاری…</div>
+                      ) : sortedPrereqs.length === 0 ? (
+                        <div className="text-xs text-muted-foreground">—</div>
+                      ) : (
+                        <div className="space-y-3">
+                          {sortedPrereqs.map((p) => (
+                            <div key={p.id} className="rounded-2xl border border-border/60 bg-background/70 p-4 space-y-2">
+                              <div className="text-sm font-black">
+                                {p.order}. {p.name}
+                              </div>
+                              {p.teaching_text?.trim() ? (
+                                <MarkdownWithMath markdown={p.teaching_text} />
+                              ) : (
+                                <div className="text-xs text-muted-foreground">(متن تدریس هنوز ساخته نشده است.)</div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </AccordionContent>
+                </AccordionItem>
+
+                <AccordionItem value="step-5" className="border-b-0 rounded-2xl border border-border/60 bg-background/50 px-4">
+                  <AccordionTrigger className="hover:no-underline">
+                    <span className="text-sm font-bold">مرحله ۵: جمع‌بندی</span>
+                  </AccordionTrigger>
+                  <AccordionContent className="pt-2">
+                    <div className="rounded-xl border border-border/60 bg-background/80 p-4 max-h-[45vh] overflow-y-auto">
+                      <MarkdownWithMath markdown={sessionDetail?.recap_markdown || '—'} />
+                    </div>
+                  </AccordionContent>
+                </AccordionItem>
+              </Accordion>
             </div>
           </Card>
 

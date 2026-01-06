@@ -47,6 +47,7 @@ from .services.prerequisites import extract_prerequisites, generate_prerequisite
 from .services.recap import generate_recap_from_structure, recap_json_to_markdown
 from .services.background import run_in_background
 from .services.sync_structure import sync_structure_from_session
+from .services.mediana_sms import send_publish_sms_for_session
 
 
 def _process_step1_transcription(session_id: int) -> None:
@@ -642,13 +643,24 @@ class ClassCreationSessionPublishView(GenericAPIView):
         if session is None:
             return Response({'detail': 'جلسه پیدا نشد.'}, status=status.HTTP_404_NOT_FOUND)
 
-        if session.status != ClassCreationSession.Status.STRUCTURED or not (session.structure_json or '').strip():
+        if session.status == ClassCreationSession.Status.FAILED:
+            return Response({'detail': 'این جلسه با خطا متوقف شده است.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        if not (session.structure_json or '').strip():
             return Response({'detail': 'برای انتشار، ابتدا ساختاردهی را کامل کنید.'}, status=status.HTTP_400_BAD_REQUEST)
 
         if not session.is_published:
             session.is_published = True
             session.published_at = timezone.now()
             session.save(update_fields=['is_published', 'published_at', 'updated_at'])
+
+            def _send_sms() -> None:
+                try:
+                    send_publish_sms_for_session(session.id)
+                except Exception:
+                    return
+
+            run_in_background(lambda: _send_sms(), name=f'class-publish-sms-{session.id}')
 
         return Response(ClassCreationSessionDetailSerializer(session).data)
 

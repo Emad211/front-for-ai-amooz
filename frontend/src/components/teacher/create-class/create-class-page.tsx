@@ -17,6 +17,8 @@ import {
 } from '@/services/classes-service';
 
 const ACTIVE_SESSION_STORAGE_KEY = 'ai_amooz_active_class_creation_session_id';
+const CREATE_CLASS_DRAFT_STORAGE_KEY = 'ai_amooz_create_class_draft_v1';
+const CREATE_CLASS_LAST_STATUS_STORAGE_KEY = 'ai_amooz_create_class_last_status_v1';
 
 const PROCESSING_STATUSES = new Set([
   'transcribing',
@@ -68,10 +70,40 @@ export function CreateClassPage() {
   const [step1ClientRequestId, setStep1ClientRequestId] = useState<string | null>(null);
   const [activeSessionId, setActiveSessionId] = useState<number | null>(null);
   const [sessionDetail, setSessionDetail] = useState<ClassCreationSessionDetail | null>(null);
+  const [optimisticStatus, setOptimisticStatus] = useState<string | null>(null);
   const [pipelineError, setPipelineError] = useState<string | null>(null);
   const [isPipelineStarting, setIsPipelineStarting] = useState(false);
 
   const pollTimer = useRef<number | null>(null);
+  const pollFailures = useRef<number>(0);
+
+  const loadDraft = () => {
+    try {
+      const raw = window.localStorage.getItem(CREATE_CLASS_DRAFT_STORAGE_KEY);
+      if (!raw) return;
+      const parsed = JSON.parse(raw) as { title?: string; description?: string };
+      if (typeof parsed.title === 'string' && parsed.title) setTitle((prev) => prev || (parsed.title as string));
+      if (typeof parsed.description === 'string' && parsed.description) setDescription((prev) => prev || (parsed.description as string));
+    } catch {
+      // ignore
+    }
+  };
+
+  const persistDraft = (next: { title: string; description: string }) => {
+    try {
+      window.localStorage.setItem(CREATE_CLASS_DRAFT_STORAGE_KEY, JSON.stringify(next));
+    } catch {
+      // ignore
+    }
+  };
+
+  const persistLastStatus = (next: { sessionId: number; status: string }) => {
+    try {
+      window.localStorage.setItem(CREATE_CLASS_LAST_STATUS_STORAGE_KEY, JSON.stringify(next));
+    } catch {
+      // ignore
+    }
+  };
 
   const stopPolling = () => {
     if (pollTimer.current) {
@@ -85,8 +117,14 @@ export function CreateClassPage() {
     const tick = async () => {
       try {
         const detail = await getClassCreationSessionDetail(sessionId);
+        pollFailures.current = 0;
+        setOptimisticStatus(null);
         setSessionDetail(detail);
         setActiveSessionId(detail.id);
+
+        if (detail?.status) {
+          persistLastStatus({ sessionId: detail.id, status: detail.status });
+        }
 
         setTitle((prev) => prev || detail.title);
         setDescription((prev) => prev || detail.description);
@@ -101,7 +139,10 @@ export function CreateClassPage() {
           stopPolling();
         }
       } catch {
-        // Keep polling; network may be flaky.
+        pollFailures.current += 1;
+        if (pollFailures.current >= 4) {
+          setPipelineError('ارتباط با سرور برای دریافت وضعیت پایپ‌لاین برقرار نشد.');
+        }
       }
     };
 
@@ -112,6 +153,8 @@ export function CreateClassPage() {
   const resumeSession = async (sessionId: number) => {
     try {
       const detail = await getClassCreationSessionDetail(sessionId);
+      pollFailures.current = 0;
+      setOptimisticStatus(null);
       setSessionDetail(detail);
       setActiveSessionId(detail.id);
       setTitle(detail.title);
@@ -130,10 +173,27 @@ export function CreateClassPage() {
     const stored = window.localStorage.getItem(ACTIVE_SESSION_STORAGE_KEY);
     const sessionId = stored ? Number(stored) : NaN;
     if (Number.isFinite(sessionId)) {
+      try {
+        const lastRaw = window.localStorage.getItem(CREATE_CLASS_LAST_STATUS_STORAGE_KEY);
+        if (lastRaw) {
+          const last = JSON.parse(lastRaw) as { sessionId?: number; status?: string };
+          if (last && last.sessionId === sessionId && typeof last.status === 'string') {
+            setOptimisticStatus(last.status);
+          }
+        }
+      } catch {
+        // ignore
+      }
       resumeSession(sessionId);
+    } else {
+      loadDraft();
     }
     return () => stopPolling();
   }, []);
+
+  useEffect(() => {
+    persistDraft({ title, description });
+  }, [title, description]);
 
   const toggleSection = (section: string) => {
     setExpandedSections((prev) =>
@@ -142,7 +202,7 @@ export function CreateClassPage() {
   };
 
   const sessionIdForActions = sessionDetail?.id ?? activeSessionId ?? null;
-  const status = sessionDetail?.status ?? null;
+  const status = sessionDetail?.status ?? optimisticStatus ?? null;
   const { message: pipelineMessage, isDone: isPipelineDone, isFailed: isPipelineFailed } = getPipelineMessage(status);
   const isPipelineRunning = Boolean(status && PROCESSING_STATUSES.has(status));
   const canStartPipeline = Boolean(title.trim()) && Boolean(lessonFile) && !isPipelineStarting && !isPipelineRunning;
@@ -157,6 +217,8 @@ export function CreateClassPage() {
 
     setIsPipelineStarting(true);
     setPipelineError(null);
+    pollFailures.current = 0;
+    setOptimisticStatus(null);
     stopPolling();
     setSessionDetail(null);
     setActiveSessionId(null);
@@ -169,8 +231,10 @@ export function CreateClassPage() {
         clientRequestId: clientRequestId ?? undefined,
         runFullPipeline: true,
       });
+      setOptimisticStatus(result.status);
       setActiveSessionId(result.id);
       window.localStorage.setItem(ACTIVE_SESSION_STORAGE_KEY, String(result.id));
+      persistLastStatus({ sessionId: result.id, status: result.status });
       startPolling(result.id);
     } catch (error) {
       const msg = error instanceof Error ? error.message : 'خطا در ارتباط با سرور';
@@ -202,6 +266,8 @@ export function CreateClassPage() {
       await publishClassCreationSession(sessionIdForActions);
 
       window.localStorage.removeItem(ACTIVE_SESSION_STORAGE_KEY);
+      window.localStorage.removeItem(CREATE_CLASS_DRAFT_STORAGE_KEY);
+      window.localStorage.removeItem(CREATE_CLASS_LAST_STATUS_STORAGE_KEY);
       toast.success('کلاس با موفقیت منتشر شد');
       router.push(`/teacher/my-classes/${sessionIdForActions}`);
     } catch (e) {
@@ -302,10 +368,12 @@ export function CreateClassPage() {
       <FileUploadSection
         title="بارگذاری تمرین"
         description="اختیاری"
+        badgeText="کامینگ سون"
         icon="exercise"
         type="exercise"
         isExpanded={expandedSections.includes('exercises')}
         onToggle={() => toggleSection('exercises')}
+        disabled
       />
 
       <StudentInviteSection

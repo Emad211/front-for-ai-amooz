@@ -19,7 +19,7 @@ class TestClassCreationSessionPublishAndInvites:
         client.credentials(HTTP_AUTHORIZATION=f'Bearer {token}')
         return client, user
 
-    def test_publish_requires_structured(self):
+    def test_publish_requires_structure_json(self):
         client, teacher = self._auth_client('TEACHER')
 
         session = ClassCreationSession.objects.create(
@@ -37,8 +37,40 @@ class TestClassCreationSessionPublishAndInvites:
         res = client.post(f'/api/classes/creation-sessions/{session.id}/publish/')
         assert res.status_code == 400
 
-    def test_publish_marks_session_published(self):
+    def test_publish_allows_recapped(self):
         client, teacher = self._auth_client('TEACHER')
+
+        session = ClassCreationSession.objects.create(
+            teacher=teacher,
+            title='t',
+            description='',
+            source_file=SimpleUploadedFile('audio.ogg', b'fake-audio', content_type='audio/ogg'),
+            source_mime_type='audio/ogg',
+            source_original_name='audio.ogg',
+            status=ClassCreationSession.Status.RECAPPED,
+            transcript_markdown='hello',
+            structure_json='{"root_object": {"title": "x"}, "outline": []}',
+            recap_markdown='# recap',
+        )
+
+        res = client.post(f'/api/classes/creation-sessions/{session.id}/publish/')
+        assert res.status_code == 200
+
+    def test_publish_marks_session_published(self, monkeypatch):
+        client, teacher = self._auth_client('TEACHER')
+
+        called = {'bg': False, 'sms': False}
+
+        def _fake_send_publish_sms_for_session(session_id: int) -> None:
+            called['sms'] = True
+
+        def _fake_run_in_background(target, *, name=None):
+            called['bg'] = True
+            target()
+            return True
+
+        monkeypatch.setattr('apps.classes.views.send_publish_sms_for_session', _fake_send_publish_sms_for_session)
+        monkeypatch.setattr('apps.classes.views.run_in_background', _fake_run_in_background)
 
         session = ClassCreationSession.objects.create(
             teacher=teacher,
@@ -57,6 +89,8 @@ class TestClassCreationSessionPublishAndInvites:
         session.refresh_from_db()
         assert session.is_published is True
         assert session.published_at is not None
+        assert called['bg'] is True
+        assert called['sms'] is True
 
     def test_patch_updates_title_description_and_structure(self):
         client, teacher = self._auth_client('TEACHER')

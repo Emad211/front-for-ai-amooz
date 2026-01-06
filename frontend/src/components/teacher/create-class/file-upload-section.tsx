@@ -8,6 +8,7 @@ import type { ReactNode } from 'react';
 interface FileUploadSectionProps {
   title: string;
   description?: string;
+  badgeText?: string;
   icon: 'upload' | 'exercise';
   isExpanded: boolean;
   onToggle: () => void;
@@ -15,12 +16,14 @@ interface FileUploadSectionProps {
   accept?: string;
   multiple?: boolean;
   onFilesSelected?: (files: FileList | null) => void;
+  disabled?: boolean;
   children?: ReactNode;
 }
 
 export function FileUploadSection({ 
   title, 
   description, 
+  badgeText,
   icon, 
   isExpanded, 
   onToggle,
@@ -28,6 +31,7 @@ export function FileUploadSection({
   accept,
   multiple,
   onFilesSelected,
+  disabled,
   children,
 }: FileUploadSectionProps) {
   const Icon = icon === 'upload' ? Upload : FileText;
@@ -46,7 +50,14 @@ export function FileUploadSection({
               <Icon className={cn("h-5 w-5", iconColor)} />
             </div>
             <div>
-              <CardTitle className="text-lg">{title}</CardTitle>
+              <div className="flex items-center gap-2">
+                <CardTitle className="text-lg">{title}</CardTitle>
+                {badgeText ? (
+                  <span className="px-2 py-0.5 rounded-full bg-muted text-[11px] text-muted-foreground">
+                    {badgeText}
+                  </span>
+                ) : null}
+              </div>
               {description && <p className="text-xs text-muted-foreground mt-0.5">{description}</p>}
             </div>
           </div>
@@ -62,8 +73,10 @@ export function FileUploadSection({
             htmlFor={`dropzone-${type}`} 
             className={cn(
               "flex flex-col items-center justify-center w-full border-2 border-dashed border-primary/30 rounded-2xl cursor-pointer bg-primary/5 hover:bg-primary/10 transition-colors",
-              type === 'lesson' ? "h-44" : "h-36"
+              type === 'lesson' ? "h-44" : "h-36",
+              disabled && "cursor-not-allowed opacity-60 hover:bg-primary/5"
             )}
+            aria-disabled={disabled ? 'true' : undefined}
           >
             <div className="flex flex-col items-center gap-2 px-4 text-center">
               {type === 'lesson' ? (
@@ -81,7 +94,9 @@ export function FileUploadSection({
               ) : (
                 <>
                   <Plus className="h-6 w-6 text-muted-foreground" />
-                  <p className="text-sm text-muted-foreground">افزودن فایل تمرین</p>
+                  <p className="text-sm text-muted-foreground">
+                    {disabled ? 'به‌زودی' : 'افزودن فایل تمرین'}
+                  </p>
                 </>
               )}
             </div>
@@ -91,6 +106,7 @@ export function FileUploadSection({
               className="hidden"
               accept={accept}
               multiple={multiple ?? type === 'lesson'}
+              disabled={disabled}
               onChange={(e) => onFilesSelected?.(e.target.files)}
             />
           </label>
