@@ -220,6 +220,18 @@ def handle_student_message(
     if not message:
         return _text_response(content='پیامت خالیه. لطفاً سوالت رو بنویس.', suggestions=[])
 
+    # Filter out automated protocol-start markers that should not be visible to the student
+    # or trigger standard LLM chat if sent by the UI.
+    if message.startswith('SYSTEM_UNIT_START:'):
+        # The user requested to remove automatic activation prompts.
+        # We'll just acknowledge the lesson context silently in the next turns.
+        return _text_response(content='', suggestions=[])
+
+    if message.startswith('SYSTEM_TOOL:'):
+        # Internal tool trigger - handle via handle_system_tool directly
+        tool_name = message.split(':', 1)[1].strip()
+        return handle_system_tool(session=session, student_id=student_id, lesson_id=lesson_id, tool=tool_name)
+
     thread_id = build_thread_id(session_id=session.id, lesson_id=lesson_id, student_id=student_id)
     memory = MemoryService(thread_id=thread_id)
 

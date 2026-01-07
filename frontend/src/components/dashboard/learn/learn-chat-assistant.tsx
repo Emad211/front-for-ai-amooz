@@ -32,9 +32,23 @@ function formatTime(d: Date): string {
 function WidgetCard({ widgetType, data }: { widgetType: string; data: any }) {
   const type = String(widgetType || '').trim();
 
+  // Helper to find an array in the data object/array
+  const findArray = (d: any, keys: string[]): any[] => {
+    if (Array.isArray(d)) return d;
+    if (!d || typeof d !== 'object') return [];
+    for (const key of keys) {
+      if (Array.isArray(d[key])) return d[key];
+    }
+    // Deep fallback: find the first array-like field
+    for (const key in d) {
+      if (Array.isArray(d[key])) return d[key];
+    }
+    return [];
+  };
+
   // Interactive widgets
   if (type === 'flashcard') {
-    const flashcards = data?.flashcards || data?.cards || [];
+    const flashcards = findArray(data, ['flashcards', 'cards', 'result']);
     return (
       <div className="mt-2 rounded-xl border border-border bg-card p-3">
         <InteractiveFlashcard flashcards={flashcards} />
@@ -43,7 +57,7 @@ function WidgetCard({ widgetType, data }: { widgetType: string; data: any }) {
   }
 
   if (type === 'match_game') {
-    const pairs = data?.pairs || data?.matches || [];
+    const pairs = findArray(data, ['pairs', 'matches', 'result']);
     return (
       <div className="mt-2 rounded-xl border border-border bg-card p-3">
         <InteractiveMatchGame pairs={pairs} />
@@ -52,7 +66,7 @@ function WidgetCard({ widgetType, data }: { widgetType: string; data: any }) {
   }
 
   if (type === 'quiz' || type === 'practice_test') {
-    const questions = data?.questions || data?.quiz || data?.test_items || [];
+    const questions = findArray(data, ['questions', 'quiz', 'test_items', 'result']);
     return (
       <div className="mt-2 rounded-xl border border-border bg-card p-3">
         <InteractiveQuiz questions={questions} />
@@ -61,19 +75,21 @@ function WidgetCard({ widgetType, data }: { widgetType: string; data: any }) {
   }
 
   if (type === 'scenario') {
-    const scenarios = data?.scenarios || (data?.context || data?.scenario ? [data] : []);
+    const scenarios = findArray(data, ['scenarios', 'result']);
+    const finalScenarios = scenarios.length ? scenarios : (data?.context || data?.scenario ? [data] : []);
     return (
       <div className="mt-2 rounded-xl border border-border bg-card p-3">
-        <InteractiveScenario scenarios={scenarios} />
+        <InteractiveScenario scenarios={finalScenarios} />
       </div>
     );
   }
 
   if (type === 'notes') {
-    const items = data?.items || (data?.notes_markdown || data?.summary_markdown ? [data] : []);
+    const items = findArray(data, ['items', 'result']);
+    const finalItems = items.length ? items : (data?.notes_markdown || data?.summary_markdown ? [data] : []);
     return (
       <div className="mt-2 rounded-xl border border-border bg-card p-3">
-        <InteractiveNotes items={items} />
+        <InteractiveNotes items={finalItems} />
       </div>
     );
   }

@@ -10,6 +10,7 @@ interface QuizQuestion {
   question: string;
   options?: string[];
   correct_answer?: string;
+  answer?: string; // Fallback for practice_test format
 }
 
 interface InteractiveQuizProps {
@@ -24,19 +25,18 @@ export function InteractiveQuiz({ questions }: InteractiveQuizProps) {
   const [answers, setAnswers] = useState<Record<number, { selected: number | null; correct: boolean }>>({});
   const [showResult, setShowResult] = useState(false);
 
-  const current = qs[currentIndex] ?? { question: '', options: [], correct_answer: '' };
+  const current = qs[currentIndex] ?? { question: '', options: [], correct_answer: '', answer: '' };
   const currentAnswer = answers[currentIndex];
 
   const selectOption = useCallback(
     (optIndex: number) => {
       if (currentAnswer) return; // Already answered
       const selectedText = String(current.options?.[optIndex] ?? '').trim();
-      const correctText = String(current.correct_answer ?? '').trim();
+      const correctText = String(current.correct_answer || current.answer || '').trim();
       const isCorrect =
         selectedText === correctText ||
         selectedText.includes(correctText) ||
-        correctText.includes(selectedText) ||
-        optIndex === 0; // fallback: assume first is correct if no correct_answer given
+        (correctText && selectedText.toLowerCase() === correctText.toLowerCase());
       setAnswers((prev) => ({ ...prev, [currentIndex]: { selected: optIndex, correct: isCorrect } }));
     },
     [current, currentAnswer, currentIndex]

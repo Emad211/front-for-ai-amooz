@@ -1157,16 +1157,23 @@ class StudentCourseChatView(APIView):
                 page_material=page_material,
                 student_name=student_name,
             )
-        except Exception:
+        except Exception as exc:
+            error_trace = traceback.format_exc()
             print(
                 '[CHATBOT][ERROR] handle_student_message failed'
                 f' session_id={session_id} lesson_id={lesson_id!r} student_id={getattr(user, "id", None)!r}'
                 f' message={message[:200]!r}'
             )
-            print(traceback.format_exc())
+            print(error_trace)
+            
+            # Identify the error for the user in a friendly way but keep technical info in logs
+            error_msg = 'الان در پاسخگویی مشکلی پیش آمده. لطفاً یک بار دیگر تلاش کن.'
+            if settings.DEBUG:
+                error_msg += f"\nDEBUG INFO: {str(exc)}"
+
             resp = {
                 'type': 'text',
-                'content': 'الان در پاسخگویی مشکلی پیش آمده. لطفاً یک بار دیگر تلاش کن.',
+                'content': error_msg,
                 'suggestions': [],
             }
 
