@@ -402,7 +402,7 @@ export function CreateClassPage() {
                 <SelectValue placeholder="انتخاب سطح" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="">بدون تعیین</SelectItem>
+                <SelectItem value="none">بدون تعیین</SelectItem>
                 <SelectItem value="مبتدی">مبتدی</SelectItem>
                 <SelectItem value="متوسط">متوسط</SelectItem>
                 <SelectItem value="پیشرفته">پیشرفته</SelectItem>

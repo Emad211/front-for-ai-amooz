@@ -23,6 +23,8 @@ services:
     restart: unless-stopped
     ports:
       - "6379:6379"
+    volumes:
+      - ai_amooz_redis_data:/data
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -31,3 +33,4 @@ services:
 
 volumes:
   ai_amooz_postgres_data:
+  ai_amooz_redis_data:
