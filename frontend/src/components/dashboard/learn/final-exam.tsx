@@ -31,9 +31,10 @@ type SubmitPayload = {
   passed: boolean;
   passing_score: number;
   per_question: Array<Record<string, any>>;
+  course_progress?: number;
 };
 
-export function FinalExam({ courseId }: { courseId: string }) {
+export function FinalExam({ courseId, onProgressUpdate }: { courseId: string; onProgressUpdate?: (progress: number) => void }) {
   const [isLoading, setIsLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
   const [exam, setExam] = React.useState<FinalExamPayload | null>(null);
@@ -71,6 +72,10 @@ export function FinalExam({ courseId }: { courseId: string }) {
     try {
       const res = await DashboardService.submitFinalExam(courseId, answers);
       setSubmitResult(res);
+      const maybeProgress = Number(res?.course_progress);
+      if (Number.isFinite(maybeProgress)) {
+        onProgressUpdate?.(Math.max(0, Math.min(100, maybeProgress)));
+      }
       try {
         const q2 = await DashboardService.getFinalExam(courseId);
         setExam(q2);

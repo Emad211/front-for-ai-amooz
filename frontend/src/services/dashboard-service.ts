@@ -89,7 +89,14 @@ function extractErrorMessage(payload: unknown, fallback: string) {
   if (Array.isArray(payload)) {
     return payload.map((item) => String(item)).join(', ');
   }
-  if (typeof payload === 'string' && payload.trim()) return payload;
+  if (typeof payload === 'string' && payload.trim()) {
+    const s = payload.trim();
+    // If server returned an HTML error page, don't dump it into the chat UI.
+    if (/^<!doctype\s+html/i.test(s) || /<html[\s>]/i.test(s)) {
+      return 'خطای داخلی سرور رخ داد. لطفاً چند لحظه بعد دوباره تلاش کنید.';
+    }
+    return s;
+  }
   return fallback;
 }
 
@@ -136,6 +143,114 @@ async function requestJson<T>(url: string, options: RequestInit): Promise<T> {
   }
   return payload as T;
 }
+
+async function requestBlob(url: string, options: RequestInit): Promise<Blob> {
+  const doFetch = async (reqOptions: RequestInit) => {
+    try {
+      return await fetch(url, reqOptions);
+    } catch {
+      throw new Error(
+        `ارتباط با سرور برقرار نشد. (آدرس فعلی API: ${RAW_API_URL})` +
+          ' معمولاً یکی از این‌هاست: بک‌اند اجرا نیست، آدرس/پورت اشتباه است، یا مرورگر به خاطر CORS/Mixed Content درخواست را بلاک کرده.'
+      );
+    }
+  };
+
+  const headers = new Headers(options.headers);
+
+  let response = await doFetch({ ...options, headers });
+
+  if (response.status === 401) {
+    const hadAuth = headers.has('Authorization');
+    if (hadAuth) {
+      try {
+        const newAccess = await refreshAccessToken();
+        headers.set('Authorization', `Bearer ${newAccess}`);
+        response = await doFetch({ ...options, headers });
+      } catch {
+        // refreshAccessToken already handled redirect/storage.
+      }
+    }
+  }
+
+  if (!response.ok) {
+    // IMPORTANT: a Response body can only be read once.
+    // We return `response.blob()` on success, so only attempt to parse a cloned response for error messaging.
+    let payload: unknown = null;
+    try {
+      payload = await parseJson(response.clone());
+    } catch {
+      payload = null;
+    }
+
+    const message = extractErrorMessage(payload, response.statusText);
+    if (response.status === 401 && typeof message === 'string' && message.includes('token')) {
+      clearAuthStorage();
+      redirectToLogin();
+    }
+    throw new Error(message);
+  }
+
+  return response.blob();
+}
+
+async function requestFormData<T>(url: string, options: RequestInit): Promise<T> {
+  const doFetch = async (reqOptions: RequestInit) => {
+    try {
+      return await fetch(url, reqOptions);
+    } catch {
+      throw new Error(
+        `ارتباط با سرور برقرار نشد. (آدرس فعلی API: ${RAW_API_URL})` +
+          ' معمولاً یکی از این‌هاست: بک‌اند اجرا نیست، آدرس/پورت اشتباه است، یا مرورگر به خاطر CORS/Mixed Content درخواست را بلاک کرده.'
+      );
+    }
+  };
+
+  const headers = new Headers(options.headers);
+
+  let response = await doFetch({ ...options, headers });
+  let payload = await parseJson(response);
+
+  if (response.status === 401) {
+    const hadAuth = headers.has('Authorization');
+    if (hadAuth) {
+      try {
+        const newAccess = await refreshAccessToken();
+        headers.set('Authorization', `Bearer ${newAccess}`);
+        response = await doFetch({ ...options, headers });
+        payload = await parseJson(response);
+      } catch {
+        // refreshAccessToken already handled redirect/storage.
+      }
+    }
+  }
+
+  if (!response.ok) {
+    const message = extractErrorMessage(payload, response.statusText);
+    if (response.status === 401 && typeof message === 'string' && message.includes('token')) {
+      clearAuthStorage();
+      redirectToLogin();
+    }
+    throw new Error(message);
+  }
+
+  return payload as T;
+}
+
+type CourseChatHistoryItem = {
+  id: number;
+  role: 'user' | 'assistant' | 'system';
+  type: 'text' | 'widget';
+  content: string;
+  payload?: any;
+  suggestions?: string[];
+  lesson_id?: string;
+  created_at: string;
+};
+
+type CourseChatHistoryResponse = {
+  items: CourseChatHistoryItem[];
+};
 
 type MeApiResponse = {
   id: number;
@@ -333,6 +448,89 @@ export const DashboardService = {
 
     const url = `${API_URL}/classes/student/courses/${encodeURIComponent(id)}/content/`;
     return requestJson<CourseContent>(url, {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${getAccessToken()}`,
+      },
+    });
+  },
+
+  downloadCoursePdf: async (courseId?: string): Promise<Blob> => {
+    if (!RAW_API_URL) {
+      throw new Error('NEXT_PUBLIC_API_URL تنظیم نشده است.');
+    }
+    const id = String(courseId ?? '').trim();
+    if (!id) {
+      throw new Error('شناسه کلاس مشخص نیست.');
+    }
+
+    const url = `${API_URL}/classes/student/courses/${encodeURIComponent(id)}/export-pdf/`;
+    return requestBlob(url, {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${getAccessToken()}`,
+      },
+    });
+  },
+
+  sendCourseChatMessage: async (
+    courseId: string,
+    payload: { message: string; lesson_id?: string | null; page_context?: string; page_material?: string }
+  ) => {
+    if (!RAW_API_URL) {
+      throw new Error('NEXT_PUBLIC_API_URL تنظیم نشده است.');
+    }
+    const cid = String(courseId ?? '').trim();
+    if (!cid) {
+      throw new Error('شناسه کلاس مشخص نیست.');
+    }
+
+    const url = `${API_URL}/classes/student/courses/${encodeURIComponent(cid)}/chat/`;
+    return requestJson<any>(url, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${getAccessToken()}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    });
+  },
+
+  sendCourseChatMedia: async (
+    courseId: string,
+    formData: FormData
+  ) => {
+    if (!RAW_API_URL) {
+      throw new Error('NEXT_PUBLIC_API_URL تنظیم نشده است.');
+    }
+    const cid = String(courseId ?? '').trim();
+    if (!cid) {
+      throw new Error('شناسه کلاس مشخص نیست.');
+    }
+
+    const url = `${API_URL}/classes/student/courses/${encodeURIComponent(cid)}/chat-media/`;
+    return requestFormData<any>(url, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${getAccessToken()}`,
+      },
+      body: formData,
+    });
+  },
+
+  getCourseChatHistory: async (courseId: string, lessonId?: string | null): Promise<CourseChatHistoryResponse> => {
+    if (!RAW_API_URL) {
+      throw new Error('NEXT_PUBLIC_API_URL تنظیم نشده است.');
+    }
+    const cid = String(courseId ?? '').trim();
+    if (!cid) {
+      throw new Error('شناسه کلاس مشخص نیست.');
+    }
+
+    const lid = String(lessonId ?? '').trim();
+    const qs = lid ? `?lesson_id=${encodeURIComponent(lid)}` : '';
+    const url = `${API_URL}/classes/student/courses/${encodeURIComponent(cid)}/chat-history/${qs}`;
+    return requestJson<CourseChatHistoryResponse>(url, {
       method: 'GET',
       headers: {
         Authorization: `Bearer ${getAccessToken()}`,

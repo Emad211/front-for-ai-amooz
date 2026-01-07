@@ -1,20 +1,26 @@
 from __future__ import annotations
 
 import json
+import re
 import uuid
+import traceback
 from datetime import timedelta
+from urllib.parse import quote
 
 from django.utils import timezone
 from django.conf import settings
+from django.http import HttpResponse
 
 from rest_framework import status
 from rest_framework import serializers
 from rest_framework.generics import GenericAPIView
+from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from drf_spectacular.utils import extend_schema
+from drf_spectacular.types import OpenApiTypes
 
 from .models import ClassCreationSession, ClassInvitation, ClassPrerequisite
 from .models import ClassSection, ClassSectionQuiz, ClassSectionQuizAttempt
@@ -60,6 +66,15 @@ from .services.background import run_in_background
 from .services.sync_structure import sync_structure_from_session
 from .services.mediana_sms import send_publish_sms_for_session
 from .services.quizzes import generate_final_exam_pool, generate_section_quiz_questions, grade_open_text_answer
+from .services.pdf_export import generate_course_pdf
+
+from apps.chatbot.services.student_course_chat import (
+    handle_student_audio_upload,
+    handle_student_image_upload,
+    handle_student_message,
+)
+
+from .services.student_chat_history import append_message, get_or_create_thread, list_messages
 
 
 def _process_step1_transcription(session_id: int) -> None:
@@ -1006,6 +1021,357 @@ class StudentCourseContentView(APIView):
         }
 
         return Response(StudentCourseContentSerializer(payload).data)
+
+
+class StudentCoursePdfExportView(APIView):
+    permission_classes = [IsAuthenticated, IsStudentUser]
+
+    @extend_schema(
+        tags=['Classes'],
+        summary='Export the full course as a PDF handout',
+        operation_id='student_course_export_pdf',
+        responses={200: OpenApiTypes.BINARY},
+    )
+    def get(self, request, session_id: int):
+        user = request.user
+        phone = (getattr(user, 'phone', None) or '').strip()
+        if not phone:
+            return Response({'detail': 'شماره موبایل برای حساب کاربری ثبت نشده است.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        session = (
+            ClassCreationSession.objects.filter(id=session_id, is_published=True, invites__phone=phone)
+            .prefetch_related('sections__units')
+            .first()
+        )
+        if session is None:
+            return Response({'detail': 'کلاس پیدا نشد.'}, status=status.HTTP_404_NOT_FOUND)
+
+        def _safe_filename(value: str) -> str:
+            value = (value or '').strip() or 'course'
+            value = re.sub(r"[\\/:*?\"<>|]+", '_', value)
+            value = re.sub(r"\s+", ' ', value)
+            return (value[:120] or 'course').strip()
+
+        # Build a structure similar to the legacy Flask exporter.
+        outline: list[dict] = []
+
+        image_re = re.compile(r'!\[[^\]]*\]\(([^)]+)\)')
+        for section in session.sections.order_by('order'):
+            units: list[dict] = []
+            for unit in section.units.order_by('order'):
+                content_md = (unit.content_markdown or unit.source_markdown or '').strip()
+                images = []
+                for m in image_re.finditer(content_md):
+                    img_src = (m.group(1) or '').strip()
+                    if not img_src:
+                        continue
+                    images.append(img_src)
+
+                units.append(
+                    {
+                        'title': unit.title,
+                        'content_markdown': content_md,
+                        'images': images,
+                    }
+                )
+            outline.append({'title': section.title, 'units': units})
+
+        structure = {
+            'root_object': {'summary': (session.description or '').strip()},
+            'outline': outline,
+        }
+        meta = {
+            'title': session.title,
+            'description': (session.description or '').strip(),
+        }
+
+        base_url = request.build_absolute_uri('/')
+        pdf_bytes = generate_course_pdf(structure=structure, meta=meta, base_url=base_url)
+        if not pdf_bytes:
+            return Response({'detail': 'ساخت PDF با خطا مواجه شد.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+        filename = f"{_safe_filename(session.title)}_جزوه.pdf"
+        resp = HttpResponse(pdf_bytes, content_type='application/pdf')
+        resp['Content-Disposition'] = f"attachment; filename*=UTF-8''{quote(filename)}"
+        resp['Cache-Control'] = 'no-store'
+        return resp
+
+
+class StudentCourseChatView(APIView):
+    permission_classes = [IsAuthenticated, IsStudentUser]
+
+    @extend_schema(
+        tags=['Classes'],
+        summary='Chat with Amooz AI tutor for a course/lesson',
+        operation_id='student_course_chat',
+        request=OpenApiTypes.OBJECT,
+        responses={200: OpenApiTypes.OBJECT},
+    )
+    def post(self, request, session_id: int):
+        user = request.user
+        phone = (getattr(user, 'phone', None) or '').strip()
+        if not phone:
+            return Response({'detail': 'شماره موبایل برای حساب کاربری ثبت نشده است.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        session = (
+            ClassCreationSession.objects.filter(id=session_id, is_published=True, invites__phone=phone)
+            .prefetch_related('sections__units')
+            .first()
+        )
+        if session is None:
+            return Response({'detail': 'کلاس پیدا نشد.'}, status=status.HTTP_404_NOT_FOUND)
+
+        data = request.data if isinstance(request.data, dict) else {}
+        message = str(data.get('message') or '').strip()
+        lesson_id = str(data.get('lesson_id') or '').strip() or None
+        page_context = str(data.get('page_context') or '').strip()
+        page_material = str(data.get('page_material') or '').strip()
+
+        thread = get_or_create_thread(session=session, student_id=int(getattr(user, 'id', 0) or 0), lesson_id=lesson_id)
+        append_message(
+            thread=thread,
+            role='user',
+            message_type='text',
+            content=message,
+            payload={'page_context': page_context, 'page_material': page_material},
+            suggestions=[],
+            lesson_id=lesson_id,
+        )
+
+        try:
+            resp = handle_student_message(
+                session=session,
+                student_id=int(getattr(user, 'id', 0) or 0),
+                lesson_id=lesson_id,
+                user_message=message,
+                page_context=page_context,
+                page_material=page_material,
+            )
+        except Exception:
+            print(
+                '[CHATBOT][ERROR] handle_student_message failed'
+                f' session_id={session_id} lesson_id={lesson_id!r} student_id={getattr(user, "id", None)!r}'
+                f' message={message[:200]!r}'
+            )
+            print(traceback.format_exc())
+            resp = {
+                'type': 'text',
+                'content': 'الان در پاسخگویی مشکلی پیش آمده. لطفاً یک بار دیگر تلاش کن.',
+                'suggestions': [],
+            }
+
+        if isinstance(resp, dict) and resp.get('type') == 'text':
+            append_message(
+                thread=thread,
+                role='assistant',
+                message_type='text',
+                content=str(resp.get('content') or ''),
+                payload={},
+                suggestions=list(resp.get('suggestions') or []),
+                lesson_id=lesson_id,
+            )
+        elif isinstance(resp, dict) and resp.get('type') == 'widget':
+            append_message(
+                thread=thread,
+                role='assistant',
+                message_type='widget',
+                content=str(resp.get('text') or ''),
+                payload=resp,
+                suggestions=list(resp.get('suggestions') or []),
+                lesson_id=lesson_id,
+            )
+        return Response(resp, status=status.HTTP_200_OK)
+
+
+class StudentCourseChatHistoryView(APIView):
+    permission_classes = [IsAuthenticated, IsStudentUser]
+
+    @extend_schema(
+        tags=['Classes'],
+        summary='Get previous chat messages for a student in a course (and optional lesson)',
+        operation_id='student_course_chat_history',
+        responses={200: OpenApiTypes.OBJECT},
+    )
+    def get(self, request, session_id: int):
+        user = request.user
+        phone = (getattr(user, 'phone', None) or '').strip()
+        if not phone:
+            return Response({'detail': 'شماره موبایل برای حساب کاربری ثبت نشده است.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        session = ClassCreationSession.objects.filter(id=session_id, is_published=True, invites__phone=phone).first()
+        if session is None:
+            return Response({'detail': 'کلاس پیدا نشد.'}, status=status.HTTP_404_NOT_FOUND)
+
+        lesson_id = str(request.query_params.get('lesson_id') or '').strip() or None
+        items = list_messages(session_id=session.id, student_id=int(getattr(user, 'id', 0) or 0), lesson_id=lesson_id)
+        return Response({'items': items}, status=status.HTTP_200_OK)
+
+
+class StudentCourseChatMediaView(APIView):
+    permission_classes = [IsAuthenticated, IsStudentUser]
+    parser_classes = [MultiPartParser, FormParser]
+
+    @extend_schema(
+        tags=['Classes'],
+        summary='Chat media upload (image/audio) for Amooz AI tutor',
+        operation_id='student_course_chat_media',
+        request=OpenApiTypes.OBJECT,
+        responses={200: OpenApiTypes.OBJECT},
+    )
+    def post(self, request, session_id: int):
+        user = request.user
+        phone = (getattr(user, 'phone', None) or '').strip()
+        if not phone:
+            return Response({'detail': 'شماره موبایل برای حساب کاربری ثبت نشده است.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        session = (
+            ClassCreationSession.objects.filter(id=session_id, is_published=True, invites__phone=phone)
+            .prefetch_related('sections__units')
+            .first()
+        )
+        if session is None:
+            return Response({'detail': 'کلاس پیدا نشد.'}, status=status.HTTP_404_NOT_FOUND)
+
+        up = request.FILES.get('file')
+        if up is None:
+            return Response({'detail': 'فایل ارسال نشده است.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        message = str(request.data.get('message') or '').strip()
+        lesson_id = str(request.data.get('lesson_id') or '').strip() or None
+        page_context = str(request.data.get('page_context') or '').strip()
+        page_material = str(request.data.get('page_material') or '').strip()
+
+        thread = get_or_create_thread(session=session, student_id=int(getattr(user, 'id', 0) or 0), lesson_id=lesson_id)
+
+        mime_type = (getattr(up, 'content_type', None) or '').strip() or 'application/octet-stream'
+        try:
+            data = up.read()
+        except Exception:
+            data = b''
+
+        if not data:
+            return Response({'detail': 'فایل خالی است.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        if mime_type.startswith('audio/'):
+            transcript, _provider, _model = transcribe_media_bytes(data=data, mime_type=mime_type)
+
+            combined = (message or '').strip()
+            if (transcript or '').strip():
+                combined = (combined + '\n\n[VOICE_TRANSCRIPT]\n' + transcript.strip()).strip()
+            append_message(
+                thread=thread,
+                role='user',
+                message_type='text',
+                content=combined or '[VOICE]',
+                payload={
+                    'mime_type': mime_type,
+                    'original_name': getattr(up, 'name', '') or '',
+                    'page_context': page_context,
+                    'page_material': page_material,
+                },
+                suggestions=[],
+                lesson_id=lesson_id,
+            )
+
+            try:
+                resp = handle_student_audio_upload(
+                    session=session,
+                    student_id=int(getattr(user, 'id', 0) or 0),
+                    lesson_id=lesson_id,
+                    user_message=message,
+                    page_context=page_context,
+                    page_material=page_material,
+                    transcript_markdown=transcript,
+                )
+            except Exception:
+                print(
+                    '[CHATBOT][ERROR] handle_student_audio_upload failed'
+                    f' session_id={session_id} lesson_id={lesson_id!r} student_id={getattr(user, "id", None)!r}'
+                    f' mime_type={mime_type!r} message={message[:200]!r}'
+                )
+                print(traceback.format_exc())
+                resp = {
+                    'type': 'text',
+                    'content': 'الان در پردازش فایل صوتی مشکلی پیش آمده. لطفاً دوباره تلاش کن.',
+                    'suggestions': [],
+                }
+
+            if isinstance(resp, dict) and resp.get('type') == 'text':
+                append_message(
+                    thread=thread,
+                    role='assistant',
+                    message_type='text',
+                    content=str(resp.get('content') or ''),
+                    payload={},
+                    suggestions=list(resp.get('suggestions') or []),
+                    lesson_id=lesson_id,
+                )
+            elif isinstance(resp, dict) and resp.get('type') == 'widget':
+                append_message(
+                    thread=thread,
+                    role='assistant',
+                    message_type='widget',
+                    content=str(resp.get('text') or ''),
+                    payload=resp,
+                    suggestions=list(resp.get('suggestions') or []),
+                    lesson_id=lesson_id,
+                )
+            return Response(resp, status=status.HTTP_200_OK)
+
+        if mime_type.startswith('image/'):
+
+            append_message(
+                thread=thread,
+                role='user',
+                message_type='text',
+                content=(message or '').strip() or '[IMAGE]',
+                payload={
+                    'mime_type': mime_type,
+                    'original_name': getattr(up, 'name', '') or '',
+                    'page_context': page_context,
+                    'page_material': page_material,
+                },
+                suggestions=[],
+                lesson_id=lesson_id,
+            )
+
+            try:
+                resp = handle_student_image_upload(
+                    session=session,
+                    student_id=int(getattr(user, 'id', 0) or 0),
+                    lesson_id=lesson_id,
+                    user_message=message,
+                    page_context=page_context,
+                    page_material=page_material,
+                    image_bytes=data,
+                    mime_type=mime_type,
+                )
+            except Exception:
+                print(
+                    '[CHATBOT][ERROR] handle_student_image_upload failed'
+                    f' session_id={session_id} lesson_id={lesson_id!r} student_id={getattr(user, "id", None)!r}'
+                    f' mime_type={mime_type!r} message={message[:200]!r}'
+                )
+                print(traceback.format_exc())
+                resp = {
+                    'type': 'text',
+                    'content': 'الان در پردازش تصویر مشکلی پیش آمده. لطفاً دوباره تلاش کن.',
+                    'suggestions': [],
+                }
+
+            if isinstance(resp, dict) and resp.get('type') == 'text':
+                append_message(
+                    thread=thread,
+                    role='assistant',
+                    message_type='text',
+                    content=str(resp.get('content') or ''),
+                    payload={},
+                    suggestions=list(resp.get('suggestions') or []),
+                    lesson_id=lesson_id,
+                )
+            return Response(resp, status=status.HTTP_200_OK)
+
+        return Response({'detail': 'فقط فایل تصویر یا صوت پشتیبانی می‌شود.'}, status=status.HTTP_400_BAD_REQUEST)
 
 
 class StudentChapterQuizView(APIView):

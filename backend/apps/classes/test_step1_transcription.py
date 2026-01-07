@@ -13,6 +13,10 @@ User = get_user_model()
 
 @pytest.mark.django_db
 class TestClassCreationStep1Transcription:
+    @pytest.fixture(autouse=True)
+    def _disable_async_pipeline(self, settings):
+        settings.CLASS_PIPELINE_ASYNC = False
+
     def test_requires_authentication(self):
         client = APIClient()
 
@@ -148,6 +152,10 @@ class TestClassCreationStep1Transcription:
 
 @pytest.mark.django_db
 class TestClassCreationStep2Structure:
+    @pytest.fixture(autouse=True)
+    def _disable_async_pipeline(self, settings):
+        settings.CLASS_PIPELINE_ASYNC = False
+
     def test_requires_authentication(self):
         client = APIClient()
         res = client.post('/api/classes/creation-sessions/step-2/', {'session_id': 1}, format='json')

@@ -34,6 +34,8 @@ interface CourseSidebarProps {
   onSelectLearningObjectives?: () => void;
   onSelectPrerequisites?: () => void;
   onSelectRecap?: () => void;
+  onDownloadPdf?: () => void;
+  isDownloadingPdf?: boolean;
 }
 
 const ICON_MAP = {
@@ -53,6 +55,8 @@ export const CourseSidebar = ({
   onSelectLearningObjectives,
   onSelectPrerequisites,
   onSelectRecap,
+  onDownloadPdf,
+  isDownloadingPdf = false,
 }: CourseSidebarProps) => (
   <aside className={cn("w-80 flex-shrink-0 flex-col gap-3 hidden lg:flex h-full", className)}>
     {isMobile ? (
@@ -142,8 +146,10 @@ export const CourseSidebar = ({
         <Button
           variant="outline"
           className="w-full justify-between p-2.5 h-auto bg-secondary/50 border-border text-primary hover:bg-primary/10 hover:border-primary/30 transition-all"
+          onClick={onDownloadPdf}
+          disabled={!onDownloadPdf || isDownloadingPdf}
         >
-          <span className="text-sm font-bold">دانلود جزوه</span>
+          <span className="text-sm font-bold">{isDownloadingPdf ? 'در حال ساخت جزوه…' : 'دانلود جزوه'}</span>
           <BookOpen className="h-4 w-4" />
         </Button>
         <div className="flex gap-2">

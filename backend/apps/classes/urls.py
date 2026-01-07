@@ -18,6 +18,10 @@ from .views import (
     TeacherAnalyticsStatsView,
     StudentCourseListView,
     StudentCourseContentView,
+    StudentCoursePdfExportView,
+    StudentCourseChatView,
+    StudentCourseChatMediaView,
+    StudentCourseChatHistoryView,
     StudentChapterQuizView,
     StudentFinalExamView,
     InviteCodeVerifyView,
@@ -44,6 +48,10 @@ urlpatterns = [
 
     path('student/courses/', StudentCourseListView.as_view(), name='student_courses_list'),
     path('student/courses/<int:session_id>/content/', StudentCourseContentView.as_view(), name='student_course_content'),
+    path('student/courses/<int:session_id>/export-pdf/', StudentCoursePdfExportView.as_view(), name='student_course_export_pdf'),
+    path('student/courses/<int:session_id>/chat/', StudentCourseChatView.as_view(), name='student_course_chat'),
+    path('student/courses/<int:session_id>/chat-media/', StudentCourseChatMediaView.as_view(), name='student_course_chat_media'),
+    path('student/courses/<int:session_id>/chat-history/', StudentCourseChatHistoryView.as_view(), name='student_course_chat_history'),
     path('student/courses/<int:session_id>/chapters/<str:chapter_id>/quiz/', StudentChapterQuizView.as_view(), name='student_chapter_quiz'),
     path('student/courses/<int:session_id>/final-exam/', StudentFinalExamView.as_view(), name='student_final_exam'),
 

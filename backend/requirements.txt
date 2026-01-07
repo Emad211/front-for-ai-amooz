@@ -7,6 +7,9 @@ djangorestframework-simplejwt
 drf-spectacular
 Pillow
 google-genai
+Markdown
+weasyprint
+redis
 pytest
 pytest-django
 model-bakery

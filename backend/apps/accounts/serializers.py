@@ -1,6 +1,9 @@
 from django.contrib.auth import get_user_model
 from rest_framework import serializers
 
+from drf_spectacular.utils import extend_schema_field
+from drf_spectacular.types import OpenApiTypes
+
 from .models import AdminProfile, StudentProfile, TeacherProfile
 
 
@@ -24,7 +27,8 @@ class MeSerializer(serializers.Serializer):
     major = serializers.SerializerMethodField()
     is_verified = serializers.SerializerMethodField()
 
-    def get_bio(self, obj):
+    @extend_schema_field(OpenApiTypes.STR)
+    def get_bio(self, obj) -> str | None:
         if getattr(obj, 'role', None) == User.Role.STUDENT and hasattr(obj, 'studentprofile'):
             return getattr(obj.studentprofile, 'bio', None)
         if getattr(obj, 'role', None) == User.Role.TEACHER and hasattr(obj, 'teacherprofile'):
@@ -33,7 +37,8 @@ class MeSerializer(serializers.Serializer):
             return getattr(obj.adminprofile, 'bio', None)
         return None
 
-    def get_grade(self, obj):
+    @extend_schema_field(OpenApiTypes.STR)
+    def get_grade(self, obj) -> str | None:
         if getattr(obj, 'role', None) != User.Role.STUDENT:
             return None
         if not hasattr(obj, 'studentprofile'):
@@ -41,7 +46,8 @@ class MeSerializer(serializers.Serializer):
         grade = getattr(obj.studentprofile, 'grade', None)
         return obj.studentprofile.get_grade_display() if grade else None
 
-    def get_major(self, obj):
+    @extend_schema_field(OpenApiTypes.STR)
+    def get_major(self, obj) -> str | None:
         if getattr(obj, 'role', None) != User.Role.STUDENT:
             return None
         if not hasattr(obj, 'studentprofile'):
@@ -49,7 +55,8 @@ class MeSerializer(serializers.Serializer):
         major = getattr(obj.studentprofile, 'major', None)
         return obj.studentprofile.get_major_display() if major else None
 
-    def get_is_verified(self, obj):
+    @extend_schema_field(OpenApiTypes.BOOL)
+    def get_is_verified(self, obj) -> bool:
         if getattr(obj, 'role', None) == User.Role.TEACHER and hasattr(obj, 'teacherprofile'):
             return bool(getattr(obj.teacherprofile, 'verification_status', False))
         return bool(getattr(obj, 'is_profile_completed', False))

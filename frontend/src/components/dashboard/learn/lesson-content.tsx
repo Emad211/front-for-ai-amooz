@@ -169,7 +169,7 @@ export const LessonContent = ({
                   className="rounded-xl"
                   onClick={() => onBackToPrerequisites?.()}
                 >
-                  بازگشت به پیشنیازها
+                  بازگشت به پیش نیازها
                 </Button>
 
                 <Button
@@ -189,7 +189,7 @@ export const LessonContent = ({
 
             <div className="text-justify">
               <MarkdownWithMath
-                markdown={lesson?.content || (String(lesson?.id ?? '').startsWith('prereq:') ? 'هنوز محتوای آموزشی این پیشنیاز آماده نیست.' : '')}
+                 markdown={lesson?.content || (String(lesson?.id ?? '').startsWith('prereq:') ? 'هنوز محتوای آموزشی این پیش نیاز آماده نیست.' : '')}
               />
             </div>
           </div>

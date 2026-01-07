@@ -6,6 +6,7 @@ from typing import Any, Optional, Tuple
 from google import genai
 
 from apps.commons.llm_prompts import PROMPTS
+from apps.commons.llm_provider import preferred_provider
 
 
 def _get_env(name: str) -> str:
@@ -17,10 +18,12 @@ def _get_clients() -> Tuple[Optional[genai.Client], Optional[genai.Client]]:
     avalai_api_key = _get_env('AVALAI_API_KEY')
     avalai_base_url = _get_env('AVALAI_BASE_URL')
 
-    gemini_client = genai.Client(api_key=gemini_api_key) if gemini_api_key else None
+    provider = preferred_provider()
+
+    gemini_client = genai.Client(api_key=gemini_api_key) if gemini_api_key and provider != 'avalai' else None
 
     avalai_client: Optional[genai.Client] = None
-    if avalai_api_key:
+    if avalai_api_key and provider != 'gemini':
         http_options = {'base_url': avalai_base_url} if avalai_base_url else None
         avalai_client = genai.Client(api_key=avalai_api_key, http_options=http_options)
 

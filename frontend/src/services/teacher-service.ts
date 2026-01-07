@@ -33,6 +33,8 @@ type ClassCreationSessionListItem = {
   status: string;
   title: string;
   description: string;
+  level?: string;
+  duration?: string;
   is_published?: boolean;
   invites_count?: number;
   created_at: string;
@@ -158,6 +160,8 @@ export const TeacherService = {
       lastActivity: s.updated_at,
       studentsCount: Number(s.invites_count ?? 0) || 0,
       lessonsCount: undefined,
+      level: (s.level as any) || undefined,
+      duration: s.duration || undefined,
     }));
     return courses;
   },
@@ -247,6 +251,8 @@ export const TeacherService = {
       status: isPublished ? 'active' : 'draft',
       createdAt: session.created_at,
       lastActivity: session.updated_at,
+      level: session.level || undefined,
+      duration: session.duration || undefined,
       pipelineStatus: session.status,
       transcriptMarkdown: session.transcript_markdown,
       structureJson: session.structure_json,
@@ -285,6 +291,8 @@ export const TeacherService = {
     if (typeof (data as any).title === 'string') payload.title = (data as any).title;
     if (typeof (data as any).description === 'string') payload.description = (data as any).description;
     if (typeof (data as any).structureJson === 'string') payload.structure_json = (data as any).structureJson;
+    if (typeof (data as any).level === 'string') payload.level = (data as any).level;
+    if (typeof (data as any).duration === 'string') payload.duration = (data as any).duration;
 
     await requestJson(`/classes/creation-sessions/${id}/`, {
       method: 'PATCH',

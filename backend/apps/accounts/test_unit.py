@@ -31,16 +31,28 @@ class TestAccountsUnit:
             'id',
             'username',
             'first_name',
+            'last_name',
             'email',
             'phone',
             'avatar',
             'role',
             'is_profile_completed',
+            'join_date',
+            'bio',
+            'grade',
+            'major',
+            'is_verified',
         }
         assert data['username'] == 'serializer_user'
         assert data['first_name'] == ''
+        assert data['last_name'] == ''
         assert data['email'] == 'teacher@example.com'
         assert data['phone'] in ('', None)
         assert data['avatar'] is None
         assert data['role'] == User.Role.TEACHER
         assert data['is_profile_completed'] is False
+        assert data['join_date']
+        assert data['bio'] in ('', None)
+        assert data['grade'] is None
+        assert data['major'] is None
+        assert data['is_verified'] in (True, False)

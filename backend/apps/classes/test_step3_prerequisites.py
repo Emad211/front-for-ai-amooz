@@ -18,6 +18,10 @@ User = get_user_model()
 
 @pytest.mark.django_db
 class TestClassCreationStep3AndStep4Prerequisites:
+    @pytest.fixture(autouse=True)
+    def _disable_async_pipeline(self, settings):
+        settings.CLASS_PIPELINE_ASYNC = False
+
     def _auth_client(self, user):
         token = str(RefreshToken.for_user(user).access_token)
         client = APIClient()

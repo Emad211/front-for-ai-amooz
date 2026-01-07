@@ -19,13 +19,15 @@ import Link from 'next/link';
 import { useCourseContent } from '@/hooks/use-course-content';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ErrorState } from '@/components/shared/error-state';
+import { DashboardService } from '@/services/dashboard-service';
 
 export default function LearnPage() {
     const params = useParams();
     const rawCourseId = (params as any)?.courseId as string | string[] | undefined;
     const courseId = Array.isArray(rawCourseId) ? rawCourseId[0] : rawCourseId;
-    const { content, currentLesson, isLoading, error, reload, setCurrentLesson } = useCourseContent(courseId);
+    const { content, currentLesson, isLoading, error, reload, setCurrentLesson, setContent } = useCourseContent(courseId);
     const [isChatOpen, setIsChatOpen] = React.useState(true);
+    const [isDownloadingPdf, setIsDownloadingPdf] = React.useState(false);
 
     const lastLessonKey = React.useMemo(() => `ai_amooz_course_last_lesson_${String(courseId ?? '')}`, [courseId]);
     const visitedKey = React.useMemo(() => `ai_amooz_course_visited_${String(courseId ?? '')}`, [courseId]);
@@ -49,6 +51,163 @@ export default function LearnPage() {
     }, [courseId, visitedKey]);
 
     const toggleChat = () => setIsChatOpen(!isChatOpen);
+
+    const chatLessonId = React.useMemo(() => {
+        const id = String((currentLesson as any)?.id ?? '').trim();
+        return /^\d+$/.test(id) ? id : null;
+    }, [currentLesson]);
+
+    const chatLessonTitle = React.useMemo(() => {
+        return String((currentLesson as any)?.title ?? '').trim();
+    }, [currentLesson]);
+
+    const chatPageContext = React.useMemo(() => {
+        return String((currentLesson as any)?.title ?? '').trim();
+    }, [currentLesson]);
+
+    const chatPageMaterial = React.useMemo(() => {
+        const lesson: any = currentLesson as any;
+        const id = String(lesson?.id ?? '').trim();
+
+        if (/^\d+$/.test(id)) {
+            return String(lesson?.content ?? '').trim();
+        }
+
+        if (id === 'learning-objectives') {
+            const items = (content?.learningObjectives ?? []).map((x) => String(x).trim()).filter(Boolean);
+            return items.length ? `# اهداف یادگیری\n\n${items.map((x) => `- ${x}`).join('\n')}` : '';
+        }
+
+        if (id === 'prerequisites') {
+            const items = (content?.prerequisites ?? []).map((p) => String(p?.name ?? '').trim()).filter(Boolean);
+            return items.length ? `# پیشنیازها\n\n${items.map((x) => `- ${x}`).join('\n')}` : '';
+        }
+
+        if (id === 'recap') {
+            return String(content?.recapMarkdown ?? '').trim();
+        }
+
+        if (id.startsWith('prereq:')) {
+            return String(lesson?.content ?? '').trim();
+        }
+
+        return '';
+    }, [content?.learningObjectives, content?.prerequisites, content?.recapMarkdown, currentLesson]);
+
+    const handleDownloadPdf = React.useCallback(async () => {
+        try {
+            if (!courseId) {
+                throw new Error('شناسه کلاس مشخص نیست.');
+            }
+
+            if (typeof window === 'undefined') return;
+            if (isDownloadingPdf) return;
+            setIsDownloadingPdf(true);
+
+            const blob = await DashboardService.downloadCoursePdf(courseId);
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            const rawTitle = String(content?.title || 'course').trim() || 'course';
+            const safeTitle = rawTitle.replace(/[\\/:*?"<>|]+/g, ' ').trim() || 'course';
+            a.download = `${safeTitle}_جزوه.pdf`;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            window.URL.revokeObjectURL(url);
+        } catch (e) {
+            const msg = e instanceof Error ? e.message : 'خطا در دانلود جزوه';
+            // Keep UX minimal: reuse existing alert/toast patterns elsewhere.
+            alert(msg);
+        } finally {
+            setIsDownloadingPdf(false);
+        }
+    }, [content?.title, courseId, isDownloadingPdf]);
+
+    const allLessons = React.useMemo(() => {
+        if (!content) return [];
+        return content.chapters.flatMap((c) => c.lessons);
+    }, [content]);
+
+    // Default behavior on first entry: open learning objectives.
+    React.useEffect(() => {
+        if (!content) return;
+        if (!courseId) return;
+        if (typeof window === 'undefined') return;
+
+        const stored = (window.localStorage.getItem(lastLessonKey) || '').trim();
+        if (stored) return;
+
+        setCurrentLesson({
+            id: 'learning-objectives',
+            title: 'اهداف یادگیری',
+            type: 'text',
+            isSpecial: true,
+        } as any);
+        persistCurrentLessonId('learning-objectives');
+    }, [content, courseId, lastLessonKey, persistCurrentLessonId, setCurrentLesson]);
+
+    // Restore last viewed lesson for repeat entries.
+    React.useEffect(() => {
+        if (!content) return;
+        if (!courseId) return;
+        if (typeof window === 'undefined') return;
+
+        const stored = (window.localStorage.getItem(lastLessonKey) || '').trim();
+        if (!stored) return;
+
+        // Avoid redundant sets.
+        if (currentLesson?.id === stored) return;
+
+        const direct = allLessons.find((l) => l.id === stored);
+        if (direct) {
+            setCurrentLesson(direct as any);
+            return;
+        }
+
+        if (stored === 'learning-objectives') {
+            setCurrentLesson({ id: 'learning-objectives', title: 'اهداف یادگیری', type: 'text', isSpecial: true } as any);
+            return;
+        }
+        if (stored === 'prerequisites') {
+            setCurrentLesson({ id: 'prerequisites', title: 'پیش نیازها', type: 'text', isSpecial: true } as any);
+            return;
+        }
+        if (stored === 'recap') {
+            setCurrentLesson({ id: 'recap', title: 'خلاصه و نکات', type: 'text', isSpecial: true } as any);
+            return;
+        }
+        if (stored === 'final-exam') {
+            setCurrentLesson({ id: 'final-exam', title: 'آزمون نهایی دوره', type: 'quiz', finalExam: true } as any);
+            return;
+        }
+
+        if (stored.startsWith('chapter-quiz:')) {
+            const chapterId = stored.split(':')[1] ?? '';
+            const ch = content.chapters.find((c) => c.id === chapterId);
+            if (!ch) return;
+            setCurrentLesson({
+                id: `chapter-quiz:${chapterId}`,
+                title: `آزمون پایان فصل: ${ch.title}`,
+                type: 'quiz',
+                chapterId,
+                isSpecial: true,
+            } as any);
+            return;
+        }
+
+        if (stored.startsWith('prereq-teaching:')) {
+            const prereqId = Number(stored.split(':')[1]);
+            const prereq = (content.prerequisites || []).find((p) => p.id === prereqId);
+            if (!prereq) return;
+            setCurrentLesson({
+                id: `prereq-teaching:${prereq.id}`,
+                title: `آموزش پیش نیاز: ${prereq.name}`,
+                type: 'text',
+                isSpecial: true,
+            } as any);
+        }
+    }, [allLessons, content, courseId, currentLesson?.id, lastLessonKey, setCurrentLesson]);
 
     if (isLoading) {
         return (
@@ -79,26 +238,6 @@ export default function LearnPage() {
             </div>
         );
     }
-
-    const allLessons = content.chapters.flatMap((c) => c.lessons);
-
-    // Default behavior on first entry: open learning objectives.
-    React.useEffect(() => {
-        if (!content) return;
-        if (!courseId) return;
-        if (typeof window === 'undefined') return;
-
-        const stored = (window.localStorage.getItem(lastLessonKey) || '').trim();
-        if (stored) return;
-
-        setCurrentLesson({
-            id: 'learning-objectives',
-            title: 'اهداف یادگیری',
-            type: 'text',
-            isSpecial: true,
-        } as any);
-        persistCurrentLessonId('learning-objectives');
-    }, [content, courseId, lastLessonKey, persistCurrentLessonId, setCurrentLesson]);
 
     const handleSelectLesson = (lessonId: string) => {
         const lesson = allLessons.find((l) => l.id === lessonId) ?? null;
@@ -217,6 +356,8 @@ export default function LearnPage() {
                                 onSelectLearningObjectives={handleSelectLearningObjectives}
                                 onSelectPrerequisites={handleSelectPrerequisites}
                                 onSelectRecap={handleSelectRecap}
+                                onDownloadPdf={handleDownloadPdf}
+                                isDownloadingPdf={isDownloadingPdf}
                             />
                         </SheetContent>
                     </Sheet>
@@ -230,7 +371,17 @@ export default function LearnPage() {
                         <SheetContent side="left" className="!p-0 !w-full !h-full !max-w-none border-none [&>button]:hidden bg-card">
                             <SheetTitle className="sr-only">دستیار هوشمند</SheetTitle>
                             <SheetDescription className="sr-only">چت با هوش مصنوعی برای رفع اشکال</SheetDescription>
-                            <ChatAssistant isOpen={true} onToggle={() => {}} isMobile className="!w-full !h-full" />
+                            <ChatAssistant
+                                isOpen={true}
+                                onToggle={() => {}}
+                                isMobile
+                                className="!w-full !h-full"
+                                courseId={String(courseId ?? '')}
+                                lessonId={chatLessonId}
+                                lessonTitle={chatLessonTitle}
+                                pageContext={chatPageContext}
+                                pageMaterial={chatPageMaterial}
+                            />
                         </SheetContent>
                     </Sheet>
                 </div>
@@ -245,6 +396,8 @@ export default function LearnPage() {
                     onSelectLearningObjectives={handleSelectLearningObjectives}
                     onSelectPrerequisites={handleSelectPrerequisites}
                     onSelectRecap={handleSelectRecap}
+                    onDownloadPdf={handleDownloadPdf}
+                    isDownloadingPdf={isDownloadingPdf}
                 />
                 <div className={cn(
                     "flex-1 flex flex-col relative transition-all duration-300 ease-in-out", 
@@ -256,9 +409,20 @@ export default function LearnPage() {
                         courseId={String(courseId ?? '')}
                         onSelectPrerequisiteTeaching={handleSelectPrerequisiteTeaching}
                         onBackToPrerequisites={handleSelectPrerequisites}
+                        onProgressUpdate={(progress) => {
+                            setContent((prev: any) => (prev ? { ...prev, progress } : prev));
+                        }}
                     />
                 </div>
-                <ChatAssistant isOpen={isChatOpen} onToggle={toggleChat} />
+                <ChatAssistant
+                    isOpen={isChatOpen}
+                    onToggle={toggleChat}
+                    courseId={String(courseId ?? '')}
+                    lessonId={chatLessonId}
+                    lessonTitle={chatLessonTitle}
+                    pageContext={chatPageContext}
+                    pageMaterial={chatPageMaterial}
+                />
                 
                 {!isChatOpen && (
                      <button 

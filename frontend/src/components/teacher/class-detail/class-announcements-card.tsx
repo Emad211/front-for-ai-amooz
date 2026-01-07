@@ -48,8 +48,8 @@ const defaultAnnouncements: Announcement[] = [
   },
   {
     id: '2',
-    title: 'تغییر ساعت کلاس',
-    content: 'جلسات کلاس از هفته آینده ساعت ۱۰ صبح برگزار می‌شود.',
+    title: 'تغییر زمان تقریبی دوره',
+    content: 'زمان تقریبی دوره به‌روزرسانی شد.',
     date: '۸ خرداد ۱۴۰۳',
     priority: 'medium',
   },

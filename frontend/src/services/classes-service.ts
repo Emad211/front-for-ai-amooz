@@ -33,6 +33,8 @@ export type ClassCreationSessionDetail = {
   status: string;
   title: string;
   description: string;
+  level?: string;
+  duration?: string;
   source_mime_type: string;
   source_original_name: string;
   transcript_markdown: string;
@@ -109,7 +111,7 @@ export async function getClassCreationSessionDetail(sessionId: number): Promise<
 
 export async function updateClassCreationSession(
   sessionId: number,
-  data: { title?: string; description?: string; structure_json?: string | object | null }
+  data: { title?: string; description?: string; level?: string; duration?: string; structure_json?: string | object | null }
 ): Promise<ClassCreationSessionDetail> {
   if (!RAW_API_URL) {
     throw new Error('NEXT_PUBLIC_API_URL تنظیم نشده است.');

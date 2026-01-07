@@ -3,9 +3,11 @@ import os
 from urllib.parse import urlparse
 from dotenv import load_dotenv
 
-load_dotenv()
-
 BASE_DIR = Path(__file__).resolve().parent.parent
+
+# Ensure `backend/.env` is loaded regardless of the process working directory.
+# (E.g. running `python backend/manage.py runserver` from the repo root.)
+load_dotenv(dotenv_path=BASE_DIR / '.env')
 
 SECRET_KEY = os.getenv('DJANGO_SECRET_KEY', 'django-insecure-change-me-in-production')
 

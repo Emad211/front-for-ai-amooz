@@ -29,9 +29,20 @@ type SubmitPayload = {
   passed: boolean;
   passing_score: number;
   per_question: Array<Record<string, any>>;
+  course_progress?: number;
 };
 
-export function ChapterQuiz({ courseId, chapterId, chapterTitle }: { courseId: string; chapterId: string; chapterTitle: string }) {
+export function ChapterQuiz({
+  courseId,
+  chapterId,
+  chapterTitle,
+  onProgressUpdate,
+}: {
+  courseId: string;
+  chapterId: string;
+  chapterTitle: string;
+  onProgressUpdate?: (progress: number) => void;
+}) {
   const [isLoading, setIsLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
   const [quiz, setQuiz] = React.useState<QuizPayload | null>(null);
@@ -69,6 +80,10 @@ export function ChapterQuiz({ courseId, chapterId, chapterTitle }: { courseId: s
     try {
       const res = await DashboardService.submitChapterQuiz(courseId, chapterId, answers);
       setSubmitResult(res);
+      const maybeProgress = Number(res?.course_progress);
+      if (Number.isFinite(maybeProgress)) {
+        onProgressUpdate?.(Math.max(0, Math.min(100, maybeProgress)));
+      }
       // refresh quiz meta (last score/pass)
       try {
         const q2 = await DashboardService.getChapterQuiz(courseId, chapterId);

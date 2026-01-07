@@ -271,3 +271,73 @@ class ClassFinalExamAttempt(models.Model):
     passed = models.BooleanField(default=False)
 
     created_at = models.DateTimeField(auto_now_add=True)
+
+
+class StudentCourseChatThread(models.Model):
+    """A per-student chat thread inside a single class session.
+
+    We keep one thread per (session, student, lesson_id). When lesson_id is NULL,
+    this represents a course-level thread.
+    """
+
+    session = models.ForeignKey(
+        ClassCreationSession,
+        on_delete=models.CASCADE,
+        related_name='student_chat_threads',
+    )
+    student = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='student_course_chat_threads',
+    )
+    lesson_id = models.CharField(max_length=64, blank=True, default='')
+    thread_key = models.CharField(max_length=255, unique=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            UniqueConstraint(
+                fields=['session', 'student', 'lesson_id'],
+                name='uniq_student_course_chat_thread_session_student_lesson',
+            ),
+        ]
+
+
+class StudentCourseChatMessage(models.Model):
+    class Role(models.TextChoices):
+        USER = 'user', 'User'
+        ASSISTANT = 'assistant', 'Assistant'
+        SYSTEM = 'system', 'System'
+
+    class MessageType(models.TextChoices):
+        TEXT = 'text', 'Text'
+        WIDGET = 'widget', 'Widget'
+
+    thread = models.ForeignKey(
+        StudentCourseChatThread,
+        on_delete=models.CASCADE,
+        related_name='messages',
+    )
+
+    role = models.CharField(max_length=16, choices=Role.choices)
+    message_type = models.CharField(max_length=16, choices=MessageType.choices)
+
+    # For text messages.
+    content = models.TextField(blank=True)
+
+    # For widget responses and any structured extra info.
+    payload = models.JSONField(default=dict, blank=True)
+    suggestions = models.JSONField(default=list, blank=True)
+
+    # Keep the UI context to help grouping and searching later.
+    lesson_id = models.CharField(max_length=64, blank=True, default='')
+
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=['thread', 'created_at']),
+            models.Index(fields=['lesson_id', 'created_at']),
+        ]

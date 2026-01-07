@@ -41,6 +41,7 @@ export function ClassEditForm({ classDetail, onSave, isSaving }: ClassEditFormPr
     description: classDetail.description,
     category: classDetail.category || '',
     level: classDetail.level || 'مبتدی' as const,
+    duration: (classDetail as any).duration || '',
     status: (classDetail.status || 'draft') as 'draft' | 'active' | 'paused' | 'archived',
     tags: classDetail.tags.join('، '),
     scheduleDay: classDetail.schedule?.[0]?.day || '',
@@ -54,6 +55,7 @@ export function ClassEditForm({ classDetail, onSave, isSaving }: ClassEditFormPr
       description: formData.description,
       category: formData.category,
       level: formData.level,
+      duration: formData.duration,
       status: formData.status,
       tags: formData.tags.split('،').map(t => t.trim()).filter(Boolean),
       schedule: formData.scheduleDay && formData.scheduleTime
@@ -105,6 +107,16 @@ export function ClassEditForm({ classDetail, onSave, isSaving }: ClassEditFormPr
                   ))}
                 </SelectContent>
               </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="duration">زمان تقریبی دوره</Label>
+              <Input
+                id="duration"
+                value={formData.duration}
+                onChange={e => setFormData(prev => ({ ...prev, duration: e.target.value }))}
+                placeholder="مثلاً ۶ ساعت یا ۲ هفته"
+              />
             </div>
 
             <div className="space-y-2">

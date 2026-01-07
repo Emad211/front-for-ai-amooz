@@ -13,6 +13,7 @@ export interface Course {
   lastActivity?: string;
   category?: string;
   level?: 'مبتدی' | 'متوسط' | 'پیشرفته';
+  duration?: string;
   rating?: number;
   reviews?: number;
 }

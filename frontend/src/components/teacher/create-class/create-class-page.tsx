@@ -8,6 +8,9 @@ import { ClassInfoForm } from './class-info-form';
 import { FileUploadSection } from './file-upload-section';
 import { StudentInviteSection } from './student-invite-section';
 import { Card } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
   getClassCreationSessionDetail,
   type ClassCreationSessionDetail,
@@ -66,6 +69,8 @@ export function CreateClassPage() {
   const [expandedSections, setExpandedSections] = useState<string[]>(['info', 'files', 'exercises', 'students']);
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
+  const [level, setLevel] = useState<string>('');
+  const [duration, setDuration] = useState<string>('');
   const [lessonFile, setLessonFile] = useState<File | null>(null);
   const [step1ClientRequestId, setStep1ClientRequestId] = useState<string | null>(null);
   const [activeSessionId, setActiveSessionId] = useState<number | null>(null);
@@ -128,6 +133,8 @@ export function CreateClassPage() {
 
         setTitle((prev) => prev || detail.title);
         setDescription((prev) => prev || detail.description);
+        setLevel((prev) => prev || String((detail as any).level || '').trim());
+        setDuration((prev) => prev || String((detail as any).duration || '').trim());
 
         if (detail.status === 'failed') {
           stopPolling();
@@ -159,6 +166,8 @@ export function CreateClassPage() {
       setActiveSessionId(detail.id);
       setTitle(detail.title);
       setDescription(detail.description);
+      setLevel(String((detail as any).level || '').trim());
+      setDuration(String((detail as any).duration || '').trim());
 
       if (detail.status !== 'failed' && detail.status !== 'recapped') {
         startPolling(sessionId);
@@ -262,6 +271,8 @@ export function CreateClassPage() {
       await updateClassCreationSession(sessionIdForActions, {
         title: title.trim() || undefined,
         description,
+        level: level.trim() || undefined,
+        duration: duration.trim() || undefined,
       });
       await publishClassCreationSession(sessionIdForActions);
 
@@ -381,6 +392,35 @@ export function CreateClassPage() {
         onToggle={() => toggleSection('students')}
         sessionId={sessionIdForActions}
       />
+
+      <Card className="p-4 sm:p-5 rounded-3xl border-border/40">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-5" dir="rtl">
+          <div className="space-y-2">
+            <Label>سطح (اختیاری)</Label>
+            <Select value={level} onValueChange={(value) => setLevel(value)}>
+              <SelectTrigger>
+                <SelectValue placeholder="انتخاب سطح" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="">بدون تعیین</SelectItem>
+                <SelectItem value="مبتدی">مبتدی</SelectItem>
+                <SelectItem value="متوسط">متوسط</SelectItem>
+                <SelectItem value="پیشرفته">پیشرفته</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="duration">زمان تقریبی دوره (اختیاری)</Label>
+            <Input
+              id="duration"
+              value={duration}
+              onChange={(e) => setDuration(e.target.value)}
+              placeholder="مثلاً ۶ ساعت یا ۲ هفته"
+            />
+          </div>
+        </div>
+      </Card>
 
       <div className="flex flex-col sm:flex-row items-center justify-end gap-3 pt-4">
         <Button variant="outline" className="w-full sm:w-auto rounded-xl h-11 px-6">
