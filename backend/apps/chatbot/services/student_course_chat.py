@@ -231,18 +231,6 @@ def handle_student_message(
     if (page_context or '').strip():
         unit_content = f"STUDENT_UI_CONTEXT:\n{page_context.strip()}\n\nSTUDENT_IS_READING:\n{unit_content}".strip()
 
-    # Special command protocol (legacy).
-    if message.startswith('SYSTEM_UNIT_START:'):
-        unit_title = message.split(':', 1)[1].strip() or unit_title
-        prompt = _safe_template_replace(PROMPTS['chat_unit_intro']['default'], {'unit_title': unit_title})
-        intro = generate_text(contents=prompt).text.strip()
-        memory.add(role='assistant', content=intro)
-        return _text_response(content=intro, suggestions=DEFAULT_SUGGESTIONS)
-
-    if message.startswith('SYSTEM_TOOL:'):
-        tool = message.split(':', 1)[1].strip()
-        return handle_system_tool(session=session, student_id=student_id, lesson_id=lesson_id, tool=tool)
-
     # Normal conversational path.
     summary, history_str = memory.get_history_for_llm()
 

@@ -1134,15 +1134,18 @@ class StudentCourseChatView(APIView):
             student_name = f'{first} {last}'.strip() or str(getattr(user, 'username', '') or '').strip()
 
         thread = get_or_create_thread(session=session, student_id=int(getattr(user, 'id', 0) or 0), lesson_id=lesson_id)
-        append_message(
-            thread=thread,
-            role='user',
-            message_type='text',
-            content=message,
-            payload={'page_context': page_context, 'page_material': page_material},
-            suggestions=[],
-            lesson_id=lesson_id,
-        )
+        
+        is_protocol = message.startswith('SYSTEM_') or message.startswith('ACTIVATION_')
+        if not is_protocol:
+            append_message(
+                thread=thread,
+                role='user',
+                message_type='text',
+                content=message,
+                payload={'page_context': page_context, 'page_material': page_material},
+                suggestions=[],
+                lesson_id=lesson_id,
+            )
 
         try:
             resp = handle_student_message(
