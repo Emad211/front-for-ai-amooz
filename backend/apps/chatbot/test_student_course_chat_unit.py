@@ -188,4 +188,4 @@ class TestToolPromptTokenReplacement:
         resp = sc.handle_system_tool(session=session, student_id=1, lesson_id=None, tool='fetch_quizzes')
         assert resp['type'] == 'widget'
         assert resp['widget_type'] == 'quiz'
-        assert 'COUNT=5' in captured['contents']
+        assert 'COUNT=3' in captured['contents']

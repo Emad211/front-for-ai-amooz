@@ -10,6 +10,7 @@ from google.genai import types
 
 from apps.commons.llm_prompts import PROMPTS
 from apps.commons.llm_provider import preferred_provider
+from apps.commons.json_utils import extract_json_object
 
 
 def _get_env(name: str) -> str:
@@ -138,7 +139,8 @@ def _repair_json_with_llm(*, feature: str, model_output: str) -> dict[str, Any]:
     )
     repaired = generate_text(contents=prompt).text
     try:
-        return json.loads(repaired)
+        obj = extract_json_object(repaired)
+        return obj if isinstance(obj, dict) else {'result': obj}
     except Exception as exc:
         print(f"[CHATBOT][LLM] json_repair failed feature={feature!r}: {type(exc).__name__}: {exc}")
         return {}
@@ -151,7 +153,8 @@ def generate_json(*, feature: str, contents: Any) -> dict[str, Any]:
     if not (out or '').strip():
         return _repair_json_with_llm(feature=feature, model_output=out)
     try:
-        return json.loads(out)
+        obj = extract_json_object(out)
+        return obj if isinstance(obj, dict) else {'result': obj}
     except Exception:
         return _repair_json_with_llm(feature=feature, model_output=out)
 

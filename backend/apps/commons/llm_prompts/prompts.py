@@ -514,6 +514,9 @@ friendly conversation, not a lecture.
                           CONTEXT
 ═══════════════════════════════════════════════════════════════
 
+【STUDENT】
+Name: {student_name}
+
 【LESSON】
 {unit_content}
 
@@ -525,7 +528,7 @@ Student: {user_message}
 
 ═══════════════════════════════════════════════════════════════
 
-RULES: Match student language • One concept at a time • End with next step suggestion
+RULES: Match student language • One concept at a time • End with next step suggestion • Address student by name occasionally (if provided)
 OUTPUT: JSON ONLY with this schema:
 {
     "content": "<final answer text only; do NOT include suggestion bullets>",
@@ -1261,6 +1264,7 @@ JSON Only.
 You are designing HIGH-QUALITY flashcards for K-12 students.
 
 Input: STRUCTURED_BLOCKS_JSON
+Count: Create EXACTLY {num_flashcards} flashcards.
 
 Goals:
 

@@ -8,6 +8,13 @@ import { cn } from '@/lib/utils';
 import { SheetClose } from '@/components/ui/sheet';
 import { MarkdownWithMath } from '@/components/content/markdown-with-math';
 import { DashboardService } from '@/services/dashboard-service';
+import {
+  InteractiveFlashcard,
+  InteractiveMatchGame,
+  InteractiveQuiz,
+  InteractiveScenario,
+  InteractiveNotes,
+} from './widgets';
 
 interface ChatMessageProps {
   sender: 'ai' | 'user';
@@ -25,98 +32,76 @@ function formatTime(d: Date): string {
 function WidgetCard({ widgetType, data }: { widgetType: string; data: any }) {
   const type = String(widgetType || '').trim();
 
-  const title =
-    type === 'quiz'
-      ? 'کوئیز'
-      : type === 'flashcard'
-        ? 'فلش‌کارت'
-        : type === 'match_game'
-          ? 'بازی تطبیق'
-          : type === 'notes'
-            ? 'جزوه و نکات'
-            : type === 'scenario'
-              ? 'سناریو'
-              : type === 'practice_test'
-                ? 'آزمون تمرینی'
-                : type === 'image'
-                  ? 'ایده‌ی تصویر'
-                  : 'ابزار';
+  // Interactive widgets
+  if (type === 'flashcard') {
+    const flashcards = data?.flashcards || data?.cards || [];
+    return (
+      <div className="mt-2 rounded-xl border border-border bg-card p-3">
+        <InteractiveFlashcard flashcards={flashcards} />
+      </div>
+    );
+  }
 
-  const renderList = (items: any[], renderItem: (item: any, idx: number) => React.ReactNode) => {
-    if (!Array.isArray(items) || items.length === 0) {
-      return <div className="text-xs text-muted-foreground">موردی برای نمایش نیست.</div>;
+  if (type === 'match_game') {
+    const pairs = data?.pairs || data?.matches || [];
+    return (
+      <div className="mt-2 rounded-xl border border-border bg-card p-3">
+        <InteractiveMatchGame pairs={pairs} />
+      </div>
+    );
+  }
+
+  if (type === 'quiz' || type === 'practice_test') {
+    const questions = data?.questions || data?.quiz || data?.test_items || [];
+    return (
+      <div className="mt-2 rounded-xl border border-border bg-card p-3">
+        <InteractiveQuiz questions={questions} />
+      </div>
+    );
+  }
+
+  if (type === 'scenario') {
+    const scenarios = data?.scenarios || (data?.context || data?.scenario ? [data] : []);
+    return (
+      <div className="mt-2 rounded-xl border border-border bg-card p-3">
+        <InteractiveScenario scenarios={scenarios} />
+      </div>
+    );
+  }
+
+  if (type === 'notes') {
+    const items = data?.items || (data?.notes_markdown || data?.summary_markdown ? [data] : []);
+    return (
+      <div className="mt-2 rounded-xl border border-border bg-card p-3">
+        <InteractiveNotes items={items} />
+      </div>
+    );
+  }
+
+  // Fallback for image or unknown types
+  if (type === 'image') {
+    const images = data?.images || [];
+    if (!Array.isArray(images) || images.length === 0) {
+      return <div className="text-xs text-muted-foreground mt-2">تصویری موجود نیست.</div>;
     }
-    return <div className="space-y-2">{items.slice(0, 6).map(renderItem)}</div>;
-  };
+    return (
+      <div className="mt-2 rounded-xl border border-border bg-card p-3 space-y-2">
+        <div className="text-xs font-medium text-muted-foreground">🖼️ ایده‌ی تصویر</div>
+        {images.slice(0, 3).map((im: any, idx: number) => (
+          <div key={idx} className="rounded-lg bg-background/40 border border-border/50 p-2">
+            <div className="text-[11px] text-muted-foreground mb-1">{String(im?.caption ?? '')}</div>
+            <div className="text-[10px] font-mono break-words" dir="ltr">{String(im?.prompt ?? '')}</div>
+          </div>
+        ))}
+      </div>
+    );
+  }
 
+  // Generic fallback
   return (
     <div className="mt-2 rounded-xl border border-border bg-card p-3">
-      <div className="text-xs font-bold text-foreground mb-2">{title}</div>
-
-      {type === 'quiz' &&
-        renderList(data?.questions, (q, idx) => (
-          <div key={idx} className="rounded-lg bg-background/40 border border-border/50 p-2">
-            <div className="text-xs font-medium mb-1">{String(q?.question ?? '')}</div>
-            {Array.isArray(q?.options) && q.options.length > 0 && (
-              <div className="text-[11px] text-muted-foreground space-y-1">
-                {q.options.slice(0, 4).map((opt: any, i: number) => (
-                  <div key={i}>• {String(opt)}</div>
-                ))}
-              </div>
-            )}
-          </div>
-        ))}
-
-      {type === 'flashcard' &&
-        renderList(data?.flashcards, (c, idx) => (
-          <div key={idx} className="rounded-lg bg-background/40 border border-border/50 p-2">
-            <div className="text-xs font-medium mb-1">{String(c?.front ?? '')}</div>
-            <div className="text-[11px] text-muted-foreground">{String(c?.back ?? '')}</div>
-          </div>
-        ))}
-
-      {type === 'match_game' &&
-        renderList(data?.pairs, (p, idx) => (
-          <div key={idx} className="rounded-lg bg-background/40 border border-border/50 p-2">
-            <div className="text-xs font-medium">{String(p?.term ?? '')}</div>
-            <div className="text-[11px] text-muted-foreground">{String(p?.definition ?? '')}</div>
-          </div>
-        ))}
-
-      {type === 'notes' &&
-        renderList(data?.items, (it, idx) => (
-          <div key={idx} className="rounded-lg bg-background/40 border border-border/50 p-2">
-            <MarkdownWithMath markdown={String(it?.notes_markdown ?? it?.summary_markdown ?? '')} className="text-[11px]" />
-          </div>
-        ))}
-
-      {type === 'scenario' &&
-        renderList(data?.scenarios, (s, idx) => (
-          <div key={idx} className="rounded-lg bg-background/40 border border-border/50 p-2">
-            <div className="text-xs font-medium mb-1">{String(s?.title ?? '')}</div>
-            <div className="text-[11px] text-muted-foreground">{String(s?.challenge_question ?? '')}</div>
-          </div>
-        ))}
-
-      {type === 'practice_test' &&
-        renderList(data?.test_items, (t, idx) => (
-          <div key={idx} className="rounded-lg bg-background/40 border border-border/50 p-2">
-            <div className="text-xs font-medium mb-1">{String(t?.question ?? '')}</div>
-            {Array.isArray(t?.options) && t.options.length > 0 && (
-              <div className="text-[11px] text-muted-foreground">{t.options.map(String).join(' | ')}</div>
-            )}
-          </div>
-        ))}
-
-      {type === 'image' &&
-        renderList(data?.images, (im, idx) => (
-          <div key={idx} className="rounded-lg bg-background/40 border border-border/50 p-2">
-            <div className="text-[11px] text-muted-foreground mb-2">{String(im?.caption ?? '')}</div>
-            <div className="text-[11px] font-mono break-words" dir="ltr">
-              {String(im?.prompt ?? '')}
-            </div>
-          </div>
-        ))}
+      <div className="text-xs font-medium text-muted-foreground mb-2">ابزار</div>
+      <div className="text-xs text-muted-foreground">محتوای ابزار در دسترس نیست.</div>
     </div>
   );
 }
@@ -156,13 +141,14 @@ interface ChatAssistantProps {
   lessonTitle?: string;
   pageContext?: string;
   pageMaterial?: string;
+  studentName?: string;
 }
 
 type ChatApiResponse =
   | { type: 'text'; content: string; suggestions?: string[] }
   | { type: 'widget'; widget_type: string; data: any; text?: string; suggestions?: string[] };
 
-export const ChatAssistant = ({ onToggle, isOpen, className, isMobile = false, courseId, lessonId, lessonTitle, pageContext, pageMaterial }: ChatAssistantProps) => {
+export const ChatAssistant = ({ onToggle, isOpen, className, isMobile = false, courseId, lessonId, lessonTitle, pageContext, pageMaterial, studentName }: ChatAssistantProps) => {
   const [message, setMessage] = React.useState('');
   const [messages, setMessages] = React.useState<
     Array<{ id: string; sender: 'ai' | 'user'; time: string; message: string; widget?: { widget_type: string; data: any } | null }>
@@ -262,12 +248,10 @@ export const ChatAssistant = ({ onToggle, isOpen, className, isMobile = false, c
 
         setMessages(mapped);
 
-        // Legacy rule: only update suggestions if server provides them.
+        // Update suggestions based on last assistant message.
         const last = items.length > 0 ? items[items.length - 1] : null;
         const nextSuggestions = Array.isArray(last?.suggestions) ? last.suggestions.filter(Boolean) : [];
-        if (nextSuggestions.length > 0) {
-          setSuggestions(nextSuggestions);
-        }
+        setSuggestions(nextSuggestions);
       } catch {
         // Ignore history load failures; chat still works.
       } finally {
@@ -297,7 +281,6 @@ export const ChatAssistant = ({ onToggle, isOpen, className, isMobile = false, c
         widget: null,
       },
     ]);
-    setSuggestions(['مفهومش رو توضیح بده', 'جزییات بیشتر می‌خواهم', 'مثال درسی بزن']);
     setSuggestions(['مفهومش رو توضیح بده', 'جزییات بیشتر می‌خواهم', 'مثال درسی بزن']);
   }, [isOpen, historyLoaded, messages.length]);
 
@@ -356,6 +339,7 @@ export const ChatAssistant = ({ onToggle, isOpen, className, isMobile = false, c
           if (lessonId) fd.append('lesson_id', lessonId);
           if (pageContext) fd.append('page_context', pageContext);
           if (pageMaterial) fd.append('page_material', pageMaterial);
+          if (studentName) fd.append('student_name', studentName);
           resp = (await DashboardService.sendCourseChatMedia(cid, fd)) as ChatApiResponse;
         } else {
           resp = (await DashboardService.sendCourseChatMessage(cid, {
@@ -363,6 +347,7 @@ export const ChatAssistant = ({ onToggle, isOpen, className, isMobile = false, c
             lesson_id: lessonId ?? null,
             page_context: pageContext ?? '',
             page_material: pageMaterial ?? '',
+            student_name: studentName ?? '',
           })) as ChatApiResponse;
         }
 
@@ -376,19 +361,17 @@ export const ChatAssistant = ({ onToggle, isOpen, className, isMobile = false, c
         }
 
         const nextSuggestions = Array.isArray((resp as any)?.suggestions) ? (resp as any).suggestions.filter(Boolean) : [];
-        // Legacy rule: only update suggestions if server provides them.
-        if (nextSuggestions.length > 0) {
-          setSuggestions(nextSuggestions);
-        }
+        setSuggestions(nextSuggestions);
         setPendingFile(null);
       } catch (e) {
         const msgErr = e instanceof Error ? e.message : 'خطا در ارسال پیام';
         pushMessage({ sender: 'ai', message: msgErr });
+        setSuggestions([]);
       } finally {
         setIsSending(false);
       }
     },
-    [courseId, isSending, isProtocolMessage, lessonId, pageContext, pageMaterial, pendingFile, pushMessage]
+    [courseId, isSending, isProtocolMessage, lessonId, pageContext, pageMaterial, pendingFile, pushMessage, studentName]
   );
 
   const toggleRecording = React.useCallback(async () => {
@@ -498,6 +481,11 @@ export const ChatAssistant = ({ onToggle, isOpen, className, isMobile = false, c
         <div className="h-4 flex-shrink-0" />
       </div>
       <div className={cn('p-3 border-t border-border bg-card z-10 flex-shrink-0', !isOpen && !isMobile && 'hidden')}>
+        {isSending && (
+          <div className="mb-2 text-xs text-muted-foreground">
+            دستیار در حال ساخت پاسخ است…
+          </div>
+        )}
         {suggestions.length > 0 && (
           <div className="flex gap-2 mb-2 overflow-x-auto no-scrollbar pb-1">
             {suggestions.slice(0, 6).map((s) => (
@@ -508,7 +496,7 @@ export const ChatAssistant = ({ onToggle, isOpen, className, isMobile = false, c
                 disabled={isSending}
                 onClick={() => sendMessage(s)}
               >
-                {s}
+                <MarkdownWithMath markdown={s} className="text-xs" />
               </Button>
             ))}
           </div>

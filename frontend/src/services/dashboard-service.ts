@@ -475,7 +475,7 @@ export const DashboardService = {
 
   sendCourseChatMessage: async (
     courseId: string,
-    payload: { message: string; lesson_id?: string | null; page_context?: string; page_material?: string }
+    payload: { message: string; lesson_id?: string | null; page_context?: string; page_material?: string; student_name?: string }
   ) => {
     if (!RAW_API_URL) {
       throw new Error('NEXT_PUBLIC_API_URL تنظیم نشده است.');

@@ -1,11 +1,12 @@
 'use client';
 
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useId, useMemo, useRef } from 'react';
 import renderMathInElement from 'katex/contrib/auto-render';
 
 type MarkdownWithMathProps = {
 	markdown: string;
 	className?: string;
+	renderKey?: string | number; // Force re-render when this changes
 };
 
 function escapeHtml(text: string): string {
@@ -125,32 +126,43 @@ function formatMarkdown(md: string): string {
 	return html;
 }
 
-export function MarkdownWithMath({ markdown, className }: MarkdownWithMathProps) {
+export function MarkdownWithMath({ markdown, className, renderKey }: MarkdownWithMathProps) {
 	const containerRef = useRef<HTMLDivElement | null>(null);
+	const uniqueId = useId();
 
 	const html = useMemo(() => formatMarkdown(markdown || ''), [markdown]);
 
+	// Run KaTeX render after DOM update
 	useEffect(() => {
 		const el = containerRef.current;
 		if (!el) return;
 
-		try {
-			renderMathInElement(el, {
-				delimiters: [
-					{ left: '\\[', right: '\\]', display: true },
-					{ left: '\\(', right: '\\)', display: false },
-					{ left: '$$', right: '$$', display: true },
-					{ left: '$', right: '$', display: false },
-				],
-				throwOnError: false,
-			});
-		} catch {
-			// ignore KaTeX failures
-		}
-	}, [html]);
+		// Use requestAnimationFrame to ensure DOM is painted first
+		const frame = requestAnimationFrame(() => {
+			try {
+				renderMathInElement(el, {
+					delimiters: [
+						{ left: '\\[', right: '\\]', display: true },
+						{ left: '\\(', right: '\\)', display: false },
+						{ left: '$$', right: '$$', display: true },
+						{ left: '$', right: '$', display: false },
+					],
+					throwOnError: false,
+				});
+			} catch {
+				// ignore KaTeX failures
+			}
+		});
+
+		return () => cancelAnimationFrame(frame);
+	}, [html, renderKey, uniqueId]);
+
+	// Generate a stable key for re-render based on content
+	const contentKey = `${uniqueId}-${renderKey ?? ''}-${markdown?.slice(0, 50) ?? ''}`;
 
 	return (
 		<div
+			key={contentKey}
 			ref={containerRef}
 			dir="rtl"
 			className={['text-right leading-7', className].filter(Boolean).join(' ')}

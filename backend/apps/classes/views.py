@@ -1126,6 +1126,12 @@ class StudentCourseChatView(APIView):
         lesson_id = str(data.get('lesson_id') or '').strip() or None
         page_context = str(data.get('page_context') or '').strip()
         page_material = str(data.get('page_material') or '').strip()
+        # Student name for personalized chat (from profile or frontend)
+        student_name = str(data.get('student_name') or '').strip()
+        if not student_name:
+            first = str(getattr(user, 'first_name', '') or '').strip()
+            last = str(getattr(user, 'last_name', '') or '').strip()
+            student_name = f'{first} {last}'.strip() or str(getattr(user, 'username', '') or '').strip()
 
         thread = get_or_create_thread(session=session, student_id=int(getattr(user, 'id', 0) or 0), lesson_id=lesson_id)
         append_message(
@@ -1146,6 +1152,7 @@ class StudentCourseChatView(APIView):
                 user_message=message,
                 page_context=page_context,
                 page_material=page_material,
+                student_name=student_name,
             )
         except Exception:
             print(

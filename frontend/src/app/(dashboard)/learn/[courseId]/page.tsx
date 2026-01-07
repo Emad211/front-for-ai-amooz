@@ -20,14 +20,20 @@ import { useCourseContent } from '@/hooks/use-course-content';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ErrorState } from '@/components/shared/error-state';
 import { DashboardService } from '@/services/dashboard-service';
+import { useProfile } from '@/hooks/use-profile';
 
 export default function LearnPage() {
     const params = useParams();
     const rawCourseId = (params as any)?.courseId as string | string[] | undefined;
     const courseId = Array.isArray(rawCourseId) ? rawCourseId[0] : rawCourseId;
     const { content, currentLesson, isLoading, error, reload, setCurrentLesson, setContent } = useCourseContent(courseId);
+    const { user } = useProfile();
     const [isChatOpen, setIsChatOpen] = React.useState(true);
     const [isDownloadingPdf, setIsDownloadingPdf] = React.useState(false);
+
+    const studentName = React.useMemo(() => {
+        return String(user?.name ?? '').trim();
+    }, [user?.name]);
 
     const lastLessonKey = React.useMemo(() => `ai_amooz_course_last_lesson_${String(courseId ?? '')}`, [courseId]);
     const visitedKey = React.useMemo(() => `ai_amooz_course_visited_${String(courseId ?? '')}`, [courseId]);
@@ -381,6 +387,7 @@ export default function LearnPage() {
                                 lessonTitle={chatLessonTitle}
                                 pageContext={chatPageContext}
                                 pageMaterial={chatPageMaterial}
+                                studentName={studentName}
                             />
                         </SheetContent>
                     </Sheet>
@@ -422,6 +429,7 @@ export default function LearnPage() {
                     lessonTitle={chatLessonTitle}
                     pageContext={chatPageContext}
                     pageMaterial={chatPageMaterial}
+                    studentName={studentName}
                 />
                 
                 {!isChatOpen && (

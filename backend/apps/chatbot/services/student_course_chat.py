@@ -146,19 +146,33 @@ def _run_intent_classifier(*, user_message: str) -> str:
     return intent or 'ask_question'
 
 
-def _run_chat_system_prompt(*, unit_content: str, history_str: str, user_message: str) -> TextResponse:
+def _run_chat_system_prompt(*, unit_content: str, history_str: str, user_message: str, student_name: str = '') -> TextResponse:
     prompt = _safe_template_replace(
         PROMPTS['chat_system_prompt'],
         {
             'unit_content': unit_content,
             'history_str': history_str,
             'user_message': user_message,
+            'student_name': student_name or 'دانشجو',
         },
     )
     obj = generate_json(feature='chat_system_prompt', contents=prompt)
     content = _safe_str(obj.get('content'))
     suggestions = _normalize_suggestions(obj.get('suggestions'))
-    return _text_response(content=content or 'متوجه شدم. سوالت رو یک‌بار کوتاه‌تر می‌گی؟', suggestions=suggestions)
+
+    if content:
+        return _text_response(content=content, suggestions=suggestions)
+
+    # Fallback: if the provider fails to output JSON, return a best-effort text answer.
+    try:
+        raw = generate_text(contents=prompt).text
+        raw = _safe_str(raw)
+        if raw:
+            return _text_response(content=raw, suggestions=DEFAULT_SUGGESTIONS)
+    except Exception:
+        pass
+
+    return _text_response(content='متوجه شدم. سوالت رو یک‌بار کوتاه‌تر می‌گی؟', suggestions=DEFAULT_SUGGESTIONS)
 
 
 def _run_tool_prompt_json(*, feature: str, strategy: str, payload: dict[str, Any]) -> dict[str, Any]:
@@ -171,6 +185,11 @@ def _run_tool_prompt_json(*, feature: str, strategy: str, payload: dict[str, Any
         prompt = prompt.replace('STRUCTURED_BLOCKS_JSON', payload['structured_blocks_json'])
     if 'UNIT_CONTENT_MARKDOWN' in prompt and isinstance(payload.get('unit_content_markdown'), str):
         prompt = prompt.replace('UNIT_CONTENT_MARKDOWN', payload['unit_content_markdown'])
+    # Ensure math is always expressed in LaTeX so frontend KaTeX can render.
+    prompt = (
+        str(prompt).strip()
+        + "\n\nIMPORTANT: For any math/science notation, ALWAYS use LaTeX. Inline: $...$ and display: $$...$$."
+    )
     return generate_json(feature=feature, contents=prompt)
 
 
@@ -195,6 +214,7 @@ def handle_student_message(
     user_message: str,
     page_context: str = '',
     page_material: str = '',
+    student_name: str = '',
 ) -> ChatResponse:
     message = (user_message or '').strip()
     if not message:
@@ -237,7 +257,7 @@ def handle_student_message(
         obj = _run_tool_prompt_json(
             feature='fetch_quizzes',
             strategy='multiple_choice',
-            payload={'num_questions': 5, 'structured_blocks_json': structured_json},
+            payload={'num_questions': 3, 'structured_blocks_json': structured_json},
         )
         memory.add(role='assistant', content='کوئیز آماده شد.')
         return _tool_widget(widget_type='quiz', data=obj, text='کوئیز آماده شد.', suggestions=DEFAULT_SUGGESTIONS)
@@ -246,7 +266,7 @@ def handle_student_message(
         obj = _run_tool_prompt_json(
             feature='flash_cards',
             strategy='standard_qa',
-            payload={'structured_blocks_json': structured_json},
+            payload={'num_flashcards': 10, 'structured_blocks_json': structured_json},
         )
         memory.add(role='assistant', content='فلش‌کارت‌ها آماده شد.')
         return _tool_widget(widget_type='flashcard', data=obj, text='فلش‌کارت‌ها آماده شد.', suggestions=DEFAULT_SUGGESTIONS)
@@ -255,7 +275,7 @@ def handle_student_message(
         obj = _run_tool_prompt_json(
             feature='match_games',
             strategy='term_definition',
-            payload={'num_pairs': 10, 'structured_blocks_json': structured_json},
+            payload={'num_pairs': 5, 'structured_blocks_json': structured_json},
         )
         memory.add(role='assistant', content='بازی تطبیق آماده شد.')
         return _tool_widget(widget_type='match_game', data=obj, text='بازی تطبیق آماده شد.', suggestions=DEFAULT_SUGGESTIONS)
@@ -293,7 +313,7 @@ def handle_student_message(
         return _tool_widget(widget_type='image', data=obj, text='ایده‌ی تصویر آماده شد.', suggestions=DEFAULT_SUGGESTIONS)
 
     # Default: tutoring chat.
-    resp = _run_chat_system_prompt(unit_content=unit_content, history_str=history_str, user_message=message)
+    resp = _run_chat_system_prompt(unit_content=unit_content, history_str=history_str, user_message=message, student_name=student_name)
     memory.add(role='assistant', content=resp['content'])
     return resp
 
@@ -313,7 +333,7 @@ def handle_system_tool(
         obj = _run_tool_prompt_json(
             feature='flash_cards',
             strategy='standard_qa',
-            payload={'structured_blocks_json': structured_json},
+            payload={'num_flashcards': 10, 'structured_blocks_json': structured_json},
         )
         return _tool_widget(widget_type='flashcard', data=obj, text='فلش‌کارت‌ها آماده شد.', suggestions=DEFAULT_SUGGESTIONS)
 
@@ -321,7 +341,7 @@ def handle_system_tool(
         obj = _run_tool_prompt_json(
             feature='fetch_quizzes',
             strategy='multiple_choice',
-            payload={'num_questions': 5, 'structured_blocks_json': structured_json},
+            payload={'num_questions': 3, 'structured_blocks_json': structured_json},
         )
         return _tool_widget(widget_type='quiz', data=obj, text='کوئیز آماده شد.', suggestions=DEFAULT_SUGGESTIONS)
 
@@ -329,7 +349,7 @@ def handle_system_tool(
         obj = _run_tool_prompt_json(
             feature='match_games',
             strategy='term_definition',
-            payload={'num_pairs': 10, 'structured_blocks_json': structured_json},
+            payload={'num_pairs': 5, 'structured_blocks_json': structured_json},
         )
         return _tool_widget(widget_type='match_game', data=obj, text='بازی تطبیق آماده شد.', suggestions=DEFAULT_SUGGESTIONS)
 
