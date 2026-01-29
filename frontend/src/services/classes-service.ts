@@ -183,6 +183,51 @@ export async function deleteClassInvite(sessionId: number, inviteId: number): Pr
   });
 }
 
+// ==========================================================================
+// EXAM PREP INVITES
+// ==========================================================================
+
+export async function listExamPrepInvites(sessionId: number): Promise<ClassInvite[]> {
+  if (!RAW_API_URL) {
+    throw new Error('NEXT_PUBLIC_API_URL تنظیم نشده است.');
+  }
+  const url = `${API_URL}/classes/exam-prep-sessions/${sessionId}/invites/`;
+  return requestJson<ClassInvite[]>(url, {
+    method: 'GET',
+    headers: {
+      Authorization: `Bearer ${getAccessToken()}`,
+    },
+  });
+}
+
+export async function addExamPrepInvites(sessionId: number, phones: string[]): Promise<ClassInvite[]> {
+  if (!RAW_API_URL) {
+    throw new Error('NEXT_PUBLIC_API_URL تنظیم نشده است.');
+  }
+  const url = `${API_URL}/classes/exam-prep-sessions/${sessionId}/invites/`;
+  return requestJson<ClassInvite[]>(url, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${getAccessToken()}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ phones }),
+  });
+}
+
+export async function deleteExamPrepInvite(sessionId: number, inviteId: number): Promise<void> {
+  if (!RAW_API_URL) {
+    throw new Error('NEXT_PUBLIC_API_URL تنظیم نشده است.');
+  }
+  const url = `${API_URL}/classes/exam-prep-sessions/${sessionId}/invites/${inviteId}/`;
+  await requestJson<void>(url, {
+    method: 'DELETE',
+    headers: {
+      Authorization: `Bearer ${getAccessToken()}`,
+    },
+  });
+}
+
 export async function listClassPrerequisites(sessionId: number): Promise<ClassPrerequisite[]> {
   if (!RAW_API_URL) {
     throw new Error('NEXT_PUBLIC_API_URL تنظیم نشده است.');
@@ -363,4 +408,196 @@ export async function structureClassCreationStep2(params: {
   }
 
   return payload as Step2StructureResponse;
+}
+
+
+// ==========================================================================
+// EXAM PREP PIPELINE (2 Steps)
+// ==========================================================================
+
+export type ExamPrepStatus =
+  | 'exam_transcribing'
+  | 'exam_transcribed'
+  | 'exam_structuring'
+  | 'exam_structured'
+  | 'failed';
+
+export interface ExamPrepStep1Response {
+  id: number;
+  status: ExamPrepStatus;
+  pipeline_type: 'exam_prep';
+  title: string;
+  description: string;
+  source_mime_type: string;
+  source_original_name: string;
+  transcript_markdown: string;
+  created_at: string;
+}
+
+export interface ExamPrepSessionDetail {
+  id: number;
+  status: ExamPrepStatus;
+  pipeline_type: 'exam_prep';
+  title: string;
+  description: string;
+  level: string;
+  duration: string;
+  transcript_markdown: string;
+  exam_prep_json: string;
+  exam_prep_data: ExamPrepData | null;
+  is_published: boolean;
+  published_at: string | null;
+  error_detail: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ExamPrepData {
+  exam_prep: {
+    title: string;
+    source_transcript_id?: string;
+    questions: ExamPrepQuestion[];
+  };
+}
+
+export interface ExamPrepQuestion {
+  question_id: string;
+  question_text_markdown: string;
+  options: { label: string; text_markdown: string }[];
+  correct_option_label: string | null;
+  correct_option_text_markdown: string | null;
+  teacher_solution_markdown: string;
+  final_answer_markdown: string;
+  confidence: number;
+  issues?: string[];
+}
+
+/**
+ * Exam Prep Step 1: Upload and transcribe audio/video.
+ */
+export async function transcribeExamPrepStep1(params: {
+  title: string;
+  description?: string;
+  file: File;
+  clientRequestId?: string;
+  runFullPipeline?: boolean;
+}): Promise<ExamPrepStep1Response> {
+  if (!RAW_API_URL) {
+    throw new Error('NEXT_PUBLIC_API_URL تنظیم نشده است.');
+  }
+
+  const formData = new FormData();
+  formData.append('title', params.title);
+  formData.append('description', params.description ?? '');
+  formData.append('file', params.file, params.file.name);
+  if (params.clientRequestId) {
+    formData.append('client_request_id', params.clientRequestId);
+  }
+  if (params.runFullPipeline) {
+    formData.append('run_full_pipeline', 'true');
+  }
+
+  const url = `${API_URL}/classes/exam-prep-sessions/step-1/`;
+
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${getAccessToken()}`,
+      },
+      body: formData,
+    });
+  } catch {
+    throw new Error(
+      `ارتباط با سرور برقرار نشد. (آدرس فعلی API: ${RAW_API_URL})` +
+        ' معمولاً یکی از این‌هاست: بک‌اند اجرا نیست، آدرس/پورت اشتباه است، یا مرورگر به خاطر CORS/Mixed Content درخواست را بلاک کرده.'
+    );
+  }
+
+  const payload = await parseJson(response);
+  if (!response.ok) {
+    throw new Error(extractErrorMessage(payload, response.statusText));
+  }
+
+  return payload as ExamPrepStep1Response;
+}
+
+/**
+ * Fetch exam prep session detail (for polling).
+ */
+export async function fetchExamPrepSession(sessionId: number): Promise<ExamPrepSessionDetail> {
+  if (!RAW_API_URL) {
+    throw new Error('NEXT_PUBLIC_API_URL تنظیم نشده است.');
+  }
+
+  const url = `${API_URL}/classes/exam-prep-sessions/${sessionId}/`;
+  const payload = await requestJson(url, {
+    method: 'GET',
+    headers: {
+      Authorization: `Bearer ${getAccessToken()}`,
+    },
+  });
+
+  return payload as ExamPrepSessionDetail;
+}
+
+/**
+ * Publish an exam prep session.
+ */
+export async function publishExamPrepSession(sessionId: number): Promise<ExamPrepSessionDetail> {
+  if (!RAW_API_URL) {
+    throw new Error('NEXT_PUBLIC_API_URL تنظیم نشده است.');
+  }
+
+  const url = `${API_URL}/classes/exam-prep-sessions/${sessionId}/publish/`;
+  const payload = await requestJson(url, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${getAccessToken()}`,
+    },
+  });
+
+  return payload as ExamPrepSessionDetail;
+}
+
+/**
+ * List all exam prep sessions for the teacher.
+ */
+export async function listExamPrepSessions(): Promise<ExamPrepSessionDetail[]> {
+  if (!RAW_API_URL) {
+    throw new Error('NEXT_PUBLIC_API_URL تنظیم نشده است.');
+  }
+
+  const url = `${API_URL}/classes/exam-prep-sessions/`;
+  const payload = await requestJson(url, {
+    method: 'GET',
+    headers: {
+      Authorization: `Bearer ${getAccessToken()}`,
+    },
+  });
+
+  return payload as ExamPrepSessionDetail[];
+}
+
+/**
+ * Delete an exam prep session.
+ */
+export async function deleteExamPrepSession(sessionId: number): Promise<void> {
+  if (!RAW_API_URL) {
+    throw new Error('NEXT_PUBLIC_API_URL تنظیم نشده است.');
+  }
+
+  const url = `${API_URL}/classes/exam-prep-sessions/${sessionId}/`;
+  const response = await fetch(url, {
+    method: 'DELETE',
+    headers: {
+      Authorization: `Bearer ${getAccessToken()}`,
+    },
+  });
+
+  if (!response.ok) {
+    const payload = await parseJson(response);
+    throw new Error(extractErrorMessage(payload, response.statusText));
+  }
 }

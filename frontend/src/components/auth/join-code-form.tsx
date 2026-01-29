@@ -10,7 +10,7 @@ import { Label } from '@/components/ui/label';
 import { joinCodeSchema, type JoinCodeFormValues } from '@/lib/validations/auth';
 import { toast } from 'sonner';
 import { Loader2, Info } from 'lucide-react';
-import { inviteLogin, persistTokens, persistUser } from '@/services/auth-service';
+import { ApiRequestError, inviteLogin, persistTokens, persistUser } from '@/services/auth-service';
 
 const RAW_API_URL = (process.env.NEXT_PUBLIC_API_URL ?? '').replace(/\/$/, '');
 const API_URL = RAW_API_URL.endsWith('/api') ? RAW_API_URL : `${RAW_API_URL}/api`;
@@ -21,11 +21,13 @@ interface JoinCodeFormProps {
 
 export function JoinCodeForm({ onSwitchToLogin }: JoinCodeFormProps) {
   const [isLoading, setIsLoading] = React.useState(false);
+  const [submitError, setSubmitError] = React.useState<string | null>(null);
   const router = useRouter();
 
   const {
     register,
     handleSubmit,
+    setError,
     formState: { errors },
   } = useForm<JoinCodeFormValues>({
     resolver: zodResolver(joinCodeSchema),
@@ -37,6 +39,7 @@ export function JoinCodeForm({ onSwitchToLogin }: JoinCodeFormProps) {
 
   const onSubmit = async (data: JoinCodeFormValues) => {
     setIsLoading(true);
+    setSubmitError(null);
 
     try {
       if (!RAW_API_URL) {
@@ -51,7 +54,26 @@ export function JoinCodeForm({ onSwitchToLogin }: JoinCodeFormProps) {
       router.push('/home');
     } catch (err) {
       console.error(err);
-      toast.error(err instanceof Error ? err.message : 'خطا در ورود با کد دعوت');
+
+      if (err instanceof ApiRequestError && err.payload && typeof err.payload === 'object') {
+        const payloadObj = err.payload as Record<string, unknown>;
+        const errorsObj = payloadObj.errors;
+        if (errorsObj && typeof errorsObj === 'object') {
+          const fieldErrors = errorsObj as Record<string, unknown>;
+          const phoneMsgs = fieldErrors.phone;
+          const codeMsgs = fieldErrors.code;
+          if (Array.isArray(phoneMsgs) && phoneMsgs.length) {
+            setError('phone', { type: 'server', message: String(phoneMsgs[0]) });
+          }
+          if (Array.isArray(codeMsgs) && codeMsgs.length) {
+            setError('code', { type: 'server', message: String(codeMsgs[0]) });
+          }
+        }
+      }
+
+      const message = err instanceof Error ? err.message : 'خطا در ورود با کد دعوت';
+      setSubmitError(message);
+      toast.error(message);
       setIsLoading(false);
     }
   };
@@ -63,6 +85,12 @@ export function JoinCodeForm({ onSwitchToLogin }: JoinCodeFormProps) {
       </h1>
 
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
+        {submitError && (
+          <div className="rounded-lg border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+            {submitError}
+          </div>
+        )}
+
         <div className="space-y-2">
           <Label htmlFor="phone" className="text-sm font-medium text-muted-foreground">
             شماره تماس

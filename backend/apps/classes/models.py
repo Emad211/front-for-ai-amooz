@@ -5,7 +5,12 @@ import uuid
 
 
 class ClassCreationSession(models.Model):
+    class PipelineType(models.TextChoices):
+        CLASS = 'class', 'Class Pipeline'
+        EXAM_PREP = 'exam_prep', 'Exam Prep Pipeline'
+
     class Status(models.TextChoices):
+        # Class pipeline statuses (5 steps)
         TRANSCRIBING = 'transcribing', 'Transcribing'
         TRANSCRIBED = 'transcribed', 'Transcribed'
         STRUCTURING = 'structuring', 'Structuring'
@@ -16,6 +21,12 @@ class ClassCreationSession(models.Model):
         PREREQ_TAUGHT = 'prereq_taught', 'Prerequisites: Taught'
         RECAPPING = 'recapping', 'Recap: Generating'
         RECAPPED = 'recapped', 'Recap: Ready'
+        # Exam prep pipeline statuses (2 steps)
+        EXAM_TRANSCRIBING = 'exam_transcribing', 'Exam Prep: Transcribing'
+        EXAM_TRANSCRIBED = 'exam_transcribed', 'Exam Prep: Transcribed'
+        EXAM_STRUCTURING = 'exam_structuring', 'Exam Prep: Extracting Q&A'
+        EXAM_STRUCTURED = 'exam_structured', 'Exam Prep: Ready'
+        # Shared
         FAILED = 'failed', 'Failed'
 
     teacher = models.ForeignKey(
@@ -26,6 +37,13 @@ class ClassCreationSession(models.Model):
 
     title = models.CharField(max_length=255)
     description = models.TextField(blank=True)
+
+    # Pipeline type: class (5 steps) or exam_prep (2 steps)
+    pipeline_type = models.CharField(
+        max_length=16,
+        choices=PipelineType.choices,
+        default=PipelineType.CLASS,
+    )
 
     # Course metadata set by teacher (shown in student Learn header).
     level = models.CharField(max_length=64, blank=True, default='')
@@ -43,6 +61,9 @@ class ClassCreationSession(models.Model):
     client_request_id = models.UUIDField(null=True, blank=True, default=None)
 
     structure_json = models.TextField(blank=True)
+
+    # Exam prep specific: extracted Q&A in JSON format
+    exam_prep_json = models.TextField(blank=True)
 
     recap_markdown = models.TextField(blank=True)
     llm_provider = models.CharField(max_length=32, blank=True)
@@ -88,6 +109,22 @@ class ClassInvitation(models.Model):
             UniqueConstraint(fields=['session', 'phone'], name='uniq_class_invite_session_phone'),
             UniqueConstraint(fields=['session', 'invite_code'], name='uniq_class_invite_session_code'),
         ]
+
+
+class StudentInviteCode(models.Model):
+    """A permanent invite code per phone number.
+
+    This is the single source of truth for invite codes across all pipelines.
+    """
+
+    phone = models.CharField(max_length=32, unique=True)
+    code = models.CharField(max_length=64, unique=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self) -> str:
+        return f"{self.phone}:{self.code}"
 
 
 class ClassLearningObjective(models.Model):

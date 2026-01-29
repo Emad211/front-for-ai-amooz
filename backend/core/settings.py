@@ -182,6 +182,10 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 CORS_ALLOW_ALL_ORIGINS = True # For development only
 
+# Allow large file uploads (up to 250MB)
+DATA_UPLOAD_MAX_MEMORY_SIZE = 250 * 1024 * 1024  # 250MB
+FILE_UPLOAD_MAX_MEMORY_SIZE = 250 * 1024 * 1024  # 250MB
+
 # Pipeline execution: when enabled, Step 1/2 return quickly and work continues in background.
 # Default is disabled to keep request/response deterministic (and test-friendly).
 CLASS_PIPELINE_ASYNC = os.getenv('CLASS_PIPELINE_ASYNC', 'False') == 'True'

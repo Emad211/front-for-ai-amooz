@@ -11,7 +11,8 @@ import {
   Radio,
   PlusCircle,
   FolderOpen,
-  Users
+  Users,
+  FileQuestion
 } from 'lucide-react';
 import { NavSection, NavItem } from '@/types';
 
@@ -57,6 +58,7 @@ export const TEACHER_NAV_MENU: NavSection[] = [
     items: [
       { label: 'ایجاد کلاس جدید', href: '/teacher/create-class', icon: PlusCircle },
       { label: 'کلاس‌های من', href: '/teacher/my-classes', icon: FolderOpen },
+      { label: 'آزمون‌های من', href: '/teacher/my-exams', icon: FileQuestion },
       { label: 'دانش‌آموزان', href: '/teacher/students', icon: Users },
     ]
   },

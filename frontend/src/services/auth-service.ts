@@ -3,6 +3,18 @@ type TokenResponse = {
   refresh: string;
 };
 
+export class ApiRequestError extends Error {
+  status: number;
+  payload: unknown;
+
+  constructor(message: string, status: number, payload: unknown) {
+    super(message);
+    this.name = 'ApiRequestError';
+    this.status = status;
+    this.payload = payload;
+  }
+}
+
 export type AuthMeResponse = {
   id: number;
   username: string;
@@ -151,7 +163,7 @@ async function request<T>(path: string, options: RequestInit = {}) {
 
   if (!response.ok) {
     const message = stringifyErrorPayload(payload) || response.statusText || 'خطا در ارتباط با سرور';
-    throw new Error(message);
+    throw new ApiRequestError(message, response.status, payload);
   }
 
   return payload as T;

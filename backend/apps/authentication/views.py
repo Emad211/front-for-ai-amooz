@@ -13,6 +13,7 @@ from drf_spectacular.utils import extend_schema, OpenApiResponse, OpenApiExample
 from apps.accounts.serializers import MeSerializer
 from apps.accounts.models import StudentProfile
 from apps.classes.models import ClassInvitation
+from apps.classes.models import StudentInviteCode
 
 from .serializers import RegisterSerializer, LogoutSerializer, PasswordChangeSerializer, InviteCodeLoginSerializer
 from .openapi import (
@@ -175,13 +176,28 @@ class InviteCodeLoginView(APIView):
         code = serializer.validated_data['code']
         phone = serializer.validated_data['phone']
 
-        inv = (
-            ClassInvitation.objects.filter(invite_code=code, phone=phone)
-            .select_related('session')
-            .first()
-        )
-        if inv is None or inv.session is None or not inv.session.is_published:
-            return Response({'detail': 'کد دعوت یا شماره تماس معتبر نیست.'}, status=status.HTTP_400_BAD_REQUEST)
+        # New behavior: global, stable invite code per phone.
+        # Backward-compatible behavior: accept legacy codes stored on invitations.
+        global_ok = StudentInviteCode.objects.filter(phone=phone, code=code).exists()
+
+        if global_ok:
+            has_published_invite = ClassInvitation.objects.filter(
+                phone=phone,
+                session__is_published=True,
+            ).exists()
+            if not has_published_invite:
+                return Response({'detail': 'کد دعوت یا شماره تماس معتبر نیست.'}, status=status.HTTP_400_BAD_REQUEST)
+        else:
+            inv = (
+                ClassInvitation.objects.filter(invite_code=code, phone=phone)
+                .select_related('session')
+                .first()
+            )
+            if inv is None or inv.session is None or not inv.session.is_published:
+                return Response({'detail': 'کد دعوت یا شماره تماس معتبر نیست.'}, status=status.HTTP_400_BAD_REQUEST)
+
+            # Persist legacy code as the global code if it doesn't exist yet.
+            StudentInviteCode.objects.get_or_create(phone=phone, defaults={'code': code})
 
         qs = User.objects.filter(phone=phone)
         if qs.count() > 1:

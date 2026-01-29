@@ -11,19 +11,33 @@ import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import {
   getClassCreationSessionDetail,
   type ClassCreationSessionDetail,
   publishClassCreationSession,
   transcribeClassCreationStep1,
   updateClassCreationSession,
+  // Exam Prep imports
+  transcribeExamPrepStep1,
+  fetchExamPrepSession,
+  publishExamPrepSession,
+  type ExamPrepSessionDetail,
+  type ExamPrepStatus,
 } from '@/services/classes-service';
+
+type PipelineType = 'class' | 'exam_prep';
 
 const ACTIVE_SESSION_STORAGE_KEY = 'ai_amooz_active_class_creation_session_id';
 const CREATE_CLASS_DRAFT_STORAGE_KEY = 'ai_amooz_create_class_draft_v1';
 const CREATE_CLASS_LAST_STATUS_STORAGE_KEY = 'ai_amooz_create_class_last_status_v1';
+// Exam Prep storage keys
+const ACTIVE_EXAM_PREP_SESSION_STORAGE_KEY = 'ai_amooz_active_exam_prep_session_id';
+const CREATE_EXAM_PREP_DRAFT_STORAGE_KEY = 'ai_amooz_create_exam_prep_draft_v1';
+const CREATE_EXAM_PREP_LAST_STATUS_STORAGE_KEY = 'ai_amooz_create_exam_prep_last_status_v1';
 
-const PROCESSING_STATUSES = new Set([
+// Class pipeline statuses (5 steps)
+const CLASS_PROCESSING_STATUSES = new Set([
   'transcribing',
   'structuring',
   'prereq_extracting',
@@ -31,7 +45,13 @@ const PROCESSING_STATUSES = new Set([
   'recapping',
 ]);
 
-function getPipelineMessage(status?: string | null) {
+// Exam prep pipeline statuses (2 steps)
+const EXAM_PREP_PROCESSING_STATUSES = new Set([
+  'exam_transcribing',
+  'exam_structuring',
+]);
+
+function getClassPipelineMessage(status?: string | null) {
   if (!status) {
     return { message: null, isDone: false, isFailed: false } as const;
   }
@@ -64,8 +84,30 @@ function getPipelineMessage(status?: string | null) {
   }
 }
 
+function getExamPrepPipelineMessage(status?: string | null) {
+  if (!status) {
+    return { message: null, isDone: false, isFailed: false } as const;
+  }
+  if (status === 'failed') {
+    return { message: 'پردازش با خطا متوقف شد.', isDone: false, isFailed: true } as const;
+  }
+  switch (status) {
+    case 'exam_transcribing':
+      return { message: 'در حال انجام مرحله ۱ از ۲ (ترنسکریپت)…', isDone: false, isFailed: false } as const;
+    case 'exam_transcribed':
+      return { message: 'مرحله ۱ از ۲ تمام شد.', isDone: false, isFailed: false } as const;
+    case 'exam_structuring':
+      return { message: 'در حال انجام مرحله ۲ از ۲ (استخراج سوالات)…', isDone: false, isFailed: false } as const;
+    case 'exam_structured':
+      return { message: 'مرحله ۲ از ۲ تمام شد.', isDone: true, isFailed: false } as const;
+    default:
+      return { message: `وضعیت: ${status}`, isDone: false, isFailed: false } as const;
+  }
+}
+
 export function CreateClassPage() {
   const router = useRouter();
+  const [pipelineType, setPipelineType] = useState<PipelineType>('class');
   const [expandedSections, setExpandedSections] = useState<string[]>(['info', 'files', 'exercises', 'students']);
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
@@ -73,11 +115,18 @@ export function CreateClassPage() {
   const [duration, setDuration] = useState<string>('');
   const [lessonFile, setLessonFile] = useState<File | null>(null);
   const [step1ClientRequestId, setStep1ClientRequestId] = useState<string | null>(null);
+  // Class pipeline state
   const [activeSessionId, setActiveSessionId] = useState<number | null>(null);
   const [sessionDetail, setSessionDetail] = useState<ClassCreationSessionDetail | null>(null);
   const [optimisticStatus, setOptimisticStatus] = useState<string | null>(null);
   const [pipelineError, setPipelineError] = useState<string | null>(null);
   const [isPipelineStarting, setIsPipelineStarting] = useState(false);
+  // Exam prep pipeline state
+  const [activeExamPrepSessionId, setActiveExamPrepSessionId] = useState<number | null>(null);
+  const [examPrepSessionDetail, setExamPrepSessionDetail] = useState<ExamPrepSessionDetail | null>(null);
+  const [examPrepOptimisticStatus, setExamPrepOptimisticStatus] = useState<string | null>(null);
+  const [examPrepPipelineError, setExamPrepPipelineError] = useState<string | null>(null);
+  const [isExamPrepPipelineStarting, setIsExamPrepPipelineStarting] = useState(false);
 
   const pollTimer = useRef<number | null>(null);
   const pollFailures = useRef<number>(0);
@@ -177,6 +226,63 @@ export function CreateClassPage() {
     }
   };
 
+  // Exam Prep Polling
+  const startExamPrepPolling = (sessionId: number) => {
+    stopPolling();
+    const tick = async () => {
+      try {
+        const detail = await fetchExamPrepSession(sessionId);
+        pollFailures.current = 0;
+        setExamPrepOptimisticStatus(null);
+        setExamPrepSessionDetail(detail);
+        setActiveExamPrepSessionId(detail.id);
+
+        try {
+          window.localStorage.setItem(CREATE_EXAM_PREP_LAST_STATUS_STORAGE_KEY, JSON.stringify({ sessionId: detail.id, status: detail.status }));
+        } catch { /* ignore */ }
+
+        setTitle((prev) => prev || detail.title);
+        setDescription((prev) => prev || detail.description);
+
+        if (detail.status === 'failed') {
+          stopPolling();
+          setExamPrepPipelineError(detail.error_detail || 'پردازش با خطا متوقف شد');
+          return;
+        }
+
+        if (detail.status === 'exam_structured') {
+          stopPolling();
+        }
+      } catch {
+        pollFailures.current += 1;
+        if (pollFailures.current >= 4) {
+          setExamPrepPipelineError('ارتباط با سرور برای دریافت وضعیت پایپ‌لاین برقرار نشد.');
+        }
+      }
+    };
+
+    void tick();
+    pollTimer.current = window.setInterval(() => void tick(), 1500);
+  };
+
+  const resumeExamPrepSession = async (sessionId: number) => {
+    try {
+      const detail = await fetchExamPrepSession(sessionId);
+      pollFailures.current = 0;
+      setExamPrepOptimisticStatus(null);
+      setExamPrepSessionDetail(detail);
+      setActiveExamPrepSessionId(detail.id);
+      setTitle(detail.title);
+      setDescription(detail.description);
+
+      if (detail.status !== 'failed' && detail.status !== 'exam_structured') {
+        startExamPrepPolling(sessionId);
+      }
+    } catch {
+      // If resume fails, don't block the page.
+    }
+  };
+
   useEffect(() => {
     // Resume active session if user navigated away.
     const stored = window.localStorage.getItem(ACTIVE_SESSION_STORAGE_KEY);
@@ -195,7 +301,25 @@ export function CreateClassPage() {
       }
       resumeSession(sessionId);
     } else {
-      loadDraft();
+      // Check for exam prep session
+      const examPrepStored = window.localStorage.getItem(ACTIVE_EXAM_PREP_SESSION_STORAGE_KEY);
+      const examPrepSessionId = examPrepStored ? Number(examPrepStored) : NaN;
+      if (Number.isFinite(examPrepSessionId)) {
+        try {
+          const lastRaw = window.localStorage.getItem(CREATE_EXAM_PREP_LAST_STATUS_STORAGE_KEY);
+          if (lastRaw) {
+            const last = JSON.parse(lastRaw) as { sessionId?: number; status?: string };
+            if (last && last.sessionId === examPrepSessionId && typeof last.status === 'string') {
+              setExamPrepOptimisticStatus(last.status);
+              setPipelineType('exam_prep');
+            }
+          }
+        } catch { /* ignore */ }
+        setPipelineType('exam_prep');
+        resumeExamPrepSession(examPrepSessionId);
+      } else {
+        loadDraft();
+      }
     }
     return () => stopPolling();
   }, []);
@@ -210,11 +334,30 @@ export function CreateClassPage() {
     );
   };
 
+  // Class Pipeline computed values
   const sessionIdForActions = sessionDetail?.id ?? activeSessionId ?? null;
   const status = sessionDetail?.status ?? optimisticStatus ?? null;
-  const { message: pipelineMessage, isDone: isPipelineDone, isFailed: isPipelineFailed } = getPipelineMessage(status);
-  const isPipelineRunning = Boolean(status && PROCESSING_STATUSES.has(status));
-  const canStartPipeline = Boolean(title.trim()) && Boolean(lessonFile) && !isPipelineStarting && !isPipelineRunning;
+  const { message: classPipelineMessage, isDone: isClassPipelineDone, isFailed: isClassPipelineFailed } = getClassPipelineMessage(status);
+  const isClassPipelineRunning = Boolean(status && CLASS_PROCESSING_STATUSES.has(status));
+  const canStartClassPipeline = Boolean(title.trim()) && Boolean(lessonFile) && !isPipelineStarting && !isClassPipelineRunning;
+
+  // Exam Prep Pipeline computed values
+  const examPrepSessionIdForActions = examPrepSessionDetail?.id ?? activeExamPrepSessionId ?? null;
+  const examPrepStatus = examPrepSessionDetail?.status ?? examPrepOptimisticStatus ?? null;
+  const { message: examPrepPipelineMessage, isDone: isExamPrepPipelineDone, isFailed: isExamPrepPipelineFailed } = getExamPrepPipelineMessage(examPrepStatus);
+  const isExamPrepPipelineRunning = Boolean(examPrepStatus && EXAM_PREP_PROCESSING_STATUSES.has(examPrepStatus));
+  const canStartExamPrepPipeline = Boolean(title.trim()) && Boolean(lessonFile) && !isExamPrepPipelineStarting && !isExamPrepPipelineRunning;
+
+  // Current pipeline state based on selected type
+  const currentSessionId = pipelineType === 'class' ? sessionIdForActions : examPrepSessionIdForActions;
+  const currentPipelineMessage = pipelineType === 'class' ? classPipelineMessage : examPrepPipelineMessage;
+  const currentIsPipelineDone = pipelineType === 'class' ? isClassPipelineDone : isExamPrepPipelineDone;
+  const currentIsPipelineFailed = pipelineType === 'class' ? isClassPipelineFailed : isExamPrepPipelineFailed;
+  const currentPipelineError = pipelineType === 'class' ? pipelineError : examPrepPipelineError;
+  const currentIsPipelineRunning = pipelineType === 'class' ? isClassPipelineRunning : isExamPrepPipelineRunning;
+  const currentCanStartPipeline = pipelineType === 'class' ? canStartClassPipeline : canStartExamPrepPipeline;
+  const currentIsPipelineStarting = pipelineType === 'class' ? isPipelineStarting : isExamPrepPipelineStarting;
+  const currentStatus = pipelineType === 'class' ? status : examPrepStatus;
 
   const startFullPipeline = async () => {
     if (!lessonFile) return;
@@ -224,66 +367,128 @@ export function CreateClassPage() {
       setStep1ClientRequestId(clientRequestId);
     }
 
-    setIsPipelineStarting(true);
-    setPipelineError(null);
-    pollFailures.current = 0;
-    setOptimisticStatus(null);
-    stopPolling();
-    setSessionDetail(null);
-    setActiveSessionId(null);
+    if (pipelineType === 'class') {
+      setIsPipelineStarting(true);
+      setPipelineError(null);
+      pollFailures.current = 0;
+      setOptimisticStatus(null);
+      stopPolling();
+      setSessionDetail(null);
+      setActiveSessionId(null);
 
-    try {
-      const result = await transcribeClassCreationStep1({
-        title: title.trim(),
-        description,
-        file: lessonFile,
-        clientRequestId: clientRequestId ?? undefined,
-        runFullPipeline: true,
-      });
-      setOptimisticStatus(result.status);
-      setActiveSessionId(result.id);
-      window.localStorage.setItem(ACTIVE_SESSION_STORAGE_KEY, String(result.id));
-      persistLastStatus({ sessionId: result.id, status: result.status });
-      startPolling(result.id);
-    } catch (error) {
-      const msg = error instanceof Error ? error.message : 'خطا در ارتباط با سرور';
-      setPipelineError(msg);
-    } finally {
-      setIsPipelineStarting(false);
+      try {
+        const result = await transcribeClassCreationStep1({
+          title: title.trim(),
+          description,
+          file: lessonFile,
+          clientRequestId: clientRequestId ?? undefined,
+          runFullPipeline: true,
+        });
+        setOptimisticStatus(result.status);
+        setActiveSessionId(result.id);
+        window.localStorage.setItem(ACTIVE_SESSION_STORAGE_KEY, String(result.id));
+        persistLastStatus({ sessionId: result.id, status: result.status });
+        startPolling(result.id);
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : 'خطا در ارتباط با سرور';
+        setPipelineError(msg);
+      } finally {
+        setIsPipelineStarting(false);
+      }
+    } else {
+      // Exam Prep Pipeline
+      setIsExamPrepPipelineStarting(true);
+      setExamPrepPipelineError(null);
+      pollFailures.current = 0;
+      setExamPrepOptimisticStatus(null);
+      stopPolling();
+      setExamPrepSessionDetail(null);
+      setActiveExamPrepSessionId(null);
+
+      try {
+        const result = await transcribeExamPrepStep1({
+          title: title.trim(),
+          description,
+          file: lessonFile,
+          clientRequestId: clientRequestId ?? undefined,
+          runFullPipeline: true,
+        });
+        setExamPrepOptimisticStatus(result.status);
+        setActiveExamPrepSessionId(result.id);
+        window.localStorage.setItem(ACTIVE_EXAM_PREP_SESSION_STORAGE_KEY, String(result.id));
+        try {
+          window.localStorage.setItem(CREATE_EXAM_PREP_LAST_STATUS_STORAGE_KEY, JSON.stringify({ sessionId: result.id, status: result.status }));
+        } catch { /* ignore */ }
+        startExamPrepPolling(result.id);
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : 'خطا در ارتباط با سرور';
+        setExamPrepPipelineError(msg);
+      } finally {
+        setIsExamPrepPipelineStarting(false);
+      }
     }
   };
 
   const publish = async () => {
-    if (!sessionIdForActions) {
-      toast.error('ابتدا مرحله ۱ را انجام دهید.');
-      return;
-    }
-    if (sessionDetail?.status === 'failed') {
-      toast.error('این جلسه با خطا متوقف شده است.');
-      return;
-    }
-    if (sessionDetail?.status !== 'recapped') {
-      toast.error('ابتدا پایپ‌لاین را تا مرحله ۵ کامل کنید.');
-      return;
-    }
+    if (pipelineType === 'class') {
+      if (!sessionIdForActions) {
+        toast.error('ابتدا مرحله ۱ را انجام دهید.');
+        return;
+      }
+      if (sessionDetail?.status === 'failed') {
+        toast.error('این جلسه با خطا متوقف شده است.');
+        return;
+      }
+      if (sessionDetail?.status !== 'recapped') {
+        toast.error('ابتدا پایپ‌لاین را تا مرحله ۵ کامل کنید.');
+        return;
+      }
 
-    try {
-      await updateClassCreationSession(sessionIdForActions, {
-        title: title.trim() || undefined,
-        description,
-        level: level.trim() || undefined,
-        duration: duration.trim() || undefined,
-      });
-      await publishClassCreationSession(sessionIdForActions);
+      try {
+        await updateClassCreationSession(sessionIdForActions, {
+          title: title.trim() || undefined,
+          description,
+          level: level.trim() || undefined,
+          duration: duration.trim() || undefined,
+        });
+        await publishClassCreationSession(sessionIdForActions);
 
-      window.localStorage.removeItem(ACTIVE_SESSION_STORAGE_KEY);
-      window.localStorage.removeItem(CREATE_CLASS_DRAFT_STORAGE_KEY);
-      window.localStorage.removeItem(CREATE_CLASS_LAST_STATUS_STORAGE_KEY);
-      toast.success('کلاس با موفقیت منتشر شد');
-      router.push(`/teacher/my-classes/${sessionIdForActions}`);
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : 'خطا در انتشار کلاس';
-      toast.error(msg);
+        window.localStorage.removeItem(ACTIVE_SESSION_STORAGE_KEY);
+        window.localStorage.removeItem(CREATE_CLASS_DRAFT_STORAGE_KEY);
+        window.localStorage.removeItem(CREATE_CLASS_LAST_STATUS_STORAGE_KEY);
+        toast.success('کلاس با موفقیت منتشر شد');
+        router.push(`/teacher/my-classes/${sessionIdForActions}`);
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : 'خطا در انتشار کلاس';
+        toast.error(msg);
+      }
+    } else {
+      // Exam Prep Pipeline
+      if (!examPrepSessionIdForActions) {
+        toast.error('ابتدا مرحله ۱ را انجام دهید.');
+        return;
+      }
+      if (examPrepSessionDetail?.status === 'failed') {
+        toast.error('این جلسه با خطا متوقف شده است.');
+        return;
+      }
+      if (examPrepSessionDetail?.status !== 'exam_structured') {
+        toast.error('ابتدا پایپ‌لاین را تا مرحله ۲ کامل کنید.');
+        return;
+      }
+
+      try {
+        await publishExamPrepSession(examPrepSessionIdForActions);
+
+        window.localStorage.removeItem(ACTIVE_EXAM_PREP_SESSION_STORAGE_KEY);
+        window.localStorage.removeItem(CREATE_EXAM_PREP_DRAFT_STORAGE_KEY);
+        window.localStorage.removeItem(CREATE_EXAM_PREP_LAST_STATUS_STORAGE_KEY);
+        toast.success('آمادگی آزمون با موفقیت منتشر شد');
+        router.push(`/teacher/my-classes/${examPrepSessionIdForActions}`);
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : 'خطا در انتشار';
+        toast.error(msg);
+      }
     }
   };
 
@@ -294,17 +499,68 @@ export function CreateClassPage() {
         <div className="relative p-6 sm:p-8 flex flex-col gap-3">
           <div className="flex items-center gap-3 text-primary">
             <span className="h-10 w-10 rounded-2xl bg-primary/10 flex items-center justify-center font-black text-lg">+</span>
-            <p className="text-sm text-primary">مسیر ساخت کلاس</p>
+            <p className="text-sm text-primary">{pipelineType === 'class' ? 'مسیر ساخت کلاس' : 'مسیر آمادگی آزمون'}</p>
           </div>
           <div className="flex flex-col gap-2">
-            <h1 className="text-2xl md:text-3xl font-black text-foreground">ایجاد کلاس جدید</h1>
-            <p className="text-muted-foreground text-sm md:text-base">اطلاعات را تکمیل کنید، فایل‌ها را بارگذاری کنید و با کد دعوت دانش‌آموزان را اضافه کنید.</p>
+            <h1 className="text-2xl md:text-3xl font-black text-foreground">
+              {pipelineType === 'class' ? 'ایجاد کلاس جدید' : 'ایجاد آمادگی آزمون'}
+            </h1>
+            <p className="text-muted-foreground text-sm md:text-base">
+              {pipelineType === 'class'
+                ? 'اطلاعات را تکمیل کنید، فایل‌ها را بارگذاری کنید و با کد دعوت دانش‌آموزان را اضافه کنید.'
+                : 'فایل صوتی یا ویدیویی حل تست‌ها را بارگذاری کنید تا سوالات و پاسخ‌ها استخراج شوند.'}
+            </p>
           </div>
-          <div className="flex flex-wrap gap-2 text-xs md:text-sm text-muted-foreground">
-            <span className="px-3 py-1 rounded-full bg-primary/10 text-primary">۱. اطلاعات کلاس</span>
-            <span className="px-3 py-1 rounded-full bg-muted">۲. فایل‌ها و تمرین‌ها</span>
-            <span className="px-3 py-1 rounded-full bg-muted">۳. دعوت دانش‌آموزان</span>
-          </div>
+          {pipelineType === 'class' ? (
+            <div className="flex flex-wrap gap-2 text-xs md:text-sm text-muted-foreground">
+              <span className="px-3 py-1 rounded-full bg-primary/10 text-primary">۱. اطلاعات کلاس</span>
+              <span className="px-3 py-1 rounded-full bg-muted">۲. فایل‌ها و تمرین‌ها</span>
+              <span className="px-3 py-1 rounded-full bg-muted">۳. دعوت دانش‌آموزان</span>
+            </div>
+          ) : (
+            <div className="flex flex-wrap gap-2 text-xs md:text-sm text-muted-foreground">
+              <span className="px-3 py-1 rounded-full bg-primary/10 text-primary">۱. ترنسکریپت</span>
+              <span className="px-3 py-1 rounded-full bg-muted">۲. استخراج سوالات</span>
+            </div>
+          )}
+        </div>
+      </Card>
+
+      {/* Pipeline Type Selector */}
+      <Card className="p-4 sm:p-5 rounded-3xl border-border/40">
+        <div className="space-y-3">
+          <Label className="text-sm font-semibold">نوع پایپ‌لاین</Label>
+          <Tabs
+            value={pipelineType}
+            onValueChange={(v) => {
+              if (!currentIsPipelineRunning && !currentIsPipelineStarting) {
+                setPipelineType(v as PipelineType);
+              }
+            }}
+            className="w-full"
+          >
+            <TabsList className="grid w-full grid-cols-2">
+              <TabsTrigger
+                value="class"
+                disabled={currentIsPipelineRunning || currentIsPipelineStarting}
+                className="rounded-xl"
+              >
+                ساخت کلاس (۵ مرحله)
+              </TabsTrigger>
+              <TabsTrigger
+                value="exam_prep"
+                disabled={currentIsPipelineRunning || currentIsPipelineStarting}
+                className="rounded-xl"
+              >
+                آمادگی آزمون (۲ مرحله)
+              </TabsTrigger>
+            </TabsList>
+          </Tabs>
+          <p className="text-xs text-muted-foreground">
+            {pipelineType === 'class'
+              ? 'برای ساخت کلاس آموزشی از این گزینه استفاده کنید. شامل ترنسکریپت، ساختاردهی، پیش‌نیازها، آموزش پیش‌نیازها و خلاصه.'
+              : 'برای استخراج سوالات و پاسخ‌ها از ویدیوی حل تست استفاده کنید. شامل ترنسکریپت و استخراج سوالات.'}
+          </p>
         </div>
       </Card>
 
@@ -318,7 +574,7 @@ export function CreateClassPage() {
       />
 
       <FileUploadSection
-        title="بارگذاری فایل درسی"
+        title={pipelineType === 'class' ? 'بارگذاری فایل درسی' : 'بارگذاری فایل حل تست'}
         icon="upload"
         type="lesson"
         isExpanded={expandedSections.includes('files')}
@@ -329,11 +585,19 @@ export function CreateClassPage() {
           const file = files && files.length ? files[0] : null;
           setLessonFile(file);
           setStep1ClientRequestId(null);
-          setPipelineError(null);
-          stopPolling();
-          setSessionDetail(null);
-          setActiveSessionId(null);
-          window.localStorage.removeItem(ACTIVE_SESSION_STORAGE_KEY);
+          if (pipelineType === 'class') {
+            setPipelineError(null);
+            stopPolling();
+            setSessionDetail(null);
+            setActiveSessionId(null);
+            window.localStorage.removeItem(ACTIVE_SESSION_STORAGE_KEY);
+          } else {
+            setExamPrepPipelineError(null);
+            stopPolling();
+            setExamPrepSessionDetail(null);
+            setActiveExamPrepSessionId(null);
+            window.localStorage.removeItem(ACTIVE_EXAM_PREP_SESSION_STORAGE_KEY);
+          }
         }}
       >
         <div className="mt-4 space-y-3">
@@ -344,31 +608,37 @@ export function CreateClassPage() {
             <Button
               type="button"
               className="rounded-xl h-10 px-5"
-              disabled={!canStartPipeline}
+              disabled={!currentCanStartPipeline}
               onClick={startFullPipeline}
             >
-              {isPipelineStarting || isPipelineRunning ? 'در حال اجرای پایپ‌لاین…' : 'اجرای کامل پایپ‌لاین (۱ تا ۵)'}
+              {currentIsPipelineStarting || currentIsPipelineRunning
+                ? 'در حال اجرای پایپ‌لاین…'
+                : pipelineType === 'class'
+                  ? 'اجرای کامل پایپ‌لاین (۱ تا ۵)'
+                  : 'اجرای کامل پایپ‌لاین (۱ تا ۲)'}
             </Button>
           </div>
 
           {!title.trim() && (
-            <div className="text-xs text-muted-foreground">برای شروع، ابتدا عنوان کلاس را وارد کنید.</div>
+            <div className="text-xs text-muted-foreground">
+              {pipelineType === 'class' ? 'برای شروع، ابتدا عنوان کلاس را وارد کنید.' : 'برای شروع، ابتدا عنوان را وارد کنید.'}
+            </div>
           )}
 
-          {pipelineError && <div className="text-sm text-destructive">{pipelineError}</div>}
+          {currentPipelineError && <div className="text-sm text-destructive">{currentPipelineError}</div>}
 
-          {sessionIdForActions && (
+          {currentSessionId && (
             <div className="space-y-1">
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 text-xs text-muted-foreground">
-                <span>شناسه جلسه: {sessionIdForActions}</span>
-                <span>وضعیت: {status ?? '—'}</span>
+                <span>شناسه جلسه: {currentSessionId}</span>
+                <span>وضعیت: {currentStatus ?? '—'}</span>
               </div>
-              {pipelineMessage && (
-                <div className={isPipelineFailed ? 'text-sm text-destructive' : 'text-xs text-muted-foreground'}>
-                  {pipelineMessage}
+              {currentPipelineMessage && (
+                <div className={currentIsPipelineFailed ? 'text-sm text-destructive' : 'text-xs text-muted-foreground'}>
+                  {currentPipelineMessage}
                 </div>
               )}
-              {isPipelineDone && (
+              {currentIsPipelineDone && (
                 <div className="text-xs text-muted-foreground">پایپ‌لاین کامل شد.</div>
               )}
             </div>
@@ -376,51 +646,59 @@ export function CreateClassPage() {
         </div>
       </FileUploadSection>
 
-      <FileUploadSection
-        title="بارگذاری تمرین"
-        description="اختیاری"
-        badgeText="کامینگ سون"
-        icon="exercise"
-        type="exercise"
-        isExpanded={expandedSections.includes('exercises')}
-        onToggle={() => toggleSection('exercises')}
-        disabled
-      />
+      {/* Only show exercise section for class pipeline */}
+      {pipelineType === 'class' && (
+        <FileUploadSection
+          title="بارگذاری تمرین"
+          description="اختیاری"
+          badgeText="کامینگ سون"
+          icon="exercise"
+          type="exercise"
+          isExpanded={expandedSections.includes('exercises')}
+          onToggle={() => toggleSection('exercises')}
+          disabled
+        />
+      )}
 
+      {/* Student invite section for both pipelines */}
       <StudentInviteSection
         isExpanded={expandedSections.includes('students')}
         onToggle={() => toggleSection('students')}
-        sessionId={sessionIdForActions}
+        sessionId={currentSessionId}
+        pipelineType={pipelineType}
       />
 
-      <Card className="p-4 sm:p-5 rounded-3xl border-border/40">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-5" dir="rtl">
-          <div className="space-y-2">
-            <Label>سطح (اختیاری)</Label>
-            <Select value={level} onValueChange={(value) => setLevel(value)}>
-              <SelectTrigger>
-                <SelectValue placeholder="انتخاب سطح" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="none">بدون تعیین</SelectItem>
-                <SelectItem value="مبتدی">مبتدی</SelectItem>
-                <SelectItem value="متوسط">متوسط</SelectItem>
-                <SelectItem value="پیشرفته">پیشرفته</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
+      {/* Only show level/duration for class pipeline */}
+      {pipelineType === 'class' && (
+        <Card className="p-4 sm:p-5 rounded-3xl border-border/40">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-5" dir="rtl">
+            <div className="space-y-2">
+              <Label>سطح (اختیاری)</Label>
+              <Select value={level} onValueChange={(value) => setLevel(value)}>
+                <SelectTrigger>
+                  <SelectValue placeholder="انتخاب سطح" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">بدون تعیین</SelectItem>
+                  <SelectItem value="مبتدی">مبتدی</SelectItem>
+                  <SelectItem value="متوسط">متوسط</SelectItem>
+                  <SelectItem value="پیشرفته">پیشرفته</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="duration">زمان تقریبی دوره (اختیاری)</Label>
-            <Input
-              id="duration"
-              value={duration}
-              onChange={(e) => setDuration(e.target.value)}
-              placeholder="مثلاً ۶ ساعت یا ۲ هفته"
-            />
+            <div className="space-y-2">
+              <Label htmlFor="duration">زمان تقریبی دوره (اختیاری)</Label>
+              <Input
+                id="duration"
+                value={duration}
+                onChange={(e) => setDuration(e.target.value)}
+                placeholder="مثلاً ۶ ساعت یا ۲ هفته"
+              />
+            </div>
           </div>
-        </div>
-      </Card>
+        </Card>
+      )}
 
       <div className="flex flex-col sm:flex-row items-center justify-end gap-3 pt-4">
         <Button variant="outline" className="w-full sm:w-auto rounded-xl h-11 px-6">
@@ -428,7 +706,11 @@ export function CreateClassPage() {
         </Button>
         <Button
           className="w-full sm:w-auto bg-primary text-primary-foreground hover:bg-primary/90 rounded-xl h-11 px-8"
-          disabled={!sessionIdForActions || sessionDetail?.status !== 'recapped'}
+          disabled={
+            pipelineType === 'class'
+              ? !sessionIdForActions || sessionDetail?.status !== 'recapped'
+              : !examPrepSessionIdForActions || examPrepSessionDetail?.status !== 'exam_structured'
+          }
           onClick={publish}
           type="button"
         >

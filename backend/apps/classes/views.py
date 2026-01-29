@@ -10,6 +10,7 @@ from urllib.parse import quote
 from django.utils import timezone
 from django.conf import settings
 from django.http import HttpResponse
+from django.db.models import Count, Max, Min, Q
 
 from rest_framework import status
 from rest_framework import serializers
@@ -25,6 +26,7 @@ from drf_spectacular.types import OpenApiTypes
 from .models import ClassCreationSession, ClassInvitation, ClassPrerequisite
 from .models import ClassSection, ClassSectionQuiz, ClassSectionQuizAttempt
 from .models import ClassFinalExam, ClassFinalExamAttempt
+from .models import StudentInviteCode
 from .permissions import IsTeacherUser, IsStudentUser
 from .serializers import (
     ClassCreationSessionDetailSerializer,
@@ -36,6 +38,7 @@ from .serializers import (
     TeacherAnalyticsChartPointSerializer,
     TeacherAnalyticsDistributionItemSerializer,
     TeacherAnalyticsStatSerializer,
+    TeacherStudentSerializer,
     Step1TranscribeRequestSerializer,
     Step1TranscribeResponseSerializer,
     Step2StructureRequestSerializer,
@@ -57,6 +60,15 @@ from .serializers import (
     StudentFinalExamSubmitResponseSerializer,
     InviteCodeVerifySerializer,
     InviteCodeVerifyResponseSerializer,
+    # Exam Prep Pipeline serializers
+    ExamPrepStep1TranscribeRequestSerializer,
+    ExamPrepStep1TranscribeResponseSerializer,
+    ExamPrepStep2StructureRequestSerializer,
+    ExamPrepStep2StructureResponseSerializer,
+    ExamPrepSessionDetailSerializer,
+    # Student Exam Prep serializers
+    StudentExamPrepListSerializer,
+    StudentExamPrepDetailSerializer,
 )
 from .services.transcription import transcribe_media_bytes
 from .services.structure import structure_transcript_markdown
@@ -67,6 +79,8 @@ from .services.sync_structure import sync_structure_from_session
 from .services.mediana_sms import send_publish_sms_for_session
 from .services.quizzes import generate_final_exam_pool, generate_section_quiz_questions, grade_open_text_answer
 from .services.pdf_export import generate_course_pdf
+from .services.exam_prep_structure import extract_exam_prep_structure
+from .services.invite_codes import get_or_create_invite_code_for_phone
 
 from apps.chatbot.services.student_course_chat import (
     handle_student_audio_upload,
@@ -613,7 +627,10 @@ class ClassCreationSessionListView(APIView):
         responses={200: ClassCreationSessionListSerializer(many=True)},
     )
     def get(self, request):
-        qs = ClassCreationSession.objects.filter(teacher=request.user).order_by('-created_at')
+        qs = ClassCreationSession.objects.filter(
+            teacher=request.user,
+            pipeline_type=ClassCreationSession.PipelineType.CLASS,
+        ).order_by('-created_at')
         return Response(ClassCreationSessionListSerializer(qs, many=True).data)
 
 
@@ -759,13 +776,7 @@ class ClassInvitationListCreateView(APIView):
             if existing is not None:
                 continue
 
-            # Generate a short code; join-code flow is not wired yet.
-            code = f"INV-{uuid.uuid4().hex[:10].upper()}"
-            tries = 0
-            while ClassInvitation.objects.filter(session=session, invite_code=code).exists() and tries < 5:
-                code = f"INV-{uuid.uuid4().hex[:10].upper()}"
-                tries += 1
-
+            code = get_or_create_invite_code_for_phone(phone)
             ClassInvitation.objects.create(session=session, phone=phone, invite_code=code)
 
         qs = ClassInvitation.objects.filter(session=session).order_by('-created_at')
@@ -811,6 +822,13 @@ class TeacherAnalyticsStatsView(APIView):
         transcribed = qs.filter(status=ClassCreationSession.Status.TRANSCRIBED).count()
         structured = qs.filter(status=ClassCreationSession.Status.STRUCTURED).count()
 
+        students_count = (
+            ClassInvitation.objects.filter(session__teacher=request.user)
+            .values('phone')
+            .distinct()
+            .count()
+        )
+
         last7 = qs.filter(created_at__gte=start_7).count()
         prev7 = qs.filter(created_at__gte=start_14, created_at__lt=start_7).count()
 
@@ -827,9 +845,100 @@ class TeacherAnalyticsStatsView(APIView):
                 {'title': 'کل جلسات ساخت کلاس', 'value': str(total), 'change': change, 'trend': trend, 'icon': 'book'},
                 {'title': 'تبدیل به متن موفق', 'value': str(transcribed), 'change': '—', 'trend': 'up', 'icon': 'trending'},
                 {'title': 'ساختاردهی شده', 'value': str(structured), 'change': '—', 'trend': 'up', 'icon': 'graduation'},
-                {'title': 'دانش‌آموزان', 'value': '0', 'change': '—', 'trend': 'up', 'icon': 'users'},
+                {'title': 'دانش‌آموزان', 'value': str(students_count), 'change': '—', 'trend': 'up', 'icon': 'users'},
             ]
         )
+
+
+class TeacherStudentsListView(APIView):
+    permission_classes = [IsAuthenticated, IsTeacherUser]
+
+    @extend_schema(
+        tags=['Classes'],
+        summary='Teacher students list',
+        operation_id='teacher_students_list',
+        responses={200: TeacherStudentSerializer(many=True)},
+    )
+    def get(self, request):
+        # We currently treat "students" as unique invited phone numbers across the teacher's sessions.
+        # If/when an enrollment model is added, this should be updated.
+
+        base_qs = ClassInvitation.objects.filter(session__teacher=request.user)
+
+        rows = (
+            base_qs.values('phone')
+            .annotate(
+                enrolled_classes=Count('session', filter=Q(session__is_published=True), distinct=True),
+                join_date=Min('created_at'),
+                last_activity=Max('session__updated_at'),
+            )
+            .order_by('-last_activity', 'phone')
+        )
+
+        # Resolve known users by phone (best-effort). We only expose minimal info.
+        from django.contrib.auth import get_user_model
+
+        User = get_user_model()
+        phones = [r['phone'] for r in rows]
+        users_by_phone: dict[str, object] = {}
+        if phones:
+            user_qs = User.objects.filter(phone__in=phones).only('id', 'first_name', 'last_name', 'username', 'email', 'phone')
+            for u in user_qs:
+                p = (getattr(u, 'phone', None) or '').strip()
+                if p:
+                    users_by_phone[p] = u
+
+        out: list[dict] = []
+        for r in rows:
+            phone = (r.get('phone') or '').strip()
+            user = users_by_phone.get(phone)
+
+            name = phone
+            email = ''
+            avatar = ''
+            status_value = 'inactive'
+
+            if user is not None:
+                first = (getattr(user, 'first_name', '') or '').strip()
+                last = (getattr(user, 'last_name', '') or '').strip()
+                full = f"{first} {last}".strip()
+                name = full or (getattr(user, 'username', '') or '').strip() or phone
+                email = (getattr(user, 'email', '') or '').strip()
+                status_value = 'active'
+
+            enrolled_classes = int(r.get('enrolled_classes') or 0)
+            join_dt = r.get('join_date')
+            last_dt = r.get('last_activity')
+            join_date = (join_dt.date().isoformat() if join_dt else timezone.localdate().isoformat())
+            last_activity = (last_dt.date().isoformat() if last_dt else join_date)
+
+            average_score = 0
+            if average_score >= 85:
+                performance = 'excellent'
+            elif average_score >= 70:
+                performance = 'good'
+            else:
+                performance = 'needs-improvement'
+
+            out.append(
+                {
+                    'id': f"phone:{phone}",
+                    'name': name,
+                    'email': email,
+                    'phone': phone,
+                    'avatar': avatar,
+                    'enrolledClasses': enrolled_classes,
+                    'completedLessons': 0,
+                    'totalLessons': 0,
+                    'averageScore': average_score,
+                    'status': status_value,
+                    'joinDate': join_date,
+                    'lastActivity': last_activity,
+                    'performance': performance,
+                }
+            )
+
+        return Response(TeacherStudentSerializer(out, many=True).data, status=status.HTTP_200_OK)
 
 
 class TeacherAnalyticsChartView(APIView):
@@ -1910,14 +2019,38 @@ class InviteCodeVerifyView(APIView):
         serializer.is_valid(raise_exception=True)
         code = serializer.validated_data['code']
 
+        # Prefer global per-phone codes.
+        global_entry = StudentInviteCode.objects.filter(code=code).only('phone').first()
+        if global_entry is not None:
+            inv = (
+                ClassInvitation.objects.filter(
+                    phone=global_entry.phone,
+                    session__is_published=True,
+                )
+                .select_related('session')
+                .order_by('-session__published_at', '-session__updated_at', '-created_at')
+                .first()
+            )
+            if inv is None or inv.session is None:
+                return Response({'valid': False}, status=status.HTTP_200_OK)
+
+            return Response(
+                {
+                    'valid': True,
+                    'session_id': inv.session_id,
+                    'title': inv.session.title,
+                },
+                status=status.HTTP_200_OK,
+            )
+
+        # Backward compatibility: accept legacy codes attached to invitations.
         inv = (
-            ClassInvitation.objects.filter(invite_code=code)
+            ClassInvitation.objects.filter(invite_code=code, session__is_published=True)
             .select_related('session')
+            .order_by('-session__published_at', '-session__updated_at', '-created_at')
             .first()
         )
         if inv is None or inv.session is None:
-            return Response({'valid': False}, status=status.HTTP_200_OK)
-        if not inv.session.is_published:
             return Response({'valid': False}, status=status.HTTP_200_OK)
 
         return Response(
@@ -1928,3 +2061,491 @@ class InviteCodeVerifyView(APIView):
             },
             status=status.HTTP_200_OK,
         )
+
+
+# ==========================================================================
+# EXAM PREP PIPELINE VIEWS (2 Steps: Transcribe + Q&A Extraction)
+# ==========================================================================
+
+
+def _process_exam_prep_step1_transcription(session_id: int) -> None:
+    """Background process: Transcribe audio/video for exam prep pipeline."""
+    session = ClassCreationSession.objects.filter(id=session_id).first()
+    if session is None:
+        return
+    if session.status != ClassCreationSession.Status.EXAM_TRANSCRIBING:
+        return
+
+    try:
+        session.source_file.open('rb')
+        try:
+            data = session.source_file.read()
+        finally:
+            session.source_file.close()
+
+        transcript, provider, model_name = transcribe_media_bytes(
+            data=data,
+            mime_type=session.source_mime_type or 'application/octet-stream',
+        )
+        session.transcript_markdown = transcript
+        session.llm_provider = provider
+        session.llm_model = model_name
+        session.status = ClassCreationSession.Status.EXAM_TRANSCRIBED
+        session.save(update_fields=['transcript_markdown', 'llm_provider', 'llm_model', 'status', 'updated_at'])
+    except Exception as exc:
+        session.status = ClassCreationSession.Status.FAILED
+        session.error_detail = str(exc)
+        session.save(update_fields=['status', 'error_detail', 'updated_at'])
+
+
+def _process_exam_prep_step2_structure(session_id: int) -> None:
+    """Background process: Extract Q&A structure from transcript."""
+    session = ClassCreationSession.objects.filter(id=session_id).first()
+    if session is None:
+        return
+    if session.status != ClassCreationSession.Status.EXAM_STRUCTURING:
+        return
+    if not (session.transcript_markdown or '').strip():
+        session.status = ClassCreationSession.Status.FAILED
+        session.error_detail = 'برای این جلسه هنوز ترنسکریپت مرحله ۱ آماده نیست.'
+        session.save(update_fields=['status', 'error_detail', 'updated_at'])
+        return
+
+    try:
+        exam_prep_obj, provider, model_name = extract_exam_prep_structure(
+            transcript_markdown=session.transcript_markdown,
+        )
+        session.exam_prep_json = json.dumps(exam_prep_obj, ensure_ascii=False)
+        session.llm_provider = provider
+        session.llm_model = model_name
+        session.status = ClassCreationSession.Status.EXAM_STRUCTURED
+        session.save(update_fields=['exam_prep_json', 'llm_provider', 'llm_model', 'status', 'updated_at'])
+    except Exception as exc:
+        session.status = ClassCreationSession.Status.FAILED
+        session.error_detail = str(exc)
+        session.save(update_fields=['status', 'error_detail', 'updated_at'])
+
+
+def _process_exam_prep_full_pipeline(session_id: int) -> None:
+    """Run exam prep steps 1..2 sequentially (one-click pipeline)."""
+    session = ClassCreationSession.objects.filter(id=session_id).first()
+    if session is None:
+        return
+
+    # Step 1: Transcription
+    if session.status == ClassCreationSession.Status.EXAM_TRANSCRIBING:
+        _process_exam_prep_step1_transcription(session_id)
+
+    session.refresh_from_db()
+    if session.status == ClassCreationSession.Status.FAILED:
+        return
+
+    # Step 2: Q&A Extraction
+    if session.status == ClassCreationSession.Status.EXAM_TRANSCRIBED:
+        session.status = ClassCreationSession.Status.EXAM_STRUCTURING
+        session.save(update_fields=['status', 'updated_at'])
+        _process_exam_prep_step2_structure(session_id)
+
+
+class ExamPrepStep1TranscribeView(APIView):
+    """Step 1 of Exam Prep Pipeline: Upload and transcribe media."""
+    permission_classes = [IsAuthenticated, IsTeacherUser]
+    parser_classes = [FormParser, MultiPartParser]
+
+    @extend_schema(
+        tags=['Exam Prep'],
+        summary='Exam Prep Step 1: Transcription (Gemini/AvalAI)',
+        request=ExamPrepStep1TranscribeRequestSerializer,
+        responses={202: ExamPrepStep1TranscribeResponseSerializer, 200: ExamPrepStep1TranscribeResponseSerializer},
+    )
+    def post(self, request):
+        serializer = ExamPrepStep1TranscribeRequestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        upload = serializer.validated_data['file']
+        title = serializer.validated_data['title']
+        description = serializer.validated_data.get('description', '')
+        client_request_id = serializer.validated_data.get('client_request_id')
+        run_full_pipeline = bool(serializer.validated_data.get('run_full_pipeline', False))
+
+        # Idempotency check
+        if client_request_id is not None:
+            existing = ClassCreationSession.objects.filter(
+                teacher=request.user,
+                client_request_id=client_request_id,
+            ).first()
+            if existing is not None:
+                payload = ExamPrepStep1TranscribeResponseSerializer(existing).data
+                http_status = (
+                    status.HTTP_202_ACCEPTED
+                    if existing.status == ClassCreationSession.Status.EXAM_TRANSCRIBING
+                    else status.HTTP_200_OK
+                )
+                return Response(payload, status=http_status)
+
+        session = ClassCreationSession.objects.create(
+            teacher=request.user,
+            title=title,
+            description=description,
+            source_file=upload,
+            source_mime_type=getattr(upload, 'content_type', '') or '',
+            source_original_name=getattr(upload, 'name', '') or '',
+            pipeline_type=ClassCreationSession.PipelineType.EXAM_PREP,
+            status=ClassCreationSession.Status.EXAM_TRANSCRIBING,
+            client_request_id=client_request_id,
+        )
+
+        if run_full_pipeline:
+            run_in_background(
+                lambda: _process_exam_prep_full_pipeline(session.id),
+                name=f'exam-prep-pipeline-1to2-{session.id}',
+            )
+            return Response(ExamPrepStep1TranscribeResponseSerializer(session).data, status=status.HTTP_202_ACCEPTED)
+
+        # Run step 1 in background
+        run_in_background(
+            lambda: _process_exam_prep_step1_transcription(session.id),
+            name=f'exam-prep-step1-{session.id}',
+        )
+        return Response(ExamPrepStep1TranscribeResponseSerializer(session).data, status=status.HTTP_202_ACCEPTED)
+
+
+class ExamPrepStep2StructureView(APIView):
+    """Step 2 of Exam Prep Pipeline: Extract Q&A structure from transcript."""
+    permission_classes = [IsAuthenticated, IsTeacherUser]
+
+    @extend_schema(
+        tags=['Exam Prep'],
+        summary='Exam Prep Step 2: Extract Q&A Structure',
+        request=ExamPrepStep2StructureRequestSerializer,
+        responses={202: ExamPrepStep2StructureResponseSerializer, 400: OpenApiTypes.OBJECT},
+    )
+    def post(self, request):
+        serializer = ExamPrepStep2StructureRequestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        session_id = serializer.validated_data['session_id']
+
+        session = ClassCreationSession.objects.filter(
+            id=session_id,
+            teacher=request.user,
+            pipeline_type=ClassCreationSession.PipelineType.EXAM_PREP,
+        ).first()
+
+        if session is None:
+            return Response({'detail': 'جلسه آمادگی آزمون یافت نشد.'}, status=status.HTTP_404_NOT_FOUND)
+
+        if session.status != ClassCreationSession.Status.EXAM_TRANSCRIBED:
+            return Response(
+                {'detail': f'این جلسه در وضعیت {session.status} است و قابل اجرای مرحله ۲ نیست.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        session.status = ClassCreationSession.Status.EXAM_STRUCTURING
+        session.save(update_fields=['status', 'updated_at'])
+
+        run_in_background(
+            lambda: _process_exam_prep_step2_structure(session.id),
+            name=f'exam-prep-step2-{session.id}',
+        )
+        return Response(ExamPrepStep2StructureResponseSerializer(session).data, status=status.HTTP_202_ACCEPTED)
+
+
+class ExamPrepSessionDetailView(APIView):
+    """Get details of an exam prep session (for polling status)."""
+    permission_classes = [IsAuthenticated, IsTeacherUser]
+
+    @extend_schema(
+        tags=['Exam Prep'],
+        summary='Get Exam Prep Session Detail',
+        responses={200: ExamPrepSessionDetailSerializer, 404: OpenApiTypes.OBJECT},
+    )
+    def get(self, request, session_id: int):
+        session = ClassCreationSession.objects.filter(
+            id=session_id,
+            teacher=request.user,
+            pipeline_type=ClassCreationSession.PipelineType.EXAM_PREP,
+        ).first()
+
+        if session is None:
+            return Response({'detail': 'جلسه آمادگی آزمون یافت نشد.'}, status=status.HTTP_404_NOT_FOUND)
+
+        return Response(ExamPrepSessionDetailSerializer(session).data)
+
+    @extend_schema(
+        tags=['Exam Prep'],
+        summary='Delete Exam Prep Session',
+        responses={204: None, 404: OpenApiTypes.OBJECT},
+    )
+    def delete(self, request, session_id: int):
+        session = ClassCreationSession.objects.filter(
+            id=session_id,
+            teacher=request.user,
+            pipeline_type=ClassCreationSession.PipelineType.EXAM_PREP,
+        ).first()
+
+        if session is None:
+            return Response({'detail': 'جلسه آمادگی آزمون یافت نشد.'}, status=status.HTTP_404_NOT_FOUND)
+
+        session.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class ExamPrepSessionListView(APIView):
+    """List all exam prep sessions for the teacher."""
+    permission_classes = [IsAuthenticated, IsTeacherUser]
+
+    @extend_schema(
+        tags=['Exam Prep'],
+        summary='List Exam Prep Sessions',
+        responses={200: ExamPrepSessionDetailSerializer(many=True)},
+    )
+    def get(self, request):
+        sessions = ClassCreationSession.objects.filter(
+            teacher=request.user,
+            pipeline_type=ClassCreationSession.PipelineType.EXAM_PREP,
+        ).order_by('-created_at')
+
+        return Response(ExamPrepSessionDetailSerializer(sessions, many=True).data)
+
+
+class ExamPrepSessionPublishView(APIView):
+    """Publish an exam prep session."""
+    permission_classes = [IsAuthenticated, IsTeacherUser]
+    serializer_class = ExamPrepSessionDetailSerializer
+
+    @extend_schema(
+        tags=['Exam Prep'],
+        summary='Publish Exam Prep Session',
+        responses={200: ExamPrepSessionDetailSerializer, 400: OpenApiTypes.OBJECT, 404: OpenApiTypes.OBJECT},
+    )
+    def post(self, request, session_id: int):
+        session = ClassCreationSession.objects.filter(
+            id=session_id,
+            teacher=request.user,
+            pipeline_type=ClassCreationSession.PipelineType.EXAM_PREP,
+        ).first()
+
+        if session is None:
+            return Response({'detail': 'جلسه آمادگی آزمون یافت نشد.'}, status=status.HTTP_404_NOT_FOUND)
+
+        if session.status != ClassCreationSession.Status.EXAM_STRUCTURED:
+            return Response(
+                {'detail': f'فقط جلسه‌های با وضعیت exam_structured قابل انتشار هستند. وضعیت فعلی: {session.status}'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        session.is_published = True
+        session.published_at = timezone.now()
+        session.save(update_fields=['is_published', 'published_at', 'updated_at'])
+
+        # Send SMS to invited students
+        def _send_sms() -> None:
+            send_publish_sms_for_session(session.id)
+
+        run_in_background(lambda: _send_sms(), name=f'exam-prep-publish-sms-{session.id}')
+
+        return Response(ExamPrepSessionDetailSerializer(session).data)
+
+
+# ==========================================================================
+# EXAM PREP INVITATIONS
+# ==========================================================================
+
+
+class ExamPrepInvitationListCreateView(APIView):
+    """List and create invitations for an exam prep session."""
+    permission_classes = [IsAuthenticated, IsTeacherUser]
+
+    @extend_schema(
+        tags=['Exam Prep'],
+        summary='List exam prep invitations for a session (teacher)',
+        operation_id='exam_prep_sessions_invites_list',
+        responses={200: ClassInvitationSerializer(many=True)},
+    )
+    def get(self, request, session_id: int):
+        session = ClassCreationSession.objects.filter(
+            id=session_id,
+            teacher=request.user,
+            pipeline_type=ClassCreationSession.PipelineType.EXAM_PREP,
+        ).first()
+        if session is None:
+            return Response({'detail': 'جلسه آمادگی آزمون یافت نشد.'}, status=status.HTTP_404_NOT_FOUND)
+        qs = ClassInvitation.objects.filter(session=session).order_by('-created_at')
+        return Response(ClassInvitationSerializer(qs, many=True).data)
+
+    @extend_schema(
+        tags=['Exam Prep'],
+        summary='Create exam prep invitations for a session (teacher)',
+        operation_id='exam_prep_sessions_invites_create',
+        request=ClassInvitationCreateSerializer,
+        responses={200: ClassInvitationSerializer(many=True)},
+    )
+    def post(self, request, session_id: int):
+        session = ClassCreationSession.objects.filter(
+            id=session_id,
+            teacher=request.user,
+            pipeline_type=ClassCreationSession.PipelineType.EXAM_PREP,
+        ).first()
+        if session is None:
+            return Response({'detail': 'جلسه آمادگی آزمون یافت نشد.'}, status=status.HTTP_404_NOT_FOUND)
+
+        serializer = ClassInvitationCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        phones: list[str] = serializer.validated_data['phones']
+
+        for phone in phones:
+            existing = ClassInvitation.objects.filter(session=session, phone=phone).first()
+            if existing is not None:
+                continue
+
+            code = get_or_create_invite_code_for_phone(phone)
+            ClassInvitation.objects.create(session=session, phone=phone, invite_code=code)
+
+        qs = ClassInvitation.objects.filter(session=session).order_by('-created_at')
+        return Response(ClassInvitationSerializer(qs, many=True).data)
+
+
+class ExamPrepInvitationDetailView(APIView):
+    """Delete an invitation from an exam prep session."""
+    permission_classes = [IsAuthenticated, IsTeacherUser]
+
+    @extend_schema(
+        tags=['Exam Prep'],
+        summary='Delete an exam prep invitation (teacher)',
+        operation_id='exam_prep_sessions_invites_delete',
+        responses={204: None},
+    )
+    def delete(self, request, session_id: int, invite_id: int):
+        session = ClassCreationSession.objects.filter(
+            id=session_id,
+            teacher=request.user,
+            pipeline_type=ClassCreationSession.PipelineType.EXAM_PREP,
+        ).first()
+        if session is None:
+            return Response({'detail': 'جلسه آمادگی آزمون یافت نشد.'}, status=status.HTTP_404_NOT_FOUND)
+        invite = ClassInvitation.objects.filter(id=invite_id, session=session).first()
+        if invite is None:
+            return Response({'detail': 'دعوت نامه پیدا نشد.'}, status=status.HTTP_404_NOT_FOUND)
+        invite.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+# ==========================================================================
+# STUDENT EXAM PREP ENDPOINTS
+# ==========================================================================
+
+
+class StudentExamPrepListView(APIView):
+    """List exam prep sessions available to the student."""
+    permission_classes = [IsAuthenticated, IsStudentUser]
+
+    @extend_schema(
+        tags=['Student Exam Prep'],
+        summary='List exam preps available to the student',
+        operation_id='student_exam_prep_list',
+        responses={200: StudentExamPrepListSerializer(many=True)},
+    )
+    def get(self, request):
+        user = request.user
+        phone = (getattr(user, 'phone', None) or '').strip()
+        if not phone:
+            return Response([], status=status.HTTP_200_OK)
+
+        qs = (
+            ClassCreationSession.objects.filter(
+                is_published=True,
+                pipeline_type=ClassCreationSession.PipelineType.EXAM_PREP,
+                invites__phone=phone,
+            )
+            .select_related('teacher')
+            .prefetch_related('invites')
+            .distinct()
+            .order_by('-published_at', '-updated_at')
+        )
+
+        out: list[dict] = []
+        for session in qs:
+            teacher = session.teacher
+            instructor = ''
+            if teacher is not None:
+                instructor = (teacher.get_full_name() or getattr(teacher, 'username', '') or '').strip()
+
+            # Parse exam_prep_json to count questions
+            questions_count = 0
+            try:
+                if session.exam_prep_json:
+                    data = json.loads(session.exam_prep_json)
+                    if isinstance(data, dict):
+                        exam_prep = data.get('exam_prep', {})
+                        questions_list = exam_prep.get('questions', [])
+                        if isinstance(questions_list, list):
+                            questions_count = len(questions_list)
+            except (json.JSONDecodeError, TypeError):
+                questions_count = 0
+
+            out.append(
+                {
+                    'id': session.id,
+                    'title': session.title,
+                    'description': session.description or '',
+                    'tags': [],
+                    'questions': questions_count,
+                    'createdAt': (session.published_at or session.created_at).date().isoformat(),
+                    'instructor': instructor,
+                }
+            )
+
+        return Response(StudentExamPrepListSerializer(out, many=True).data)
+
+
+class StudentExamPrepDetailView(APIView):
+    """Get exam prep detail including questions for the student."""
+    permission_classes = [IsAuthenticated, IsStudentUser]
+
+    @extend_schema(
+        tags=['Student Exam Prep'],
+        summary='Get exam prep detail with questions',
+        operation_id='student_exam_prep_detail',
+        responses={200: StudentExamPrepDetailSerializer, 404: OpenApiTypes.OBJECT},
+    )
+    def get(self, request, session_id: int):
+        user = request.user
+        phone = (getattr(user, 'phone', None) or '').strip()
+        if not phone:
+            return Response({'detail': 'شماره موبایل برای حساب کاربری ثبت نشده است.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        session = ClassCreationSession.objects.filter(
+            id=session_id,
+            is_published=True,
+            pipeline_type=ClassCreationSession.PipelineType.EXAM_PREP,
+            invites__phone=phone,
+        ).first()
+
+        if session is None:
+            return Response({'detail': 'آزمون آمادگی پیدا نشد.'}, status=status.HTTP_404_NOT_FOUND)
+
+        # Parse exam_prep_json
+        questions_list = []
+        subject = ''
+        try:
+            if session.exam_prep_json:
+                data = json.loads(session.exam_prep_json)
+                if isinstance(data, dict):
+                    exam_prep = data.get('exam_prep', {})
+                    subject = exam_prep.get('title', '')
+                    raw_questions = exam_prep.get('questions', [])
+                    if isinstance(raw_questions, list):
+                        questions_list = raw_questions
+        except (json.JSONDecodeError, TypeError):
+            questions_list = []
+
+        out = {
+            'id': session.id,
+            'title': session.title,
+            'description': session.description or '',
+            'questions': questions_list,
+            'totalQuestions': len(questions_list),
+            'subject': subject,
+        }
+
+        return Response(StudentExamPrepDetailSerializer(out).data)

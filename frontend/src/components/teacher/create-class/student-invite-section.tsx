@@ -7,8 +7,24 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { cn } from '@/lib/utils';
-import { addClassInvites, deleteClassInvite, listClassInvites } from '@/services/classes-service';
+import { TeacherService } from '@/services/teacher-service';
+import {
+  addClassInvites,
+  deleteClassInvite,
+  listClassInvites,
+  addExamPrepInvites,
+  deleteExamPrepInvite,
+  listExamPrepInvites,
+} from '@/services/classes-service';
+import type { Student as TeacherStudent } from '@/types';
 
 interface Student {
   id: number;
@@ -17,15 +33,20 @@ interface Student {
   inviteCode: string;
 }
 
+type PipelineType = 'class' | 'exam_prep';
+
 interface StudentInviteSectionProps {
   isExpanded: boolean;
   onToggle: () => void;
   sessionId: number | null;
+  pipelineType?: PipelineType;
 }
 
-export function StudentInviteSection({ isExpanded, onToggle, sessionId }: StudentInviteSectionProps) {
+export function StudentInviteSection({ isExpanded, onToggle, sessionId, pipelineType = 'class' }: StudentInviteSectionProps) {
   const [invitedStudents, setInvitedStudents] = useState<Student[]>([]);
+  const [teacherStudents, setTeacherStudents] = useState<TeacherStudent[]>([]);
   const [newPhone, setNewPhone] = useState('');
+  const [selectedStudentPhone, setSelectedStudentPhone] = useState<string>('');
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -38,8 +59,13 @@ export function StudentInviteSection({ isExpanded, onToggle, sessionId }: Studen
 
   const isValidPhone = (phone: string) => /^09\d{9}$/.test(phone);
 
+  // Select API functions based on pipeline type
+  const listInvitesFn = pipelineType === 'exam_prep' ? listExamPrepInvites : listClassInvites;
+  const addInvitesFn = pipelineType === 'exam_prep' ? addExamPrepInvites : addClassInvites;
+  const deleteInviteFn = pipelineType === 'exam_prep' ? deleteExamPrepInvite : deleteClassInvite;
+
   const loadInvites = async (sid: number) => {
-    const invites = await listClassInvites(sid);
+    const invites = await listInvitesFn(sid);
     setInvitedStudents(
       invites.map((inv) => ({
         id: inv.id,
@@ -58,9 +84,20 @@ export function StudentInviteSection({ isExpanded, onToggle, sessionId }: Studen
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId]);
 
+  useEffect(() => {
+    // Best-effort: load teacher students so the teacher can pick quickly.
+    TeacherService.getStudents()
+      .then(setTeacherStudents)
+      .catch(() => {
+        // keep silent
+      });
+  }, []);
+
   const handleAddStudent = async () => {
     if (!sessionId) {
-      setErrorMessage('ابتدا مرحله ۱ را انجام دهید تا «جلسه ساخت کلاس» ایجاد شود.');
+      setErrorMessage(pipelineType === 'exam_prep' 
+        ? 'ابتدا مرحله ۱ را انجام دهید تا «جلسه آمادگی آزمون» ایجاد شود.'
+        : 'ابتدا مرحله ۱ را انجام دهید تا «جلسه ساخت کلاس» ایجاد شود.');
       return;
     }
 
@@ -77,7 +114,7 @@ export function StudentInviteSection({ isExpanded, onToggle, sessionId }: Studen
     }
 
     try {
-      const nextInvites = await addClassInvites(sessionId, [normalized]);
+      const nextInvites = await addInvitesFn(sessionId, [normalized]);
       setInvitedStudents(
         nextInvites.map((inv) => ({
           id: inv.id,
@@ -99,7 +136,7 @@ export function StudentInviteSection({ isExpanded, onToggle, sessionId }: Studen
       return;
     }
     try {
-      await deleteClassInvite(sessionId, student.id);
+      await deleteInviteFn(sessionId, student.id);
       await loadInvites(sessionId);
     } catch (e) {
       setErrorMessage(e instanceof Error ? e.message : 'خطا در حذف دانش‌آموز');
@@ -138,6 +175,32 @@ export function StudentInviteSection({ isExpanded, onToggle, sessionId }: Studen
       </CardHeader>
       {isExpanded && (
         <CardContent className="pt-0 space-y-5 text-start">
+          {/* انتخاب از لیست دانش‌آموزان */}
+          <div className="space-y-2 text-start">
+            <Label>انتخاب از دانش‌آموزان شما (اختیاری)</Label>
+            <Select
+              value={selectedStudentPhone}
+              onValueChange={(val) => {
+                setSelectedStudentPhone(val);
+                if (val) {
+                  setNewPhone(val);
+                  if (errorMessage) setErrorMessage(null);
+                }
+              }}
+            >
+              <SelectTrigger className="h-11 bg-background rounded-xl text-start">
+                <SelectValue placeholder={teacherStudents.length ? 'انتخاب دانش‌آموز...' : 'هنوز دانش‌آموزی ندارید'} />
+              </SelectTrigger>
+              <SelectContent>
+                {teacherStudents.map((s) => (
+                  <SelectItem key={s.phone} value={s.phone}>
+                    {s.name} — {s.phone}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
           {/* افزودن دستی */}
           <div className="space-y-2 text-start">
             <Label>افزودن دستی (شماره تلفن اجباری)</Label>
@@ -146,6 +209,7 @@ export function StudentInviteSection({ isExpanded, onToggle, sessionId }: Studen
                 value={newPhone}
                 onChange={(e) => {
                   setNewPhone(e.target.value);
+                  setSelectedStudentPhone('');
                   if (errorMessage) setErrorMessage(null);
                 }}
                 placeholder="شماره تلفن دانش‌آموز (مثلاً 09120000000)" 

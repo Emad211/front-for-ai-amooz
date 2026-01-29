@@ -8,6 +8,7 @@ import type {
   AdminNotificationSettings,
   ClassDetail,
   Course,
+  Student,
 } from '@/types';
 
 import {
@@ -144,8 +145,7 @@ export const TeacherService = {
   },
 
   getStudents: async () => {
-    // No enrollment model wired yet; return empty (real).
-    return [];
+    return requestJson<Student[]>('/classes/teacher/students/', { method: 'GET' });
   },
 
   getCourses: async () => {

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import os
 from typing import Any, Optional, Tuple
 
@@ -8,6 +9,9 @@ from google.genai import types
 
 from apps.commons.llm_prompts import PROMPTS
 from apps.commons.llm_provider import preferred_provider
+from apps.classes.services.media_compressor import prepare_media_parts_for_api
+
+logger = logging.getLogger(__name__)
 
 
 def _get_env(name: str) -> str:
@@ -52,31 +56,67 @@ def _extract_text(resp: Any) -> str:
 
 
 def transcribe_media_bytes(*, data: bytes, mime_type: str) -> tuple[str, str, str]:
-    """Return (transcript_markdown, provider, model_name)."""
+    """Return (transcript_markdown, provider, model_name).
 
+    If the input media exceeds API payload limits, it will be compressed and split
+    into multiple video parts (never audio-only) before sending to the API.
+    """
+    original_size = len(data)
+    media_parts = prepare_media_parts_for_api(data, mime_type)
+    logger.info(
+        'Prepared %d media part(s) for transcription (original=%d bytes)',
+        len(media_parts),
+        original_size,
+    )
+    
     model = _get_env('TRANSCRIPTION_MODEL') or _get_env('MODEL_NAME')
     if not model:
         model = 'models/gemini-2.5-flash'
-
-    prompt = PROMPTS['transcribe_media']['default']
-    media_part = types.Part.from_bytes(data=data, mime_type=mime_type)
-    contents = [prompt, media_part]
 
     gemini_client, avalai_client = _get_clients()
 
     last_error: Optional[Exception] = None
 
+    base_prompt = PROMPTS['transcribe_media']['default']
+
+    def _transcribe_with_client(client: genai.Client, provider_name: str) -> tuple[str, str, str]:
+        texts: list[str] = []
+        total = len(media_parts)
+
+        for idx, (part_bytes, part_mime) in enumerate(media_parts, start=1):
+            if total == 1:
+                prompt = base_prompt
+            else:
+                prompt = (
+                    base_prompt
+                    + "\n\n---\n"
+                    + f"این فایل بخش {idx} از {total} یک ویدیوی طولانی است. "
+                    + "فقط محتوای همین بخش را ترنسکریپت کن و از تکرار بخش‌های قبلی خودداری کن. "
+                    + "خروجی را به صورت Markdown بده."
+                )
+
+            media_part = types.Part.from_bytes(data=part_bytes, mime_type=part_mime)
+            resp = client.models.generate_content(model=model, contents=[prompt, media_part])
+            texts.append(_extract_text(resp))
+
+        if len(texts) == 1:
+            transcript = texts[0]
+        else:
+            transcript = "\n\n".join(
+                [f"## Part {i + 1}/{len(texts)}\n\n{texts[i]}" for i in range(len(texts))]
+            )
+
+        return transcript, provider_name, model
+
     if gemini_client is not None:
         try:
-            resp = gemini_client.models.generate_content(model=model, contents=contents)
-            return _extract_text(resp), 'gemini', model
+            return _transcribe_with_client(gemini_client, 'gemini')
         except Exception as exc:
             last_error = exc
 
     if avalai_client is not None:
         try:
-            resp = avalai_client.models.generate_content(model=model, contents=contents)
-            return _extract_text(resp), 'avalai', model
+            return _transcribe_with_client(avalai_client, 'avalai')
         except Exception as exc:
             last_error = exc
 

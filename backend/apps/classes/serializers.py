@@ -14,9 +14,9 @@ class Step1TranscribeRequestSerializer(serializers.Serializer):
     run_full_pipeline = serializers.BooleanField(required=False, default=False)
 
     def validate_file(self, value):
-        max_bytes = 50 * 1024 * 1024
+        max_bytes = 200 * 1024 * 1024
         if getattr(value, 'size', 0) > max_bytes:
-            raise serializers.ValidationError('File is too large (max 50MB).')
+            raise serializers.ValidationError('File is too large (max 200MB).')
 
         content_type = getattr(value, 'content_type', '') or ''
         if not (content_type.startswith('audio/') or content_type.startswith('video/')):
@@ -219,6 +219,22 @@ class ClassInvitationCreateSerializer(serializers.Serializer):
         return unique
 
 
+class TeacherStudentSerializer(serializers.Serializer):
+    id = serializers.CharField()
+    name = serializers.CharField()
+    email = serializers.CharField()
+    phone = serializers.CharField()
+    avatar = serializers.CharField()
+    enrolledClasses = serializers.IntegerField(min_value=0)
+    completedLessons = serializers.IntegerField(min_value=0)
+    totalLessons = serializers.IntegerField(min_value=0)
+    averageScore = serializers.IntegerField(min_value=0)
+    status = serializers.CharField()
+    joinDate = serializers.CharField()
+    lastActivity = serializers.CharField()
+    performance = serializers.CharField()
+
+
 class TeacherAnalyticsStatSerializer(serializers.Serializer):
     title = serializers.CharField()
     value = serializers.CharField()
@@ -370,3 +386,138 @@ class InviteCodeVerifyResponseSerializer(serializers.Serializer):
     valid = serializers.BooleanField()
     session_id = serializers.IntegerField(required=False)
     title = serializers.CharField(required=False, allow_blank=True)
+
+
+# ==========================================================================
+# EXAM PREP PIPELINE SERIALIZERS
+# ==========================================================================
+
+
+class ExamPrepStep1TranscribeRequestSerializer(serializers.Serializer):
+    """Request serializer for Exam Prep Step 1: Transcription."""
+    title = serializers.CharField(max_length=255)
+    description = serializers.CharField(required=False, allow_blank=True)
+    file = serializers.FileField()
+    client_request_id = serializers.UUIDField(required=False)
+    run_full_pipeline = serializers.BooleanField(required=False, default=False)
+
+    def validate_file(self, value):
+        max_bytes = 200 * 1024 * 1024
+        if getattr(value, 'size', 0) > max_bytes:
+            raise serializers.ValidationError('File is too large (max 200MB).')
+
+        content_type = getattr(value, 'content_type', '') or ''
+        if not (content_type.startswith('audio/') or content_type.startswith('video/')):
+            raise serializers.ValidationError('Only audio/video uploads are supported for transcription.')
+
+        return value
+
+
+class ExamPrepStep1TranscribeResponseSerializer(serializers.ModelSerializer):
+    """Response serializer for Exam Prep Step 1: Transcription."""
+    class Meta:
+        model = ClassCreationSession
+        fields = [
+            'id',
+            'status',
+            'pipeline_type',
+            'title',
+            'description',
+            'source_mime_type',
+            'source_original_name',
+            'transcript_markdown',
+            'created_at',
+        ]
+
+
+class ExamPrepStep2StructureRequestSerializer(serializers.Serializer):
+    """Request serializer for Exam Prep Step 2: Q&A Extraction."""
+    session_id = serializers.IntegerField(min_value=1)
+
+
+class ExamPrepStep2StructureResponseSerializer(serializers.ModelSerializer):
+    """Response serializer for Exam Prep Step 2: Q&A Extraction."""
+    class Meta:
+        model = ClassCreationSession
+        fields = [
+            'id',
+            'status',
+            'pipeline_type',
+            'title',
+            'description',
+            'exam_prep_json',
+            'created_at',
+        ]
+
+
+class ExamPrepSessionDetailSerializer(serializers.ModelSerializer):
+    """Detail serializer for Exam Prep sessions."""
+    exam_prep_data = serializers.SerializerMethodField()
+
+    @extend_schema_field(serializers.DictField())
+    def get_exam_prep_data(self, obj: ClassCreationSession):
+        """Parse and return exam_prep_json as dict."""
+        raw = obj.exam_prep_json or ''
+        if not raw.strip():
+            return None
+        try:
+            return json.loads(raw)
+        except (json.JSONDecodeError, TypeError):
+            return None
+
+    class Meta:
+        model = ClassCreationSession
+        fields = [
+            'id',
+            'status',
+            'pipeline_type',
+            'title',
+            'description',
+            'level',
+            'duration',
+            'transcript_markdown',
+            'exam_prep_json',
+            'exam_prep_data',
+            'is_published',
+            'published_at',
+            'error_detail',
+            'created_at',
+            'updated_at',
+        ]
+
+
+# ==========================================================================
+# STUDENT EXAM PREP SERIALIZERS
+# ==========================================================================
+
+
+class StudentExamPrepListSerializer(serializers.Serializer):
+    """Serializer for listing exam preps available to students."""
+    id = serializers.IntegerField()
+    title = serializers.CharField()
+    description = serializers.CharField(allow_blank=True)
+    tags = serializers.ListField(child=serializers.CharField(), allow_empty=True)
+    questions = serializers.IntegerField()
+    createdAt = serializers.CharField(required=False, allow_blank=True)
+    instructor = serializers.CharField(required=False, allow_blank=True)
+
+
+class StudentExamPrepQuestionSerializer(serializers.Serializer):
+    """Serializer for exam prep questions exposed to students."""
+    question_id = serializers.CharField()
+    question_text_markdown = serializers.CharField()
+    options = serializers.ListField(child=serializers.DictField())
+    correct_option_label = serializers.CharField(required=False, allow_null=True, allow_blank=True)
+    correct_option_text_markdown = serializers.CharField(required=False, allow_null=True, allow_blank=True)
+    teacher_solution_markdown = serializers.CharField(allow_blank=True)
+    final_answer_markdown = serializers.CharField(allow_blank=True)
+
+
+class StudentExamPrepDetailSerializer(serializers.Serializer):
+    """Serializer for student exam prep detail."""
+    id = serializers.IntegerField()
+    title = serializers.CharField()
+    description = serializers.CharField(allow_blank=True)
+    questions = StudentExamPrepQuestionSerializer(many=True)
+    totalQuestions = serializers.IntegerField()
+    subject = serializers.CharField(required=False, allow_blank=True)
