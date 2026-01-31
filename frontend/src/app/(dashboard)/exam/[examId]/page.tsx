@@ -12,6 +12,7 @@ import { ExamHeader } from '@/components/dashboard/exam/exam-header';
 import { QuestionContent } from '@/components/dashboard/exam/question-content';
 import { ChatAssistant } from '@/components/dashboard/exam/chat-assistant';
 import { Sheet, SheetContent, SheetTrigger, SheetTitle, SheetDescription } from "@/components/ui/sheet";
+import { ErrorState } from '@/components/shared/error-state';
 import { useExam } from '@/hooks/use-exam';
 import { useParams } from 'next/navigation';
 
@@ -19,10 +20,26 @@ export default function ExamPage() {
     const params = useParams();
     const rawExamId = (params as any)?.examId as string | string[] | undefined;
     const examId = Array.isArray(rawExamId) ? rawExamId[0] : rawExamId;
-    const { exam, currentQuestion, isChatOpen, toggleChat, isLoading, goToNextQuestion, goToPrevQuestion, submitAnswer } = useExam(examId);
+    const { exam, currentQuestion, isChatOpen, toggleChat, isLoading, error, goToNextQuestion, goToPrevQuestion, submitAnswer } = useExam(examId);
 
-    if (!examId || isLoading || !exam) {
+    if (!examId) {
+        return (
+            <main className="p-4 md:p-8 max-w-5xl mx-auto">
+                <ErrorState title="شناسه آزمون نامعتبر است" description="لطفاً دوباره وارد صفحه آزمون شوید." />
+            </main>
+        );
+    }
+
+    if (isLoading) {
         return <div className="flex items-center justify-center h-screen">در حال بارگذاری...</div>;
+    }
+
+    if (error || !exam) {
+        return (
+            <main className="p-4 md:p-8 max-w-5xl mx-auto">
+                <ErrorState title="خطا در دریافت اطلاعات آزمون" description={error || 'اطلاعات آزمون در دسترس نیست.'} />
+            </main>
+        );
     }
 
     return (
