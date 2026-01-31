@@ -1,6 +1,6 @@
 'use client';
 
-import { Mail, Phone, BookOpen, Award, Clock } from 'lucide-react';
+import { Mail, Phone, BookOpen, Award, Clock, KeyRound } from 'lucide-react';
 import { TableCell, TableRow } from '@/components/ui/table';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { StudentStatusBadge } from './status-badge';
@@ -12,6 +12,7 @@ interface Student {
   name: string;
   email: string;
   phone: string;
+  inviteCode?: string;
   avatar: string;
   enrolledClasses: number;
   averageScore: number;
@@ -47,6 +48,10 @@ export function StudentTableRow({ student }: { student: Student }) {
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <Phone className="w-3 h-3" />
             {student.phone}
+          </div>
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <KeyRound className="w-3 h-3" />
+            {student.inviteCode || '—'}
           </div>
         </div>
       </TableCell>

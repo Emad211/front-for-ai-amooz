@@ -4,7 +4,7 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from rest_framework.test import APIClient
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from apps.classes.models import ClassCreationSession
+from apps.classes.models import ClassCreationSession, StudentInviteCode
 
 
 User = get_user_model()
@@ -12,7 +12,7 @@ User = get_user_model()
 
 @pytest.mark.django_db
 def test_teacher_students_list_returns_invited_phones():
-    teacher = User.objects.create_user(username='t_students', password='pass', role=User.Role.TEACHER)
+    teacher = User.objects.create_user(username='t_students', password='pass', role=User.Role.TEACHER, phone='09120000001')
     token = str(RefreshToken.for_user(teacher).access_token)
 
     session = ClassCreationSession.objects.create(
@@ -33,7 +33,7 @@ def test_teacher_students_list_returns_invited_phones():
     # Create invite via API to ensure it uses the unified invite-code generation.
     res = client.post(
         f'/api/classes/creation-sessions/{session.id}/invites/',
-        {'phones': ['09120000000']},
+        {'phones': ['09120000000', '09120000001']},
         format='json',
     )
     assert res.status_code == 200
@@ -43,3 +43,7 @@ def test_teacher_students_list_returns_invited_phones():
     assert isinstance(res2.data, list)
     assert len(res2.data) == 1
     assert res2.data[0]['phone'] == '09120000000'
+    assert res2.data[0]['inviteCode']
+
+    code = StudentInviteCode.objects.get(phone='09120000000').code
+    assert res2.data[0]['inviteCode'] == code

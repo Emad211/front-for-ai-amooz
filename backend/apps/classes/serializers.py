@@ -224,6 +224,7 @@ class TeacherStudentSerializer(serializers.Serializer):
     name = serializers.CharField()
     email = serializers.CharField()
     phone = serializers.CharField()
+    inviteCode = serializers.CharField()
     avatar = serializers.CharField()
     enrolledClasses = serializers.IntegerField(min_value=0)
     completedLessons = serializers.IntegerField(min_value=0)

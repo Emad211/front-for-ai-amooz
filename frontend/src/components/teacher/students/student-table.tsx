@@ -19,6 +19,7 @@ interface Student {
   name: string;
   email: string;
   phone: string;
+  inviteCode?: string;
   avatar: string;
   enrolledClasses: number;
   averageScore: number;
@@ -50,7 +51,7 @@ export function StudentTable({ students }: StudentTableProps) {
             <TableHeader>
               <TableRow>
                 <TableHead className="text-start">دانش‌آموز</TableHead>
-                <TableHead className="text-start">اطلاعات تماس</TableHead>
+                <TableHead className="text-start">اطلاعات دانش‌آموز</TableHead>
                 <TableHead className="text-start">کلاس‌ها</TableHead>
                 <TableHead className="text-start">نمره</TableHead>
                 <TableHead className="text-start">عملکرد</TableHead>
@@ -99,6 +100,10 @@ export function StudentTable({ students }: StudentTableProps) {
                 <div className="bg-muted/30 p-2 rounded-lg text-start">
                   <p className="text-[10px] text-muted-foreground mb-1">میانگین نمره</p>
                   <p className="text-sm font-bold">{student.averageScore}</p>
+                </div>
+                <div className="bg-muted/30 p-2 rounded-lg text-start">
+                  <p className="text-[10px] text-muted-foreground mb-1">کد دعوت</p>
+                  <p className="text-sm font-bold">{student.inviteCode || '—'}</p>
                 </div>
               </div>
 

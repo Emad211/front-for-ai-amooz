@@ -864,6 +864,9 @@ class TeacherStudentsListView(APIView):
         # If/when an enrollment model is added, this should be updated.
 
         base_qs = ClassInvitation.objects.filter(session__teacher=request.user)
+        teacher_phone = (getattr(request.user, 'phone', '') or '').strip()
+        if teacher_phone:
+            base_qs = base_qs.exclude(phone=teacher_phone)
 
         rows = (
             base_qs.values('phone')
@@ -887,6 +890,19 @@ class TeacherStudentsListView(APIView):
                 p = (getattr(u, 'phone', None) or '').strip()
                 if p:
                     users_by_phone[p] = u
+
+        invite_codes_by_phone: dict[str, str] = {}
+        if phones:
+            for obj in StudentInviteCode.objects.filter(phone__in=phones).only('phone', 'code'):
+                invite_codes_by_phone[obj.phone] = obj.code
+
+        for phone in phones:
+            normalized = (phone or '').strip()
+            if not normalized:
+                continue
+            if normalized in invite_codes_by_phone:
+                continue
+            invite_codes_by_phone[normalized] = get_or_create_invite_code_for_phone(normalized)
 
         out: list[dict] = []
         for r in rows:
@@ -926,6 +942,7 @@ class TeacherStudentsListView(APIView):
                     'name': name,
                     'email': email,
                     'phone': phone,
+                    'inviteCode': invite_codes_by_phone.get(phone, ''),
                     'avatar': avatar,
                     'enrolledClasses': enrolled_classes,
                     'completedLessons': 0,

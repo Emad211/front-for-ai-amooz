@@ -110,6 +110,7 @@ export interface Student {
   name: string;
   email: string;
   phone: string;
+  inviteCode?: string;
   avatar: string;
   enrolledClasses: number;
   completedLessons: number;
