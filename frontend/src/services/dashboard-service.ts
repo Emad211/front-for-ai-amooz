@@ -2,8 +2,6 @@ import {
   MOCK_DASHBOARD_STATS,
   MOCK_ACTIVITIES,
   MOCK_UPCOMING_EVENTS,
-  MOCK_EXAMS,
-  MOCK_EXAM,
   MOCK_TICKETS,
   MOCK_NOTIFICATIONS,
   MOCK_CALENDAR_EVENTS,
@@ -355,149 +353,89 @@ export const DashboardService = {
   },
 
   getExams: async () => {
+    if (!RAW_API_URL) {
+      throw new Error('NEXT_PUBLIC_API_URL تنظیم نشده است.');
+    }
     // Fetch real exam prep data from API
     const url = `${API_URL}/classes/student/exam-preps/`;
-    try {
-      const data = await requestJson<{
-        id: number;
-        title: string;
-        description: string;
-        tags: string[];
-        questions: number;
-        createdAt?: string;
-        instructor?: string;
-      }[]>(url, {
-        method: 'GET',
-        headers: {
-          Authorization: `Bearer ${getAccessToken()}`,
-        },
-      });
-      // Transform to Exam type expected by frontend
-      return data.map(item => ({
-        id: item.id,
-        title: item.title,
-        description: item.description,
-        tags: item.tags || [],
-        questions: item.questions,
-      }));
-    } catch {
-      // Fallback to mock data if API fails
-      return MOCK_EXAMS;
-    }
+    const data = await requestJson<{
+      id: number;
+      title: string;
+      description: string;
+      tags: string[];
+      questions: number;
+      createdAt?: string;
+      instructor?: string;
+    }[]>(url, {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${getAccessToken()}`,
+      },
+    });
+    // Transform to Exam type expected by frontend
+    return data.map(item => ({
+      id: item.id,
+      title: item.title,
+      description: item.description,
+      tags: item.tags || [],
+      questions: item.questions,
+    }));
   },
 
   getExam: async (examId: string) => {
+    if (!RAW_API_URL) {
+      throw new Error('NEXT_PUBLIC_API_URL تنظیم نشده است.');
+    }
     // Try to fetch real exam prep detail from API
     const url = `${API_URL}/classes/student/exam-preps/${examId}/`;
-    try {
-      const data = await requestJson<{
-        id: number;
-        title: string;
-        description: string;
-        questions: {
-          question_id: string;
-          question_text_markdown: string;
-          options: { label: string; text_markdown: string }[];
-          correct_option_label?: string | null;
-          correct_option_text_markdown?: string | null;
-          teacher_solution_markdown: string;
-          final_answer_markdown: string;
-        }[];
-        totalQuestions: number;
-        subject?: string;
-      }>(url, {
-        method: 'GET',
-        headers: {
-          Authorization: `Bearer ${getAccessToken()}`,
-        },
-      });
+    const data = await requestJson<{
+      id: number;
+      title: string;
+      description: string;
+      questions: {
+        question_id: string;
+        question_text_markdown: string;
+        options: { label: string; text_markdown: string }[];
+        correct_option_label?: string | null;
+        correct_option_text_markdown?: string | null;
+        teacher_solution_markdown: string;
+        final_answer_markdown: string;
+      }[];
+      totalQuestions: number;
+      subject?: string;
+    }>(url, {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${getAccessToken()}`,
+      },
+    });
 
-      // Transform to Exam type expected by frontend
-      const questionsList = data.questions.map((q, idx) => ({
-        id: q.question_id,
-        number: idx + 1,
-        text: q.question_text_markdown,
-        options: q.options.map((opt, optIdx) => ({
-          id: String(optIdx),
-          label: opt.label,
-          text: opt.text_markdown,
-        })),
-        correctOptionId: q.correct_option_label || undefined,
-        teacherSolution: q.teacher_solution_markdown,
-        finalAnswer: q.final_answer_markdown,
-      }));
+    // Transform to Exam type expected by frontend
+    const questionsList = data.questions.map((q, idx) => ({
+      id: q.question_id,
+      number: idx + 1,
+      text: q.question_text_markdown,
+      options: q.options.map((opt, optIdx) => ({
+        id: String(optIdx),
+        label: opt.label,
+        text: opt.text_markdown,
+      })),
+      correctOptionId: q.correct_option_label || undefined,
+      teacherSolution: q.teacher_solution_markdown,
+      finalAnswer: q.final_answer_markdown,
+    }));
 
-      return {
-        id: data.id,
-        title: data.title,
-        description: data.description,
-        tags: [],
-        questions: data.totalQuestions,
-        subject: data.subject || data.title,
-        totalQuestions: data.totalQuestions,
-        currentQuestionIndex: 0,
-        questionsList,
-      };
-    } catch {
-      // Fallback to mock data
-      const ensureQuestionsList = (exam: any) => {
-        const desiredCount = Number(exam?.totalQuestions ?? exam?.questions ?? 0);
-        const baseList = Array.isArray(exam?.questionsList) ? exam.questionsList : [];
-        const baseQuestion = baseList[0] ?? {
-          id: 'q1',
-          number: 1,
-          text: 'سوال نمونه',
-          options: [
-            { id: 'a', label: 'الف', text: 'گزینه ۱' },
-            { id: 'b', label: 'ب', text: 'گزینه ۲' },
-            { id: 'c', label: 'ج', text: 'گزینه ۳' },
-            { id: 'd', label: 'د', text: 'گزینه ۴' },
-          ],
-          correctOptionId: 'a',
-        };
-
-        const count = Number.isFinite(desiredCount) && desiredCount > 0 ? desiredCount : (baseList.length || 1);
-
-        const questionsList = Array.from({ length: count }, (_, idx) => {
-          const n = idx + 1;
-          return {
-            ...baseQuestion,
-            id: `q${n}`,
-            number: n,
-            options: baseQuestion.options?.map((o: any) => ({ ...o })) ?? [],
-          };
-        });
-
-        return {
-          ...exam,
-          totalQuestions: count,
-          questions: count,
-          currentQuestionIndex: 0,
-          questionsList,
-        };
-      };
-
-      const fromList = MOCK_EXAMS.find(e => String(e.id) === String(examId));
-      if (fromList) {
-        const hydrated = {
-          ...MOCK_EXAM,
-          id: String(fromList.id),
-          title: fromList.title,
-          description: fromList.description,
-          tags: fromList.tags,
-          subject: fromList.tags?.[0] ?? MOCK_EXAM.subject,
-          questions: fromList.questions,
-          totalQuestions: fromList.questions,
-        };
-        return ensureQuestionsList(hydrated);
-      }
-
-      if (String(MOCK_EXAM.id) === String(examId)) {
-        return ensureQuestionsList({ ...MOCK_EXAM, id: String(examId) });
-      }
-
-      return ensureQuestionsList({ ...MOCK_EXAM, id: String(examId || MOCK_EXAM.id) });
-    }
+    return {
+      id: data.id,
+      title: data.title,
+      description: data.description,
+      tags: [],
+      questions: data.totalQuestions,
+      subject: data.subject || data.title,
+      totalQuestions: data.totalQuestions,
+      currentQuestionIndex: 0,
+      questionsList,
+    };
   },
 
   getTickets: async () => {

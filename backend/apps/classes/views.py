@@ -1042,7 +1042,11 @@ class StudentCourseListView(APIView):
             return Response([], status=status.HTTP_200_OK)
 
         qs = (
-            ClassCreationSession.objects.filter(is_published=True, invites__phone=phone)
+            ClassCreationSession.objects.filter(
+                is_published=True,
+                pipeline_type=ClassCreationSession.PipelineType.CLASS,
+                invites__phone=phone,
+            )
             .select_related('teacher')
             .prefetch_related('sections__units', 'invites')
             .distinct()
@@ -1097,7 +1101,12 @@ class StudentCourseContentView(APIView):
             return Response({'detail': 'شماره موبایل برای حساب کاربری ثبت نشده است.'}, status=status.HTTP_400_BAD_REQUEST)
 
         session = (
-            ClassCreationSession.objects.filter(id=session_id, is_published=True, invites__phone=phone)
+            ClassCreationSession.objects.filter(
+                id=session_id,
+                is_published=True,
+                pipeline_type=ClassCreationSession.PipelineType.CLASS,
+                invites__phone=phone,
+            )
             .prefetch_related('sections__units', 'learning_objectives', 'prerequisites')
             .first()
         )
