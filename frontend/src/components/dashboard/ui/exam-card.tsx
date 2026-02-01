@@ -13,14 +13,14 @@ interface ExamCardProps {
 }
 
 export const ExamCard = ({ exam }: ExamCardProps) => {
-  const isInProgress = exam.tags.includes('ریاضیات') || exam.tags.includes('برنامه نویسی');
-  const isDiscreteMath = exam.id === 1;
+  const primaryTag = exam.tags?.[0] || 'آزمون';
+  const examHref = `/exam/${exam.id}`;
 
   return (
     <Card className="group bg-card border-border/50 hover:border-primary/30 transition-all duration-300 overflow-hidden flex flex-col justify-between h-full rounded-3xl hover:shadow-2xl hover:shadow-primary/5">
       <CardContent className="p-6 md:p-8">
         <div className="flex justify-start mb-6">
-          <TagBadge tag={exam.tags[0]} />
+          <TagBadge tag={primaryTag} />
         </div>
         <h3 className="font-black text-xl md:text-2xl text-foreground mb-3 group-hover:text-primary transition-colors">{exam.title}</h3>
         <p className="text-muted-foreground text-sm md:text-base leading-relaxed mb-6 font-medium">{exam.description}</p>
@@ -30,23 +30,14 @@ export const ExamCard = ({ exam }: ExamCardProps) => {
         </div>
       </CardContent>
       <div className="px-6 md:px-8 pb-6 md:pb-8">
-        {isInProgress ? (
-          <Button asChild className="w-full h-12 md:h-14 bg-primary hover:bg-primary/90 text-primary-foreground rounded-2xl font-bold text-base shadow-lg shadow-primary/20 transition-all group-hover:scale-[1.02]">
-            <Link href={isDiscreteMath ? '/exam/1' : '#'}>
-              ادامه یادگیری <ArrowLeft className="mr-2 h-5 w-5" />
-            </Link>
-          </Button>
-        ) : (
-          <Button
-            asChild
-            variant="secondary"
-            className="w-full h-12 md:h-14 bg-secondary/50 hover:bg-secondary text-primary rounded-2xl font-bold text-base transition-all group-hover:scale-[1.02]"
-          >
-            <Link href="#">
-              <Play className="h-5 w-5 ml-2 fill-current" /> شروع یادگیری
-            </Link>
-          </Button>
-        )}
+        <Button
+          asChild
+          className="w-full h-12 md:h-14 bg-primary hover:bg-primary/90 text-primary-foreground rounded-2xl font-bold text-base shadow-lg shadow-primary/20 transition-all group-hover:scale-[1.02]"
+        >
+          <Link href={examHref}>
+            <Play className="h-5 w-5 ml-2 fill-current" /> شروع یادگیری
+          </Link>
+        </Button>
       </div>
     </Card>
   );

@@ -12,8 +12,8 @@ interface ExamCardProps {
 }
 
 export const ExamCard = ({ exam }: ExamCardProps) => {
-  const isInProgress = exam.tags.includes('ریاضیات') || exam.tags.includes('برنامه نویسی');
-  const isDiscreteMath = exam.id === 1;
+  const primaryTag = exam.tags?.[0] || 'آزمون';
+  const examHref = `/exam/${exam.id}`;
 
   return (
     <Card className="bg-card text-card-foreground overflow-hidden flex flex-col justify-between h-full rounded-2xl">
@@ -22,22 +22,22 @@ export const ExamCard = ({ exam }: ExamCardProps) => {
           <Badge
             variant="secondary"
             className={`bg-opacity-20 text-sm font-normal ${
-              exam.tags[0] === 'هوش مصنوعی'
+              primaryTag === 'هوش مصنوعی'
                 ? 'bg-green-500/20 text-green-400 border-green-500/30'
-                : exam.tags[0] === 'ریاضیات'
+                : primaryTag === 'ریاضیات'
                 ? 'bg-purple-500/20 text-purple-400 border-purple-500/30'
-                : exam.tags[0] === 'فیزیک'
+                : primaryTag === 'فیزیک'
                 ? 'bg-blue-500/20 text-blue-400 border-blue-500/30'
-                : exam.tags[0] === 'برنامه نویسی'
+                : primaryTag === 'برنامه نویسی'
                 ? 'bg-indigo-500/20 text-indigo-400 border-indigo-500/30'
-                : exam.tags[0] === 'زبان'
+                : primaryTag === 'زبان'
                 ? 'bg-pink-500/20 text-pink-400 border-pink-500/30'
-                : exam.tags[0] === 'آمار'
+                : primaryTag === 'آمار'
                 ? 'bg-purple-500/20 text-purple-400 border-purple-500/30'
                 : 'bg-gray-500/20 text-gray-400 border-gray-500/30'
             } border mr-2`}
           >
-            {exam.tags[0]}
+            {primaryTag}
           </Badge>
         </div>
         <h3 className="font-bold text-xl text-text-light mb-2">{exam.title}</h3>
@@ -48,23 +48,11 @@ export const ExamCard = ({ exam }: ExamCardProps) => {
         </div>
       </CardContent>
       <div className="px-6 pb-6">
-        {isInProgress ? (
-          <Button asChild className="w-full bg-primary hover:bg-primary/90 text-primary-foreground rounded-lg">
-            <Link href={isDiscreteMath ? '/exam/1' : '#'}>
-              ادامه یادگیری <ArrowLeft className="mr-2 h-4 w-4" />
-            </Link>
-          </Button>
-        ) : (
-          <Button
-            asChild
-            variant="secondary"
-            className="w-full bg-secondary hover:bg-secondary/80 text-primary rounded-lg"
-          >
-            <Link href="#">
-              <Play className="h-4 w-4 ml-2 fill-current" /> شروع یادگیری
-            </Link>
-          </Button>
-        )}
+        <Button asChild className="w-full bg-primary hover:bg-primary/90 text-primary-foreground rounded-lg">
+          <Link href={examHref}>
+            <Play className="h-4 w-4 ml-2 fill-current" /> شروع یادگیری
+          </Link>
+        </Button>
       </div>
     </Card>
   );
