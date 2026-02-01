@@ -2,11 +2,12 @@
 
 import React from 'react';
 import Link from 'next/link';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import { DashboardService } from '@/services/dashboard-service';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { MarkdownWithMath } from '@/components/content/markdown-with-math';
+import { toPersianOptionLabel } from '@/lib/persian-option-label';
 import type { Exam } from '@/types';
 
 type ExamPrepResult = {
@@ -20,6 +21,7 @@ type ExamPrepResult = {
 
 export default function ExamResultPage() {
   const params = useParams();
+  const router = useRouter();
   const rawExamId = (params as any)?.examId as string | string[] | undefined;
   const examId = Array.isArray(rawExamId) ? rawExamId[0] : rawExamId;
 
@@ -27,6 +29,7 @@ export default function ExamResultPage() {
   const [result, setResult] = React.useState<ExamPrepResult | null>(null);
   const [isLoading, setIsLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
+  const [isResetting, setIsResetting] = React.useState(false);
 
   React.useEffect(() => {
     const eid = String(examId ?? '').trim();
@@ -116,6 +119,21 @@ export default function ExamResultPage() {
 
   const items = Array.isArray(result.items) ? result.items : [];
 
+  const handleRetake = async () => {
+    const eid = String(examId ?? '').trim();
+    if (!eid || isResetting) return;
+    setIsResetting(true);
+    try {
+      await DashboardService.resetExamPrepAttempt(eid);
+      router.push(`/exam/${eid}`);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'خطا در شروع آزمون مجدد';
+      setError(msg);
+    } finally {
+      setIsResetting(false);
+    }
+  };
+
   return (
     <main className="p-4 md:p-8 max-w-5xl mx-auto space-y-6">
       <div className="bg-card border border-border rounded-2xl p-6 space-y-3">
@@ -145,9 +163,9 @@ export default function ExamResultPage() {
         </div>
 
         <div className="flex gap-2">
-          <Link href={`/exam/${examId}`}>
-            <Button variant="outline">مرور سوالات</Button>
-          </Link>
+          <Button variant="outline" onClick={handleRetake} disabled={isResetting}>
+            {isResetting ? 'در حال آماده‌سازی...' : 'آزمون مجدد'}
+          </Button>
           <Link href="/exam-prep">
             <Button>بازگشت به لیست آزمون‌ها</Button>
           </Link>
@@ -161,7 +179,12 @@ export default function ExamResultPage() {
             const meta = questionIndex.get(String(it.question_id));
             const number = meta?.number ?? '?';
             const qText = meta?.text ?? '';
-            const selected = String(it.selected_label || '').trim();
+            const selected = String(it.selected_label || result.answers?.[String(it.question_id)] || '').trim();
+
+            const question = (exam?.questionsList ?? []).find(q => String(q.id) === String(it.question_id));
+            const optionIndex = question?.options?.findIndex(o => String(o.label).trim() === selected) ?? -1;
+            const selectedOption = optionIndex >= 0 ? (question?.options?.[optionIndex] ?? null) : null;
+            const displayLabel = selected ? toPersianOptionLabel(selected, optionIndex >= 0 ? optionIndex : undefined) : '';
 
             const status = result.finalized
               ? it.is_correct
@@ -182,7 +205,23 @@ export default function ExamResultPage() {
                 <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
                   <div className="flex items-center justify-between gap-2 bg-card border border-border rounded-lg px-3 py-2">
                     <span className="text-muted-foreground">پاسخ شما</span>
-                    <span className="font-semibold">{selected || '—'}</span>
+                    {selected ? (
+                      <span className="font-semibold text-right" dir="rtl">
+                        {displayLabel ? `${displayLabel}) ` : ''}
+                        {selectedOption?.text ? (
+                          <MarkdownWithMath
+                            as="span"
+                            markdown={selectedOption.text}
+                            className="inline leading-6"
+                            renderKey={`res-ans-${it.question_id}-${selected}`}
+                          />
+                        ) : (
+                          <span>{displayLabel || selected}</span>
+                        )}
+                      </span>
+                    ) : (
+                      <span className="font-semibold">ثبت نشده</span>
+                    )}
                   </div>
                 </div>
               </div>

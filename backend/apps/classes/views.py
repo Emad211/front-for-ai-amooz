@@ -2685,7 +2685,12 @@ class StudentExamPrepSubmitView(APIView):
             return Response({'detail': 'این آزمون قبلاً ثبت نهایی شده است.'}, status=status.HTTP_400_BAD_REQUEST)
 
         if isinstance(attempt.answers, dict):
-            merged_answers.update(attempt.answers)
+            # Normalize existing JSONField keys to trimmed strings.
+            for k, v in attempt.answers.items():
+                key = str(k).strip()
+                if not key:
+                    continue
+                merged_answers[key] = str(v).strip()
 
         for k, v in answers.items():
             key = str(k).strip()
@@ -2907,13 +2912,20 @@ class StudentExamPrepResultView(APIView):
             if qid:
                 correct_map[qid] = label
 
-        answers = attempt.answers if isinstance(attempt.answers, dict) else {}
+        answers_raw = attempt.answers if isinstance(attempt.answers, dict) else {}
+        # Normalize JSONField keys to strings to avoid lookup mismatches.
+        answers: dict[str, str] = {}
+        for k, v in answers_raw.items():
+            key = str(k).strip()
+            if not key:
+                continue
+            answers[key] = str(v).strip()
         total_questions = len(correct_map)
 
         items = []
         correct_count = 0
         for qid, correct_label in correct_map.items():
-            selected = str(answers.get(qid) or '').strip()
+            selected = str(answers.get(str(qid).strip()) or '').strip()
             ok = bool(selected) and bool(correct_label) and selected == correct_label
             if attempt.finalized and ok:
                 correct_count += 1
@@ -2936,6 +2948,77 @@ class StudentExamPrepResultView(APIView):
             'items': items,
         }
         return Response(StudentExamPrepResultResponseSerializer(payload).data, status=status.HTTP_200_OK)
+
+
+class StudentExamPrepResetView(APIView):
+    """Reset an exam prep attempt for a student so they can retake the exam."""
+
+    permission_classes = [IsAuthenticated, IsStudentUser]
+
+    @extend_schema(
+        tags=['Student Exam Prep'],
+        summary='Reset exam prep attempt (retake)',
+        operation_id='student_exam_prep_reset',
+        request=None,
+        responses={200: OpenApiTypes.OBJECT, 404: OpenApiTypes.OBJECT},
+    )
+    def post(self, request, session_id: int):
+        user = request.user
+        phone = (getattr(user, 'phone', None) or '').strip()
+        if not phone:
+            return Response({'detail': 'شماره موبایل برای حساب کاربری ثبت نشده است.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        session = ClassCreationSession.objects.filter(
+            id=session_id,
+            is_published=True,
+            pipeline_type=ClassCreationSession.PipelineType.EXAM_PREP,
+            invites__phone=phone,
+        ).first()
+
+        if session is None:
+            return Response({'detail': 'آزمون آمادگی پیدا نشد.'}, status=status.HTTP_404_NOT_FOUND)
+
+        from apps.classes.models import StudentExamPrepAttempt
+
+        attempt = StudentExamPrepAttempt.objects.filter(session=session, student=user).first()
+        if attempt is None:
+            return Response({'detail': 'هنوز آزمونی برای ریست کردن ثبت نشده است.'}, status=status.HTTP_404_NOT_FOUND)
+
+        # Recompute total questions from current exam JSON.
+        questions_list = []
+        try:
+            if session.exam_prep_json:
+                data = json.loads(session.exam_prep_json)
+                if isinstance(data, dict):
+                    exam_prep = data.get('exam_prep', {})
+                    raw_questions = exam_prep.get('questions', [])
+                    if isinstance(raw_questions, list):
+                        questions_list = raw_questions
+        except (json.JSONDecodeError, TypeError):
+            questions_list = []
+
+        total_questions = 0
+        for q in questions_list:
+            qid = str((q or {}).get('question_id') or '').strip() if isinstance(q, dict) else ''
+            if qid:
+                total_questions += 1
+
+        attempt.answers = {}
+        attempt.score_0_100 = 0
+        attempt.correct_count = 0
+        attempt.total_questions = total_questions
+        attempt.finalized = False
+        attempt.save(update_fields=['answers', 'score_0_100', 'correct_count', 'total_questions', 'finalized', 'updated_at'])
+
+        return Response(
+            {
+                'finalized': False,
+                'score_0_100': 0,
+                'correct_count': 0,
+                'total_questions': total_questions,
+            },
+            status=status.HTTP_200_OK,
+        )
 
 
 class StudentExamPrepChatHistoryView(APIView):

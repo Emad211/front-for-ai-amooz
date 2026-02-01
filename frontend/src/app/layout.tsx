@@ -35,7 +35,15 @@ export default function RootLayout({
         >
           {children}
           <Toaster />
-          <SonnerToaster position="top-center" dir="rtl" richColors />
+          <SonnerToaster
+            position="top-center"
+            dir="rtl"
+            richColors
+            toastOptions={{
+              className: 'text-right',
+              descriptionClassName: 'text-right',
+            }}
+          />
         </ThemeProvider>
       </body>
     </html>

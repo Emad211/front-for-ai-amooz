@@ -381,15 +381,15 @@ Detect question boundaries using cues like:
                 "question_id": "q-1",
                 "question_text_markdown": "<verbatim question statement>",
                 "options": [
-                    {"label": "A", "text_markdown": "<verbatim option A>"},
-                    {"label": "B", "text_markdown": "<verbatim option B>"},
-                    {"label": "C", "text_markdown": "<verbatim option C>"},
-                    {"label": "D", "text_markdown": "<verbatim option D>"}
+                {"label": "الف", "text_markdown": "<verbatim option الف>"},
+                {"label": "ب", "text_markdown": "<verbatim option ب>"},
+                {"label": "ج", "text_markdown": "<verbatim option ج>"},
+                {"label": "د", "text_markdown": "<verbatim option د>"}
                 ],
-                "correct_option_label": "<A|B|C|D|null>",
+              "correct_option_label": "<الف|ب|ج|د|null>",
                 "correct_option_text_markdown": "<verbatim correct option text if available else null>",
                 "teacher_solution_markdown": "<teacher’s analytical solution linked to THIS question>",
-                "final_answer_markdown": "<short final answer/ نتیجه نهایی (e.g., \"گزینه B\" or \"x=2\")>",
+              "final_answer_markdown": "<short final answer/ نتیجه نهایی (e.g., \"گزینه ب\" or \"x=2\")>",
                 "confidence": 0.0,
                 "issues": ["<only if needed: e.g., missing options, unclear boundary>"]
             }
@@ -399,7 +399,7 @@ Detect question boundaries using cues like:
 
 ### Important constraints
 - If the transcript has questions without options (open-ended), set `options` to [] and `correct_option_label` to null.
-- If options exist but labels are not explicit, infer labels by order (A,B,C,D) AND mention this in `issues`.
+- If options exist but labels are not explicit, infer labels by order (الف,ب,ج,د) AND mention this in `issues`.
 - If the teacher solves multiple questions in one continuous block, you MUST split them into separate question objects.
 - Do not include any extra top-level keys.
 

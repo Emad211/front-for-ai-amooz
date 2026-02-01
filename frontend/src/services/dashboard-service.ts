@@ -471,6 +471,24 @@ export const DashboardService = {
     });
   },
 
+  resetExamPrepAttempt: async (examId: string) => {
+    if (!RAW_API_URL) {
+      throw new Error('NEXT_PUBLIC_API_URL تنظیم نشده است.');
+    }
+    const url = `${API_URL}/classes/student/exam-preps/${examId}/reset/`;
+    return requestJson<{
+      finalized: boolean;
+      score_0_100: number;
+      correct_count: number;
+      total_questions: number;
+    }>(url, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${getAccessToken()}`,
+      },
+    });
+  },
+
   getTickets: async () => {
     await new Promise(resolve => setTimeout(resolve, 600));
     return MOCK_TICKETS;

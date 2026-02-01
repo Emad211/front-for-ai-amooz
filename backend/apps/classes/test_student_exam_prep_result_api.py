@@ -5,7 +5,7 @@ from model_bakery import baker
 from rest_framework.test import APIClient
 
 from apps.accounts.models import User
-from apps.classes.models import ClassCreationSession, ClassInvitation
+from apps.classes.models import ClassCreationSession, ClassInvitation, StudentExamPrepAttempt
 
 
 @pytest.mark.django_db
@@ -182,3 +182,36 @@ class TestStudentExamPrepResultApi:
         assert resp.status_code == 200
         assert resp.data['total_questions'] == 0
         assert resp.data['items'] == []
+
+    def test_result_normalizes_jsonfield_keys_to_strings(self):
+        student, client = self._make_student_client(student_phone='09920000007')
+        session = self._make_exam_for_student(
+            student.phone,
+            questions=[
+                {
+                    'question_id': 1,
+                    'question_text_markdown': 'Q1',
+                    'options': [{'label': 'الف', 'text_markdown': '1'}],
+                    'correct_option_label': 'الف',
+                }
+            ],
+        )
+
+        # Simulate a legacy/buggy JSONField payload where keys are ints.
+        attempt = StudentExamPrepAttempt.objects.create(
+            session=session,
+            student=student,
+            answers={1: 'الف'},
+            total_questions=1,
+            correct_count=0,
+            score_0_100=0,
+            finalized=False,
+        )
+        assert attempt.answers == {1: 'الف'}
+
+        resp = client.get(f'/api/classes/student/exam-preps/{session.id}/result/')
+        assert resp.status_code == 200
+        assert resp.data['finalized'] is False
+        assert resp.data['total_questions'] == 1
+        assert resp.data['items'][0]['question_id'] == '1'
+        assert resp.data['items'][0]['selected_label'] == 'الف'

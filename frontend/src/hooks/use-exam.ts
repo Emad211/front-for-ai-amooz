@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { DashboardService } from '@/services/dashboard-service';
 import { Exam, Question } from '@/types';
 
@@ -19,6 +19,7 @@ export const useExam = (examId?: string, service: ExamService = DashboardService
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [answers, setAnswers] = useState<Record<string, string>>({});
+  const answersRef = useRef<Record<string, string>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isFinalized, setIsFinalized] = useState(false);
 
@@ -41,6 +42,7 @@ export const useExam = (examId?: string, service: ExamService = DashboardService
           setCurrentQuestion(null);
         }
         setAnswers({});
+        answersRef.current = {};
         setIsFinalized(false);
       } catch (err) {
         console.error(err);
@@ -75,14 +77,15 @@ export const useExam = (examId?: string, service: ExamService = DashboardService
     // Selection should be local-only.
     // We only send answers to backend when the user explicitly finalizes the exam.
     if (isFinalized) return;
-    setAnswers((prev) => ({ ...prev, [questionId]: answerId }));
+    answersRef.current = { ...answersRef.current, [questionId]: answerId };
+    setAnswers(answersRef.current);
   };
 
   const finalizeExam = async () => {
     if (!examId || isFinalized) return;
     setIsSubmitting(true);
     try {
-      const result = await service.submitExamPrep(examId, { answers, finalize: true });
+      const result = await service.submitExamPrep(examId, { answers: answersRef.current, finalize: true });
       setIsFinalized(Boolean(result?.finalized));
       return result;
     } catch (err) {

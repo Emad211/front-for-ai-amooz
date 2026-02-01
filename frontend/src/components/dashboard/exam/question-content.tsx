@@ -6,6 +6,7 @@ import { Label } from '@/components/ui/label';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { Question } from '@/types';
 import { MarkdownWithMath } from '@/components/content/markdown-with-math';
+import { toPersianOptionLabel } from '@/lib/persian-option-label';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -59,25 +60,29 @@ export const QuestionContent = ({ question, totalQuestions, onNext, onPrev, onSu
             className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4"
             disabled={Boolean(isSubmitting) || Boolean(isFinalized)}
           >
-            {question.options.map((option) => (
-              <Label
-                key={option.id}
-                htmlFor={`option-${question.id}-${option.id}`}
-                className="flex items-center justify-between p-3 sm:p-4 bg-background border border-border rounded-lg cursor-pointer hover:bg-secondary/50 has-[:checked]:bg-primary/10 has-[:checked]:border-primary"
-              >
-                <div className="flex items-center gap-3">
-                  <RadioGroupItem value={option.label} id={`option-${question.id}-${option.id}`} />
-                  <span className="text-sm sm:text-base">{option.label})</span>
-                  <div className="text-sm sm:text-base">
-                    <MarkdownWithMath
-                      markdown={option.text}
-                      renderKey={`${question.id}-${option.id}`}
-                      className="leading-7"
+            {question.options.map((option, optionIndex) => {
+              const displayLabel = toPersianOptionLabel(option.label, optionIndex);
+              return (
+                <Label
+                  key={option.id}
+                  htmlFor={`option-${question.id}-${option.id}`}
+                  className="flex items-center justify-between p-3 sm:p-4 bg-background border border-border rounded-lg cursor-pointer hover:bg-secondary/50 has-[:checked]:bg-primary/10 has-[:checked]:border-primary"
+                >
+                  <div className="flex items-center gap-3">
+                    <RadioGroupItem value={option.label} id={`option-${question.id}-${option.id}`}
                     />
+                    <span className="text-sm sm:text-base">{displayLabel})</span>
+                    <div className="text-sm sm:text-base">
+                      <MarkdownWithMath
+                        markdown={option.text}
+                        renderKey={`${question.id}-${option.id}`}
+                        className="leading-7"
+                      />
+                    </div>
                   </div>
-                </div>
-              </Label>
-            ))}
+                </Label>
+              );
+            })}
           </RadioGroup>
         </div>
         <div className="mt-6 flex flex-col sm:flex-row gap-4 justify-between items-center border-t border-border pt-4">
@@ -102,10 +107,10 @@ export const QuestionContent = ({ question, totalQuestions, onNext, onPrev, onSu
                 <ChevronLeft className="mr-2 h-4 w-4" />
               </Button>
             </AlertDialogTrigger>
-            <AlertDialogContent dir="rtl">
+            <AlertDialogContent dir="rtl" className="text-right">
               <AlertDialogHeader>
-                <AlertDialogTitle>آیا از ثبت نهایی آزمون مطمئن هستید؟</AlertDialogTitle>
-                <AlertDialogDescription>
+                <AlertDialogTitle className="text-right">آیا از ثبت نهایی آزمون مطمئن هستید؟</AlertDialogTitle>
+                <AlertDialogDescription className="text-right">
                   با تایید این مرحله، آزمون نهایی می‌شود و دیگر امکان تغییر پاسخ‌ها وجود ندارد.
                   {typeof unansweredCount === 'number' && unansweredCount > 0 ? ` (تعداد سوالات بدون پاسخ: ${unansweredCount})` : ''}
                 </AlertDialogDescription>
