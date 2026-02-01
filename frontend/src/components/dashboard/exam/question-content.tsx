@@ -5,6 +5,18 @@ import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Label } from '@/components/ui/label';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { Question } from '@/types';
+import { MarkdownWithMath } from '@/components/content/markdown-with-math';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
 
 interface QuestionContentProps {
   question: Question | null;
@@ -12,11 +24,14 @@ interface QuestionContentProps {
   onNext: () => void;
   onPrev: () => void;
   onSubmit: (questionId: string, answerId: string) => void;
-  onFinalize: () => void;
+  onFinalize: () => void | Promise<void>;
   isSubmitting?: boolean;
+  isFinalized?: boolean;
+  selectedOptionId?: string;
+  unansweredCount?: number;
 }
 
-export const QuestionContent = ({ question, totalQuestions, onNext, onPrev, onSubmit, onFinalize, isSubmitting }: QuestionContentProps) => {
+export const QuestionContent = ({ question, totalQuestions, onNext, onPrev, onSubmit, onFinalize, isSubmitting, isFinalized, selectedOptionId, unansweredCount }: QuestionContentProps) => {
   if (!question) return null;
 
   return (
@@ -31,26 +46,35 @@ export const QuestionContent = ({ question, totalQuestions, onNext, onPrev, onSu
           </div>
         </div>
         <div className="space-y-6 flex-grow">
-          <p className="text-foreground leading-8 text-base sm:text-lg text-right">
-            {question.text}
-          </p>
+          <MarkdownWithMath
+            markdown={question.text}
+            renderKey={question.id}
+            className="text-foreground leading-8 text-base sm:text-lg"
+          />
           <RadioGroup 
-            defaultValue={question.userAnswerId} 
+            key={question.id}
+            value={selectedOptionId || ''}
             onValueChange={(value) => onSubmit(question.id, value)}
             dir="rtl" 
             className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4"
-            disabled={Boolean(isSubmitting)}
+            disabled={Boolean(isSubmitting) || Boolean(isFinalized)}
           >
             {question.options.map((option) => (
               <Label
                 key={option.id}
-                htmlFor={`option-${option.id}`}
+                htmlFor={`option-${question.id}-${option.id}`}
                 className="flex items-center justify-between p-3 sm:p-4 bg-background border border-border rounded-lg cursor-pointer hover:bg-secondary/50 has-[:checked]:bg-primary/10 has-[:checked]:border-primary"
               >
                 <div className="flex items-center gap-3">
-                  <RadioGroupItem value={option.id} id={`option-${option.id}`} />
+                  <RadioGroupItem value={option.label} id={`option-${question.id}-${option.id}`} />
                   <span className="text-sm sm:text-base">{option.label})</span>
-                  <span className="font-mono text-sm sm:text-base">{option.text}</span>
+                  <div className="text-sm sm:text-base">
+                    <MarkdownWithMath
+                      markdown={option.text}
+                      renderKey={`${question.id}-${option.id}`}
+                      className="leading-7"
+                    />
+                  </div>
                 </div>
               </Label>
             ))}
@@ -67,15 +91,38 @@ export const QuestionContent = ({ question, totalQuestions, onNext, onPrev, onSu
               <ChevronLeft className="mr-2 h-4 w-4" />
             </Button>
           </div>
-          <Button
-            size="lg"
-            className="w-full sm:w-auto bg-primary text-primary-foreground hover:bg-primary/90"
-            onClick={onFinalize}
-            disabled={Boolean(isSubmitting)}
-          >
-            {isSubmitting ? 'در حال ثبت...' : 'ثبت پاسخ و پایان آزمون'}
-            <ChevronLeft className="mr-2 h-4 w-4" />
-          </Button>
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button
+                size="lg"
+                className="w-full sm:w-auto bg-primary text-primary-foreground hover:bg-primary/90"
+                disabled={Boolean(isSubmitting) || Boolean(isFinalized)}
+              >
+                {isFinalized ? 'آزمون ثبت نهایی شد' : isSubmitting ? 'در حال ثبت...' : 'ثبت پاسخ و پایان آزمون'}
+                <ChevronLeft className="mr-2 h-4 w-4" />
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent dir="rtl">
+              <AlertDialogHeader>
+                <AlertDialogTitle>آیا از ثبت نهایی آزمون مطمئن هستید؟</AlertDialogTitle>
+                <AlertDialogDescription>
+                  با تایید این مرحله، آزمون نهایی می‌شود و دیگر امکان تغییر پاسخ‌ها وجود ندارد.
+                  {typeof unansweredCount === 'number' && unansweredCount > 0 ? ` (تعداد سوالات بدون پاسخ: ${unansweredCount})` : ''}
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter className="gap-2">
+                <AlertDialogCancel disabled={Boolean(isSubmitting)}>انصراف</AlertDialogCancel>
+                <AlertDialogAction
+                  disabled={Boolean(isSubmitting) || Boolean(isFinalized)}
+                  onClick={() => {
+                    void onFinalize();
+                  }}
+                >
+                  تایید و ثبت نهایی
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
         </div>
       </div>
     </section>

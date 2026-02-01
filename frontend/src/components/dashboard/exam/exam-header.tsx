@@ -6,9 +6,10 @@ import { ArrowLeft, PanelRightClose } from 'lucide-react';
 
 interface ExamHeaderProps {
   onToggle: () => void;
+  title: string;
 }
 
-export const ExamHeader = ({ onToggle }: ExamHeaderProps) => (
+export const ExamHeader = ({ onToggle, title }: ExamHeaderProps) => (
   <header className="hidden lg:flex items-center justify-between px-4 border-b border-border w-full h-[73px]">
     <Button
       variant="outline"
@@ -21,7 +22,7 @@ export const ExamHeader = ({ onToggle }: ExamHeaderProps) => (
       </Link>
     </Button>
     <div className="text-center">
-      <h1 className="text-xl font-bold text-foreground">بررسی کنکور تیر 1403 - ریاضی</h1>
+      <h1 className="text-xl font-bold text-foreground">{title}</h1>
     </div>
     <div className="flex items-center gap-4 w-[100px] justify-end">
       {/* Toggle button removed to avoid redundancy with ChatAssistant's own close button */}

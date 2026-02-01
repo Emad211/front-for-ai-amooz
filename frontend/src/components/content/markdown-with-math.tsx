@@ -1,12 +1,13 @@
 'use client';
 
-import { useEffect, useId, useMemo, useRef } from 'react';
+import { memo, useEffect, useId, useMemo, useRef } from 'react';
 import renderMathInElement from 'katex/contrib/auto-render';
 
 type MarkdownWithMathProps = {
 	markdown: string;
 	className?: string;
 	renderKey?: string | number; // Force re-render when this changes
+	as?: 'div' | 'span';
 };
 
 function escapeHtml(text: string): string {
@@ -33,6 +34,18 @@ function formatMarkdown(md: string): string {
 	// ============ STEP 1: Protect LaTeX from processing ============
 	const latexBlocks: string[] = [];
 	const latexInlines: string[] = [];
+
+	// Protect block LaTeX \\[...\\]
+	html = html.replace(/\\\[([\s\S]*?)\\\]/g, (_match, content) => {
+		latexBlocks.push(String(content));
+		return `%%LATEXBLOCK${latexBlocks.length - 1}%%`;
+	});
+
+	// Protect inline LaTeX \\(...\\)
+	html = html.replace(/\\\(([\s\S]*?)\\\)/g, (_match, content) => {
+		latexInlines.push(String(content));
+		return `%%LATEXINLINE${latexInlines.length - 1}%%`;
+	});
 
 	// Protect block LaTeX $$...$$
 	html = html.replace(/\$\$([\s\S]*?)\$\$/g, (_match, content) => {
@@ -126,8 +139,8 @@ function formatMarkdown(md: string): string {
 	return html;
 }
 
-export function MarkdownWithMath({ markdown, className, renderKey }: MarkdownWithMathProps) {
-	const containerRef = useRef<HTMLDivElement | null>(null);
+function MarkdownWithMathImpl({ markdown, className, renderKey, as }: MarkdownWithMathProps) {
+	const containerRef = useRef<HTMLElement | null>(null);
 	const uniqueId = useId();
 
 	const html = useMemo(() => formatMarkdown(markdown || ''), [markdown]);
@@ -159,9 +172,10 @@ export function MarkdownWithMath({ markdown, className, renderKey }: MarkdownWit
 
 	// Generate a stable key for re-render based on content
 	const contentKey = `${uniqueId}-${renderKey ?? ''}-${markdown?.slice(0, 50) ?? ''}`;
+	const Component = (as ?? 'div') as any;
 
 	return (
-		<div
+		<Component
 			key={contentKey}
 			ref={containerRef}
 			dir="rtl"
@@ -171,3 +185,14 @@ export function MarkdownWithMath({ markdown, className, renderKey }: MarkdownWit
 		/>
 	);
 }
+
+export const MarkdownWithMath = memo(
+	MarkdownWithMathImpl,
+	(prev, next) =>
+		prev.markdown === next.markdown &&
+		prev.className === next.className &&
+		prev.renderKey === next.renderKey &&
+		prev.as === next.as
+);
+
+MarkdownWithMath.displayName = 'MarkdownWithMath';

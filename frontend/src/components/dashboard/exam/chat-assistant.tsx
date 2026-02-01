@@ -6,11 +6,21 @@ import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
 import { SheetClose } from '@/components/ui/sheet';
+import { MarkdownWithMath } from '@/components/content/markdown-with-math';
+import { DashboardService } from '@/services/dashboard-service';
+import { normalizeMathText } from '@/lib/normalize-math-text';
+import type { Question } from '@/types';
 
 interface ChatMessageProps {
   sender: 'ai' | 'user';
   time: string;
   message: string;
+}
+
+function formatTime(d: Date): string {
+  const hh = d.getHours().toString().padStart(2, '0');
+  const mm = d.getMinutes().toString().padStart(2, '0');
+  return `${hh}:${mm}`;
 }
 
 export const ChatMessage = ({ sender, time, message }: ChatMessageProps) => {
@@ -29,7 +39,7 @@ export const ChatMessage = ({ sender, time, message }: ChatMessageProps) => {
             isAI ? 'bg-card text-foreground rounded-tr-none border-border/50' : 'bg-primary/10 text-foreground rounded-tl-none border-primary/20'
           )}
         >
-          <p className="text-sm" dangerouslySetInnerHTML={{ __html: message }}></p>
+          <MarkdownWithMath markdown={normalizeMathText(message)} className="text-sm" renderKey={time} />
         </div>
       </div>
       <span className={`text-[9px] text-muted-foreground ${isAI ? 'pr-11' : 'pl-1'}`}>{time}</span>
@@ -42,12 +52,67 @@ interface ChatAssistantProps {
   isOpen: boolean;
   isMobile?: boolean;
   className?: string;
+  examId?: string;
+  question?: Question | null;
+  selectedOptionLabel?: string | null;
+  isChecked?: boolean;
 }
 
-export const ChatAssistant = ({ onToggle, isOpen, isMobile = false, className }: ChatAssistantProps) => {
+type ChatApiResponse = { type: 'text'; content: string; suggestions?: string[] };
+
+function normalizeChatResponse(resp: ChatApiResponse | null) {
+  const content = String(resp?.content ?? '').trim();
+  let suggestions = Array.isArray(resp?.suggestions) ? resp?.suggestions : [];
+
+  if (content.startsWith('{') && content.includes('"content"')) {
+    try {
+      const parsed = JSON.parse(content);
+      const nestedContent = String(parsed?.content ?? '').trim();
+      if (nestedContent) {
+        return {
+          content: nestedContent,
+          suggestions: Array.isArray(parsed?.suggestions) ? parsed.suggestions : suggestions,
+        };
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  return { content, suggestions };
+}
+
+export const ChatAssistant = ({ onToggle, isOpen, isMobile = false, className, examId, question, selectedOptionLabel, isChecked }: ChatAssistantProps) => {
   const [message, setMessage] = React.useState('');
+  const [messages, setMessages] = React.useState<Array<{ id: string; sender: 'ai' | 'user'; time: string; message: string }>>([]);
+  const [suggestions, setSuggestions] = React.useState<string[]>([]);
+  const [pendingFile, setPendingFile] = React.useState<File | null>(null);
+  const [isSending, setIsSending] = React.useState(false);
+  const [historyLoaded, setHistoryLoaded] = React.useState(false);
+
+  const [isRecording, setIsRecording] = React.useState(false);
+  const recorderRef = React.useRef<MediaRecorder | null>(null);
+  const recordChunksRef = React.useRef<BlobPart[]>([]);
+  const recordStartRef = React.useRef<number | null>(null);
+  const [recordSeconds, setRecordSeconds] = React.useState(0);
+
   const textareaRef = React.useRef<HTMLTextAreaElement>(null);
   const scrollRef = React.useRef<HTMLDivElement>(null);
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
+
+  const threadKey = React.useMemo(() => {
+    const base = String(examId ?? '').trim();
+    const qid = String(question?.id ?? '').trim();
+    return `${base}:${qid || 'root'}`;
+  }, [examId, question?.id]);
+
+  const selectedLabel = React.useMemo(() => {
+    return String(selectedOptionLabel ?? '').trim();
+  }, [selectedOptionLabel]);
+
+  // Exam Prep must never expose correct answers client-side.
+  // Correctness (if needed) is computed server-side.
+  const isCorrect = false;
 
   const handleInputChange = (event: React.ChangeEvent<HTMLTextAreaElement>) => {
     setMessage(event.target.value);
@@ -57,12 +122,213 @@ export const ChatAssistant = ({ onToggle, isOpen, isMobile = false, className }:
     }
   };
 
-  // Scroll to bottom on open or new messages
   React.useEffect(() => {
     if (isOpen && scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
-  }, [isOpen]);
+  }, [isOpen, messages]);
+
+  React.useEffect(() => {
+    setMessages([]);
+    setSuggestions([]);
+    setPendingFile(null);
+    setMessage('');
+    setHistoryLoaded(false);
+  }, [threadKey]);
+
+  React.useEffect(() => {
+    if (!isOpen) return;
+    const eid = String(examId ?? '').trim();
+    if (!eid || historyLoaded) return;
+
+    let cancelled = false;
+
+    const run = async () => {
+      try {
+        const hist = await DashboardService.getExamPrepChatHistory(eid, question?.id ?? null);
+        if (cancelled) return;
+
+        const items = Array.isArray(hist?.items) ? hist.items : [];
+        const mapped = items
+          .filter((it: any) => {
+            const role = String(it?.role ?? '').trim();
+            const content = String(it?.content ?? '').trim();
+            if (role === 'system') return false;
+            if (content.startsWith('SYSTEM_') || content.startsWith('ACTIVATION_')) return false;
+            return true;
+          })
+          .map((it: any) => {
+            const role = String(it?.role ?? 'assistant');
+            const sender: 'ai' | 'user' = role === 'user' ? 'user' : 'ai';
+            const createdAt = it?.created_at ? new Date(String(it.created_at)) : new Date();
+            return {
+              id: `hist-${String(it?.id ?? Math.random())}`,
+              sender,
+              time: formatTime(createdAt),
+              message: String(it?.content ?? ''),
+            };
+          });
+
+        setMessages(mapped);
+      } catch {
+        // ignore
+      } finally {
+        if (!cancelled) setHistoryLoaded(true);
+      }
+    };
+
+    run();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen, examId, question?.id, historyLoaded]);
+
+  const sendMessage = async (text: string) => {
+    const msg = String(text ?? '').trim();
+    const eid = String(examId ?? '').trim();
+    if (!msg || !eid || isSending) return;
+
+    setIsSending(true);
+    const userMsg = { id: `user-${Date.now()}`, sender: 'user' as const, time: formatTime(new Date()), message: msg };
+    setMessages(prev => [...prev, userMsg]);
+    setMessage('');
+
+    try {
+      const resp = (await DashboardService.sendExamPrepChatMessage(eid, {
+        message: msg,
+        question_id: question?.id ?? null,
+        student_selected: selectedLabel,
+        is_checked: Boolean(isChecked),
+      })) as ChatApiResponse;
+
+      const normalized = normalizeChatResponse(resp);
+      const content = normalizeMathText(normalized.content);
+      if (content) {
+        const aiMsg = { id: `ai-${Date.now()}`, sender: 'ai' as const, time: formatTime(new Date()), message: content };
+        setMessages(prev => [...prev, aiMsg]);
+      }
+      setSuggestions(Array.isArray(normalized.suggestions) ? normalized.suggestions : []);
+        // Re-fetch persisted history so the chat stays in sync with backend storage.
+        setHistoryLoaded(false);
+    } catch {
+      const aiMsg = {
+        id: `ai-${Date.now()}`,
+        sender: 'ai' as const,
+        time: formatTime(new Date()),
+        message: 'الان در پاسخگویی مشکلی پیش آمده. لطفاً دوباره تلاش کن.',
+      };
+      setMessages(prev => [...prev, aiMsg]);
+    } finally {
+      setIsSending(false);
+    }
+  };
+
+  const handleSend = () => {
+    if (pendingFile) {
+      void handleUpload(pendingFile);
+      return;
+    }
+    void sendMessage(message);
+  };
+
+  const handleUpload = async (file: File) => {
+    const eid = String(examId ?? '').trim();
+    if (!eid) return;
+
+    setIsSending(true);
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('message', message || '');
+    formData.append('question_id', question?.id ?? '');
+    formData.append('student_selected', selectedLabel || '');
+    formData.append('is_checked', String(Boolean(isChecked)));
+
+    try {
+      const resp = (await DashboardService.sendExamPrepChatMedia(eid, formData)) as ChatApiResponse;
+      const normalized = normalizeChatResponse(resp);
+      const content = normalizeMathText(normalized.content);
+      if (content) {
+        const aiMsg = { id: `ai-${Date.now()}`, sender: 'ai' as const, time: formatTime(new Date()), message: content };
+        setMessages(prev => [...prev, aiMsg]);
+      }
+      setSuggestions(Array.isArray(normalized.suggestions) ? normalized.suggestions : []);
+      // Re-fetch persisted history so the chat stays in sync with backend storage.
+      setHistoryLoaded(false);
+    } catch {
+      const aiMsg = {
+        id: `ai-${Date.now()}`,
+        sender: 'ai' as const,
+        time: formatTime(new Date()),
+        message: 'در پردازش فایل مشکلی پیش آمد. دوباره تلاش کن.',
+      };
+      setMessages(prev => [...prev, aiMsg]);
+    } finally {
+      setIsSending(false);
+      setPendingFile(null);
+      setMessage('');
+    }
+  };
+
+  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    setPendingFile(file);
+  };
+
+  const handleSuggestion = (s: string) => {
+    void sendMessage(s);
+  };
+
+  const handleKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (event.key === 'Enter' && !event.shiftKey) {
+      event.preventDefault();
+      handleSend();
+    }
+  };
+
+  const startRecording = async () => {
+    try {
+      if (!navigator?.mediaDevices?.getUserMedia) return;
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const recorder = new MediaRecorder(stream);
+      recordChunksRef.current = [];
+      recorder.ondataavailable = (e) => {
+        if (e.data.size > 0) recordChunksRef.current.push(e.data);
+      };
+      recorder.onstop = async () => {
+        const blob = new Blob(recordChunksRef.current, { type: 'audio/webm' });
+        const file = new File([blob], 'recording.webm', { type: 'audio/webm' });
+        await handleUpload(file);
+        stream.getTracks().forEach(t => t.stop());
+      };
+      recorder.start();
+      recorderRef.current = recorder;
+      recordStartRef.current = Date.now();
+      setIsRecording(true);
+      setRecordSeconds(0);
+    } catch {
+      // ignore
+    }
+  };
+
+  const stopRecording = () => {
+    if (recorderRef.current && isRecording) {
+      recorderRef.current.stop();
+      recorderRef.current = null;
+      setIsRecording(false);
+    }
+  };
+
+  React.useEffect(() => {
+    if (!isRecording) return;
+    const id = setInterval(() => {
+      if (!recordStartRef.current) return;
+      const elapsed = Math.floor((Date.now() - recordStartRef.current) / 1000);
+      setRecordSeconds(elapsed);
+    }, 500);
+    return () => clearInterval(id);
+  }, [isRecording]);
 
   return (
     <aside
@@ -87,7 +353,7 @@ export const ChatAssistant = ({ onToggle, isOpen, isMobile = false, className }:
           </div>
           <div>
             <h3 className="text-sm font-bold text-foreground text-right">دستیار هوشمند</h3>
-            <p className="text-[10px] text-muted-foreground font-medium">پاسخگوی سوالات شما</p>
+            <p className="text-[10px] text-muted-foreground font-medium">راهنمای حل سؤال</p>
           </div>
         </div>
         {isMobile ? (
@@ -110,48 +376,44 @@ export const ChatAssistant = ({ onToggle, isOpen, isMobile = false, className }:
           </button>
         )}
       </div>
-      <div 
+      <div
         ref={scrollRef}
         className={cn(
-          'flex-1 overflow-y-auto p-4 space-y-6 bg-background/30 no-scrollbar min-h-0', 
+          'flex-1 overflow-y-auto p-4 space-y-6 bg-background/30 no-scrollbar min-h-0',
           !isOpen && !isMobile && 'hidden'
         )}
       >
-        <ChatMessage
-          sender="ai"
-          time="۱۰:۳۲"
-          message="سلام! 👋 من دستیار هوشمندت هستم.<br/>میتونی سوالت رو بپرسی، یا اگه توی مبحثی گیر کردی ازم راهنمایی بخوای. اگه روی کاغذ تمرین کردی، عکسش رو بفرست تا بررسی کنم."
-        />
-        <ChatMessage
-          sender="user"
-          time="۱۰:۳۴"
-          message="مطمئن نیستم چطوری باید از اطلاعات داده شده برای حل این بخش استفاده کنم. میشه یه راهنمایی کلی بکنی؟"
-        />
-        <ChatMessage
-          sender="ai"
-          time="۱۰:۳۵"
-          message='حتماً! برای حل این بخش، ابتدا باید متغیرهای اصلی رو شناسایی کنی. مثلاً در مورد سهمی: <br> <span class="font-mono px-1 rounded my-1 block text-center" dir="ltr">x = -b / 2a</span> <br> سعی کن مقادیر رو جایگذاری کنی تا به جواب برسی.'
-        />
-        {/* Spacer for keyboard on mobile */}
+        {messages.length === 0 ? (
+          <ChatMessage
+            sender="ai"
+            time={formatTime(new Date())}
+            message="سلام! 👋 من دستیار هوشمندت هستم. می‌تونیم قدم‌به‌قدم برای حل این سوال جلو بریم."
+          />
+        ) : null}
+        {messages.map(m => (
+          <ChatMessage key={m.id} sender={m.sender} time={m.time} message={m.message} />
+        ))}
         <div className="h-4 flex-shrink-0" />
       </div>
       <div className={cn('p-3 border-t border-border bg-card z-10 flex-shrink-0', !isOpen && !isMobile && 'hidden')}>
         <div className="flex gap-2 mb-2 overflow-x-auto no-scrollbar pb-1">
-          <Button variant="outline" className="text-xs h-8 flex-shrink-0">
-            راهنماییم کن
-          </Button>
-          <Button variant="outline" className="text-xs h-8 flex-shrink-0">
-            اشتباهم کجاست؟
-          </Button>
-          <Button variant="outline" className="text-xs h-8 flex-shrink-0">
-            قدم اول را بگو
-          </Button>
+          {(suggestions.length ? suggestions : ['راهنمایی می‌خوام', 'قدم اول چیه؟', 'یه مثال مشابه بزن']).map(s => (
+            <Button key={s} variant="outline" className="text-xs h-8 flex-shrink-0" onClick={() => handleSuggestion(s)} disabled={isSending}>
+              <MarkdownWithMath
+                markdown={normalizeMathText(s)}
+                className="text-xs [&_.md-p]:m-0 [&_.md-ul]:m-0 [&_.md-ol]:m-0"
+                as="span"
+                renderKey={s}
+              />
+            </Button>
+          ))}
         </div>
         <div className="relative">
           <Textarea
             ref={textareaRef}
             value={message}
             onChange={handleInputChange}
+            onKeyDown={handleKeyDown}
             onFocus={() => {
               setTimeout(() => {
                 if (scrollRef.current) {
@@ -167,24 +429,32 @@ export const ChatAssistant = ({ onToggle, isOpen, isMobile = false, className }:
             <Button
               size="icon"
               className="h-9 w-9 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground transition-all shadow-lg shadow-primary/20 hover:scale-105 active:scale-95"
+              onClick={handleSend}
+              disabled={isSending}
+              title="ارسال"
             >
               <Send className="h-4 w-4 rtl:-rotate-180" />
             </Button>
           </div>
           <div className="absolute right-2 bottom-1.5 flex items-center gap-1">
+            <input ref={fileInputRef} type="file" className="hidden" onChange={handleFileChange} />
             <Button
               variant="ghost"
               size="icon"
               className="h-8 w-8 rounded-lg text-muted-foreground hover:text-primary hover:bg-foreground/5"
               title="پیوست فایل"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={isSending}
             >
               <Paperclip className="h-4 w-4 -rotate-45" />
             </Button>
             <Button
               variant="ghost"
               size="icon"
-              className="h-8 w-8 rounded-lg text-muted-foreground hover:text-primary hover:bg-foreground/5"
-              title="ضبط صدا"
+              className={cn('h-8 w-8 rounded-lg text-muted-foreground hover:text-primary hover:bg-foreground/5', isRecording && 'text-primary')}
+              title={isRecording ? `در حال ضبط (${recordSeconds}s)` : 'ضبط صدا'}
+              onClick={() => (isRecording ? stopRecording() : startRecording())}
+              disabled={isSending}
             >
               <Mic className="h-4 w-4" />
             </Button>

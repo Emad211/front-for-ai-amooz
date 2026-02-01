@@ -508,10 +508,6 @@ class StudentExamPrepQuestionSerializer(serializers.Serializer):
     question_id = serializers.CharField()
     question_text_markdown = serializers.CharField()
     options = serializers.ListField(child=serializers.DictField())
-    correct_option_label = serializers.CharField(required=False, allow_null=True, allow_blank=True)
-    correct_option_text_markdown = serializers.CharField(required=False, allow_null=True, allow_blank=True)
-    teacher_solution_markdown = serializers.CharField(allow_blank=True)
-    final_answer_markdown = serializers.CharField(allow_blank=True)
 
 
 class StudentExamPrepDetailSerializer(serializers.Serializer):
@@ -534,3 +530,18 @@ class StudentExamPrepSubmitResponseSerializer(serializers.Serializer):
     correct_count = serializers.IntegerField()
     total_questions = serializers.IntegerField()
     finalized = serializers.BooleanField()
+
+
+class StudentExamPrepResultItemSerializer(serializers.Serializer):
+    question_id = serializers.CharField()
+    selected_label = serializers.CharField(allow_blank=True)
+    is_correct = serializers.BooleanField()
+
+
+class StudentExamPrepResultResponseSerializer(serializers.Serializer):
+    finalized = serializers.BooleanField()
+    score_0_100 = serializers.IntegerField()
+    correct_count = serializers.IntegerField()
+    total_questions = serializers.IntegerField()
+    answers = serializers.DictField(child=serializers.CharField(allow_blank=True))
+    items = StudentExamPrepResultItemSerializer(many=True)

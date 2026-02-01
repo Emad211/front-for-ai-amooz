@@ -34,9 +34,10 @@ export function InteractiveQuiz({ questions }: InteractiveQuizProps) {
       const selectedText = String(current.options?.[optIndex] ?? '').trim();
       const correctText = String(current.correct_answer || current.answer || '').trim();
       const isCorrect =
-        selectedText === correctText ||
-        selectedText.includes(correctText) ||
-        (correctText && selectedText.toLowerCase() === correctText.toLowerCase());
+        Boolean(correctText) &&
+        (selectedText === correctText ||
+          selectedText.includes(correctText) ||
+          selectedText.toLowerCase() === correctText.toLowerCase());
       setAnswers((prev) => ({ ...prev, [currentIndex]: { selected: optIndex, correct: isCorrect } }));
     },
     [current, currentAnswer, currentIndex]
@@ -107,11 +108,8 @@ export function InteractiveQuiz({ questions }: InteractiveQuizProps) {
         <div className="space-y-2 mb-4">
           {current.options.map((opt, i) => {
             const isSelected = currentAnswer?.selected === i;
-            const isCorrectOption =
-              String(opt).trim() === String(current.correct_answer ?? '').trim() ||
-              String(opt).includes(String(current.correct_answer ?? ''));
-            const showCorrect = currentAnswer && isCorrectOption;
-            const showWrong = currentAnswer && isSelected && !currentAnswer.correct;
+            const showRight = Boolean(currentAnswer) && isSelected && Boolean(currentAnswer?.correct);
+            const showWrong = Boolean(currentAnswer) && isSelected && !Boolean(currentAnswer?.correct);
 
             return (
               <div
@@ -120,13 +118,13 @@ export function InteractiveQuiz({ questions }: InteractiveQuizProps) {
                 className={cn(
                   'rounded-lg border p-2.5 cursor-pointer transition-all flex items-start gap-2',
                   !currentAnswer && 'border-border bg-card hover:border-primary/40',
-                  showCorrect && 'border-green-500/50 bg-green-500/10',
+                  showRight && 'border-green-500/50 bg-green-500/10',
                   showWrong && 'border-destructive/50 bg-destructive/10',
-                  currentAnswer && !showCorrect && !showWrong && 'opacity-50 cursor-default'
+                  currentAnswer && !showRight && !showWrong && 'opacity-50 cursor-default'
                 )}
               >
                 <span className="flex-shrink-0 w-5 h-5 rounded-full border border-border flex items-center justify-center text-[10px] font-bold">
-                  {showCorrect ? <Check className="h-3 w-3 text-green-600" /> : showWrong ? <X className="h-3 w-3 text-destructive" /> : String.fromCharCode(65 + i)}
+                  {showRight ? <Check className="h-3 w-3 text-green-600" /> : showWrong ? <X className="h-3 w-3 text-destructive" /> : String.fromCharCode(65 + i)}
                 </span>
                 <MarkdownWithMath markdown={String(opt)} className="text-xs flex-1" renderKey={`opt-${currentIndex}-${i}-${currentAnswer ? 'a' : 'u'}`} />
               </div>
@@ -145,7 +143,7 @@ export function InteractiveQuiz({ questions }: InteractiveQuizProps) {
             currentAnswer.correct ? 'border-green-500/30 bg-green-500/10 text-green-600' : 'border-destructive/30 bg-destructive/10 text-destructive'
           )}
         >
-          {currentAnswer.correct ? 'آفرین! پاسخ درست بود 🎉' : `پاسخ صحیح: ${current.correct_answer || '—'}`}
+          {currentAnswer.correct ? 'آفرین! پاسخ درست بود 🎉' : 'پاسخ اشتباه بود. دوباره تلاش کن.'}
         </div>
       )}
 

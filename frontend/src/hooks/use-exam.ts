@@ -20,6 +20,7 @@ export const useExam = (examId?: string, service: ExamService = DashboardService
   const [error, setError] = useState<string | null>(null);
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isFinalized, setIsFinalized] = useState(false);
 
   useEffect(() => {
     const fetchExam = async () => {
@@ -40,6 +41,7 @@ export const useExam = (examId?: string, service: ExamService = DashboardService
           setCurrentQuestion(null);
         }
         setAnswers({});
+        setIsFinalized(false);
       } catch (err) {
         console.error(err);
         setError('خطا در دریافت اطلاعات آزمون');
@@ -70,26 +72,27 @@ export const useExam = (examId?: string, service: ExamService = DashboardService
   };
 
   const submitAnswer = async (questionId: string, answerId: string) => {
-    if (!examId) return;
-    const next = { ...answers, [questionId]: answerId };
-    setAnswers(next);
-    setIsSubmitting(true);
-    try {
-      await service.submitExamPrep(examId, { answers: next, finalize: false });
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setIsSubmitting(false);
-    }
+    // Selection should be local-only.
+    // We only send answers to backend when the user explicitly finalizes the exam.
+    if (isFinalized) return;
+    setAnswers((prev) => ({ ...prev, [questionId]: answerId }));
   };
 
   const finalizeExam = async () => {
-    if (!examId) return;
+    if (!examId || isFinalized) return;
     setIsSubmitting(true);
     try {
-      await service.submitExamPrep(examId, { answers, finalize: true });
+      const result = await service.submitExamPrep(examId, { answers, finalize: true });
+      setIsFinalized(Boolean(result?.finalized));
+      return result;
     } catch (err) {
-      console.error(err);
+      const message = err instanceof Error ? err.message : '';
+      if (message.includes('قبلاً ثبت نهایی شده')) {
+        setIsFinalized(true);
+        return { score_0_100: 0, correct_count: 0, total_questions: 0, finalized: true };
+      } else {
+        console.error(err);
+      }
     } finally {
       setIsSubmitting(false);
     }
@@ -103,6 +106,8 @@ export const useExam = (examId?: string, service: ExamService = DashboardService
     isLoading,
     error,
     isSubmitting,
+    isFinalized,
+    answers,
     goToNextQuestion,
     goToPrevQuestion,
     submitAnswer,

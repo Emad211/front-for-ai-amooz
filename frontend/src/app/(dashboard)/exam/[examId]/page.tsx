@@ -15,12 +15,26 @@ import { Sheet, SheetContent, SheetTrigger, SheetTitle, SheetDescription } from 
 import { ErrorState } from '@/components/shared/error-state';
 import { useExam } from '@/hooks/use-exam';
 import { useParams } from 'next/navigation';
+import { useRouter } from 'next/navigation';
 
 export default function ExamPage() {
     const params = useParams();
+    const router = useRouter();
     const rawExamId = (params as any)?.examId as string | string[] | undefined;
     const examId = Array.isArray(rawExamId) ? rawExamId[0] : rawExamId;
-    const { exam, currentQuestion, isChatOpen, toggleChat, isLoading, error, isSubmitting, goToNextQuestion, goToPrevQuestion, submitAnswer, finalizeExam } = useExam(examId);
+    const { exam, currentQuestion, isChatOpen, toggleChat, isLoading, error, isSubmitting, isFinalized, answers, goToNextQuestion, goToPrevQuestion, submitAnswer, finalizeExam } = useExam(examId);
+    const selectedOptionLabel = currentQuestion ? answers[currentQuestion.id] : undefined;
+    const unansweredCount = React.useMemo(() => {
+        const list = exam?.questionsList || [];
+        return list.filter((q) => !answers[String(q.id)]).length;
+    }, [exam?.questionsList, answers]);
+
+    const handleFinalize = React.useCallback(async () => {
+        const result = await finalizeExam();
+        if (result?.finalized) {
+            router.push(`/exam/${examId}/result`);
+        }
+    }, [finalizeExam, router, examId]);
 
     if (!examId) {
         return (
@@ -68,7 +82,16 @@ export default function ExamPage() {
                         <SheetContent side="left" className="!p-0 !w-full !h-full !max-w-none border-none [&>button]:hidden bg-card">
                             <SheetTitle className="sr-only">دستیار حل سوال</SheetTitle>
                             <SheetDescription className="sr-only">چت با هوش مصنوعی برای حل سوالات آزمون</SheetDescription>
-                            <ChatAssistant isOpen={true} onToggle={() => {}} isMobile className="!w-full !h-full" />
+                            <ChatAssistant
+                                isOpen={true}
+                                onToggle={() => {}}
+                                isMobile
+                                className="!w-full !h-full"
+                                examId={examId}
+                                question={currentQuestion}
+                                selectedOptionLabel={selectedOptionLabel}
+                                isChecked={isFinalized}
+                            />
                         </SheetContent>
                     </Sheet>
                 </div>
@@ -79,7 +102,7 @@ export default function ExamPage() {
                     "flex-1 flex flex-col relative transition-all duration-300 ease-in-out", 
                     isChatOpen ? "lg:w-[calc(100%-36rem)]" : "w-full"
                 )}>
-                    <ExamHeader onToggle={toggleChat} />
+                    <ExamHeader title={exam.title} onToggle={toggleChat} />
                     <div className="flex-1 overflow-y-auto">
                         <QuestionContent 
                             question={currentQuestion} 
@@ -87,13 +110,23 @@ export default function ExamPage() {
                             onNext={goToNextQuestion}
                             onPrev={goToPrevQuestion}
                             onSubmit={submitAnswer}
-                            onFinalize={finalizeExam}
+                            onFinalize={handleFinalize}
                             isSubmitting={isSubmitting}
+                            isFinalized={isFinalized}
+                            selectedOptionId={selectedOptionLabel}
+                            unansweredCount={unansweredCount}
                         />
                     </div>
                 </div>
 
-                <ChatAssistant isOpen={isChatOpen} onToggle={toggleChat} />
+                <ChatAssistant
+                    isOpen={isChatOpen}
+                    onToggle={toggleChat}
+                    examId={examId}
+                    question={currentQuestion}
+                    selectedOptionLabel={selectedOptionLabel}
+                    isChecked={isFinalized}
+                />
 
                 {!isChatOpen && (
                      <button 

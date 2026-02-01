@@ -90,7 +90,18 @@ from apps.chatbot.services.student_course_chat import (
     handle_student_message,
 )
 
+from apps.chatbot.services.student_exam_prep_chat import (
+    build_exam_question_context,
+    describe_exam_prep_handwriting,
+    handle_exam_prep_message,
+)
+
 from .services.student_chat_history import append_message, get_or_create_thread, list_messages
+from .services.student_exam_chat_history import (
+    append_message as append_exam_message,
+    get_or_create_thread as get_or_create_exam_thread,
+    list_messages as list_exam_messages,
+)
 
 
 def _process_step1_transcription(session_id: int) -> None:
@@ -2567,12 +2578,40 @@ class StudentExamPrepDetailView(APIView):
         except (json.JSONDecodeError, TypeError):
             questions_list = []
 
+        # IMPORTANT: Never expose correct answers or solutions to students.
+        safe_questions: list[dict] = []
+        for q in questions_list:
+            if not isinstance(q, dict):
+                continue
+
+            qid = str(q.get('question_id') or '').strip()
+            qtext = str(q.get('question_text_markdown') or '').strip()
+            opts_raw = q.get('options')
+            opts: list[dict] = []
+            if isinstance(opts_raw, list):
+                for opt in opts_raw:
+                    if not isinstance(opt, dict):
+                        continue
+                    label = str(opt.get('label') or '').strip()
+                    text_md = str(opt.get('text_markdown') or '').strip()
+                    if label:
+                        opts.append({'label': label, 'text_markdown': text_md})
+
+            if qid:
+                safe_questions.append(
+                    {
+                        'question_id': qid,
+                        'question_text_markdown': qtext,
+                        'options': opts,
+                    }
+                )
+
         out = {
             'id': session.id,
             'title': session.title,
             'description': session.description or '',
-            'questions': questions_list,
-            'totalQuestions': len(questions_list),
+            'questions': safe_questions,
+            'totalQuestions': len(safe_questions),
             'subject': subject,
         }
 
@@ -2654,26 +2693,421 @@ class StudentExamPrepSubmitView(APIView):
                 continue
             merged_answers[key] = str(v).strip()
 
+        # Save draft answers without scoring. Only compute score when finalized.
         correct_count = 0
-        for qid, correct_label in correct_map.items():
-            selected = (merged_answers.get(qid) or '').strip()
-            if selected and correct_label and selected == correct_label:
-                correct_count += 1
-
-        score_0_100 = int(round((correct_count / total_questions) * 100)) if total_questions > 0 else 0
+        score_0_100 = 0
 
         attempt.answers = merged_answers
         attempt.total_questions = total_questions
-        attempt.correct_count = correct_count
-        attempt.score_0_100 = score_0_100
+
+        update_fields = ['answers', 'total_questions', 'updated_at']
+
         if finalize:
+            for qid, correct_label in correct_map.items():
+                selected = (merged_answers.get(qid) or '').strip()
+                if selected and correct_label and selected == correct_label:
+                    correct_count += 1
+
+            score_0_100 = int(round((correct_count / total_questions) * 100)) if total_questions > 0 else 0
+            attempt.correct_count = correct_count
+            attempt.score_0_100 = score_0_100
             attempt.finalized = True
-        attempt.save(update_fields=['answers', 'total_questions', 'correct_count', 'score_0_100', 'finalized', 'updated_at'])
+            update_fields.extend(['correct_count', 'score_0_100', 'finalized'])
+
+        attempt.save(update_fields=update_fields)
 
         payload = {
-            'score_0_100': score_0_100,
-            'correct_count': correct_count,
+            'score_0_100': int(score_0_100),
+            'correct_count': int(correct_count),
             'total_questions': total_questions,
             'finalized': attempt.finalized,
         }
         return Response(StudentExamPrepSubmitResponseSerializer(payload).data)
+
+
+class StudentExamPrepChatView(APIView):
+    permission_classes = [IsAuthenticated, IsStudentUser]
+
+    @extend_schema(
+        tags=['Student Exam Prep'],
+        summary='Chat with Amooz AI tutor for an exam prep question',
+        operation_id='student_exam_prep_chat',
+        request=OpenApiTypes.OBJECT,
+        responses={200: OpenApiTypes.OBJECT},
+    )
+    def post(self, request, session_id: int):
+        user = request.user
+        phone = (getattr(user, 'phone', None) or '').strip()
+        if not phone:
+            return Response({'detail': 'شماره موبایل برای حساب کاربری ثبت نشده است.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        session = ClassCreationSession.objects.filter(
+            id=session_id,
+            is_published=True,
+            pipeline_type=ClassCreationSession.PipelineType.EXAM_PREP,
+            invites__phone=phone,
+        ).first()
+
+        if session is None:
+            return Response({'detail': 'آزمون آمادگی پیدا نشد.'}, status=status.HTTP_404_NOT_FOUND)
+
+        data = request.data if isinstance(request.data, dict) else {}
+        message = str(data.get('message') or '').strip()
+        question_id = str(data.get('question_id') or '').strip() or None
+        student_selected = str(data.get('student_selected') or '').strip()
+
+        def _as_bool(value: object) -> bool:
+            if isinstance(value, bool):
+                return value
+            if value is None:
+                return False
+            s = str(value).strip().lower()
+            return s in {'1', 'true', 'yes', 'y', 'ok'}
+
+        is_checked = _as_bool(data.get('is_checked'))
+
+        # Never trust/accept correctness from client.
+        # Compute it server-side (and still do not expose the correct answer).
+        computed_is_correct = False
+        if question_id and is_checked and student_selected:
+            try:
+                questions_list = []
+                if session.exam_prep_json:
+                    parsed = json.loads(session.exam_prep_json)
+                    if isinstance(parsed, dict):
+                        raw_questions = (parsed.get('exam_prep') or {}).get('questions', [])
+                        if isinstance(raw_questions, list):
+                            questions_list = raw_questions
+
+                correct_label = ''
+                for q in questions_list:
+                    if not isinstance(q, dict):
+                        continue
+                    qid = str(q.get('question_id') or '').strip()
+                    if qid == question_id:
+                        correct_label = str(q.get('correct_option_label') or '').strip()
+                        break
+
+                computed_is_correct = bool(correct_label) and student_selected == correct_label
+            except Exception:
+                computed_is_correct = False
+
+        thread = get_or_create_exam_thread(
+            session=session,
+            student_id=int(getattr(user, 'id', 0) or 0),
+            question_id=question_id,
+        )
+
+        is_protocol = message.startswith('SYSTEM_') or message.startswith('ACTIVATION_')
+        if not is_protocol:
+            append_exam_message(
+                thread=thread,
+                role='user',
+                message_type='text',
+                content=message,
+                payload={},
+                suggestions=[],
+                question_id=question_id,
+            )
+
+        try:
+            resp = handle_exam_prep_message(
+                session=session,
+                student_id=int(getattr(user, 'id', 0) or 0),
+                question_id=question_id,
+                user_message=message,
+                student_selected=student_selected,
+                is_checked=is_checked,
+                is_correct=computed_is_correct,
+            )
+        except Exception as exc:
+            error_trace = traceback.format_exc()
+            print(
+                '[CHATBOT][ERROR] handle_exam_prep_message failed'
+                f' session_id={session_id} question_id={question_id!r} student_id={getattr(user, "id", None)!r}'
+                f' message={message[:200]!r}'
+            )
+            print(error_trace)
+
+            error_msg = 'الان در پاسخگویی مشکلی پیش آمده. لطفاً یک بار دیگر تلاش کن.'
+            if settings.DEBUG:
+                error_msg += f"\nDEBUG INFO: {str(exc)}"
+
+            resp = {
+                'type': 'text',
+                'content': error_msg,
+                'suggestions': [],
+            }
+
+        if isinstance(resp, dict) and resp.get('type') == 'text':
+            append_exam_message(
+                thread=thread,
+                role='assistant',
+                message_type='text',
+                content=str(resp.get('content') or ''),
+                payload={},
+                suggestions=list(resp.get('suggestions') or []),
+                question_id=question_id,
+            )
+
+        return Response(resp, status=status.HTTP_200_OK)
+
+
+class StudentExamPrepResultView(APIView):
+    """Get exam prep result for a student (score + per-question correctness)."""
+
+    permission_classes = [IsAuthenticated, IsStudentUser]
+
+    @extend_schema(
+        tags=['Student Exam Prep'],
+        summary='Get exam prep result',
+        operation_id='student_exam_prep_result',
+        responses={200: OpenApiTypes.OBJECT, 404: OpenApiTypes.OBJECT},
+    )
+    def get(self, request, session_id: int):
+        user = request.user
+        phone = (getattr(user, 'phone', None) or '').strip()
+        if not phone:
+            return Response({'detail': 'شماره موبایل برای حساب کاربری ثبت نشده است.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        session = ClassCreationSession.objects.filter(
+            id=session_id,
+            is_published=True,
+            pipeline_type=ClassCreationSession.PipelineType.EXAM_PREP,
+            invites__phone=phone,
+        ).first()
+
+        if session is None:
+            return Response({'detail': 'آزمون آمادگی پیدا نشد.'}, status=status.HTTP_404_NOT_FOUND)
+
+        from apps.classes.models import StudentExamPrepAttempt
+        from apps.classes.serializers import StudentExamPrepResultResponseSerializer
+
+        attempt = StudentExamPrepAttempt.objects.filter(session=session, student=user).first()
+        if attempt is None:
+            return Response({'detail': 'هنوز نتیجه‌ای برای این آزمون ثبت نشده است.'}, status=status.HTTP_404_NOT_FOUND)
+
+        # Parse exam_prep_json to build correct map.
+        questions_list = []
+        try:
+            if session.exam_prep_json:
+                data = json.loads(session.exam_prep_json)
+                if isinstance(data, dict):
+                    exam_prep = data.get('exam_prep', {})
+                    raw_questions = exam_prep.get('questions', [])
+                    if isinstance(raw_questions, list):
+                        questions_list = raw_questions
+        except (json.JSONDecodeError, TypeError):
+            questions_list = []
+
+        correct_map: dict[str, str] = {}
+        for q in questions_list:
+            qid = str(q.get('question_id') or '').strip()
+            label = str(q.get('correct_option_label') or '').strip()
+            if qid:
+                correct_map[qid] = label
+
+        answers = attempt.answers if isinstance(attempt.answers, dict) else {}
+        total_questions = len(correct_map)
+
+        items = []
+        correct_count = 0
+        for qid, correct_label in correct_map.items():
+            selected = str(answers.get(qid) or '').strip()
+            ok = bool(selected) and bool(correct_label) and selected == correct_label
+            if attempt.finalized and ok:
+                correct_count += 1
+            items.append(
+                {
+                    'question_id': qid,
+                    'selected_label': selected,
+                    'is_correct': bool(ok) if attempt.finalized else False,
+                }
+            )
+
+        score_0_100 = int(round((correct_count / total_questions) * 100)) if (attempt.finalized and total_questions > 0) else 0
+
+        payload = {
+            'finalized': bool(attempt.finalized),
+            'score_0_100': score_0_100,
+            'correct_count': correct_count,
+            'total_questions': total_questions,
+            'answers': {str(k): str(v) for k, v in answers.items()},
+            'items': items,
+        }
+        return Response(StudentExamPrepResultResponseSerializer(payload).data, status=status.HTTP_200_OK)
+
+
+class StudentExamPrepChatHistoryView(APIView):
+    permission_classes = [IsAuthenticated, IsStudentUser]
+
+    @extend_schema(
+        tags=['Student Exam Prep'],
+        summary='Get previous chat messages for a student in an exam prep question',
+        operation_id='student_exam_prep_chat_history',
+        responses={200: OpenApiTypes.OBJECT},
+    )
+    def get(self, request, session_id: int):
+        user = request.user
+        phone = (getattr(user, 'phone', None) or '').strip()
+        if not phone:
+            return Response({'detail': 'شماره موبایل برای حساب کاربری ثبت نشده است.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        session = ClassCreationSession.objects.filter(
+            id=session_id,
+            is_published=True,
+            pipeline_type=ClassCreationSession.PipelineType.EXAM_PREP,
+            invites__phone=phone,
+        ).first()
+        if session is None:
+            return Response({'detail': 'آزمون آمادگی پیدا نشد.'}, status=status.HTTP_404_NOT_FOUND)
+
+        question_id = str(request.query_params.get('question_id') or '').strip() or None
+        items = list_exam_messages(session_id=session.id, student_id=int(getattr(user, 'id', 0) or 0), question_id=question_id)
+        return Response({'items': items}, status=status.HTTP_200_OK)
+
+
+class StudentExamPrepChatMediaView(APIView):
+    permission_classes = [IsAuthenticated, IsStudentUser]
+    parser_classes = [MultiPartParser, FormParser]
+
+    @extend_schema(
+        tags=['Student Exam Prep'],
+        summary='Chat media upload (image/audio) for exam prep tutor',
+        operation_id='student_exam_prep_chat_media',
+        request=OpenApiTypes.OBJECT,
+        responses={200: OpenApiTypes.OBJECT},
+    )
+    def post(self, request, session_id: int):
+        user = request.user
+        phone = (getattr(user, 'phone', None) or '').strip()
+        if not phone:
+            return Response({'detail': 'شماره موبایل برای حساب کاربری ثبت نشده است.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        session = ClassCreationSession.objects.filter(
+            id=session_id,
+            is_published=True,
+            pipeline_type=ClassCreationSession.PipelineType.EXAM_PREP,
+            invites__phone=phone,
+        ).first()
+
+        if session is None:
+            return Response({'detail': 'آزمون آمادگی پیدا نشد.'}, status=status.HTTP_404_NOT_FOUND)
+
+        up = request.FILES.get('file')
+        if up is None:
+            return Response({'detail': 'فایل ارسال نشده است.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        message = str(request.data.get('message') or '').strip()
+        question_id = str(request.data.get('question_id') or '').strip() or None
+        student_selected = str(request.data.get('student_selected') or '').strip()
+
+        def _as_bool(value: object) -> bool:
+            if isinstance(value, bool):
+                return value
+            if value is None:
+                return False
+            s = str(value).strip().lower()
+            return s in {'1', 'true', 'yes', 'y', 'ok'}
+
+        is_checked = _as_bool(request.data.get('is_checked'))
+        is_correct = _as_bool(request.data.get('is_correct'))
+
+        thread = get_or_create_exam_thread(
+            session=session,
+            student_id=int(getattr(user, 'id', 0) or 0),
+            question_id=question_id,
+        )
+
+        mime_type = (getattr(up, 'content_type', None) or '').strip() or 'application/octet-stream'
+        try:
+            data = up.read()
+        except Exception:
+            data = b''
+
+        if not data:
+            return Response({'detail': 'فایل خالی است.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        if mime_type.startswith('audio/'):
+            transcript, _provider, _model = transcribe_media_bytes(data=data, mime_type=mime_type)
+            combined = (message or '').strip()
+            if (transcript or '').strip():
+                combined = (combined + '\n\n[VOICE_TRANSCRIPT]\n' + transcript.strip()).strip()
+
+            append_exam_message(
+                thread=thread,
+                role='user',
+                message_type='text',
+                content=combined or '[VOICE]',
+                payload={'mime_type': mime_type, 'original_name': getattr(up, 'name', '') or ''},
+                suggestions=[],
+                question_id=question_id,
+            )
+
+            resp = handle_exam_prep_message(
+                session=session,
+                student_id=int(getattr(user, 'id', 0) or 0),
+                question_id=question_id,
+                user_message=combined,
+                student_selected=student_selected,
+                is_checked=is_checked,
+                is_correct=is_correct,
+            )
+
+            if isinstance(resp, dict) and resp.get('type') == 'text':
+                append_exam_message(
+                    thread=thread,
+                    role='assistant',
+                    message_type='text',
+                    content=str(resp.get('content') or ''),
+                    payload={},
+                    suggestions=list(resp.get('suggestions') or []),
+                    question_id=question_id,
+                )
+
+            return Response(resp, status=status.HTTP_200_OK)
+
+        if mime_type.startswith('image/'):
+            append_exam_message(
+                thread=thread,
+                role='user',
+                message_type='text',
+                content=(message or '').strip() or '[IMAGE]',
+                payload={'mime_type': mime_type, 'original_name': getattr(up, 'name', '') or ''},
+                suggestions=[],
+                question_id=question_id,
+            )
+
+            question_context = build_exam_question_context(session=session, question_id=question_id, is_checked=is_checked)
+            description = describe_exam_prep_handwriting(
+                question_context=question_context,
+                user_message=message,
+                image_bytes=data,
+                mime_type=mime_type,
+            )
+
+            resp = handle_exam_prep_message(
+                session=session,
+                student_id=int(getattr(user, 'id', 0) or 0),
+                question_id=question_id,
+                user_message=message or '[IMAGE]',
+                student_selected=student_selected,
+                is_checked=is_checked,
+                is_correct=is_correct,
+                image_description=description,
+            )
+
+            if isinstance(resp, dict) and resp.get('type') == 'text':
+                append_exam_message(
+                    thread=thread,
+                    role='assistant',
+                    message_type='text',
+                    content=str(resp.get('content') or ''),
+                    payload={},
+                    suggestions=list(resp.get('suggestions') or []),
+                    question_id=question_id,
+                )
+
+            return Response(resp, status=status.HTTP_200_OK)
+
+        return Response({'detail': 'فقط فایل تصویر یا صوت پشتیبانی می‌شود.'}, status=status.HTTP_400_BAD_REQUEST)

@@ -396,10 +396,6 @@ export const DashboardService = {
         question_id: string;
         question_text_markdown: string;
         options: { label: string; text_markdown: string }[];
-        correct_option_label?: string | null;
-        correct_option_text_markdown?: string | null;
-        teacher_solution_markdown: string;
-        final_answer_markdown: string;
       }[];
       totalQuestions: number;
       subject?: string;
@@ -416,13 +412,10 @@ export const DashboardService = {
       number: idx + 1,
       text: q.question_text_markdown,
       options: q.options.map((opt, optIdx) => ({
-        id: String(optIdx),
+        id: String(opt.label || optIdx),
         label: opt.label,
         text: opt.text_markdown,
       })),
-      correctOptionId: q.correct_option_label || undefined,
-      teacherSolution: q.teacher_solution_markdown,
-      finalAnswer: q.final_answer_markdown,
     }));
 
     return {
@@ -455,6 +448,26 @@ export const DashboardService = {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(payload),
+    });
+  },
+
+  getExamPrepResult: async (examId: string) => {
+    if (!RAW_API_URL) {
+      throw new Error('NEXT_PUBLIC_API_URL تنظیم نشده است.');
+    }
+    const url = `${API_URL}/classes/student/exam-preps/${examId}/result/`;
+    return requestJson<{
+      finalized: boolean;
+      score_0_100: number;
+      correct_count: number;
+      total_questions: number;
+      answers: Record<string, string>;
+      items: { question_id: string; selected_label: string; is_correct: boolean }[];
+    }>(url, {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${getAccessToken()}`,
+      },
     });
   },
 
@@ -566,6 +579,68 @@ export const DashboardService = {
     const lid = String(lessonId ?? '').trim();
     const qs = lid ? `?lesson_id=${encodeURIComponent(lid)}` : '';
     const url = `${API_URL}/classes/student/courses/${encodeURIComponent(cid)}/chat-history/${qs}`;
+    return requestJson<CourseChatHistoryResponse>(url, {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${getAccessToken()}`,
+      },
+    });
+  },
+
+  sendExamPrepChatMessage: async (
+    examId: string,
+    payload: { message: string; question_id?: string | null; student_selected?: string; is_checked?: boolean }
+  ) => {
+    if (!RAW_API_URL) {
+      throw new Error('NEXT_PUBLIC_API_URL تنظیم نشده است.');
+    }
+    const eid = String(examId ?? '').trim();
+    if (!eid) {
+      throw new Error('شناسه آزمون مشخص نیست.');
+    }
+
+    const url = `${API_URL}/classes/student/exam-preps/${encodeURIComponent(eid)}/chat/`;
+    return requestJson<any>(url, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${getAccessToken()}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    });
+  },
+
+  sendExamPrepChatMedia: async (examId: string, formData: FormData) => {
+    if (!RAW_API_URL) {
+      throw new Error('NEXT_PUBLIC_API_URL تنظیم نشده است.');
+    }
+    const eid = String(examId ?? '').trim();
+    if (!eid) {
+      throw new Error('شناسه آزمون مشخص نیست.');
+    }
+
+    const url = `${API_URL}/classes/student/exam-preps/${encodeURIComponent(eid)}/chat-media/`;
+    return requestFormData<any>(url, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${getAccessToken()}`,
+      },
+      body: formData,
+    });
+  },
+
+  getExamPrepChatHistory: async (examId: string, questionId?: string | null): Promise<CourseChatHistoryResponse> => {
+    if (!RAW_API_URL) {
+      throw new Error('NEXT_PUBLIC_API_URL تنظیم نشده است.');
+    }
+    const eid = String(examId ?? '').trim();
+    if (!eid) {
+      throw new Error('شناسه آزمون مشخص نیست.');
+    }
+
+    const qid = String(questionId ?? '').trim();
+    const qs = qid ? `?question_id=${encodeURIComponent(qid)}` : '';
+    const url = `${API_URL}/classes/student/exam-preps/${encodeURIComponent(eid)}/chat-history/${qs}`;
     return requestJson<CourseChatHistoryResponse>(url, {
       method: 'GET',
       headers: {

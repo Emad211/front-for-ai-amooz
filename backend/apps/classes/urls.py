@@ -38,6 +38,10 @@ from .views import (
     StudentExamPrepListView,
     StudentExamPrepDetailView,
     StudentExamPrepSubmitView,
+    StudentExamPrepResultView,
+    StudentExamPrepChatView,
+    StudentExamPrepChatHistoryView,
+    StudentExamPrepChatMediaView,
 )
 
 urlpatterns = [
@@ -68,6 +72,10 @@ urlpatterns = [
     path('student/exam-preps/', StudentExamPrepListView.as_view(), name='student_exam_prep_list'),
     path('student/exam-preps/<int:session_id>/', StudentExamPrepDetailView.as_view(), name='student_exam_prep_detail'),
     path('student/exam-preps/<int:session_id>/submit/', StudentExamPrepSubmitView.as_view(), name='student_exam_prep_submit'),
+    path('student/exam-preps/<int:session_id>/result/', StudentExamPrepResultView.as_view(), name='student_exam_prep_result'),
+    path('student/exam-preps/<int:session_id>/chat/', StudentExamPrepChatView.as_view(), name='student_exam_prep_chat'),
+    path('student/exam-preps/<int:session_id>/chat-media/', StudentExamPrepChatMediaView.as_view(), name='student_exam_prep_chat_media'),
+    path('student/exam-preps/<int:session_id>/chat-history/', StudentExamPrepChatHistoryView.as_view(), name='student_exam_prep_chat_history'),
 
     # Teacher Analytics
     path('teacher/analytics/stats/', TeacherAnalyticsStatsView.as_view(), name='teacher_analytics_stats'),

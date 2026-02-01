@@ -8,6 +8,7 @@ import { cn } from '@/lib/utils';
 import { SheetClose } from '@/components/ui/sheet';
 import { MarkdownWithMath } from '@/components/content/markdown-with-math';
 import { DashboardService } from '@/services/dashboard-service';
+import { normalizeMathText } from '@/lib/normalize-math-text';
 import {
   InteractiveFlashcard,
   InteractiveMatchGame,
@@ -138,7 +139,7 @@ export const ChatMessage = ({ sender, time, message, widget }: ChatMessageProps)
             isAI ? 'bg-card text-foreground rounded-tr-none border-border/50' : 'bg-primary/10 text-foreground rounded-tl-none border-primary/20'
           )}
         >
-          <MarkdownWithMath markdown={message} className="text-sm" />
+          <MarkdownWithMath markdown={normalizeMathText(message)} className="text-sm" />
           {isAI && widget?.widget_type ? <WidgetCard widgetType={widget.widget_type} data={widget.data} /> : null}
         </div>
       </div>
@@ -225,6 +226,7 @@ export const ChatAssistant = ({ onToggle, isOpen, className, isMobile = false, c
     if (!isOpen) return;
     const cid = String(courseId ?? '').trim();
     if (!cid) return;
+    if (historyLoaded) return;
 
     let cancelled = false;
 
@@ -280,7 +282,7 @@ export const ChatAssistant = ({ onToggle, isOpen, className, isMobile = false, c
     return () => {
       cancelled = true;
     };
-  }, [isOpen, courseId, lessonId, threadKey]);
+  }, [isOpen, courseId, lessonId, threadKey, historyLoaded]);
 
   // Boot message: fixed local greeting (no activation/unit-start protocol).
   React.useEffect(() => {
@@ -379,6 +381,8 @@ export const ChatAssistant = ({ onToggle, isOpen, className, isMobile = false, c
         const nextSuggestions = Array.isArray((resp as any)?.suggestions) ? (resp as any).suggestions.filter(Boolean) : [];
         setSuggestions(nextSuggestions);
         setPendingFile(null);
+        // Refresh persisted history so the UI stays in sync with backend storage.
+        setHistoryLoaded(false);
       } catch (e) {
         const msgErr = e instanceof Error ? e.message : 'خطا در ارسال پیام';
         pushMessage({ sender: 'ai', message: msgErr });
@@ -512,7 +516,12 @@ export const ChatAssistant = ({ onToggle, isOpen, className, isMobile = false, c
                 disabled={isSending}
                 onClick={() => sendMessage(s)}
               >
-                <MarkdownWithMath markdown={s} className="text-xs" />
+                <MarkdownWithMath
+                  markdown={normalizeMathText(s)}
+                  className="text-xs [&_.md-p]:m-0 [&_.md-ul]:m-0 [&_.md-ol]:m-0"
+                  as="span"
+                  renderKey={s}
+                />
               </Button>
             ))}
           </div>
