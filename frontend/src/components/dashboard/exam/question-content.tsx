@@ -12,9 +12,11 @@ interface QuestionContentProps {
   onNext: () => void;
   onPrev: () => void;
   onSubmit: (questionId: string, answerId: string) => void;
+  onFinalize: () => void;
+  isSubmitting?: boolean;
 }
 
-export const QuestionContent = ({ question, totalQuestions, onNext, onPrev, onSubmit }: QuestionContentProps) => {
+export const QuestionContent = ({ question, totalQuestions, onNext, onPrev, onSubmit, onFinalize, isSubmitting }: QuestionContentProps) => {
   if (!question) return null;
 
   return (
@@ -37,6 +39,7 @@ export const QuestionContent = ({ question, totalQuestions, onNext, onPrev, onSu
             onValueChange={(value) => onSubmit(question.id, value)}
             dir="rtl" 
             className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4"
+            disabled={Boolean(isSubmitting)}
           >
             {question.options.map((option) => (
               <Label
@@ -64,8 +67,13 @@ export const QuestionContent = ({ question, totalQuestions, onNext, onPrev, onSu
               <ChevronLeft className="mr-2 h-4 w-4" />
             </Button>
           </div>
-          <Button size="lg" className="w-full sm:w-auto bg-primary text-primary-foreground hover:bg-primary/90">
-            ثبت پاسخ و ادامه
+          <Button
+            size="lg"
+            className="w-full sm:w-auto bg-primary text-primary-foreground hover:bg-primary/90"
+            onClick={onFinalize}
+            disabled={Boolean(isSubmitting)}
+          >
+            {isSubmitting ? 'در حال ثبت...' : 'ثبت پاسخ و پایان آزمون'}
             <ChevronLeft className="mr-2 h-4 w-4" />
           </Button>
         </div>

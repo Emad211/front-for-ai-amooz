@@ -20,7 +20,7 @@ export default function ExamPage() {
     const params = useParams();
     const rawExamId = (params as any)?.examId as string | string[] | undefined;
     const examId = Array.isArray(rawExamId) ? rawExamId[0] : rawExamId;
-    const { exam, currentQuestion, isChatOpen, toggleChat, isLoading, error, goToNextQuestion, goToPrevQuestion, submitAnswer } = useExam(examId);
+    const { exam, currentQuestion, isChatOpen, toggleChat, isLoading, error, isSubmitting, goToNextQuestion, goToPrevQuestion, submitAnswer, finalizeExam } = useExam(examId);
 
     if (!examId) {
         return (
@@ -87,6 +87,8 @@ export default function ExamPage() {
                             onNext={goToNextQuestion}
                             onPrev={goToPrevQuestion}
                             onSubmit={submitAnswer}
+                            onFinalize={finalizeExam}
+                            isSubmitting={isSubmitting}
                         />
                     </div>
                 </div>

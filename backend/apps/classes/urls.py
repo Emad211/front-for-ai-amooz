@@ -37,6 +37,7 @@ from .views import (
     # Student Exam Prep views
     StudentExamPrepListView,
     StudentExamPrepDetailView,
+    StudentExamPrepSubmitView,
 )
 
 urlpatterns = [
@@ -66,6 +67,7 @@ urlpatterns = [
     # Student Exam Prep endpoints
     path('student/exam-preps/', StudentExamPrepListView.as_view(), name='student_exam_prep_list'),
     path('student/exam-preps/<int:session_id>/', StudentExamPrepDetailView.as_view(), name='student_exam_prep_detail'),
+    path('student/exam-preps/<int:session_id>/submit/', StudentExamPrepSubmitView.as_view(), name='student_exam_prep_submit'),
 
     # Teacher Analytics
     path('teacher/analytics/stats/', TeacherAnalyticsStatsView.as_view(), name='teacher_analytics_stats'),

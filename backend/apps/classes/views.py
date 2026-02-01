@@ -69,6 +69,8 @@ from .serializers import (
     # Student Exam Prep serializers
     StudentExamPrepListSerializer,
     StudentExamPrepDetailSerializer,
+    StudentExamPrepSubmitRequestSerializer,
+    StudentExamPrepSubmitResponseSerializer,
 )
 from .services.transcription import transcribe_media_bytes
 from .services.structure import structure_transcript_markdown
@@ -2575,3 +2577,103 @@ class StudentExamPrepDetailView(APIView):
         }
 
         return Response(StudentExamPrepDetailSerializer(out).data)
+
+
+class StudentExamPrepSubmitView(APIView):
+    """Submit exam prep answers (student)."""
+    permission_classes = [IsAuthenticated, IsStudentUser]
+
+    @extend_schema(
+        tags=['Student Exam Prep'],
+        summary='Submit exam prep answers',
+        operation_id='student_exam_prep_submit',
+        request=StudentExamPrepSubmitRequestSerializer,
+        responses={200: StudentExamPrepSubmitResponseSerializer, 400: OpenApiTypes.OBJECT, 404: OpenApiTypes.OBJECT},
+    )
+    def post(self, request, session_id: int):
+        user = request.user
+        phone = (getattr(user, 'phone', None) or '').strip()
+        if not phone:
+            return Response({'detail': 'شماره موبایل برای حساب کاربری ثبت نشده است.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        session = ClassCreationSession.objects.filter(
+            id=session_id,
+            is_published=True,
+            pipeline_type=ClassCreationSession.PipelineType.EXAM_PREP,
+            invites__phone=phone,
+        ).first()
+
+        if session is None:
+            return Response({'detail': 'آزمون آمادگی پیدا نشد.'}, status=status.HTTP_404_NOT_FOUND)
+
+        serializer = StudentExamPrepSubmitRequestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        answers = serializer.validated_data.get('answers') or {}
+        finalize = bool(serializer.validated_data.get('finalize'))
+
+        # Parse exam_prep_json
+        questions_list = []
+        try:
+            if session.exam_prep_json:
+                data = json.loads(session.exam_prep_json)
+                if isinstance(data, dict):
+                    exam_prep = data.get('exam_prep', {})
+                    raw_questions = exam_prep.get('questions', [])
+                    if isinstance(raw_questions, list):
+                        questions_list = raw_questions
+        except (json.JSONDecodeError, TypeError):
+            questions_list = []
+
+        correct_map: dict[str, str] = {}
+        for q in questions_list:
+            qid = str(q.get('question_id') or '').strip()
+            label = str(q.get('correct_option_label') or '').strip()
+            if qid:
+                correct_map[qid] = label
+
+        total_questions = len(correct_map)
+        merged_answers: dict[str, str] = {}
+
+        from apps.classes.models import StudentExamPrepAttempt
+
+        attempt, _created = StudentExamPrepAttempt.objects.get_or_create(
+            session=session,
+            student=user,
+            defaults={'answers': {}, 'score_0_100': 0, 'total_questions': total_questions, 'correct_count': 0},
+        )
+
+        if attempt.finalized:
+            return Response({'detail': 'این آزمون قبلاً ثبت نهایی شده است.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        if isinstance(attempt.answers, dict):
+            merged_answers.update(attempt.answers)
+
+        for k, v in answers.items():
+            key = str(k).strip()
+            if not key:
+                continue
+            merged_answers[key] = str(v).strip()
+
+        correct_count = 0
+        for qid, correct_label in correct_map.items():
+            selected = (merged_answers.get(qid) or '').strip()
+            if selected and correct_label and selected == correct_label:
+                correct_count += 1
+
+        score_0_100 = int(round((correct_count / total_questions) * 100)) if total_questions > 0 else 0
+
+        attempt.answers = merged_answers
+        attempt.total_questions = total_questions
+        attempt.correct_count = correct_count
+        attempt.score_0_100 = score_0_100
+        if finalize:
+            attempt.finalized = True
+        attempt.save(update_fields=['answers', 'total_questions', 'correct_count', 'score_0_100', 'finalized', 'updated_at'])
+
+        payload = {
+            'score_0_100': score_0_100,
+            'correct_count': correct_count,
+            'total_questions': total_questions,
+            'finalized': attempt.finalized,
+        }
+        return Response(StudentExamPrepSubmitResponseSerializer(payload).data)

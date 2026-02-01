@@ -438,6 +438,26 @@ export const DashboardService = {
     };
   },
 
+  submitExamPrep: async (examId: string, payload: { answers: Record<string, string>; finalize?: boolean }) => {
+    if (!RAW_API_URL) {
+      throw new Error('NEXT_PUBLIC_API_URL تنظیم نشده است.');
+    }
+    const url = `${API_URL}/classes/student/exam-preps/${examId}/submit/`;
+    return requestJson<{
+      score_0_100: number;
+      correct_count: number;
+      total_questions: number;
+      finalized: boolean;
+    }>(url, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${getAccessToken()}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    });
+  },
+
   getTickets: async () => {
     await new Promise(resolve => setTimeout(resolve, 600));
     return MOCK_TICKETS;

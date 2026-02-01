@@ -127,6 +127,35 @@ class StudentInviteCode(models.Model):
         return f"{self.phone}:{self.code}"
 
 
+class StudentExamPrepAttempt(models.Model):
+    session = models.ForeignKey(
+        ClassCreationSession,
+        on_delete=models.CASCADE,
+        related_name='exam_prep_attempts',
+    )
+    student = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='exam_prep_attempts',
+    )
+    answers = models.JSONField(default=dict)
+    score_0_100 = models.IntegerField(null=True, blank=True)
+    total_questions = models.IntegerField(default=0)
+    correct_count = models.IntegerField(default=0)
+    finalized = models.BooleanField(default=False)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self) -> str:
+        return f"{self.session_id}:{self.student_id}:{self.score_0_100}"
+
+    class Meta:
+        constraints = [
+            UniqueConstraint(fields=['session', 'student'], name='uniq_exam_prep_attempt_session_student'),
+        ]
+
+
 class ClassLearningObjective(models.Model):
     session = models.ForeignKey(
         ClassCreationSession,

@@ -522,3 +522,15 @@ class StudentExamPrepDetailSerializer(serializers.Serializer):
     questions = StudentExamPrepQuestionSerializer(many=True)
     totalQuestions = serializers.IntegerField()
     subject = serializers.CharField(required=False, allow_blank=True)
+
+
+class StudentExamPrepSubmitRequestSerializer(serializers.Serializer):
+    answers = serializers.DictField(child=serializers.CharField(allow_blank=True), required=False, default=dict)
+    finalize = serializers.BooleanField(required=False, default=False)
+
+
+class StudentExamPrepSubmitResponseSerializer(serializers.Serializer):
+    score_0_100 = serializers.IntegerField()
+    correct_count = serializers.IntegerField()
+    total_questions = serializers.IntegerField()
+    finalized = serializers.BooleanField()
