@@ -11,6 +11,7 @@ import { clearAuthStorage, getStoredTokens, persistTokens, persistUser } from '@
 
 const RAW_API_URL = (process.env.NEXT_PUBLIC_API_URL ?? '').replace(/\/$/, '');
 const API_URL = RAW_API_URL.endsWith('/api') ? RAW_API_URL : `${RAW_API_URL}/api`;
+const BASE_URL = RAW_API_URL.replace(/\/api$/, '');
 
 function getAccessToken(): string {
   if (typeof window === 'undefined') {
@@ -274,13 +275,19 @@ function mapMeToUserProfile(me: MeApiResponse): UserProfile {
   const role = String(me.role || '').toLowerCase() as any;
   const joinDate = me.join_date ? String(me.join_date) : '';
 
+  const avatarRaw = String(me.avatar ?? '');
+  let avatar = avatarRaw;
+  if (avatarRaw && !avatarRaw.startsWith('http') && !avatarRaw.startsWith('data:')) {
+    avatar = `${BASE_URL}${avatarRaw.startsWith('/') ? '' : '/'}${avatarRaw}`;
+  }
+
   return {
     id: String(me.id),
     username: me.username,
     name,
     email: me.email,
     phone: String(me.phone ?? ''),
-    avatar: String(me.avatar ?? ''),
+    avatar,
     role: role === 'student' || role === 'teacher' || role === 'admin' ? role : 'student',
     grade: me.grade ?? undefined,
     major: me.major ?? undefined,
@@ -767,6 +774,7 @@ export const DashboardService = {
     if (data.bio !== undefined) payload.bio = data.bio;
     if (data.grade !== undefined) payload.grade = data.grade;
     if (data.major !== undefined) payload.major = data.major;
+    if ((data as any).avatar !== undefined) payload.avatar = (data as any).avatar;
 
     const me = await requestJson<MeApiResponse>(url, {
       method: 'PATCH',

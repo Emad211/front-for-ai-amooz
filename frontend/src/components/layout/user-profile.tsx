@@ -42,6 +42,14 @@ export function UserProfile({
   useEffect(() => {
     setMounted(true);
     setStored(getStoredUser());
+
+    // Listen for updates
+    const handleUpdate = () => {
+      setStored(getStoredUser());
+    };
+
+    window.addEventListener('user-profile-updated', handleUpdate);
+    return () => window.removeEventListener('user-profile-updated', handleUpdate);
   }, []);
 
   const displayName = (() => {
@@ -57,7 +65,15 @@ export function UserProfile({
     return String(stored?.email ?? '').trim() || '';
   })();
 
-  const displayAvatar = user?.avatar ?? (stored?.avatar ?? undefined) ?? undefined;
+  const displayAvatar = (() => {
+    let url = user?.avatar ?? stored?.avatar ?? undefined;
+    if (url && !url.startsWith('http') && !url.startsWith('data:')) {
+      const RAW_API_URL = (process.env.NEXT_PUBLIC_API_URL ?? '').replace(/\/$/, '');
+      const BASE_URL = RAW_API_URL.replace(/\/api$/, '');
+      return `${BASE_URL}${url.startsWith('/') ? '' : '/'}${url}`;
+    }
+    return url;
+  })();
 
   const profileHref = isTeacher ? '/teacher/settings' : '/profile';
   const ticketsHref = isTeacher ? '/teacher/tickets' : '/tickets';

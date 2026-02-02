@@ -1,5 +1,8 @@
 from django.contrib.auth import get_user_model
+from django.core.files.base import ContentFile
 from rest_framework import serializers
+import base64
+import uuid
 
 from drf_spectacular.utils import extend_schema_field
 from drf_spectacular.types import OpenApiTypes
@@ -67,6 +70,7 @@ class MeUpdateSerializer(serializers.Serializer):
     last_name = serializers.CharField(required=False, allow_blank=True, max_length=150)
     email = serializers.EmailField(required=False, allow_blank=True)
     phone = serializers.CharField(required=False, allow_blank=True, max_length=15)
+    avatar = serializers.CharField(required=False, allow_null=True)
 
     bio = serializers.CharField(required=False, allow_blank=True, allow_null=True)
     grade = serializers.CharField(required=False, allow_blank=True, allow_null=True)
@@ -151,6 +155,28 @@ class MeUpdateSerializer(serializers.Serializer):
                     value = (value or '').strip().lower()
                 setattr(instance, field, value)
                 user_update_fields.append(field)
+
+        # Handle avatar base64 upload
+        avatar_data = validated_data.get('avatar')
+        if avatar_data:
+            if avatar_data.startswith('data:image'):
+                try:
+                    format, imgstr = avatar_data.split(';base64,')
+                    ext = format.split('/')[-1]
+                    # Clean up extension (e.g. image/jpeg -> jpg)
+                    if ext == 'jpeg': ext = 'jpg'
+                    
+                    data = ContentFile(
+                        base64.b64decode(imgstr), 
+                        name=f'avatar_{instance.id}_{uuid.uuid4().hex[:8]}.{ext}'
+                    )
+                    instance.avatar = data
+                    user_update_fields.append('avatar')
+                except Exception as e:
+                    print(f"Error decoding avatar: {e}")
+            elif avatar_data == '': # Clear avatar
+                instance.avatar = None
+                user_update_fields.append('avatar')
 
         if user_update_fields:
             instance.save(update_fields=user_update_fields)

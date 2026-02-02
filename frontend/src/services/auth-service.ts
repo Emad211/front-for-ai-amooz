@@ -224,7 +224,10 @@ export function persistTokens(tokens: TokenResponse) {
 export function persistUser(user: AuthMeResponse) {
   if (!isClient()) return;
   window.localStorage.setItem(STORAGE_KEYS.user, JSON.stringify(user));
-  window.localStorage.setItem('userRole', user.role.toLowerCase());
+  window.localStorage.setItem('userRole', (user.role || '').toLowerCase());
+  
+  // Notify other components that user data has changed
+  window.dispatchEvent(new Event('user-profile-updated'));
 }
 
 export function clearAuthStorage() {

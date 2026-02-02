@@ -1671,7 +1671,11 @@ class StudentCourseChatMediaView(APIView):
             return Response({'detail': 'فایل خالی است.'}, status=status.HTTP_400_BAD_REQUEST)
 
         if mime_type.startswith('audio/'):
-            transcript, _provider, _model = transcribe_media_bytes(data=data, mime_type=mime_type)
+            try:
+                transcript, _provider, _model = transcribe_media_bytes(data=data, mime_type=mime_type)
+            except Exception as e:
+                logger.error(f"Failed to transcribe course media: {str(e)}")
+                transcript = ""
 
             combined = (message or '').strip()
             if (transcript or '').strip():
@@ -3612,7 +3616,12 @@ class StudentExamPrepChatMediaView(APIView):
             return Response({'detail': 'فایل خالی است.'}, status=status.HTTP_400_BAD_REQUEST)
 
         if mime_type.startswith('audio/'):
-            transcript, _provider, _model = transcribe_media_bytes(data=data, mime_type=mime_type)
+            try:
+                transcript, _provider, _model = transcribe_media_bytes(data=data, mime_type=mime_type)
+            except Exception as e:
+                logger.error(f"Failed to transcribe exam prep media: {str(e)}")
+                transcript = ""
+
             combined = (message or '').strip()
             if (transcript or '').strip():
                 combined = (combined + '\n\n[VOICE_TRANSCRIPT]\n' + transcript.strip()).strip()

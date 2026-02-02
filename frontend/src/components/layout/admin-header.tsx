@@ -62,11 +62,7 @@ export function AdminHeader() {
 
       <div className="flex items-center gap-2 md:gap-3">
         <div className="flex items-center gap-1 md:gap-2">
-          <UserProfile user={{
-            name: 'مدیر سیستم',
-            email: 'admin@example.com',
-            avatar: ''
-          }} isAdmin={true} />
+          <UserProfile isAdmin={true} />
         </div>
       </div>
     </header>

@@ -87,19 +87,19 @@ export function NotificationPopover() {
                     <div className="mt-1">
                       {getIcon(notification.type)}
                     </div>
-                    <div className="flex-1 space-y-1">
+                    <div className="flex-1 space-y-1 text-right">
                       <div className="flex items-center justify-between">
                         <p className={cn(
-                          "text-sm font-medium leading-none",
+                          "text-sm font-bold leading-none",
                           !notification.isRead ? "text-foreground" : "text-muted-foreground"
                         )}>
                           {notification.title}
                         </p>
-                        <span className="text-[10px] text-muted-foreground">
+                        <span className="text-[10px] text-muted-foreground font-medium">
                           {notification.time}
                         </span>
                       </div>
-                      <p className="text-xs text-muted-foreground line-clamp-2 leading-relaxed">
+                      <p className="text-xs text-muted-foreground line-clamp-2 leading-relaxed font-medium">
                         {notification.message}
                       </p>
                     </div>

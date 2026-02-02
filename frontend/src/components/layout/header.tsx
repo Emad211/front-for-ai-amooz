@@ -19,6 +19,8 @@ import {
 import { useTheme } from 'next-themes';
 import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/utils';
+import { getStoredUser, type AuthMeResponse } from '@/services/auth-service';
+import { useEffect, useState } from 'react';
 
 type NavLinkProps = {
   href: string;
@@ -37,59 +39,97 @@ const NavLink = ({ href, children }: NavLinkProps) => {
     );
 };
 
-const UserProfile = () => (
+const UserProfile = () => {
+    const [user, setUser] = useState<AuthMeResponse | null>(null);
+
+    useEffect(() => {
+        // Initial load
+        setUser(getStoredUser());
+
+        // Listen for updates
+        const handleUpdate = () => {
+            setUser(getStoredUser());
+        };
+
+        window.addEventListener('user-profile-updated', handleUpdate);
+        return () => window.removeEventListener('user-profile-updated', handleUpdate);
+    }, []);
+    
+    // Construct avatar URL if needed
+    let avatarUrl = user?.avatar;
+    if (avatarUrl && !avatarUrl.startsWith('http') && !avatarUrl.startsWith('data:')) {
+      const RAW_API_URL = (process.env.NEXT_PUBLIC_API_URL ?? '').replace(/\/$/, '');
+      const BASE_URL = RAW_API_URL.replace(/\/api$/, '');
+      avatarUrl = `${BASE_URL}${avatarUrl.startsWith('/') ? '' : '/'}${avatarUrl}`;
+    }
+
+    const initials = user?.first_name || user?.last_name 
+      ? `${(user.first_name?.[0] || '')}${(user.last_name?.[0] || '')}`.toUpperCase()
+      : (user?.username?.[0] || 'U').toUpperCase();
+
+    const fullName = user?.first_name || user?.last_name 
+      ? `${user.first_name || ''} ${user.last_name || ''}`.trim() 
+      : user?.username;
+
+    return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button variant="ghost" className="relative h-10 w-10 rounded-full">
-          <Avatar className="h-10 w-10">
+          <Avatar className="h-10 w-10 overflow-hidden ring-2 ring-background ring-offset-2 ring-offset-primary/20">
             <AvatarImage
-              src="https://picsum.photos/seed/user/100/100"
-              alt="Alireza"
+              src={avatarUrl || undefined}
+              alt={fullName || 'پروفایل'}
+              className="object-cover"
             />
-            <AvatarFallback>AR</AvatarFallback>
+            <AvatarFallback className="bg-primary/10 text-primary font-bold">
+                {initials}
+            </AvatarFallback>
           </Avatar>
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent className="w-56" align="end" forceMount>
         <DropdownMenuLabel className="font-normal">
-          <div className="flex flex-col space-y-1">
-            <p className="text-sm font-medium leading-none">علیرضا رضایی</p>
-            <p className="text-xs leading-none text-muted-foreground">
-              ali.rezaei@example.com
+          <div className="flex flex-col space-y-2 py-1">
+            <p className="text-sm font-semibold leading-none">{fullName}</p>
+            <p className="text-xs leading-none text-muted-foreground truncate">
+              {user?.email}
             </p>
           </div>
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
         <DropdownMenuGroup>
-          <DropdownMenuItem asChild>
+          <DropdownMenuItem asChild className="cursor-pointer">
             <Link href="/profile" className="flex items-center w-full">
-              <User className="ml-2 h-4 w-4" />
+              <User className="ml-2 h-4 w-4 text-muted-foreground" />
               <span>پروفایل</span>
             </Link>
           </DropdownMenuItem>
-          <DropdownMenuItem asChild>
+          <DropdownMenuItem asChild className="cursor-pointer">
             <Link href="/notifications" className="flex items-center w-full">
-              <Bell className="ml-2 h-4 w-4" />
+              <Bell className="ml-2 h-4 w-4 text-muted-foreground" />
               <span>اعلان‌ها</span>
             </Link>
           </DropdownMenuItem>
-          <DropdownMenuItem asChild>
+          <DropdownMenuItem asChild className="cursor-pointer">
             <Link href="/tickets" className="flex items-center w-full">
-              <Ticket className="ml-2 h-4 w-4" />
+              <Ticket className="ml-2 h-4 w-4 text-muted-foreground" />
               <span>پشتیبانی و تیکت</span>
             </Link>
           </DropdownMenuItem>
         </DropdownMenuGroup>
         <DropdownMenuSeparator />
-        <DropdownMenuItem asChild>
-           <Link href="/login">
+        <DropdownMenuItem asChild className="cursor-pointer text-destructive focus:text-destructive">
+           <Link href="/login" onClick={() => {
+             // Optional: Call logout service here
+           }}>
             <LogOut className="ml-2 h-4 w-4" />
             <span>خروج</span>
           </Link>
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
-);
+    );
+};
 
 
 const ThemeToggle = () => {

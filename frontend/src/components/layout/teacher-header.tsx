@@ -123,14 +123,7 @@ export function TeacherHeader() {
           <ThemeToggle className="h-9 w-9 rounded-xl hover:bg-primary/10 hover:text-primary transition-colors" />
           <NotificationPopover />
           <div className="w-px h-6 bg-border/50 mx-1"></div>
-          <UserProfile 
-            user={{
-              name: displayName,
-              email: displayEmail,
-              avatar: displayAvatar
-            }} 
-            isAdmin={false} 
-          />
+          <UserProfile isAdmin={false} />
         </div>
       </div>
     </header>

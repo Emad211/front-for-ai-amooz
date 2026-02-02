@@ -7,6 +7,7 @@ from typing import Any, Optional, Tuple
 
 from google import genai
 from google.genai import types
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
 from apps.commons.llm_prompts import PROMPTS
 from apps.commons.llm_provider import preferred_provider
@@ -96,29 +97,40 @@ def generate_text(*, contents: Any, model: Optional[str] = None) -> LlmResult:
     gemini_client, avalai_client = _get_clients()
 
     provider = preferred_provider()
-
     last_error: Optional[Exception] = None
+
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=1, max=10),
+        retry=retry_if_exception_type(Exception),
+        reraise=True
+    )
+    def _call_llm(client: genai.Client, prov: str) -> LlmResult:
+        try:
+            resp = client.models.generate_content(model=used_model, contents=contents)
+            text = _extract_text(resp)
+            if not text:
+                raise ValueError(f'Empty response from {prov}')
+            return LlmResult(text=text, provider=prov, model=used_model)
+        except Exception as exc:
+            # Check specifically for SSL/Connection errors to log them differently if needed
+            err_msg = str(exc)
+            if "SSL" in err_msg or "EOF" in err_msg or "ConnectError" in err_msg:
+                print(f"[CHATBOT][RETRY] {prov} encountered connection issue: {err_msg}. Retrying...")
+            raise
 
     if provider != 'avalai' and gemini_client is not None:
         try:
-            resp = gemini_client.models.generate_content(model=used_model, contents=contents)
-            text = _extract_text(resp)
-            if not text:
-                raise ValueError('Empty response from gemini')
-            return LlmResult(text=text, provider='gemini', model=used_model)
+            return _call_llm(gemini_client, 'gemini')
         except Exception as exc:
-            print(f"[CHATBOT][LLM] gemini failed model={used_model!r}: {type(exc).__name__}: {exc}")
+            print(f"[CHATBOT][LLM] gemini failed model={used_model!r} after retries: {type(exc).__name__}: {exc}")
             last_error = exc
 
     if provider != 'gemini' and avalai_client is not None:
         try:
-            resp = avalai_client.models.generate_content(model=used_model, contents=contents)
-            text = _extract_text(resp)
-            if not text:
-                raise ValueError('Empty response from avalai')
-            return LlmResult(text=text, provider='avalai', model=used_model)
+            return _call_llm(avalai_client, 'avalai')
         except Exception as exc:
-            print(f"[CHATBOT][LLM] avalai failed model={used_model!r}: {type(exc).__name__}: {exc}")
+            print(f"[CHATBOT][LLM] avalai failed model={used_model!r} after retries: {type(exc).__name__}: {exc}")
             last_error = exc
 
     if last_error is not None:

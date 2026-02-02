@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { Bot, PanelRightClose, Send, Paperclip, Mic, X, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Bot, PanelRightClose, Send, Paperclip, Mic, X, ChevronLeft, ChevronRight, AlertTriangle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
@@ -172,6 +172,74 @@ type ChatApiResponse =
   | { type: 'text'; content: string; suggestions?: string[] }
   | { type: 'widget'; widget_type: string; data: any; text?: string; suggestions?: string[] };
 
+type ChatErrorKind = 'timeout' | 'network' | 'auth' | 'rate' | 'server' | 'unknown' | 'mic';
+
+interface ChatErrorInfo {
+  kind: ChatErrorKind;
+  title: string;
+  detail?: string;
+}
+
+function getChatErrorInfo(error: unknown, fallbackTitle: string): ChatErrorInfo {
+  const raw = error instanceof Error ? error.message : String(error ?? '');
+  const msg = raw.trim().toLowerCase();
+
+  if (msg.includes('timeout') || msg.includes('timed out')) {
+    return {
+      kind: 'timeout',
+      title: 'پاسخی از سرور دریافت نشد.',
+      detail: 'ارتباط کند یا سرور شلوغ است. چند لحظه بعد دوباره تلاش کن.',
+    };
+  }
+  if (
+    msg.includes('ssl') ||
+    msg.includes('eof') ||
+    msg.includes('connect') ||
+    msg.includes('network') ||
+    msg.includes('failed to fetch') ||
+    msg.includes('cors')
+  ) {
+    return {
+      kind: 'network',
+      title: 'ارتباط با سرور ناپایدار بود.',
+      detail: 'اینترنت، VPN یا فایروال را بررسی کن و دوباره امتحان کن.',
+    };
+  }
+  if (msg.includes('401') || msg.includes('token') || msg.includes('unauthorized')) {
+    return {
+      kind: 'auth',
+      title: 'برای ادامه باید دوباره وارد شوی.',
+      detail: 'نشست شما منقضی شده است.',
+    };
+  }
+  if (msg.includes('429') || msg.includes('rate')) {
+    return {
+      kind: 'rate',
+      title: 'تعداد درخواست‌ها زیاد شد.',
+      detail: 'چند ثانیه صبر کن و دوباره تلاش کن.',
+    };
+  }
+  if (msg.includes('500') || msg.includes('server')) {
+    return {
+      kind: 'server',
+      title: 'خطای سرور رخ داد.',
+      detail: 'این مشکل معمولاً موقتی است.',
+    };
+  }
+  if (msg.includes('microphone') || msg.includes('mic') || msg.includes('media')) {
+    return {
+      kind: 'mic',
+      title: 'دسترسی به میکروفون انجام نشد.',
+      detail: 'اجازه دسترسی را بررسی کن و دوباره امتحان کن.',
+    };
+  }
+  return {
+    kind: 'unknown',
+    title: fallbackTitle,
+    detail: 'اگر مشکل ادامه داشت، یک بار صفحه را تازه‌سازی کن.',
+  };
+}
+
 export const ChatAssistant = ({ onToggle, isOpen, className, isMobile = false, courseId, lessonId, lessonTitle, pageContext, pageMaterial, studentName }: ChatAssistantProps) => {
   const [message, setMessage] = React.useState('');
   const [messages, setMessages] = React.useState<
@@ -181,6 +249,9 @@ export const ChatAssistant = ({ onToggle, isOpen, className, isMobile = false, c
   const [pendingFile, setPendingFile] = React.useState<File | null>(null);
   const [isSending, setIsSending] = React.useState(false);
   const [historyLoaded, setHistoryLoaded] = React.useState(false);
+  const [chatError, setChatError] = React.useState<ChatErrorInfo | null>(null);
+  const [retryAvailable, setRetryAvailable] = React.useState(false);
+  const lastActionRef = React.useRef<null | (() => void)>(null);
 
   const [isRecording, setIsRecording] = React.useState(false);
   const recorderRef = React.useRef<MediaRecorder | null>(null);
@@ -193,6 +264,18 @@ export const ChatAssistant = ({ onToggle, isOpen, className, isMobile = false, c
   const scrollRef = React.useRef<HTMLDivElement>(null);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
   const suggestionsRef = React.useRef<HTMLDivElement>(null);
+
+  const clearChatError = React.useCallback(() => {
+    setChatError(null);
+    setRetryAvailable(false);
+    lastActionRef.current = null;
+  }, []);
+
+  const setChatErrorWithAction = React.useCallback((error: unknown, action: (() => void) | null, fallbackTitle: string) => {
+    setChatError(getChatErrorInfo(error, fallbackTitle));
+    lastActionRef.current = action;
+    setRetryAvailable(Boolean(action));
+  }, []);
 
   const scrollSuggestions = React.useCallback((direction: 'left' | 'right') => {
     const el = suggestionsRef.current;
@@ -243,6 +326,7 @@ export const ChatAssistant = ({ onToggle, isOpen, className, isMobile = false, c
     setPendingFile(null);
     setMessage('');
     setHistoryLoaded(false);
+    clearChatError();
   }, [threadKey]);
 
   // Load persisted history from backend (so student sees previous chat after returning).
@@ -294,8 +378,14 @@ export const ChatAssistant = ({ onToggle, isOpen, className, isMobile = false, c
         const last = items.length > 0 ? items[items.length - 1] : null;
         const nextSuggestions = Array.isArray(last?.suggestions) ? last.suggestions.filter(Boolean) : [];
         setSuggestions(nextSuggestions);
-      } catch {
-        // Ignore history load failures; chat still works.
+      } catch (error) {
+        setChatErrorWithAction(
+          error,
+          () => {
+            setHistoryLoaded(false);
+          },
+          'بارگذاری گفتگو ناموفق بود.'
+        );
       } finally {
         if (!cancelled) setHistoryLoaded(true);
       }
@@ -366,6 +456,8 @@ export const ChatAssistant = ({ onToggle, isOpen, className, isMobile = false, c
       if (!msg && !pendingFile) return;
       if (isSending) return;
 
+      clearChatError();
+
       const skipEcho = Boolean(opts?.skipUserEcho);
       if (msg && !skipEcho && !isProtocolMessage(msg)) {
         pushMessage({ sender: 'user', message: msg });
@@ -408,6 +500,13 @@ export const ChatAssistant = ({ onToggle, isOpen, className, isMobile = false, c
         // Refresh persisted history so the UI stays in sync with backend storage.
         setHistoryLoaded(false);
       } catch (e) {
+        setChatErrorWithAction(
+          e,
+          () => {
+            void sendMessage(text, opts);
+          },
+          'ارسال پیام ناموفق بود.'
+        );
         const msgErr = e instanceof Error ? e.message : 'خطا در ارسال پیام';
         pushMessage({ sender: 'ai', message: msgErr });
         setSuggestions([]);
@@ -415,7 +514,7 @@ export const ChatAssistant = ({ onToggle, isOpen, className, isMobile = false, c
         setIsSending(false);
       }
     },
-    [courseId, isSending, isProtocolMessage, lessonId, pageContext, pageMaterial, pendingFile, pushMessage, studentName]
+    [courseId, isSending, isProtocolMessage, lessonId, pageContext, pageMaterial, pendingFile, pushMessage, studentName, clearChatError, setChatErrorWithAction]
   );
 
   const toggleRecording = React.useCallback(async () => {
@@ -461,10 +560,11 @@ export const ChatAssistant = ({ onToggle, isOpen, className, isMobile = false, c
       rec.start();
       setIsRecording(true);
     } catch (e) {
+      setChatErrorWithAction(e, null, 'دسترسی به میکروفون انجام نشد.');
       const msgErr = e instanceof Error ? e.message : 'خطا در دسترسی به میکروفون';
       pushMessage({ sender: 'ai', message: msgErr });
     }
-  }, [isRecording, isSending, pushMessage]);
+  }, [isRecording, isSending, pushMessage, setChatErrorWithAction]);
 
   const handleSend = React.useCallback(() => {
     const text = message;
@@ -531,16 +631,14 @@ export const ChatAssistant = ({ onToggle, isOpen, className, isMobile = false, c
           <ChatMessage key={m.id} sender={m.sender} time={m.time} message={m.message} widget={m.widget ?? null} />
         ))}
         {isSending && (
-          <div className="flex items-start gap-2">
-            <div className="h-7 w-7 rounded-full bg-secondary flex-shrink-0 flex items-center justify-center border border-border mt-1">
-              <Bot className="text-primary h-4 w-4" />
+          <div className="flex justify-start items-end gap-2 animate-in fade-in slide-in-from-bottom-2 duration-300">
+            <div className="h-7 w-7 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0 mb-1">
+              <Bot className="h-4 w-4 text-primary" />
             </div>
-            <div className="px-3 py-2 rounded-2xl rounded-tr-none border border-border/50 bg-card text-foreground shadow-sm">
-              <div className="flex items-center gap-1">
-                <span className="h-1.5 w-1.5 rounded-full bg-primary/70 animate-bounce" style={{ animationDelay: '0ms' }} />
-                <span className="h-1.5 w-1.5 rounded-full bg-primary/70 animate-bounce" style={{ animationDelay: '120ms' }} />
-                <span className="h-1.5 w-1.5 rounded-full bg-primary/70 animate-bounce" style={{ animationDelay: '240ms' }} />
-              </div>
+            <div className="bg-muted px-3 py-2 rounded-[18px] rounded-bl-sm flex items-center gap-1.5 h-9 border border-border/40">
+              <span className="w-1.5 h-1.5 bg-primary/60 rounded-full animate-bounce [animation-delay:-0.3s]" />
+              <span className="w-1.5 h-1.5 bg-primary/60 rounded-full animate-bounce [animation-delay:-0.15s]" />
+              <span className="w-1.5 h-1.5 bg-primary/60 rounded-full animate-bounce" />
             </div>
           </div>
         )}
@@ -548,9 +646,36 @@ export const ChatAssistant = ({ onToggle, isOpen, className, isMobile = false, c
         <div className="h-4 flex-shrink-0" />
       </div>
       <div className={cn('p-3 border-t border-border bg-card z-10 flex-shrink-0', !isOpen && !isMobile && 'hidden')}>
-        {isSending && (
-          <div className="mb-2 text-xs text-muted-foreground">
-            دستیار در حال ساخت پاسخ است…
+        {chatError && (
+          <div className="mb-2 rounded-xl border border-destructive/30 bg-destructive/5 px-3 py-2 flex items-center gap-2">
+            <div className="h-7 w-7 rounded-lg bg-destructive/10 text-destructive flex items-center justify-center flex-shrink-0">
+              <AlertTriangle className="h-4 w-4" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="text-xs font-semibold text-foreground truncate">{chatError.title}</div>
+              {chatError.detail ? <div className="text-[10px] text-muted-foreground truncate">{chatError.detail}</div> : null}
+            </div>
+            <div className="flex items-center gap-1 flex-shrink-0">
+              {retryAvailable && (
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  className="h-7 px-3 text-[10px] font-bold bg-primary/10 hover:bg-primary/20 text-primary border-none"
+                  onClick={() => lastActionRef.current?.()}
+                >
+                  تلاش دوباره
+                </Button>
+              )}
+              <Button
+                size="icon"
+                variant="ghost"
+                className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                onClick={clearChatError}
+                title="بستن"
+              >
+                <X className="h-3.5 w-3.5" />
+              </Button>
+            </div>
           </div>
         )}
         {suggestions.length > 0 && (
@@ -599,79 +724,84 @@ export const ChatAssistant = ({ onToggle, isOpen, className, isMobile = false, c
         )}
 
         {isRecording && (
-          <div className="mb-2 rounded-xl border border-border bg-gradient-to-r from-primary/10 via-purple-500/10 to-transparent px-3 py-2">
-            <div className="flex items-center justify-between gap-3">
-              <div className="flex items-center gap-3">
-                <div className="h-8 w-8 rounded-lg bg-primary/15 flex items-center justify-center">
-                  <Mic className="h-4 w-4 text-primary" />
-                </div>
-                <div>
-                  <div className="text-xs font-semibold text-foreground">در حال ضبط صدا</div>
-                  <div className="text-[11px] text-muted-foreground">{formatDuration(recordSeconds)}</div>
-                </div>
-              </div>
-              <div className="flex items-center gap-1">
-                {Array.from({ length: 16 }).map((_, i) => (
+          <div className="mb-2 rounded-xl border border-border bg-primary/5 px-2 py-1.5 flex items-center gap-2 animate-in fade-in slide-in-from-bottom-2 duration-300">
+            <div className="h-7 w-7 rounded-lg bg-primary/20 flex items-center justify-center flex-shrink-0">
+              <Mic className="h-3.5 w-3.5 text-primary animate-pulse" />
+            </div>
+            <div className="flex-1 min-w-0 flex items-center gap-2">
+              <span className="text-[11px] font-bold text-foreground whitespace-nowrap">{formatDuration(recordSeconds)}</span>
+              <div className="flex-1 flex items-center gap-0.5 overflow-hidden h-4">
+                {Array.from({ length: 40 }).map((_, i) => (
                   <span
                     key={i}
-                    className="w-1 rounded-full bg-primary/70 animate-pulse"
-                    style={{ height: `${8 + ((i * 7) % 18)}px`, animationDelay: `${i * 0.08}s` }}
+                    className="w-[2px] rounded-full bg-primary/40 animate-pulse"
+                    style={{ 
+                      height: `${4 + Math.random() * 12}px`, 
+                      animationDelay: `${i * 0.05}s`,
+                      opacity: i > 25 ? (40 - i) / 15 : 1
+                    }}
                   />
                 ))}
               </div>
             </div>
+            <Button 
+                variant="ghost" 
+                size="icon" 
+                className="h-7 w-7 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-lg" 
+                onClick={toggleRecording}
+                title="توقف و حذف"
+            >
+              <X className="h-3.5 w-3.5" />
+            </Button>
           </div>
         )}
 
         {pendingFile && (
-          <div className="mb-2 rounded-xl border border-border bg-background/40 px-3 py-2">
-            <div className="flex items-center justify-between gap-3">
-              <div className="flex items-center gap-3 min-w-0">
-                <div className="h-8 w-8 rounded-lg bg-secondary flex items-center justify-center">
-                  <Paperclip className="h-4 w-4 text-primary -rotate-45" />
-                </div>
-                <div className="min-w-0">
-                  <div className="text-xs font-semibold text-foreground truncate">{pendingFile.name}</div>
-                  <div className="text-[11px] text-muted-foreground">
-                    {pendingFile.type.startsWith('audio/') ? 'فایل صوتی آماده ارسال' : 'فایل آماده ارسال'}
-                    {pendingFile.type.startsWith('audio/') && recordedSeconds !== null ? ` • ${formatDuration(recordedSeconds)}` : ''}
-                  </div>
-                </div>
-              </div>
-              <div className="flex items-center gap-1">
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  className="h-8 px-3"
-                  disabled={isSending}
-                  onClick={handleSend}
-                >
-                  ارسال
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-8 w-8"
-                  onClick={() => {
-                    setPendingFile(null);
-                    setRecordedSeconds(null);
-                  }}
-                >
-                  <X className="h-4 w-4" />
-                </Button>
-              </div>
+          <div className="mb-2 rounded-xl border border-border bg-background/60 shadow-sm px-2 py-1.5 flex items-center gap-2 animate-in fade-in slide-in-from-bottom-2 duration-300">
+            <div className="h-7 w-7 rounded-lg bg-secondary flex items-center justify-center flex-shrink-0">
+              {pendingFile.type.startsWith('audio/') ? (
+                <Mic className="h-3.5 w-3.5 text-primary" />
+              ) : (
+                <Paperclip className="h-3.5 w-3.5 text-primary -rotate-45" />
+              )}
             </div>
-            {pendingFile.type.startsWith('audio/') && (
-              <div className="mt-2 flex items-center gap-1">
-                {Array.from({ length: 20 }).map((_, i) => (
-                  <span
-                    key={i}
-                    className="w-1 rounded-full bg-primary/60"
-                    style={{ height: `${6 + ((i * 5) % 16)}px` }}
-                  />
-                ))}
+            <div className="flex-1 min-w-0 flex items-center gap-2">
+              <div className="min-w-0 flex flex-col">
+                <span className="text-[10px] font-bold text-foreground truncate">{pendingFile.name}</span>
+                <span className="text-[9px] text-muted-foreground leading-tight">
+                  {pendingFile.type.startsWith('audio/') && recordedSeconds !== null ? formatDuration(recordedSeconds) : `${(pendingFile.size / 1024).toFixed(1)} KB`}
+                </span>
               </div>
-            )}
+              {pendingFile.type.startsWith('audio/') && (
+                <div className="flex-1 hidden sm:flex items-center gap-0.5 h-3 px-2 opacity-30">
+                  {Array.from({ length: 24 }).map((_, i) => (
+                    <span key={i} className="w-[1.5px] rounded-full bg-primary" style={{ height: `${3 + (Math.sin(i * 0.8) + 1) * 4}px` }} />
+                  ))}
+                </div>
+              )}
+            </div>
+            <div className="flex items-center gap-1 flex-shrink-0">
+              <Button
+                variant="secondary"
+                size="sm"
+                className="h-7 px-3 text-[10px] font-bold bg-primary/10 hover:bg-primary/20 text-primary border-none"
+                disabled={isSending}
+                onClick={handleSend}
+              >
+                ارسال
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7 rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                onClick={() => {
+                  setPendingFile(null);
+                  setRecordedSeconds(null);
+                }}
+              >
+                <X className="h-3.5 w-3.5" />
+              </Button>
+            </div>
           </div>
         )}
         <div className="relative">

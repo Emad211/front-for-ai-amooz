@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import logging
 import os
+import time
 from typing import Any, Optional, Tuple
 
 from google import genai
 from google.genai import types
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
 from apps.commons.llm_prompts import PROMPTS
 from apps.commons.llm_provider import preferred_provider
@@ -79,6 +81,12 @@ def transcribe_media_bytes(*, data: bytes, mime_type: str) -> tuple[str, str, st
 
     base_prompt = PROMPTS['transcribe_media']['default']
 
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=2, max=10),
+        retry=retry_if_exception_type(Exception),
+        reraise=True
+    )
     def _transcribe_with_client(client: genai.Client, provider_name: str) -> tuple[str, str, str]:
         texts: list[str] = []
         total = len(media_parts)
@@ -96,8 +104,12 @@ def transcribe_media_bytes(*, data: bytes, mime_type: str) -> tuple[str, str, st
                 )
 
             media_part = types.Part.from_bytes(data=part_bytes, mime_type=part_mime)
-            resp = client.models.generate_content(model=model, contents=[prompt, media_part])
-            texts.append(_extract_text(resp))
+            try:
+                resp = client.models.generate_content(model=model, contents=[prompt, media_part])
+                texts.append(_extract_text(resp))
+            except Exception as e:
+                logger.error(f"Transcription error with {provider_name} (part {idx}/{total}): {str(e)}")
+                raise
 
         if len(texts) == 1:
             transcript = texts[0]
