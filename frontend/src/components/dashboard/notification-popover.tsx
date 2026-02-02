@@ -83,19 +83,19 @@ export function NotificationPopover() {
                     !notification.isRead && "bg-primary/5"
                   )}
                 >
-                  <div className="flex gap-3">
-                    <div className="mt-1">
+                  <div className="flex flex-row-reverse items-start gap-3">
+                    <div className="mt-1 shrink-0">
                       {getIcon(notification.type)}
                     </div>
-                    <div className="flex-1 space-y-1 text-right">
-                      <div className="flex items-center justify-between">
+                    <div className="flex-1 space-y-1 text-right min-w-0">
+                      <div className="flex flex-row-reverse items-center justify-between gap-2">
                         <p className={cn(
                           "text-sm font-bold leading-none",
                           !notification.isRead ? "text-foreground" : "text-muted-foreground"
                         )}>
                           {notification.title}
                         </p>
-                        <span className="text-[10px] text-muted-foreground font-medium">
+                        <span className="text-[10px] text-muted-foreground font-medium whitespace-nowrap">
                           {notification.time}
                         </span>
                       </div>
@@ -105,7 +105,7 @@ export function NotificationPopover() {
                     </div>
                   </div>
                   
-                  <div className="absolute left-2 top-1/2 -translate-y-1/2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <div className="absolute left-2 top-1/2 -translate-y-1/2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity bg-background/80 backdrop-blur-sm p-1 rounded-lg border shadow-sm">
                     {!notification.isRead && (
                       <Button 
                         variant="ghost" 
