@@ -1,7 +1,8 @@
 'use client';
 
 import { useState } from 'react';
-import { Shield, Eye, EyeOff, Mail, Lock, Chrome } from 'lucide-react';
+import { Shield, Eye, EyeOff, Mail, Lock, Chrome, Loader2 } from 'lucide-react';
+import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
 import { Button } from '@/components/ui/button';
@@ -9,16 +10,46 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
+import { toast } from 'sonner';
+import { login, fetchMe, persistTokens, persistUser } from '@/services/auth-service';
 
 export default function AdminLoginPage() {
+  const router = useRouter();
   const [showPassword, setShowPassword] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    // Handle admin login logic here
-    console.log('Admin login:', { email, password });
+    setIsLoading(true);
+    
+    try {
+      // Step 1: Login to get tokens
+      // Admin might use email but the login API expects 'username'
+      const tokens = await login({ username: email, password });
+      persistTokens(tokens);
+
+      // Step 2: Fetch user info
+      const user = await fetchMe(tokens.access);
+
+      // Step 3: Check role
+      if (user.role.toLowerCase() !== 'admin') {
+        toast.error('شما دسترسی مدیریت ندارید.');
+        return;
+      }
+
+      persistUser(user);
+      toast.success('خوش آمدید، مدیر!');
+      
+      // Step 4: Redirect to admin panel
+      router.push('/admin');
+    } catch (error: any) {
+      console.error('Admin login error:', error);
+      toast.error(error.message || 'خطا در ورود به پنل مدیریت');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const handleGoogleLogin = () => {
@@ -147,9 +178,17 @@ export default function AdminLoginPage() {
             {/* Login Button */}
             <Button 
               type="submit" 
+              disabled={isLoading}
               className="w-full h-12 text-base bg-primary hover:bg-primary/90 shadow-lg shadow-primary/20 transition-all hover:scale-[1.02]"
             >
-              ورود به پنل مدیریت
+              {isLoading ? (
+                <>
+                  <Loader2 className="ml-2 h-4 w-4 animate-spin" />
+                  در حال بررسی...
+                </>
+              ) : (
+                'ورود به پنل مدیریت'
+              )}
             </Button>
           </form>
 

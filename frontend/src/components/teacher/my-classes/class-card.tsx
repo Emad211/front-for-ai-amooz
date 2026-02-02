@@ -3,6 +3,8 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { formatDistanceToNow } from 'date-fns';
+import { faIR } from 'date-fns/locale';
 import { MoreVertical, Users, BookOpen, Star, Calendar, Edit, Trash2, Eye } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -42,6 +44,7 @@ interface ClassCardProps {
     rating: number;
   };
   basePath?: string;
+  onDelete?: () => void;
 }
 
 const statusConfig: Record<string, { label: string; color: string }> = {
@@ -56,7 +59,7 @@ const levelConfig: Record<string, string> = {
   'پیشرفته': 'bg-muted text-muted-foreground border-border',
 };
 
-export function ClassCard({ cls, basePath = '/admin' }: ClassCardProps) {
+export function ClassCard({ cls, basePath = '/admin', onDelete }: ClassCardProps) {
   const router = useRouter();
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -67,7 +70,11 @@ export function ClassCard({ cls, basePath = '/admin' }: ClassCardProps) {
       await TeacherService.deleteClass(String(cls.id));
       toast.success('کلاس با موفقیت حذف شد');
       setIsDeleteDialogOpen(false);
-      router.refresh();
+      if (onDelete) {
+        onDelete();
+      } else {
+        router.refresh();
+      }
     } catch {
       toast.error('خطا در حذف کلاس');
     } finally {
@@ -76,9 +83,21 @@ export function ClassCard({ cls, basePath = '/admin' }: ClassCardProps) {
   };
 
   if (!cls) return null;
+
+  const navigateToDetails = (e: React.MouseEvent) => {
+    const target = e.target as HTMLElement;
+    if (target.closest('button') || target.closest('.dropdown-trigger') || target.closest('a')) {
+      return;
+    }
+    router.push(`${basePath}/my-classes/${cls.id}`);
+  };
+
   return (
     <>
-      <Card className="group hover:shadow-md transition-all duration-300 border-border/60 bg-card hover:border-primary/50 overflow-hidden relative">
+      <Card 
+        onClick={navigateToDetails}
+        className="group cursor-pointer hover:shadow-md transition-all duration-300 border-border/60 bg-card hover:border-primary/50 overflow-hidden relative"
+      >
       <div className="absolute top-0 right-0 w-1 h-full bg-primary/0 group-hover:bg-primary transition-all duration-300" />
       
       <CardHeader className="pb-3 pt-5 px-5">
@@ -100,44 +119,47 @@ export function ClassCard({ cls, basePath = '/admin' }: ClassCardProps) {
             </p>
           </div>
           
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon" className="h-8 w-8 -ml-2 text-muted-foreground hover:text-foreground">
-                <MoreVertical className="h-4 w-4" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-48">
-              <DropdownMenuItem asChild>
-                <Link href={`${basePath}/my-classes/${cls.id}`}>
-                  <Eye className="w-4 h-4 ml-2" />
-                  مشاهده جزئیات
-                </Link>
-              </DropdownMenuItem>
-              <DropdownMenuItem asChild>
-                <Link href={`${basePath}/my-classes/${cls.id}/edit`}>
-                  <Edit className="w-4 h-4 ml-2" />
-                  ویرایش محتوا
-                </Link>
-              </DropdownMenuItem>
-              <DropdownMenuItem asChild>
-                <Link href={`${basePath}/my-classes/${cls.id}/students`}>
-                  <Users className="w-4 h-4 ml-2" />
-                  مدیریت دانش‌آموزان
-                </Link>
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem 
-                className="text-destructive focus:text-destructive"
-                onClick={() => setIsDeleteDialogOpen(true)}
-              >
-                <Trash2 className="w-4 h-4 ml-2" />
-                حذف کلاس
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+          <div onClick={(e) => e.stopPropagation()}>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild className="dropdown-trigger">
+                <Button variant="ghost" size="icon" className="h-8 w-8 -ml-2 text-muted-foreground hover:text-foreground">
+                  <MoreVertical className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-48 font-bold">
+                <DropdownMenuItem asChild>
+                  <Link href={`${basePath}/my-classes/${cls.id}`}>
+                    <Eye className="w-4 h-4 ml-2" />
+                    مشاهده جزئیات
+                  </Link>
+                </DropdownMenuItem>
+                <DropdownMenuItem asChild>
+                  <Link href={`${basePath}/my-classes/${cls.id}/edit`}>
+                    <Edit className="w-4 h-4 ml-2" />
+                    ویرایش محتوا
+                  </Link>
+                </DropdownMenuItem>
+                <DropdownMenuItem asChild>
+                  <Link href={`${basePath}/my-classes/${cls.id}/students`}>
+                    <Users className="w-4 h-4 ml-2" />
+                    مدیریت دانش‌آموزان
+                  </Link>
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem 
+                  className="text-destructive focus:text-destructive"
+                  onClick={() => setIsDeleteDialogOpen(true)}
+                >
+                  <Trash2 className="w-4 h-4 ml-2" />
+                  حذف کلاس
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
         </div>
+
       </CardHeader>
-      
+
       <CardContent className="px-5 pb-5">
         <div className="grid grid-cols-2 gap-3 mb-4">
           <div className="flex items-center gap-2 bg-muted/50 p-2 rounded-lg">
@@ -161,11 +183,13 @@ export function ClassCard({ cls, basePath = '/admin' }: ClassCardProps) {
         </div>
 
         <div className="flex items-center justify-between text-xs text-muted-foreground border-t border-border/50 pt-3 mt-2">
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-1 font-medium">
             <Calendar className="h-3 w-3" />
-            <span>آخرین فعالیت: {cls.lastActivity}</span>
+            <span>
+              {cls.createdAt ? formatDistanceToNow(new Date(cls.createdAt), { addSuffix: true, locale: faIR }) : 'نامشخص'}
+            </span>
           </div>
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-1 font-bold">
             <Star className="h-3 w-3 text-amber-500 fill-amber-500" />
             <span>{cls.rating}</span>
           </div>

@@ -1,7 +1,8 @@
 'use client';
 
 import { use, useEffect, useRef, useState } from 'react';
-import { Loader2, ArrowRight, CheckCircle, Users, FileQuestion, Calendar, Clock, AlertCircle } from 'lucide-react';
+import Link from 'next/link';
+import { Loader2, ArrowRight, CheckCircle, Users, FileQuestion, Calendar, Clock, AlertCircle, Edit3 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -9,6 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { MarkdownWithMath } from '@/components/content/markdown-with-math';
 import { StudentInviteSection } from '@/components/teacher/create-class/student-invite-section';
+import { ClassAnnouncementsCard } from '@/components/teacher/class-detail';
 import {
   fetchExamPrepSession,
   publishExamPrepSession,
@@ -16,8 +18,9 @@ import {
   listExamPrepInvites,
   type ClassInvite,
 } from '@/services/classes-service';
-import { formatDistanceToNow, format } from 'date-fns';
+import { formatDistanceToNow } from 'date-fns';
 import { faIR } from 'date-fns/locale';
+import { formatPersianDate, formatPersianDateTime } from '@/lib/date-utils';
 import { toast } from 'sonner';
 
 interface PageProps {
@@ -181,6 +184,14 @@ export default function TeacherExamDetailPage({ params }: PageProps) {
             <Users className="h-4 w-4 sm:ml-2" />
             <span className="hidden sm:inline">دعوت دانش‌آموزان</span>
           </Button>
+          {!isProcessing && (
+            <Button variant="outline" size="sm" asChild>
+              <Link href={`/teacher/my-exams/${examId}/edit`}>
+                <Edit3 className="h-4 w-4 sm:ml-2" />
+                <span className="hidden sm:inline">ویرایش</span>
+              </Link>
+            </Button>
+          )}
           {canPublish && (
             <Button size="sm" onClick={handlePublish} disabled={isPublishing}>
               {isPublishing ? (
@@ -311,6 +322,7 @@ export default function TeacherExamDetailPage({ params }: PageProps) {
             sessionId={examPrep.id}
             pipelineType="exam_prep"
           />
+          <ClassAnnouncementsCard sessionId={examPrep.id} sessionType="exam_prep" />
         </div>
 
         {/* Sidebar */}
@@ -349,7 +361,7 @@ export default function TeacherExamDetailPage({ params }: PageProps) {
                   <span className="text-sm text-muted-foreground">تاریخ ایجاد</span>
                 </div>
                 <span className="font-semibold text-xs">
-                  {format(new Date(examPrep.created_at), 'yyyy/MM/dd', { locale: faIR })}
+                  {formatPersianDate(examPrep.created_at)}
                 </span>
               </div>
 
@@ -384,7 +396,7 @@ export default function TeacherExamDetailPage({ params }: PageProps) {
                   </div>
                   {examPrep.published_at && (
                     <p className="text-xs text-muted-foreground">
-                      تاریخ انتشار: {format(new Date(examPrep.published_at), 'yyyy/MM/dd HH:mm', { locale: faIR })}
+                      تاریخ انتشار: {formatPersianDateTime(examPrep.published_at)}
                     </p>
                   )}
                 </div>

@@ -2,6 +2,7 @@
 
 import { Bell, Info, CheckCircle, AlertTriangle, XCircle, MessageCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { formatPersianDateTime } from '@/lib/date-utils';
 import type { Notification, NotificationType } from '@/types';
 
 interface NotificationItemProps {
@@ -31,15 +32,6 @@ export function NotificationItem({ notification, onMarkAsRead }: NotificationIte
   const Icon = iconMap[notification.type];
   const colorClass = colorMap[notification.type];
 
-  const formatDate = (dateString: string) => {
-    const date = new Date(dateString);
-    return date.toLocaleDateString('fa-IR', {
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
-  };
 
   return (
     <div
@@ -71,7 +63,7 @@ export function NotificationItem({ notification, onMarkAsRead }: NotificationIte
           {notification.message}
         </p>
         <span className="text-[10px] sm:text-xs text-muted-foreground mt-1.5 sm:mt-2 block">
-          {formatDate(notification.createdAt)}
+          {formatPersianDateTime(notification.createdAt)}
         </span>
       </div>
     </div>

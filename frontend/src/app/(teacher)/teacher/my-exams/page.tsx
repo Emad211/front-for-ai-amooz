@@ -151,7 +151,16 @@ function ExamPrepCard({ examPrep, onDeleted }: { examPrep: ExamPrepSessionDetail
 
   return (
     <>
-      <Card className="group hover:shadow-md transition-all duration-300 border-border/60 bg-card hover:border-primary/50 overflow-hidden relative">
+      <Card 
+        onClick={(e) => {
+          const target = e.target as HTMLElement;
+          if (target.closest('button') || target.closest('.dropdown-trigger') || target.closest('a')) {
+            return;
+          }
+          router.push(`/teacher/my-exams/${examPrep.id}`);
+        }}
+        className="group cursor-pointer hover:shadow-md transition-all duration-300 border-border/60 bg-card hover:border-primary/50 overflow-hidden relative"
+      >
         <div className="absolute top-0 right-0 w-1 h-full bg-primary/0 group-hover:bg-primary transition-all duration-300" />
 
         <CardHeader className="pb-3 pt-5 px-5">
@@ -175,29 +184,31 @@ function ExamPrepCard({ examPrep, onDeleted }: { examPrep: ExamPrepSessionDetail
               </p>
             </div>
 
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="icon" className="h-8 w-8 -ml-2 text-muted-foreground hover:text-foreground">
-                  <MoreVertical className="h-4 w-4" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-48">
-                <DropdownMenuItem asChild>
-                  <Link href={`/teacher/my-exams/${examPrep.id}`}>
-                    <Eye className="w-4 h-4 ml-2" />
-                    مشاهده جزئیات
-                  </Link>
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem
-                  className="text-destructive focus:text-destructive"
-                  onClick={() => setIsDeleteDialogOpen(true)}
-                >
-                  <Trash2 className="w-4 h-4 ml-2" />
-                  حذف آزمون
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+            <div onClick={(e) => e.stopPropagation()}>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild className="dropdown-trigger">
+                  <Button variant="ghost" size="icon" className="h-8 w-8 -ml-2 text-muted-foreground hover:text-foreground">
+                    <MoreVertical className="h-4 w-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-48 font-bold">
+                  <DropdownMenuItem asChild>
+                    <Link href={`/teacher/my-exams/${examPrep.id}`}>
+                      <Eye className="w-4 h-4 ml-2" />
+                      مشاهده جزئیات
+                    </Link>
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    className="text-destructive focus:text-destructive"
+                    onClick={() => setIsDeleteDialogOpen(true)}
+                  >
+                    <Trash2 className="w-4 h-4 ml-2" />
+                    حذف آزمون
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
           </div>
         </CardHeader>
 
@@ -218,13 +229,13 @@ function ExamPrepCard({ examPrep, onDeleted }: { examPrep: ExamPrepSessionDetail
               </div>
               <div className="flex flex-col min-w-0">
                 <span className="text-[10px] text-muted-foreground leading-none mb-0.5">دانش‌آموزان</span>
-                <span className="text-xs font-bold truncate">—</span>
+                <span className="text-xs font-bold truncate">{examPrep.invites_count ?? 0}</span>
               </div>
             </div>
           </div>
 
           <div className="flex items-center justify-between text-xs text-muted-foreground border-t border-border/50 pt-3 mt-2">
-            <div className="flex items-center gap-1">
+            <div className="flex items-center gap-1 font-medium">
               <Calendar className="h-3 w-3" />
               <span>
                 {formatDistanceToNow(new Date(examPrep.created_at), { addSuffix: true, locale: faIR })}

@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import re
 import uuid
+import csv
 import traceback
 from datetime import timedelta
 from urllib.parse import quote
@@ -23,7 +24,7 @@ from rest_framework.views import APIView
 from drf_spectacular.utils import extend_schema
 from drf_spectacular.types import OpenApiTypes
 
-from .models import ClassCreationSession, ClassInvitation, ClassPrerequisite
+from .models import ClassAnnouncement, ClassCreationSession, ClassInvitation, ClassPrerequisite
 from .models import ClassSection, ClassSectionQuiz, ClassSectionQuizAttempt
 from .models import ClassFinalExam, ClassFinalExamAttempt
 from .models import StudentInviteCode
@@ -34,6 +35,9 @@ from .serializers import (
     ClassCreationSessionUpdateSerializer,
     ClassInvitationCreateSerializer,
     ClassInvitationSerializer,
+    ClassAnnouncementSerializer,
+    ClassAnnouncementCreateSerializer,
+    ClassAnnouncementUpdateSerializer,
     TeacherAnalyticsActivitySerializer,
     TeacherAnalyticsChartPointSerializer,
     TeacherAnalyticsDistributionItemSerializer,
@@ -65,6 +69,7 @@ from .serializers import (
     ExamPrepStep1TranscribeResponseSerializer,
     ExamPrepStep2StructureRequestSerializer,
     ExamPrepStep2StructureResponseSerializer,
+    ExamPrepSessionUpdateSerializer,
     ExamPrepSessionDetailSerializer,
     # Student Exam Prep serializers
     StudentExamPrepListSerializer,
@@ -816,6 +821,96 @@ class ClassInvitationDetailView(APIView):
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
+class ClassAnnouncementListCreateView(APIView):
+    permission_classes = [IsAuthenticated, IsTeacherUser]
+
+    @extend_schema(
+        tags=['Classes'],
+        summary='List class announcements for a session (teacher)',
+        operation_id='classes_creation_sessions_announcements_list',
+        responses={200: ClassAnnouncementSerializer(many=True)},
+    )
+    def get(self, request, session_id: int):
+        session = ClassCreationSession.objects.filter(id=session_id, teacher=request.user).first()
+        if session is None:
+            return Response({'detail': 'جلسه پیدا نشد.'}, status=status.HTTP_404_NOT_FOUND)
+        qs = ClassAnnouncement.objects.filter(session=session).order_by('-created_at')
+        return Response(ClassAnnouncementSerializer(qs, many=True).data)
+
+    @extend_schema(
+        tags=['Classes'],
+        summary='Create class announcement for a session (teacher)',
+        operation_id='classes_creation_sessions_announcements_create',
+        request=ClassAnnouncementCreateSerializer,
+        responses={201: ClassAnnouncementSerializer},
+    )
+    def post(self, request, session_id: int):
+        session = ClassCreationSession.objects.filter(id=session_id, teacher=request.user).first()
+        if session is None:
+            return Response({'detail': 'جلسه پیدا نشد.'}, status=status.HTTP_404_NOT_FOUND)
+        serializer = ClassAnnouncementCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        announcement = ClassAnnouncement.objects.create(
+            session=session,
+            title=serializer.validated_data['title'],
+            content=serializer.validated_data['content'],
+            priority=serializer.validated_data.get('priority', ClassAnnouncement.Priority.MEDIUM),
+        )
+        return Response(ClassAnnouncementSerializer(announcement).data, status=status.HTTP_201_CREATED)
+
+
+class ClassAnnouncementDetailView(APIView):
+    permission_classes = [IsAuthenticated, IsTeacherUser]
+
+    @extend_schema(
+        tags=['Classes'],
+        summary='Update class announcement (teacher)',
+        operation_id='classes_creation_sessions_announcements_update',
+        request=ClassAnnouncementUpdateSerializer,
+        responses={200: ClassAnnouncementSerializer},
+    )
+    def patch(self, request, session_id: int, announcement_id: int):
+        session = ClassCreationSession.objects.filter(id=session_id, teacher=request.user).first()
+        if session is None:
+            return Response({'detail': 'جلسه پیدا نشد.'}, status=status.HTTP_404_NOT_FOUND)
+        announcement = ClassAnnouncement.objects.filter(id=announcement_id, session=session).first()
+        if announcement is None:
+            return Response({'detail': 'اطلاعیه پیدا نشد.'}, status=status.HTTP_404_NOT_FOUND)
+        serializer = ClassAnnouncementUpdateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        updated_fields = []
+        if 'title' in data:
+            announcement.title = data['title']
+            updated_fields.append('title')
+        if 'content' in data:
+            announcement.content = data['content']
+            updated_fields.append('content')
+        if 'priority' in data:
+            announcement.priority = data['priority']
+            updated_fields.append('priority')
+        if updated_fields:
+            updated_fields.append('updated_at')
+            announcement.save(update_fields=updated_fields)
+        return Response(ClassAnnouncementSerializer(announcement).data)
+
+    @extend_schema(
+        tags=['Classes'],
+        summary='Delete class announcement (teacher)',
+        operation_id='classes_creation_sessions_announcements_delete',
+        responses={204: None},
+    )
+    def delete(self, request, session_id: int, announcement_id: int):
+        session = ClassCreationSession.objects.filter(id=session_id, teacher=request.user).first()
+        if session is None:
+            return Response({'detail': 'جلسه پیدا نشد.'}, status=status.HTTP_404_NOT_FOUND)
+        announcement = ClassAnnouncement.objects.filter(id=announcement_id, session=session).first()
+        if announcement is None:
+            return Response({'detail': 'اطلاعیه پیدا نشد.'}, status=status.HTTP_404_NOT_FOUND)
+        announcement.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
 class TeacherAnalyticsStatsView(APIView):
     permission_classes = [IsAuthenticated, IsTeacherUser]
 
@@ -826,39 +921,28 @@ class TeacherAnalyticsStatsView(APIView):
         responses={200: TeacherAnalyticsStatSerializer(many=True)},
     )
     def get(self, request):
-        now = timezone.now()
-        start_7 = now - timedelta(days=7)
-        start_14 = now - timedelta(days=14)
-
+        days = int(request.query_params.get('days', 0))
         qs = ClassCreationSession.objects.filter(teacher=request.user)
-        total = qs.count()
-        transcribed = qs.filter(status=ClassCreationSession.Status.TRANSCRIBED).count()
-        structured = qs.filter(status=ClassCreationSession.Status.STRUCTURED).count()
+        total_classes = qs.filter(pipeline_type='class').count()
+        total_exams = qs.filter(pipeline_type='exam_prep').count()
+        
+        # Exclude teacher's own phone from student count to match the list view
+        teacher_phone = (getattr(request.user, 'phone', '') or '').strip()
+        invites_qs = ClassInvitation.objects.filter(session__teacher=request.user)
+        if days > 0:
+            start_date = timezone.localdate() - timedelta(days=days-1)
+            invites_qs = invites_qs.filter(created_at__date__gte=start_date)
+            
+        if teacher_phone:
+            invites_qs = invites_qs.exclude(phone=teacher_phone)
 
-        students_count = (
-            ClassInvitation.objects.filter(session__teacher=request.user)
-            .values('phone')
-            .distinct()
-            .count()
-        )
-
-        last7 = qs.filter(created_at__gte=start_7).count()
-        prev7 = qs.filter(created_at__gte=start_14, created_at__lt=start_7).count()
-
-        def _pct_change(cur: int, prev: int) -> str:
-            if prev <= 0:
-                return '—' if cur == 0 else '+100%'
-            return f"{round(((cur - prev) / prev) * 100)}%"
-
-        change = _pct_change(last7, prev7)
-        trend = 'up' if last7 >= prev7 else 'down'
+        students_count = invites_qs.values('phone').distinct().count()
 
         return Response(
             [
-                {'title': 'کل جلسات ساخت کلاس', 'value': str(total), 'change': change, 'trend': trend, 'icon': 'book'},
-                {'title': 'تبدیل به متن موفق', 'value': str(transcribed), 'change': '—', 'trend': 'up', 'icon': 'trending'},
-                {'title': 'ساختاردهی شده', 'value': str(structured), 'change': '—', 'trend': 'up', 'icon': 'graduation'},
-                {'title': 'دانش‌آموزان', 'value': str(students_count), 'change': '—', 'trend': 'up', 'icon': 'users'},
+                {'title': 'کل کلاس‌های ساخته شده', 'value': str(total_classes), 'icon': 'book', 'change': '—', 'trend': 'up'},
+                {'title': 'آمادگی آزمون‌های فعال', 'value': str(total_exams), 'icon': 'graduation', 'change': '—', 'trend': 'up'},
+                {'title': 'کل دانش‌آموزان', 'value': str(students_count), 'icon': 'users', 'change': '—', 'trend': 'up'},
             ]
         )
 
@@ -976,18 +1060,100 @@ class TeacherAnalyticsChartView(APIView):
 
     @extend_schema(
         tags=['Classes'],
-        summary='Teacher analytics: chart data (last 7 days)',
+        summary='Teacher analytics: chart data',
         operation_id='teacher_analytics_chart',
         responses={200: TeacherAnalyticsChartPointSerializer(many=True)},
     )
     def get(self, request):
-        # No enrollment model yet; keep it real (0). Chart keys must exist.
+        days = int(request.query_params.get('days', 7))
         today = timezone.localdate()
+        start_date = today - timedelta(days=days-1)
+        
+        # Aggregate invitations by date
+        from django.db.models.functions import TruncDate
+        from django.db.models import Count
+        
+        counts = (
+            ClassInvitation.objects.filter(
+                session__teacher=request.user,
+                created_at__date__gte=start_date
+            )
+            .annotate(date=TruncDate('created_at'))
+            .values('date')
+            .annotate(count=Count('id'))
+            .order_by('date')
+        )
+        
+        count_map = {item['date']: item['count'] for item in counts}
+        
         data = []
-        for i in range(6, -1, -1):
+        for i in range(days - 1, -1, -1):
             d = today - timedelta(days=i)
-            data.append({'name': d.strftime('%m/%d'), 'students': 0})
+            data.append({
+                'name': d.isoformat(), 
+                'students': count_map.get(d, 0)
+            })
+            
         return Response(data)
+
+
+class TeacherAnalyticsExportCSVView(APIView):
+    permission_classes = [IsAuthenticated, IsTeacherUser]
+
+    @extend_schema(
+        tags=['Classes'],
+        summary='Teacher analytics: export report (CSV)',
+        operation_id='teacher_analytics_export_csv',
+    )
+    def get(self, request):
+        response = HttpResponse(content_type='text/csv; charset=utf-8-sig')
+        response['Content-Disposition'] = 'attachment; filename="teacher_analytics_report.csv"'
+        
+        writer = csv.writer(response)
+        
+        # Summary Header
+        writer.writerow(['گزارش تحلیلی معلم - پلتفرم AI_AMOOZ'])
+        writer.writerow(['تاریخ گزارش', timezone.now().strftime('%Y/%m/%d %H:%M')])
+        writer.writerow([])
+        
+        writer.writerow(['عنوان شاخص', 'مقدار'])
+        
+        # Stats
+        qs = ClassCreationSession.objects.filter(teacher=request.user)
+        total_classes = qs.filter(pipeline_type='class').count()
+        total_exams = qs.filter(pipeline_type='exam_prep').count()
+        
+        invites_qs = ClassInvitation.objects.filter(session__teacher=request.user)
+        teacher_phone = (getattr(request.user, 'phone', '') or '').strip()
+        if teacher_phone:
+            invites_qs = invites_qs.exclude(phone=teacher_phone)
+        students_count = invites_qs.values('phone').distinct().count()
+        
+        writer.writerow(['کل کلاس‌های ساخته شده', total_classes])
+        writer.writerow(['آمادگی آزمون‌های فعال', total_exams])
+        writer.writerow(['کل دانش‌آموزان', students_count])
+        writer.writerow([])
+        
+        # Detailed activity summary (Last 30 days)
+        writer.writerow(['روند ثبت‌نام‌ها در ۳۰ روز اخیر'])
+        writer.writerow(['تاریخ', 'تعداد ثبت‌نام'])
+        
+        from django.db.models.functions import TruncDate
+        start_date = timezone.localdate() - timedelta(days=29)
+        chart_counts = (
+            ClassInvitation.objects.filter(
+                session__teacher=request.user,
+                created_at__date__gte=start_date
+            )
+            .annotate(date=TruncDate('created_at'))
+            .values('date')
+            .annotate(count=Count('id'))
+            .order_by('date')
+        )
+        for c in chart_counts:
+            writer.writerow([c['date'], c['count']])
+            
+        return response
 
 
 class TeacherAnalyticsDistributionView(APIView):
@@ -1000,15 +1166,25 @@ class TeacherAnalyticsDistributionView(APIView):
         responses={200: TeacherAnalyticsDistributionItemSerializer(many=True)},
     )
     def get(self, request):
-        qs = ClassCreationSession.objects.filter(teacher=request.user)
-        return Response(
-            [
-                {'name': 'Transcribed', 'value': qs.filter(status=ClassCreationSession.Status.TRANSCRIBED).count()},
-                {'name': 'Structured', 'value': qs.filter(status=ClassCreationSession.Status.STRUCTURED).count()},
-                {'name': 'Failed', 'value': qs.filter(status=ClassCreationSession.Status.FAILED).count()},
-                {'name': 'In progress', 'value': qs.filter(status__in=[ClassCreationSession.Status.TRANSCRIBING, ClassCreationSession.Status.STRUCTURING]).count()},
-            ]
+        from django.db.models import Count
+        
+        # Get top 5 sessions by number of invites
+        sessions = (
+            ClassCreationSession.objects.filter(teacher=request.user)
+            .annotate(invites_count=Count('invites'))
+            .filter(invites_count__gt=0)
+            .order_by('-invites_count')[:5]
         )
+        
+        data = []
+        for s in sessions:
+            data.append({'name': s.title, 'value': s.invites_count})
+            
+        if not data:
+            # Fallback for empty state to avoid empty chart display issues if any
+            return Response([{'name': 'هنوز موردی ثبت نشده', 'value': 0}])
+            
+        return Response(data)
 
 
 class TeacherAnalyticsActivitiesView(APIView):
@@ -1021,22 +1197,39 @@ class TeacherAnalyticsActivitiesView(APIView):
         responses={200: TeacherAnalyticsActivitySerializer(many=True)},
     )
     def get(self, request):
-        qs = ClassCreationSession.objects.filter(teacher=request.user).order_by('-created_at')[:10]
+        # Combine recent sessions and recent invites for a better activity feed
+        sessions = ClassCreationSession.objects.filter(teacher=request.user).order_by('-created_at')[:5]
+        invites = ClassInvitation.objects.filter(session__teacher=request.user).order_by('-created_at')[:5]
+        
         items = []
-        for s in qs:
-            items.append(
-                {
-                    'id': s.id,
-                    'type': 'class_creation',
-                    'user': request.user.first_name or request.user.username,
-                    'action': f"Session {s.id}: {s.status}",
-                    'time': s.created_at.isoformat(),
-                    'icon': 'book',
-                    'color': 'text-primary',
-                    'bg': 'bg-primary/10',
-                }
-            )
-        return Response(items)
+        for s in sessions:
+            type_label = "کلاس" if s.pipeline_type == 'class' else "آزمون"
+            items.append({
+                'id': f"session-{s.id}",
+                'type': 'class_creation',
+                'user': request.user.first_name or request.user.username,
+                'action': f"ایجاد {type_label}: {s.title}",
+                'time': s.created_at.isoformat(),
+                'icon': 'book' if s.pipeline_type == 'class' else 'graduation',
+                'color': 'text-primary' if s.pipeline_type == 'class' else 'text-emerald-500',
+                'bg': 'bg-primary/10' if s.pipeline_type == 'class' else 'bg-emerald-500/10',
+            })
+            
+        for inv in invites:
+            items.append({
+                'id': f"invite-{inv.id}",
+                'type': 'enrollment',
+                'user': inv.phone,
+                'action': f"دانش‌آموز با شماره {inv.phone} به «{inv.session.title}» اضافه شد.",
+                'time': inv.created_at.isoformat(),
+                'icon': 'users',
+                'color': 'text-blue-500',
+                'bg': 'bg-blue-500/10',
+            })
+            
+        # Re-sort by time and take top 10
+        items.sort(key=lambda x: x['time'], reverse=True)
+        return Response(items[:10])
 
 
 class StudentCourseListView(APIView):
@@ -2312,6 +2505,49 @@ class ExamPrepSessionDetailView(APIView):
 
     @extend_schema(
         tags=['Exam Prep'],
+        summary='Update Exam Prep Session',
+        request=ExamPrepSessionUpdateSerializer,
+        responses={200: ExamPrepSessionDetailSerializer, 404: OpenApiTypes.OBJECT},
+    )
+    def patch(self, request, session_id: int):
+        session = ClassCreationSession.objects.filter(
+            id=session_id,
+            teacher=request.user,
+            pipeline_type=ClassCreationSession.PipelineType.EXAM_PREP,
+        ).first()
+
+        if session is None:
+            return Response({'detail': 'جلسه آمادگی آزمون یافت نشد.'}, status=status.HTTP_404_NOT_FOUND)
+
+        serializer = ExamPrepSessionUpdateSerializer(data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+
+        updated_fields: list[str] = []
+        data = serializer.validated_data
+        if 'title' in data:
+            session.title = data['title']
+            updated_fields.append('title')
+        if 'description' in data:
+            session.description = data['description']
+            updated_fields.append('description')
+        if 'level' in data:
+            session.level = data['level']
+            updated_fields.append('level')
+        if 'duration' in data:
+            session.duration = data['duration']
+            updated_fields.append('duration')
+        if 'exam_prep_json' in data:
+            session.exam_prep_json = data['exam_prep_json']
+            updated_fields.append('exam_prep_json')
+
+        if updated_fields:
+            updated_fields.append('updated_at')
+            session.save(update_fields=updated_fields)
+
+        return Response(ExamPrepSessionDetailSerializer(session).data)
+
+    @extend_schema(
+        tags=['Exam Prep'],
         summary='Delete Exam Prep Session',
         responses={204: None, 404: OpenApiTypes.OBJECT},
     )
@@ -2466,6 +2702,114 @@ class ExamPrepInvitationDetailView(APIView):
         if invite is None:
             return Response({'detail': 'دعوت نامه پیدا نشد.'}, status=status.HTTP_404_NOT_FOUND)
         invite.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class ExamPrepAnnouncementListCreateView(APIView):
+    """List and create announcements for an exam prep session."""
+    permission_classes = [IsAuthenticated, IsTeacherUser]
+
+    @extend_schema(
+        tags=['Exam Prep'],
+        summary='List exam prep announcements (teacher)',
+        operation_id='exam_prep_sessions_announcements_list',
+        responses={200: ClassAnnouncementSerializer(many=True)},
+    )
+    def get(self, request, session_id: int):
+        session = ClassCreationSession.objects.filter(
+            id=session_id,
+            teacher=request.user,
+            pipeline_type=ClassCreationSession.PipelineType.EXAM_PREP,
+        ).first()
+        if session is None:
+            return Response({'detail': 'جلسه آمادگی آزمون یافت نشد.'}, status=status.HTTP_404_NOT_FOUND)
+        qs = ClassAnnouncement.objects.filter(session=session).order_by('-created_at')
+        return Response(ClassAnnouncementSerializer(qs, many=True).data)
+
+    @extend_schema(
+        tags=['Exam Prep'],
+        summary='Create exam prep announcement (teacher)',
+        operation_id='exam_prep_sessions_announcements_create',
+        request=ClassAnnouncementCreateSerializer,
+        responses={201: ClassAnnouncementSerializer},
+    )
+    def post(self, request, session_id: int):
+        session = ClassCreationSession.objects.filter(
+            id=session_id,
+            teacher=request.user,
+            pipeline_type=ClassCreationSession.PipelineType.EXAM_PREP,
+        ).first()
+        if session is None:
+            return Response({'detail': 'جلسه آمادگی آزمون یافت نشد.'}, status=status.HTTP_404_NOT_FOUND)
+        serializer = ClassAnnouncementCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        announcement = ClassAnnouncement.objects.create(
+            session=session,
+            title=serializer.validated_data['title'],
+            content=serializer.validated_data['content'],
+            priority=serializer.validated_data.get('priority', ClassAnnouncement.Priority.MEDIUM),
+        )
+        return Response(ClassAnnouncementSerializer(announcement).data, status=status.HTTP_201_CREATED)
+
+
+class ExamPrepAnnouncementDetailView(APIView):
+    """Update/delete announcements for an exam prep session."""
+    permission_classes = [IsAuthenticated, IsTeacherUser]
+
+    @extend_schema(
+        tags=['Exam Prep'],
+        summary='Update exam prep announcement (teacher)',
+        operation_id='exam_prep_sessions_announcements_update',
+        request=ClassAnnouncementUpdateSerializer,
+        responses={200: ClassAnnouncementSerializer},
+    )
+    def patch(self, request, session_id: int, announcement_id: int):
+        session = ClassCreationSession.objects.filter(
+            id=session_id,
+            teacher=request.user,
+            pipeline_type=ClassCreationSession.PipelineType.EXAM_PREP,
+        ).first()
+        if session is None:
+            return Response({'detail': 'جلسه آمادگی آزمون یافت نشد.'}, status=status.HTTP_404_NOT_FOUND)
+        announcement = ClassAnnouncement.objects.filter(id=announcement_id, session=session).first()
+        if announcement is None:
+            return Response({'detail': 'اطلاعیه پیدا نشد.'}, status=status.HTTP_404_NOT_FOUND)
+        serializer = ClassAnnouncementUpdateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        updated_fields = []
+        if 'title' in data:
+            announcement.title = data['title']
+            updated_fields.append('title')
+        if 'content' in data:
+            announcement.content = data['content']
+            updated_fields.append('content')
+        if 'priority' in data:
+            announcement.priority = data['priority']
+            updated_fields.append('priority')
+        if updated_fields:
+            updated_fields.append('updated_at')
+            announcement.save(update_fields=updated_fields)
+        return Response(ClassAnnouncementSerializer(announcement).data)
+
+    @extend_schema(
+        tags=['Exam Prep'],
+        summary='Delete exam prep announcement (teacher)',
+        operation_id='exam_prep_sessions_announcements_delete',
+        responses={204: None},
+    )
+    def delete(self, request, session_id: int, announcement_id: int):
+        session = ClassCreationSession.objects.filter(
+            id=session_id,
+            teacher=request.user,
+            pipeline_type=ClassCreationSession.PipelineType.EXAM_PREP,
+        ).first()
+        if session is None:
+            return Response({'detail': 'جلسه آمادگی آزمون یافت نشد.'}, status=status.HTTP_404_NOT_FOUND)
+        announcement = ClassAnnouncement.objects.filter(id=announcement_id, session=session).first()
+        if announcement is None:
+            return Response({'detail': 'اطلاعیه پیدا نشد.'}, status=status.HTTP_404_NOT_FOUND)
+        announcement.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 

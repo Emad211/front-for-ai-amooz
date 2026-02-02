@@ -260,7 +260,7 @@ export default function TeacherClassDetailPage({ params }: PageProps) {
             onToggle={() => setIsInviteExpanded((p) => !p)}
             sessionId={Number(detail.id)}
           />
-          <ClassAnnouncementsCard />
+          <ClassAnnouncementsCard sessionId={Number(detail.id)} sessionType="class" />
         </div>
 
         <div className="lg:col-span-1">

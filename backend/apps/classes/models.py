@@ -244,6 +244,28 @@ class ClassPrerequisite(models.Model):
         ]
 
 
+class ClassAnnouncement(models.Model):
+    class Priority(models.TextChoices):
+        LOW = 'low', 'Low'
+        MEDIUM = 'medium', 'Medium'
+        HIGH = 'high', 'High'
+
+    session = models.ForeignKey(
+        ClassCreationSession,
+        on_delete=models.CASCADE,
+        related_name='announcements',
+    )
+    title = models.CharField(max_length=255)
+    content = models.TextField()
+    priority = models.CharField(max_length=16, choices=Priority.choices, default=Priority.MEDIUM)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+
 class ClassSectionQuiz(models.Model):
     session = models.ForeignKey(
         ClassCreationSession,

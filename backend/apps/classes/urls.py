@@ -6,6 +6,8 @@ from .views import (
     ClassCreationSessionDetailView,
     ClassCreationSessionListView,
     ClassInvitationDetailView,
+    ClassAnnouncementListCreateView,
+    ClassAnnouncementDetailView,
     ClassInvitationListCreateView,
     Step1TranscribeView,
     Step2StructureView,
@@ -16,6 +18,7 @@ from .views import (
     TeacherAnalyticsChartView,
     TeacherAnalyticsDistributionView,
     TeacherAnalyticsStatsView,
+    TeacherAnalyticsExportCSVView,
     TeacherStudentsListView,
     StudentCourseListView,
     StudentCourseContentView,
@@ -34,6 +37,8 @@ from .views import (
     ExamPrepSessionPublishView,
     ExamPrepInvitationListCreateView,
     ExamPrepInvitationDetailView,
+    ExamPrepAnnouncementListCreateView,
+    ExamPrepAnnouncementDetailView,
     # Student Exam Prep views
     StudentExamPrepListView,
     StudentExamPrepDetailView,
@@ -59,6 +64,8 @@ urlpatterns = [
     path('creation-sessions/<int:session_id>/prerequisites/', ClassPrerequisiteListView.as_view(), name='class_creation_session_prerequisites'),
     path('creation-sessions/<int:session_id>/invites/', ClassInvitationListCreateView.as_view(), name='class_creation_session_invites'),
     path('creation-sessions/<int:session_id>/invites/<int:invite_id>/', ClassInvitationDetailView.as_view(), name='class_creation_session_invite_detail'),
+    path('creation-sessions/<int:session_id>/announcements/', ClassAnnouncementListCreateView.as_view(), name='class_creation_session_announcements'),
+    path('creation-sessions/<int:session_id>/announcements/<int:announcement_id>/', ClassAnnouncementDetailView.as_view(), name='class_creation_session_announcement_detail'),
 
     # Exam Prep Pipeline (2 steps)
     path('exam-prep-sessions/step-1/', ExamPrepStep1TranscribeView.as_view(), name='exam_prep_step1'),
@@ -68,6 +75,8 @@ urlpatterns = [
     path('exam-prep-sessions/<int:session_id>/publish/', ExamPrepSessionPublishView.as_view(), name='exam_prep_session_publish'),
     path('exam-prep-sessions/<int:session_id>/invites/', ExamPrepInvitationListCreateView.as_view(), name='exam_prep_session_invites'),
     path('exam-prep-sessions/<int:session_id>/invites/<int:invite_id>/', ExamPrepInvitationDetailView.as_view(), name='exam_prep_session_invite_detail'),
+    path('exam-prep-sessions/<int:session_id>/announcements/', ExamPrepAnnouncementListCreateView.as_view(), name='exam_prep_session_announcements'),
+    path('exam-prep-sessions/<int:session_id>/announcements/<int:announcement_id>/', ExamPrepAnnouncementDetailView.as_view(), name='exam_prep_session_announcement_detail'),
 
     # Student Exam Prep endpoints
     path('student/exam-preps/', StudentExamPrepListView.as_view(), name='student_exam_prep_list'),
@@ -84,6 +93,7 @@ urlpatterns = [
     path('teacher/analytics/chart/', TeacherAnalyticsChartView.as_view(), name='teacher_analytics_chart'),
     path('teacher/analytics/distribution/', TeacherAnalyticsDistributionView.as_view(), name='teacher_analytics_distribution'),
     path('teacher/analytics/activities/', TeacherAnalyticsActivitiesView.as_view(), name='teacher_analytics_activities'),
+    path('teacher/analytics/export-csv/', TeacherAnalyticsExportCSVView.as_view(), name='teacher_analytics_export_csv'),
 
     # Teacher Students
     path('teacher/students/', TeacherStudentsListView.as_view(), name='teacher_students_list'),

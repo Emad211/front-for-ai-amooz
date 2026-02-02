@@ -11,9 +11,9 @@ import {
 import { useMountedRef } from '@/hooks/use-mounted-ref';
 
 type AnalyticsService = {
-  getAnalyticsStats: () => Promise<AdminAnalyticsStat[]>;
-  getChartData: () => Promise<AdminChartData[]>;
-  getDistributionData: () => Promise<AdminDistributionData[]>;
+  getAnalyticsStats: (days?: number) => Promise<AdminAnalyticsStat[]>;
+  getChartData: (days?: number) => Promise<AdminChartData[]>;
+  getDistributionData: (days?: number) => Promise<AdminDistributionData[]>;
   getRecentActivities: () => Promise<AdminRecentActivity[]>;
 };
 
@@ -25,15 +25,16 @@ export function useAdminAnalytics(service: AnalyticsService = AdminService) {
   const [activities, setActivities] = useState<AdminRecentActivity[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [days, setDays] = useState(7);
 
   const reload = useCallback(async () => {
     try {
       setError(null);
       setIsLoading(true);
       const [statsData, chartDataRes, distributionDataRes, activitiesData] = await Promise.all([
-        service.getAnalyticsStats(),
-        service.getChartData(),
-        service.getDistributionData(),
+        service.getAnalyticsStats(days),
+        service.getChartData(days),
+        service.getDistributionData(days),
         service.getRecentActivities(),
       ]);
 
@@ -48,7 +49,7 @@ export function useAdminAnalytics(service: AnalyticsService = AdminService) {
     } finally {
       if (mountedRef.current) setIsLoading(false);
     }
-  }, [mountedRef]);
+  }, [mountedRef, days, service]);
 
   useEffect(() => {
     reload();
@@ -61,6 +62,8 @@ export function useAdminAnalytics(service: AnalyticsService = AdminService) {
     activities,
     isLoading,
     error,
+    days,
+    setDays,
     reload
   };
 }

@@ -161,7 +161,7 @@ export function StudentInviteSection({ isExpanded, onToggle, sessionId, pipeline
               <Users className="h-5 w-5 text-primary" />
             </div>
             <div>
-              <CardTitle className="text-lg">دعوت دانش‌آموزان</CardTitle>
+              <CardTitle className="text-lg">۳. دعوت دانش‌آموزان</CardTitle>
               <p className="text-xs text-muted-foreground mt-0.5">
                 {invitedStudents.length} نفر اضافه شده
               </p>

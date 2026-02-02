@@ -266,8 +266,8 @@ export default function ClassDetailPage({ params }: PageProps) {
             onToggle={() => setIsInviteExpanded((p) => !p)}
             sessionId={Number(classDetail.id)}
           />
-          
-          <ClassAnnouncementsCard />
+
+          <ClassAnnouncementsCard sessionId={Number(classDetail.id)} sessionType="class" />
         </div>
 
         {/* Sidebar */}

@@ -16,8 +16,12 @@ interface OverviewCardsProps {
 }
 
 export function OverviewCards({ stats }: OverviewCardsProps) {
+  const gridCols = stats.length === 1 ? 'lg:grid-cols-1' : 
+                   stats.length === 2 ? 'lg:grid-cols-2' :
+                   stats.length === 3 ? 'lg:grid-cols-3' : 'lg:grid-cols-4';
+
   return (
-    <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
+    <div className={`grid grid-cols-1 sm:grid-cols-2 ${gridCols} gap-4 md:gap-6`}>
       {stats.map((stat, index) => {
         const config = ICON_MAP[stat.icon as keyof typeof ICON_MAP] || ICON_MAP.users;
         const Icon = config.icon;
@@ -36,13 +40,6 @@ export function OverviewCards({ stats }: OverviewCardsProps) {
                 <div className="flex items-center justify-between mb-5">
                   <div className={`p-3 ${config.bg} rounded-2xl group-hover:scale-110 transition-transform duration-300`}>
                     <Icon className={`w-5 h-5 sm:w-6 sm:h-6 ${config.color}`} />
-                  </div>
-                  <div className={`flex items-center gap-1 text-[10px] sm:text-xs font-bold px-2.5 py-1 rounded-xl ${
-                    stat.trend === 'up' 
-                      ? 'bg-emerald-500/10 text-emerald-600' 
-                      : 'bg-rose-500/10 text-rose-600'
-                  }`}>
-                    {stat.trend === 'up' ? '↑' : '↓'} {stat.change}
                   </div>
                 </div>
                 

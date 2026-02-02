@@ -3,7 +3,7 @@ import json
 
 from drf_spectacular.utils import extend_schema_field
 
-from .models import ClassCreationSession, ClassInvitation, ClassPrerequisite
+from .models import ClassAnnouncement, ClassCreationSession, ClassInvitation, ClassPrerequisite
 
 
 class Step1TranscribeRequestSerializer(serializers.Serializer):
@@ -110,9 +110,13 @@ class Step5RecapResponseSerializer(serializers.ModelSerializer):
 
 class ClassCreationSessionListSerializer(serializers.ModelSerializer):
     invites_count = serializers.SerializerMethodField()
+    lessons_count = serializers.SerializerMethodField()
 
     def get_invites_count(self, obj: ClassCreationSession) -> int:
         return obj.invites.count()
+
+    def get_lessons_count(self, obj: ClassCreationSession) -> int:
+        return obj.units.count()
 
     class Meta:
         model = ClassCreationSession
@@ -124,6 +128,7 @@ class ClassCreationSessionListSerializer(serializers.ModelSerializer):
             'is_published',
             'published_at',
             'invites_count',
+            'lessons_count',
             'created_at',
             'updated_at',
         ]
@@ -156,6 +161,21 @@ class ClassCreationSessionDetailSerializer(serializers.ModelSerializer):
             'created_at',
             'updated_at',
         ]
+
+class ClassAnnouncementSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ClassAnnouncement
+        fields = ['id', 'title', 'content', 'priority', 'created_at', 'updated_at']
+
+class ClassAnnouncementCreateSerializer(serializers.Serializer):
+    title = serializers.CharField(max_length=255)
+    content = serializers.CharField()
+    priority = serializers.ChoiceField(choices=ClassAnnouncement.Priority.choices, default=ClassAnnouncement.Priority.MEDIUM)
+
+class ClassAnnouncementUpdateSerializer(serializers.Serializer):
+    title = serializers.CharField(max_length=255, required=False)
+    content = serializers.CharField(required=False)
+    priority = serializers.ChoiceField(choices=ClassAnnouncement.Priority.choices, required=False)
 
 
 class ClassCreationSessionUpdateSerializer(serializers.Serializer):
@@ -255,7 +275,7 @@ class TeacherAnalyticsDistributionItemSerializer(serializers.Serializer):
 
 
 class TeacherAnalyticsActivitySerializer(serializers.Serializer):
-    id = serializers.IntegerField()
+    id = serializers.CharField()
     type = serializers.CharField()
     user = serializers.CharField()
     action = serializers.CharField()
@@ -454,6 +474,7 @@ class ExamPrepStep2StructureResponseSerializer(serializers.ModelSerializer):
 class ExamPrepSessionDetailSerializer(serializers.ModelSerializer):
     """Detail serializer for Exam Prep sessions."""
     exam_prep_data = serializers.SerializerMethodField()
+    invites_count = serializers.SerializerMethodField()
 
     @extend_schema_field(serializers.DictField())
     def get_exam_prep_data(self, obj: ClassCreationSession):
@@ -465,6 +486,9 @@ class ExamPrepSessionDetailSerializer(serializers.ModelSerializer):
             return json.loads(raw)
         except (json.JSONDecodeError, TypeError):
             return None
+
+    def get_invites_count(self, obj: ClassCreationSession) -> int:
+        return obj.invites.count()
 
     class Meta:
         model = ClassCreationSession
@@ -479,12 +503,21 @@ class ExamPrepSessionDetailSerializer(serializers.ModelSerializer):
             'transcript_markdown',
             'exam_prep_json',
             'exam_prep_data',
+            'invites_count',
             'is_published',
             'published_at',
             'error_detail',
             'created_at',
             'updated_at',
         ]
+
+
+class ExamPrepSessionUpdateSerializer(serializers.Serializer):
+    title = serializers.CharField(max_length=255, required=False)
+    description = serializers.CharField(required=False, allow_blank=True)
+    level = serializers.CharField(required=False, allow_blank=True)
+    duration = serializers.CharField(required=False, allow_blank=True)
+    exam_prep_json = serializers.CharField(required=False, allow_blank=True)
 
 
 # ==========================================================================

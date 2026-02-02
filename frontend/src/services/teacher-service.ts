@@ -38,6 +38,7 @@ type ClassCreationSessionListItem = {
   duration?: string;
   is_published?: boolean;
   invites_count?: number;
+  lessons_count?: number;
   created_at: string;
   updated_at: string;
 };
@@ -128,20 +129,34 @@ async function requestJson<T>(path: string, options: RequestInit = {}): Promise<
 }
 
 export const TeacherService = {
-  getAnalyticsStats: async (): Promise<AdminAnalyticsStat[]> => {
-    return requestJson<AdminAnalyticsStat[]>('/classes/teacher/analytics/stats/', { method: 'GET' });
+  getAnalyticsStats: async (days?: number): Promise<AdminAnalyticsStat[]> => {
+    const url = days ? `/classes/teacher/analytics/stats/?days=${days}` : '/classes/teacher/analytics/stats/';
+    return requestJson<AdminAnalyticsStat[]>(url, { method: 'GET' });
   },
 
-  getChartData: async (): Promise<AdminChartData[]> => {
-    return requestJson<AdminChartData[]>('/classes/teacher/analytics/chart/', { method: 'GET' });
+  getChartData: async (days?: number): Promise<AdminChartData[]> => {
+    const url = days ? `/classes/teacher/analytics/chart/?days=${days}` : '/classes/teacher/analytics/chart/';
+    return requestJson<AdminChartData[]>(url, { method: 'GET' });
   },
 
-  getDistributionData: async (): Promise<AdminDistributionData[]> => {
-    return requestJson<AdminDistributionData[]>('/classes/teacher/analytics/distribution/', { method: 'GET' });
+  getDistributionData: async (days?: number): Promise<AdminDistributionData[]> => {
+    const url = days ? `/classes/teacher/analytics/distribution/?days=${days}` : '/classes/teacher/analytics/distribution/';
+    return requestJson<AdminDistributionData[]>(url, { method: 'GET' });
   },
 
   getRecentActivities: async (): Promise<AdminRecentActivity[]> => {
     return requestJson<AdminRecentActivity[]>('/classes/teacher/analytics/activities/', { method: 'GET' });
+  },
+
+  exportAnalyticsCSV: async (days: number = 7) => {
+    const response = await fetch(`${API_URL}/classes/teacher/analytics/export-csv/?days=${days}`, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${getAccessToken()}`,
+      },
+    });
+    if (!response.ok) throw new Error('Export failed');
+    return response.blob();
   },
 
   getStudents: async () => {
@@ -159,7 +174,7 @@ export const TeacherService = {
       createdAt: s.created_at,
       lastActivity: s.updated_at,
       studentsCount: Number(s.invites_count ?? 0) || 0,
-      lessonsCount: undefined,
+      lessonsCount: Number(s.lessons_count ?? 0) || 0,
       level: (s.level as any) || undefined,
       duration: s.duration || undefined,
     }));

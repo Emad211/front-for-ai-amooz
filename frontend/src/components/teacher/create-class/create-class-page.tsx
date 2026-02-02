@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
+import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { ClassInfoForm } from './class-info-form';
 import { FileUploadSection } from './file-upload-section';
@@ -93,13 +94,13 @@ function getExamPrepPipelineMessage(status?: string | null) {
   }
   switch (status) {
     case 'exam_transcribing':
-      return { message: 'در حال انجام مرحله ۱ از ۲ (ترنسکریپت)…', isDone: false, isFailed: false } as const;
+      return { message: 'در حال انجام مرحله ۱ از ۳ (ترنسکریپت)…', isDone: false, isFailed: false } as const;
     case 'exam_transcribed':
-      return { message: 'مرحله ۱ از ۲ تمام شد.', isDone: false, isFailed: false } as const;
+      return { message: 'مرحله ۱ از ۳ تمام شد.', isDone: false, isFailed: false } as const;
     case 'exam_structuring':
-      return { message: 'در حال انجام مرحله ۲ از ۲ (استخراج سوالات)…', isDone: false, isFailed: false } as const;
+      return { message: 'در حال انجام مرحله ۲ از ۳ (استخراج سوالات)…', isDone: false, isFailed: false } as const;
     case 'exam_structured':
-      return { message: 'مرحله ۲ از ۲ تمام شد.', isDone: true, isFailed: false } as const;
+      return { message: 'مرحله ۲ از ۳ تمام شد. اکنون می‌توانید دانش‌آموزان را دعوت کنید.', isDone: true, isFailed: false } as const;
     default:
       return { message: `وضعیت: ${status}`, isDone: false, isFailed: false } as const;
   }
@@ -513,14 +514,15 @@ export function CreateClassPage() {
           </div>
           {pipelineType === 'class' ? (
             <div className="flex flex-wrap gap-2 text-xs md:text-sm text-muted-foreground">
-              <span className="px-3 py-1 rounded-full bg-primary/10 text-primary">۱. اطلاعات کلاس</span>
-              <span className="px-3 py-1 rounded-full bg-muted">۲. فایل‌ها و تمرین‌ها</span>
-              <span className="px-3 py-1 rounded-full bg-muted">۳. دعوت دانش‌آموزان</span>
+              <span className={cn("px-3 py-1 rounded-full", !status ? "bg-primary/10 text-primary" : "bg-muted")}>۱. اطلاعات کلاس</span>
+              <span className={cn("px-3 py-1 rounded-full", (status && status !== 'recapped') ? "bg-primary/10 text-primary" : "bg-muted")}>۲. فایل‌ها و تمرین‌ها</span>
+              <span className={cn("px-3 py-1 rounded-full", status === 'recapped' ? "bg-primary/10 text-primary" : "bg-muted")}>۳. دعوت دانش‌آموزان</span>
             </div>
           ) : (
             <div className="flex flex-wrap gap-2 text-xs md:text-sm text-muted-foreground">
-              <span className="px-3 py-1 rounded-full bg-primary/10 text-primary">۱. ترنسکریپت</span>
-              <span className="px-3 py-1 rounded-full bg-muted">۲. استخراج سوالات</span>
+              <span className={cn("px-3 py-1 rounded-full", (!examPrepStatus || examPrepStatus.includes('trans')) ? "bg-primary/10 text-primary" : "bg-muted")}>۱. ترنسکریپت</span>
+              <span className={cn("px-3 py-1 rounded-full", examPrepStatus === 'exam_structuring' ? "bg-primary/10 text-primary" : "bg-muted")}>۲. استخراج سوالات</span>
+              <span className={cn("px-3 py-1 rounded-full", examPrepStatus === 'exam_structured' ? "bg-primary/10 text-primary" : "bg-muted")}>۳. دعوت دانش‌آموزان</span>
             </div>
           )}
         </div>
@@ -545,21 +547,21 @@ export function CreateClassPage() {
                 disabled={currentIsPipelineRunning || currentIsPipelineStarting}
                 className="rounded-xl"
               >
-                ساخت کلاس (۵ مرحله)
+                ساخت کلاس 
               </TabsTrigger>
               <TabsTrigger
                 value="exam_prep"
                 disabled={currentIsPipelineRunning || currentIsPipelineStarting}
                 className="rounded-xl"
               >
-                آمادگی آزمون (۲ مرحله)
+                آمادگی آزمون
               </TabsTrigger>
             </TabsList>
           </Tabs>
           <p className="text-xs text-muted-foreground">
             {pipelineType === 'class'
               ? 'برای ساخت کلاس آموزشی از این گزینه استفاده کنید. شامل ترنسکریپت، ساختاردهی، پیش‌نیازها، آموزش پیش‌نیازها و خلاصه.'
-              : 'برای استخراج سوالات و پاسخ‌ها از ویدیوی حل تست استفاده کنید. شامل ترنسکریپت و استخراج سوالات.'}
+              : 'برای استخراج سوالات و پاسخ‌ها از ویدیوی حل تست استفاده کنید. شامل ترنسکریپت، استخراج سوالات و دعوت دانش‌آموزان.'}
           </p>
         </div>
       </Card>
@@ -615,7 +617,7 @@ export function CreateClassPage() {
                 ? 'در حال اجرای پایپ‌لاین…'
                 : pipelineType === 'class'
                   ? 'اجرای کامل پایپ‌لاین (۱ تا ۵)'
-                  : 'اجرای کامل پایپ‌لاین (۱ تا ۲)'}
+                  : 'اجرای کامل پایپ‌لاین (۱ تا ۳)'}
             </Button>
           </div>
 

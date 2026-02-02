@@ -55,6 +55,17 @@ export type ClassInvite = {
   created_at: string;
 };
 
+export type AnnouncementPriority = 'low' | 'medium' | 'high';
+
+export type ClassAnnouncement = {
+  id: number;
+  title: string;
+  content: string;
+  priority: AnnouncementPriority;
+  created_at: string;
+  updated_at: string;
+};
+
 export type ClassPrerequisite = {
   id: number;
   order: number;
@@ -220,6 +231,134 @@ export async function deleteExamPrepInvite(sessionId: number, inviteId: number):
     throw new Error('NEXT_PUBLIC_API_URL تنظیم نشده است.');
   }
   const url = `${API_URL}/classes/exam-prep-sessions/${sessionId}/invites/${inviteId}/`;
+  await requestJson<void>(url, {
+    method: 'DELETE',
+    headers: {
+      Authorization: `Bearer ${getAccessToken()}`,
+    },
+  });
+}
+
+export async function listClassAnnouncements(sessionId: number): Promise<ClassAnnouncement[]> {
+  if (!RAW_API_URL) {
+    throw new Error('NEXT_PUBLIC_API_URL تنظیم نشده است.');
+  }
+  const url = `${API_URL}/classes/creation-sessions/${sessionId}/announcements/`;
+  return requestJson<ClassAnnouncement[]>(url, {
+    method: 'GET',
+    headers: {
+      Authorization: `Bearer ${getAccessToken()}`,
+    },
+  });
+}
+
+export async function createClassAnnouncement(sessionId: number, payload: {
+  title: string;
+  content: string;
+  priority: AnnouncementPriority;
+}): Promise<ClassAnnouncement> {
+  if (!RAW_API_URL) {
+    throw new Error('NEXT_PUBLIC_API_URL تنظیم نشده است.');
+  }
+  const url = `${API_URL}/classes/creation-sessions/${sessionId}/announcements/`;
+  return requestJson<ClassAnnouncement>(url, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${getAccessToken()}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function updateClassAnnouncement(sessionId: number, announcementId: number, payload: Partial<{
+  title: string;
+  content: string;
+  priority: AnnouncementPriority;
+}>): Promise<ClassAnnouncement> {
+  if (!RAW_API_URL) {
+    throw new Error('NEXT_PUBLIC_API_URL تنظیم نشده است.');
+  }
+  const url = `${API_URL}/classes/creation-sessions/${sessionId}/announcements/${announcementId}/`;
+  return requestJson<ClassAnnouncement>(url, {
+    method: 'PATCH',
+    headers: {
+      Authorization: `Bearer ${getAccessToken()}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function deleteClassAnnouncement(sessionId: number, announcementId: number): Promise<void> {
+  if (!RAW_API_URL) {
+    throw new Error('NEXT_PUBLIC_API_URL تنظیم نشده است.');
+  }
+  const url = `${API_URL}/classes/creation-sessions/${sessionId}/announcements/${announcementId}/`;
+  await requestJson<void>(url, {
+    method: 'DELETE',
+    headers: {
+      Authorization: `Bearer ${getAccessToken()}`,
+    },
+  });
+}
+
+export async function listExamPrepAnnouncements(sessionId: number): Promise<ClassAnnouncement[]> {
+  if (!RAW_API_URL) {
+    throw new Error('NEXT_PUBLIC_API_URL تنظیم نشده است.');
+  }
+  const url = `${API_URL}/classes/exam-prep-sessions/${sessionId}/announcements/`;
+  return requestJson<ClassAnnouncement[]>(url, {
+    method: 'GET',
+    headers: {
+      Authorization: `Bearer ${getAccessToken()}`,
+    },
+  });
+}
+
+export async function createExamPrepAnnouncement(sessionId: number, payload: {
+  title: string;
+  content: string;
+  priority: AnnouncementPriority;
+}): Promise<ClassAnnouncement> {
+  if (!RAW_API_URL) {
+    throw new Error('NEXT_PUBLIC_API_URL تنظیم نشده است.');
+  }
+  const url = `${API_URL}/classes/exam-prep-sessions/${sessionId}/announcements/`;
+  return requestJson<ClassAnnouncement>(url, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${getAccessToken()}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function updateExamPrepAnnouncement(sessionId: number, announcementId: number, payload: Partial<{
+  title: string;
+  content: string;
+  priority: AnnouncementPriority;
+}>): Promise<ClassAnnouncement> {
+  if (!RAW_API_URL) {
+    throw new Error('NEXT_PUBLIC_API_URL تنظیم نشده است.');
+  }
+  const url = `${API_URL}/classes/exam-prep-sessions/${sessionId}/announcements/${announcementId}/`;
+  return requestJson<ClassAnnouncement>(url, {
+    method: 'PATCH',
+    headers: {
+      Authorization: `Bearer ${getAccessToken()}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function deleteExamPrepAnnouncement(sessionId: number, announcementId: number): Promise<void> {
+  if (!RAW_API_URL) {
+    throw new Error('NEXT_PUBLIC_API_URL تنظیم نشده است.');
+  }
+  const url = `${API_URL}/classes/exam-prep-sessions/${sessionId}/announcements/${announcementId}/`;
   await requestJson<void>(url, {
     method: 'DELETE',
     headers: {
@@ -445,6 +584,7 @@ export interface ExamPrepSessionDetail {
   transcript_markdown: string;
   exam_prep_json: string;
   exam_prep_data: ExamPrepData | null;
+  invites_count?: number;
   is_published: boolean;
   published_at: string | null;
   error_detail: string;
@@ -578,6 +718,36 @@ export async function listExamPrepSessions(): Promise<ExamPrepSessionDetail[]> {
   });
 
   return payload as ExamPrepSessionDetail[];
+}
+
+/**
+ * Update an exam prep session.
+ */
+export async function updateExamPrepSession(
+  sessionId: number,
+  data: Partial<{
+    title: string;
+    description: string;
+    level: string;
+    duration: string;
+    exam_prep_json: string;
+  }>,
+): Promise<ExamPrepSessionDetail> {
+  if (!RAW_API_URL) {
+    throw new Error('NEXT_PUBLIC_API_URL تنظیم نشده است.');
+  }
+
+  const url = `${API_URL}/classes/exam-prep-sessions/${sessionId}/`;
+  const payload = await requestJson(url, {
+    method: 'PATCH',
+    headers: {
+      Authorization: `Bearer ${getAccessToken()}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(data),
+  });
+
+  return payload as ExamPrepSessionDetail;
 }
 
 /**
