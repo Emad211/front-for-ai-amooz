@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { toast } from 'sonner';
 import { RecipientSelector } from '@/components/admin/messages/recipient-selector';
@@ -11,46 +11,46 @@ import { MessageTips } from '@/components/admin/messages/message-tips';
 import { useMessageRecipients } from '@/hooks/use-message-recipients';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ErrorState } from '@/components/shared/error-state';
+import { AdminService } from '@/services/admin-service';
 
 export default function BroadcastPage() {
   const { recipients, isLoading, error, reload } = useMessageRecipients();
-  const [recipientType, setRecipientType] = useState<'all' | 'specific'>('all');
-  const [selectedStudents, setSelectedStudents] = useState<string[]>([]);
+  const [audience, setAudience] = useState<'all' | 'students' | 'teachers'>('all');
   const [subject, setSubject] = useState('');
   const [message, setMessage] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [isSending, setIsSending] = useState(false);
 
-  const handleSelectStudent = (studentId: string) => {
-    setSelectedStudents(prev => 
-      prev.includes(studentId) 
-        ? prev.filter(id => id !== studentId)
-        : [...prev, studentId]
-    );
-  };
+  const filteredRecipientsCount = useMemo(() => {
+    if (audience === 'students') return recipients.filter(r => r.role === 'student').length;
+    if (audience === 'teachers') return recipients.filter(r => r.role === 'teacher').length;
+    return recipients.length;
+  }, [audience, recipients]);
 
-  const handleSend = () => {
+  const handleSend = async () => {
     if (!subject || !message) {
       toast.error('لطفاً موضوع و متن پیام را وارد کنید');
       return;
     }
 
-    if (recipientType === 'specific' && selectedStudents.length === 0) {
-      toast.error('لطفاً حداقل یک گیرنده انتخاب کنید');
-      return;
-    }
-
-    setIsSending(true);
-    
-    // Simulate API call
-    setTimeout(() => {
-      setIsSending(false);
-      toast.success('پیام با موفقیت ارسال شد');
+    try {
+      setIsSending(true);
+      await AdminService.sendBroadcastNotification({
+        title: subject,
+        message,
+        audience,
+        notification_type: 'info',
+      });
+      toast.success('اعلان با موفقیت ارسال شد');
       setSubject('');
       setMessage('');
-      setSelectedStudents([]);
-      setRecipientType('all');
-    }, 1500);
+      setAudience('all');
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'ارسال اعلان ناموفق بود';
+      toast.error(message);
+    } finally {
+      setIsSending(false);
+    }
   };
 
   if (error) {
@@ -90,12 +90,9 @@ export default function BroadcastPage() {
                 </div>
               ) : (
                 <RecipientSelector 
-                  recipientType={recipientType}
-                  onRecipientTypeChange={setRecipientType}
-                  selectedStudents={selectedStudents}
-                  onSelectStudent={handleSelectStudent}
-                  onSelectAll={setSelectedStudents}
-                  students={recipients}
+                  audience={audience}
+                  onAudienceChange={setAudience}
+                  recipients={recipients}
                   searchQuery={searchQuery}
                   onSearchChange={setSearchQuery}
                 />
@@ -117,7 +114,7 @@ export default function BroadcastPage() {
         <div className="space-y-6">
           <MessageStats 
             totalRecipients={recipients.length}
-            selectedCount={recipientType === 'all' ? recipients.length : selectedStudents.length}
+            selectedCount={filteredRecipientsCount}
           />
           <MessageTips />
         </div>

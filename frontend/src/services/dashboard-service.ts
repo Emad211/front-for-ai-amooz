@@ -494,9 +494,17 @@ export const DashboardService = {
     return MOCK_TICKETS;
   },
 
-  getNotifications: async () => {
-    await new Promise(resolve => setTimeout(resolve, 400));
-    return MOCK_NOTIFICATIONS;
+  getNotifications: async (): Promise<Notification[]> => {
+    if (!RAW_API_URL) {
+      throw new Error('NEXT_PUBLIC_API_URL تنظیم نشده است.');
+    }
+    const url = `${API_URL}/classes/student/notifications/`;
+    const response = await requestJson<Notification[]>(url, {
+      headers: {
+        Authorization: `Bearer ${getAccessToken()}`,
+      },
+    });
+    return response || [];
   },
 
   getCalendarEvents: async () => {

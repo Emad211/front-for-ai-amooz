@@ -9,6 +9,7 @@ import type {
   ClassDetail,
   Course,
   Student,
+  Notification,
 } from '@/types';
 
 import {
@@ -246,6 +247,10 @@ export const TeacherService = {
 
   updateNotificationSettings: async (data: Partial<AdminNotificationSettings>) => {
     return { success: false, data };
+  },
+
+  getNotifications: async (): Promise<Notification[]> => {
+    return requestJson<Notification[]>('/notifications/teacher/', { method: 'GET' });
   },
 
   getClassDetail: async (classId: string): Promise<ClassDetail | null> => {

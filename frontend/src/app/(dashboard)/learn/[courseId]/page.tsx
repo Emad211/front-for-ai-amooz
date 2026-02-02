@@ -60,7 +60,7 @@ export default function LearnPage() {
 
     const chatLessonId = React.useMemo(() => {
         const id = String((currentLesson as any)?.id ?? '').trim();
-        return /^\d+$/.test(id) ? id : null;
+        return id || null;
     }, [currentLesson]);
 
     const chatLessonTitle = React.useMemo(() => {

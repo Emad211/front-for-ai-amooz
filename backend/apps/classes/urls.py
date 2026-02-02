@@ -29,6 +29,7 @@ from .views import (
     StudentChapterQuizView,
     StudentFinalExamView,
     InviteCodeVerifyView,
+    StudentNotificationListView,
     # Exam Prep Pipeline views
     ExamPrepStep1TranscribeView,
     ExamPrepStep2StructureView,
@@ -109,4 +110,5 @@ urlpatterns = [
     path('student/courses/<int:session_id>/final-exam/', StudentFinalExamView.as_view(), name='student_final_exam'),
 
     path('invites/verify/', InviteCodeVerifyView.as_view(), name='invite_code_verify'),
+    path('student/notifications/', StudentNotificationListView.as_view(), name='student_notifications_list'),
 ]

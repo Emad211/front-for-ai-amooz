@@ -4,13 +4,14 @@ import { useState, useMemo } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { NotificationHeader, NotificationList } from '@/components/dashboard/notifications';
 import { useNotifications } from '@/hooks/use-notifications';
+import { TeacherService } from '@/services/teacher-service';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ErrorState } from '@/components/shared/error-state';
 import { Bell } from 'lucide-react';
 import { motion } from 'framer-motion';
 
 export default function TeacherNotificationsPage() {
-  const { notifications, isLoading, error, reload, markAsRead } = useNotifications();
+  const { notifications, isLoading, error, reload, markAsRead } = useNotifications(TeacherService);
   const [filter, setFilter] = useState('all');
 
   const unreadCount = useMemo(

@@ -730,7 +730,7 @@ export async function updateExamPrepSession(
     description: string;
     level: string;
     duration: string;
-    exam_prep_json: string;
+    exam_prep_json: any;
   }>,
 ): Promise<ExamPrepSessionDetail> {
   if (!RAW_API_URL) {

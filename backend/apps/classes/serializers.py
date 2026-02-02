@@ -338,6 +338,16 @@ class StudentChapterQuizQuestionSerializer(serializers.Serializer):
     difficulty = serializers.CharField(required=False, allow_blank=True)
 
 
+class StudentNotificationSerializer(serializers.Serializer):
+    id = serializers.CharField()
+    title = serializers.CharField()
+    message = serializers.CharField()
+    type = serializers.CharField()
+    isRead = serializers.BooleanField()
+    createdAt = serializers.CharField()
+    link = serializers.CharField(required=False, allow_blank=True)
+
+
 class StudentChapterQuizResponseSerializer(serializers.Serializer):
     quiz_id = serializers.IntegerField()
     session_id = serializers.IntegerField()
@@ -517,7 +527,24 @@ class ExamPrepSessionUpdateSerializer(serializers.Serializer):
     description = serializers.CharField(required=False, allow_blank=True)
     level = serializers.CharField(required=False, allow_blank=True)
     duration = serializers.CharField(required=False, allow_blank=True)
-    exam_prep_json = serializers.CharField(required=False, allow_blank=True)
+    exam_prep_json = serializers.JSONField(required=False)
+
+    def validate_exam_prep_json(self, value):
+        """Allow either object/array (JSON) or a valid JSON string."""
+        if isinstance(value, str):
+            s = value.strip()
+            if not s:
+                return ''
+            try:
+                json.loads(s)
+            except Exception:
+                raise serializers.ValidationError('Invalid JSON string.')
+            return s
+
+        try:
+            return json.dumps(value, ensure_ascii=False)
+        except Exception:
+            raise serializers.ValidationError('Invalid JSON payload.')
 
 
 # ==========================================================================

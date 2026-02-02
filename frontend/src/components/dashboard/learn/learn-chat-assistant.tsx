@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { Bot, PanelRightClose, Send, Paperclip, Mic, X } from 'lucide-react';
+import { Bot, PanelRightClose, Send, Paperclip, Mic, X, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
@@ -28,6 +28,13 @@ function formatTime(d: Date): string {
   const hh = d.getHours().toString().padStart(2, '0');
   const mm = d.getMinutes().toString().padStart(2, '0');
   return `${hh}:${mm}`;
+}
+
+function formatDuration(totalSeconds: number): string {
+  const secs = Math.max(0, Math.floor(totalSeconds || 0));
+  const mm = Math.floor(secs / 60).toString().padStart(2, '0');
+  const ss = (secs % 60).toString().padStart(2, '0');
+  return `${mm}:${ss}`;
 }
 
 function WidgetCard({ widgetType, data }: { widgetType: string; data: any }) {
@@ -180,10 +187,20 @@ export const ChatAssistant = ({ onToggle, isOpen, className, isMobile = false, c
   const recordChunksRef = React.useRef<BlobPart[]>([]);
   const recordStartRef = React.useRef<number | null>(null);
   const [recordSeconds, setRecordSeconds] = React.useState(0);
+  const [recordedSeconds, setRecordedSeconds] = React.useState<number | null>(null);
 
   const textareaRef = React.useRef<HTMLTextAreaElement>(null);
   const scrollRef = React.useRef<HTMLDivElement>(null);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
+  const suggestionsRef = React.useRef<HTMLDivElement>(null);
+
+  const scrollSuggestions = React.useCallback((direction: 'left' | 'right') => {
+    const el = suggestionsRef.current;
+    if (!el) return;
+    const amount = Math.max(140, Math.floor(el.clientWidth * 0.6));
+    const delta = direction === 'left' ? -amount : amount;
+    el.scrollBy({ left: delta, behavior: 'smooth' });
+  }, []);
 
   const threadKey = React.useMemo(() => {
     const base = String(courseId ?? '').trim();
@@ -205,12 +222,19 @@ export const ChatAssistant = ({ onToggle, isOpen, className, isMobile = false, c
     }
   };
 
+  const scrollToBottom = React.useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    requestAnimationFrame(() => {
+      el.scrollTop = el.scrollHeight;
+    });
+  }, []);
+
   // Scroll to bottom on open or new messages
   React.useEffect(() => {
-    if (isOpen && scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-    }
-  }, [isOpen]);
+    if (!isOpen) return;
+    scrollToBottom();
+  }, [isOpen, messages.length, scrollToBottom]);
 
   // Reset chat when lesson/thread changes (legacy behavior: thread_id includes unit).
   React.useEffect(() => {
@@ -413,6 +437,7 @@ export const ChatAssistant = ({ onToggle, isOpen, className, isMobile = false, c
       recordChunksRef.current = [];
       recordStartRef.current = Date.now();
       setRecordSeconds(0);
+      setRecordedSeconds(null);
 
       rec.ondataavailable = (ev) => {
         if (ev.data && ev.data.size > 0) {
@@ -429,6 +454,8 @@ export const ChatAssistant = ({ onToggle, isOpen, className, isMobile = false, c
         stream.getTracks().forEach((t) => t.stop());
         const file = new File([blob], `voice-${Date.now()}.webm`, { type: blob.type || 'audio/webm' });
         setPendingFile(file);
+        const duration = recordStartRef.current ? Math.floor((Date.now() - recordStartRef.current) / 1000) : recordSeconds;
+        setRecordedSeconds(duration);
       };
 
       rec.start();
@@ -438,6 +465,12 @@ export const ChatAssistant = ({ onToggle, isOpen, className, isMobile = false, c
       pushMessage({ sender: 'ai', message: msgErr });
     }
   }, [isRecording, isSending, pushMessage]);
+
+  const handleSend = React.useCallback(() => {
+    const text = message;
+    setMessage('');
+    sendMessage(text);
+  }, [message, sendMessage]);
 
   return (
     <aside
@@ -497,6 +530,20 @@ export const ChatAssistant = ({ onToggle, isOpen, className, isMobile = false, c
         {messages.map((m) => (
           <ChatMessage key={m.id} sender={m.sender} time={m.time} message={m.message} widget={m.widget ?? null} />
         ))}
+        {isSending && (
+          <div className="flex items-start gap-2">
+            <div className="h-7 w-7 rounded-full bg-secondary flex-shrink-0 flex items-center justify-center border border-border mt-1">
+              <Bot className="text-primary h-4 w-4" />
+            </div>
+            <div className="px-3 py-2 rounded-2xl rounded-tr-none border border-border/50 bg-card text-foreground shadow-sm">
+              <div className="flex items-center gap-1">
+                <span className="h-1.5 w-1.5 rounded-full bg-primary/70 animate-bounce" style={{ animationDelay: '0ms' }} />
+                <span className="h-1.5 w-1.5 rounded-full bg-primary/70 animate-bounce" style={{ animationDelay: '120ms' }} />
+                <span className="h-1.5 w-1.5 rounded-full bg-primary/70 animate-bounce" style={{ animationDelay: '240ms' }} />
+              </div>
+            </div>
+          </div>
+        )}
         {/* Spacer for keyboard on mobile */}
         <div className="h-4 flex-shrink-0" />
       </div>
@@ -507,40 +554,124 @@ export const ChatAssistant = ({ onToggle, isOpen, className, isMobile = false, c
           </div>
         )}
         {suggestions.length > 0 && (
-          <div className="flex gap-2 mb-2 overflow-x-auto no-scrollbar pb-1">
-            {suggestions.slice(0, 6).map((s) => (
-              <Button
-                key={s}
-                variant="outline"
-                className="text-xs h-8 flex-shrink-0"
-                disabled={isSending}
-                onClick={() => sendMessage(s)}
-              >
-                <MarkdownWithMath
-                  markdown={normalizeMathText(s)}
-                  className="text-xs [&_.md-p]:m-0 [&_.md-ul]:m-0 [&_.md-ol]:m-0"
-                  as="span"
-                  renderKey={s}
-                />
-              </Button>
-            ))}
-          </div>
-        )}
-
-        {pendingFile && (
-          <div className="mb-2 flex items-center justify-between gap-2 rounded-xl border border-border bg-background/40 px-3 py-2">
-            <div className="text-xs text-muted-foreground truncate">
-              فایل: <span className="text-foreground">{pendingFile.name}</span>
+          <div className="mb-2 flex items-center gap-2">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7 rounded-lg text-muted-foreground hover:text-foreground"
+              onClick={() => scrollSuggestions('right')}
+              disabled={isSending}
+              title="حرکت به راست"
+            >
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+            <div ref={suggestionsRef} className="flex-1 overflow-x-auto no-scrollbar">
+              <div className="flex gap-2 pb-1">
+                {suggestions.slice(0, 6).map((s) => (
+                  <Button
+                    key={s}
+                    variant="outline"
+                    className="text-xs h-8 flex-shrink-0"
+                    disabled={isSending}
+                    onClick={() => sendMessage(s)}
+                  >
+                    <MarkdownWithMath
+                      markdown={normalizeMathText(s)}
+                      className="text-xs [&_.md-p]:m-0 [&_.md-ul]:m-0 [&_.md-ol]:m-0"
+                      as="span"
+                      renderKey={s}
+                    />
+                  </Button>
+                ))}
+              </div>
             </div>
-            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setPendingFile(null)}>
-              <X className="h-4 w-4" />
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7 rounded-lg text-muted-foreground hover:text-foreground"
+              onClick={() => scrollSuggestions('left')}
+              disabled={isSending}
+              title="حرکت به چپ"
+            >
+              <ChevronLeft className="h-4 w-4" />
             </Button>
           </div>
         )}
 
         {isRecording && (
-          <div className="mb-2 text-xs text-muted-foreground">
-            در حال ضبط صدا… ({recordSeconds}s)
+          <div className="mb-2 rounded-xl border border-border bg-gradient-to-r from-primary/10 via-purple-500/10 to-transparent px-3 py-2">
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="h-8 w-8 rounded-lg bg-primary/15 flex items-center justify-center">
+                  <Mic className="h-4 w-4 text-primary" />
+                </div>
+                <div>
+                  <div className="text-xs font-semibold text-foreground">در حال ضبط صدا</div>
+                  <div className="text-[11px] text-muted-foreground">{formatDuration(recordSeconds)}</div>
+                </div>
+              </div>
+              <div className="flex items-center gap-1">
+                {Array.from({ length: 16 }).map((_, i) => (
+                  <span
+                    key={i}
+                    className="w-1 rounded-full bg-primary/70 animate-pulse"
+                    style={{ height: `${8 + ((i * 7) % 18)}px`, animationDelay: `${i * 0.08}s` }}
+                  />
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {pendingFile && (
+          <div className="mb-2 rounded-xl border border-border bg-background/40 px-3 py-2">
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="h-8 w-8 rounded-lg bg-secondary flex items-center justify-center">
+                  <Paperclip className="h-4 w-4 text-primary -rotate-45" />
+                </div>
+                <div className="min-w-0">
+                  <div className="text-xs font-semibold text-foreground truncate">{pendingFile.name}</div>
+                  <div className="text-[11px] text-muted-foreground">
+                    {pendingFile.type.startsWith('audio/') ? 'فایل صوتی آماده ارسال' : 'فایل آماده ارسال'}
+                    {pendingFile.type.startsWith('audio/') && recordedSeconds !== null ? ` • ${formatDuration(recordedSeconds)}` : ''}
+                  </div>
+                </div>
+              </div>
+              <div className="flex items-center gap-1">
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  className="h-8 px-3"
+                  disabled={isSending}
+                  onClick={handleSend}
+                >
+                  ارسال
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8"
+                  onClick={() => {
+                    setPendingFile(null);
+                    setRecordedSeconds(null);
+                  }}
+                >
+                  <X className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+            {pendingFile.type.startsWith('audio/') && (
+              <div className="mt-2 flex items-center gap-1">
+                {Array.from({ length: 20 }).map((_, i) => (
+                  <span
+                    key={i}
+                    className="w-1 rounded-full bg-primary/60"
+                    style={{ height: `${6 + ((i * 5) % 16)}px` }}
+                  />
+                ))}
+              </div>
+            )}
           </div>
         )}
         <div className="relative">
@@ -551,9 +682,7 @@ export const ChatAssistant = ({ onToggle, isOpen, className, isMobile = false, c
             onKeyDown={(e) => {
               if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
-                const text = message;
-                setMessage('');
-                sendMessage(text);
+                handleSend();
               }
             }}
             onFocus={() => {
@@ -564,9 +693,9 @@ export const ChatAssistant = ({ onToggle, isOpen, className, isMobile = false, c
                 }
               }, 300);
             }}
-            placeholder="سوالت رو بپرس... یا تصویر تمرینت رو بفرست"
+            placeholder="سوالت رو بپرس..."
             rows={1}
-            className="bg-background border-border rounded-xl text-sm text-foreground focus:ring-1 focus:ring-primary focus:border-primary placeholder:text-muted-foreground/50 py-3 pr-20 pl-12 resize-none overflow-y-hidden no-scrollbar"
+            className="bg-background border-border rounded-xl text-sm leading-6 text-foreground focus:ring-1 focus:ring-primary focus:border-primary placeholder:text-muted-foreground/50 py-3 pr-20 pl-12 resize-none overflow-y-hidden no-scrollbar flex items-center min-h-[44px]"
           />
           <input
             ref={fileInputRef}
@@ -576,10 +705,11 @@ export const ChatAssistant = ({ onToggle, isOpen, className, isMobile = false, c
             onChange={(e) => {
               const f = e.target.files?.[0] ?? null;
               setPendingFile(f);
+              setRecordedSeconds(null);
               e.target.value = '';
             }}
           />
-          <div className="absolute right-2 bottom-1.5 flex items-center gap-1">
+          <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
             <Button
               variant="ghost"
               size="icon"
@@ -604,16 +734,12 @@ export const ChatAssistant = ({ onToggle, isOpen, className, isMobile = false, c
               <Mic className="h-4 w-4" />
             </Button>
           </div>
-          <div className="absolute left-2 bottom-1.5 flex items-center">
+          <div className="absolute left-2 top-1/2 -translate-y-1/2 flex items-center">
             <Button
               size="icon"
               className="h-9 w-9 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground transition-all shadow-lg shadow-primary/20 hover:scale-105 active:scale-95"
               disabled={isSending}
-              onClick={() => {
-                const text = message;
-                setMessage('');
-                sendMessage(text);
-              }}
+              onClick={handleSend}
             >
               <Send className="h-4 w-4 rtl:-rotate-180" />
             </Button>

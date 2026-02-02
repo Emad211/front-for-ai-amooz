@@ -74,4 +74,5 @@ urlpatterns = [
     path('api/accounts/', include('apps.accounts.urls')),
     path('api/auth/', include('apps.authentication.urls')),
     path('api/classes/', include('apps.classes.urls')),
+    path('api/notifications/', include('apps.notification.urls')),
 ]

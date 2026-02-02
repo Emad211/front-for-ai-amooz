@@ -138,6 +138,7 @@ export interface MessageRecipient {
   name: string;
   email: string;
   avatar?: string;
+  role?: 'student' | 'teacher';
 }
 
 export interface UserProfile {

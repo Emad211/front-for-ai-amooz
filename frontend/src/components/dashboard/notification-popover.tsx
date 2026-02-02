@@ -14,11 +14,15 @@ import { useNotifications } from '@/hooks/use-notifications';
 import type { Notification } from '@/types';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { TeacherService } from '@/services/teacher-service';
+import { DashboardService } from '@/services/dashboard-service';
 
 export function NotificationPopover() {
-  const { notifications, isLoading, markAsRead, markAllAsRead, deleteNotification } = useNotifications();
   const pathname = usePathname();
   const isTeacher = pathname.startsWith('/teacher');
+  const service = isTeacher ? TeacherService : DashboardService;
+  
+  const { notifications, isLoading, markAsRead, markAllAsRead, deleteNotification } = useNotifications(service);
   const notificationsLink = isTeacher ? '/teacher/notifications' : '/notifications';
   
   const unreadCount = notifications.filter(n => !n.isRead).length;

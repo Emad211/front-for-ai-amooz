@@ -28,6 +28,7 @@ from .models import ClassAnnouncement, ClassCreationSession, ClassInvitation, Cl
 from .models import ClassSection, ClassSectionQuiz, ClassSectionQuizAttempt
 from .models import ClassFinalExam, ClassFinalExamAttempt
 from .models import StudentInviteCode
+from apps.notification.models import AdminNotification
 from .permissions import IsTeacherUser, IsStudentUser
 from .serializers import (
     ClassCreationSessionDetailSerializer,
@@ -64,6 +65,7 @@ from .serializers import (
     StudentFinalExamSubmitResponseSerializer,
     InviteCodeVerifySerializer,
     InviteCodeVerifyResponseSerializer,
+    StudentNotificationSerializer,
     # Exam Prep Pipeline serializers
     ExamPrepStep1TranscribeRequestSerializer,
     ExamPrepStep1TranscribeResponseSerializer,
@@ -100,6 +102,64 @@ from apps.chatbot.services.student_exam_prep_chat import (
     describe_exam_prep_handwriting,
     handle_exam_prep_message,
 )
+
+
+def _normalize_exam_prep_questions(exam_prep_obj: dict) -> tuple[dict, bool]:
+    """Ensure each question has a unique, non-empty question_id."""
+    changed = False
+    if not isinstance(exam_prep_obj, dict):
+        return exam_prep_obj, False
+
+    exam_prep = exam_prep_obj.get('exam_prep')
+    if not isinstance(exam_prep, dict):
+        return exam_prep_obj, False
+
+    questions = exam_prep.get('questions')
+    if not isinstance(questions, list):
+        return exam_prep_obj, False
+
+    used_ids: set[str] = set()
+    for idx, q in enumerate(questions):
+        if not isinstance(q, dict):
+            continue
+        qid = str(q.get('question_id') or '').strip()
+        if not qid or qid in used_ids:
+            base = f"q-{idx + 1}"
+            qid = base
+            suffix = 1
+            while qid in used_ids:
+                suffix += 1
+                qid = f"{base}-{suffix}"
+            q['question_id'] = qid
+            changed = True
+        used_ids.add(qid)
+
+    return exam_prep_obj, changed
+
+
+def _normalize_exam_prep_json(raw_value: object) -> tuple[str | None, bool]:
+    """Normalize exam_prep_json and return JSON string + changed flag."""
+    if raw_value is None:
+        return None, False
+
+    obj: object = raw_value
+    if isinstance(raw_value, str):
+        s = raw_value.strip()
+        if not s:
+            return s, False
+        try:
+            obj = json.loads(s)
+        except Exception:
+            return raw_value, False
+
+    if not isinstance(obj, dict):
+        try:
+            return json.dumps(obj, ensure_ascii=False), False
+        except Exception:
+            return None, False
+
+    normalized, changed = _normalize_exam_prep_questions(obj)
+    return json.dumps(normalized, ensure_ascii=False), changed
 
 from .services.student_chat_history import append_message, get_or_create_thread, list_messages
 from .services.student_exam_chat_history import (
@@ -2295,6 +2355,85 @@ class InviteCodeVerifyView(APIView):
         )
 
 
+class StudentNotificationListView(APIView):
+    """List notifications for the logged-in student (from class announcements)."""
+
+    permission_classes = [IsAuthenticated, IsStudentUser]
+
+    @extend_schema(
+        tags=['Notifications'],
+        summary='List student notifications (from class announcements)',
+        operation_id='student_notifications_list',
+        responses={200: StudentNotificationSerializer(many=True)},
+    )
+    def get(self, request):
+        user = request.user
+        phone = (getattr(user, 'phone', None) or '').strip()
+        sessions = []
+        if phone:
+            # Get all published sessions (Classes and Exam Preps) that this student is invited to.
+            sessions = (
+                ClassCreationSession.objects.filter(
+                    is_published=True,
+                    invites__phone=phone,
+                )
+                .prefetch_related('announcements')
+                .distinct()
+            )
+
+        out: list[dict] = []
+
+        admin_qs = AdminNotification.objects.filter(
+            audience__in=[AdminNotification.Audience.ALL, AdminNotification.Audience.STUDENTS],
+        ).order_by('-created_at')
+
+        for item in admin_qs:
+            out.append(
+                {
+                    'id': f'admin-{item.id}',
+                    'title': item.title,
+                    'message': item.message,
+                    'type': item.notification_type,
+                    'isRead': False,
+                    'createdAt': item.created_at.isoformat(),
+                    'link': '/notifications',
+                }
+            )
+
+        for session in sessions:
+            for announcement in session.announcements.all():
+                # Map priority to notification type
+                ntype = 'info'
+                if announcement.priority == ClassAnnouncement.Priority.HIGH:
+                    ntype = 'warning'
+                elif announcement.priority == ClassAnnouncement.Priority.MEDIUM:
+                    ntype = 'info'
+
+                # Define link based on session type
+                link = None
+                if session.pipeline_type == ClassCreationSession.PipelineType.CLASS:
+                    link = f'/dashboard/courses/{session.id}'
+                else:
+                    link = f'/dashboard/exam-prep/{session.id}'
+
+                out.append(
+                    {
+                        'id': f'announcement-{announcement.id}',
+                        'title': announcement.title,
+                        'message': announcement.content,
+                        'type': ntype,
+                        'isRead': False,  # We don't have per-student read tracking yet in DB
+                        'createdAt': announcement.created_at.isoformat(),
+                        'link': link,
+                    }
+                )
+
+        # Sort by latest first
+        out.sort(key=lambda x: x['createdAt'], reverse=True)
+
+        return Response(StudentNotificationSerializer(out, many=True).data)
+
+
 # ==========================================================================
 # EXAM PREP PIPELINE VIEWS (2 Steps: Transcribe + Q&A Extraction)
 # ==========================================================================
@@ -2347,7 +2486,8 @@ def _process_exam_prep_step2_structure(session_id: int) -> None:
         exam_prep_obj, provider, model_name = extract_exam_prep_structure(
             transcript_markdown=session.transcript_markdown,
         )
-        session.exam_prep_json = json.dumps(exam_prep_obj, ensure_ascii=False)
+        normalized, _changed = _normalize_exam_prep_questions(exam_prep_obj)
+        session.exam_prep_json = json.dumps(normalized, ensure_ascii=False)
         session.llm_provider = provider
         session.llm_model = model_name
         session.status = ClassCreationSession.Status.EXAM_STRUCTURED
@@ -2537,7 +2677,8 @@ class ExamPrepSessionDetailView(APIView):
             session.duration = data['duration']
             updated_fields.append('duration')
         if 'exam_prep_json' in data:
-            session.exam_prep_json = data['exam_prep_json']
+            normalized_json, _changed = _normalize_exam_prep_json(data['exam_prep_json'])
+            session.exam_prep_json = normalized_json or ''
             updated_fields.append('exam_prep_json')
 
         if updated_fields:
@@ -2914,6 +3055,11 @@ class StudentExamPrepDetailView(APIView):
             if session.exam_prep_json:
                 data = json.loads(session.exam_prep_json)
                 if isinstance(data, dict):
+                    normalized, changed = _normalize_exam_prep_questions(data)
+                    if changed:
+                        session.exam_prep_json = json.dumps(normalized, ensure_ascii=False)
+                        session.save(update_fields=['exam_prep_json', 'updated_at'])
+                    data = normalized
                     exam_prep = data.get('exam_prep', {})
                     subject = exam_prep.get('title', '')
                     raw_questions = exam_prep.get('questions', [])
@@ -3000,6 +3146,11 @@ class StudentExamPrepSubmitView(APIView):
             if session.exam_prep_json:
                 data = json.loads(session.exam_prep_json)
                 if isinstance(data, dict):
+                    normalized, changed = _normalize_exam_prep_questions(data)
+                    if changed:
+                        session.exam_prep_json = json.dumps(normalized, ensure_ascii=False)
+                        session.save(update_fields=['exam_prep_json', 'updated_at'])
+                    data = normalized
                     exam_prep = data.get('exam_prep', {})
                     raw_questions = exam_prep.get('questions', [])
                     if isinstance(raw_questions, list):
@@ -3242,6 +3393,11 @@ class StudentExamPrepResultView(APIView):
             if session.exam_prep_json:
                 data = json.loads(session.exam_prep_json)
                 if isinstance(data, dict):
+                    normalized, changed = _normalize_exam_prep_questions(data)
+                    if changed:
+                        session.exam_prep_json = json.dumps(normalized, ensure_ascii=False)
+                        session.save(update_fields=['exam_prep_json', 'updated_at'])
+                    data = normalized
                     exam_prep = data.get('exam_prep', {})
                     raw_questions = exam_prep.get('questions', [])
                     if isinstance(raw_questions, list):
