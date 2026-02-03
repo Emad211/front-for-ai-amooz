@@ -45,3 +45,23 @@ class AdminNotification(models.Model):
 
     def __str__(self) -> str:
         return f"{self.title} ({self.audience})"
+
+
+class NotificationReadReceipt(models.Model):
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='notification_receipts'
+    )
+    # This stores identifiers like 'admin-123' or 'announcement-456'
+    notification_id = models.CharField(max_length=100)
+    read_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ('user', 'notification_id')
+        indexes = [
+            models.Index(fields=['user', 'notification_id']),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.user.username} read {self.notification_id}"

@@ -2385,6 +2385,11 @@ class StudentNotificationListView(APIView):
                 .distinct()
             )
 
+        from apps.notification.models import NotificationReadReceipt
+        read_ids = set(
+            NotificationReadReceipt.objects.filter(user=user).values_list('notification_id', flat=True)
+        )
+
         out: list[dict] = []
 
         admin_qs = AdminNotification.objects.filter(
@@ -2392,13 +2397,14 @@ class StudentNotificationListView(APIView):
         ).order_by('-created_at')
 
         for item in admin_qs:
+            item_id = f'admin-{item.id}'
             out.append(
                 {
-                    'id': f'admin-{item.id}',
+                    'id': item_id,
                     'title': item.title,
                     'message': item.message,
                     'type': item.notification_type,
-                    'isRead': False,
+                    'isRead': item_id in read_ids,
                     'createdAt': item.created_at.isoformat(),
                     'link': '/notifications',
                 }
@@ -2420,13 +2426,14 @@ class StudentNotificationListView(APIView):
                 else:
                     link = f'/dashboard/exam-prep/{session.id}'
 
+                item_id = f'announcement-{announcement.id}'
                 out.append(
                     {
-                        'id': f'announcement-{announcement.id}',
+                        'id': item_id,
                         'title': announcement.title,
                         'message': announcement.content,
                         'type': ntype,
-                        'isRead': False,  # We don't have per-student read tracking yet in DB
+                        'isRead': item_id in read_ids,
                         'createdAt': announcement.created_at.isoformat(),
                         'link': link,
                     }

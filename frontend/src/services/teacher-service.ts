@@ -28,6 +28,8 @@ type AuthMeResponse = {
   avatar?: string | null;
   role: string;
   is_profile_completed: boolean;
+  bio?: string | null;
+  location?: string | null;
 };
 
 type ClassCreationSessionListItem = {
@@ -195,8 +197,8 @@ export const TeacherService = {
       name: fullName,
       email: me.email || '',
       phone: me.phone || '',
-      bio: '',
-      location: '',
+      bio: me.bio || '',
+      location: me.location || '',
       avatar: (me.avatar as unknown as string) || '',
     };
   },
@@ -231,7 +233,13 @@ export const TeacherService = {
         payload.first_name = parts.slice(0, -1).join(' ');
       }
     }
+    
+    // Add all supported fields for update
+    if (typeof data.email === 'string') payload.email = data.email;
     if (typeof data.phone === 'string') payload.phone = data.phone;
+    if (typeof data.avatar === 'string') payload.avatar = data.avatar;
+    if (typeof data.bio === 'string') payload.bio = data.bio;
+    if (typeof data.location === 'string') payload.location = data.location;
 
     await requestJson<AuthMeResponse>('/accounts/me/', {
       method: 'PATCH',
@@ -251,6 +259,14 @@ export const TeacherService = {
 
   getNotifications: async (): Promise<Notification[]> => {
     return requestJson<Notification[]>('/notifications/teacher/', { method: 'GET' });
+  },
+
+  markNotificationRead: async (id: string) => {
+    return requestJson<any>(`/notifications/${encodeURIComponent(id)}/read/`, { method: 'POST' });
+  },
+
+  markAllNotificationsRead: async () => {
+    return requestJson<any>(`/notifications/read-all/`, { method: 'POST' });
   },
 
   getClassDetail: async (classId: string): Promise<ClassDetail | null> => {

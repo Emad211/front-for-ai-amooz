@@ -7,6 +7,8 @@ import { useMountedRef } from '@/hooks/use-mounted-ref';
 
 type NotificationsService = {
   getNotifications: () => Promise<Notification[]>;
+  markNotificationRead?: (id: string) => Promise<any>;
+  markAllNotificationsRead?: () => Promise<any>;
 };
 
 export function useNotifications(service: NotificationsService = DashboardService) {
@@ -18,7 +20,8 @@ export function useNotifications(service: NotificationsService = DashboardServic
   const reload = useCallback(async () => {
     try {
       setError(null);
-      setIsLoading(true);
+      // Only set loading on initial fetch to avoid flickering during read-sync
+      if (notifications.length === 0) setIsLoading(true);
       const data = await service.getNotifications();
       if (mountedRef.current) setNotifications(data);
     } catch (err) {
@@ -27,18 +30,38 @@ export function useNotifications(service: NotificationsService = DashboardServic
     } finally {
       if (mountedRef.current) setIsLoading(false);
     }
-  }, [mountedRef, service]);
+  }, [mountedRef, service, notifications.length]);
 
   useEffect(() => {
     reload();
   }, [reload]);
 
-  const markAsRead = (id: string) => {
+  const markAsRead = async (id: string) => {
+    // Optimistic UI update
     setNotifications(prev => prev.map(n => n.id === id ? { ...n, isRead: true } : n));
+    
+    // Server sync
+    if (service.markNotificationRead) {
+      try {
+        await service.markNotificationRead(id);
+      } catch (err) {
+        console.error('Failed to sync notification read status:', err);
+      }
+    }
   };
 
-  const markAllAsRead = () => {
+  const markAllAsRead = async () => {
+    // Optimistic UI update
     setNotifications(prev => prev.map(n => ({ ...n, isRead: true })));
+
+    // Server sync
+    if (service.markAllNotificationsRead) {
+      try {
+        await service.markAllNotificationsRead();
+      } catch (err) {
+        console.error('Failed to sync all notifications read status:', err);
+      }
+    }
   };
 
   const deleteNotification = (id: string) => {

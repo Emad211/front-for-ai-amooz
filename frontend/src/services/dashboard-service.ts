@@ -514,6 +514,28 @@ export const DashboardService = {
     return response || [];
   },
 
+  markNotificationRead: async (id: string) => {
+    if (!RAW_API_URL) return;
+    const url = `${API_URL}/notifications/${encodeURIComponent(id)}/read/`;
+    await fetch(url, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${getAccessToken()}`,
+      },
+    });
+  },
+
+  markAllNotificationsRead: async () => {
+    if (!RAW_API_URL) return;
+    const url = `${API_URL}/notifications/read-all/`;
+    await fetch(url, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${getAccessToken()}`,
+      },
+    });
+  },
+
   getCalendarEvents: async () => {
     await new Promise(resolve => setTimeout(resolve, 500));
     return MOCK_CALENDAR_EVENTS;

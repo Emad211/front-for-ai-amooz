@@ -26,6 +26,7 @@ class MeSerializer(serializers.Serializer):
 
     join_date = serializers.DateTimeField(source='date_joined', read_only=True)
     bio = serializers.SerializerMethodField()
+    location = serializers.SerializerMethodField()
     grade = serializers.SerializerMethodField()
     major = serializers.SerializerMethodField()
     is_verified = serializers.SerializerMethodField()
@@ -38,6 +39,16 @@ class MeSerializer(serializers.Serializer):
             return getattr(obj.teacherprofile, 'bio', None)
         if getattr(obj, 'role', None) == User.Role.ADMIN and hasattr(obj, 'adminprofile'):
             return getattr(obj.adminprofile, 'bio', None)
+        return None
+
+    @extend_schema_field(OpenApiTypes.STR)
+    def get_location(self, obj) -> str | None:
+        if getattr(obj, 'role', None) == User.Role.STUDENT and hasattr(obj, 'studentprofile'):
+            return getattr(obj.studentprofile, 'location', None)
+        if getattr(obj, 'role', None) == User.Role.TEACHER and hasattr(obj, 'teacherprofile'):
+            return getattr(obj.teacherprofile, 'location', None)
+        if getattr(obj, 'role', None) == User.Role.ADMIN and hasattr(obj, 'adminprofile'):
+            return getattr(obj.adminprofile, 'location', None)
         return None
 
     @extend_schema_field(OpenApiTypes.STR)
@@ -73,6 +84,8 @@ class MeUpdateSerializer(serializers.Serializer):
     avatar = serializers.CharField(required=False, allow_null=True)
 
     bio = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    location = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    expertise = serializers.CharField(required=False, allow_blank=True, allow_null=True)
     grade = serializers.CharField(required=False, allow_blank=True, allow_null=True)
     major = serializers.CharField(required=False, allow_blank=True, allow_null=True)
 
@@ -181,23 +194,27 @@ class MeUpdateSerializer(serializers.Serializer):
         if user_update_fields:
             instance.save(update_fields=user_update_fields)
 
-        # Profile fields
-        bio = validated_data.get('bio', None) if 'bio' in validated_data else None
+        # Profile fields logic
+        def update_base_profile(profile, data):
+            changed = False
+            if 'bio' in data:
+                profile.bio = (data.get('bio') or '').strip() or None
+                changed = True
+            if 'location' in data:
+                profile.location = (data.get('location') or '').strip() or None
+                changed = True
+            return changed
 
         if getattr(instance, 'role', None) == User.Role.STUDENT:
             profile, _ = StudentProfile.objects.get_or_create(user=instance)
-            profile_changed = False
-
-            if 'bio' in validated_data:
-                profile.bio = (bio or '').strip() or None
-                profile_changed = True
+            profile_changed = update_base_profile(profile, validated_data)
 
             if 'grade' in validated_data:
-                profile.grade = validated_data.get('grade')
+                profile.grade = self._normalize_student_grade(validated_data.get('grade'))
                 profile_changed = True
 
             if 'major' in validated_data:
-                profile.major = validated_data.get('major')
+                profile.major = self._normalize_student_major(validated_data.get('major'))
                 profile_changed = True
 
             if profile_changed:
@@ -205,14 +222,18 @@ class MeUpdateSerializer(serializers.Serializer):
 
         elif getattr(instance, 'role', None) == User.Role.TEACHER:
             profile, _ = TeacherProfile.objects.get_or_create(user=instance)
-            if 'bio' in validated_data:
-                profile.bio = (bio or '').strip() or None
+            profile_changed = update_base_profile(profile, validated_data)
+            
+            if 'expertise' in validated_data:
+                profile.expertise = (validated_data.get('expertise') or '').strip() or None
+                profile_changed = True
+                
+            if profile_changed:
                 profile.save()
 
         elif getattr(instance, 'role', None) == User.Role.ADMIN:
             profile, _ = AdminProfile.objects.get_or_create(user=instance)
-            if 'bio' in validated_data:
-                profile.bio = (bio or '').strip() or None
+            if update_base_profile(profile, validated_data):
                 profile.save()
 
         return instance
