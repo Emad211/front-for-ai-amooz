@@ -13,3 +13,4 @@ redis
 pytest
 pytest-django
 model-bakery
+gunicorn
