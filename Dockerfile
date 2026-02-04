@@ -18,5 +18,5 @@ COPY backend/ .
 # پورت
 EXPOSE 8000
 
-# ران شدن (migrate و static رو در Args همروش می‌ذاریم)
-CMD ["gunicorn", "ai_amooz.wsgi:application", "--bind", "0.0.0.0:$PORT"]
+# ✅ ران شدن با نام صحیح پروژه و اضافه کردن عملیات ضروری
+CMD ["sh", "-c", "python manage.py migrate --noinput && python manage.py collectstatic --noinput && gunicorn core.wsgi:application --bind 0.0.0.0:$PORT --timeout 120"]
