@@ -8,7 +8,12 @@ RUN apt-get update && apt-get install -y \
 # محیط‌های ضروری
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
-    PORT=8000
+    PORT=8000 \
+    GUNICORN_TIMEOUT=300 \
+    GUNICORN_WORKERS=3 \
+    GUNICORN_WORKER_CLASS=sync \
+    GUNICORN_GRACEFUL_TIMEOUT=60 \
+    GUNICORN_KEEP_ALIVE=5
 
 # دایرکتوری کار
 WORKDIR /app
@@ -23,5 +28,5 @@ COPY backend/ .
 # پورت
 EXPOSE 8000
 
-# ران شدن با timeout بیشتر
-CMD ["gunicorn", "core.wsgi:application", "--bind", "0.0.0.0:$PORT", "--timeout", "300", "--workers", "3", "--worker-class", "sync"]
+# Run gunicorn with env-configurable settings.
+CMD ["sh", "-c", "gunicorn core.wsgi:application --bind 0.0.0.0:${PORT:-8000} --timeout ${GUNICORN_TIMEOUT} --workers ${GUNICORN_WORKERS} --worker-class ${GUNICORN_WORKER_CLASS} --graceful-timeout ${GUNICORN_GRACEFUL_TIMEOUT} --keep-alive ${GUNICORN_KEEP_ALIVE}"]

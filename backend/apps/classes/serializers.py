@@ -1,5 +1,7 @@
-from rest_framework import serializers
 import json
+
+from django.conf import settings
+from rest_framework import serializers
 
 from drf_spectacular.utils import extend_schema_field
 
@@ -14,9 +16,10 @@ class Step1TranscribeRequestSerializer(serializers.Serializer):
     run_full_pipeline = serializers.BooleanField(required=False, default=False)
 
     def validate_file(self, value):
-        max_bytes = 200 * 1024 * 1024
+        max_bytes = getattr(settings, 'TRANSCRIPTION_MAX_UPLOAD_BYTES', 200 * 1024 * 1024)
+        max_mb = max_bytes // (1024 * 1024)
         if getattr(value, 'size', 0) > max_bytes:
-            raise serializers.ValidationError('File is too large (max 200MB).')
+            raise serializers.ValidationError(f'File is too large (max {max_mb}MB).')
 
         content_type = getattr(value, 'content_type', '') or ''
         if not (content_type.startswith('audio/') or content_type.startswith('video/')):
@@ -433,9 +436,10 @@ class ExamPrepStep1TranscribeRequestSerializer(serializers.Serializer):
     run_full_pipeline = serializers.BooleanField(required=False, default=False)
 
     def validate_file(self, value):
-        max_bytes = 200 * 1024 * 1024
+        max_bytes = getattr(settings, 'TRANSCRIPTION_MAX_UPLOAD_BYTES', 200 * 1024 * 1024)
+        max_mb = max_bytes // (1024 * 1024)
         if getattr(value, 'size', 0) > max_bytes:
-            raise serializers.ValidationError('File is too large (max 200MB).')
+            raise serializers.ValidationError(f'File is too large (max {max_mb}MB).')
 
         content_type = getattr(value, 'content_type', '') or ''
         if not (content_type.startswith('audio/') or content_type.startswith('video/')):

@@ -13,11 +13,25 @@ SECRET_KEY = os.getenv('DJANGO_SECRET_KEY', 'django-insecure-change-me-in-produc
 
 DEBUG = os.getenv('DEBUG', 'True') == 'True'
 
-ALLOWED_HOSTS = [
-    host.strip()
-    for host in os.getenv('ALLOWED_HOSTS', 'localhost,127.0.0.1,0.0.0.0').split(',')
-    if host.strip()
-]
+def _split_env_list(name: str, default: str = '') -> list[str]:
+    raw = os.getenv(name, default)
+    return [item.strip() for item in raw.split(',') if item.strip()]
+
+
+def _get_env_int(name: str, default: int) -> int:
+    raw = (os.getenv(name) or '').strip()
+    if not raw:
+        return default
+    try:
+        return int(raw)
+    except ValueError:
+        return default
+
+
+ALLOWED_HOSTS = _split_env_list(
+    'ALLOWED_HOSTS',
+    'localhost,127.0.0.1,0.0.0.0',
+)
 
 INSTALLED_APPS = [
     'django.contrib.admin',
@@ -181,13 +195,34 @@ SIMPLE_JWT = {
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
-CORS_ALLOW_ALL_ORIGINS = True # For development only
+# CORS: allow-all by default only in DEBUG, override via env in production.
+CORS_ALLOW_ALL_ORIGINS = os.getenv(
+    'CORS_ALLOW_ALL_ORIGINS',
+    'True' if DEBUG else 'False',
+) == 'True'
+CORS_ALLOWED_ORIGINS = _split_env_list('CORS_ALLOWED_ORIGINS')
+CORS_ALLOW_CREDENTIALS = os.getenv('CORS_ALLOW_CREDENTIALS', 'False') == 'True'
 
-# Allow large file uploads (up to 250MB)
-DATA_UPLOAD_MAX_MEMORY_SIZE = 250 * 1024 * 1024  # 250MB
-FILE_UPLOAD_MAX_MEMORY_SIZE = 250 * 1024 * 1024  # 250MB
+# Reverse proxy / HTTPS support.
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+USE_X_FORWARDED_HOST = True
+
+# CSRF trusted origins for admin/UI if needed.
+CSRF_TRUSTED_ORIGINS = _split_env_list('CSRF_TRUSTED_ORIGINS')
+
+# Allow large file uploads (defaults can be overridden via env)
+MAX_UPLOAD_MB = _get_env_int('MAX_UPLOAD_MB', 250)
+DATA_UPLOAD_MAX_MEMORY_SIZE = MAX_UPLOAD_MB * 1024 * 1024
+FILE_UPLOAD_MAX_MEMORY_SIZE = MAX_UPLOAD_MB * 1024 * 1024
+
+# Max size for transcription uploads (applies to class + exam prep step 1).
+TRANSCRIPTION_MAX_UPLOAD_MB = _get_env_int('TRANSCRIPTION_MAX_UPLOAD_MB', 200)
+TRANSCRIPTION_MAX_UPLOAD_BYTES = TRANSCRIPTION_MAX_UPLOAD_MB * 1024 * 1024
 
 # Pipeline execution: when enabled, Step 1/2 return quickly and work continues in background.
 # Default is disabled to keep request/response deterministic (and test-friendly).
-CLASS_PIPELINE_ASYNC = os.getenv('CLASS_PIPELINE_ASYNC', 'False') == 'True'
+CLASS_PIPELINE_ASYNC = os.getenv(
+    'CLASS_PIPELINE_ASYNC',
+    'True' if not DEBUG else 'False',
+) == 'True'
 

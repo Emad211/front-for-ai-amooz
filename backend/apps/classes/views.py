@@ -7,7 +7,6 @@ import csv
 import traceback
 from datetime import timedelta
 from urllib.parse import quote
-
 from django.utils import timezone
 from django.conf import settings
 from django.http import HttpResponse
