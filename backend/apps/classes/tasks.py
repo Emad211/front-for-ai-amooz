@@ -1,0 +1,462 @@
+"""Celery tasks for the classes app.
+
+Every function that used to run inside ``run_in_background`` (daemon thread)
+is now a proper Celery task so it survives worker restarts, can be monitored,
+and does **not** block the Gunicorn sync worker.
+
+Design principles
+-----------------
+* Each task reads file data from disk via ``TemporaryFileUploadHandler``
+  (already forced in settings) so RAM stays low even for 500 MB uploads.
+* Retry with exponential back-off (max 3 retries, delay starts at 60 s).
+* ``time_limit`` / ``soft_time_limit`` inherited from settings by default;
+  individual tasks can override if needed.
+"""
+from __future__ import annotations
+
+import json
+import logging
+import os
+import tempfile
+
+from celery import shared_task
+
+logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _read_session_file_to_disk(session) -> str:
+    """Stream the uploaded file to a temp file and return the path.
+
+    This avoids loading 500 MB into RAM at once.
+    """
+    suffix = os.path.splitext(session.source_original_name or '')[-1] or '.bin'
+    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
+    try:
+        session.source_file.open('rb')
+        try:
+            for chunk in session.source_file.chunks(chunk_size=2 * 1024 * 1024):
+                tmp.write(chunk)
+        finally:
+            session.source_file.close()
+    except Exception:
+        tmp.close()
+        os.unlink(tmp.name)
+        raise
+    tmp.close()
+    return tmp.name
+
+
+def _read_file_bytes(path: str) -> bytes:
+    with open(path, 'rb') as f:
+        return f.read()
+
+
+# ---------------------------------------------------------------------------
+# CLASS pipeline tasks (steps 1-5 + full pipeline)
+# ---------------------------------------------------------------------------
+
+@shared_task(bind=True, max_retries=3, default_retry_delay=60, acks_late=True)
+def process_class_step1_transcription(self, session_id: int) -> dict:
+    """Transcribe uploaded media for a class creation session."""
+    from .models import ClassCreationSession
+    from .services.transcription import transcribe_media_bytes
+
+    session = ClassCreationSession.objects.filter(id=session_id).first()
+    if session is None:
+        return {'status': 'skipped', 'reason': 'session not found'}
+    if session.status != ClassCreationSession.Status.TRANSCRIBING:
+        return {'status': 'skipped', 'reason': f'unexpected status {session.status}'}
+
+    tmp_path: str | None = None
+    try:
+        tmp_path = _read_session_file_to_disk(session)
+        data = _read_file_bytes(tmp_path)
+
+        transcript, provider, model_name = transcribe_media_bytes(
+            data=data,
+            mime_type=session.source_mime_type or 'application/octet-stream',
+        )
+        session.transcript_markdown = transcript
+        session.llm_provider = provider
+        session.llm_model = model_name
+        session.status = ClassCreationSession.Status.TRANSCRIBED
+        session.save(update_fields=['transcript_markdown', 'llm_provider', 'llm_model', 'status', 'updated_at'])
+        return {'status': 'success', 'session_id': session_id}
+    except Exception as exc:
+        if tmp_path and os.path.exists(tmp_path):
+            os.unlink(tmp_path)
+            tmp_path = None
+        # Mark failed only on final retry.
+        if self.request.retries >= self.max_retries:
+            session.refresh_from_db()
+            session.status = ClassCreationSession.Status.FAILED
+            session.error_detail = str(exc)
+            session.save(update_fields=['status', 'error_detail', 'updated_at'])
+            return {'status': 'failed', 'error': str(exc)}
+        raise self.retry(exc=exc)
+    finally:
+        if tmp_path and os.path.exists(tmp_path):
+            os.unlink(tmp_path)
+
+
+@shared_task(bind=True, max_retries=3, default_retry_delay=60, acks_late=True)
+def process_class_step2_structure(self, session_id: int) -> dict:
+    """Structure transcript into outline/units."""
+    from .models import ClassCreationSession
+    from .services.structure import structure_transcript_markdown
+    from .services.sync_structure import sync_structure_from_session
+
+    session = ClassCreationSession.objects.filter(id=session_id).first()
+    if session is None:
+        return {'status': 'skipped', 'reason': 'session not found'}
+    if session.status != ClassCreationSession.Status.STRUCTURING:
+        return {'status': 'skipped', 'reason': f'unexpected status {session.status}'}
+    if not (session.transcript_markdown or '').strip():
+        session.status = ClassCreationSession.Status.FAILED
+        session.error_detail = 'برای این جلسه هنوز متن درس آماده نیست.'
+        session.save(update_fields=['status', 'error_detail', 'updated_at'])
+        return {'status': 'failed', 'error': session.error_detail}
+
+    try:
+        structure_obj, provider, model_name = structure_transcript_markdown(
+            transcript_markdown=session.transcript_markdown,
+        )
+        session.structure_json = json.dumps(structure_obj, ensure_ascii=False)
+        session.llm_provider = provider
+        session.llm_model = model_name
+        session.status = ClassCreationSession.Status.STRUCTURED
+        session.save(update_fields=['structure_json', 'llm_provider', 'llm_model', 'status', 'updated_at'])
+        sync_structure_from_session(session=session)
+        return {'status': 'success', 'session_id': session_id}
+    except Exception as exc:
+        if self.request.retries >= self.max_retries:
+            session.refresh_from_db()
+            session.status = ClassCreationSession.Status.FAILED
+            session.error_detail = str(exc)
+            session.save(update_fields=['status', 'error_detail', 'updated_at'])
+            return {'status': 'failed', 'error': str(exc)}
+        raise self.retry(exc=exc)
+
+
+@shared_task(bind=True, max_retries=3, default_retry_delay=60, acks_late=True)
+def process_class_step3_prerequisites(self, session_id: int) -> dict:
+    """Extract prerequisites from transcript."""
+    from .models import ClassCreationSession, ClassPrerequisite
+    from .services.prerequisites import extract_prerequisites
+
+    session = ClassCreationSession.objects.filter(id=session_id).first()
+    if session is None:
+        return {'status': 'skipped', 'reason': 'session not found'}
+    if session.status != ClassCreationSession.Status.PREREQ_EXTRACTING:
+        return {'status': 'skipped', 'reason': f'unexpected status {session.status}'}
+    if not (session.transcript_markdown or '').strip():
+        session.status = ClassCreationSession.Status.FAILED
+        session.error_detail = 'برای این جلسه هنوز متن درس آماده نیست.'
+        session.save(update_fields=['status', 'error_detail', 'updated_at'])
+        return {'status': 'failed', 'error': session.error_detail}
+
+    try:
+        prereq_obj, provider, model_name = extract_prerequisites(
+            transcript_markdown=session.transcript_markdown,
+        )
+        raw_list = prereq_obj.get('prerequisites') if isinstance(prereq_obj, dict) else None
+        prereqs = [str(x).strip() for x in (raw_list or []) if str(x).strip()]
+
+        # Upsert prerequisites
+        keep_ids: list[int] = []
+        for idx, name in enumerate(prereqs):
+            obj, _ = ClassPrerequisite.objects.update_or_create(
+                session=session, order=idx + 1, defaults={'name': name},
+            )
+            keep_ids.append(obj.id)
+        ClassPrerequisite.objects.filter(session=session).exclude(id__in=keep_ids).delete()
+
+        session.llm_provider = provider
+        session.llm_model = model_name
+        session.status = ClassCreationSession.Status.PREREQ_EXTRACTED
+        session.save(update_fields=['llm_provider', 'llm_model', 'status', 'updated_at'])
+        return {'status': 'success', 'session_id': session_id}
+    except Exception as exc:
+        if self.request.retries >= self.max_retries:
+            session.refresh_from_db()
+            session.status = ClassCreationSession.Status.FAILED
+            session.error_detail = str(exc)
+            session.save(update_fields=['status', 'error_detail', 'updated_at'])
+            return {'status': 'failed', 'error': str(exc)}
+        raise self.retry(exc=exc)
+
+
+@shared_task(bind=True, max_retries=3, default_retry_delay=60, acks_late=True)
+def process_class_step4_prereq_teaching(self, session_id: int, prerequisite_name: str | None = None) -> dict:
+    """Generate teaching notes for prerequisites."""
+    from .models import ClassCreationSession, ClassPrerequisite
+    from .services.prerequisites import generate_prerequisite_teaching
+
+    session = ClassCreationSession.objects.filter(id=session_id).first()
+    if session is None:
+        return {'status': 'skipped', 'reason': 'session not found'}
+    if session.status != ClassCreationSession.Status.PREREQ_TEACHING:
+        return {'status': 'skipped', 'reason': f'unexpected status {session.status}'}
+
+    qs = ClassPrerequisite.objects.filter(session=session).order_by('order')
+    if prerequisite_name:
+        qs = qs.filter(name=prerequisite_name)
+    if not qs.exists():
+        session.status = ClassCreationSession.Status.FAILED
+        session.error_detail = 'پیش نیازها یافت نشدند. ابتدا مرحله پیش نیازها را اجرا کنید.'
+        session.save(update_fields=['status', 'error_detail', 'updated_at'])
+        return {'status': 'failed', 'error': session.error_detail}
+
+    try:
+        provider = model_name = ''
+        for prereq in qs:
+            teaching, provider, model_name = generate_prerequisite_teaching(prerequisite_name=prereq.name)
+            prereq.teaching_text = teaching
+            prereq.save(update_fields=['teaching_text'])
+
+        if provider:
+            session.llm_provider = provider
+        if model_name:
+            session.llm_model = model_name
+        session.status = ClassCreationSession.Status.PREREQ_TAUGHT
+        session.save(update_fields=['llm_provider', 'llm_model', 'status', 'updated_at'])
+        return {'status': 'success', 'session_id': session_id}
+    except Exception as exc:
+        if self.request.retries >= self.max_retries:
+            session.refresh_from_db()
+            session.status = ClassCreationSession.Status.FAILED
+            session.error_detail = str(exc)
+            session.save(update_fields=['status', 'error_detail', 'updated_at'])
+            return {'status': 'failed', 'error': str(exc)}
+        raise self.retry(exc=exc)
+
+
+@shared_task(bind=True, max_retries=3, default_retry_delay=60, acks_late=True)
+def process_class_step5_recap(self, session_id: int) -> dict:
+    """Generate recap markdown from structured content."""
+    from .models import ClassCreationSession
+    from .services.recap import generate_recap_from_structure, recap_json_to_markdown
+
+    session = ClassCreationSession.objects.filter(id=session_id).first()
+    if session is None:
+        return {'status': 'skipped', 'reason': 'session not found'}
+    if session.status != ClassCreationSession.Status.RECAPPING:
+        return {'status': 'skipped', 'reason': f'unexpected status {session.status}'}
+    if not (session.structure_json or '').strip():
+        session.status = ClassCreationSession.Status.FAILED
+        session.error_detail = 'برای این جلسه هنوز ساختار مرحله ۲ آماده نیست.'
+        session.save(update_fields=['status', 'error_detail', 'updated_at'])
+        return {'status': 'failed', 'error': session.error_detail}
+
+    try:
+        recap_obj, provider, model_name = generate_recap_from_structure(structure_json=session.structure_json)
+        session.recap_markdown = recap_json_to_markdown(recap_obj)
+        session.llm_provider = provider
+        session.llm_model = model_name
+        session.status = ClassCreationSession.Status.RECAPPED
+        session.save(update_fields=['recap_markdown', 'llm_provider', 'llm_model', 'status', 'updated_at'])
+        return {'status': 'success', 'session_id': session_id}
+    except Exception as exc:
+        if self.request.retries >= self.max_retries:
+            session.refresh_from_db()
+            session.status = ClassCreationSession.Status.FAILED
+            session.error_detail = str(exc)
+            session.save(update_fields=['status', 'error_detail', 'updated_at'])
+            return {'status': 'failed', 'error': str(exc)}
+        raise self.retry(exc=exc)
+
+
+@shared_task(bind=True, max_retries=0, acks_late=True)
+def process_class_full_pipeline(self, session_id: int) -> dict:
+    """Run class creation steps 1-5 sequentially (one-click pipeline).
+
+    Each step is called **inline** (not as a sub-task) so that
+    ordering is always guaranteed.
+    """
+    from .models import ClassCreationSession
+
+    session = ClassCreationSession.objects.filter(id=session_id).first()
+    if session is None:
+        return {'status': 'skipped', 'reason': 'session not found'}
+
+    # Step 1
+    if session.status == ClassCreationSession.Status.TRANSCRIBING:
+        process_class_step1_transcription(session_id)
+
+    session.refresh_from_db()
+    if session.status == ClassCreationSession.Status.FAILED:
+        return {'status': 'failed', 'stopped_at': 'step1'}
+
+    # Step 2
+    if session.status == ClassCreationSession.Status.TRANSCRIBED:
+        session.status = ClassCreationSession.Status.STRUCTURING
+        session.save(update_fields=['status', 'updated_at'])
+        process_class_step2_structure(session_id)
+
+    session.refresh_from_db()
+    if session.status == ClassCreationSession.Status.FAILED:
+        return {'status': 'failed', 'stopped_at': 'step2'}
+
+    # Step 3
+    if session.status == ClassCreationSession.Status.STRUCTURED:
+        session.status = ClassCreationSession.Status.PREREQ_EXTRACTING
+        session.save(update_fields=['status', 'updated_at'])
+        process_class_step3_prerequisites(session_id)
+
+    session.refresh_from_db()
+    if session.status == ClassCreationSession.Status.FAILED:
+        return {'status': 'failed', 'stopped_at': 'step3'}
+
+    # Step 4
+    if session.status == ClassCreationSession.Status.PREREQ_EXTRACTED:
+        session.status = ClassCreationSession.Status.PREREQ_TEACHING
+        session.save(update_fields=['status', 'updated_at'])
+        process_class_step4_prereq_teaching(session_id)
+
+    session.refresh_from_db()
+    if session.status == ClassCreationSession.Status.FAILED:
+        return {'status': 'failed', 'stopped_at': 'step4'}
+
+    # Step 5
+    if session.status == ClassCreationSession.Status.PREREQ_TAUGHT:
+        session.status = ClassCreationSession.Status.RECAPPING
+        session.save(update_fields=['status', 'updated_at'])
+        process_class_step5_recap(session_id)
+
+    return {'status': 'success', 'session_id': session_id}
+
+
+# ---------------------------------------------------------------------------
+# EXAM PREP pipeline tasks (steps 1-2 + full pipeline)
+# ---------------------------------------------------------------------------
+
+@shared_task(bind=True, max_retries=3, default_retry_delay=60, acks_late=True)
+def process_exam_prep_step1_transcription(self, session_id: int) -> dict:
+    """Transcribe uploaded media for exam prep pipeline."""
+    from .models import ClassCreationSession
+    from .services.transcription import transcribe_media_bytes
+
+    session = ClassCreationSession.objects.filter(id=session_id).first()
+    if session is None:
+        return {'status': 'skipped', 'reason': 'session not found'}
+    if session.status != ClassCreationSession.Status.EXAM_TRANSCRIBING:
+        return {'status': 'skipped', 'reason': f'unexpected status {session.status}'}
+
+    tmp_path: str | None = None
+    try:
+        tmp_path = _read_session_file_to_disk(session)
+        data = _read_file_bytes(tmp_path)
+
+        transcript, provider, model_name = transcribe_media_bytes(
+            data=data,
+            mime_type=session.source_mime_type or 'application/octet-stream',
+        )
+        session.transcript_markdown = transcript
+        session.llm_provider = provider
+        session.llm_model = model_name
+        session.status = ClassCreationSession.Status.EXAM_TRANSCRIBED
+        session.save(update_fields=['transcript_markdown', 'llm_provider', 'llm_model', 'status', 'updated_at'])
+        return {'status': 'success', 'session_id': session_id}
+    except Exception as exc:
+        if tmp_path and os.path.exists(tmp_path):
+            os.unlink(tmp_path)
+            tmp_path = None
+        if self.request.retries >= self.max_retries:
+            session.refresh_from_db()
+            session.status = ClassCreationSession.Status.FAILED
+            session.error_detail = str(exc)
+            session.save(update_fields=['status', 'error_detail', 'updated_at'])
+            return {'status': 'failed', 'error': str(exc)}
+        raise self.retry(exc=exc)
+    finally:
+        if tmp_path and os.path.exists(tmp_path):
+            os.unlink(tmp_path)
+
+
+@shared_task(bind=True, max_retries=3, default_retry_delay=60, acks_late=True)
+def process_exam_prep_step2_structure(self, session_id: int) -> dict:
+    """Extract Q&A structure from exam prep transcript."""
+    import json as _json
+    from .models import ClassCreationSession
+    from .services.exam_prep_structure import extract_exam_prep_structure
+    from .services.exam_prep_utils import normalize_exam_prep_questions
+
+    session = ClassCreationSession.objects.filter(id=session_id).first()
+    if session is None:
+        return {'status': 'skipped', 'reason': 'session not found'}
+    if session.status != ClassCreationSession.Status.EXAM_STRUCTURING:
+        return {'status': 'skipped', 'reason': f'unexpected status {session.status}'}
+    if not (session.transcript_markdown or '').strip():
+        session.status = ClassCreationSession.Status.FAILED
+        session.error_detail = 'برای این جلسه هنوز ترنسکریپت مرحله ۱ آماده نیست.'
+        session.save(update_fields=['status', 'error_detail', 'updated_at'])
+        return {'status': 'failed', 'error': session.error_detail}
+
+    try:
+        exam_prep_obj, provider, model_name = extract_exam_prep_structure(
+            transcript_markdown=session.transcript_markdown,
+        )
+        normalized, _changed = normalize_exam_prep_questions(exam_prep_obj)
+        session.exam_prep_json = _json.dumps(normalized, ensure_ascii=False)
+        session.llm_provider = provider
+        session.llm_model = model_name
+        session.status = ClassCreationSession.Status.EXAM_STRUCTURED
+        session.save(update_fields=['exam_prep_json', 'llm_provider', 'llm_model', 'status', 'updated_at'])
+        return {'status': 'success', 'session_id': session_id}
+    except Exception as exc:
+        if self.request.retries >= self.max_retries:
+            session.refresh_from_db()
+            session.status = ClassCreationSession.Status.FAILED
+            session.error_detail = str(exc)
+            session.save(update_fields=['status', 'error_detail', 'updated_at'])
+            return {'status': 'failed', 'error': str(exc)}
+        raise self.retry(exc=exc)
+
+
+@shared_task(bind=True, max_retries=0, acks_late=True)
+def process_exam_prep_full_pipeline(self, session_id: int) -> dict:
+    """Run exam prep steps 1-2 sequentially."""
+    from .models import ClassCreationSession
+
+    session = ClassCreationSession.objects.filter(id=session_id).first()
+    if session is None:
+        return {'status': 'skipped', 'reason': 'session not found'}
+
+    # Step 1
+    if session.status == ClassCreationSession.Status.EXAM_TRANSCRIBING:
+        process_exam_prep_step1_transcription(session_id)
+
+    session.refresh_from_db()
+    if session.status == ClassCreationSession.Status.FAILED:
+        return {'status': 'failed', 'stopped_at': 'step1'}
+
+    # Step 2
+    if session.status == ClassCreationSession.Status.EXAM_TRANSCRIBED:
+        session.status = ClassCreationSession.Status.EXAM_STRUCTURING
+        session.save(update_fields=['status', 'updated_at'])
+        process_exam_prep_step2_structure(session_id)
+
+    return {'status': 'success', 'session_id': session_id}
+
+
+# ---------------------------------------------------------------------------
+# Lightweight tasks (SMS, notifications, etc.)
+# ---------------------------------------------------------------------------
+
+@shared_task(bind=True, max_retries=2, default_retry_delay=30, acks_late=True)
+def send_publish_sms_task(self, session_id: int) -> dict:
+    """Send publish SMS notifications to invited students."""
+    from .services.mediana_sms import send_publish_sms_for_session
+
+    try:
+        send_publish_sms_for_session(session_id)
+        return {'status': 'success', 'session_id': session_id}
+    except Exception as exc:
+        logger.exception('SMS send failed for session %s', session_id)
+        if self.request.retries >= self.max_retries:
+            return {'status': 'failed', 'error': str(exc)}
+        raise self.retry(exc=exc)

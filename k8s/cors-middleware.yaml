@@ -1,0 +1,22 @@
+apiVersion: traefik.containo.us/v1alpha1
+kind: Middleware
+metadata:
+  name: ai-amooz-cors-headers
+  namespace: ai-products-ai-amooz
+spec:
+  headers:
+    accessControlAllowOriginList:
+      - "https://front-for-ai-amooz.vercel.app"
+    accessControlAllowMethods:
+      - GET
+      - POST
+      - PUT
+      - PATCH
+      - DELETE
+      - OPTIONS
+    accessControlAllowHeaders:
+      - Content-Type
+      - Authorization
+      - X-Requested-With
+    accessControlAllowCredentials: true
+    accessControlMaxAge: 86400

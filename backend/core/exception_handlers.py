@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from rest_framework.response import Response
 from rest_framework.views import exception_handler
+
+logger = logging.getLogger(__name__)
 
 
 def _as_error_dict(data: Any) -> dict[str, list[str]]:
@@ -35,10 +38,18 @@ def api_exception_handler(exc: Exception, context: dict[str, Any]) -> Response |
     Contract:
     - Validation errors return: {"detail": "Validation error.", "errors": {..}}
     - Other errors keep DRF's default {"detail": "..."} shape.
+    - Unhandled exceptions return JSON 500 (never HTML).
     """
     response = exception_handler(exc, context)
+
+    # DRF returned None → unhandled exception (e.g. ValueError, DB error).
+    # Return a generic JSON 500 instead of letting Django emit HTML.
     if response is None:
-        return None
+        logger.exception("Unhandled exception in %s", context.get('view', ''))
+        return Response(
+            {'detail': 'Internal server error.'},
+            status=500,
+        )
 
     data = response.data
 

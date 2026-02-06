@@ -2,6 +2,7 @@ from pathlib import Path
 import os
 from urllib.parse import urlparse
 from dotenv import load_dotenv
+from datetime import timedelta
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -184,7 +185,6 @@ SPECTACULAR_SETTINGS = {
     },
 }
 
-from datetime import timedelta
 SIMPLE_JWT = {
     'ACCESS_TOKEN_LIFETIME': timedelta(minutes=60),
     'REFRESH_TOKEN_LIFETIME': timedelta(days=1),
@@ -211,12 +211,18 @@ USE_X_FORWARDED_HOST = True
 CSRF_TRUSTED_ORIGINS = _split_env_list('CSRF_TRUSTED_ORIGINS')
 
 # Allow large file uploads (defaults can be overridden via env)
-MAX_UPLOAD_MB = _get_env_int('MAX_UPLOAD_MB', 250)
+MAX_UPLOAD_MB = _get_env_int('MAX_UPLOAD_MB', 500)
 DATA_UPLOAD_MAX_MEMORY_SIZE = MAX_UPLOAD_MB * 1024 * 1024
 FILE_UPLOAD_MAX_MEMORY_SIZE = MAX_UPLOAD_MB * 1024 * 1024
 
+# Force large uploads to stream to disk instead of staying in memory.
+# Files > 2.5 MB are written to /tmp automatically.
+FILE_UPLOAD_HANDLERS = [
+    'django.core.files.uploadhandler.TemporaryFileUploadHandler',
+]
+
 # Max size for transcription uploads (applies to class + exam prep step 1).
-TRANSCRIPTION_MAX_UPLOAD_MB = _get_env_int('TRANSCRIPTION_MAX_UPLOAD_MB', 200)
+TRANSCRIPTION_MAX_UPLOAD_MB = _get_env_int('TRANSCRIPTION_MAX_UPLOAD_MB', 500)
 TRANSCRIPTION_MAX_UPLOAD_BYTES = TRANSCRIPTION_MAX_UPLOAD_MB * 1024 * 1024
 
 # Pipeline execution: when enabled, Step 1/2 return quickly and work continues in background.
@@ -225,4 +231,47 @@ CLASS_PIPELINE_ASYNC = os.getenv(
     'CLASS_PIPELINE_ASYNC',
     'True' if not DEBUG else 'False',
 ) == 'True'
+
+# ---------------------------------------------------------------------------
+# Celery (task queue) – used for heavy AI / transcription workloads.
+# ---------------------------------------------------------------------------
+REDIS_URL = os.getenv('REDIS_URL') or os.getenv('CHAT_REDIS_URL') or 'redis://localhost:6379/0'
+CELERY_BROKER_URL = os.getenv('CELERY_BROKER_URL', REDIS_URL)
+CELERY_RESULT_BACKEND = os.getenv('CELERY_RESULT_BACKEND', REDIS_URL)
+CELERY_ACCEPT_CONTENT = ['json']
+CELERY_TASK_SERIALIZER = 'json'
+CELERY_RESULT_SERIALIZER = 'json'
+CELERY_TASK_TIME_LIMIT = _get_env_int('CELERY_TASK_TIME_LIMIT', 6 * 60 * 60)       # 6 h
+CELERY_TASK_SOFT_TIME_LIMIT = _get_env_int('CELERY_TASK_SOFT_TIME_LIMIT', 5 * 60 * 60)  # 5 h
+CELERY_WORKER_PREFETCH_MULTIPLIER = 1   # important for long-running tasks
+CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = True
+
+# ---------------------------------------------------------------------------
+# Logging — structured JSON-ready logging for production.
+# ---------------------------------------------------------------------------
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'formatters': {
+        'verbose': {
+            'format': '[{asctime}] {levelname} {name} {message}',
+            'style': '{',
+        },
+    },
+    'handlers': {
+        'console': {
+            'class': 'logging.StreamHandler',
+            'formatter': 'verbose',
+        },
+    },
+    'root': {
+        'handlers': ['console'],
+        'level': 'INFO',
+    },
+    'loggers': {
+        'django': {'level': 'WARNING', 'propagate': True},
+        'celery': {'level': 'INFO', 'propagate': True},
+        'apps': {'level': 'INFO', 'propagate': True},
+    },
+}
 

@@ -1,0 +1,28 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ai-amooz-backend-ingress
+  namespace: ai-products-ai-amooz
+  annotations:
+    # Chain the two Traefik middlewares we created.
+    traefik.ingress.kubernetes.io/router.middlewares: >-
+      ai-products-ai-amooz-ai-amooz-cors-headers@kubernetescrd,
+      ai-products-ai-amooz-ai-amooz-upload-limit@kubernetescrd
+    # Optional: auto-issue TLS certificate via cert-manager.
+    cert-manager.io/cluster-issuer: acme-prod
+spec:
+  rules:
+    - host: aiamoooz.darkube.app
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: ai-amooz-backend
+                port:
+                  name: main
+  tls:
+    - hosts:
+        - aiamoooz.darkube.app
+      secretName: ai-amooz-tls-secret

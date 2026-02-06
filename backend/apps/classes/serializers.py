@@ -16,7 +16,7 @@ class Step1TranscribeRequestSerializer(serializers.Serializer):
     run_full_pipeline = serializers.BooleanField(required=False, default=False)
 
     def validate_file(self, value):
-        max_bytes = getattr(settings, 'TRANSCRIPTION_MAX_UPLOAD_BYTES', 200 * 1024 * 1024)
+        max_bytes = getattr(settings, 'TRANSCRIPTION_MAX_UPLOAD_BYTES', 500 * 1024 * 1024)
         max_mb = max_bytes // (1024 * 1024)
         if getattr(value, 'size', 0) > max_bytes:
             raise serializers.ValidationError(f'File is too large (max {max_mb}MB).')
@@ -436,7 +436,7 @@ class ExamPrepStep1TranscribeRequestSerializer(serializers.Serializer):
     run_full_pipeline = serializers.BooleanField(required=False, default=False)
 
     def validate_file(self, value):
-        max_bytes = getattr(settings, 'TRANSCRIPTION_MAX_UPLOAD_BYTES', 200 * 1024 * 1024)
+        max_bytes = getattr(settings, 'TRANSCRIPTION_MAX_UPLOAD_BYTES', 500 * 1024 * 1024)
         max_mb = max_bytes // (1024 * 1024)
         if getattr(value, 'size', 0) > max_bytes:
             raise serializers.ValidationError(f'File is too large (max {max_mb}MB).')

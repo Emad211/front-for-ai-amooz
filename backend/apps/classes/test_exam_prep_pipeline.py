@@ -28,6 +28,22 @@ class TestExamPrepStep1Transcription:
     def _disable_async_pipeline(self, settings):
         settings.CLASS_PIPELINE_ASYNC = False
 
+    @pytest.fixture(autouse=True)
+    def _stub_celery_tasks(self, monkeypatch):
+        """Stub Celery .delay() so tests don't need a running broker."""
+        monkeypatch.setattr(
+            'apps.classes.views.process_exam_prep_step1_transcription.delay',
+            lambda session_id: None,
+        )
+        monkeypatch.setattr(
+            'apps.classes.views.process_exam_prep_full_pipeline.delay',
+            lambda session_id: None,
+        )
+        monkeypatch.setattr(
+            'apps.classes.views.process_exam_prep_step2_structure.delay',
+            lambda session_id: None,
+        )
+
     def test_requires_authentication(self):
         """Step 1 should reject unauthenticated requests."""
         client = APIClient()
@@ -170,6 +186,14 @@ class TestExamPrepStep1Transcription:
 @pytest.mark.django_db
 class TestExamPrepStep2Structure:
     """Tests for Exam Prep Step 2: Q&A Extraction."""
+
+    @pytest.fixture(autouse=True)
+    def _stub_celery_tasks(self, monkeypatch):
+        """Stub Celery .delay() so tests don't need a running broker."""
+        monkeypatch.setattr(
+            'apps.classes.views.process_exam_prep_step2_structure.delay',
+            lambda session_id: None,
+        )
 
     @pytest.fixture
     def teacher_with_transcribed_session(self):

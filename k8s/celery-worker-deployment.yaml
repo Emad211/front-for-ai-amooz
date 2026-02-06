@@ -1,0 +1,53 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ai-amooz-celery-worker
+  namespace: ai-products-ai-amooz
+  labels:
+    app: ai-amooz-celery-worker
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: ai-amooz-celery-worker
+  template:
+    metadata:
+      labels:
+        app: ai-amooz-celery-worker
+    spec:
+      containers:
+        - name: worker
+          # Same backend image – different entrypoint.
+          image: registry.hamdocker.ir/ai-products/ai-amooz-backend:latest
+          command: ["celery"]
+          args:
+            - "-A"
+            - "core"
+            - "worker"
+            - "--loglevel=info"
+            - "--concurrency=2"
+            - "--max-tasks-per-child=50"
+          envFrom:
+            - secretRef:
+                name: ai-amooz-backend-secrets
+          resources:
+            requests:
+              memory: "1Gi"
+              cpu: "500m"
+            limits:
+              memory: "4Gi"
+              cpu: "2000m"
+          # Liveness: make sure the worker is alive.
+          livenessProbe:
+            exec:
+              command:
+                - "celery"
+                - "-A"
+                - "core"
+                - "inspect"
+                - "ping"
+                - "--timeout=10"
+            initialDelaySeconds: 30
+            periodSeconds: 60
+            timeoutSeconds: 15
+      restartPolicy: Always

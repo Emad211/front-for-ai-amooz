@@ -1,0 +1,12 @@
+apiVersion: traefik.containo.us/v1alpha1
+kind: Middleware
+metadata:
+  name: ai-amooz-upload-limit
+  namespace: ai-products-ai-amooz
+spec:
+  buffering:
+    # 500 MB in bytes
+    maxRequestBodyBytes: 524288000
+    # Allow response streaming without buffering
+    maxResponseBodyBytes: 0
+    retryExpression: "IsNetworkError() && Attempts() < 2"

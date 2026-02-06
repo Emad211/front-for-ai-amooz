@@ -1,14 +1,18 @@
 from __future__ import annotations
 
+import csv
 import json
+import logging
 import re
 import uuid
-import csv
-import traceback
 from datetime import timedelta
 from urllib.parse import quote
-from django.utils import timezone
+
 from django.conf import settings
+from django.db import transaction
+from django.utils import timezone
+
+logger = logging.getLogger(__name__)
 from django.http import HttpResponse
 from django.db.models import Count, Max, Min, Q
 
@@ -82,13 +86,24 @@ from .services.transcription import transcribe_media_bytes
 from .services.structure import structure_transcript_markdown
 from .services.prerequisites import extract_prerequisites, generate_prerequisite_teaching
 from .services.recap import generate_recap_from_structure, recap_json_to_markdown
-from .services.background import run_in_background
 from .services.sync_structure import sync_structure_from_session
-from .services.mediana_sms import send_publish_sms_for_session
 from .services.quizzes import generate_final_exam_pool, generate_section_quiz_questions, grade_open_text_answer
 from .services.pdf_export import generate_course_pdf
 from .services.exam_prep_structure import extract_exam_prep_structure
 from .services.invite_codes import get_or_create_invite_code_for_phone
+
+from .tasks import (
+    process_class_step1_transcription,
+    process_class_step2_structure,
+    process_class_step3_prerequisites,
+    process_class_step4_prereq_teaching,
+    process_class_step5_recap,
+    process_class_full_pipeline,
+    process_exam_prep_step1_transcription,
+    process_exam_prep_step2_structure,
+    process_exam_prep_full_pipeline,
+    send_publish_sms_task,
+)
 
 from apps.chatbot.services.student_course_chat import (
     handle_student_audio_upload,
@@ -102,63 +117,10 @@ from apps.chatbot.services.student_exam_prep_chat import (
     handle_exam_prep_message,
 )
 
-
-def _normalize_exam_prep_questions(exam_prep_obj: dict) -> tuple[dict, bool]:
-    """Ensure each question has a unique, non-empty question_id."""
-    changed = False
-    if not isinstance(exam_prep_obj, dict):
-        return exam_prep_obj, False
-
-    exam_prep = exam_prep_obj.get('exam_prep')
-    if not isinstance(exam_prep, dict):
-        return exam_prep_obj, False
-
-    questions = exam_prep.get('questions')
-    if not isinstance(questions, list):
-        return exam_prep_obj, False
-
-    used_ids: set[str] = set()
-    for idx, q in enumerate(questions):
-        if not isinstance(q, dict):
-            continue
-        qid = str(q.get('question_id') or '').strip()
-        if not qid or qid in used_ids:
-            base = f"q-{idx + 1}"
-            qid = base
-            suffix = 1
-            while qid in used_ids:
-                suffix += 1
-                qid = f"{base}-{suffix}"
-            q['question_id'] = qid
-            changed = True
-        used_ids.add(qid)
-
-    return exam_prep_obj, changed
-
-
-def _normalize_exam_prep_json(raw_value: object) -> tuple[str | None, bool]:
-    """Normalize exam_prep_json and return JSON string + changed flag."""
-    if raw_value is None:
-        return None, False
-
-    obj: object = raw_value
-    if isinstance(raw_value, str):
-        s = raw_value.strip()
-        if not s:
-            return s, False
-        try:
-            obj = json.loads(s)
-        except Exception:
-            return raw_value, False
-
-    if not isinstance(obj, dict):
-        try:
-            return json.dumps(obj, ensure_ascii=False), False
-        except Exception:
-            return None, False
-
-    normalized, changed = _normalize_exam_prep_questions(obj)
-    return json.dumps(normalized, ensure_ascii=False), changed
+from .services.exam_prep_utils import (
+    normalize_exam_prep_questions as _normalize_exam_prep_questions,
+    normalize_exam_prep_json as _normalize_exam_prep_json,
+)
 
 from .services.student_chat_history import append_message, get_or_create_thread, list_messages
 from .services.student_exam_chat_history import (
@@ -459,12 +421,12 @@ class Step1TranscribeView(APIView):
         )
 
         if run_full_pipeline:
-            run_in_background(lambda: _process_full_pipeline(session.id), name=f'class-pipeline-1to5-{session.id}')
+            transaction.on_commit(lambda: process_class_full_pipeline.delay(session.id))
             return Response(Step1TranscribeResponseSerializer(session).data, status=status.HTTP_202_ACCEPTED)
 
         if getattr(settings, 'CLASS_PIPELINE_ASYNC', False):
-            # Run in background so the teacher can navigate away without breaking the pipeline.
-            run_in_background(lambda: _process_step1_transcription(session.id), name=f'class-step1-{session.id}')
+            # Dispatch to Celery so the teacher can navigate away without breaking the pipeline.
+            transaction.on_commit(lambda: process_class_step1_transcription.delay(session.id))
             return Response(Step1TranscribeResponseSerializer(session).data, status=status.HTTP_202_ACCEPTED)
 
         try:
@@ -530,7 +492,7 @@ class Step2StructureView(APIView):
         session.save(update_fields=['status', 'updated_at'])
 
         if getattr(settings, 'CLASS_PIPELINE_ASYNC', False):
-            run_in_background(lambda: _process_step2_structure(session.id), name=f'class-step2-{session.id}')
+            transaction.on_commit(lambda: process_class_step2_structure.delay(session.id))
             return Response(Step2StructureResponseSerializer(session).data, status=status.HTTP_202_ACCEPTED)
 
         try:
@@ -590,7 +552,7 @@ class Step3PrerequisitesView(APIView):
         session.save(update_fields=['status', 'updated_at'])
 
         if getattr(settings, 'CLASS_PIPELINE_ASYNC', False):
-            run_in_background(lambda: _process_step3_prerequisites(session.id), name=f'class-step3-{session.id}')
+            transaction.on_commit(lambda: process_class_step3_prerequisites.delay(session.id))
             return Response(Step3PrerequisitesResponseSerializer(session).data, status=status.HTTP_202_ACCEPTED)
 
         _process_step3_prerequisites(session.id)
@@ -628,10 +590,7 @@ class Step4PrerequisiteTeachingView(APIView):
         session.save(update_fields=['status', 'updated_at'])
 
         if getattr(settings, 'CLASS_PIPELINE_ASYNC', False):
-            run_in_background(
-                lambda: _process_step4_prereq_teaching(session.id, prerequisite_name),
-                name=f'class-step4-{session.id}',
-            )
+            transaction.on_commit(lambda: process_class_step4_prereq_teaching.delay(session.id, prerequisite_name))
             return Response(Step4PrerequisiteTeachingResponseSerializer(session).data, status=status.HTTP_202_ACCEPTED)
 
         _process_step4_prereq_teaching(session.id, prerequisite_name)
@@ -670,7 +629,7 @@ class Step5RecapView(APIView):
         session.save(update_fields=['status', 'updated_at'])
 
         if getattr(settings, 'CLASS_PIPELINE_ASYNC', False):
-            run_in_background(lambda: _process_step5_recap(session.id), name=f'class-step5-{session.id}')
+            transaction.on_commit(lambda: process_class_step5_recap.delay(session.id))
             return Response(Step5RecapResponseSerializer(session).data, status=status.HTTP_202_ACCEPTED)
 
         _process_step5_recap(session.id)
@@ -808,10 +767,7 @@ class ClassCreationSessionPublishView(GenericAPIView):
             session.published_at = timezone.now()
             session.save(update_fields=['is_published', 'published_at', 'updated_at'])
 
-            def _send_sms() -> None:
-                send_publish_sms_for_session(session.id)
-
-            run_in_background(lambda: _send_sms(), name=f'class-publish-sms-{session.id}')
+            transaction.on_commit(lambda: send_publish_sms_task.delay(session.id))
 
         return Response(ClassCreationSessionDetailSerializer(session).data)
 
@@ -980,7 +936,11 @@ class TeacherAnalyticsStatsView(APIView):
         responses={200: TeacherAnalyticsStatSerializer(many=True)},
     )
     def get(self, request):
-        days = int(request.query_params.get('days', 0))
+        try:
+            days = int(request.query_params.get('days', 0))
+        except (TypeError, ValueError):
+            days = 0
+        days = max(0, min(days, 365))
         qs = ClassCreationSession.objects.filter(teacher=request.user)
         total_classes = qs.filter(pipeline_type='class').count()
         total_exams = qs.filter(pipeline_type='exam_prep').count()
@@ -1124,7 +1084,11 @@ class TeacherAnalyticsChartView(APIView):
         responses={200: TeacherAnalyticsChartPointSerializer(many=True)},
     )
     def get(self, request):
-        days = int(request.query_params.get('days', 7))
+        try:
+            days = int(request.query_params.get('days', 7))
+        except (TypeError, ValueError):
+            days = 7
+        days = max(1, min(days, 365))
         today = timezone.localdate()
         start_date = today - timedelta(days=days-1)
         
@@ -1558,13 +1522,10 @@ class StudentCourseChatView(APIView):
                 student_name=student_name,
             )
         except Exception as exc:
-            error_trace = traceback.format_exc()
-            print(
-                '[CHATBOT][ERROR] handle_student_message failed'
-                f' session_id={session_id} lesson_id={lesson_id!r} student_id={getattr(user, "id", None)!r}'
-                f' message={message[:200]!r}'
+            logger.exception(
+                'handle_student_message failed session_id=%s lesson_id=%r student_id=%r',
+                session_id, lesson_id, getattr(user, 'id', None),
             )
-            print(error_trace)
             
             # Identify the error for the user in a friendly way but keep technical info in logs
             error_msg = 'الان در پاسخگویی مشکلی پیش آمده. لطفاً یک بار دیگر تلاش کن.'
@@ -1705,12 +1666,10 @@ class StudentCourseChatMediaView(APIView):
                     transcript_markdown=transcript,
                 )
             except Exception:
-                print(
-                    '[CHATBOT][ERROR] handle_student_audio_upload failed'
-                    f' session_id={session_id} lesson_id={lesson_id!r} student_id={getattr(user, "id", None)!r}'
-                    f' mime_type={mime_type!r} message={message[:200]!r}'
+                logger.exception(
+                    'handle_student_audio_upload failed session_id=%s lesson_id=%r student_id=%r',
+                    session_id, lesson_id, getattr(user, 'id', None),
                 )
-                print(traceback.format_exc())
                 resp = {
                     'type': 'text',
                     'content': 'الان در پردازش فایل صوتی مشکلی پیش آمده. لطفاً دوباره تلاش کن.',
@@ -1768,12 +1727,10 @@ class StudentCourseChatMediaView(APIView):
                     mime_type=mime_type,
                 )
             except Exception:
-                print(
-                    '[CHATBOT][ERROR] handle_student_image_upload failed'
-                    f' session_id={session_id} lesson_id={lesson_id!r} student_id={getattr(user, "id", None)!r}'
-                    f' mime_type={mime_type!r} message={message[:200]!r}'
+                logger.exception(
+                    'handle_student_image_upload failed session_id=%s lesson_id=%r student_id=%r',
+                    session_id, lesson_id, getattr(user, 'id', None),
                 )
-                print(traceback.format_exc())
                 resp = {
                     'type': 'text',
                     'content': 'الان در پردازش تصویر مشکلی پیش آمده. لطفاً دوباره تلاش کن.',
@@ -2578,17 +2535,11 @@ class ExamPrepStep1TranscribeView(APIView):
         )
 
         if run_full_pipeline:
-            run_in_background(
-                lambda: _process_exam_prep_full_pipeline(session.id),
-                name=f'exam-prep-pipeline-1to2-{session.id}',
-            )
+            transaction.on_commit(lambda: process_exam_prep_full_pipeline.delay(session.id))
             return Response(ExamPrepStep1TranscribeResponseSerializer(session).data, status=status.HTTP_202_ACCEPTED)
 
-        # Run step 1 in background
-        run_in_background(
-            lambda: _process_exam_prep_step1_transcription(session.id),
-            name=f'exam-prep-step1-{session.id}',
-        )
+        # Dispatch step 1 to Celery
+        transaction.on_commit(lambda: process_exam_prep_step1_transcription.delay(session.id))
         return Response(ExamPrepStep1TranscribeResponseSerializer(session).data, status=status.HTTP_202_ACCEPTED)
 
 
@@ -2625,10 +2576,7 @@ class ExamPrepStep2StructureView(APIView):
         session.status = ClassCreationSession.Status.EXAM_STRUCTURING
         session.save(update_fields=['status', 'updated_at'])
 
-        run_in_background(
-            lambda: _process_exam_prep_step2_structure(session.id),
-            name=f'exam-prep-step2-{session.id}',
-        )
+        transaction.on_commit(lambda: process_exam_prep_step2_structure.delay(session.id))
         return Response(ExamPrepStep2StructureResponseSerializer(session).data, status=status.HTTP_202_ACCEPTED)
 
 
@@ -2764,11 +2712,7 @@ class ExamPrepSessionPublishView(APIView):
         session.published_at = timezone.now()
         session.save(update_fields=['is_published', 'published_at', 'updated_at'])
 
-        # Send SMS to invited students
-        def _send_sms() -> None:
-            send_publish_sms_for_session(session.id)
-
-        run_in_background(lambda: _send_sms(), name=f'exam-prep-publish-sms-{session.id}')
+        transaction.on_commit(lambda: send_publish_sms_task.delay(session.id))
 
         return Response(ExamPrepSessionDetailSerializer(session).data)
 
@@ -3235,6 +3179,35 @@ class StudentExamPrepSubmitView(APIView):
         return Response(StudentExamPrepSubmitResponseSerializer(payload).data)
 
 
+# ---------------------------------------------------------------------------
+# Helpers – exam-prep chat correctness
+# ---------------------------------------------------------------------------
+
+def _compute_is_correct(session, question_id: str | None, student_selected: str, is_checked: bool) -> bool:
+    """Compute correctness server-side; never trust the client."""
+    if not (question_id and is_checked and student_selected):
+        return False
+    try:
+        questions_list: list = []
+        if session.exam_prep_json:
+            parsed = json.loads(session.exam_prep_json)
+            if isinstance(parsed, dict):
+                raw_questions = (parsed.get('exam_prep') or {}).get('questions', [])
+                if isinstance(raw_questions, list):
+                    questions_list = raw_questions
+
+        for q in questions_list:
+            if not isinstance(q, dict):
+                continue
+            qid = str(q.get('question_id') or '').strip()
+            if qid == question_id:
+                correct_label = str(q.get('correct_option_label') or '').strip()
+                return bool(correct_label) and student_selected == correct_label
+    except Exception:
+        pass
+    return False
+
+
 class StudentExamPrepChatView(APIView):
     permission_classes = [IsAuthenticated, IsStudentUser]
 
@@ -3276,31 +3249,7 @@ class StudentExamPrepChatView(APIView):
 
         is_checked = _as_bool(data.get('is_checked'))
 
-        # Never trust/accept correctness from client.
-        # Compute it server-side (and still do not expose the correct answer).
-        computed_is_correct = False
-        if question_id and is_checked and student_selected:
-            try:
-                questions_list = []
-                if session.exam_prep_json:
-                    parsed = json.loads(session.exam_prep_json)
-                    if isinstance(parsed, dict):
-                        raw_questions = (parsed.get('exam_prep') or {}).get('questions', [])
-                        if isinstance(raw_questions, list):
-                            questions_list = raw_questions
-
-                correct_label = ''
-                for q in questions_list:
-                    if not isinstance(q, dict):
-                        continue
-                    qid = str(q.get('question_id') or '').strip()
-                    if qid == question_id:
-                        correct_label = str(q.get('correct_option_label') or '').strip()
-                        break
-
-                computed_is_correct = bool(correct_label) and student_selected == correct_label
-            except Exception:
-                computed_is_correct = False
+        computed_is_correct = _compute_is_correct(session, question_id, student_selected, is_checked)
 
         thread = get_or_create_exam_thread(
             session=session,
@@ -3331,13 +3280,10 @@ class StudentExamPrepChatView(APIView):
                 is_correct=computed_is_correct,
             )
         except Exception as exc:
-            error_trace = traceback.format_exc()
-            print(
-                '[CHATBOT][ERROR] handle_exam_prep_message failed'
-                f' session_id={session_id} question_id={question_id!r} student_id={getattr(user, "id", None)!r}'
-                f' message={message[:200]!r}'
+            logger.exception(
+                'handle_exam_prep_message failed session_id=%s question_id=%r student_id=%r',
+                session_id, question_id, getattr(user, 'id', None),
             )
-            print(error_trace)
 
             error_msg = 'الان در پاسخگویی مشکلی پیش آمده. لطفاً یک بار دیگر تلاش کن.'
             if settings.DEBUG:
@@ -3604,7 +3550,8 @@ class StudentExamPrepChatMediaView(APIView):
             return s in {'1', 'true', 'yes', 'y', 'ok'}
 
         is_checked = _as_bool(request.data.get('is_checked'))
-        is_correct = _as_bool(request.data.get('is_correct'))
+        # Compute correctness server-side — never trust the client.
+        is_correct = _compute_is_correct(session, question_id, student_selected, is_checked)
 
         thread = get_or_create_exam_thread(
             session=session,
@@ -3642,15 +3589,27 @@ class StudentExamPrepChatMediaView(APIView):
                 question_id=question_id,
             )
 
-            resp = handle_exam_prep_message(
-                session=session,
-                student_id=int(getattr(user, 'id', 0) or 0),
-                question_id=question_id,
-                user_message=combined,
-                student_selected=student_selected,
-                is_checked=is_checked,
-                is_correct=is_correct,
-            )
+            resp = None
+            try:
+                resp = handle_exam_prep_message(
+                    session=session,
+                    student_id=int(getattr(user, 'id', 0) or 0),
+                    question_id=question_id,
+                    user_message=combined,
+                    student_selected=student_selected,
+                    is_checked=is_checked,
+                    is_correct=is_correct,
+                )
+            except Exception:
+                logger.exception(
+                    'handle_exam_prep_message (audio) failed session_id=%s question_id=%r',
+                    session_id, question_id,
+                )
+                resp = {
+                    'type': 'text',
+                    'content': 'الان در پردازش فایل صوتی مشکلی پیش آمده. لطفاً دوباره تلاش کن.',
+                    'suggestions': [],
+                }
 
             if isinstance(resp, dict) and resp.get('type') == 'text':
                 append_exam_message(
@@ -3676,24 +3635,36 @@ class StudentExamPrepChatMediaView(APIView):
                 question_id=question_id,
             )
 
-            question_context = build_exam_question_context(session=session, question_id=question_id, is_checked=is_checked)
-            description = describe_exam_prep_handwriting(
-                question_context=question_context,
-                user_message=message,
-                image_bytes=data,
-                mime_type=mime_type,
-            )
+            resp = None
+            try:
+                question_context = build_exam_question_context(session=session, question_id=question_id, is_checked=is_checked)
+                description = describe_exam_prep_handwriting(
+                    question_context=question_context,
+                    user_message=message,
+                    image_bytes=data,
+                    mime_type=mime_type,
+                )
 
-            resp = handle_exam_prep_message(
-                session=session,
-                student_id=int(getattr(user, 'id', 0) or 0),
-                question_id=question_id,
-                user_message=message or '[IMAGE]',
-                student_selected=student_selected,
-                is_checked=is_checked,
-                is_correct=is_correct,
-                image_description=description,
-            )
+                resp = handle_exam_prep_message(
+                    session=session,
+                    student_id=int(getattr(user, 'id', 0) or 0),
+                    question_id=question_id,
+                    user_message=message or '[IMAGE]',
+                    student_selected=student_selected,
+                    is_checked=is_checked,
+                    is_correct=is_correct,
+                    image_description=description,
+                )
+            except Exception:
+                logger.exception(
+                    'handle_exam_prep_message (image) failed session_id=%s question_id=%r',
+                    session_id, question_id,
+                )
+                resp = {
+                    'type': 'text',
+                    'content': 'الان در پردازش تصویر مشکلی پیش آمده. لطفاً دوباره تلاش کن.',
+                    'suggestions': [],
+                }
 
             if isinstance(resp, dict) and resp.get('type') == 'text':
                 append_exam_message(

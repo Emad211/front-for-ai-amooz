@@ -118,7 +118,7 @@ class TestRunFullPipelineFlag:
         return client
 
     def test_step1_run_full_pipeline_sets_async_status(self, settings, monkeypatch):
-        """We don't assert final status here because background execution depends on threading.
+        """We don't assert final status here because background execution depends on Celery.
 
         We only assert the endpoint accepts the flag and returns 202.
         """
@@ -129,10 +129,14 @@ class TestRunFullPipelineFlag:
 
         called = {'ok': False}
 
-        def _fake_run_in_background(fn, name: str):
-            called['ok'] = True
+        class _FakeDelayResult:
+            pass
 
-        monkeypatch.setattr('apps.classes.views.run_in_background', _fake_run_in_background)
+        def _fake_delay(*args, **kwargs):
+            called['ok'] = True
+            return _FakeDelayResult()
+
+        monkeypatch.setattr('apps.classes.views.process_class_full_pipeline.delay', _fake_delay)
 
         upload = SimpleUploadedFile('audio.ogg', b'fake-audio', content_type='audio/ogg')
         res = client.post(
