@@ -155,6 +155,9 @@ STATIC_ROOT = BASE_DIR / 'staticfiles'
 # WhiteNoise — serve static files directly from Gunicorn (no nginx needed).
 # Compresses and caches automatically in production.
 STORAGES = {
+    'default': {
+        'BACKEND': 'django.core.files.storage.FileSystemStorage',
+    },
     'staticfiles': {
         'BACKEND': 'whitenoise.storage.CompressedManifestStaticFilesStorage',
     },
