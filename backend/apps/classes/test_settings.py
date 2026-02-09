@@ -26,7 +26,8 @@ class TestRestFrameworkSettings:
 
     def test_throttle_classes_configured(self):
         """Throttle classes must be set to prevent API abuse."""
-        throttle_classes = settings.REST_FRAMEWORK.get('DEFAULT_THROTTLE_CLASSES', [])
+        import core.settings as mod
+        throttle_classes = mod.REST_FRAMEWORK.get('DEFAULT_THROTTLE_CLASSES', [])
         assert len(throttle_classes) >= 2, (
             f'Expected at least 2 throttle classes, got {throttle_classes}'
         )
@@ -36,7 +37,8 @@ class TestRestFrameworkSettings:
 
     def test_throttle_rates_configured(self):
         """Throttle rates must be set for both anon and user."""
-        rates = settings.REST_FRAMEWORK.get('DEFAULT_THROTTLE_RATES', {})
+        import core.settings as mod
+        rates = mod.REST_FRAMEWORK.get('DEFAULT_THROTTLE_RATES', {})
         assert 'anon' in rates, 'Missing anon throttle rate'
         assert 'user' in rates, 'Missing user throttle rate'
 

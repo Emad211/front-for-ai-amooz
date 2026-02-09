@@ -39,6 +39,7 @@ class TestAccountsUnit:
             'is_profile_completed',
             'join_date',
             'bio',
+            'location',
             'grade',
             'major',
             'is_verified',

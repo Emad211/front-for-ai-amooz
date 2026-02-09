@@ -111,11 +111,13 @@ class TestStudentInviteCodeConstraints:
     """Test uniqueness of phone and code on StudentInviteCode."""
 
     def test_unique_phone(self):
+        StudentInviteCode.objects.all().delete()
         StudentInviteCode.objects.create(phone='09121111111', code='ABC')
         with pytest.raises(IntegrityError):
             StudentInviteCode.objects.create(phone='09121111111', code='DEF')
 
     def test_unique_code(self):
+        StudentInviteCode.objects.all().delete()
         StudentInviteCode.objects.create(phone='09121111111', code='ABC')
         with pytest.raises(IntegrityError):
             StudentInviteCode.objects.create(phone='09122222222', code='ABC')

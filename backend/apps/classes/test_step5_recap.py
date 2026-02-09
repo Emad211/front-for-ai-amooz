@@ -137,6 +137,11 @@ class TestRunFullPipelineFlag:
             return _FakeDelayResult()
 
         monkeypatch.setattr('apps.classes.views.process_class_full_pipeline.delay', _fake_delay)
+        # Make on_commit fire immediately so the task mock is invoked.
+        monkeypatch.setattr(
+            'django.db.transaction.on_commit',
+            lambda func, using=None, robust=False: func(),
+        )
 
         upload = SimpleUploadedFile('audio.ogg', b'fake-audio', content_type='audio/ogg')
         res = client.post(

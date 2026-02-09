@@ -57,20 +57,19 @@ class TestClassCreationSessionPublishAndInvites:
         assert res.status_code == 200
 
     def test_publish_marks_session_published(self, monkeypatch):
+        from unittest.mock import MagicMock
+
         client, teacher = self._auth_client('TEACHER')
 
-        called = {'bg': False, 'sms': False}
+        # Patch the Celery task so we can verify it was queued.
+        fake_task = MagicMock()
+        monkeypatch.setattr('apps.classes.views.send_publish_sms_task', fake_task)
 
-        def _fake_send_publish_sms_for_session(session_id: int) -> None:
-            called['sms'] = True
-
-        def _fake_run_in_background(target, *, name=None):
-            called['bg'] = True
-            target()
-            return True
-
-        monkeypatch.setattr('apps.classes.views.send_publish_sms_for_session', _fake_send_publish_sms_for_session)
-        monkeypatch.setattr('apps.classes.views.run_in_background', _fake_run_in_background)
+        # Make on_commit fire immediately inside the test transaction.
+        monkeypatch.setattr(
+            'django.db.transaction.on_commit',
+            lambda func, using=None, robust=False: func(),
+        )
 
         session = ClassCreationSession.objects.create(
             teacher=teacher,
@@ -89,8 +88,7 @@ class TestClassCreationSessionPublishAndInvites:
         session.refresh_from_db()
         assert session.is_published is True
         assert session.published_at is not None
-        assert called['bg'] is True
-        assert called['sms'] is True
+        fake_task.delay.assert_called_once_with(session.id)
 
     def test_patch_updates_title_description_and_structure(self):
         client, teacher = self._auth_client('TEACHER')

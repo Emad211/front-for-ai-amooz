@@ -83,8 +83,10 @@ class TestStudentChatHistoryApi:
         assert hist.status_code == 200
 
         items = hist.data['items']
-        assert len(items) == 2
-        assert items[1]['type'] == 'widget'
-        assert items[1]['payload']['widget_type'] == 'quiz'
-        assert items[1]['payload']['data'] == {'questions': []}
-        assert items[1]['suggestions'] == ['s']
+        # Protocol messages (SYSTEM_*) are not stored as user messages,
+        # so only the assistant widget response is in history.
+        assert len(items) == 1
+        assert items[0]['type'] == 'widget'
+        assert items[0]['payload']['widget_type'] == 'quiz'
+        assert items[0]['payload']['data'] == {'questions': []}
+        assert items[0]['suggestions'] == ['s']

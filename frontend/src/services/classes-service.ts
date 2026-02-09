@@ -81,6 +81,8 @@ const RAW_API_URL = (process.env.NEXT_PUBLIC_API_URL ?? '').replace(/\/$/, '');
 // - NEXT_PUBLIC_API_URL="https://example.com/api" -> https://example.com/api
 const API_URL = RAW_API_URL.endsWith('/api') ? RAW_API_URL : `${RAW_API_URL}/api`;
 
+import { refreshAccessToken } from '@/services/auth-service';
+
 async function parseJson(response: Response) {
   const text = await response.text();
   if (!text) return null;
@@ -93,17 +95,33 @@ async function parseJson(response: Response) {
 }
 
 async function requestJson<T>(url: string, options: RequestInit): Promise<T> {
-  let response: Response;
-  try {
-    response = await fetch(url, options);
-  } catch {
-    throw new Error(
-      `ارتباط با سرور برقرار نشد. (آدرس فعلی API: ${RAW_API_URL})` +
-        ' معمولاً یکی از این‌هاست: بک‌اند اجرا نیست، آدرس/پورت اشتباه است، یا مرورگر به خاطر CORS/Mixed Content درخواست را بلاک کرده.'
-    );
+  const doFetch = async (reqOptions: RequestInit) => {
+    try {
+      return await fetch(url, reqOptions);
+    } catch {
+      throw new Error(
+        `ارتباط با سرور برقرار نشد. (آدرس فعلی API: ${RAW_API_URL})` +
+          ' معمولاً یکی از این‌هاست: بک‌اند اجرا نیست، آدرس/پورت اشتباه است، یا مرورگر به خاطر CORS/Mixed Content درخواست را بلاک کرده.'
+      );
+    }
+  };
+
+  let response = await doFetch(options);
+  let payload = await parseJson(response);
+
+  // Auto-refresh on 401 if we had an Authorization header
+  const headers = new Headers(options.headers);
+  if (response.status === 401 && headers.has('Authorization')) {
+    try {
+      const newAccess = await refreshAccessToken();
+      headers.set('Authorization', `Bearer ${newAccess}`);
+      response = await doFetch({ ...options, headers });
+      payload = await parseJson(response);
+    } catch {
+      // refreshAccessToken already handles redirect/storage cleanup
+    }
   }
 
-  const payload = await parseJson(response);
   if (!response.ok) {
     throw new Error(extractErrorMessage(payload, response.statusText));
   }

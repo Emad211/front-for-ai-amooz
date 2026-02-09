@@ -12,7 +12,7 @@ import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { ADMIN_NAV_MENU, TEACHER_NAV_MENU } from '@/constants/navigation';
 import { Logo } from '@/components/ui/logo';
-import { clearAuthStorage } from '@/services/auth-service';
+import { clearAuthStorage, getStoredTokens, logout as logoutApi } from '@/services/auth-service';
 
 interface SidebarContentProps {
   onItemClick?: () => void;
@@ -95,12 +95,17 @@ export function SidebarContent({ onItemClick, navMenu = ADMIN_NAV_MENU, panelLab
         <Button 
           variant="ghost" 
           className="w-full justify-start gap-3 px-3 py-2.5 h-auto text-sm font-bold text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-xl"
-          onClick={() => {
+          onClick={async () => {
             if (onItemClick) onItemClick();
-            if (typeof window !== 'undefined') {
+            try {
+              const tokens = getStoredTokens();
+              if (tokens?.refresh) {
+                await logoutApi(tokens.refresh, tokens.access).catch(() => {});
+              }
+            } finally {
               clearAuthStorage();
+              window.location.href = '/login';
             }
-            window.location.href = '/';
           }}
         >
           <LogOut className="h-5 w-5" />

@@ -8,8 +8,26 @@ const nextConfig: NextConfig = {
   eslint: {
     ignoreDuringBuilds: true,
   },
+  // Proxy /api/* requests to the Django backend in local development.
+  // In production the frontend env should set NEXT_PUBLIC_API_URL to the
+  // full backend URL (e.g. https://aiamoooz.darkube.app).
+  async rewrites() {
+    const backendUrl = process.env.BACKEND_URL || 'http://localhost:8000';
+    return [
+      {
+        source: '/api/:path*',
+        destination: `${backendUrl}/api/:path*`,
+      },
+    ];
+  },
   images: {
     remotePatterns: [
+      {
+        protocol: 'http',
+        hostname: 'localhost',
+        port: '8000',
+        pathname: '/**',
+      },
       {
         protocol: 'https',
         hostname: 'placehold.co',

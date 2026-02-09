@@ -10,6 +10,8 @@ from model_bakery import baker
 from rest_framework.test import APIClient
 from rest_framework_simplejwt.tokens import RefreshToken
 
+from apps.accounts.models import User
+
 
 def _auth_client(user) -> APIClient:
     refresh = RefreshToken.for_user(user)
@@ -22,53 +24,63 @@ def _auth_client(user) -> APIClient:
 class TestThrottlingConfiguration:
     """Verify that throttling is active on API endpoints."""
 
-    def test_anonymous_rate_limit_configured(self, settings):
-        """Anon throttle rate must be set."""
-        rates = settings.REST_FRAMEWORK.get('DEFAULT_THROTTLE_RATES', {})
+    def test_anonymous_rate_limit_configured(self):
+        """Anon throttle rate must be set in the *real* (non-test) settings."""
+        from django.conf import settings as real_settings
+        # Read from the original module, not the overridden test settings.
+        import core.settings as mod
+        rf = getattr(mod, 'REST_FRAMEWORK', {})
+        rates = rf.get('DEFAULT_THROTTLE_RATES', {})
         assert 'anon' in rates
 
-    def test_user_rate_limit_configured(self, settings):
-        """User throttle rate must be set."""
-        rates = settings.REST_FRAMEWORK.get('DEFAULT_THROTTLE_RATES', {})
+    def test_user_rate_limit_configured(self):
+        """User throttle rate must be set in the *real* settings module."""
+        import core.settings as mod
+        rf = getattr(mod, 'REST_FRAMEWORK', {})
+        rates = rf.get('DEFAULT_THROTTLE_RATES', {})
         assert 'user' in rates
 
     def test_throttle_responds_with_429(self, settings):
         """Exceeding the rate limit should return 429 Too Many Requests."""
-        # Set an extremely low rate for testing.
-        settings.REST_FRAMEWORK = {
-            **settings.REST_FRAMEWORK,
-            'DEFAULT_THROTTLE_RATES': {
-                'anon': '1/minute',
-                'user': '1/minute',
-            },
-        }
-
-        # Clear throttle cache.
+        from rest_framework.throttling import UserRateThrottle
+        from apps.classes.views import ClassCreationSessionListView
         from django.core.cache import cache
+
         cache.clear()
 
-        client = APIClient()
+        # DRF resolves throttle_classes and THROTTLE_RATES at class-definition
+        # time.  Override directly so the test isn't affected by import ordering.
+        original_throttle = ClassCreationSessionListView.throttle_classes
+        original_rates = UserRateThrottle.THROTTLE_RATES
+        ClassCreationSessionListView.throttle_classes = [UserRateThrottle]
+        UserRateThrottle.THROTTLE_RATES = {'user': '1/minute'}
 
-        # First request should succeed (or 401 for auth-required).
-        resp1 = client.get('/api/classes/sessions/')
-        # Second request should be throttled OR auth-rejected.
-        resp2 = client.get('/api/classes/sessions/')
+        try:
+            teacher = baker.make(User, role=User.Role.TEACHER)
+            client = _auth_client(teacher)
 
-        # If the endpoint requires auth, both will be 401.
-        # If it allows anon, first=200, second=429.
-        assert resp1.status_code in (200, 401, 429)
-        if resp1.status_code == 200:
+            resp1 = client.get('/api/classes/creation-sessions/')
+            assert resp1.status_code == 200
+
+            resp2 = client.get('/api/classes/creation-sessions/')
             assert resp2.status_code == 429
+        finally:
+            ClassCreationSessionListView.throttle_classes = original_throttle
+            UserRateThrottle.THROTTLE_RATES = original_rates
 
 
 @pytest.mark.django_db
 class TestPaginationConfiguration:
     """Verify that pagination is active on list endpoints."""
 
-    def test_default_pagination_class_set(self, settings):
-        assert settings.REST_FRAMEWORK.get('DEFAULT_PAGINATION_CLASS') is not None
+    def test_default_pagination_class_set(self):
+        import core.settings as mod
+        rf = getattr(mod, 'REST_FRAMEWORK', {})
+        assert rf.get('DEFAULT_PAGINATION_CLASS') is not None
 
-    def test_page_size_set(self, settings):
-        page_size = settings.REST_FRAMEWORK.get('PAGE_SIZE')
+    def test_page_size_set(self):
+        import core.settings as mod
+        rf = getattr(mod, 'REST_FRAMEWORK', {})
+        page_size = rf.get('PAGE_SIZE')
         assert page_size is not None
         assert page_size > 0

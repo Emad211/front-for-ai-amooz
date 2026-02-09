@@ -7,7 +7,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { useTheme } from 'next-themes';
 import { useState, useEffect } from 'react';
 import { usePathname } from 'next/navigation';
-import { getStoredUser } from '@/services/auth-service';
+import { getStoredUser, getStoredTokens, logout as logoutApi, clearAuthStorage } from '@/services/auth-service';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -157,13 +157,23 @@ export function UserProfile({
           )}
         </DropdownMenuGroup>
         <DropdownMenuSeparator className="bg-border/50" />
-        <DropdownMenuItem asChild className="justify-start rounded-xl h-11 cursor-pointer focus:bg-destructive/5 text-destructive">
-           <Link href="/" className="flex items-center w-full">
+        <DropdownMenuItem className="justify-start rounded-xl h-11 cursor-pointer focus:bg-destructive/5 text-destructive"
+          onClick={async () => {
+            try {
+              const tokens = getStoredTokens();
+              if (tokens?.refresh) {
+                await logoutApi(tokens.refresh, tokens.access).catch(() => {});
+              }
+            } finally {
+              clearAuthStorage();
+              window.location.href = '/login';
+            }
+          }}
+        >
             <div className="p-1.5 bg-destructive/10 rounded-lg ml-2">
               <LogOut className="h-4 w-4" />
             </div>
             <span className="flex-1 text-start font-bold text-sm">خروج از حساب</span>
-          </Link>
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>

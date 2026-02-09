@@ -30,8 +30,9 @@ class TestStudentCourseChatUnitRouting:
 
         resp = sc.handle_student_message(session=session, student_id=1, lesson_id='1', user_message='SYSTEM_UNIT_START:Unit')
         assert resp['type'] == 'text'
-        assert resp['content'] == 'INTRO'
-        assert resp['suggestions']
+        # SYSTEM_UNIT_START now silently acknowledges context (no intro generated).
+        assert resp['content'] == ''
+        assert resp['suggestions'] == []
 
     def test_system_tool_maps_to_widget(self, monkeypatch):
         from apps.chatbot.services import student_course_chat as sc

@@ -19,7 +19,7 @@ import {
 import { useTheme } from 'next-themes';
 import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/utils';
-import { getStoredUser, type AuthMeResponse } from '@/services/auth-service';
+import { getStoredUser, getStoredTokens, logout as logoutApi, clearAuthStorage, type AuthMeResponse } from '@/services/auth-service';
 import { useEffect, useState } from 'react';
 
 type NavLinkProps = {
@@ -118,13 +118,21 @@ const UserProfile = () => {
           </DropdownMenuItem>
         </DropdownMenuGroup>
         <DropdownMenuSeparator />
-        <DropdownMenuItem asChild className="cursor-pointer text-destructive focus:text-destructive">
-           <Link href="/login" onClick={() => {
-             // Optional: Call logout service here
-           }}>
+        <DropdownMenuItem className="cursor-pointer text-destructive focus:text-destructive"
+          onClick={async () => {
+            try {
+              const tokens = getStoredTokens();
+              if (tokens?.refresh) {
+                await logoutApi(tokens.refresh, tokens.access).catch(() => {});
+              }
+            } finally {
+              clearAuthStorage();
+              window.location.href = '/login';
+            }
+          }}
+        >
             <LogOut className="ml-2 h-4 w-4" />
             <span>خروج</span>
-          </Link>
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>

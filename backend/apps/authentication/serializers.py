@@ -39,11 +39,24 @@ class RegisterSerializer(serializers.Serializer):
         min_length=8,
         help_text="Strong password (min 8 characters)."
     )
-    role = serializers.ChoiceField(
-        choices=[(User.Role.STUDENT, 'Student'), (User.Role.TEACHER, 'Teacher')],
+    role = serializers.CharField(
         required=False,
-        help_text="User role: 'student' or 'teacher'. Defaults to 'student'."
+        allow_blank=True,
+        help_text="User role: 'STUDENT' or 'TEACHER'. Defaults to 'STUDENT'. Case-insensitive."
     )
+
+    _VALID_ROLES = {User.Role.STUDENT, User.Role.TEACHER}
+
+    def validate_role(self, value: str) -> str:
+        """Accept role in any case (e.g. 'teacher' -> 'TEACHER')."""
+        if not value:
+            return User.Role.STUDENT
+        upper = value.upper()
+        if upper not in self._VALID_ROLES:
+            raise serializers.ValidationError(
+                f"Invalid role '{value}'. Must be one of: {', '.join(sorted(self._VALID_ROLES))}"
+            )
+        return upper
 
     def validate_username(self, value: str) -> str:
         if User.objects.filter(username=value).exists():

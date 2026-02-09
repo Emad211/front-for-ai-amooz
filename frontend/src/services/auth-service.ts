@@ -257,3 +257,48 @@ export function getStoredUser(): AuthMeResponse | null {
     return null;
   }
 }
+
+/**
+ * Attempt to refresh the access token using the stored refresh token.
+ * On success, persists the new access token and returns it.
+ * On failure, clears auth storage and redirects to /login.
+ */
+export async function refreshAccessToken(): Promise<string> {
+  const tokens = getStoredTokens();
+  const refresh = (tokens?.refresh || '').trim();
+  if (!refresh) {
+    clearAuthStorage();
+    if (isClient() && !window.location.pathname.startsWith('/login')) {
+      window.location.href = '/login';
+    }
+    throw new Error('جلسه شما منقضی شده است. لطفاً دوباره وارد شوید.');
+  }
+
+  const url = `${API_URL}/token/refresh/`;
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ refresh }),
+  });
+
+  const payload = await parseJson(response);
+  if (!response.ok) {
+    clearAuthStorage();
+    if (isClient() && !window.location.pathname.startsWith('/login')) {
+      window.location.href = '/login';
+    }
+    throw new Error('جلسه شما منقضی شده است. لطفاً دوباره وارد شوید.');
+  }
+
+  const newAccess = (payload as Record<string, unknown>)?.access;
+  if (typeof newAccess !== 'string' || !newAccess.trim()) {
+    clearAuthStorage();
+    if (isClient() && !window.location.pathname.startsWith('/login')) {
+      window.location.href = '/login';
+    }
+    throw new Error('توکن جدید معتبر نیست. لطفاً دوباره وارد شوید.');
+  }
+
+  persistTokens({ access: newAccess, refresh });
+  return newAccess;
+}

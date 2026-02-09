@@ -18,6 +18,11 @@ import {
   parseCourseStructure,
 } from '@/lib/classes/course-structure';
 
+import {
+  clearAuthStorage,
+  refreshAccessToken,
+} from '@/services/auth-service';
+
 type AuthMeResponse = {
   id: number;
   username: string;
@@ -114,17 +119,32 @@ async function requestJson<T>(path: string, options: RequestInit = {}): Promise<
 
   const url = `${API_URL}${path}`;
 
-  let response: Response;
-  try {
-    response = await fetch(url, { ...options, headers });
-  } catch {
-    throw new Error(
-      `ارتباط با سرور برقرار نشد. (آدرس فعلی API: ${RAW_API_URL})` +
-        ' معمولاً یکی از این‌هاست: بک‌اند اجرا نیست، آدرس/پورت اشتباه است، یا مرورگر به خاطر CORS/Mixed Content درخواست را بلاک کرده.'
-    );
+  const doFetch = async (reqHeaders: Headers) => {
+    try {
+      return await fetch(url, { ...options, headers: reqHeaders });
+    } catch {
+      throw new Error(
+        `ارتباط با سرور برقرار نشد. (آدرس فعلی API: ${RAW_API_URL})` +
+          ' معمولاً یکی از این‌هاست: بک‌اند اجرا نیست، آدرس/پورت اشتباه است، یا مرورگر به خاطر CORS/Mixed Content درخواست را بلاک کرده.'
+      );
+    }
+  };
+
+  let response = await doFetch(headers);
+  let payload = await parseJson(response);
+
+  // Auto-refresh on 401 if we had an Authorization header
+  if (response.status === 401 && headers.has('Authorization')) {
+    try {
+      const newAccess = await refreshAccessToken();
+      headers.set('Authorization', `Bearer ${newAccess}`);
+      response = await doFetch(headers);
+      payload = await parseJson(response);
+    } catch {
+      // refreshAccessToken already handles redirect/storage cleanup
+    }
   }
 
-  const payload = await parseJson(response);
   if (!response.ok) {
     throw new Error(extractErrorMessage(payload, response.statusText));
   }

@@ -7,7 +7,7 @@ import {
   MOCK_CALENDAR_EVENTS,
 } from '@/constants/mock';
 import type { Course, CourseContent, UserProfile } from '@/types';
-import { clearAuthStorage, getStoredTokens, persistTokens, persistUser } from '@/services/auth-service';
+import { clearAuthStorage, getStoredTokens, persistTokens, persistUser, refreshAccessToken } from '@/services/auth-service';
 
 const RAW_API_URL = (process.env.NEXT_PUBLIC_API_URL ?? '').replace(/\/$/, '');
 const API_URL = RAW_API_URL.endsWith('/api') ? RAW_API_URL : `${RAW_API_URL}/api`;
@@ -25,48 +25,11 @@ function getAccessToken(): string {
   return trimmed;
 }
 
-function redirectToLogin() {
+function navigateToLogin() {
   if (typeof window === 'undefined') return;
   // Avoid endless loops if already on login.
   if (window.location.pathname.startsWith('/login')) return;
   window.location.href = '/login';
-}
-
-async function refreshAccessToken(): Promise<string> {
-  const tokens = getStoredTokens();
-  const refresh = (tokens?.refresh || '').trim();
-  if (!refresh) {
-    clearAuthStorage();
-    redirectToLogin();
-    throw new Error('جلسه شما منقضی شده است. لطفاً دوباره وارد شوید.');
-  }
-
-  const url = `${API_URL}/token/refresh/`;
-
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ refresh }),
-  });
-
-  const payload = await parseJson(response);
-  if (!response.ok) {
-    clearAuthStorage();
-    redirectToLogin();
-    throw new Error(extractErrorMessage(payload, 'جلسه شما منقضی شده است. لطفاً دوباره وارد شوید.'));
-  }
-
-  const newAccess = (payload as any)?.access;
-  if (typeof newAccess !== 'string' || !newAccess.trim()) {
-    clearAuthStorage();
-    redirectToLogin();
-    throw new Error('توکن جدید معتبر نیست. لطفاً دوباره وارد شوید.');
-  }
-
-  persistTokens({ access: newAccess, refresh });
-  return newAccess;
 }
 
 async function parseJson(response: Response) {
@@ -136,7 +99,7 @@ async function requestJson<T>(url: string, options: RequestInit): Promise<T> {
     // If server says token is invalid, clear and redirect.
     if (response.status === 401 && typeof message === 'string' && message.includes('token')) {
       clearAuthStorage();
-      redirectToLogin();
+      navigateToLogin();
     }
     throw new Error(message);
   }
@@ -185,7 +148,7 @@ async function requestBlob(url: string, options: RequestInit): Promise<Blob> {
     const message = extractErrorMessage(payload, response.statusText);
     if (response.status === 401 && typeof message === 'string' && message.includes('token')) {
       clearAuthStorage();
-      redirectToLogin();
+      navigateToLogin();
     }
     throw new Error(message);
   }
@@ -228,7 +191,7 @@ async function requestFormData<T>(url: string, options: RequestInit): Promise<T>
     const message = extractErrorMessage(payload, response.statusText);
     if (response.status === 401 && typeof message === 'string' && message.includes('token')) {
       clearAuthStorage();
-      redirectToLogin();
+      navigateToLogin();
     }
     throw new Error(message);
   }
