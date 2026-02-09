@@ -42,11 +42,11 @@ class HealthCheckMiddleware:
         payload: dict[str, str] = {
             "status": "healthy",
             "database": "connected",
-            "redis": "connected",
+            "redis": "unknown",
         }
         http_status = 200
 
-        # --- Database -------------------------------------------------
+        # --- Database (CRITICAL — 503 if unreachable) -----------------
         try:
             from django.db import connections
 
@@ -58,18 +58,19 @@ class HealthCheckMiddleware:
             payload["status"] = "unhealthy"
             http_status = 503
 
-        # --- Redis / Celery broker ------------------------------------
+        # --- Redis (NON-CRITICAL — report but don't fail probe) -------
         try:
             from django.conf import settings as _s
             import redis as _redis
 
             r = _redis.from_url(_s.REDIS_URL, socket_connect_timeout=3)
             r.ping()
+            payload["redis"] = "connected"
         except Exception:
-            logger.exception("Health check: Redis unreachable")
+            logger.warning("Health check: Redis unreachable (non-critical)")
             payload["redis"] = "disconnected"
-            payload["status"] = "unhealthy"
-            http_status = 503
+            # Do NOT set http_status=503 — Redis is needed for Celery
+            # but the API can still serve requests without it.
 
         return HttpResponse(
             json.dumps(payload),
