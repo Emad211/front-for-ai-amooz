@@ -60,6 +60,7 @@ AUTH_USER_MODEL = 'accounts.User'
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+    'whitenoise.middleware.WhiteNoiseMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'corsheaders.middleware.CorsMiddleware',
     'django.middleware.common.CommonMiddleware',
@@ -149,6 +150,14 @@ USE_TZ = True
 STATIC_URL = '/static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
 
+# WhiteNoise — serve static files directly from Gunicorn (no nginx needed).
+# Compresses and caches automatically in production.
+STORAGES = {
+    'staticfiles': {
+        'BACKEND': 'whitenoise.storage.CompressedManifestStaticFilesStorage',
+    },
+}
+
 MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
 
@@ -227,8 +236,9 @@ USE_X_FORWARDED_HOST = True
 # Production security — enabled automatically when DEBUG=False.
 # ---------------------------------------------------------------------------
 if not DEBUG:
-    # HTTPS enforcement
-    SECURE_SSL_REDIRECT = os.getenv('SECURE_SSL_REDIRECT', 'True') == 'True'
+    # HTTPS enforcement — default OFF because K8s ingress/reverse proxy handles SSL.
+    # Set SECURE_SSL_REDIRECT=True only if your proxy does NOT handle HTTPS.
+    SECURE_SSL_REDIRECT = os.getenv('SECURE_SSL_REDIRECT', 'False') == 'True'
     SESSION_COOKIE_SECURE = True
     CSRF_COOKIE_SECURE = True
 

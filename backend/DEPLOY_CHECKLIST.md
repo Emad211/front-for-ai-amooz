@@ -1,247 +1,382 @@
-# چک‌لیست دپلوی AI_AMOOZ — نسخه کامل
+# چک‌لیست دپلوی AI_AMOOZ — Hamravesh (Darkube K8s)
 
-> این چک‌لیست فرض می‌کند **هیچ‌کدام** از مراحل دپلوی هنوز انجام نشده.
-> پلتفرم: **Darkube (Hamravesh ‑ k8s cluster `hamravesh-c13`)**.
-
----
-
-## ۰. پیش‌نیازها
-
-- [ ] حساب Darkube فعال با دسترسی `ai-products-ai-amooz`
-- [ ] داکر روی لپ‌تاپ نصب شده (بهتر است لوکال تست کنید)
-- [ ] `git` و آخرین تغییرات push شده به remote
+> **پلتفرم**: Hamravesh — Kubernetes cluster `hamravesh-c13`
+> **Namespace**: `ai-products-ai-amooz`
+> **Backend domain**: `aiamoooz.darkube.app`
+> **Frontend**: Vercel — `front-for-ai-amooz.vercel.app`
 
 ---
 
-## ۱. تولید Secret Key جدید
+## ۰. وضعیت فعلی
+
+| سرویس | وضعیت | آدرس |
+|--------|--------|-------|
+| Backend (Django + Gunicorn) | ✅ دپلوی شده | `aiamoooz.darkube.app` |
+| PostgreSQL | ✅ ساخته شده | `ai-amooz-db.ai-products-ai-amooz.svc:5432` (داخلی) |
+| Redis | ✅ ساخته شده | `2bd19fdd-bd09-43d9-9cc4-9c48c29009d2.hsvc.ir:24484` (خارجی) |
+| Frontend (Next.js) | ✅ Vercel | `front-for-ai-amooz.vercel.app` |
+| **Celery Worker** | ❌ **هنوز ساخته نشده** | باید اپ جداگانه بسازید |
+
+---
+
+## ۱. Push آخرین تغییرات به GitHub
 
 ```bash
-python -c "import secrets; print(secrets.token_urlsafe(64))"
+cd path/to/AI_AMOOZ
+git add -A
+git commit -m "prod: whitenoise, gthread threads, SSL redirect fix"
+git push origin main
 ```
 
-خروجی را کپی کنید — در مرحله ۳ استفاده می‌شود.
+**تغییرات مهم این سشن:**
+- ✅ `whitenoise` اضافه شد → static files بدون nginx کار می‌کند
+- ✅ `STORAGES` dict (Django 5.x compatible) جایگزین `STATICFILES_STORAGE` شد
+- ✅ `SECURE_SSL_REDIRECT` default → `False` (K8s ingress خودش SSL handle می‌کند)
+- ✅ `GUNICORN_THREADS=4` اضافه شد → gthread واقعاً multi-thread شد
+- ✅ `GUNICORN_WORKER_CLASS` default → `gthread`
 
 ---
 
-## ۲. ساخت ایمیج Docker
+## ۲. ری‌بیلد ایمیج Backend
 
-Dockerfile کنونی:
-```
-FROM python:3.12-slim
-# migrate + collectstatic + gunicorn
-CMD ["sh", "-c", "python manage.py migrate --noinput && python manage.py collectstatic --noinput && gunicorn ..."]
-```
+بعد از push به GitHub، در پنل Hamravesh:
 
-تست لوکال:
-```bash
-cd backend
-docker build -t aiamooz-backend .
-docker run --rm -p 8000:8000 \
-  -e DATABASE_URL="postgresql://ai_amooz:ai_amooz_password@host.docker.internal:5432/ai_amooz" \
-  -e REDIS_URL="redis://localhost:6379/0" \
-  -e DJANGO_SECRET_KEY="$(python -c 'import secrets; print(secrets.token_urlsafe(64))')" \
-  -e DEBUG=False \
-  aiamooz-backend
-```
+1. **اپ Backend** → **Deployments** → **New Deployment** (یا Auto-deploy اگر فعال است)
+2. Hamravesh از GitHub repo ایمیج می‌سازد
+3. **Dockerfile path**: `backend/Dockerfile`
+4. **Build context**: `backend/`
+
+> ⚠️ اگر ایمیج به صورت دستی build می‌کنید:
+> ```bash
+> cd backend
+> docker build -t registry.hamdocker.ir/ai-products-ai-amooz/aiamooz-backend:latest .
+> docker push registry.hamdocker.ir/ai-products-ai-amooz/aiamooz-backend:latest
+> ```
 
 ---
 
-## ۳. متغیرهای محیطی (Environment Variables)
+## ۳. متغیرهای محیطی Backend
 
-در پنل Darkube → اپ Backend → تنظیمات Environment Variables, **همه** موارد زیر را ست کنید:
+در پنل Hamravesh → اپ Backend → **Environment Variables**:
 
-### الزامی (Critical)
+### ۳.۱. Django Core (الزامی)
 
 | متغیر | مقدار | توضیح |
 |--------|-------|-------|
-| `DJANGO_SECRET_KEY` | *(مقدار ۶۴+ کاراکتری از مرحله ۱)* | **حتماً عوض کنید!** مقدار فعلی فقط ۱۶ کاراکتر است |
 | `DEBUG` | `False` | |
-| `ALLOWED_HOSTS` | `aiamoooz.darkube.app` | کاما جدا. **`*` نباشد!** |
-| `DATABASE_URL` | `postgresql://postgres:IcHfBNcI0Ey8XGv2R85V@ai-amooz-db.ai-products-ai-amooz.svc:5432/postgres` | کانکشن PostgreSQL داخلی |
-| `REDIS_URL` | `redis://:wTsn0gOcwynZe2VZ5pY1PoBH5PP5fzEl@aiamooz.ai-products-ai-amooz.svc:6379/0` | Redis داخلی با پسورد |
-| `CORS_ALLOWED_ORIGINS` | `https://front-for-ai-amooz.vercel.app` | فرانت Vercel |
-| `CSRF_TRUSTED_ORIGINS` | `https://aiamoooz.darkube.app,https://front-for-ai-amooz.vercel.app` | |
-| `CORS_ALLOW_CREDENTIALS` | `True` | |
+| `DJANGO_SECRET_KEY` | `WNktgCA4...` (مقدار فعلی شما) | ⚠️ **پیشنهاد**: یک کلید ۶۴+ کاراکتری جدید بسازید |
+| `ALLOWED_HOSTS` | `*` | ⚠️ **پیشنهاد**: به `aiamoooz.darkube.app` تغییر دهید |
 
-### Gunicorn (پیشنهادی برای ۱۰۰ کاربر)
+### ۳.۲. دیتابیس
+
+| متغیر | مقدار |
+|--------|-------|
+| `DATABASE_URL` | `postgresql://postgres:IcHfBNcI0Ey8XGv2R85V@ai-amooz-db.ai-products-ai-amooz.svc:5432/postgres` |
+| `CONN_MAX_AGE` | `600` (پیش‌فرض — نیازی به ست کردن نیست) |
+
+### ۳.۳. Redis
+
+| متغیر | مقدار |
+|--------|-------|
+| `CHAT_REDIS_URL` | `redis://wTsn0gOcwynZe2VZ5pY1PoBH5PP5fzEl@2bd19fdd-bd09-43d9-9cc4-9c48c29009d2.hsvc.ir:24484/0` |
+
+> **نکته**: `REDIS_URL`، `CELERY_BROKER_URL` و `CELERY_RESULT_BACKEND` ست نشده‌اند — کد به‌صورت خودکار از `CHAT_REDIS_URL` fallback می‌کند. ✅ درست است.
+
+### ۳.۴. AI / LLM
+
+| متغیر | مقدار |
+|--------|-------|
+| `AVALAI_API_KEY` | `av-...` (کلید شما) |
+| `AVALAI_BASE_URL` | `https://api.avalai.ir/v1` |
+| `MODE` | `avalai` |
+| `MODEL_NAME` | `gpt-4o-mini` |
+| `GEMINI_API_KEY` | `AIza...` (کلید شما) |
+| `TRANSCRIPTION_MODEL` | `models/gemini-2.5-flash` |
+| `REWRITE_MODEL` | `models/gemini-2.5-flash` |
+| `IMAGE_MODEL` | `models/gemini-2.0-flash` |
+| `EMBEDDING_MODEL_NAME` | `models/gemini-embedding-001` |
+| `GENAI_HTTP_TIMEOUT` | `1000` |
+| `TRANSCRIBE_CHUNK_SECONDS` | `20` |
+| `FRAME_MAX_FRAMES_FOR_MODEL` | `40` |
+| `FRAME_HARD_CAP` | `16` |
+| `MAX_TOTAL_FRAME_BYTES_MB` | `3` |
+| `FRAME_EXTRACTION_FPS` | `0.25` |
+
+### ۳.۵. SMS
+
+| متغیر | مقدار |
+|--------|-------|
+| `MEDIANA_API_KEY` | `...` (کلید شما) |
+
+### ۳.۶. CORS / CSRF
+
+| متغیر | مقدار |
+|--------|-------|
+| `CORS_ALLOW_ALL_ORIGINS` | `False` |
+| `CORS_ALLOWED_ORIGINS` | `https://front-for-ai-amooz.vercel.app` |
+| `CORS_ALLOW_CREDENTIALS` | `True` |
+| `CSRF_TRUSTED_ORIGINS` | `https://aiamoooz.darkube.app,https://front-for-ai-amooz.vercel.app` |
+
+### ۳.۷. Gunicorn
 
 | متغیر | مقدار | توضیح |
 |--------|-------|-------|
-| `GUNICORN_WORKERS` | `3` | ≈ 2×CPU+1. با 2 CPU = 3 عدد worker |
-| `GUNICORN_TIMEOUT` | `300` | ۵ دقیقه (برای pipeline endpoints) |
-| `GUNICORN_WORKER_CLASS` | `gthread` | **تغییر از `sync` به `gthread`** — یک thread pool داخل هر worker |
-| `GUNICORN_KEEP_ALIVE` | `5` | ثانیه |
-| `GUNICORN_GRACEFUL_TIMEOUT` | `60` | |
+| `GUNICORN_WORKERS` | `3` | ≈ 2×CPU + 1 |
+| `GUNICORN_WORKER_CLASS` | `gthread` | |
+| `GUNICORN_THREADS` | `4` | **جدید — اضافه کنید!** 3 worker × 4 thread = **12 concurrent** |
+| `GUNICORN_TIMEOUT` | `300` | ۵ دقیقه (برای pipeline) |
 
-> **چرا `gthread`؟** هر worker سه thread دارد (worker-threads=3). با 3 worker × 3 thread = 9 concurrent request بدون blocking. برای I/O-heavy endpoints (DB queries) بسیار بهتر از `sync` است.
+### ۳.۸. Pipeline
 
-### دیتابیس (اتصال)
-
-| متغیر | مقدار | توضیح |
-|--------|-------|-------|
-| `CONN_MAX_AGE` | `600` | ثانیه (۱۰ دقیقه). از ساخت connection جدید در هر request جلوگیری |
-
-### Rate Limiting
-
-| متغیر | مقدار | توضیح |
-|--------|-------|-------|
-| `THROTTLE_RATE_ANON` | `60/minute` | ۶۰ درخواست/دقیقه برای anonymous |
-| `THROTTLE_RATE_USER` | `300/minute` | ۳۰۰ درخواست/دقیقه برای authenticated |
-
-### SMS (Mediana)
-
-| متغیر | مقدار | توضیح |
-|--------|-------|-------|
-| `MEDIANA_API_KEY` | *(کلید API مدیانا)* | بدون این، SMS ارسال نمی‌شود |
-
-### Google AI (LLM)
-
-| متغیر | مقدار | توضیح |
-|--------|-------|-------|
-| `GOOGLE_API_KEY` | *(کلید Google AI)* | برای transcription و structure |
-
-### Pipeline
-
-| متغیر | مقدار | توضیح |
-|--------|-------|-------|
-| `CLASS_PIPELINE_ASYNC` | `True` | فعال‌سازی Celery tasks |
+| متغیر | مقدار |
+|--------|-------|
+| `CLASS_PIPELINE_ASYNC` | `True` |
 
 ---
 
-## ۴. دپلوی Celery Worker (اپ جداگانه)
+## ۴. ساخت اپ Celery Worker (اپ جداگانه در Hamravesh)
 
-Celery باید به عنوان **اپ جداگانه** در Darkube دپلوی شود:
+### ۴.۱. تنظیمات اپ
 
-### مرحله‌ها:
-1. **ساخت اپ جدید** در Darkube → نام: `aiamooz-celery-worker`
-2. **همان ایمیج Docker** Backend را استفاده کنید
-3. **Command override** (در تنظیمات اپ):
-   ```
-   celery -A core worker --loglevel=info --concurrency=2 --max-tasks-per-child=50
-   ```
-4. **متغیرهای محیطی**: دقیقاً همان env vars بالا (بجز Gunicorn)
-5. **Resource limits**:
-   - RAM: 2GB
-   - CPU: 1 core
+| فیلد | مقدار |
+|------|-------|
+| **نام اپ** | `aiamooz-celery-worker` |
+| **آدرس ایمیج** | همان ایمیج Backend (همان repo/registry) |
+| **تگ ایمیج** | همان تگ Backend (مثلاً `latest` یا commit hash) |
+| **پورت سرویس** | `8000` (Hamravesh ممکن است الزامی کند — Celery استفاده نمی‌کند) |
 
-> `--max-tasks-per-child=50` جلوگیری از memory leak در worker ها.
+### ۴.۲. دستور اجرایی (Command Override)
 
-### تنظیمات اضافی Celery (اختیاری):
-
-| متغیر | مقدار | توضیح |
-|--------|-------|-------|
-| `CELERY_TASK_TIME_LIMIT` | `21600` | ۶ ساعت حداکثر |
-| `CELERY_TASK_SOFT_TIME_LIMIT` | `18000` | ۵ ساعت soft limit |
-
----
-
-## ۵. مایگریشن دیتابیس
-
-مایگریشن **خودکار** اجرا می‌شود چون `migrate --noinput` در CMD داکرفایل هست.
-
-**بعد از اولین دپلوی** بررسی کنید:
-```bash
-# از طریق Darkube shell یا exec:
-python manage.py showmigrations
+```
+celery -A core worker --loglevel=info --concurrency=2 --max-tasks-per-child=50
 ```
 
-اگر migration های اعمال‌نشده دیدید:
-```bash
-python manage.py migrate --noinput
-```
+> **توضیح پارامترها:**
+> - `-A core` → ماژول Celery در `core/celery.py`
+> - `--concurrency=2` → ۲ worker process همزمان (با ۲GB RAM کافی)
+> - `--max-tasks-per-child=50` → بعد از ۵۰ task، child ریستارت (جلوگیری از memory leak)
+> - `--loglevel=info` → سطح لاگ
 
-> ⚠️ ایندکس‌های جدید (روی `status`, `is_published`, `pipeline_type`, `phone`, `invite_code`) در migration بعدی اضافه شده‌اند.
+### ۴.۳. متغیرهای محیطی
+
+**دقیقاً همان env vars بخش ۳** را کپی کنید، **بجز** موارد Gunicorn:
+
+| حذف کنید (لازم نیست) |
+|----------------------|
+| `GUNICORN_WORKERS` |
+| `GUNICORN_WORKER_CLASS` |
+| `GUNICORN_THREADS` |
+| `GUNICORN_TIMEOUT` |
+| `GUNICORN_KEEP_ALIVE` |
+| `GUNICORN_GRACEFUL_TIMEOUT` |
+
+### ۴.۴. Readiness Probe
+
+Celery Worker سرور HTTP نیست. **HTTP readiness probe کار نمی‌کند.**
+
+**گزینه ۱ (پیشنهادی)** — Exec Probe:
+```
+celery -A core inspect ping --timeout 10
+```
+> پاسخ سالم: `pong`
+
+**گزینه ۲** — اگر Hamravesh فقط HTTP probe دارد:
+Probe را غیرفعال کنید یا به TCP روی پورت قرار دهید.
+
+### ۴.۵. Resource Limits
+
+| منبع | مقدار پیشنهادی |
+|------|----------------|
+| **RAM** | `2 GB` |
+| **CPU** | `1 core` |
+
+### ۴.۶. دامنه / پورت
+
+| فیلد | مقدار |
+|------|-------|
+| **آدرس دامنه** | ❌ لازم نیست (Celery Worker سرور HTTP ندارد) |
+| **Port mapping** | ❌ لازم نیست |
+| **Custom Config** | ❌ لازم نیست |
 
 ---
 
-## ۶. ساخت Superuser (برای admin)
+## ۵. تأیید دپلوی
+
+### ۵.۱. Health Check
 
 ```bash
-# از طریق Darkube shell:
+curl -s https://aiamoooz.darkube.app/api/health/
+```
+
+**پاسخ مورد انتظار:**
+```json
+{"status": "healthy", "database": "connected", "redis": "connected"}
+```
+
+| مشکل | بررسی |
+|------|--------|
+| `database: error` | `DATABASE_URL` — host باید `*.svc` داخلی باشد |
+| `redis: error` | `CHAT_REDIS_URL` — password و port صحیح باشد |
+| `502 Bad Gateway` | Pod هنوز آماده نیست — ۱-۲ دقیقه صبر کنید |
+| `301 Redirect Loop` | `SECURE_SSL_REDIRECT` باید `False` باشد |
+
+### ۵.۲. Static Files
+
+```bash
+curl -s -o /dev/null -w "%{http_code}" https://aiamoooz.darkube.app/static/rest_framework/css/default.css
+```
+
+**باید `200` برگرداند.** اگر `404`: whitenoise نصب نشده یا `collectstatic` اجرا نشده.
+
+### ۵.۳. Admin Panel
+
+```
+https://aiamoooz.darkube.app/admin/
+```
+باید صفحه لاگین Django Admin **با CSS درست** نمایش داده شود.
+
+### ۵.۴. Swagger / API Docs
+
+```
+https://aiamoooz.darkube.app/api/schema/swagger-ui/
+```
+
+### ۵.۵. Celery Worker
+
+از Hamravesh shell (اپ Backend):
+```bash
+celery -A core inspect ping
+```
+
+**پاسخ سالم:**
+```
+-> celery@<hostname>: OK
+        pong
+```
+
+اگر پاسخی نگرفتید:
+1. لاگ Celery worker را بررسی کنید
+2. `CHAT_REDIS_URL` در هر دو اپ یکسان باشد
+3. Redis accessible باشد
+
+### ۵.۶. Pipeline End-to-End Test
+
+1. از Admin یا Frontend یک **Class Session** جدید بسازید
+2. فایل ویدیو/صوت آپلود و Step 1 را شروع کنید
+3. لاگ Celery: باید task `process_class_step1_transcription` اجرا شود
+4. صبر تا pipeline تمام شود → بررسی نتیجه
+
+---
+
+## ۶. ساخت Superuser
+
+از Hamravesh shell (اپ Backend):
+```bash
 python manage.py createsuperuser
 ```
 
 ---
 
-## ۷. تست Health Check
+## ۷. Media Files — Persistent Volume
 
-```bash
-curl https://aiamoooz.darkube.app/api/health/
-# باید 200 برگرداند:
-# {"status": "ok", "db": "ok", "redis": "ok"}
-```
+> ⚠️ **بسیار مهم**: در K8s، فایل‌های داخل container با هر restart/redeploy **حذف** می‌شوند!
 
-اگر `redis: error` گرفتید: `REDIS_URL` را بررسی کنید.
-اگر `db: error` گرفتید: `DATABASE_URL` را بررسی کنید.
+### اقدام:
+
+1. پنل Hamravesh → **Volumes** → ساخت volume جدید
+   - **Size**: حداقل `10 GB` (بسته به حجم ویدیوها)
+   - **Mount Path**: `/app/media`
+2. این Volume را به **اپ Backend** وصل کنید
+3. همین Volume را به **اپ Celery Worker** هم Mount کنید (ReadWriteMany اگر پشتیبانی شود)
+
+> بدون Persistent Volume، تمام فایل‌های آپلود شده (ویدیو، تصاویر) با هر deploy از بین می‌روند!
 
 ---
 
 ## ۸. Frontend (Vercel)
 
-فرانت از قبل روی Vercel دپلوی شده. مطمئن شوید:
+مطمئن شوید در **Vercel Dashboard → Environment Variables**:
 
-1. **`NEXT_PUBLIC_API_URL`** در Vercel = `https://aiamoooz.darkube.app`
-2. بعد از دپلوی Backend, یک تست end-to-end انجام دهید:
-   - ثبت‌نام → لاگین → دسترسی به API → خروج
+| متغیر | مقدار |
+|--------|-------|
+| `NEXT_PUBLIC_API_URL` | `https://aiamoooz.darkube.app` |
+
+**تست:**
+1. `https://front-for-ai-amooz.vercel.app` → صفحه لاگین
+2. ثبت‌نام → لاگین → دریافت JWT
+3. فراخوانی API → `200` + داده
+4. Logout → Token blacklisted
 
 ---
 
-## ۹. مانیتورینگ
+## ۹. بررسی امنیتی نهایی
 
-### لاگ‌ها
+- [ ] `DJANGO_SECRET_KEY` — حداقل ۵۰ کاراکتر رندوم
+- [ ] `DEBUG=False` ✅
+- [ ] `ALLOWED_HOSTS` — فقط `aiamoooz.darkube.app` (**نه `*`**)
+- [ ] `CORS_ALLOWED_ORIGINS` — فقط frontend دامنه
+- [ ] `CSRF_TRUSTED_ORIGINS` — backend + frontend
+- [ ] `SECURE_SSL_REDIRECT=False` — K8s ingress handles SSL
+- [ ] `SESSION_COOKIE_SECURE=True` — خودکار با `DEBUG=False`
+- [ ] `CSRF_COOKIE_SECURE=True` — خودکار با `DEBUG=False`
+
+### Secret Key جدید بسازید:
 ```bash
-# Darkube dashboard → Logs tab
-# یا:
-darkube logs aiamooz-backend --tail 100
-darkube logs aiamooz-celery-worker --tail 100
+python -c "import secrets; print(secrets.token_urlsafe(64))"
 ```
 
-### معیارهای کلیدی برای ۱۰۰ کاربر
-- **Response time**: p95 < 500ms برای list endpoints
-- **Error rate**: < 1%
-- **DB connections**: با `CONN_MAX_AGE=600` باید ≤ 3 connection فعال ببینید
-- **Memory**: < 3GB برای backend, < 1.5GB برای celery
-- **Celery queue**: `celery inspect active` — queue خالی = خوب
+---
+
+## ۱۰. مانیتورینگ
+
+| معیار | مقدار سالم |
+|-------|------------|
+| Response time p95 | < 500ms (بجز pipeline endpoints) |
+| Error rate | < 1% |
+| DB connections | ≤ 3 فعال |
+| Memory — Backend | < 2GB |
+| Memory — Celery | < 1.5GB |
+| Celery queue | خالی (tasks پردازش شده) |
 
 ---
 
-## ۱۰. چک‌لیست نهایی قبل از Go-Live
+## ۱۱. Rollback
 
-- [ ] `DJANGO_SECRET_KEY` عوض شده (۶۴+ کاراکتر)
-- [ ] `DEBUG=False`
-- [ ] `ALLOWED_HOSTS` فقط دامنه خودتان (نه `*`)
-- [ ] `CORS_ALLOWED_ORIGINS` فقط فرانت Vercel
-- [ ] `CSRF_TRUSTED_ORIGINS` شامل backend + frontend
-- [ ] Health check : `GET /api/health/` → `200 {"status": "ok"}`
-- [ ] Celery worker running: `celery inspect ping` از Darkube shell
-- [ ] SMS test: یک جلسه publish کنید و تأیید بگیرید SMS رسیده
-- [ ] Migration applied: `python manage.py showmigrations` → همه `[X]`
-- [ ] لاگ‌ها بدون error: `darkube logs --tail 50`
-- [ ] Rate limiting فعال: بیش از ۶۰ request/min بدون auth → `429`
-- [ ] فرانت وصل شده: لاگین از Vercel و دریافت JWT
+1. Hamravesh → اپ → **Deployments** → **Rollback** به version قبلی
+2. Migration rollback: `python manage.py migrate <app> <prev_number>`
+3. Celery worker را هم rollback کنید
 
 ---
 
-## ۱۱. Rollback Plan
+## ۱۲. ترتیب دقیق اقدامات
 
-اگر مشکلی پیش آمد:
-1. **Darkube** → اپ Backend → Deployments → Rollback to previous version
-2. اگر migration مشکل‌ساز شد:
-   ```bash
-   python manage.py migrate classes <previous_migration_number>
-   ```
-3. **Celery worker** را هم rollback کنید
+```
+ 1. git add + commit + push (آخرین تغییرات)
+ 2. ری‌بیلد ایمیج Backend در Hamravesh
+ 3. env var جدید اضافه کنید: GUNICORN_THREADS=4
+ 4. صبر تا Pod آماده شود (۱-۲ دقیقه)
+ 5. curl /api/health/ → {"status": "healthy"}
+ 6. چک Admin panel + static files (CSS)
+ 7. ساخت اپ Celery Worker (بخش ۴)
+ 8. ساخت Persistent Volume برای /app/media (بخش ۷)
+ 9. ساخت superuser
+10. تست Pipeline (upload → celery → result)
+11. تست Frontend E2E (login → API → logout)
+12. بررسی امنیت (بخش ۹)
+```
 
 ---
 
-## ۱۲. Performance Tuning (بعد از Go-Live)
+## ۱۳. Troubleshooting
 
-اگر بعد از Go-Live با ۱۰۰ کاربر مشکل دیدید:
-
-| مشکل | راه‌حل |
-|-------|--------|
-| Response time بالا | `GUNICORN_WORKERS` را به 4 افزایش دهید |
-| DB connection error | `CONN_MAX_AGE=None` + نصب pgbouncer |
-| Memory بالا | `GUNICORN_WORKERS` را کاهش + `--max-memory-per-child=500000` |
-| Celery queue پر | `--concurrency=4` در worker |
-| 429 Too Many Requests | `THROTTLE_RATE_USER=500/minute` |
+| مشکل | علت احتمالی | راه‌حل |
+|------|------------|--------|
+| `502 Bad Gateway` | Pod crash یا slow startup | لاگ Pod چک کنید — `migrate` ممکن است زمان ببرد |
+| `301 Redirect Loop` | `SECURE_SSL_REDIRECT=True` | به `False` تغییر دهید |
+| Static files `404` | `collectstatic` اجرا نشده | ری‌بیلد ایمیج — CMD شامل `collectstatic` هست |
+| Admin بدون CSS | whitenoise نصب نیست | `requirements.txt` شامل `whitenoise>=6.0.0` باشد |
+| Celery tasks اجرا نمی‌شوند | Worker روشن نیست | اپ Celery Worker بسازید (بخش ۴) |
+| Redis connection error | Password/port اشتباه | `CHAT_REDIS_URL` format: `redis://PASSWORD@HOST:PORT/DB` |
+| Media files حذف شدند | بدون PV | Persistent Volume بسازید (بخش ۷) |
+| Memory بالا | Worker/concurrency زیاد | `GUNICORN_WORKERS=2` یا `--concurrency=1` |
+| Response time بالا | Worker کم | `GUNICORN_WORKERS=4` + `GUNICORN_THREADS=4` |
