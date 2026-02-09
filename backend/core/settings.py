@@ -231,7 +231,21 @@ CORS_ALLOW_ALL_ORIGINS = os.getenv(
     'True' if DEBUG else 'False',
 ) == 'True'
 CORS_ALLOWED_ORIGINS = _split_env_list('CORS_ALLOWED_ORIGINS')
-CORS_ALLOW_CREDENTIALS = os.getenv('CORS_ALLOW_CREDENTIALS', 'False') == 'True'
+CORS_ALLOW_CREDENTIALS = os.getenv('CORS_ALLOW_CREDENTIALS', 'True') == 'True'
+# Ensure large file upload headers are allowed in preflight responses.
+CORS_ALLOW_HEADERS = [
+    'accept',
+    'accept-encoding',
+    'authorization',
+    'content-type',
+    'dnt',
+    'origin',
+    'user-agent',
+    'x-csrftoken',
+    'x-requested-with',
+    'content-disposition',
+    'cache-control',
+]
 
 # Reverse proxy / HTTPS support.
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')

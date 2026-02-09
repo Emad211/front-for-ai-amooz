@@ -7,6 +7,9 @@ spec:
   headers:
     accessControlAllowOriginList:
       - "https://front-for-ai-amooz.vercel.app"
+      # Add your custom frontend domain here when ready:
+      # - "https://YOUR-DOMAIN.ir"
+      # - "https://www.YOUR-DOMAIN.ir"
     accessControlAllowMethods:
       - GET
       - POST
@@ -18,5 +21,7 @@ spec:
       - Content-Type
       - Authorization
       - X-Requested-With
+      - Content-Disposition
+      - Cache-Control
     accessControlAllowCredentials: true
     accessControlMaxAge: 86400

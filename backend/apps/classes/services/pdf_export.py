@@ -9,12 +9,43 @@ logger = logging.getLogger(__name__)
 
 
 def get_font_path() -> str:
+    """Find the best available Persian font for PDF generation.
+
+    Search order:
+    1. Bundled static font (project repo)
+    2. System font installed via Dockerfile (Linux / Docker production)
+    3. Common Linux font paths
+    4. Windows fallbacks (local dev only)
+    """
     paths = [
+        # Project-bundled font
         os.path.join(os.path.dirname(__file__), "..", "static", "fonts", "Vazirmatn-Regular.ttf"),
         os.path.join(os.path.dirname(__file__), "..", "static", "fonts", "Vazirmatn.ttf"),
+        # Docker / Linux system font (installed by Dockerfile)
+        "/usr/share/fonts/truetype/vazirmatn/Vazirmatn-Regular.ttf",
+        "/usr/share/fonts/truetype/vazirmatn/Vazirmatn-Bold.ttf",
+        # Common Linux font paths
+        "/usr/share/fonts/truetype/noto/NotoSansArabic-Regular.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        # Windows local development
         "C:/Windows/Fonts/Vazirmatn-Regular.ttf",
         "C:/Windows/Fonts/IRANSans.ttf",
         "C:/Windows/Fonts/tahoma.ttf",
+    ]
+    for p in paths:
+        if os.path.exists(p):
+            logger.info("PDF font found: %s", p)
+            return p.replace("\\", "/")
+    logger.warning("No Persian font found — PDF text may render incorrectly!")
+    return ""
+
+
+def get_bold_font_path() -> str:
+    """Find bold variant of the Persian font (optional)."""
+    paths = [
+        os.path.join(os.path.dirname(__file__), "..", "static", "fonts", "Vazirmatn-Bold.ttf"),
+        "/usr/share/fonts/truetype/vazirmatn/Vazirmatn-Bold.ttf",
+        "C:/Windows/Fonts/Vazirmatn-Bold.ttf",
     ]
     for p in paths:
         if os.path.exists(p):
@@ -27,11 +58,23 @@ def get_base_css(font_path: str) -> str:
     font_family = "sans-serif"
 
     if font_path:
-        font_family = "MyPersianFont, sans-serif"
+        font_family = "MyPersianFont, Vazirmatn, Tahoma, sans-serif"
+        bold_path = get_bold_font_path()
         font_face = f"""
         @font-face {{
             font-family: 'MyPersianFont';
             src: url('file://{font_path}');
+            font-weight: normal;
+            font-style: normal;
+        }}
+        """
+        if bold_path:
+            font_face += f"""
+        @font-face {{
+            font-family: 'MyPersianFont';
+            src: url('file://{bold_path}');
+            font-weight: bold;
+            font-style: normal;
         }}
         """
 

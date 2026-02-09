@@ -12,6 +12,7 @@ metadata:
     cert-manager.io/cluster-issuer: acme-prod
 spec:
   rules:
+    # ── Darkube default domain ───────────────────────────────────────
     - host: aiamoooz.darkube.app
       http:
         paths:
@@ -22,7 +23,20 @@ spec:
                 name: ai-amooz-backend
                 port:
                   name: main
+    # ── Custom domain (needed because darkube.app is filtered in Iran) ─
+    # Uncomment & update when your custom domain DNS is configured:
+    # - host: api.YOUR-DOMAIN.ir
+    #   http:
+    #     paths:
+    #       - path: /
+    #         pathType: Prefix
+    #         backend:
+    #           service:
+    #             name: ai-amooz-backend
+    #             port:
+    #               name: main
   tls:
     - hosts:
         - aiamoooz.darkube.app
+        # - api.YOUR-DOMAIN.ir   # uncomment when custom domain ready
       secretName: ai-amooz-tls-secret
