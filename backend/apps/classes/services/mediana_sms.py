@@ -41,14 +41,14 @@ def _post_json(*, url: str, api_key: str, payload: dict, max_retries: int = 2) -
                 raise RuntimeError(f'Mediana SMS invalid JSON response: {raw[:500]}') from exc
 
         except urllib.error.HTTPError as exc:
-            raw = (exc.read() or b'').decode('utf-8', errors='replace')
+            raw = (exc.read() or b'').decode('utf-8', errors='replace')[:300]
             # Don't retry client errors (4xx)
             if 400 <= exc.code < 500:
-                raise RuntimeError(f'Mediana SMS HTTP error: {exc.code} {raw}') from exc
-            last_exc = RuntimeError(f'Mediana SMS HTTP error: {exc.code} {raw}')
+                raise RuntimeError(f'Mediana SMS HTTP {exc.code}: {raw}') from exc
+            last_exc = RuntimeError(f'Mediana SMS HTTP {exc.code}: {raw}')
             logger.warning(
-                'Mediana SMS transient error (attempt %d/%d): %s %s',
-                attempt, max_retries + 1, exc.code, raw[:200],
+                'Mediana SMS transient error (attempt %d/%d): HTTP %s',
+                attempt, max_retries + 1, exc.code,
             )
 
         except (urllib.error.URLError, TimeoutError, OSError) as exc:

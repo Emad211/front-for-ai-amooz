@@ -11,6 +11,11 @@ ENV PYTHONUNBUFFERED=1 \
 
 WORKDIR /app
 
+# Install system dependencies (ffmpeg needed for media compression/splitting)
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends ffmpeg && \
+    rm -rf /var/lib/apt/lists/*
+
 # کپی requirements و نصب
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt

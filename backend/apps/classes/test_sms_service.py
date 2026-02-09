@@ -72,7 +72,7 @@ class TestPostJsonRetry:
                 hdrs=None, fp=None,
             )
 
-            with pytest.raises(RuntimeError, match='HTTP error: 400'):
+            with pytest.raises(RuntimeError, match='HTTP 400'):
                 _post_json(
                     url='https://api.mediana.ir/sms/v1/send/array',
                     api_key='test-key',
@@ -91,7 +91,7 @@ class TestPostJsonRetry:
                 hdrs=None, fp=None,
             )
 
-            with pytest.raises(RuntimeError, match='HTTP error: 503'):
+            with pytest.raises(RuntimeError, match='HTTP 503'):
                 _post_json(
                     url='https://api.mediana.ir/sms/v1/send/array',
                     api_key='test-key',

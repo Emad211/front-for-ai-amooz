@@ -275,7 +275,9 @@ def process_class_full_pipeline(self, session_id: int) -> dict:
     """Run class creation steps 1-5 sequentially (one-click pipeline).
 
     Each step is called **inline** (not as a sub-task) so that
-    ordering is always guaranteed.
+    ordering is always guaranteed.  Exceptions from inline calls
+    are caught so the session is properly marked *failed* instead
+    of leaving Celery to raise an unhandled Retry.
     """
     from .models import ClassCreationSession
 
@@ -283,9 +285,22 @@ def process_class_full_pipeline(self, session_id: int) -> dict:
     if session is None:
         return {'status': 'skipped', 'reason': 'session not found'}
 
+    def _run_step(step_fn, step_label):
+        """Run an inline step; catch errors and mark session failed."""
+        try:
+            step_fn(session_id)
+        except Exception as exc:
+            session.refresh_from_db()
+            if session.status != ClassCreationSession.Status.FAILED:
+                session.status = ClassCreationSession.Status.FAILED
+                session.error_detail = f'{step_label}: {str(exc)[:500]}'
+                session.save(update_fields=['status', 'error_detail', 'updated_at'])
+            logger.error('Pipeline step %s failed for session %s: %s',
+                         step_label, session_id, str(exc)[:300])
+
     # Step 1
     if session.status == ClassCreationSession.Status.TRANSCRIBING:
-        process_class_step1_transcription(session_id)
+        _run_step(process_class_step1_transcription, 'step1_transcription')
 
     session.refresh_from_db()
     if session.status == ClassCreationSession.Status.FAILED:
@@ -295,7 +310,7 @@ def process_class_full_pipeline(self, session_id: int) -> dict:
     if session.status == ClassCreationSession.Status.TRANSCRIBED:
         session.status = ClassCreationSession.Status.STRUCTURING
         session.save(update_fields=['status', 'updated_at'])
-        process_class_step2_structure(session_id)
+        _run_step(process_class_step2_structure, 'step2_structure')
 
     session.refresh_from_db()
     if session.status == ClassCreationSession.Status.FAILED:
@@ -305,7 +320,7 @@ def process_class_full_pipeline(self, session_id: int) -> dict:
     if session.status == ClassCreationSession.Status.STRUCTURED:
         session.status = ClassCreationSession.Status.PREREQ_EXTRACTING
         session.save(update_fields=['status', 'updated_at'])
-        process_class_step3_prerequisites(session_id)
+        _run_step(process_class_step3_prerequisites, 'step3_prerequisites')
 
     session.refresh_from_db()
     if session.status == ClassCreationSession.Status.FAILED:
@@ -315,7 +330,7 @@ def process_class_full_pipeline(self, session_id: int) -> dict:
     if session.status == ClassCreationSession.Status.PREREQ_EXTRACTED:
         session.status = ClassCreationSession.Status.PREREQ_TEACHING
         session.save(update_fields=['status', 'updated_at'])
-        process_class_step4_prereq_teaching(session_id)
+        _run_step(process_class_step4_prereq_teaching, 'step4_prereq_teaching')
 
     session.refresh_from_db()
     if session.status == ClassCreationSession.Status.FAILED:
@@ -325,7 +340,11 @@ def process_class_full_pipeline(self, session_id: int) -> dict:
     if session.status == ClassCreationSession.Status.PREREQ_TAUGHT:
         session.status = ClassCreationSession.Status.RECAPPING
         session.save(update_fields=['status', 'updated_at'])
-        process_class_step5_recap(session_id)
+        _run_step(process_class_step5_recap, 'step5_recap')
+
+    session.refresh_from_db()
+    if session.status == ClassCreationSession.Status.FAILED:
+        return {'status': 'failed', 'stopped_at': 'step5'}
 
     return {'status': 'success', 'session_id': session_id}
 
@@ -426,9 +445,21 @@ def process_exam_prep_full_pipeline(self, session_id: int) -> dict:
     if session is None:
         return {'status': 'skipped', 'reason': 'session not found'}
 
+    def _run_step(step_fn, step_label):
+        try:
+            step_fn(session_id)
+        except Exception as exc:
+            session.refresh_from_db()
+            if session.status != ClassCreationSession.Status.FAILED:
+                session.status = ClassCreationSession.Status.FAILED
+                session.error_detail = f'{step_label}: {str(exc)[:500]}'
+                session.save(update_fields=['status', 'error_detail', 'updated_at'])
+            logger.error('Exam-prep step %s failed for session %s: %s',
+                         step_label, session_id, str(exc)[:300])
+
     # Step 1
     if session.status == ClassCreationSession.Status.EXAM_TRANSCRIBING:
-        process_exam_prep_step1_transcription(session_id)
+        _run_step(process_exam_prep_step1_transcription, 'step1_transcription')
 
     session.refresh_from_db()
     if session.status == ClassCreationSession.Status.FAILED:
@@ -438,7 +469,11 @@ def process_exam_prep_full_pipeline(self, session_id: int) -> dict:
     if session.status == ClassCreationSession.Status.EXAM_TRANSCRIBED:
         session.status = ClassCreationSession.Status.EXAM_STRUCTURING
         session.save(update_fields=['status', 'updated_at'])
-        process_exam_prep_step2_structure(session_id)
+        _run_step(process_exam_prep_step2_structure, 'step2_structure')
+
+    session.refresh_from_db()
+    if session.status == ClassCreationSession.Status.FAILED:
+        return {'status': 'failed', 'stopped_at': 'step2'}
 
     return {'status': 'success', 'session_id': session_id}
 
@@ -447,16 +482,22 @@ def process_exam_prep_full_pipeline(self, session_id: int) -> dict:
 # Lightweight tasks (SMS, notifications, etc.)
 # ---------------------------------------------------------------------------
 
-@shared_task(bind=True, max_retries=2, default_retry_delay=30, acks_late=True)
+@shared_task(bind=True, max_retries=5, acks_late=True)
 def send_publish_sms_task(self, session_id: int) -> dict:
-    """Send publish SMS notifications to invited students."""
+    """Send publish SMS notifications to invited students.
+
+    Uses exponential back-off: 30 s → 60 s → 120 s → 240 s → 480 s.
+    """
     from .services.mediana_sms import send_publish_sms_for_session
 
     try:
         send_publish_sms_for_session(session_id)
         return {'status': 'success', 'session_id': session_id}
     except Exception as exc:
-        logger.exception('SMS send failed for session %s', session_id)
+        logger.error('SMS send failed for session %s (attempt %s/%s): %s',
+                     session_id, self.request.retries + 1, self.max_retries + 1,
+                     str(exc)[:200])
         if self.request.retries >= self.max_retries:
-            return {'status': 'failed', 'error': str(exc)}
-        raise self.retry(exc=exc)
+            return {'status': 'failed', 'error': str(exc)[:500]}
+        backoff = 30 * (2 ** self.request.retries)  # 30, 60, 120, 240, 480
+        raise self.retry(exc=exc, countdown=backoff)
