@@ -11,6 +11,9 @@ Design principles
 * Retry with exponential back-off (max 3 retries, delay starts at 60 s).
 * ``time_limit`` / ``soft_time_limit`` inherited from settings by default;
   individual tasks can override if needed.
+* Full-pipeline tasks run steps **inline** with their own retry logic.
+  Celery's ``self.retry()`` raises ``Retry``; the pipeline catches this
+  and retries locally with exponential back-off instead.
 """
 from __future__ import annotations
 
@@ -18,8 +21,10 @@ import json
 import logging
 import os
 import tempfile
+import time
 
 from celery import shared_task
+from celery.exceptions import Retry as CeleryRetry
 
 logger = logging.getLogger(__name__)
 
@@ -32,7 +37,13 @@ def _read_session_file_to_disk(session) -> str:
     """Stream the uploaded file to a temp file and return the path.
 
     This avoids loading 500 MB into RAM at once.
+    Raises ``FileNotFoundError`` if the session has no source file.
     """
+    if not session.source_file:
+        raise FileNotFoundError(
+            f'فایل منبع برای جلسه {session.id} وجود ندارد. '
+            'ممکن است قبلاً حذف شده باشد.'
+        )
     suffix = os.path.splitext(session.source_original_name or '')[-1] or '.bin'
     tmp = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
     try:
@@ -69,6 +80,62 @@ def _cleanup_source_file(session) -> None:
             session.save(update_fields=['source_file', 'updated_at'])
     except Exception:
         logger.warning('Failed to cleanup source file for session %s', session.id, exc_info=True)
+
+
+def _run_pipeline_step(
+    step_fn,
+    step_label: str,
+    session_id: int,
+    session,
+    *,
+    max_attempts: int = 4,
+    base_delay: int = 30,
+) -> bool:
+    """Run a pipeline step inline with retry logic.
+
+    Individual step tasks call ``self.retry()`` on failure which raises
+    ``celery.exceptions.Retry``.  When called directly from a full-pipeline
+    task, the Retry is caught here and retried inline with exponential
+    back-off instead of re-queuing a separate Celery task.
+
+    Returns ``True`` on success, ``False`` on failure (session marked FAILED).
+    """
+    for attempt in range(1, max_attempts + 1):
+        try:
+            result = step_fn(session_id)
+            # Step returned normally — check if it flagged failure internally.
+            if isinstance(result, dict) and result.get('status') == 'failed':
+                return False
+            return True
+
+        except (CeleryRetry, Exception) as exc:
+            is_last = attempt >= max_attempts
+            exc_msg = str(exc)[:300]
+
+            if is_last:
+                logger.error(
+                    'Pipeline step %s failed after %d attempts for session %s: %s',
+                    step_label, max_attempts, session_id, exc_msg,
+                )
+                session.refresh_from_db()
+                if session.status != session.Status.FAILED:
+                    session.status = session.Status.FAILED
+                    session.error_detail = f'{step_label}: {exc_msg}'
+                    session.save(update_fields=['status', 'error_detail', 'updated_at'])
+                return False
+
+            delay = min(base_delay * (2 ** (attempt - 1)), 300)
+            logger.warning(
+                'Pipeline step %s attempt %d/%d failed for session %s: %s — retrying in %ds',
+                step_label, attempt, max_attempts, session_id, exc_msg, delay,
+            )
+            time.sleep(delay)
+            session.refresh_from_db()
+            if session.status == session.Status.FAILED:
+                # Something else marked it failed — abort.
+                return False
+
+    return False  # pragma: no cover
 
 
 # ---------------------------------------------------------------------------
@@ -295,10 +362,9 @@ def process_class_step5_recap(self, session_id: int) -> dict:
 def process_class_full_pipeline(self, session_id: int) -> dict:
     """Run class creation steps 1-5 sequentially (one-click pipeline).
 
-    Each step is called **inline** (not as a sub-task) so that
-    ordering is always guaranteed.  Exceptions from inline calls
-    are caught so the session is properly marked *failed* instead
-    of leaving Celery to raise an unhandled Retry.
+    Each step is called **inline** (not as a sub-task) so that ordering
+    is always guaranteed.  Failures are retried up to 4 times with
+    exponential back-off per step before the pipeline gives up.
     """
     from .models import ClassCreationSession
 
@@ -306,22 +372,10 @@ def process_class_full_pipeline(self, session_id: int) -> dict:
     if session is None:
         return {'status': 'skipped', 'reason': 'session not found'}
 
-    def _run_step(step_fn, step_label):
-        """Run an inline step; catch errors and mark session failed."""
-        try:
-            step_fn(session_id)
-        except Exception as exc:
-            session.refresh_from_db()
-            if session.status != ClassCreationSession.Status.FAILED:
-                session.status = ClassCreationSession.Status.FAILED
-                session.error_detail = f'{step_label}: {str(exc)[:500]}'
-                session.save(update_fields=['status', 'error_detail', 'updated_at'])
-            logger.error('Pipeline step %s failed for session %s: %s',
-                         step_label, session_id, str(exc)[:300])
-
     # Step 1
     if session.status == ClassCreationSession.Status.TRANSCRIBING:
-        _run_step(process_class_step1_transcription, 'step1_transcription')
+        if not _run_pipeline_step(process_class_step1_transcription, 'step1_transcription', session_id, session):
+            return {'status': 'failed', 'stopped_at': 'step1'}
 
     session.refresh_from_db()
     if session.status == ClassCreationSession.Status.FAILED:
@@ -331,7 +385,8 @@ def process_class_full_pipeline(self, session_id: int) -> dict:
     if session.status == ClassCreationSession.Status.TRANSCRIBED:
         session.status = ClassCreationSession.Status.STRUCTURING
         session.save(update_fields=['status', 'updated_at'])
-        _run_step(process_class_step2_structure, 'step2_structure')
+        if not _run_pipeline_step(process_class_step2_structure, 'step2_structure', session_id, session):
+            return {'status': 'failed', 'stopped_at': 'step2'}
 
     session.refresh_from_db()
     if session.status == ClassCreationSession.Status.FAILED:
@@ -341,7 +396,8 @@ def process_class_full_pipeline(self, session_id: int) -> dict:
     if session.status == ClassCreationSession.Status.STRUCTURED:
         session.status = ClassCreationSession.Status.PREREQ_EXTRACTING
         session.save(update_fields=['status', 'updated_at'])
-        _run_step(process_class_step3_prerequisites, 'step3_prerequisites')
+        if not _run_pipeline_step(process_class_step3_prerequisites, 'step3_prerequisites', session_id, session):
+            return {'status': 'failed', 'stopped_at': 'step3'}
 
     session.refresh_from_db()
     if session.status == ClassCreationSession.Status.FAILED:
@@ -351,7 +407,8 @@ def process_class_full_pipeline(self, session_id: int) -> dict:
     if session.status == ClassCreationSession.Status.PREREQ_EXTRACTED:
         session.status = ClassCreationSession.Status.PREREQ_TEACHING
         session.save(update_fields=['status', 'updated_at'])
-        _run_step(process_class_step4_prereq_teaching, 'step4_prereq_teaching')
+        if not _run_pipeline_step(process_class_step4_prereq_teaching, 'step4_prereq_teaching', session_id, session):
+            return {'status': 'failed', 'stopped_at': 'step4'}
 
     session.refresh_from_db()
     if session.status == ClassCreationSession.Status.FAILED:
@@ -361,12 +418,14 @@ def process_class_full_pipeline(self, session_id: int) -> dict:
     if session.status == ClassCreationSession.Status.PREREQ_TAUGHT:
         session.status = ClassCreationSession.Status.RECAPPING
         session.save(update_fields=['status', 'updated_at'])
-        _run_step(process_class_step5_recap, 'step5_recap')
+        if not _run_pipeline_step(process_class_step5_recap, 'step5_recap', session_id, session):
+            return {'status': 'failed', 'stopped_at': 'step5'}
 
     session.refresh_from_db()
     if session.status == ClassCreationSession.Status.FAILED:
         return {'status': 'failed', 'stopped_at': 'step5'}
 
+    logger.info('Full pipeline completed for session %s', session_id)
     return {'status': 'success', 'session_id': session_id}
 
 
@@ -463,28 +522,17 @@ def process_exam_prep_step2_structure(self, session_id: int) -> dict:
 
 @shared_task(bind=True, max_retries=0, acks_late=True)
 def process_exam_prep_full_pipeline(self, session_id: int) -> dict:
-    """Run exam prep steps 1-2 sequentially."""
+    """Run exam prep steps 1-2 sequentially with inline retry logic."""
     from .models import ClassCreationSession
 
     session = ClassCreationSession.objects.filter(id=session_id).first()
     if session is None:
         return {'status': 'skipped', 'reason': 'session not found'}
 
-    def _run_step(step_fn, step_label):
-        try:
-            step_fn(session_id)
-        except Exception as exc:
-            session.refresh_from_db()
-            if session.status != ClassCreationSession.Status.FAILED:
-                session.status = ClassCreationSession.Status.FAILED
-                session.error_detail = f'{step_label}: {str(exc)[:500]}'
-                session.save(update_fields=['status', 'error_detail', 'updated_at'])
-            logger.error('Exam-prep step %s failed for session %s: %s',
-                         step_label, session_id, str(exc)[:300])
-
     # Step 1
     if session.status == ClassCreationSession.Status.EXAM_TRANSCRIBING:
-        _run_step(process_exam_prep_step1_transcription, 'step1_transcription')
+        if not _run_pipeline_step(process_exam_prep_step1_transcription, 'step1_transcription', session_id, session):
+            return {'status': 'failed', 'stopped_at': 'step1'}
 
     session.refresh_from_db()
     if session.status == ClassCreationSession.Status.FAILED:
@@ -494,12 +542,14 @@ def process_exam_prep_full_pipeline(self, session_id: int) -> dict:
     if session.status == ClassCreationSession.Status.EXAM_TRANSCRIBED:
         session.status = ClassCreationSession.Status.EXAM_STRUCTURING
         session.save(update_fields=['status', 'updated_at'])
-        _run_step(process_exam_prep_step2_structure, 'step2_structure')
+        if not _run_pipeline_step(process_exam_prep_step2_structure, 'step2_structure', session_id, session):
+            return {'status': 'failed', 'stopped_at': 'step2'}
 
     session.refresh_from_db()
     if session.status == ClassCreationSession.Status.FAILED:
         return {'status': 'failed', 'stopped_at': 'step2'}
 
+    logger.info('Exam-prep pipeline completed for session %s', session_id)
     return {'status': 'success', 'session_id': session_id}
 
 
