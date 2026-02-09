@@ -446,6 +446,16 @@ class Step1TranscribeView(APIView):
             session.llm_model = model_name
             session.status = ClassCreationSession.Status.TRANSCRIBED
             session.save(update_fields=['transcript_markdown', 'llm_provider', 'llm_model', 'status', 'updated_at'])
+
+            # Delete uploaded file — only transcript text is needed from now on.
+            try:
+                if session.source_file:
+                    session.source_file.delete(save=False)
+                    session.source_file = None
+                    session.save(update_fields=['source_file', 'updated_at'])
+            except Exception:
+                logger.warning('Failed to cleanup source file for session %s', session.id)
+
             return Response(Step1TranscribeResponseSerializer(session).data, status=status.HTTP_201_CREATED)
         except Exception as exc:
             session.status = ClassCreationSession.Status.FAILED

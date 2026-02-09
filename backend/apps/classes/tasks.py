@@ -55,6 +55,22 @@ def _read_file_bytes(path: str) -> bytes:
         return f.read()
 
 
+def _cleanup_source_file(session) -> None:
+    """Delete the uploaded source file from disk and clear the DB field.
+
+    Called after successful transcription — only the transcript text is
+    needed from that point on.  This avoids accumulating large media
+    files on the server.
+    """
+    try:
+        if session.source_file:
+            session.source_file.delete(save=False)
+            session.source_file = None
+            session.save(update_fields=['source_file', 'updated_at'])
+    except Exception:
+        logger.warning('Failed to cleanup source file for session %s', session.id, exc_info=True)
+
+
 # ---------------------------------------------------------------------------
 # CLASS pipeline tasks (steps 1-5 + full pipeline)
 # ---------------------------------------------------------------------------
@@ -85,6 +101,11 @@ def process_class_step1_transcription(self, session_id: int) -> dict:
         session.llm_model = model_name
         session.status = ClassCreationSession.Status.TRANSCRIBED
         session.save(update_fields=['transcript_markdown', 'llm_provider', 'llm_model', 'status', 'updated_at'])
+
+        # Delete the uploaded source file to free disk space.
+        # Only the transcript text is needed from this point on.
+        _cleanup_source_file(session)
+
         return {'status': 'success', 'session_id': session_id}
     except Exception as exc:
         if tmp_path and os.path.exists(tmp_path):
@@ -379,6 +400,10 @@ def process_exam_prep_step1_transcription(self, session_id: int) -> dict:
         session.llm_model = model_name
         session.status = ClassCreationSession.Status.EXAM_TRANSCRIBED
         session.save(update_fields=['transcript_markdown', 'llm_provider', 'llm_model', 'status', 'updated_at'])
+
+        # Delete the uploaded source file to free disk space.
+        _cleanup_source_file(session)
+
         return {'status': 'success', 'session_id': session_id}
     except Exception as exc:
         if tmp_path and os.path.exists(tmp_path):
