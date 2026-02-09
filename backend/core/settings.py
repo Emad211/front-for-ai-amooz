@@ -30,6 +30,7 @@ def _get_env_int(name: str, default: int) -> int:
 
 
 ALLOWED_HOSTS = _split_env_list(
+    '10.1.35.115',
     'ALLOWED_HOSTS',
     'localhost,127.0.0.1,0.0.0.0',
 )
