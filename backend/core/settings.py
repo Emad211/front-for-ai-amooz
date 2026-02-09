@@ -119,6 +119,10 @@ def _build_databases_from_url(database_url: str):
 
 DATABASES = _build_databases_from_url(os.getenv('DATABASE_URL', 'postgresql://ai_amooz:ai_amooz_password@localhost:5432/ai_amooz'))
 
+# Keep DB connections alive for 10 min instead of reconnecting every request.
+# Critical for 100+ concurrent users — avoids ~5-10ms per-request connect overhead.
+DATABASES['default']['CONN_MAX_AGE'] = _get_env_int('CONN_MAX_AGE', 600)
+
 AUTH_PASSWORD_VALIDATORS = [
     {
         'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator',
@@ -154,6 +158,18 @@ REST_FRAMEWORK = {
     ),
     'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
     'EXCEPTION_HANDLER': 'core.exception_handlers.api_exception_handler',
+    # Rate limiting — prevent abuse and protect expensive endpoints.
+    'DEFAULT_THROTTLE_CLASSES': [
+        'rest_framework.throttling.AnonRateThrottle',
+        'rest_framework.throttling.UserRateThrottle',
+    ],
+    'DEFAULT_THROTTLE_RATES': {
+        'anon': os.getenv('THROTTLE_RATE_ANON', '60/minute'),
+        'user': os.getenv('THROTTLE_RATE_USER', '300/minute'),
+    },
+    # Global pagination — all list endpoints return at most PAGE_SIZE items.
+    'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
+    'PAGE_SIZE': _get_env_int('DRF_PAGE_SIZE', 50),
 }
 
 SPECTACULAR_SETTINGS = {
@@ -236,6 +252,24 @@ CLASS_PIPELINE_ASYNC = os.getenv(
 # Celery (task queue) – used for heavy AI / transcription workloads.
 # ---------------------------------------------------------------------------
 REDIS_URL = os.getenv('REDIS_URL') or os.getenv('CHAT_REDIS_URL') or 'redis://localhost:6379/0'
+
+# ---------------------------------------------------------------------------
+# Cache — shared Redis cache for throttle counters, sessions, and app caching.
+# Using LocMemCache in local dev falls back automatically if Redis is unavailable.
+# ---------------------------------------------------------------------------
+CACHES = {
+    'default': {
+        'BACKEND': 'django.core.cache.backends.redis.RedisCache',
+        'LOCATION': REDIS_URL,
+        'KEY_PREFIX': 'aiamooz',
+        'TIMEOUT': 300,  # 5 min default TTL
+    }
+}
+
+# Use cache-backed sessions instead of DB — saves a DB round-trip per request.
+SESSION_ENGINE = 'django.contrib.sessions.backends.cache'
+SESSION_CACHE_ALIAS = 'default'
+
 CELERY_BROKER_URL = os.getenv('CELERY_BROKER_URL', REDIS_URL)
 CELERY_RESULT_BACKEND = os.getenv('CELERY_RESULT_BACKEND', REDIS_URL)
 CELERY_ACCEPT_CONTENT = ['json']

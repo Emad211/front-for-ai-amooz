@@ -15,32 +15,50 @@ def _get_env(name: str) -> str:
     return (os.getenv(name) or '').strip()
 
 
-def _post_json(*, url: str, api_key: str, payload: dict) -> dict:
+def _post_json(*, url: str, api_key: str, payload: dict, max_retries: int = 2) -> dict:
+    """POST JSON to the Mediana API with retry on transient errors."""
     body = json.dumps(payload, ensure_ascii=False).encode('utf-8')
-    req = urllib.request.Request(
-        url,
-        data=body,
-        headers={
-            'Content-Type': 'application/json',
-            'Accept': 'application/json',
-            'X-API-KEY': api_key,
-        },
-        method='POST',
-    )
 
-    try:
-        with urllib.request.urlopen(req, timeout=20) as resp:
-            raw = resp.read().decode('utf-8')
-    except urllib.error.HTTPError as exc:
-        raw = (exc.read() or b'').decode('utf-8', errors='replace')
-        raise RuntimeError(f'Mediana SMS HTTP error: {exc.code} {raw}') from exc
-    except Exception as exc:
-        raise RuntimeError(f'Mediana SMS request failed: {exc}') from exc
+    last_exc: Exception | None = None
+    for attempt in range(1, max_retries + 2):
+        req = urllib.request.Request(
+            url,
+            data=body,
+            headers={
+                'Content-Type': 'application/json',
+                'Accept': 'application/json',
+                'X-API-KEY': api_key,
+            },
+            method='POST',
+        )
 
-    try:
-        return json.loads(raw) if raw else {}
-    except Exception as exc:
-        raise RuntimeError(f'Mediana SMS invalid JSON response: {raw[:500]}') from exc
+        try:
+            with urllib.request.urlopen(req, timeout=20) as resp:
+                raw = resp.read().decode('utf-8')
+            try:
+                return json.loads(raw) if raw else {}
+            except Exception as exc:
+                raise RuntimeError(f'Mediana SMS invalid JSON response: {raw[:500]}') from exc
+
+        except urllib.error.HTTPError as exc:
+            raw = (exc.read() or b'').decode('utf-8', errors='replace')
+            # Don't retry client errors (4xx)
+            if 400 <= exc.code < 500:
+                raise RuntimeError(f'Mediana SMS HTTP error: {exc.code} {raw}') from exc
+            last_exc = RuntimeError(f'Mediana SMS HTTP error: {exc.code} {raw}')
+            logger.warning(
+                'Mediana SMS transient error (attempt %d/%d): %s %s',
+                attempt, max_retries + 1, exc.code, raw[:200],
+            )
+
+        except (urllib.error.URLError, TimeoutError, OSError) as exc:
+            last_exc = RuntimeError(f'Mediana SMS request failed: {exc}')
+            logger.warning(
+                'Mediana SMS network error (attempt %d/%d): %s',
+                attempt, max_retries + 1, exc,
+            )
+
+    raise last_exc or RuntimeError('Mediana SMS failed after retries')
 
 
 def send_peer_to_peer_sms(*, api_key: str, requests: list[dict], message_type: str = 'Informational') -> dict:

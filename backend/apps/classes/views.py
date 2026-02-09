@@ -666,6 +666,9 @@ class ClassCreationSessionListView(APIView):
         qs = ClassCreationSession.objects.filter(
             teacher=request.user,
             pipeline_type=ClassCreationSession.PipelineType.CLASS,
+        ).annotate(
+            _invites_count=Count('invites', distinct=True),
+            _lessons_count=Count('units', distinct=True),
         ).order_by('-created_at')
         return Response(ClassCreationSessionListSerializer(qs, many=True).data)
 
@@ -763,11 +766,16 @@ class ClassCreationSessionPublishView(GenericAPIView):
             return Response({'detail': 'برای انتشار، ابتدا ساختاردهی را کامل کنید.'}, status=status.HTTP_400_BAD_REQUEST)
 
         if not session.is_published:
-            session.is_published = True
-            session.published_at = timezone.now()
-            session.save(update_fields=['is_published', 'published_at', 'updated_at'])
+            # Atomic update to prevent double publish from concurrent requests.
+            now = timezone.now()
+            updated = ClassCreationSession.objects.filter(
+                id=session.id, is_published=False,
+            ).update(is_published=True, published_at=now, updated_at=now)
 
-            transaction.on_commit(lambda: send_publish_sms_task.delay(session.id))
+            if updated:
+                session.is_published = True
+                session.published_at = now
+                transaction.on_commit(lambda: send_publish_sms_task.delay(session.id))
 
         return Response(ClassCreationSessionDetailSerializer(session).data)
 
@@ -804,13 +812,20 @@ class ClassInvitationListCreateView(APIView):
         serializer.is_valid(raise_exception=True)
         phones: list[str] = serializer.validated_data['phones']
 
+        # Bulk check existing invitations (1 query instead of N).
+        existing_phones = set(
+            ClassInvitation.objects.filter(
+                session=session, phone__in=phones,
+            ).values_list('phone', flat=True)
+        )
+        new_invites = []
         for phone in phones:
-            existing = ClassInvitation.objects.filter(session=session, phone=phone).first()
-            if existing is not None:
+            if phone in existing_phones:
                 continue
-
             code = get_or_create_invite_code_for_phone(phone)
-            ClassInvitation.objects.create(session=session, phone=phone, invite_code=code)
+            new_invites.append(ClassInvitation(session=session, phone=phone, invite_code=code))
+        if new_invites:
+            ClassInvitation.objects.bulk_create(new_invites, ignore_conflicts=True)
 
         qs = ClassInvitation.objects.filter(session=session).order_by('-created_at')
         return Response(ClassInvitationSerializer(qs, many=True).data)
@@ -1222,7 +1237,7 @@ class TeacherAnalyticsActivitiesView(APIView):
     def get(self, request):
         # Combine recent sessions and recent invites for a better activity feed
         sessions = ClassCreationSession.objects.filter(teacher=request.user).order_by('-created_at')[:5]
-        invites = ClassInvitation.objects.filter(session__teacher=request.user).order_by('-created_at')[:5]
+        invites = ClassInvitation.objects.filter(session__teacher=request.user).select_related('session').order_by('-created_at')[:5]
         
         items = []
         for s in sessions:
@@ -1278,6 +1293,9 @@ class StudentCourseListView(APIView):
             )
             .select_related('teacher')
             .prefetch_related('sections__units', 'invites')
+            .annotate(
+                _invites_count=Count('invites', distinct=True),
+            )
             .distinct()
             .order_by('-published_at', '-updated_at')
         )
@@ -1289,9 +1307,10 @@ class StudentCourseListView(APIView):
             if teacher is not None:
                 instructor = (teacher.get_full_name() or getattr(teacher, 'username', '') or '').strip()
 
+            # Use prefetched data — len() hits the cache, .count() would issue a new query.
             lessons_count = 0
             try:
-                lessons_count = sum(s.units.count() for s in session.sections.all())
+                lessons_count = sum(len(s.units.all()) for s in session.sections.all())
             except Exception:
                 lessons_count = 0
 
@@ -1303,7 +1322,7 @@ class StudentCourseListView(APIView):
                     'tags': [],
                     'instructor': instructor,
                     'progress': _compute_student_course_progress(session=session, student=user),
-                    'studentsCount': session.invites.count(),
+                    'studentsCount': session._invites_count,
                     'lessonsCount': lessons_count,
                     'status': 'active',
                     'createdAt': (session.published_at or session.created_at).date().isoformat(),
@@ -2677,6 +2696,8 @@ class ExamPrepSessionListView(APIView):
         sessions = ClassCreationSession.objects.filter(
             teacher=request.user,
             pipeline_type=ClassCreationSession.PipelineType.EXAM_PREP,
+        ).annotate(
+            _invites_count=Count('invites', distinct=True),
         ).order_by('-created_at')
 
         return Response(ExamPrepSessionDetailSerializer(sessions, many=True).data)
@@ -2708,11 +2729,16 @@ class ExamPrepSessionPublishView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        session.is_published = True
-        session.published_at = timezone.now()
-        session.save(update_fields=['is_published', 'published_at', 'updated_at'])
+        # Atomic update to prevent double publish from concurrent requests.
+        now = timezone.now()
+        updated = ClassCreationSession.objects.filter(
+            id=session.id, is_published=False,
+        ).update(is_published=True, published_at=now, updated_at=now)
 
-        transaction.on_commit(lambda: send_publish_sms_task.delay(session.id))
+        if updated:
+            session.is_published = True
+            session.published_at = now
+            transaction.on_commit(lambda: send_publish_sms_task.delay(session.id))
 
         return Response(ExamPrepSessionDetailSerializer(session).data)
 
@@ -2763,13 +2789,20 @@ class ExamPrepInvitationListCreateView(APIView):
         serializer.is_valid(raise_exception=True)
         phones: list[str] = serializer.validated_data['phones']
 
+        # Bulk check existing invitations (1 query instead of N).
+        existing_phones = set(
+            ClassInvitation.objects.filter(
+                session=session, phone__in=phones,
+            ).values_list('phone', flat=True)
+        )
+        new_invites = []
         for phone in phones:
-            existing = ClassInvitation.objects.filter(session=session, phone=phone).first()
-            if existing is not None:
+            if phone in existing_phones:
                 continue
-
             code = get_or_create_invite_code_for_phone(phone)
-            ClassInvitation.objects.create(session=session, phone=phone, invite_code=code)
+            new_invites.append(ClassInvitation(session=session, phone=phone, invite_code=code))
+        if new_invites:
+            ClassInvitation.objects.bulk_create(new_invites, ignore_conflicts=True)
 
         qs = ClassInvitation.objects.filter(session=session).order_by('-created_at')
         return Response(ClassInvitationSerializer(qs, many=True).data)

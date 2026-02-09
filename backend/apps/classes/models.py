@@ -43,6 +43,7 @@ class ClassCreationSession(models.Model):
         max_length=16,
         choices=PipelineType.choices,
         default=PipelineType.CLASS,
+        db_index=True,
     )
 
     # Course metadata set by teacher (shown in student Learn header).
@@ -53,7 +54,7 @@ class ClassCreationSession(models.Model):
     source_mime_type = models.CharField(max_length=127, blank=True)
     source_original_name = models.CharField(max_length=255, blank=True)
 
-    status = models.CharField(max_length=32, choices=Status.choices, default=Status.TRANSCRIBING)
+    status = models.CharField(max_length=32, choices=Status.choices, default=Status.TRANSCRIBING, db_index=True)
 
     transcript_markdown = models.TextField(blank=True)
 
@@ -70,8 +71,8 @@ class ClassCreationSession(models.Model):
     llm_model = models.CharField(max_length=128, blank=True)
 
     # When published, the session becomes visible as an active class (MVP).
-    is_published = models.BooleanField(default=False)
-    published_at = models.DateTimeField(null=True, blank=True)
+    is_published = models.BooleanField(default=False, db_index=True)
+    published_at = models.DateTimeField(null=True, blank=True, db_index=True)
 
     error_detail = models.TextField(blank=True)
 
@@ -88,6 +89,14 @@ class ClassCreationSession(models.Model):
                 name='uniq_class_creation_teacher_client_request_id',
             )
         ]
+        indexes = [
+            # Composite index for the hot student list query:
+            # filter(is_published=True, pipeline_type=...).order_by('-published_at')
+            models.Index(
+                fields=['is_published', 'pipeline_type', '-published_at'],
+                name='idx_session_pub_type_pubat',
+            ),
+        ]
 
 
 class ClassInvitation(models.Model):
@@ -96,8 +105,8 @@ class ClassInvitation(models.Model):
         on_delete=models.CASCADE,
         related_name='invites',
     )
-    phone = models.CharField(max_length=32)
-    invite_code = models.CharField(max_length=64)
+    phone = models.CharField(max_length=32, db_index=True)
+    invite_code = models.CharField(max_length=64, db_index=True)
 
     created_at = models.DateTimeField(auto_now_add=True)
 

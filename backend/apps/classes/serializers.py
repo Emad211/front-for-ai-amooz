@@ -112,14 +112,8 @@ class Step5RecapResponseSerializer(serializers.ModelSerializer):
 
 
 class ClassCreationSessionListSerializer(serializers.ModelSerializer):
-    invites_count = serializers.SerializerMethodField()
-    lessons_count = serializers.SerializerMethodField()
-
-    def get_invites_count(self, obj: ClassCreationSession) -> int:
-        return obj.invites.count()
-
-    def get_lessons_count(self, obj: ClassCreationSession) -> int:
-        return obj.units.count()
+    invites_count = serializers.IntegerField(read_only=True, source='_invites_count')
+    lessons_count = serializers.IntegerField(read_only=True, source='_lessons_count')
 
     class Meta:
         model = ClassCreationSession
@@ -141,6 +135,9 @@ class ClassCreationSessionDetailSerializer(serializers.ModelSerializer):
     invites_count = serializers.SerializerMethodField()
 
     def get_invites_count(self, obj: ClassCreationSession) -> int:
+        # Prefer the annotation if available (from list views), otherwise fall back.
+        if hasattr(obj, '_invites_count'):
+            return obj._invites_count
         return obj.invites.count()
 
     class Meta:
@@ -502,6 +499,8 @@ class ExamPrepSessionDetailSerializer(serializers.ModelSerializer):
             return None
 
     def get_invites_count(self, obj: ClassCreationSession) -> int:
+        if hasattr(obj, '_invites_count'):
+            return obj._invites_count
         return obj.invites.count()
 
     class Meta:

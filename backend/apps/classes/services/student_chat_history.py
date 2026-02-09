@@ -18,7 +18,7 @@ def get_or_create_thread(*, session: ClassCreationSession, student_id: int, less
     lid = (lesson_id or '').strip()
     thread_key = build_db_thread_key(session_id=session.id, student_id=student_id, lesson_id=lesson_id)
 
-    obj, created = StudentCourseChatThread.objects.select_for_update().get_or_create(
+    obj, created = StudentCourseChatThread.objects.get_or_create(
         thread_key=thread_key,
         defaults={
             'session': session,
@@ -26,11 +26,6 @@ def get_or_create_thread(*, session: ClassCreationSession, student_id: int, less
             'lesson_id': lid,
         },
     )
-
-    # If session/student/lesson were created under a different key format in the future,
-    # keep thread_key as the source of truth.
-    if not created and obj.updated_at:
-        StudentCourseChatThread.objects.filter(id=obj.id).update(updated_at=timezone.now())
 
     return obj
 
@@ -62,7 +57,15 @@ def list_messages(
     session_id: int,
     student_id: int,
     lesson_id: Optional[str] = None,
+    limit: int = 100,
+    before_id: Optional[int] = None,
 ) -> list[dict[str, Any]]:
+    """Return chat messages, newest last.
+
+    Supports cursor-based pagination via ``before_id`` — returns ``limit``
+    messages with ``id < before_id``, ordered ascending by created_at.
+    This prevents unbounded result sets for long-lived chats.
+    """
     qs = StudentCourseChatMessage.objects.filter(
         thread__session_id=session_id,
         thread__student_id=student_id,
@@ -72,10 +75,16 @@ def list_messages(
     if lid:
         qs = qs.filter(thread__lesson_id=lid)
 
-    rows: Iterable[StudentCourseChatMessage] = qs.order_by('created_at').all()
+    if before_id is not None:
+        qs = qs.filter(id__lt=before_id)
+
+    # Take the most recent `limit` messages, then reverse for ascending order.
+    rows: Iterable[StudentCourseChatMessage] = (
+        qs.order_by('-created_at')[:limit]
+    )
 
     out: list[dict[str, Any]] = []
-    for msg in rows:
+    for msg in reversed(list(rows)):
         out.append(
             {
                 'id': msg.id,
