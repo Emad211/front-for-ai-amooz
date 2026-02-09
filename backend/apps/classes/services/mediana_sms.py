@@ -75,23 +75,12 @@ def send_peer_to_peer_sms(*, api_key: str, requests: list[dict], message_type: s
     return _post_json(url=url, api_key=api_key, payload=payload)
 
 
-def send_publish_sms_for_session(session_id: int) -> None:
-    api_key = _get_env('MEDIANA_API_KEY')
-    if not api_key:
-        logger.info('MEDIANA_API_KEY not set; skipping SMS send for session=%s', session_id)
-        return
-
-    session = ClassCreationSession.objects.filter(id=session_id).prefetch_related('invites').first()
-    if session is None:
-        logger.info('Publish SMS skipped: session not found session=%s', session_id)
-        return
-
-    invites = list(session.invites.all())
+def _send_sms_for_invites(api_key: str, session, invites) -> None:
+    """Build and send SMS messages for a list of ClassInvitation objects."""
     if not invites:
-        logger.info('Publish SMS skipped: no invites session=%s', session_id)
         return
 
-    logger.info('Publish SMS starting: invites=%s session=%s', len(invites), session_id)
+    logger.info('Sending SMS: invites=%d session=%s', len(invites), session.id)
 
     sms_requests: list[dict] = []
     for inv in invites:
@@ -120,5 +109,46 @@ def send_publish_sms_for_session(session_id: int) -> None:
                 'Mediana SMS sent: TotalSent=%s TotalRequested=%s session=%s',
                 data.get('TotalSent'),
                 data.get('TotalRequested'),
-                session_id,
+                session.id,
             )
+
+
+def send_publish_sms_for_session(session_id: int) -> None:
+    api_key = _get_env('MEDIANA_API_KEY')
+    if not api_key:
+        logger.info('MEDIANA_API_KEY not set; skipping SMS send for session=%s', session_id)
+        return
+
+    session = ClassCreationSession.objects.filter(id=session_id).prefetch_related('invites').first()
+    if session is None:
+        logger.info('Publish SMS skipped: session not found session=%s', session_id)
+        return
+
+    invites = list(session.invites.all())
+    if not invites:
+        logger.info('Publish SMS skipped: no invites session=%s', session_id)
+        return
+
+    _send_sms_for_invites(api_key, session, invites)
+
+
+def send_invite_sms_for_ids(session_id: int, invite_ids: list[int]) -> None:
+    """Send SMS to specific invitations (e.g. newly added to a published session)."""
+    from apps.classes.models import ClassInvitation
+
+    api_key = _get_env('MEDIANA_API_KEY')
+    if not api_key:
+        logger.info('MEDIANA_API_KEY not set; skipping invite SMS session=%s', session_id)
+        return
+
+    session = ClassCreationSession.objects.filter(id=session_id).first()
+    if session is None:
+        logger.info('Invite SMS skipped: session not found session=%s', session_id)
+        return
+
+    invites = list(ClassInvitation.objects.filter(id__in=invite_ids, session=session))
+    if not invites:
+        logger.info('Invite SMS skipped: no matching invites session=%s ids=%s', session_id, invite_ids)
+        return
+
+    _send_sms_for_invites(api_key, session, invites)

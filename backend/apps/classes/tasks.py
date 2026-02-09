@@ -501,3 +501,24 @@ def send_publish_sms_task(self, session_id: int) -> dict:
             return {'status': 'failed', 'error': str(exc)[:500]}
         backoff = 30 * (2 ** self.request.retries)  # 30, 60, 120, 240, 480
         raise self.retry(exc=exc, countdown=backoff)
+
+
+@shared_task(bind=True, max_retries=5, acks_late=True)
+def send_new_invites_sms_task(self, session_id: int, invite_ids: list[int]) -> dict:
+    """Send SMS to specific newly-added invitations (post-publish).
+
+    Uses exponential back-off: 30 s → 60 s → 120 s → 240 s → 480 s.
+    """
+    from .services.mediana_sms import send_invite_sms_for_ids
+
+    try:
+        send_invite_sms_for_ids(session_id, invite_ids)
+        return {'status': 'success', 'session_id': session_id, 'invite_count': len(invite_ids)}
+    except Exception as exc:
+        logger.error('New-invite SMS failed for session %s (attempt %s/%s): %s',
+                     session_id, self.request.retries + 1, self.max_retries + 1,
+                     str(exc)[:200])
+        if self.request.retries >= self.max_retries:
+            return {'status': 'failed', 'error': str(exc)[:500]}
+        backoff = 30 * (2 ** self.request.retries)
+        raise self.retry(exc=exc, countdown=backoff)

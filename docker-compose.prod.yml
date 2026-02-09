@@ -1,49 +1,60 @@
+# Production Docker Compose – AI_AMOOZ
+#
+# Usage:
+#   docker compose -f docker-compose.prod.yml up -d --build
+#
+# Prerequisites:
+#   - Copy backend/.env.production.example to backend/.env and fill in secrets.
+#   - Place SSL certs or use a reverse proxy (Caddy/Traefik) in front of nginx.
+#
 services:
   postgres:
     image: postgres:16-alpine
     container_name: ai_amooz_postgres
-    restart: unless-stopped
+    restart: always
     environment:
-      POSTGRES_DB: ai_amooz
-      POSTGRES_USER: ai_amooz
-      POSTGRES_PASSWORD: ai_amooz_password
-    ports:
-      - "5432:5432"
+      POSTGRES_DB: ${POSTGRES_DB:-ai_amooz}
+      POSTGRES_USER: ${POSTGRES_USER:-ai_amooz}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
     volumes:
       - ai_amooz_postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ai_amooz -d ai_amooz"]
-      interval: 5s
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-ai_amooz} -d ${POSTGRES_DB:-ai_amooz}"]
+      interval: 10s
       timeout: 5s
       retries: 10
+    deploy:
+      resources:
+        limits:
+          memory: 1G
 
   redis:
     image: redis:7-alpine
     container_name: ai_amooz_redis
-    restart: unless-stopped
-    ports:
-      - "6379:6379"
+    restart: always
+    command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru
     volumes:
       - ai_amooz_redis_data:/data
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
+      interval: 10s
       timeout: 5s
       retries: 10
+    deploy:
+      resources:
+        limits:
+          memory: 512M
 
   backend:
     build:
       context: ./backend
       dockerfile: Dockerfile
     container_name: ai_amooz_backend
-    restart: unless-stopped
-    ports:
-      - "8000:8000"
+    restart: always
     env_file:
       - ./backend/.env
     environment:
-      # Override hostnames for Docker networking (service names instead of localhost)
-      DATABASE_URL: postgresql://ai_amooz:ai_amooz_password@postgres:5432/ai_amooz
+      DATABASE_URL: postgresql://${POSTGRES_USER:-ai_amooz}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-ai_amooz}
       REDIS_URL: redis://redis:6379/0
       CELERY_BROKER_URL: redis://redis:6379/0
       CELERY_RESULT_BACKEND: redis://redis:6379/1
@@ -58,22 +69,26 @@ services:
         condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health/')\""]
-      interval: 10s
+      interval: 15s
       timeout: 10s
       retries: 5
-      start_period: 30s
+      start_period: 45s
+    deploy:
+      resources:
+        limits:
+          memory: 2G
 
   celery-worker:
     build:
       context: ./backend
       dockerfile: Dockerfile
     container_name: ai_amooz_celery_worker
-    restart: unless-stopped
-    command: celery -A core worker --loglevel=info --concurrency=2
+    restart: always
+    command: celery -A core worker --loglevel=info --concurrency=4
     env_file:
       - ./backend/.env
     environment:
-      DATABASE_URL: postgresql://ai_amooz:ai_amooz_password@postgres:5432/ai_amooz
+      DATABASE_URL: postgresql://${POSTGRES_USER:-ai_amooz}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-ai_amooz}
       REDIS_URL: redis://redis:6379/0
       CELERY_BROKER_URL: redis://redis:6379/0
       CELERY_RESULT_BACKEND: redis://redis:6379/1
@@ -92,6 +107,31 @@ services:
       timeout: 15s
       retries: 3
       start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: ai_amooz_nginx
+    restart: always
+    ports:
+      - "${NGINX_HTTP_PORT:-80}:80"
+      - "${NGINX_HTTPS_PORT:-443}:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      - ai_amooz_media:/app/media:ro
+      - ai_amooz_static:/app/staticfiles:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+    depends_on:
+      backend:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 256M
 
 volumes:
   ai_amooz_postgres_data:

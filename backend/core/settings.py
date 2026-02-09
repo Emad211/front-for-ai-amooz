@@ -223,6 +223,32 @@ CORS_ALLOW_CREDENTIALS = os.getenv('CORS_ALLOW_CREDENTIALS', 'False') == 'True'
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 USE_X_FORWARDED_HOST = True
 
+# ---------------------------------------------------------------------------
+# Production security — enabled automatically when DEBUG=False.
+# ---------------------------------------------------------------------------
+if not DEBUG:
+    # HTTPS enforcement
+    SECURE_SSL_REDIRECT = os.getenv('SECURE_SSL_REDIRECT', 'True') == 'True'
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+
+    # HSTS — instruct browsers to only use HTTPS for this domain.
+    SECURE_HSTS_SECONDS = _get_env_int('SECURE_HSTS_SECONDS', 31536000)  # 1 year
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+    SECURE_HSTS_PRELOAD = True
+
+    # Prevent content-type sniffing & clickjacking.
+    SECURE_CONTENT_TYPE_NOSNIFF = True
+    X_FRAME_OPTIONS = 'DENY'
+
+    # Ensure SECRET_KEY is not the default insecure value.
+    if 'insecure' in SECRET_KEY:
+        raise ValueError(
+            'DJANGO_SECRET_KEY must be set to a secure random value '
+            'when DEBUG=False. Generate one with: '
+            'python -c "from django.core.management.utils import get_random_secret_key; print(get_random_secret_key())"'
+        )
+
 # CSRF trusted origins for admin/UI if needed.
 CSRF_TRUSTED_ORIGINS = _split_env_list('CSRF_TRUSTED_ORIGINS')
 

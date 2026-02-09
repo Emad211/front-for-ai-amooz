@@ -103,6 +103,7 @@ from .tasks import (
     process_exam_prep_step2_structure,
     process_exam_prep_full_pipeline,
     send_publish_sms_task,
+    send_new_invites_sms_task,
 )
 
 from apps.chatbot.services.student_course_chat import (
@@ -819,13 +820,27 @@ class ClassInvitationListCreateView(APIView):
             ).values_list('phone', flat=True)
         )
         new_invites = []
+        new_phones = []
         for phone in phones:
             if phone in existing_phones:
                 continue
             code = get_or_create_invite_code_for_phone(phone)
             new_invites.append(ClassInvitation(session=session, phone=phone, invite_code=code))
+            new_phones.append(phone)
         if new_invites:
             ClassInvitation.objects.bulk_create(new_invites, ignore_conflicts=True)
+
+        # If session is already published, send SMS to newly added students.
+        if new_phones and session.is_published:
+            invite_ids = list(
+                ClassInvitation.objects.filter(
+                    session=session, phone__in=new_phones,
+                ).values_list('id', flat=True)
+            )
+            if invite_ids:
+                transaction.on_commit(
+                    lambda ids=invite_ids: send_new_invites_sms_task.delay(session.id, ids)
+                )
 
         qs = ClassInvitation.objects.filter(session=session).order_by('-created_at')
         return Response(ClassInvitationSerializer(qs, many=True).data)
@@ -2796,13 +2811,27 @@ class ExamPrepInvitationListCreateView(APIView):
             ).values_list('phone', flat=True)
         )
         new_invites = []
+        new_phones = []
         for phone in phones:
             if phone in existing_phones:
                 continue
             code = get_or_create_invite_code_for_phone(phone)
             new_invites.append(ClassInvitation(session=session, phone=phone, invite_code=code))
+            new_phones.append(phone)
         if new_invites:
             ClassInvitation.objects.bulk_create(new_invites, ignore_conflicts=True)
+
+        # If session is already published, send SMS to newly added students.
+        if new_phones and session.is_published:
+            invite_ids = list(
+                ClassInvitation.objects.filter(
+                    session=session, phone__in=new_phones,
+                ).values_list('id', flat=True)
+            )
+            if invite_ids:
+                transaction.on_commit(
+                    lambda ids=invite_ids: send_new_invites_sms_task.delay(session.id, ids)
+                )
 
         qs = ClassInvitation.objects.filter(session=session).order_by('-created_at')
         return Response(ClassInvitationSerializer(qs, many=True).data)
