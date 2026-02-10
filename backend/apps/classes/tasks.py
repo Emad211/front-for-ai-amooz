@@ -45,8 +45,17 @@ _SOURCE_FILE_KEY_PREFIX = 'session_source_file:'
 # ---------------------------------------------------------------------------
 
 def _get_redis_client():
-    """Return a Redis client using the project's REDIS_URL."""
-    url = getattr(django_settings, 'REDIS_URL', None) or 'redis://localhost:6379/0'
+    """Return a Redis client using the project's Redis URL.
+
+    Tries ``REDIS_URL`` first, then ``CELERY_BROKER_URL`` (always set on
+    the Celery worker even if ``REDIS_URL`` env-var is missing), and falls
+    back to localhost for local development.
+    """
+    url = (
+        getattr(django_settings, 'REDIS_URL', None)
+        or getattr(django_settings, 'CELERY_BROKER_URL', None)
+        or 'redis://localhost:6379/0'
+    )
     return _redis_lib.from_url(url, socket_connect_timeout=5, socket_timeout=30)
 
 
@@ -95,6 +104,11 @@ def _read_source_file_from_redis(session_id: int, suffix: str) -> str | None:
         key = f'{_SOURCE_FILE_KEY_PREFIX}{session_id}'
         data = r.get(key)
         if data is None:
+            logger.warning(
+                'Redis cache MISS for session %s source file (key=%s). '
+                'Will fall back to local filesystem.',
+                session_id, key,
+            )
             return None
         tmp = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
         tmp.write(data)
@@ -107,9 +121,11 @@ def _read_source_file_from_redis(session_id: int, suffix: str) -> str | None:
         )
         return tmp.name
     except Exception:
-        logger.debug(
-            'Redis cache miss/error for session %s source file',
-            session_id, exc_info=True,
+        logger.warning(
+            'Redis cache ERROR for session %s source file (key=%s). '
+            'Will fall back to local filesystem.',
+            session_id, f'{_SOURCE_FILE_KEY_PREFIX}{session_id}',
+            exc_info=True,
         )
         return None
 
