@@ -83,3 +83,11 @@ from django.conf.urls.static import static
 if settings.DEBUG:
     urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
     urlpatterns += static(settings.STATIC_URL, document_root=settings.STATIC_ROOT)
+
+# When S3 storage is active and no public custom domain is set,
+# serve media files through a Django proxy so URLs stay browser-reachable.
+if getattr(settings, '_USE_S3', False) and not getattr(settings, 'AWS_S3_CUSTOM_DOMAIN', ''):
+    from core.storage_backends import media_proxy_view
+    urlpatterns += [
+        path('media/<path:path>', media_proxy_view, name='media_proxy'),
+    ]

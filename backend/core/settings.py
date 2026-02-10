@@ -177,17 +177,19 @@ if _USE_S3:
 
     STORAGES = {
         'default': {
-            'BACKEND': 'storages.backends.s3boto3.S3Boto3Storage',
+            # ProxiedS3Storage generates /media/<key> URLs so the browser
+            # always goes through Django — no need to expose MinIO publicly.
+            # If AWS_S3_CUSTOM_DOMAIN is set, it falls back to standard
+            # S3 public URLs automatically.
+            'BACKEND': 'core.storage_backends.ProxiedS3Storage',
         },
         'staticfiles': {
             'BACKEND': 'whitenoise.storage.CompressedManifestStaticFilesStorage',
         },
     }
-    # Media URL: use custom domain if provided, else endpoint + bucket.
-    if AWS_S3_CUSTOM_DOMAIN:
-        MEDIA_URL = f'https://{AWS_S3_CUSTOM_DOMAIN}/'
-    else:
-        MEDIA_URL = f'{AWS_S3_ENDPOINT_URL}/{AWS_STORAGE_BUCKET_NAME}/'
+    # Media URL: always /media/ — the proxy view handles S3 streaming.
+    # If a public S3 domain is used, ProxiedS3Storage.url() returns full URLs instead.
+    MEDIA_URL = '/media/'
 else:
     # Local filesystem (development / single-pod setups).
     STORAGES = {
