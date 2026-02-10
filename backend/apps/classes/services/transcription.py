@@ -15,6 +15,11 @@ from apps.classes.services.media_compressor import prepare_media_parts_for_api
 
 logger = logging.getLogger(__name__)
 
+# Per-call timeout for LLM generate_content (seconds).
+# Large video transcription can take a while, but we don't want to block forever.
+# Default httpx timeout is only 5s — way too short for multi-MB video uploads.
+_LLM_TIMEOUT_SECONDS = int(os.getenv('LLM_TIMEOUT_SECONDS', '600'))
+
 
 def _get_env(name: str) -> str:
     value = (os.getenv(name) or '').strip()
@@ -27,20 +32,34 @@ def _get_clients() -> Tuple[Optional[genai.Client], Optional[genai.Client]]:
     avalai_base_url = _get_env('AVALAI_BASE_URL')
 
     provider = preferred_provider()
+    logger.info(
+        'LLM client init: provider=%s gemini_key=%s avalai_key=%s avalai_url=%s',
+        provider,
+        'set' if gemini_api_key else 'MISSING',
+        'set' if avalai_api_key else 'MISSING',
+        avalai_base_url or 'DEFAULT',
+    )
 
-    gemini_client = genai.Client(api_key=gemini_api_key) if gemini_api_key and provider != 'avalai' else None
+    # Generous timeout for large video uploads to external APIs.
+    # Default httpx timeout is only 5s which is too short for multi-MB uploads.
+    _client_timeout_ms = _LLM_TIMEOUT_SECONDS * 1000
+
+    gemini_client = None
+    if gemini_api_key and provider != 'avalai':
+        gemini_client = genai.Client(
+            api_key=gemini_api_key,
+            http_options={'timeout': _client_timeout_ms},
+        )
 
     avalai_client: Optional[genai.Client] = None
     if avalai_api_key and provider != 'gemini':
-        http_options = {'base_url': avalai_base_url} if avalai_base_url else None
-        avalai_client = genai.Client(api_key=avalai_api_key, http_options=http_options)
+        avalai_http: dict = {'timeout': _client_timeout_ms}
+        if avalai_base_url:
+            avalai_http['base_url'] = avalai_base_url
+        avalai_client = genai.Client(api_key=avalai_api_key, http_options=avalai_http)
+        logger.info('AvalAI client created with base_url=%s timeout=%ds', avalai_base_url, _LLM_TIMEOUT_SECONDS)
 
     return gemini_client, avalai_client
-
-
-# Per-call timeout for LLM generate_content (seconds).
-# Large video transcription can take a while, but we don't want to block forever.
-_LLM_TIMEOUT_SECONDS = int(os.getenv('LLM_TIMEOUT_SECONDS', '300'))
 
 
 def _extract_text(resp: Any) -> str:
