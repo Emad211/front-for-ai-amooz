@@ -45,10 +45,11 @@ services:
     volumes:
       - ai_amooz_minio_data:/data
     healthcheck:
-      test: ["CMD", "mc", "ready", "local"]
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
       interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 5s
 
   # Automatically create the bucket on first start.
   minio-init:
