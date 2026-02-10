@@ -197,7 +197,7 @@ if _USE_S3:
     from botocore.config import Config as _BotoConfig                 # noqa: E402
     AWS_S3_CONFIG = _BotoConfig(
         connect_timeout=5,          # seconds to wait for TCP connection
-        read_timeout=30,            # seconds to wait for response data
+        read_timeout=300,           # seconds to wait for response data (large video files)
         retries={'max_attempts': 2, 'mode': 'standard'},
     )
 

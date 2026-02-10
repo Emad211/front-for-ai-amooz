@@ -119,6 +119,58 @@ def _cleanup_source_file(session) -> None:
         logger.warning('Failed to cleanup source file for session %s', session.id, exc_info=True)
 
 
+def _safe_refresh(session) -> bool:
+    """Refresh session from DB, returning ``False`` if the row was deleted.
+
+    Every ``session.refresh_from_db()`` call in pipeline code should go
+    through this helper so that a user-initiated deletion does not crash
+    the worker with ``DoesNotExist``.
+    """
+    try:
+        session.refresh_from_db()
+        return True
+    except Exception:
+        logger.info('Session %s no longer exists — aborting.', session.id)
+        return False
+
+
+def _safe_mark_failed(session, error_detail: str) -> None:
+    """Best-effort update of session status to FAILED.
+
+    If the session was already deleted (e.g. user removed it while the
+    pipeline was running), this silently does nothing.
+    """
+    try:
+        session.refresh_from_db()
+        if session.status != session.Status.FAILED:
+            session.status = session.Status.FAILED
+            session.error_detail = (error_detail or '')[:2000]
+            session.save(update_fields=['status', 'error_detail', 'updated_at'])
+    except Exception:
+        logger.info(
+            'Could not mark session %s as FAILED (likely deleted).',
+            session.id,
+        )
+
+
+def _safe_save(session, update_fields: list[str]) -> bool:
+    """Save session with ``update_fields``, returning ``False`` on error.
+
+    Handles the ``DatabaseError("Save with update_fields did not affect
+    any rows")`` that Django raises when the row was deleted between a
+    ``refresh_from_db()`` and a ``save()``.
+    """
+    try:
+        session.save(update_fields=update_fields)
+        return True
+    except Exception:
+        logger.info(
+            'Could not save session %s (may have been deleted).',
+            session.id,
+        )
+        return False
+
+
 def _run_pipeline_step(
     step_fn,
     step_label: str,
@@ -154,11 +206,7 @@ def _run_pipeline_step(
                     'Pipeline step %s failed after %d attempts for session %s: %s',
                     step_label, max_attempts, session_id, exc_msg,
                 )
-                session.refresh_from_db()
-                if session.status != session.Status.FAILED:
-                    session.status = session.Status.FAILED
-                    session.error_detail = f'{step_label}: {exc_msg}'
-                    session.save(update_fields=['status', 'error_detail', 'updated_at'])
+                _safe_mark_failed(session, f'{step_label}: {exc_msg}')
                 return False
 
             delay = min(base_delay * (2 ** (attempt - 1)), 300)
@@ -167,7 +215,8 @@ def _run_pipeline_step(
                 step_label, attempt, max_attempts, session_id, exc_msg, delay,
             )
             time.sleep(delay)
-            session.refresh_from_db()
+            if not _safe_refresh(session):
+                return False
             if session.status == session.Status.FAILED:
                 # Something else marked it failed — abort.
                 return False
@@ -217,10 +266,7 @@ def process_class_step1_transcription(self, session_id: int) -> dict:
             tmp_path = None
         # Mark failed only on final retry.
         if self.request.retries >= self.max_retries:
-            session.refresh_from_db()
-            session.status = ClassCreationSession.Status.FAILED
-            session.error_detail = str(exc)
-            session.save(update_fields=['status', 'error_detail', 'updated_at'])
+            _safe_mark_failed(session, str(exc))
             return {'status': 'failed', 'error': str(exc)}
         raise self.retry(exc=exc)
     finally:
@@ -259,10 +305,7 @@ def process_class_step2_structure(self, session_id: int) -> dict:
         return {'status': 'success', 'session_id': session_id}
     except Exception as exc:
         if self.request.retries >= self.max_retries:
-            session.refresh_from_db()
-            session.status = ClassCreationSession.Status.FAILED
-            session.error_detail = str(exc)
-            session.save(update_fields=['status', 'error_detail', 'updated_at'])
+            _safe_mark_failed(session, str(exc))
             return {'status': 'failed', 'error': str(exc)}
         raise self.retry(exc=exc)
 
@@ -307,10 +350,7 @@ def process_class_step3_prerequisites(self, session_id: int) -> dict:
         return {'status': 'success', 'session_id': session_id}
     except Exception as exc:
         if self.request.retries >= self.max_retries:
-            session.refresh_from_db()
-            session.status = ClassCreationSession.Status.FAILED
-            session.error_detail = str(exc)
-            session.save(update_fields=['status', 'error_detail', 'updated_at'])
+            _safe_mark_failed(session, str(exc))
             return {'status': 'failed', 'error': str(exc)}
         raise self.retry(exc=exc)
 
@@ -352,10 +392,7 @@ def process_class_step4_prereq_teaching(self, session_id: int, prerequisite_name
         return {'status': 'success', 'session_id': session_id}
     except Exception as exc:
         if self.request.retries >= self.max_retries:
-            session.refresh_from_db()
-            session.status = ClassCreationSession.Status.FAILED
-            session.error_detail = str(exc)
-            session.save(update_fields=['status', 'error_detail', 'updated_at'])
+            _safe_mark_failed(session, str(exc))
             return {'status': 'failed', 'error': str(exc)}
         raise self.retry(exc=exc)
 
@@ -387,10 +424,7 @@ def process_class_step5_recap(self, session_id: int) -> dict:
         return {'status': 'success', 'session_id': session_id}
     except Exception as exc:
         if self.request.retries >= self.max_retries:
-            session.refresh_from_db()
-            session.status = ClassCreationSession.Status.FAILED
-            session.error_detail = str(exc)
-            session.save(update_fields=['status', 'error_detail', 'updated_at'])
+            _safe_mark_failed(session, str(exc))
             return {'status': 'failed', 'error': str(exc)}
         raise self.retry(exc=exc)
 
@@ -414,51 +448,60 @@ def process_class_full_pipeline(self, session_id: int) -> dict:
         if not _run_pipeline_step(process_class_step1_transcription, 'step1_transcription', session_id, session):
             return {'status': 'failed', 'stopped_at': 'step1'}
 
-    session.refresh_from_db()
+    if not _safe_refresh(session):
+        return {'status': 'aborted', 'reason': 'session deleted'}
     if session.status == ClassCreationSession.Status.FAILED:
         return {'status': 'failed', 'stopped_at': 'step1'}
 
     # Step 2
     if session.status == ClassCreationSession.Status.TRANSCRIBED:
         session.status = ClassCreationSession.Status.STRUCTURING
-        session.save(update_fields=['status', 'updated_at'])
+        if not _safe_save(session, ['status', 'updated_at']):
+            return {'status': 'aborted', 'reason': 'session deleted'}
         if not _run_pipeline_step(process_class_step2_structure, 'step2_structure', session_id, session):
             return {'status': 'failed', 'stopped_at': 'step2'}
 
-    session.refresh_from_db()
+    if not _safe_refresh(session):
+        return {'status': 'aborted', 'reason': 'session deleted'}
     if session.status == ClassCreationSession.Status.FAILED:
         return {'status': 'failed', 'stopped_at': 'step2'}
 
     # Step 3
     if session.status == ClassCreationSession.Status.STRUCTURED:
         session.status = ClassCreationSession.Status.PREREQ_EXTRACTING
-        session.save(update_fields=['status', 'updated_at'])
+        if not _safe_save(session, ['status', 'updated_at']):
+            return {'status': 'aborted', 'reason': 'session deleted'}
         if not _run_pipeline_step(process_class_step3_prerequisites, 'step3_prerequisites', session_id, session):
             return {'status': 'failed', 'stopped_at': 'step3'}
 
-    session.refresh_from_db()
+    if not _safe_refresh(session):
+        return {'status': 'aborted', 'reason': 'session deleted'}
     if session.status == ClassCreationSession.Status.FAILED:
         return {'status': 'failed', 'stopped_at': 'step3'}
 
     # Step 4
     if session.status == ClassCreationSession.Status.PREREQ_EXTRACTED:
         session.status = ClassCreationSession.Status.PREREQ_TEACHING
-        session.save(update_fields=['status', 'updated_at'])
+        if not _safe_save(session, ['status', 'updated_at']):
+            return {'status': 'aborted', 'reason': 'session deleted'}
         if not _run_pipeline_step(process_class_step4_prereq_teaching, 'step4_prereq_teaching', session_id, session):
             return {'status': 'failed', 'stopped_at': 'step4'}
 
-    session.refresh_from_db()
+    if not _safe_refresh(session):
+        return {'status': 'aborted', 'reason': 'session deleted'}
     if session.status == ClassCreationSession.Status.FAILED:
         return {'status': 'failed', 'stopped_at': 'step4'}
 
     # Step 5
     if session.status == ClassCreationSession.Status.PREREQ_TAUGHT:
         session.status = ClassCreationSession.Status.RECAPPING
-        session.save(update_fields=['status', 'updated_at'])
+        if not _safe_save(session, ['status', 'updated_at']):
+            return {'status': 'aborted', 'reason': 'session deleted'}
         if not _run_pipeline_step(process_class_step5_recap, 'step5_recap', session_id, session):
             return {'status': 'failed', 'stopped_at': 'step5'}
 
-    session.refresh_from_db()
+    if not _safe_refresh(session):
+        return {'status': 'aborted', 'reason': 'session deleted'}
     if session.status == ClassCreationSession.Status.FAILED:
         return {'status': 'failed', 'stopped_at': 'step5'}
 
@@ -506,10 +549,7 @@ def process_exam_prep_step1_transcription(self, session_id: int) -> dict:
             os.unlink(tmp_path)
             tmp_path = None
         if self.request.retries >= self.max_retries:
-            session.refresh_from_db()
-            session.status = ClassCreationSession.Status.FAILED
-            session.error_detail = str(exc)
-            session.save(update_fields=['status', 'error_detail', 'updated_at'])
+            _safe_mark_failed(session, str(exc))
             return {'status': 'failed', 'error': str(exc)}
         raise self.retry(exc=exc)
     finally:
@@ -549,10 +589,7 @@ def process_exam_prep_step2_structure(self, session_id: int) -> dict:
         return {'status': 'success', 'session_id': session_id}
     except Exception as exc:
         if self.request.retries >= self.max_retries:
-            session.refresh_from_db()
-            session.status = ClassCreationSession.Status.FAILED
-            session.error_detail = str(exc)
-            session.save(update_fields=['status', 'error_detail', 'updated_at'])
+            _safe_mark_failed(session, str(exc))
             return {'status': 'failed', 'error': str(exc)}
         raise self.retry(exc=exc)
 
@@ -571,18 +608,21 @@ def process_exam_prep_full_pipeline(self, session_id: int) -> dict:
         if not _run_pipeline_step(process_exam_prep_step1_transcription, 'step1_transcription', session_id, session):
             return {'status': 'failed', 'stopped_at': 'step1'}
 
-    session.refresh_from_db()
+    if not _safe_refresh(session):
+        return {'status': 'aborted', 'reason': 'session deleted'}
     if session.status == ClassCreationSession.Status.FAILED:
         return {'status': 'failed', 'stopped_at': 'step1'}
 
     # Step 2
     if session.status == ClassCreationSession.Status.EXAM_TRANSCRIBED:
         session.status = ClassCreationSession.Status.EXAM_STRUCTURING
-        session.save(update_fields=['status', 'updated_at'])
+        if not _safe_save(session, ['status', 'updated_at']):
+            return {'status': 'aborted', 'reason': 'session deleted'}
         if not _run_pipeline_step(process_exam_prep_step2_structure, 'step2_structure', session_id, session):
             return {'status': 'failed', 'stopped_at': 'step2'}
 
-    session.refresh_from_db()
+    if not _safe_refresh(session):
+        return {'status': 'aborted', 'reason': 'session deleted'}
     if session.status == ClassCreationSession.Status.FAILED:
         return {'status': 'failed', 'stopped_at': 'step2'}
 
