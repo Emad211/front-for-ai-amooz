@@ -35,7 +35,7 @@ class TestClassCreationStep5Recap:
             source_file=SimpleUploadedFile('audio.ogg', b'fake-audio', content_type='audio/ogg'),
             source_mime_type='audio/ogg',
             source_original_name='audio.ogg',
-            status=ClassCreationSession.Status.TRANSCRIBED,
+            status=ClassCreationSession.Status.PREREQ_TAUGHT,
             transcript_markdown='## transcript\nhello',
             structure_json='',
         )
@@ -67,7 +67,7 @@ class TestClassCreationStep5Recap:
             source_file=SimpleUploadedFile('audio.ogg', b'fake-audio', content_type='audio/ogg'),
             source_mime_type='audio/ogg',
             source_original_name='audio.ogg',
-            status=ClassCreationSession.Status.STRUCTURED,
+            status=ClassCreationSession.Status.PREREQ_TAUGHT,
             transcript_markdown='## transcript\nhello',
             structure_json=json.dumps(structure_obj, ensure_ascii=False),
         )

@@ -68,19 +68,22 @@ class ProxiedS3Storage(S3Boto3Storage):
 def media_proxy_view(request, path: str):
     """Stream a file from S3 storage through Django.
 
-    Supports ``If-Modified-Since`` / ``Last-Modified`` caching and sets
-    the correct ``Content-Type``.  Intended to be mounted at
-    ``/media/<path:path>``.
+    Uses a single S3 GET request — metadata (size, last-modified) is
+    extracted from the response headers instead of issuing separate HEAD
+    calls.  Supports ``If-Modified-Since`` caching.
     """
     from django.core.files.storage import default_storage
 
-    if not default_storage.exists(path):
+    # Reject path traversal attempts.
+    if '..' in path or path.startswith('/'):
         raise Http404
 
     try:
         s3_file = default_storage.open(path, 'rb')
+    except (BotoCoreError, ClientError, BotoConnectionError, EndpointConnectionError):
+        logger.exception('S3 connection error for: %s', path)
+        return JsonResponse({'detail': 'Storage unavailable.'}, status=503)
     except Exception:
-        logger.exception('Failed to open S3 file: %s', path)
         raise Http404
 
     # Content type
@@ -88,34 +91,28 @@ def media_proxy_view(request, path: str):
     if not content_type:
         content_type = 'application/octet-stream'
 
-    # Size — try to get it for Content-Length header
-    try:
-        size = default_storage.size(path)
-    except Exception:
-        size = None
-
     response = FileResponse(s3_file, content_type=content_type)
 
-    if size is not None:
-        response['Content-Length'] = size
+    # Extract metadata from the already-opened S3 object (avoids extra HEAD calls).
+    try:
+        obj = getattr(s3_file, 'obj', None)
+        if obj is not None:
+            response['Content-Length'] = obj.content_length
+            if obj.last_modified:
+                response['Last-Modified'] = http_date(obj.last_modified.timestamp())
+
+                # Honour If-Modified-Since
+                ims = request.META.get('HTTP_IF_MODIFIED_SINCE')
+                if ims:
+                    from django.utils.http import parse_http_date_safe
+                    ims_ts = parse_http_date_safe(ims)
+                    if ims_ts and obj.last_modified.timestamp() <= ims_ts:
+                        s3_file.close()
+                        return HttpResponseNotModified()
+    except Exception:
+        pass  # Gracefully degrade if metadata is unavailable
 
     # Cache headers — let browsers cache media for 1 hour.
     response['Cache-Control'] = 'public, max-age=3600'
-
-    # Last-Modified — let the browser send If-Modified-Since on revalidation.
-    try:
-        last_modified = default_storage.get_modified_time(path)
-        response['Last-Modified'] = http_date(last_modified.timestamp())
-
-        # Honour If-Modified-Since
-        ims = request.META.get('HTTP_IF_MODIFIED_SINCE')
-        if ims and last_modified:
-            from django.utils.http import parse_http_date_safe
-            ims_ts = parse_http_date_safe(ims)
-            if ims_ts and last_modified.timestamp() <= ims_ts:
-                s3_file.close()
-                return HttpResponseNotModified()
-    except Exception:
-        pass  # Not all storage backends support get_modified_time
 
     return response

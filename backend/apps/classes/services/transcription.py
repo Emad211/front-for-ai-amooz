@@ -38,6 +38,11 @@ def _get_clients() -> Tuple[Optional[genai.Client], Optional[genai.Client]]:
     return gemini_client, avalai_client
 
 
+# Per-call timeout for LLM generate_content (seconds).
+# Large video transcription can take a while, but we don't want to block forever.
+_LLM_TIMEOUT_SECONDS = int(os.getenv('LLM_TIMEOUT_SECONDS', '300'))
+
+
 def _extract_text(resp: Any) -> str:
     text = (getattr(resp, 'text', '') or '').strip()
     if text:
@@ -105,7 +110,13 @@ def transcribe_media_bytes(*, data: bytes, mime_type: str) -> tuple[str, str, st
 
             media_part = types.Part.from_bytes(data=part_bytes, mime_type=part_mime)
             try:
-                resp = client.models.generate_content(model=model, contents=[prompt, media_part])
+                resp = client.models.generate_content(
+                    model=model,
+                    contents=[prompt, media_part],
+                    config=types.GenerateContentConfig(
+                        http_options={'timeout': _LLM_TIMEOUT_SECONDS},
+                    ),
+                )
                 texts.append(_extract_text(resp))
             except Exception as e:
                 logger.error(f"Transcription error with {provider_name} (part {idx}/{total}): {str(e)}")

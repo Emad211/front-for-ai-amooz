@@ -39,8 +39,9 @@ class TestClassCreationStep3AndStep4Prerequisites:
             source_file=SimpleUploadedFile('audio.ogg', b'fake-audio', content_type='audio/ogg'),
             source_mime_type='audio/ogg',
             source_original_name='audio.ogg',
-            status=ClassCreationSession.Status.TRANSCRIBED,
+            status=ClassCreationSession.Status.STRUCTURED,
             transcript_markdown='',
+            structure_json='{}',
         )
 
         res = client.post('/api/classes/creation-sessions/step-3/', {'session_id': session.id}, format='json')
@@ -57,7 +58,7 @@ class TestClassCreationStep3AndStep4Prerequisites:
             source_file=SimpleUploadedFile('audio.ogg', b'fake-audio', content_type='audio/ogg'),
             source_mime_type='audio/ogg',
             source_original_name='audio.ogg',
-            status=ClassCreationSession.Status.STRUCTURED,
+            status=ClassCreationSession.Status.PREREQ_EXTRACTED,
             transcript_markdown='## transcript\nhello',
             structure_json='{}',
         )
@@ -76,8 +77,9 @@ class TestClassCreationStep3AndStep4Prerequisites:
             source_file=SimpleUploadedFile('audio.ogg', b'fake-audio', content_type='audio/ogg'),
             source_mime_type='audio/ogg',
             source_original_name='audio.ogg',
-            status=ClassCreationSession.Status.TRANSCRIBED,
+            status=ClassCreationSession.Status.STRUCTURED,
             transcript_markdown='## transcript\nhello',
+            structure_json='{}',
         )
 
         prereqs = [f'P{i}' for i in range(1, 11)]

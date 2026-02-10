@@ -9,7 +9,7 @@ from datetime import timedelta
 from urllib.parse import quote
 
 from django.conf import settings
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.utils import timezone
 
 logger = logging.getLogger(__name__)
@@ -378,6 +378,7 @@ def _process_full_pipeline(session_id: int) -> None:
 
 class Step1TranscribeView(APIView):
     permission_classes = [IsAuthenticated, IsTeacherUser]
+    parser_classes = [FormParser, MultiPartParser]
 
     @extend_schema(
         tags=['Classes'],
@@ -395,13 +396,22 @@ class Step1TranscribeView(APIView):
         client_request_id = serializer.validated_data.get('client_request_id')
         run_full_pipeline = bool(serializer.validated_data.get('run_full_pipeline', False))
 
+        # Limit concurrent in-progress sessions per teacher to prevent resource abuse.
+        _ACTIVE_STATUSES = [
+            ClassCreationSession.Status.TRANSCRIBING,
+            ClassCreationSession.Status.STRUCTURING,
+            ClassCreationSession.Status.PREREQ_EXTRACTING,
+            ClassCreationSession.Status.PREREQ_TEACHING,
+            ClassCreationSession.Status.RECAPPING,
+        ]
+
+        # Idempotency: return existing session if client_request_id matches.
         if client_request_id is not None:
             existing = ClassCreationSession.objects.filter(
                 teacher=request.user,
                 client_request_id=client_request_id,
             ).first()
             if existing is not None:
-                # Idempotency: return the same session on retries.
                 payload = Step1TranscribeResponseSerializer(existing).data
                 http_status = (
                     status.HTTP_202_ACCEPTED
@@ -410,23 +420,51 @@ class Step1TranscribeView(APIView):
                 )
                 return Response(payload, status=http_status)
 
+        # Atomic check + create to prevent TOCTOU race on concurrent limit.
         try:
-            session = ClassCreationSession.objects.create(
-                teacher=request.user,
-                title=title,
-                description=description,
-                source_file=upload,
-                source_mime_type=getattr(upload, 'content_type', '') or '',
-                source_original_name=getattr(upload, 'name', '') or '',
-                status=ClassCreationSession.Status.TRANSCRIBING,
-                client_request_id=client_request_id,
+            with transaction.atomic():
+                active_count = ClassCreationSession.objects.select_for_update(skip_locked=True).filter(
+                    teacher=request.user,
+                    pipeline_type=ClassCreationSession.PipelineType.CLASS,
+                    status__in=_ACTIVE_STATUSES,
+                ).count()
+                if active_count >= 5:
+                    return Response(
+                        {'detail': 'حداکثر ۵ کلاس همزمان در حال پردازش است. لطفاً صبر کنید.'},
+                        status=status.HTTP_429_TOO_MANY_REQUESTS,
+                    )
+
+                session = ClassCreationSession.objects.create(
+                    teacher=request.user,
+                    title=title,
+                    description=description,
+                    source_file=upload,
+                    source_mime_type=getattr(upload, 'content_type', '') or '',
+                    source_original_name=getattr(upload, 'name', '') or '',
+                    status=ClassCreationSession.Status.TRANSCRIBING,
+                    client_request_id=client_request_id,
+                )
+        except IntegrityError:
+            # Double-submit race: another request already created the session.
+            if client_request_id is not None:
+                existing = ClassCreationSession.objects.filter(
+                    teacher=request.user, client_request_id=client_request_id,
+                ).first()
+                if existing is not None:
+                    return Response(
+                        Step1TranscribeResponseSerializer(existing).data,
+                        status=status.HTTP_202_ACCEPTED,
+                    )
+            return Response(
+                {'detail': 'درخواست تکراری. لطفاً دوباره تلاش کنید.'},
+                status=status.HTTP_409_CONFLICT,
             )
         except Exception as exc:
             logger.exception(
                 'Failed to create session (file upload to storage failed): %s', exc,
             )
             return Response(
-                {'detail': 'فایل آپلود نشد. لطفاً دوباره تلاش کنید.', 'error': str(exc)},
+                {'detail': 'فایل آپلود نشد. لطفاً دوباره تلاش کنید.'},
                 status=status.HTTP_503_SERVICE_UNAVAILABLE,
             )
 
@@ -475,7 +513,6 @@ class Step1TranscribeView(APIView):
                     'detail': 'Transcription provider failed.',
                     'session_id': session.id,
                     'status': session.status,
-                    'error_detail': session.error_detail,
                 },
                 status=status.HTTP_502_BAD_GATEWAY,
             )
@@ -505,11 +542,27 @@ class Step2StructureView(APIView):
         if session.status == ClassCreationSession.Status.STRUCTURING:
             return Response(Step2StructureResponseSerializer(session).data, status=status.HTTP_202_ACCEPTED)
 
-        if not session.transcript_markdown.strip():
+        # Only allow transition from TRANSCRIBED (step-1 completed).
+        if session.status != ClassCreationSession.Status.TRANSCRIBED:
+            return Response(
+                {'detail': f'مرحله ۲ فقط بعد از تکمیل مرحله ۱ قابل اجراست. وضعیت فعلی: {session.get_status_display()}'},
+                status=status.HTTP_409_CONFLICT,
+            )
+
+        if not (session.transcript_markdown or '').strip():
             return Response({'detail': 'برای این جلسه هنوز متن درس آماده نیست.'}, status=status.HTTP_400_BAD_REQUEST)
 
-        session.status = ClassCreationSession.Status.STRUCTURING
-        session.save(update_fields=['status', 'updated_at'])
+        # Atomic status transition with row-level lock to prevent races.
+        with transaction.atomic():
+            locked = ClassCreationSession.objects.select_for_update().filter(
+                id=session_id, status=ClassCreationSession.Status.TRANSCRIBED,
+            ).first()
+            if locked is None:
+                session.refresh_from_db()
+                return Response(Step2StructureResponseSerializer(session).data, status=status.HTTP_202_ACCEPTED)
+            locked.status = ClassCreationSession.Status.STRUCTURING
+            locked.save(update_fields=['status', 'updated_at'])
+            session = locked
 
         if getattr(settings, 'CLASS_PIPELINE_ASYNC', False):
             transaction.on_commit(lambda: process_class_step2_structure.delay(session.id))
@@ -535,7 +588,6 @@ class Step2StructureView(APIView):
                     'detail': 'Structuring provider failed.',
                     'session_id': session.id,
                     'status': session.status,
-                    'error_detail': session.error_detail,
                 },
                 status=status.HTTP_502_BAD_GATEWAY,
             )
@@ -565,11 +617,26 @@ class Step3PrerequisitesView(APIView):
         if session.status == ClassCreationSession.Status.PREREQ_EXTRACTING:
             return Response(Step3PrerequisitesResponseSerializer(session).data, status=status.HTTP_202_ACCEPTED)
 
+        # Only allow transition from STRUCTURED (step-2 completed).
+        if session.status != ClassCreationSession.Status.STRUCTURED:
+            return Response(
+                {'detail': f'مرحله ۳ فقط بعد از تکمیل مرحله ۲ قابل اجراست. وضعیت فعلی: {session.get_status_display()}'},
+                status=status.HTTP_409_CONFLICT,
+            )
+
         if not (session.transcript_markdown or '').strip():
             return Response({'detail': 'برای این جلسه هنوز متن درس آماده نیست.'}, status=status.HTTP_400_BAD_REQUEST)
 
-        session.status = ClassCreationSession.Status.PREREQ_EXTRACTING
-        session.save(update_fields=['status', 'updated_at'])
+        with transaction.atomic():
+            locked = ClassCreationSession.objects.select_for_update().filter(
+                id=session_id, status=ClassCreationSession.Status.STRUCTURED,
+            ).first()
+            if locked is None:
+                session.refresh_from_db()
+                return Response(Step3PrerequisitesResponseSerializer(session).data, status=status.HTTP_202_ACCEPTED)
+            locked.status = ClassCreationSession.Status.PREREQ_EXTRACTING
+            locked.save(update_fields=['status', 'updated_at'])
+            session = locked
 
         if getattr(settings, 'CLASS_PIPELINE_ASYNC', False):
             transaction.on_commit(lambda: process_class_step3_prerequisites.delay(session.id))
@@ -600,14 +667,32 @@ class Step4PrerequisiteTeachingView(APIView):
         if session is None:
             return Response({'detail': 'جلسه پیدا نشد.'}, status=status.HTTP_404_NOT_FOUND)
 
+        if session.status == ClassCreationSession.Status.PREREQ_TAUGHT:
+            return Response(Step4PrerequisiteTeachingResponseSerializer(session).data, status=status.HTTP_200_OK)
+
         if session.status == ClassCreationSession.Status.PREREQ_TEACHING:
             return Response(Step4PrerequisiteTeachingResponseSerializer(session).data, status=status.HTTP_202_ACCEPTED)
+
+        # Only allow transition from PREREQ_EXTRACTED (step-3 completed).
+        if session.status != ClassCreationSession.Status.PREREQ_EXTRACTED:
+            return Response(
+                {'detail': f'مرحله ۴ فقط بعد از تکمیل مرحله ۳ قابل اجراست. وضعیت فعلی: {session.get_status_display()}'},
+                status=status.HTTP_409_CONFLICT,
+            )
 
         if not session.prerequisites.exists():
             return Response({'detail': 'ابتدا مرحله پیش نیازها را اجرا کنید.'}, status=status.HTTP_400_BAD_REQUEST)
 
-        session.status = ClassCreationSession.Status.PREREQ_TEACHING
-        session.save(update_fields=['status', 'updated_at'])
+        with transaction.atomic():
+            locked = ClassCreationSession.objects.select_for_update().filter(
+                id=session_id, status=ClassCreationSession.Status.PREREQ_EXTRACTED,
+            ).first()
+            if locked is None:
+                session.refresh_from_db()
+                return Response(Step4PrerequisiteTeachingResponseSerializer(session).data, status=status.HTTP_202_ACCEPTED)
+            locked.status = ClassCreationSession.Status.PREREQ_TEACHING
+            locked.save(update_fields=['status', 'updated_at'])
+            session = locked
 
         if getattr(settings, 'CLASS_PIPELINE_ASYNC', False):
             transaction.on_commit(lambda: process_class_step4_prereq_teaching.delay(session.id, prerequisite_name))
@@ -642,11 +727,26 @@ class Step5RecapView(APIView):
         if session.status == ClassCreationSession.Status.RECAPPING:
             return Response(Step5RecapResponseSerializer(session).data, status=status.HTTP_202_ACCEPTED)
 
+        # Only allow transition from PREREQ_TAUGHT (step-4 completed).
+        if session.status != ClassCreationSession.Status.PREREQ_TAUGHT:
+            return Response(
+                {'detail': f'مرحله ۵ فقط بعد از تکمیل مرحله ۴ قابل اجراست. وضعیت فعلی: {session.get_status_display()}'},
+                status=status.HTTP_409_CONFLICT,
+            )
+
         if not (session.structure_json or '').strip():
             return Response({'detail': 'برای این جلسه هنوز ساختار مرحله ۲ آماده نیست.'}, status=status.HTTP_400_BAD_REQUEST)
 
-        session.status = ClassCreationSession.Status.RECAPPING
-        session.save(update_fields=['status', 'updated_at'])
+        with transaction.atomic():
+            locked = ClassCreationSession.objects.select_for_update().filter(
+                id=session_id, status=ClassCreationSession.Status.PREREQ_TAUGHT,
+            ).first()
+            if locked is None:
+                session.refresh_from_db()
+                return Response(Step5RecapResponseSerializer(session).data, status=status.HTTP_202_ACCEPTED)
+            locked.status = ClassCreationSession.Status.RECAPPING
+            locked.save(update_fields=['status', 'updated_at'])
+            session = locked
 
         if getattr(settings, 'CLASS_PIPELINE_ASYNC', False):
             transaction.on_commit(lambda: process_class_step5_recap.delay(session.id))
@@ -2560,6 +2660,12 @@ class ExamPrepStep1TranscribeView(APIView):
         client_request_id = serializer.validated_data.get('client_request_id')
         run_full_pipeline = bool(serializer.validated_data.get('run_full_pipeline', False))
 
+        # Limit concurrent in-progress exam prep sessions per teacher.
+        _ACTIVE_EXAM_STATUSES = [
+            ClassCreationSession.Status.EXAM_TRANSCRIBING,
+            ClassCreationSession.Status.EXAM_STRUCTURING,
+        ]
+
         # Idempotency check
         if client_request_id is not None:
             existing = ClassCreationSession.objects.filter(
@@ -2575,24 +2681,51 @@ class ExamPrepStep1TranscribeView(APIView):
                 )
                 return Response(payload, status=http_status)
 
+        # Atomic check + create to prevent TOCTOU race.
         try:
-            session = ClassCreationSession.objects.create(
-                teacher=request.user,
-                title=title,
-                description=description,
-                source_file=upload,
-                source_mime_type=getattr(upload, 'content_type', '') or '',
-                source_original_name=getattr(upload, 'name', '') or '',
-                pipeline_type=ClassCreationSession.PipelineType.EXAM_PREP,
-                status=ClassCreationSession.Status.EXAM_TRANSCRIBING,
-                client_request_id=client_request_id,
+            with transaction.atomic():
+                active_count = ClassCreationSession.objects.select_for_update(skip_locked=True).filter(
+                    teacher=request.user,
+                    pipeline_type=ClassCreationSession.PipelineType.EXAM_PREP,
+                    status__in=_ACTIVE_EXAM_STATUSES,
+                ).count()
+                if active_count >= 5:
+                    return Response(
+                        {'detail': 'حداکثر ۵ آزمون همزمان در حال پردازش است. لطفاً صبر کنید.'},
+                        status=status.HTTP_429_TOO_MANY_REQUESTS,
+                    )
+
+                session = ClassCreationSession.objects.create(
+                    teacher=request.user,
+                    title=title,
+                    description=description,
+                    source_file=upload,
+                    source_mime_type=getattr(upload, 'content_type', '') or '',
+                    source_original_name=getattr(upload, 'name', '') or '',
+                    pipeline_type=ClassCreationSession.PipelineType.EXAM_PREP,
+                    status=ClassCreationSession.Status.EXAM_TRANSCRIBING,
+                    client_request_id=client_request_id,
+                )
+        except IntegrityError:
+            if client_request_id is not None:
+                existing = ClassCreationSession.objects.filter(
+                    teacher=request.user, client_request_id=client_request_id,
+                ).first()
+                if existing is not None:
+                    return Response(
+                        ExamPrepStep1TranscribeResponseSerializer(existing).data,
+                        status=status.HTTP_202_ACCEPTED,
+                    )
+            return Response(
+                {'detail': 'درخواست تکراری. لطفاً دوباره تلاش کنید.'},
+                status=status.HTTP_409_CONFLICT,
             )
         except Exception as exc:
             logger.exception(
                 'Failed to create exam prep session (file upload to storage failed): %s', exc,
             )
             return Response(
-                {'detail': 'فایل آپلود نشد. لطفاً دوباره تلاش کنید.', 'error': str(exc)},
+                {'detail': 'فایل آپلود نشد. لطفاً دوباره تلاش کنید.'},
                 status=status.HTTP_503_SERVICE_UNAVAILABLE,
             )
 
@@ -2631,12 +2764,20 @@ class ExamPrepStep2StructureView(APIView):
 
         if session.status != ClassCreationSession.Status.EXAM_TRANSCRIBED:
             return Response(
-                {'detail': f'این جلسه در وضعیت {session.status} است و قابل اجرای مرحله ۲ نیست.'},
-                status=status.HTTP_400_BAD_REQUEST,
+                {'detail': f'این جلسه در وضعیت {session.get_status_display()} است و قابل اجرای مرحله ۲ نیست.'},
+                status=status.HTTP_409_CONFLICT,
             )
 
-        session.status = ClassCreationSession.Status.EXAM_STRUCTURING
-        session.save(update_fields=['status', 'updated_at'])
+        with transaction.atomic():
+            locked = ClassCreationSession.objects.select_for_update().filter(
+                id=session_id, status=ClassCreationSession.Status.EXAM_TRANSCRIBED,
+            ).first()
+            if locked is None:
+                session.refresh_from_db()
+                return Response(ExamPrepStep2StructureResponseSerializer(session).data, status=status.HTTP_202_ACCEPTED)
+            locked.status = ClassCreationSession.Status.EXAM_STRUCTURING
+            locked.save(update_fields=['status', 'updated_at'])
+            session = locked
 
         transaction.on_commit(lambda: process_exam_prep_step2_structure.delay(session.id))
         return Response(ExamPrepStep2StructureResponseSerializer(session).data, status=status.HTTP_202_ACCEPTED)

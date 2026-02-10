@@ -25,6 +25,10 @@ TARGET_VIDEO_BITRATE_KBPS = 500
 # Target audio bitrate (in kbps)
 TARGET_AUDIO_BITRATE_KBPS = 64
 
+# Maximum video duration we'll process (seconds). Videos longer than this
+# are rejected upfront to avoid blocking a Celery worker for hours.
+MAX_VIDEO_DURATION_SECONDS = int(os.getenv('MAX_VIDEO_DURATION_SECONDS', '7200'))  # 2h default
+
 
 def _get_ffmpeg_path() -> str:
     """Return FFmpeg executable path."""
@@ -36,7 +40,7 @@ def _get_file_size(path: str) -> int:
     return os.path.getsize(path)
 
 
-def _run_ffmpeg(args: list[str], timeout: int = 600) -> Tuple[bool, str]:
+def _run_ffmpeg(args: list[str], timeout: int = 1800) -> Tuple[bool, str]:
     """
     Run FFmpeg with given arguments.
     
@@ -54,10 +58,10 @@ def _run_ffmpeg(args: list[str], timeout: int = 600) -> Tuple[bool, str]:
             timeout=timeout,
         )
         if result.returncode != 0:
-            return False, result.stderr
+            return False, result.stderr[-2000:] if len(result.stderr) > 2000 else result.stderr
         return True, ''
     except subprocess.TimeoutExpired:
-        return False, 'FFmpeg timed out'
+        return False, f'FFmpeg timed out after {timeout}s'
     except Exception as exc:
         return False, str(exc)
 
@@ -101,6 +105,16 @@ def prepare_media_parts_for_api(
 
         with open(input_path, 'wb') as f:
             f.write(input_data)
+
+        # Pre-check: reject extremely long videos that would block workers.
+        duration = _get_duration(input_path)
+        if duration > MAX_VIDEO_DURATION_SECONDS:
+            hours = MAX_VIDEO_DURATION_SECONDS // 3600
+            raise RuntimeError(
+                f'ویدیو بیش از حد طولانی است ({duration:.0f} ثانیه). '
+                f'حداکثر مدت مجاز {hours} ساعت می‌باشد. '
+                'لطفاً ویدیو را کوتاه‌تر کنید.'
+            )
 
         # Try: compress as a single video first.
         compressed_data, out_mime = _try_compress_video(input_path, output_video_path, max_part_size_bytes)

@@ -181,7 +181,7 @@ class TestSessionStatusTransition:
             data={'session_id': session.id},
             format='json',
         )
-        assert resp.status_code == 400
+        assert resp.status_code == 409  # Conflict — wrong status
 
     def test_step3_requires_structured_status(self):
         teacher = baker.make(User, role=User.Role.TEACHER)
@@ -197,4 +197,4 @@ class TestSessionStatusTransition:
             data={'session_id': session.id},
             format='json',
         )
-        assert resp.status_code == 400
+        assert resp.status_code == 409  # Conflict — wrong status

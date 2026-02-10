@@ -297,7 +297,7 @@ class TestExamPrepStep2Structure:
             '/api/classes/exam-prep-sessions/step-2/',
             {'session_id': session.id},
         )
-        assert res.status_code == 400
+        assert res.status_code == 409
 
 
 @pytest.mark.django_db

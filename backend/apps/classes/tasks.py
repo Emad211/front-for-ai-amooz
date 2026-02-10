@@ -26,6 +26,7 @@ import logging
 import os
 import tempfile
 import time
+from datetime import timedelta
 
 from celery import shared_task
 from celery.exceptions import Retry as CeleryRetry
@@ -178,7 +179,7 @@ def _run_pipeline_step(
     session,
     *,
     max_attempts: int = 4,
-    base_delay: int = 30,
+    base_delay: int = 15,
 ) -> bool:
     """Run a pipeline step inline with retry logic.
 
@@ -209,7 +210,7 @@ def _run_pipeline_step(
                 _safe_mark_failed(session, f'{step_label}: {exc_msg}')
                 return False
 
-            delay = min(base_delay * (2 ** (attempt - 1)), 300)
+            delay = min(base_delay * (2 ** (attempt - 1)), 120)
             logger.warning(
                 'Pipeline step %s attempt %d/%d failed for session %s: %s — retrying in %ds',
                 step_label, attempt, max_attempts, session_id, exc_msg, delay,
@@ -674,3 +675,56 @@ def send_new_invites_sms_task(self, session_id: int, invite_ids: list[int]) -> d
             return {'status': 'failed', 'error': str(exc)[:500]}
         backoff = 30 * (2 ** self.request.retries)
         raise self.retry(exc=exc, countdown=backoff)
+
+
+# ---------------------------------------------------------------------------
+# Periodic maintenance tasks
+# ---------------------------------------------------------------------------
+
+# In-progress statuses that indicate a pipeline step is actively running.
+# Sessions stuck in these statuses for too long are considered stale.
+_IN_PROGRESS_STATUSES: list[str] = []  # populated lazily
+
+
+def _get_in_progress_statuses() -> list[str]:
+    global _IN_PROGRESS_STATUSES
+    if not _IN_PROGRESS_STATUSES:
+        from .models import ClassCreationSession
+        _IN_PROGRESS_STATUSES = [
+            ClassCreationSession.Status.TRANSCRIBING,
+            ClassCreationSession.Status.STRUCTURING,
+            ClassCreationSession.Status.PREREQ_EXTRACTING,
+            ClassCreationSession.Status.PREREQ_TEACHING,
+            ClassCreationSession.Status.RECAPPING,
+            ClassCreationSession.Status.EXAM_TRANSCRIBING,
+            ClassCreationSession.Status.EXAM_STRUCTURING,
+        ]
+    return _IN_PROGRESS_STATUSES
+
+
+@shared_task(bind=True, max_retries=0)
+def cleanup_stale_sessions(self) -> dict:
+    """Mark sessions stuck in *ING statuses for >2 hours as FAILED.
+
+    Should be scheduled as a periodic task (celery beat) every 30 minutes.
+    Can also be called manually via Django management shell.
+    """
+    from django.utils import timezone as _tz
+    from .models import ClassCreationSession
+
+    cutoff = _tz.now() - timedelta(hours=2)
+    stale_statuses = _get_in_progress_statuses()
+
+    stale_qs = ClassCreationSession.objects.filter(
+        status__in=stale_statuses,
+        updated_at__lt=cutoff,
+    )
+    count = stale_qs.count()
+    if count > 0:
+        stale_qs.update(
+            status=ClassCreationSession.Status.FAILED,
+            error_detail='پایپ لاین بیش از ۲ ساعت بدون پاسخ ماند و به طور خودکار متوقف شد.',
+        )
+        logger.warning('Marked %d stale sessions as FAILED (stuck >2h).', count)
+
+    return {'status': 'success', 'stale_count': count}

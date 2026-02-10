@@ -125,6 +125,7 @@ DATABASES = _build_databases_from_url(os.getenv('DATABASE_URL', 'postgresql://ai
 # Keep DB connections alive for 10 min instead of reconnecting every request.
 # Critical for 100+ concurrent users — avoids ~5-10ms per-request connect overhead.
 DATABASES['default']['CONN_MAX_AGE'] = _get_env_int('CONN_MAX_AGE', 600)
+DATABASES['default']['CONN_HEALTH_CHECKS'] = True  # verify stale connections before use
 
 AUTH_PASSWORD_VALIDATORS = [
     {
@@ -394,10 +395,35 @@ CELERY_RESULT_BACKEND = os.getenv('CELERY_RESULT_BACKEND', REDIS_URL)
 CELERY_ACCEPT_CONTENT = ['json']
 CELERY_TASK_SERIALIZER = 'json'
 CELERY_RESULT_SERIALIZER = 'json'
-CELERY_TASK_TIME_LIMIT = _get_env_int('CELERY_TASK_TIME_LIMIT', 6 * 60 * 60)       # 6 h
-CELERY_TASK_SOFT_TIME_LIMIT = _get_env_int('CELERY_TASK_SOFT_TIME_LIMIT', 5 * 60 * 60)  # 5 h
+CELERY_TASK_TIME_LIMIT = _get_env_int('CELERY_TASK_TIME_LIMIT', 2 * 60 * 60)       # 2 h
+CELERY_TASK_SOFT_TIME_LIMIT = _get_env_int('CELERY_TASK_SOFT_TIME_LIMIT', 100 * 60)  # 100 min
 CELERY_WORKER_PREFETCH_MULTIPLIER = 1   # important for long-running tasks
 CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = True
+
+# Route heavy pipeline tasks to a dedicated queue so SMS / fast tasks
+# are never starved.  The Celery worker CLI must listen on both queues:
+#   celery -A core worker -Q default,pipeline --concurrency=2
+CELERY_TASK_ROUTES = {
+    'apps.classes.tasks.process_class_full_pipeline': {'queue': 'pipeline'},
+    'apps.classes.tasks.process_class_step1_transcription': {'queue': 'pipeline'},
+    'apps.classes.tasks.process_class_step2_structure': {'queue': 'pipeline'},
+    'apps.classes.tasks.process_class_step3_prerequisites': {'queue': 'pipeline'},
+    'apps.classes.tasks.process_class_step4_prereq_teaching': {'queue': 'pipeline'},
+    'apps.classes.tasks.process_class_step5_recap': {'queue': 'pipeline'},
+    'apps.classes.tasks.process_exam_prep_full_pipeline': {'queue': 'pipeline'},
+    'apps.classes.tasks.process_exam_prep_step1_transcription': {'queue': 'pipeline'},
+    'apps.classes.tasks.process_exam_prep_step2_structure': {'queue': 'pipeline'},
+    # SMS and lightweight tasks stay on the default queue.
+}
+CELERY_TASK_REJECT_ON_WORKER_LOST = True  # requeue tasks if worker is killed (OOM)
+
+# Periodic tasks (celery beat) — run cleanup_stale_sessions every 30 min.
+CELERY_BEAT_SCHEDULE = {
+    'cleanup-stale-sessions': {
+        'task': 'apps.classes.tasks.cleanup_stale_sessions',
+        'schedule': 30 * 60,  # every 30 minutes
+    },
+}
 
 # ---------------------------------------------------------------------------
 # Logging — structured JSON-ready logging for production.

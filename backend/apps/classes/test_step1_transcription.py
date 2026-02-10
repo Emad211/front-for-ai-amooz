@@ -143,8 +143,11 @@ class TestClassCreationStep1Transcription:
         assert res.data['detail']
         assert res.data['session_id']
         assert res.data['status'] == ClassCreationSession.Status.FAILED
-        assert 'error_detail' in res.data
+        # error_detail must NOT be leaked in the HTTP response (security)
+        assert 'error_detail' not in res.data
+        assert 'provider boom' not in str(res.data)
 
+        # But the error IS stored in the DB for internal debugging
         session = ClassCreationSession.objects.get(id=res.data['session_id'])
         assert session.status == ClassCreationSession.Status.FAILED
         assert 'provider boom' in session.error_detail
