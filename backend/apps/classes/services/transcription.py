@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 # Per-call timeout for LLM generate_content (seconds).
 # Large video transcription can take a while, but we don't want to block forever.
 # Default httpx timeout is only 5s — way too short for multi-MB video uploads.
-_LLM_TIMEOUT_SECONDS = int(os.getenv('LLM_TIMEOUT_SECONDS', '600'))
+_LLM_TIMEOUT_SECONDS = int(os.getenv('LLM_TIMEOUT_SECONDS', '60000000'))
 
 
 def _get_env(name: str) -> str:
