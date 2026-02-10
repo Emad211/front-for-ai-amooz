@@ -25,7 +25,9 @@ import {
   publishExamPrepSession,
   type ExamPrepSessionDetail,
   type ExamPrepStatus,
+  type UploadProgress,
 } from '@/services/classes-service';
+import { PipelineTracker } from './pipeline-tracker';
 
 type PipelineType = 'class' | 'exam_prep';
 
@@ -129,6 +131,9 @@ export function CreateClassPage() {
   const [examPrepPipelineError, setExamPrepPipelineError] = useState<string | null>(null);
   const [isExamPrepPipelineStarting, setIsExamPrepPipelineStarting] = useState(false);
 
+  // Upload progress state (shared between class & exam prep)
+  const [uploadProgress, setUploadProgress] = useState<UploadProgress | null>(null);
+
   const pollTimer = useRef<number | null>(null);
   const pollFailures = useRef<number>(0);
 
@@ -162,7 +167,7 @@ export function CreateClassPage() {
 
   const stopPolling = () => {
     if (pollTimer.current) {
-      window.clearInterval(pollTimer.current);
+      window.clearTimeout(pollTimer.current);
       pollTimer.current = null;
     }
   };
@@ -194,17 +199,23 @@ export function CreateClassPage() {
 
         if (detail.status === 'recapped') {
           stopPolling();
+          return;
         }
+
+        // Schedule next tick (setTimeout prevents pileup from slow responses)
+        pollTimer.current = window.setTimeout(() => void tick(), 2000);
       } catch {
         pollFailures.current += 1;
         if (pollFailures.current >= 4) {
+          stopPolling();
           setPipelineError('ارتباط با سرور برای دریافت وضعیت پایپ‌لاین برقرار نشد.');
+          return;
         }
+        pollTimer.current = window.setTimeout(() => void tick(), 2000);
       }
     };
 
     void tick();
-    pollTimer.current = window.setInterval(() => void tick(), 1500);
   };
 
   const resumeSession = async (sessionId: number) => {
@@ -253,17 +264,22 @@ export function CreateClassPage() {
 
         if (detail.status === 'exam_structured') {
           stopPolling();
+          return;
         }
+
+        pollTimer.current = window.setTimeout(() => void tick(), 2000);
       } catch {
         pollFailures.current += 1;
         if (pollFailures.current >= 4) {
+          stopPolling();
           setExamPrepPipelineError('ارتباط با سرور برای دریافت وضعیت پایپ‌لاین برقرار نشد.');
+          return;
         }
+        pollTimer.current = window.setTimeout(() => void tick(), 2000);
       }
     };
 
     void tick();
-    pollTimer.current = window.setInterval(() => void tick(), 1500);
   };
 
   const resumeExamPrepSession = async (sessionId: number) => {
@@ -373,18 +389,23 @@ export function CreateClassPage() {
       setPipelineError(null);
       pollFailures.current = 0;
       setOptimisticStatus(null);
+      setUploadProgress(null);
       stopPolling();
       setSessionDetail(null);
       setActiveSessionId(null);
 
       try {
-        const result = await transcribeClassCreationStep1({
-          title: title.trim(),
-          description,
-          file: lessonFile,
-          clientRequestId: clientRequestId ?? undefined,
-          runFullPipeline: true,
-        });
+        const result = await transcribeClassCreationStep1(
+          {
+            title: title.trim(),
+            description,
+            file: lessonFile,
+            clientRequestId: clientRequestId ?? undefined,
+            runFullPipeline: true,
+          },
+          { onProgress: (p) => setUploadProgress(p) },
+        );
+        setUploadProgress(null);
         setOptimisticStatus(result.status);
         setActiveSessionId(result.id);
         window.localStorage.setItem(ACTIVE_SESSION_STORAGE_KEY, String(result.id));
@@ -393,6 +414,7 @@ export function CreateClassPage() {
       } catch (error) {
         const msg = error instanceof Error ? error.message : 'خطا در ارتباط با سرور';
         setPipelineError(msg);
+        setUploadProgress(null);
       } finally {
         setIsPipelineStarting(false);
       }
@@ -402,18 +424,23 @@ export function CreateClassPage() {
       setExamPrepPipelineError(null);
       pollFailures.current = 0;
       setExamPrepOptimisticStatus(null);
+      setUploadProgress(null);
       stopPolling();
       setExamPrepSessionDetail(null);
       setActiveExamPrepSessionId(null);
 
       try {
-        const result = await transcribeExamPrepStep1({
-          title: title.trim(),
-          description,
-          file: lessonFile,
-          clientRequestId: clientRequestId ?? undefined,
-          runFullPipeline: true,
-        });
+        const result = await transcribeExamPrepStep1(
+          {
+            title: title.trim(),
+            description,
+            file: lessonFile,
+            clientRequestId: clientRequestId ?? undefined,
+            runFullPipeline: true,
+          },
+          { onProgress: (p) => setUploadProgress(p) },
+        );
+        setUploadProgress(null);
         setExamPrepOptimisticStatus(result.status);
         setActiveExamPrepSessionId(result.id);
         window.localStorage.setItem(ACTIVE_EXAM_PREP_SESSION_STORAGE_KEY, String(result.id));
@@ -424,6 +451,7 @@ export function CreateClassPage() {
       } catch (error) {
         const msg = error instanceof Error ? error.message : 'خطا در ارتباط با سرور';
         setExamPrepPipelineError(msg);
+        setUploadProgress(null);
       } finally {
         setIsExamPrepPipelineStarting(false);
       }
@@ -627,24 +655,15 @@ export function CreateClassPage() {
             </div>
           )}
 
-          {currentPipelineError && <div className="text-sm text-destructive">{currentPipelineError}</div>}
-
-          {currentSessionId && (
-            <div className="space-y-1">
-              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 text-xs text-muted-foreground">
-                <span>شناسه جلسه: {currentSessionId}</span>
-                <span>وضعیت: {currentStatus ?? '—'}</span>
-              </div>
-              {currentPipelineMessage && (
-                <div className={currentIsPipelineFailed ? 'text-sm text-destructive' : 'text-xs text-muted-foreground'}>
-                  {currentPipelineMessage}
-                </div>
-              )}
-              {currentIsPipelineDone && (
-                <div className="text-xs text-muted-foreground">پایپ‌لاین کامل شد.</div>
-              )}
-            </div>
-          )}
+          {/* ── Pipeline Tracker (upload progress + step-by-step status) ── */}
+          <PipelineTracker
+            pipelineType={pipelineType}
+            status={currentStatus}
+            uploadProgress={uploadProgress}
+            isUploading={currentIsPipelineStarting}
+            errorMessage={currentPipelineError}
+            sessionId={currentSessionId}
+          />
         </div>
       </FileUploadSection>
 

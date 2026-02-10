@@ -88,7 +88,7 @@ export function FileUploadSection({
                     فایل‌ها را بکشید و رها کنید یا <span className="text-primary font-medium">کلیک کنید</span>
                   </p>
                   <p className="text-[10px] sm:text-xs text-muted-foreground">
-                    Audio/Video تا ۵۰ مگابایت
+                    Audio/Video تا ۵۰۰ مگابایت
                   </p>
                 </>
               ) : (

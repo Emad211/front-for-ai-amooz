@@ -484,13 +484,89 @@ function getAccessToken(): string {
   return access;
 }
 
-export async function transcribeClassCreationStep1(params: {
-  title: string;
-  description?: string;
-  file: File;
-  clientRequestId?: string;
-  runFullPipeline?: boolean;
-}): Promise<Step1TranscribeResponse> {
+/* ------------------------------------------------------------------ */
+/* Upload with progress tracking (uses XMLHttpRequest for onprogress) */
+/* ------------------------------------------------------------------ */
+
+export type UploadProgress = {
+  /** 0-100 percentage, or -1 if not computable */
+  percent: number;
+  /** Bytes sent so far */
+  loaded: number;
+  /** Total bytes (0 if unknown) */
+  total: number;
+  /** Current phase label */
+  phase: 'uploading' | 'processing';
+};
+
+function uploadWithProgress(
+  url: string,
+  formData: FormData,
+  token: string,
+  onProgress?: (p: UploadProgress) => void,
+): Promise<{ status: number; body: unknown }> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', url, true);
+    xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+
+    xhr.upload.addEventListener('progress', (e) => {
+      if (onProgress) {
+        const percent = e.lengthComputable ? Math.round((e.loaded / e.total) * 100) : -1;
+        onProgress({ percent, loaded: e.loaded, total: e.total, phase: 'uploading' });
+      }
+    });
+
+    xhr.upload.addEventListener('load', () => {
+      // Upload done, now server is processing (saving to S3, creating session)
+      if (onProgress) {
+        onProgress({ percent: 100, loaded: 0, total: 0, phase: 'processing' });
+      }
+    });
+
+    xhr.addEventListener('load', () => {
+      let body: unknown;
+      try {
+        body = JSON.parse(xhr.responseText);
+      } catch {
+        body = xhr.responseText;
+      }
+      resolve({ status: xhr.status, body });
+    });
+
+    xhr.addEventListener('error', () => {
+      reject(
+        new Error(
+          `ارتباط با سرور برقرار نشد. (آدرس فعلی API: ${RAW_API_URL})` +
+            ' معمولاً یکی از این‌هاست: بک‌اند اجرا نیست، آدرس/پورت اشتباه است، یا مرورگر به خاطر CORS/Mixed Content درخواست را بلاک کرده.',
+        ),
+      );
+    });
+
+    xhr.addEventListener('timeout', () => {
+      reject(new Error('درخواست آپلود به علت طولانی بودن زمان ارسال منقضی شد.'));
+    });
+
+    xhr.addEventListener('abort', () => {
+      reject(new Error('آپلود لغو شد.'));
+    });
+
+    // 30 minute timeout for very large files over slow VPN
+    xhr.timeout = 30 * 60 * 1000;
+    xhr.send(formData);
+  });
+}
+
+export async function transcribeClassCreationStep1(
+  params: {
+    title: string;
+    description?: string;
+    file: File;
+    clientRequestId?: string;
+    runFullPipeline?: boolean;
+  },
+  options?: { onProgress?: (p: UploadProgress) => void },
+): Promise<Step1TranscribeResponse> {
   if (!RAW_API_URL) {
     throw new Error('NEXT_PUBLIC_API_URL تنظیم نشده است.');
   }
@@ -507,30 +583,20 @@ export async function transcribeClassCreationStep1(params: {
   }
 
   const url = `${API_URL}/classes/creation-sessions/step-1/`;
+  const token = getAccessToken();
 
-  let response: Response;
-  try {
-    response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${getAccessToken()}`,
-      },
-      body: formData,
-    });
-  } catch (error) {
-    throw new Error(
-      `ارتباط با سرور برقرار نشد. (آدرس فعلی API: ${RAW_API_URL})` +
-        ' معمولاً یکی از این‌هاست: بک‌اند اجرا نیست، آدرس/پورت اشتباه است، یا مرورگر به خاطر CORS/Mixed Content درخواست را بلاک کرده.'
-    );
+  const { status, body } = await uploadWithProgress(
+    url,
+    formData,
+    token,
+    options?.onProgress,
+  );
+
+  if (status < 200 || status >= 300) {
+    throw new Error(extractErrorMessage(body, `HTTP ${status}`));
   }
 
-  const payload = await parseJson(response);
-
-  if (!response.ok) {
-    throw new Error(extractErrorMessage(payload, response.statusText));
-  }
-
-  return payload as Step1TranscribeResponse;
+  return body as Step1TranscribeResponse;
 }
 
 export async function structureClassCreationStep2(params: {
@@ -633,13 +699,16 @@ export interface ExamPrepQuestion {
 /**
  * Exam Prep Step 1: Upload and transcribe audio/video.
  */
-export async function transcribeExamPrepStep1(params: {
-  title: string;
-  description?: string;
-  file: File;
-  clientRequestId?: string;
-  runFullPipeline?: boolean;
-}): Promise<ExamPrepStep1Response> {
+export async function transcribeExamPrepStep1(
+  params: {
+    title: string;
+    description?: string;
+    file: File;
+    clientRequestId?: string;
+    runFullPipeline?: boolean;
+  },
+  options?: { onProgress?: (p: UploadProgress) => void },
+): Promise<ExamPrepStep1Response> {
   if (!RAW_API_URL) {
     throw new Error('NEXT_PUBLIC_API_URL تنظیم نشده است.');
   }
@@ -656,29 +725,20 @@ export async function transcribeExamPrepStep1(params: {
   }
 
   const url = `${API_URL}/classes/exam-prep-sessions/step-1/`;
+  const token = getAccessToken();
 
-  let response: Response;
-  try {
-    response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${getAccessToken()}`,
-      },
-      body: formData,
-    });
-  } catch {
-    throw new Error(
-      `ارتباط با سرور برقرار نشد. (آدرس فعلی API: ${RAW_API_URL})` +
-        ' معمولاً یکی از این‌هاست: بک‌اند اجرا نیست، آدرس/پورت اشتباه است، یا مرورگر به خاطر CORS/Mixed Content درخواست را بلاک کرده.'
-    );
+  const { status, body } = await uploadWithProgress(
+    url,
+    formData,
+    token,
+    options?.onProgress,
+  );
+
+  if (status < 200 || status >= 300) {
+    throw new Error(extractErrorMessage(body, `HTTP ${status}`));
   }
 
-  const payload = await parseJson(response);
-  if (!response.ok) {
-    throw new Error(extractErrorMessage(payload, response.statusText));
-  }
-
-  return payload as ExamPrepStep1Response;
+  return body as ExamPrepStep1Response;
 }
 
 /**
