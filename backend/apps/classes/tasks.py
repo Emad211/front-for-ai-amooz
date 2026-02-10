@@ -6,19 +6,18 @@ and does **not** block the Gunicorn sync worker.
 
 Design principles
 -----------------
-* Each task reads file data from disk via ``TemporaryFileUploadHandler``
-  (already forced in settings) so RAM stays low even for 500 MB uploads.
+* Media files are stored in S3-compatible object storage (MinIO in
+  production).  Django's ``FileField`` reads/writes through ``boto3``,
+  so **every pod** (Gunicorn, Celery worker) can access the same files
+  without sharing a filesystem volume.
+* Each task streams file data to a local temp file before processing so
+  RAM stays low even for 500 MB uploads.
 * Retry with exponential back-off (max 3 retries, delay starts at 60 s).
 * ``time_limit`` / ``soft_time_limit`` inherited from settings by default;
   individual tasks can override if needed.
 * Full-pipeline tasks run steps **inline** with their own retry logic.
   Celery's ``self.retry()`` raises ``Retry``; the pipeline catches this
   and retries locally with exponential back-off instead.
-* In Kubernetes, the Celery worker runs in a **separate pod** from the
-  backend (Gunicorn).  They do NOT share a filesystem.  To bridge the
-  gap, the API view caches the uploaded file bytes in Redis before
-  dispatching the Celery task.  The worker reads from Redis first,
-  falling back to the local filesystem (for single-pod / dev setups).
 """
 from __future__ import annotations
 
@@ -28,111 +27,10 @@ import os
 import tempfile
 import time
 
-import redis as _redis_lib
 from celery import shared_task
 from celery.exceptions import Retry as CeleryRetry
-from django.conf import settings as django_settings
 
 logger = logging.getLogger(__name__)
-
-# Redis key TTL for cached source files (6 hours — generous for long pipelines).
-_SOURCE_FILE_CACHE_TTL = 6 * 3600
-_SOURCE_FILE_KEY_PREFIX = 'session_source_file:'
-
-
-# ---------------------------------------------------------------------------
-# Redis file-cache helpers (solves K8s multi-pod file access)
-# ---------------------------------------------------------------------------
-
-def _get_redis_client():
-    """Return a Redis client using the project's Redis URL.
-
-    Uses ``CELERY_BROKER_URL`` from settings — this is **always** correct
-    on both the backend pod and the Celery worker pod because Celery itself
-    uses it to connect.
-
-    We cannot rely on ``REDIS_URL`` because ``settings.py`` falls back to
-    ``'redis://localhost:6379/0'`` when the env-var is missing, producing
-    a truthy-but-wrong value on the worker pod.
-    """
-    url = (
-        getattr(django_settings, 'CELERY_BROKER_URL', None)
-        or getattr(django_settings, 'REDIS_URL', None)
-        or 'redis://localhost:6379/0'
-    )
-    logger.debug('_get_redis_client using URL: %s', url.split('@')[-1] if '@' in url else url)
-    return _redis_lib.from_url(url, socket_connect_timeout=5, socket_timeout=30)
-
-
-def cache_source_file_to_redis(session) -> bool:
-    """Read the uploaded source file from disk and cache it in Redis.
-
-    Called in the **API view** (backend pod) right before dispatching the
-    Celery task.  The Celery worker will read from this Redis key instead
-    of trying to open the file on its own (non-existent) filesystem.
-
-    Returns ``True`` on success, ``False`` on error (non-fatal — the
-    worker will still try the filesystem as a fallback).
-    """
-    if not session.source_file:
-        return False
-    try:
-        r = _get_redis_client()
-        key = f'{_SOURCE_FILE_KEY_PREFIX}{session.id}'
-        session.source_file.open('rb')
-        try:
-            data = session.source_file.read()
-        finally:
-            session.source_file.close()
-        r.setex(key, _SOURCE_FILE_CACHE_TTL, data)
-        logger.info(
-            'Cached source file for session %s in Redis (%d bytes)',
-            session.id, len(data),
-        )
-        return True
-    except Exception:
-        logger.warning(
-            'Failed to cache source file for session %s in Redis',
-            session.id, exc_info=True,
-        )
-        return False
-
-
-def _read_source_file_from_redis(session_id: int, suffix: str) -> str | None:
-    """Try to read cached source file bytes from Redis.
-
-    Returns a temp-file path on success, or ``None`` if the key does not
-    exist or Redis is unreachable.
-    """
-    try:
-        r = _get_redis_client()
-        key = f'{_SOURCE_FILE_KEY_PREFIX}{session_id}'
-        data = r.get(key)
-        if data is None:
-            logger.warning(
-                'Redis cache MISS for session %s source file (key=%s). '
-                'Will fall back to local filesystem.',
-                session_id, key,
-            )
-            return None
-        tmp = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
-        tmp.write(data)
-        tmp.close()
-        # Delete the key after successful read — file is now on local disk.
-        r.delete(key)
-        logger.info(
-            'Read source file for session %s from Redis cache (%d bytes)',
-            session_id, len(data),
-        )
-        return tmp.name
-    except Exception:
-        logger.warning(
-            'Redis cache ERROR for session %s source file (key=%s). '
-            'Will fall back to local filesystem.',
-            session_id, f'{_SOURCE_FILE_KEY_PREFIX}{session_id}',
-            exc_info=True,
-        )
-        return None
 
 
 # ---------------------------------------------------------------------------
@@ -140,27 +38,20 @@ def _read_source_file_from_redis(session_id: int, suffix: str) -> str | None:
 # ---------------------------------------------------------------------------
 
 def _read_session_file_to_disk(session) -> str:
-    """Stream the uploaded file to a temp file and return the path.
+    """Stream the uploaded file (from S3 or local FS) to a temp file.
 
-    Strategy:
-    1. Try Redis cache first (works when backend and worker are separate pods).
-    2. Fall back to Django ``FileField`` on the local filesystem (works in
-       single-pod / development setups).
-    Raises ``FileNotFoundError`` if neither source is available.
+    Django's ``FileField.open()`` uses whichever storage backend is
+    configured — ``S3Boto3Storage`` in production, ``FileSystemStorage``
+    in local dev.  Both are transparent to this function.
+
+    Raises ``FileNotFoundError`` if the session has no source file.
     """
-    suffix = os.path.splitext(session.source_original_name or '')[-1] or '.bin'
-
-    # --- Attempt 1: Redis cache (K8s multi-pod) ---
-    cached_path = _read_source_file_from_redis(session.id, suffix)
-    if cached_path:
-        return cached_path
-
-    # --- Attempt 2: local filesystem (single-pod / dev) ---
     if not session.source_file:
         raise FileNotFoundError(
             f'فایل منبع برای جلسه {session.id} وجود ندارد. '
-            'ممکن است قبلاً حذف شده باشد یا در Pod دیگری ذخیره شده است.'
+            'ممکن است قبلاً حذف شده باشد.'
         )
+    suffix = os.path.splitext(session.source_original_name or '')[-1] or '.bin'
     tmp = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
     try:
         session.source_file.open('rb')

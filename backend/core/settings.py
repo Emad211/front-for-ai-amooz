@@ -154,16 +154,52 @@ STATIC_ROOT = BASE_DIR / 'staticfiles'
 
 # WhiteNoise — serve static files directly from Gunicorn (no nginx needed).
 # Compresses and caches automatically in production.
-STORAGES = {
-    'default': {
-        'BACKEND': 'django.core.files.storage.FileSystemStorage',
-    },
-    'staticfiles': {
-        'BACKEND': 'whitenoise.storage.CompressedManifestStaticFilesStorage',
-    },
-}
+#
+# Media storage: when AWS_STORAGE_BUCKET_NAME is set, all FileField /
+# ImageField uploads go to S3-compatible storage (MinIO / Hamravesh Object
+# Storage / real AWS S3).  Otherwise falls back to local filesystem (dev).
+# ---------------------------------------------------------------------------
+_USE_S3 = bool(os.getenv('AWS_STORAGE_BUCKET_NAME'))
 
-MEDIA_URL = '/media/'
+if _USE_S3:
+    # S3-compatible object storage (MinIO, Hamravesh, AWS, etc.)
+    AWS_ACCESS_KEY_ID = os.getenv('AWS_ACCESS_KEY_ID')
+    AWS_SECRET_ACCESS_KEY = os.getenv('AWS_SECRET_ACCESS_KEY')
+    AWS_STORAGE_BUCKET_NAME = os.getenv('AWS_STORAGE_BUCKET_NAME')
+    AWS_S3_ENDPOINT_URL = os.getenv('AWS_S3_ENDPOINT_URL')           # e.g. http://minio:9000
+    AWS_S3_REGION_NAME = os.getenv('AWS_S3_REGION_NAME', 'us-east-1')
+    AWS_S3_CUSTOM_DOMAIN = os.getenv('AWS_S3_CUSTOM_DOMAIN', '')     # public URL if different
+    AWS_DEFAULT_ACL = os.getenv('AWS_DEFAULT_ACL', None)             # None = bucket default
+    AWS_S3_FILE_OVERWRITE = False                                     # never silently overwrite
+    AWS_QUERYSTRING_AUTH = os.getenv('AWS_QUERYSTRING_AUTH', 'True') == 'True'  # signed URLs
+    AWS_S3_SIGNATURE_VERSION = 's3v4'
+    AWS_S3_ADDRESSING_STYLE = 'path'                                  # required for MinIO
+
+    STORAGES = {
+        'default': {
+            'BACKEND': 'storages.backends.s3boto3.S3Boto3Storage',
+        },
+        'staticfiles': {
+            'BACKEND': 'whitenoise.storage.CompressedManifestStaticFilesStorage',
+        },
+    }
+    # Media URL: use custom domain if provided, else endpoint + bucket.
+    if AWS_S3_CUSTOM_DOMAIN:
+        MEDIA_URL = f'https://{AWS_S3_CUSTOM_DOMAIN}/'
+    else:
+        MEDIA_URL = f'{AWS_S3_ENDPOINT_URL}/{AWS_STORAGE_BUCKET_NAME}/'
+else:
+    # Local filesystem (development / single-pod setups).
+    STORAGES = {
+        'default': {
+            'BACKEND': 'django.core.files.storage.FileSystemStorage',
+        },
+        'staticfiles': {
+            'BACKEND': 'whitenoise.storage.CompressedManifestStaticFilesStorage',
+        },
+    }
+    MEDIA_URL = '/media/'
+
 MEDIA_ROOT = BASE_DIR / 'media'
 
 REST_FRAMEWORK = {

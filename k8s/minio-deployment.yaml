@@ -1,0 +1,105 @@
+# MinIO S3-compatible object storage for shared media files.
+# Both the backend (Gunicorn) and Celery worker pods access files
+# through the S3 API — no shared filesystem needed.
+#
+# Deploy on Hamravesh as a separate app (Docker):
+#   Image:   minio/minio:latest
+#   Command: server /data --console-address ":9001"
+#   Ports:   9000 (API), 9001 (Console)
+#   Volume:  mount a persistent disk at /data
+#
+# Environment variables on the MinIO app:
+#   MINIO_ROOT_USER=minioadmin
+#   MINIO_ROOT_PASSWORD=<strong-password>
+#
+# After deploying, create a bucket via the console (port 9001):
+#   Bucket name: ai-amooz-media
+#
+# Then set these env vars on BOTH the backend and celery-worker apps:
+#   AWS_ACCESS_KEY_ID=minioadmin
+#   AWS_SECRET_ACCESS_KEY=<same-strong-password>
+#   AWS_STORAGE_BUCKET_NAME=ai-amooz-media
+#   AWS_S3_ENDPOINT_URL=http://<minio-service-address>:9000
+#
+# -------------------------------------------------------------------
+# If deploying via kubectl (not Hamravesh UI), use the manifest below:
+# -------------------------------------------------------------------
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: minio
+  labels:
+    app: minio
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: minio
+  template:
+    metadata:
+      labels:
+        app: minio
+    spec:
+      containers:
+        - name: minio
+          image: minio/minio:latest
+          args:
+            - server
+            - /data
+            - --console-address
+            - ":9001"
+          ports:
+            - containerPort: 9000
+              name: api
+            - containerPort: 9001
+              name: console
+          env:
+            - name: MINIO_ROOT_USER
+              value: "minioadmin"
+            - name: MINIO_ROOT_PASSWORD
+              value: "CHANGE_ME_USE_STRONG_PASSWORD"
+          volumeMounts:
+            - name: minio-data
+              mountPath: /data
+          readinessProbe:
+            httpGet:
+              path: /minio/health/ready
+              port: 9000
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /minio/health/live
+              port: 9000
+            initialDelaySeconds: 10
+            periodSeconds: 30
+      volumes:
+        - name: minio-data
+          persistentVolumeClaim:
+            claimName: minio-pvc
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: minio-pvc
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: minio
+spec:
+  selector:
+    app: minio
+  ports:
+    - name: api
+      port: 9000
+      targetPort: 9000
+    - name: console
+      port: 9001
+      targetPort: 9001

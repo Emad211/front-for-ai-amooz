@@ -93,7 +93,6 @@ from .services.exam_prep_structure import extract_exam_prep_structure
 from .services.invite_codes import get_or_create_invite_code_for_phone
 
 from .tasks import (
-    cache_source_file_to_redis,
     process_class_step1_transcription,
     process_class_step2_structure,
     process_class_step3_prerequisites,
@@ -423,14 +422,10 @@ class Step1TranscribeView(APIView):
         )
 
         if run_full_pipeline:
-            # Cache file in Redis so the Celery worker (separate K8s pod) can access it.
-            cache_source_file_to_redis(session)
             transaction.on_commit(lambda: process_class_full_pipeline.delay(session.id))
             return Response(Step1TranscribeResponseSerializer(session).data, status=status.HTTP_202_ACCEPTED)
 
         if getattr(settings, 'CLASS_PIPELINE_ASYNC', False):
-            # Cache file in Redis so the Celery worker (separate K8s pod) can access it.
-            cache_source_file_to_redis(session)
             # Dispatch to Celery so the teacher can navigate away without breaking the pipeline.
             transaction.on_commit(lambda: process_class_step1_transcription.delay(session.id))
             return Response(Step1TranscribeResponseSerializer(session).data, status=status.HTTP_202_ACCEPTED)
@@ -2584,13 +2579,9 @@ class ExamPrepStep1TranscribeView(APIView):
         )
 
         if run_full_pipeline:
-            # Cache file in Redis so the Celery worker (separate K8s pod) can access it.
-            cache_source_file_to_redis(session)
             transaction.on_commit(lambda: process_exam_prep_full_pipeline.delay(session.id))
             return Response(ExamPrepStep1TranscribeResponseSerializer(session).data, status=status.HTTP_202_ACCEPTED)
 
-        # Cache file in Redis so the Celery worker (separate K8s pod) can access it.
-        cache_source_file_to_redis(session)
         # Dispatch step 1 to Celery
         transaction.on_commit(lambda: process_exam_prep_step1_transcription.delay(session.id))
         return Response(ExamPrepStep1TranscribeResponseSerializer(session).data, status=status.HTTP_202_ACCEPTED)
