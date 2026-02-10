@@ -47,15 +47,20 @@ _SOURCE_FILE_KEY_PREFIX = 'session_source_file:'
 def _get_redis_client():
     """Return a Redis client using the project's Redis URL.
 
-    Tries ``REDIS_URL`` first, then ``CELERY_BROKER_URL`` (always set on
-    the Celery worker even if ``REDIS_URL`` env-var is missing), and falls
-    back to localhost for local development.
+    Uses ``CELERY_BROKER_URL`` from settings — this is **always** correct
+    on both the backend pod and the Celery worker pod because Celery itself
+    uses it to connect.
+
+    We cannot rely on ``REDIS_URL`` because ``settings.py`` falls back to
+    ``'redis://localhost:6379/0'`` when the env-var is missing, producing
+    a truthy-but-wrong value on the worker pod.
     """
     url = (
-        getattr(django_settings, 'REDIS_URL', None)
-        or getattr(django_settings, 'CELERY_BROKER_URL', None)
+        getattr(django_settings, 'CELERY_BROKER_URL', None)
+        or getattr(django_settings, 'REDIS_URL', None)
         or 'redis://localhost:6379/0'
     )
+    logger.debug('_get_redis_client using URL: %s', url.split('@')[-1] if '@' in url else url)
     return _redis_lib.from_url(url, socket_connect_timeout=5, socket_timeout=30)
 
 
