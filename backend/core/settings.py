@@ -409,8 +409,9 @@ CELERY_WORKER_PREFETCH_MULTIPLIER = 1   # important for long-running tasks
 CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = True
 
 # Route heavy pipeline tasks to a dedicated queue so SMS / fast tasks
-# are never starved.  The Celery worker CLI must listen on both queues:
+# are never starved.  Workers MUST listen on both queues:
 #   celery -A core worker -Q default,pipeline --concurrency=2
+# NOTE: Hamravesh Celery CMD must include: -Q default,pipeline
 CELERY_TASK_ROUTES = {
     'apps.classes.tasks.process_class_full_pipeline': {'queue': 'pipeline'},
     'apps.classes.tasks.process_class_step1_transcription': {'queue': 'pipeline'},

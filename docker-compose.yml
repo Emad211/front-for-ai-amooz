@@ -110,7 +110,7 @@ services:
       dockerfile: Dockerfile
     container_name: ai_amooz_celery_worker
     restart: unless-stopped
-    command: celery -A core worker --loglevel=info --concurrency=2
+    command: celery -A core worker -Q default,pipeline --loglevel=info --concurrency=2
     env_file:
       - ./backend/.env
     environment:
