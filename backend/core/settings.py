@@ -29,6 +29,13 @@ def _get_env_int(name: str, default: int) -> int:
         return default
 
 
+def _get_env_bool(name: str, default: bool = False) -> bool:
+    raw = (os.getenv(name) or '').strip().lower()
+    if not raw:
+        return default
+    return raw in {'1', 'true', 'yes', 'on'}
+
+
 ALLOWED_HOSTS = _split_env_list(
     'ALLOWED_HOSTS',
     'localhost,127.0.0.1,0.0.0.0',
@@ -66,6 +73,7 @@ MIDDLEWARE = [
     'django.contrib.sessions.middleware.SessionMiddleware',
     'corsheaders.middleware.CorsMiddleware',
     'django.middleware.common.CommonMiddleware',
+    'core.middleware.RequestLogMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
@@ -428,6 +436,10 @@ CELERY_BEAT_SCHEDULE = {
 # ---------------------------------------------------------------------------
 # Logging — structured JSON-ready logging for production.
 # ---------------------------------------------------------------------------
+LOG_LEVEL = os.getenv('LOG_LEVEL', 'INFO').upper()
+LOG_HTTP = _get_env_bool('LOG_HTTP', True)
+LOG_SQL = _get_env_bool('LOG_SQL', False)
+
 LOGGING = {
     'version': 1,
     'disable_existing_loggers': False,
@@ -445,17 +457,27 @@ LOGGING = {
     },
     'root': {
         'handlers': ['console'],
-        'level': 'INFO',
+        'level': LOG_LEVEL,
     },
     'loggers': {
         'django': {'level': 'WARNING', 'propagate': True},
+        'django.request': {'level': 'INFO' if LOG_HTTP else 'WARNING', 'propagate': True},
+        'django.server': {'level': 'INFO' if LOG_HTTP else 'WARNING', 'propagate': True},
+        'core.request': {'level': 'INFO' if LOG_HTTP else 'WARNING', 'propagate': True},
         # Suppress noisy DisallowedHost errors from scanners/bots.
         'django.security.DisallowedHost': {
             'level': 'CRITICAL',
             'propagate': False,
         },
         'celery': {'level': 'INFO', 'propagate': True},
+        'celery.app.trace': {'level': 'INFO', 'propagate': True},
         'apps': {'level': 'INFO', 'propagate': True},
     },
 }
+
+if LOG_SQL:
+    LOGGING['loggers']['django.db.backends'] = {
+        'level': 'DEBUG',
+        'propagate': True,
+    }
 

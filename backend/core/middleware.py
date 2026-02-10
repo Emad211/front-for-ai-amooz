@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 
 from django.http import HttpResponse
 
@@ -77,3 +78,49 @@ class HealthCheckMiddleware:
             content_type="application/json",
             status=http_status,
         )
+
+
+class RequestLogMiddleware:
+    """Log each request with method/path/status/latency and basic user context."""
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+        self.logger = logging.getLogger('core.request')
+
+    def __call__(self, request):
+        if request.path == HEALTH_PATH:
+            return self.get_response(request)
+
+        start = time.monotonic()
+        response = self.get_response(request)
+        elapsed_ms = int((time.monotonic() - start) * 1000)
+
+        user = getattr(request, 'user', None)
+        user_id = getattr(user, 'id', None) if getattr(user, 'is_authenticated', False) else None
+        status_code = getattr(response, 'status_code', 0)
+        level = logging.INFO
+        if status_code >= 500:
+            level = logging.ERROR
+        elif status_code >= 400:
+            level = logging.WARNING
+
+        client_ip = _get_client_ip(request)
+        self.logger.log(
+            level,
+            'HTTP %s %s %s %dms ip=%s user_id=%s size=%s',
+            request.method,
+            request.path,
+            status_code,
+            elapsed_ms,
+            client_ip,
+            user_id,
+            response.get('Content-Length', '-'),
+        )
+        return response
+
+
+def _get_client_ip(request) -> str:
+    forwarded = request.META.get('HTTP_X_FORWARDED_FOR', '')
+    if forwarded:
+        return forwarded.split(',')[0].strip()
+    return request.META.get('REMOTE_ADDR', '') or '-'
