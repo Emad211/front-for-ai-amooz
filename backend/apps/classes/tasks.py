@@ -45,12 +45,31 @@ def _read_session_file_to_disk(session) -> str:
     in local dev.  Both are transparent to this function.
 
     Raises ``FileNotFoundError`` if the session has no source file.
+    Raises ``RuntimeError`` if the storage backend appears misconfigured
+    (e.g. S3 env vars missing on the Celery worker pod).
     """
     if not session.source_file:
         raise FileNotFoundError(
             f'فایل منبع برای جلسه {session.id} وجود ندارد. '
             'ممکن است قبلاً حذف شده باشد.'
         )
+
+    # Detect storage misconfiguration: if the backend saved to S3 but this
+    # worker uses FileSystemStorage, the file won't exist on disk.  Give a
+    # clear error instead of a confusing "No such file or directory".
+    from django.core.files.storage import default_storage
+    storage_cls = type(default_storage).__name__
+    logger.info(
+        'Reading source file for session %s via %s storage (name=%s)',
+        session.id, storage_cls, session.source_file.name,
+    )
+    if storage_cls == 'FileSystemStorage' and os.getenv('AWS_STORAGE_BUCKET_NAME'):
+        raise RuntimeError(
+            f'Storage misconfiguration: AWS_STORAGE_BUCKET_NAME is set but '
+            f'default_storage is FileSystemStorage. Ensure S3 env vars are '
+            f'set on this pod/container (celery worker).'
+        )
+
     suffix = os.path.splitext(session.source_original_name or '')[-1] or '.bin'
     tmp = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
     try:
@@ -60,6 +79,17 @@ def _read_session_file_to_disk(session) -> str:
                 tmp.write(chunk)
         finally:
             session.source_file.close()
+    except FileNotFoundError:
+        tmp.close()
+        os.unlink(tmp.name)
+        logger.error(
+            'File not found for session %s. Storage backend: %s. '
+            'If this is a Celery worker, ensure ALL S3 env vars '
+            '(AWS_STORAGE_BUCKET_NAME, AWS_ACCESS_KEY_ID, '
+            'AWS_SECRET_ACCESS_KEY, AWS_S3_ENDPOINT_URL) are set.',
+            session.id, storage_cls,
+        )
+        raise
     except Exception:
         tmp.close()
         os.unlink(tmp.name)

@@ -406,6 +406,11 @@ LOGGING = {
     },
     'loggers': {
         'django': {'level': 'WARNING', 'propagate': True},
+        # Suppress noisy DisallowedHost errors from scanners/bots.
+        'django.security.DisallowedHost': {
+            'level': 'CRITICAL',
+            'propagate': False,
+        },
         'celery': {'level': 'INFO', 'propagate': True},
         'apps': {'level': 'INFO', 'propagate': True},
     },
