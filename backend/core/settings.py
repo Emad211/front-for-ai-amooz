@@ -161,6 +161,23 @@ STATIC_ROOT = BASE_DIR / 'staticfiles'
 # ---------------------------------------------------------------------------
 _USE_S3 = bool(os.getenv('AWS_STORAGE_BUCKET_NAME'))
 
+# Log which storage mode is active so every pod's startup logs are explicit.
+import logging as _logging
+_startup_logger = _logging.getLogger('core.settings')
+if _USE_S3:
+    _startup_logger.info(
+        'S3 storage ACTIVE — bucket=%s endpoint=%s',
+        os.getenv('AWS_STORAGE_BUCKET_NAME'),
+        os.getenv('AWS_S3_ENDPOINT_URL'),
+    )
+else:
+    _startup_logger.warning(
+        'S3 storage INACTIVE (AWS_STORAGE_BUCKET_NAME not set) — '
+        'using local FileSystemStorage. If this is production, '
+        'set AWS_STORAGE_BUCKET_NAME, AWS_ACCESS_KEY_ID, '
+        'AWS_SECRET_ACCESS_KEY, AWS_S3_ENDPOINT_URL on this pod.',
+    )
+
 if _USE_S3:
     # S3-compatible object storage (MinIO, Hamravesh, AWS, etc.)
     AWS_ACCESS_KEY_ID = os.getenv('AWS_ACCESS_KEY_ID')
