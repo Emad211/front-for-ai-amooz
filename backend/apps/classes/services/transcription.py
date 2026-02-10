@@ -133,7 +133,8 @@ def transcribe_media_bytes(*, data: bytes, mime_type: str) -> tuple[str, str, st
                     model=model,
                     contents=[prompt, media_part],
                     config=types.GenerateContentConfig(
-                        http_options={'timeout': _LLM_TIMEOUT_SECONDS},
+                        # google-genai SDK expects timeout in MILLISECONDS
+                        http_options={'timeout': _LLM_TIMEOUT_SECONDS * 1000},
                     ),
                 )
                 texts.append(_extract_text(resp))
