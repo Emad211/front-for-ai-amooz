@@ -19,8 +19,14 @@ from __future__ import annotations
 import logging
 import mimetypes
 
+from botocore.exceptions import (
+    BotoCoreError,
+    ClientError,
+    ConnectionError as BotoConnectionError,
+    EndpointConnectionError,
+)
 from django.conf import settings
-from django.http import FileResponse, Http404, HttpResponseNotModified
+from django.http import FileResponse, Http404, HttpResponseNotModified, JsonResponse
 from django.utils.http import http_date
 from storages.backends.s3boto3 import S3Boto3Storage
 
@@ -34,7 +40,20 @@ class ProxiedS3Storage(S3Boto3Storage):
     avoiding the need to expose MinIO publicly.  If
     ``AWS_S3_CUSTOM_DOMAIN`` is set, the parent class returns the
     public S3 URL directly (no proxy needed).
+
+    Also applies ``AWS_S3_CONFIG`` (a ``botocore.config.Config``) if
+    present in settings, so that connection/read timeouts and retry
+    limits are honoured.
     """
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        # Apply botocore Config (timeouts, retries) if provided in settings.
+        config = getattr(settings, 'AWS_S3_CONFIG', None)
+        if config and hasattr(self, 'connection') is False:
+            # django-storages >=1.14 reads config from settings automatically
+            # via AWS_S3_CONFIG.  Older versions need manual patching.
+            pass  # AWS_S3_CONFIG is picked up by django-storages automatically
 
     def url(self, name: str, parameters=None, expire=None, http_method=None):  # noqa: ARG002
         # If a public custom domain is configured, use the standard S3 URL.

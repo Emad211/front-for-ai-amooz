@@ -410,16 +410,25 @@ class Step1TranscribeView(APIView):
                 )
                 return Response(payload, status=http_status)
 
-        session = ClassCreationSession.objects.create(
-            teacher=request.user,
-            title=title,
-            description=description,
-            source_file=upload,
-            source_mime_type=getattr(upload, 'content_type', '') or '',
-            source_original_name=getattr(upload, 'name', '') or '',
-            status=ClassCreationSession.Status.TRANSCRIBING,
-            client_request_id=client_request_id,
-        )
+        try:
+            session = ClassCreationSession.objects.create(
+                teacher=request.user,
+                title=title,
+                description=description,
+                source_file=upload,
+                source_mime_type=getattr(upload, 'content_type', '') or '',
+                source_original_name=getattr(upload, 'name', '') or '',
+                status=ClassCreationSession.Status.TRANSCRIBING,
+                client_request_id=client_request_id,
+            )
+        except Exception as exc:
+            logger.exception(
+                'Failed to create session (file upload to storage failed): %s', exc,
+            )
+            return Response(
+                {'detail': 'فایل آپلود نشد. لطفاً دوباره تلاش کنید.', 'error': str(exc)},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
 
         if run_full_pipeline:
             transaction.on_commit(lambda: process_class_full_pipeline.delay(session.id))
@@ -2566,17 +2575,26 @@ class ExamPrepStep1TranscribeView(APIView):
                 )
                 return Response(payload, status=http_status)
 
-        session = ClassCreationSession.objects.create(
-            teacher=request.user,
-            title=title,
-            description=description,
-            source_file=upload,
-            source_mime_type=getattr(upload, 'content_type', '') or '',
-            source_original_name=getattr(upload, 'name', '') or '',
-            pipeline_type=ClassCreationSession.PipelineType.EXAM_PREP,
-            status=ClassCreationSession.Status.EXAM_TRANSCRIBING,
-            client_request_id=client_request_id,
-        )
+        try:
+            session = ClassCreationSession.objects.create(
+                teacher=request.user,
+                title=title,
+                description=description,
+                source_file=upload,
+                source_mime_type=getattr(upload, 'content_type', '') or '',
+                source_original_name=getattr(upload, 'name', '') or '',
+                pipeline_type=ClassCreationSession.PipelineType.EXAM_PREP,
+                status=ClassCreationSession.Status.EXAM_TRANSCRIBING,
+                client_request_id=client_request_id,
+            )
+        except Exception as exc:
+            logger.exception(
+                'Failed to create exam prep session (file upload to storage failed): %s', exc,
+            )
+            return Response(
+                {'detail': 'فایل آپلود نشد. لطفاً دوباره تلاش کنید.', 'error': str(exc)},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
 
         if run_full_pipeline:
             transaction.on_commit(lambda: process_exam_prep_full_pipeline.delay(session.id))

@@ -175,6 +175,15 @@ if _USE_S3:
     AWS_S3_SIGNATURE_VERSION = 's3v4'
     AWS_S3_ADDRESSING_STYLE = 'path'                                  # required for MinIO
 
+    # boto3 connection config — prevent Gunicorn workers from hanging if
+    # MinIO is temporarily unreachable.
+    from botocore.config import Config as _BotoConfig                 # noqa: E402
+    AWS_S3_CONFIG = _BotoConfig(
+        connect_timeout=5,          # seconds to wait for TCP connection
+        read_timeout=30,            # seconds to wait for response data
+        retries={'max_attempts': 2, 'mode': 'standard'},
+    )
+
     STORAGES = {
         'default': {
             # ProxiedS3Storage generates /media/<key> URLs so the browser
