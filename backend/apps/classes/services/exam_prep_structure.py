@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 
 # Per-call timeout for LLM generate_content (seconds).
 # Default httpx timeout is only 5s — too short for larger payloads.
-_LLM_TIMEOUT_SECONDS = int(os.getenv('LLM_TIMEOUT_SECONDS', '6000000'))
+_LLM_TIMEOUT_SECONDS = int(os.getenv('LLM_TIMEOUT_SECONDS', '600'))
 
 
 def _get_env(name: str) -> str:
