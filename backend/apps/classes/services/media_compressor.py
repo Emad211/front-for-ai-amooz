@@ -80,7 +80,8 @@ def prepare_media_parts_for_api(
     Returns a list of (bytes, mime_type). For small inputs, the list has exactly one part.
     """
 
-    if len(input_data) <= max_part_size_bytes:
+    input_size = len(input_data)
+    if input_size <= max_part_size_bytes:
         return [(input_data, input_mime_type)]
 
     if input_mime_type.startswith('audio/'):
@@ -116,12 +117,20 @@ def prepare_media_parts_for_api(
                 'لطفاً ویدیو را کوتاه‌تر کنید.'
             )
 
+        logger.info(
+            'Media exceeds API limit (%d > %d bytes). duration=%.1fs. Starting compression/split.',
+            input_size,
+            max_part_size_bytes,
+            duration,
+        )
+
         # Try: compress as a single video first.
         compressed_data, out_mime = _try_compress_video(input_path, output_video_path, max_part_size_bytes)
         if compressed_data is not None:
             return [(compressed_data, out_mime)]
 
         # Fallback: split into multiple video parts (keeps all frames across parts).
+        logger.info('Starting video split into parts (max_part_size=%d bytes)', max_part_size_bytes)
         return _split_and_compress_video_into_parts(
             input_path=input_path,
             workdir=tmpdir,
@@ -149,6 +158,7 @@ def _split_and_compress_video_into_parts(
             except OSError:
                 pass
 
+        logger.info('Splitting video with segment_time=%ss', segment_seconds)
         args = [
             '-i', input_path,
             '-c:v', 'libx264',

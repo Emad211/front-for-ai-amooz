@@ -7,15 +7,23 @@ transcripts into structured Q&A JSON format.
 
 from __future__ import annotations
 
+import logging
 import os
 from typing import Any, Optional, Tuple
 
 from google import genai
+from google.genai import types
 
 from apps.commons.llm_prompts import PROMPTS
 from apps.commons.llm_provider import preferred_provider
 
 from .json_utils import extract_json_object
+
+logger = logging.getLogger(__name__)
+
+# Per-call timeout for LLM generate_content (seconds).
+# Default httpx timeout is only 5s — too short for larger payloads.
+_LLM_TIMEOUT_SECONDS = int(os.getenv('LLM_TIMEOUT_SECONDS', '6000000'))
 
 
 def _get_env(name: str) -> str:
@@ -29,13 +37,30 @@ def _get_clients() -> Tuple[Optional[genai.Client], Optional[genai.Client]]:
     avalai_base_url = _get_env('AVALAI_BASE_URL')
 
     provider = preferred_provider()
+    logger.info(
+        'Exam prep LLM init: provider=%s gemini_key=%s avalai_key=%s avalai_url=%s',
+        provider,
+        'set' if gemini_api_key else 'MISSING',
+        'set' if avalai_api_key else 'MISSING',
+        avalai_base_url or 'DEFAULT',
+    )
 
-    gemini_client = genai.Client(api_key=gemini_api_key) if gemini_api_key and provider != 'avalai' else None
+    _client_timeout_ms = _LLM_TIMEOUT_SECONDS * 1000
+
+    gemini_client = None
+    if gemini_api_key and provider != 'avalai':
+        gemini_client = genai.Client(
+            api_key=gemini_api_key,
+            http_options={'timeout': _client_timeout_ms},
+        )
 
     avalai_client: Optional[genai.Client] = None
     if avalai_api_key and provider != 'gemini':
-        http_options = {'base_url': avalai_base_url} if avalai_base_url else None
-        avalai_client = genai.Client(api_key=avalai_api_key, http_options=http_options)
+        avalai_http: dict = {'timeout': _client_timeout_ms}
+        if avalai_base_url:
+            avalai_http['base_url'] = avalai_base_url
+        avalai_client = genai.Client(api_key=avalai_api_key, http_options=avalai_http)
+        logger.info('Exam prep AvalAI client created with base_url=%s timeout=%ds', avalai_base_url, _LLM_TIMEOUT_SECONDS)
 
     return gemini_client, avalai_client
 
@@ -131,7 +156,14 @@ def extract_exam_prep_structure(*, transcript_markdown: str) -> tuple[dict[str, 
                 return None
 
         # Attempt 1: normal generation
-        resp = client.models.generate_content(model=model, contents=contents)
+        resp = client.models.generate_content(
+            model=model,
+            contents=contents,
+            config=types.GenerateContentConfig(
+                # google-genai SDK expects timeout in MILLISECONDS
+                http_options={'timeout': _LLM_TIMEOUT_SECONDS * 1000},
+            ),
+        )
         txt = _extract_text(resp)
         obj = _attempt_parse(txt)
         if obj is not None:
@@ -161,7 +193,13 @@ def extract_exam_prep_structure(*, transcript_markdown: str) -> tuple[dict[str, 
                 "You are a strict JSON repair tool.",
                 template + "INVALID_OUTPUT:\n" + (txt or ''),
             ]
-            resp2 = client.models.generate_content(model=model, contents=repair_contents)
+            resp2 = client.models.generate_content(
+                model=model,
+                contents=repair_contents,
+                config=types.GenerateContentConfig(
+                    http_options={'timeout': _LLM_TIMEOUT_SECONDS * 1000},
+                ),
+            )
             txt2 = _extract_text(resp2)
             obj2 = _attempt_parse(txt2)
             if obj2 is not None:
