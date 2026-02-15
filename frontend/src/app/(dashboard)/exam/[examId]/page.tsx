@@ -22,8 +22,9 @@ export default function ExamPage() {
     const router = useRouter();
     const rawExamId = (params as any)?.examId as string | string[] | undefined;
     const examId = Array.isArray(rawExamId) ? rawExamId[0] : rawExamId;
-    const { exam, currentQuestion, isChatOpen, toggleChat, isLoading, error, isSubmitting, isFinalized, answers, goToNextQuestion, goToPrevQuestion, submitAnswer, finalizeExam } = useExam(examId);
+    const { exam, currentQuestion, isChatOpen, toggleChat, isLoading, error, isSubmitting, isFinalized, isCheckingAnswer, answers, feedbacks, goToNextQuestion, goToPrevQuestion, submitAnswer, checkAnswer, finalizeExam } = useExam(examId);
     const selectedOptionLabel = currentQuestion ? answers[currentQuestion.id] : undefined;
+    const currentFeedback = currentQuestion ? (feedbacks[currentQuestion.id] ?? null) : null;
     const unansweredCount = React.useMemo(() => {
         const list = exam?.questionsList || [];
         return list.filter((q) => !answers[String(q.id)]).length;
@@ -110,11 +111,14 @@ export default function ExamPage() {
                             onNext={goToNextQuestion}
                             onPrev={goToPrevQuestion}
                             onSubmit={submitAnswer}
+                            onCheckAnswer={checkAnswer}
                             onFinalize={handleFinalize}
                             isSubmitting={isSubmitting}
                             isFinalized={isFinalized}
+                            isCheckingAnswer={isCheckingAnswer}
                             selectedOptionId={selectedOptionLabel}
                             unansweredCount={unansweredCount}
+                            feedback={currentFeedback}
                         />
                     </div>
                 </div>

@@ -3,10 +3,11 @@
 import { Button } from '@/components/ui/button';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Label } from '@/components/ui/label';
-import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { ChevronLeft, ChevronRight, CheckCircle2, XCircle, Loader2, Lightbulb, MessageCircle } from 'lucide-react';
 import { Question } from '@/types';
 import { MarkdownWithMath } from '@/components/content/markdown-with-math';
 import { toPersianOptionLabel } from '@/lib/persian-option-label';
+import type { QuestionFeedback } from '@/hooks/use-exam';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -25,11 +26,14 @@ interface QuestionContentProps {
   onNext: () => void;
   onPrev: () => void;
   onSubmit: (questionId: string, answerId: string) => void;
+  onCheckAnswer: (questionId: string) => Promise<QuestionFeedback | null>;
   onFinalize: () => void | Promise<void>;
   isSubmitting?: boolean;
   isFinalized?: boolean;
+  isCheckingAnswer?: boolean;
   selectedOptionId?: string;
   unansweredCount?: number;
+  feedback?: QuestionFeedback | null;
 }
 
 /** Map question type to a Persian badge label. */
@@ -64,11 +68,14 @@ export const QuestionContent = ({
   onNext,
   onPrev,
   onSubmit,
+  onCheckAnswer,
   onFinalize,
   isSubmitting,
   isFinalized,
+  isCheckingAnswer,
   selectedOptionId,
   unansweredCount,
+  feedback,
 }: QuestionContentProps) => {
   if (!question) return null;
 
@@ -76,6 +83,10 @@ export const QuestionContent = ({
   const qType = question.type || 'multiple_choice';
   const displayText =
     qType === 'fill_blank' ? renderBlankPlaceholders(question.text) : question.text;
+
+  const hasAnswer = Boolean(selectedOptionId?.trim());
+  const alreadyCorrect = feedback?.isCorrect === true;
+  const canCheck = hasAnswer && !alreadyCorrect && !isFinalized && !isCheckingAnswer;
 
   return (
     <section className="flex-1 flex flex-col justify-center items-center gap-8 p-4 sm:p-6 md:p-8 w-full min-h-full">
@@ -89,6 +100,11 @@ export const QuestionContent = ({
             {badge && (
               <span className={`text-xs font-semibold px-2 py-1 rounded-md ${badge.color}`}>
                 {badge.label}
+              </span>
+            )}
+            {feedback && feedback.attempts > 0 && (
+              <span className="text-xs font-semibold px-2 py-1 rounded-md bg-secondary text-muted-foreground">
+                {feedback.attempts} تلاش
               </span>
             )}
           </div>
@@ -108,7 +124,7 @@ export const QuestionContent = ({
               onValueChange={(value) => onSubmit(question.id, value)}
               dir="rtl"
               className="grid grid-cols-2 gap-3 sm:gap-4"
-              disabled={Boolean(isSubmitting) || Boolean(isFinalized)}
+              disabled={Boolean(isSubmitting) || Boolean(isFinalized) || alreadyCorrect}
             >
               {[
                 { value: 'صحیح', label: 'صحیح ✓' },
@@ -132,7 +148,7 @@ export const QuestionContent = ({
               <textarea
                 value={selectedOptionId || ''}
                 onChange={(e) => onSubmit(question.id, e.target.value)}
-                disabled={Boolean(isSubmitting) || Boolean(isFinalized)}
+                disabled={Boolean(isSubmitting) || Boolean(isFinalized) || alreadyCorrect}
                 className="w-full min-h-20 rounded-lg border border-border bg-background p-3 text-sm text-foreground resize-y"
                 placeholder="پاسخ خود را برای جای خالی بنویسید..."
                 dir="rtl"
@@ -146,7 +162,7 @@ export const QuestionContent = ({
               <textarea
                 value={selectedOptionId || ''}
                 onChange={(e) => onSubmit(question.id, e.target.value)}
-                disabled={Boolean(isSubmitting) || Boolean(isFinalized)}
+                disabled={Boolean(isSubmitting) || Boolean(isFinalized) || alreadyCorrect}
                 className="w-full min-h-28 rounded-lg border border-border bg-background p-3 text-sm text-foreground resize-y"
                 placeholder="پاسخ تشریحی خود را بنویسید..."
                 dir="rtl"
@@ -162,7 +178,7 @@ export const QuestionContent = ({
               onValueChange={(value) => onSubmit(question.id, value)}
               dir="rtl"
               className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4"
-              disabled={Boolean(isSubmitting) || Boolean(isFinalized)}
+              disabled={Boolean(isSubmitting) || Boolean(isFinalized) || alreadyCorrect}
             >
               {question.options.map((option, optionIndex) => {
                 const displayLabel = toPersianOptionLabel(option.label, optionIndex);
@@ -188,6 +204,75 @@ export const QuestionContent = ({
               })}
             </RadioGroup>
           )}
+
+          {/* ===== PER-QUESTION CHECK BUTTON ===== */}
+          {!isFinalized && (
+            <div className="flex justify-center mt-2">
+              <Button
+                onClick={() => void onCheckAnswer(question.id)}
+                disabled={!canCheck}
+                className="px-6"
+                variant={alreadyCorrect ? 'outline' : 'default'}
+              >
+                {isCheckingAnswer ? (
+                  <>
+                    <Loader2 className="ml-2 h-4 w-4 animate-spin" />
+                    در حال بررسی...
+                  </>
+                ) : alreadyCorrect ? (
+                  <>
+                    <CheckCircle2 className="ml-2 h-4 w-4 text-green-500" />
+                    پاسخ صحیح
+                  </>
+                ) : (
+                  'ثبت و بررسی پاسخ'
+                )}
+              </Button>
+            </div>
+          )}
+
+          {/* ===== FEEDBACK AREA ===== */}
+          {feedback && !isFinalized && (
+            <div className={`rounded-xl border p-4 mt-2 ${
+              feedback.isCorrect
+                ? 'bg-green-500/10 border-green-500/30'
+                : 'bg-amber-500/10 border-amber-500/30'
+            }`} dir="rtl">
+              {feedback.isCorrect ? (
+                <div className="flex items-start gap-3">
+                  <CheckCircle2 className="h-5 w-5 text-green-500 flex-shrink-0 mt-0.5" />
+                  <div className="space-y-1">
+                    <p className="text-sm font-semibold text-green-600">آفرین! پاسخ شما صحیح است.</p>
+                    <p className="text-xs text-muted-foreground">
+                      تعداد تلاش: {feedback.attempts} — امتیاز: {feedback.scoreForQuestion}
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <div className="flex items-start gap-3">
+                    <XCircle className="h-5 w-5 text-amber-500 flex-shrink-0 mt-0.5" />
+                    <div className="space-y-1">
+                      <p className="text-sm font-semibold text-amber-600">پاسخ شما صحیح نیست. دوباره تلاش کنید!</p>
+                      <p className="text-xs text-muted-foreground">تلاش شماره {feedback.attempts}</p>
+                    </div>
+                  </div>
+                  {feedback.hint && (
+                    <div className="flex items-start gap-2 bg-background/50 rounded-lg p-3">
+                      <Lightbulb className="h-4 w-4 text-amber-400 flex-shrink-0 mt-0.5" />
+                      <p className="text-sm leading-6">{feedback.hint}</p>
+                    </div>
+                  )}
+                  {feedback.encouragement && (
+                    <div className="flex items-start gap-2 bg-background/50 rounded-lg p-3">
+                      <MessageCircle className="h-4 w-4 text-blue-400 flex-shrink-0 mt-0.5" />
+                      <p className="text-sm leading-6 text-muted-foreground">{feedback.encouragement}</p>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         <div className="mt-6 flex flex-col sm:flex-row gap-4 justify-between items-center border-t border-border pt-4">
@@ -208,7 +293,7 @@ export const QuestionContent = ({
                 className="w-full sm:w-auto bg-primary text-primary-foreground hover:bg-primary/90"
                 disabled={Boolean(isSubmitting) || Boolean(isFinalized)}
               >
-                {isFinalized ? 'آزمون ثبت نهایی شد' : isSubmitting ? 'در حال ثبت...' : 'ثبت پاسخ و پایان آزمون'}
+                {isFinalized ? 'آزمون ثبت نهایی شد' : isSubmitting ? 'در حال ثبت...' : 'پایان آزمون'}
                 <ChevronLeft className="mr-2 h-4 w-4" />
               </Button>
             </AlertDialogTrigger>

@@ -599,6 +599,8 @@ class StudentExamPrepResultItemSerializer(serializers.Serializer):
     question_id = serializers.CharField()
     selected_label = serializers.CharField(allow_blank=True)
     is_correct = serializers.BooleanField()
+    attempts = serializers.IntegerField(required=False, default=0)
+    score_for_question = serializers.IntegerField(required=False, default=0)
 
 
 class StudentExamPrepResultResponseSerializer(serializers.Serializer):
@@ -608,3 +610,20 @@ class StudentExamPrepResultResponseSerializer(serializers.Serializer):
     total_questions = serializers.IntegerField()
     answers = serializers.DictField(child=serializers.CharField(allow_blank=True))
     items = StudentExamPrepResultItemSerializer(many=True)
+
+
+# ---------------------------------------------------------------------------
+# Per-question check-answer (exam prep)
+# ---------------------------------------------------------------------------
+
+class StudentExamPrepCheckAnswerRequestSerializer(serializers.Serializer):
+    question_id = serializers.CharField()
+    answer = serializers.CharField(allow_blank=True)
+
+
+class StudentExamPrepCheckAnswerResponseSerializer(serializers.Serializer):
+    is_correct = serializers.BooleanField()
+    attempts = serializers.IntegerField()
+    hint = serializers.CharField(allow_blank=True, required=False, default='')
+    encouragement = serializers.CharField(allow_blank=True, required=False, default='')
+    score_for_question = serializers.IntegerField(required=False, default=0)

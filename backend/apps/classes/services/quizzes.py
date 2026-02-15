@@ -198,3 +198,62 @@ def generate_final_exam_pool(*, combined_content: str, pool_size: int = 12) -> t
         raise last_error
 
     raise RuntimeError('No LLM credentials configured. Set GEMINI_API_KEY and/or AVALAI_API_KEY.')
+
+
+# ---------------------------------------------------------------------------
+# Hint generation for per-question feedback (exam prep)
+# ---------------------------------------------------------------------------
+
+def generate_answer_hint(
+    *,
+    question: str,
+    reference_answer: str,
+    student_answer: str,
+    attempt_number: int = 1,
+) -> tuple[dict[str, Any], str, str]:
+    """Return (hint_obj, provider, model_name).
+
+    hint_obj schema: {"hint": str, "encouragement": str}
+    Uses the 'exam_prep_hint' prompt template.
+    """
+
+    model = _get_env('QUIZ_MODEL') or _get_env('MODEL_NAME')
+    if not model:
+        model = 'models/gemini-2.5-flash'
+
+    prompt = _render_prompt(
+        PROMPTS['exam_prep_hint']['default'],
+        question=question,
+        reference_answer=reference_answer,
+        student_answer=student_answer,
+        attempt_number=attempt_number,
+    )
+    contents = [prompt]
+
+    gemini_client, avalai_client = _get_clients()
+    last_error: Optional[Exception] = None
+
+    if gemini_client is not None:
+        try:
+            resp = gemini_client.models.generate_content(model=model, contents=contents)
+            obj = extract_json_object(_extract_text(resp))
+            if not isinstance(obj, dict):
+                obj = {'hint': str(obj), 'encouragement': ''}
+            return obj, 'gemini', model
+        except Exception as exc:
+            last_error = exc
+
+    if avalai_client is not None:
+        try:
+            resp = avalai_client.models.generate_content(model=model, contents=contents)
+            obj = extract_json_object(_extract_text(resp))
+            if not isinstance(obj, dict):
+                obj = {'hint': str(obj), 'encouragement': ''}
+            return obj, 'avalai', model
+        except Exception as exc:
+            last_error = exc
+
+    if last_error is not None:
+        raise last_error
+
+    raise RuntimeError('No LLM credentials configured. Set GEMINI_API_KEY and/or AVALAI_API_KEY.')

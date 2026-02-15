@@ -1,6 +1,15 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { DashboardService } from '@/services/dashboard-service';
 import { Exam, Question } from '@/types';
+
+/** Feedback returned after checking a single answer. */
+export interface QuestionFeedback {
+  isCorrect: boolean;
+  attempts: number;
+  hint: string;
+  encouragement: string;
+  scoreForQuestion: number;
+}
 
 type ExamService = {
   getExam: (examId: string) => Promise<Exam>;
@@ -9,6 +18,13 @@ type ExamService = {
     correct_count: number;
     total_questions: number;
     finalized: boolean;
+  }>;
+  checkExamPrepAnswer: (examId: string, questionId: string, answer: string) => Promise<{
+    is_correct: boolean;
+    attempts: number;
+    hint: string;
+    encouragement: string;
+    score_for_question: number;
   }>;
 };
 
@@ -22,6 +38,10 @@ export const useExam = (examId?: string, service: ExamService = DashboardService
   const answersRef = useRef<Record<string, string>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isFinalized, setIsFinalized] = useState(false);
+  const [isCheckingAnswer, setIsCheckingAnswer] = useState(false);
+
+  // Per-question feedback state: { [questionId]: QuestionFeedback }
+  const [feedbacks, setFeedbacks] = useState<Record<string, QuestionFeedback>>({});
 
   useEffect(() => {
     const fetchExam = async () => {
@@ -44,6 +64,7 @@ export const useExam = (examId?: string, service: ExamService = DashboardService
         setAnswers({});
         answersRef.current = {};
         setIsFinalized(false);
+        setFeedbacks({});
       } catch (err) {
         console.error(err);
         setError('خطا در دریافت اطلاعات آزمون');
@@ -73,15 +94,47 @@ export const useExam = (examId?: string, service: ExamService = DashboardService
     }
   };
 
-  const submitAnswer = async (questionId: string, answerId: string) => {
-    // Selection should be local-only.
-    // We only send answers to backend when the user explicitly finalizes the exam.
+  /** Update local answer selection (no network call). */
+  const submitAnswer = useCallback(async (questionId: string, answerId: string) => {
     if (isFinalized) return;
+    // Don't allow changing answer if already correct
+    const fb = feedbacks[questionId];
+    if (fb?.isCorrect) return;
     answersRef.current = { ...answersRef.current, [questionId]: answerId };
-    setAnswers(answersRef.current);
-  };
+    setAnswers(prev => ({ ...prev, [questionId]: answerId }));
+  }, [isFinalized, feedbacks]);
 
-  const finalizeExam = async () => {
+  /** Submit a single question answer for checking and get feedback. */
+  const checkAnswer = useCallback(async (questionId: string): Promise<QuestionFeedback | null> => {
+    if (!examId || isFinalized || isCheckingAnswer) return null;
+    const answer = answersRef.current[questionId];
+    if (!answer?.trim()) return null;
+
+    // Don't re-check if already correct
+    const existing = feedbacks[questionId];
+    if (existing?.isCorrect) return existing;
+
+    setIsCheckingAnswer(true);
+    try {
+      const result = await service.checkExamPrepAnswer(examId, questionId, answer);
+      const fb: QuestionFeedback = {
+        isCorrect: result.is_correct,
+        attempts: result.attempts,
+        hint: result.hint || '',
+        encouragement: result.encouragement || '',
+        scoreForQuestion: result.score_for_question,
+      };
+      setFeedbacks(prev => ({ ...prev, [questionId]: fb }));
+      return fb;
+    } catch (err) {
+      console.error('Check answer failed:', err);
+      return null;
+    } finally {
+      setIsCheckingAnswer(false);
+    }
+  }, [examId, isFinalized, isCheckingAnswer, feedbacks, service]);
+
+  const finalizeExam = useCallback(async () => {
     if (!examId || isFinalized) return;
     setIsSubmitting(true);
     try {
@@ -99,7 +152,7 @@ export const useExam = (examId?: string, service: ExamService = DashboardService
     } finally {
       setIsSubmitting(false);
     }
-  };
+  }, [examId, isFinalized, service]);
 
   return {
     exam,
@@ -110,10 +163,13 @@ export const useExam = (examId?: string, service: ExamService = DashboardService
     error,
     isSubmitting,
     isFinalized,
+    isCheckingAnswer,
     answers,
+    feedbacks,
     goToNextQuestion,
     goToPrevQuestion,
     submitAnswer,
+    checkAnswer,
     finalizeExam,
   };
 };

@@ -16,7 +16,7 @@ type ExamPrepResult = {
   correct_count: number;
   total_questions: number;
   answers: Record<string, string>;
-  items: { question_id: string; selected_label: string; is_correct: boolean }[];
+  items: { question_id: string; selected_label: string; is_correct: boolean; attempts: number; score_for_question: number }[];
 };
 
 export default function ExamResultPage() {
@@ -192,6 +192,9 @@ export default function ExamResultPage() {
                 : { label: 'غلط', className: 'bg-red-500/15 text-red-600 border-red-500/30' }
               : { label: 'نامشخص', className: 'bg-secondary text-secondary-foreground' };
 
+            const attempts = it.attempts || 0;
+            const qScore = it.score_for_question || 0;
+
             return (
               <div key={it.question_id} className="bg-background border border-border rounded-xl p-4">
                 <div className="flex items-start justify-between gap-3">
@@ -199,7 +202,19 @@ export default function ExamResultPage() {
                     <div className="text-sm font-semibold">سوال {number}</div>
                     {qText ? <MarkdownWithMath markdown={qText} className="text-sm text-muted-foreground" renderKey={`res-q-${it.question_id}`} /> : null}
                   </div>
-                  <span className={["text-xs px-2 py-1 rounded-md border", status.className].join(' ')}>{status.label}</span>
+                  <div className="flex items-center gap-2">
+                    {attempts > 0 && (
+                      <span className="text-xs px-2 py-1 rounded-md border bg-secondary text-secondary-foreground">
+                        {attempts} تلاش
+                      </span>
+                    )}
+                    {result.finalized && attempts > 0 && (
+                      <span className="text-xs px-2 py-1 rounded-md border bg-secondary text-secondary-foreground">
+                        امتیاز: {qScore}
+                      </span>
+                    )}
+                    <span className={["text-xs px-2 py-1 rounded-md border", status.className].join(' ')}>{status.label}</span>
+                  </div>
                 </div>
 
                 <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">

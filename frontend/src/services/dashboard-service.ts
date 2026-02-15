@@ -423,6 +423,27 @@ export const DashboardService = {
     });
   },
 
+  checkExamPrepAnswer: async (examId: string, questionId: string, answer: string) => {
+    if (!RAW_API_URL) {
+      throw new Error('NEXT_PUBLIC_API_URL تنظیم نشده است.');
+    }
+    const url = `${API_URL}/classes/student/exam-preps/${examId}/check-answer/`;
+    return requestJson<{
+      is_correct: boolean;
+      attempts: number;
+      hint: string;
+      encouragement: string;
+      score_for_question: number;
+    }>(url, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${getAccessToken()}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ question_id: questionId, answer }),
+    });
+  },
+
   getExamPrepResult: async (examId: string) => {
     if (!RAW_API_URL) {
       throw new Error('NEXT_PUBLIC_API_URL تنظیم نشده است.');
@@ -434,7 +455,7 @@ export const DashboardService = {
       correct_count: number;
       total_questions: number;
       answers: Record<string, string>;
-      items: { question_id: string; selected_label: string; is_correct: boolean }[];
+      items: { question_id: string; selected_label: string; is_correct: boolean; attempts: number; score_for_question: number }[];
     }>(url, {
       method: 'GET',
       headers: {

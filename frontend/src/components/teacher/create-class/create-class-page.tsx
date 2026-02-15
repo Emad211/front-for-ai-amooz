@@ -83,7 +83,7 @@ function getClassPipelineMessage(status?: string | null) {
     case 'recapped':
       return { message: 'مرحله ۵ از ۵ تمام شد.', isDone: true, isFailed: false } as const;
     default:
-      return { message: `وضعیت: ${status}`, isDone: false, isFailed: false } as const;
+      return { message: 'در حال پردازش…', isDone: false, isFailed: false } as const;
   }
 }
 
@@ -96,15 +96,15 @@ function getExamPrepPipelineMessage(status?: string | null) {
   }
   switch (status) {
     case 'exam_transcribing':
-      return { message: 'در حال انجام مرحله ۱ از ۳ (ترنسکریپت)…', isDone: false, isFailed: false } as const;
+      return { message: 'در حال پردازش فایل…', isDone: false, isFailed: false } as const;
     case 'exam_transcribed':
-      return { message: 'مرحله ۱ از ۳ تمام شد.', isDone: false, isFailed: false } as const;
+      return { message: 'پردازش فایل تمام شد.', isDone: false, isFailed: false } as const;
     case 'exam_structuring':
-      return { message: 'در حال انجام مرحله ۲ از ۳ (استخراج سوالات)…', isDone: false, isFailed: false } as const;
+      return { message: 'در حال آماده‌سازی سوالات…', isDone: false, isFailed: false } as const;
     case 'exam_structured':
-      return { message: 'مرحله ۲ از ۳ تمام شد. اکنون می‌توانید دانش‌آموزان را دعوت کنید.', isDone: true, isFailed: false } as const;
+      return { message: 'آماده‌سازی کامل شد. اکنون می‌توانید دانش‌آموزان را دعوت کنید.', isDone: true, isFailed: false } as const;
     default:
-      return { message: `وضعیت: ${status}`, isDone: false, isFailed: false } as const;
+      return { message: 'در حال پردازش…', isDone: false, isFailed: false } as const;
   }
 }
 
@@ -208,7 +208,7 @@ export function CreateClassPage() {
         pollFailures.current += 1;
         if (pollFailures.current >= 4) {
           stopPolling();
-          setPipelineError('ارتباط با سرور برای دریافت وضعیت پایپ‌لاین برقرار نشد.');
+          setPipelineError('ارتباط با سرور برای دریافت وضعیت پردازش برقرار نشد.');
           return;
         }
         pollTimer.current = window.setTimeout(() => void tick(), 2000);
@@ -272,7 +272,7 @@ export function CreateClassPage() {
         pollFailures.current += 1;
         if (pollFailures.current >= 4) {
           stopPolling();
-          setExamPrepPipelineError('ارتباط با سرور برای دریافت وضعیت پایپ‌لاین برقرار نشد.');
+          setExamPrepPipelineError('ارتباط با سرور برای دریافت وضعیت پردازش برقرار نشد.');
           return;
         }
         pollTimer.current = window.setTimeout(() => void tick(), 2000);
@@ -469,7 +469,7 @@ export function CreateClassPage() {
         return;
       }
       if (sessionDetail?.status !== 'recapped') {
-        toast.error('ابتدا پایپ‌لاین را تا مرحله ۵ کامل کنید.');
+        toast.error('ابتدا پردازش را کامل کنید.');
         return;
       }
 
@@ -502,7 +502,7 @@ export function CreateClassPage() {
         return;
       }
       if (examPrepSessionDetail?.status !== 'exam_structured') {
-        toast.error('ابتدا پایپ‌لاین را تا مرحله ۲ کامل کنید.');
+        toast.error('ابتدا پردازش را کامل کنید.');
         return;
       }
 
@@ -559,7 +559,7 @@ export function CreateClassPage() {
       {/* Pipeline Type Selector */}
       <Card className="p-4 sm:p-5 rounded-3xl border-border/40">
         <div className="space-y-3">
-          <Label className="text-sm font-semibold">نوع پایپ‌لاین</Label>
+          <Label className="text-sm font-semibold">نوع پردازش</Label>
           <Tabs
             value={pipelineType}
             onValueChange={(v) => {
@@ -642,10 +642,8 @@ export function CreateClassPage() {
               onClick={startFullPipeline}
             >
               {currentIsPipelineStarting || currentIsPipelineRunning
-                ? 'در حال اجرای پایپ‌لاین…'
-                : pipelineType === 'class'
-                  ? 'اجرای کامل پایپ‌لاین (۱ تا ۵)'
-                  : 'اجرای کامل پایپ‌لاین (۱ تا ۳)'}
+                ? 'در حال پردازش…'
+                : 'شروع پردازش'}
             </Button>
           </div>
 

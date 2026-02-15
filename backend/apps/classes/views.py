@@ -81,13 +81,16 @@ from .serializers import (
     StudentExamPrepDetailSerializer,
     StudentExamPrepSubmitRequestSerializer,
     StudentExamPrepSubmitResponseSerializer,
+    StudentExamPrepCheckAnswerRequestSerializer,
+    StudentExamPrepCheckAnswerResponseSerializer,
+    StudentExamPrepResultResponseSerializer,
 )
 from .services.transcription import transcribe_media_bytes
 from .services.structure import structure_transcript_markdown
 from .services.prerequisites import extract_prerequisites, generate_prerequisite_teaching
 from .services.recap import generate_recap_from_structure, recap_json_to_markdown
 from .services.sync_structure import sync_structure_from_session
-from .services.quizzes import generate_final_exam_pool, generate_section_quiz_questions, grade_open_text_answer
+from .services.quizzes import generate_answer_hint, generate_final_exam_pool, generate_section_quiz_questions, grade_open_text_answer
 from .services.pdf_export import generate_course_pdf
 from .services.exam_prep_structure import extract_exam_prep_structure
 from .services.invite_codes import get_or_create_invite_code_for_phone
@@ -3461,13 +3464,23 @@ class StudentExamPrepSubmitView(APIView):
                 key = str(k).strip()
                 if not key:
                     continue
-                merged_answers[key] = str(v).strip()
+                # Preserve dict-format data from check-answer flow
+                if isinstance(v, dict):
+                    merged_answers[key] = v
+                else:
+                    merged_answers[key] = str(v).strip()
 
         for k, v in answers.items():
             key = str(k).strip()
             if not key:
                 continue
-            merged_answers[key] = str(v).strip()
+            existing = merged_answers.get(key)
+            if isinstance(existing, dict):
+                # Update current_answer in structured data (check-answer flow)
+                existing['current_answer'] = str(v).strip()
+                merged_answers[key] = existing
+            else:
+                merged_answers[key] = str(v).strip()
 
         # Save draft answers without scoring. Only compute score when finalized.
         correct_count = 0
@@ -3482,54 +3495,35 @@ class StudentExamPrepSubmitView(APIView):
             score_total = 0
             score_count = 0
             for qid, correct_label in correct_map.items():
-                selected = (merged_answers.get(qid) or '').strip()
+                q_data = merged_answers.get(qid)
                 qtype = question_type_map.get(qid, 'multiple_choice')
 
-                if qtype == 'multiple_choice':
-                    # Exact label match (e.g. "الف", "ب")
-                    if selected and correct_label and selected == correct_label:
-                        correct_count += 1
-                        score_total += 100
-                    score_count += 1
-
-                elif qtype == 'true_false':
-                    # Normalized true/false comparison
-                    norm_selected = _normalize_true_false_value(selected)
-                    norm_correct = _normalize_true_false_value(correct_label)
-                    if norm_selected and norm_correct and norm_selected == norm_correct:
-                        correct_count += 1
-                        score_total += 100
-                    score_count += 1
-
-                elif qtype in ('fill_blank', 'short_answer'):
-                    # Use LLM grading for fill_blank and short_answer —
-                    # the student's answer may differ in wording but be conceptually correct.
-                    if not selected:
-                        score_count += 1
-                        continue
-                    reference = question_solution_map.get(qid) or correct_label
-                    qtext = question_text_map.get(qid, '')
-                    try:
-                        grading_obj, _prov, _model = grade_open_text_answer(
-                            question=qtext,
-                            reference_answer=reference,
-                            student_answer=selected,
+                # Check-answer flow: data is a dict with attempts/is_correct/score
+                if isinstance(q_data, dict):
+                    q_attempts = int(q_data.get('attempts', 0))
+                    q_is_correct = bool(q_data.get('is_correct', False))
+                    q_score = int(q_data.get('score', 0))
+                    if q_attempts == 0:
+                        # Question was never checked — score it now as legacy
+                        selected = str(q_data.get('current_answer') or '').strip()
+                        q_is_correct, q_score = _finalize_legacy_answer(
+                            selected, correct_label, qtype, qid,
+                            question_text_map, question_solution_map,
                         )
-                        q_score = max(0, min(100, int(grading_obj.get('score_0_100') or 0)))
-                    except Exception:
-                        # Fallback to exact match on LLM failure
-                        logger.warning('LLM grading failed for exam-prep qid=%s, falling back to exact match', qid)
-                        q_score = 100 if selected == correct_label else 0
-                    if q_score >= 60:
+                    if q_is_correct:
                         correct_count += 1
                     score_total += q_score
                     score_count += 1
-
                 else:
-                    # Unknown type → exact label match
-                    if selected and correct_label and selected == correct_label:
+                    # Legacy flow: plain string answer
+                    selected = str(q_data or '').strip() if q_data else ''
+                    q_is_correct, q_score = _finalize_legacy_answer(
+                        selected, correct_label, qtype, qid,
+                        question_text_map, question_solution_map,
+                    )
+                    if q_is_correct:
                         correct_count += 1
-                        score_total += 100
+                    score_total += q_score
                     score_count += 1
 
             score_0_100 = int(round(score_total / score_count)) if score_count > 0 else 0
@@ -3547,6 +3541,251 @@ class StudentExamPrepSubmitView(APIView):
             'finalized': attempt.finalized,
         }
         return Response(StudentExamPrepSubmitResponseSerializer(payload).data)
+
+
+# ---------------------------------------------------------------------------
+# Per-question check-answer endpoint (exam prep)
+# ---------------------------------------------------------------------------
+
+def _score_for_attempts(attempts: int, is_correct: bool) -> int:
+    """Compute score for a single question based on how many attempts it took."""
+    if not is_correct:
+        return 0
+    if attempts <= 1:
+        return 100
+    if attempts == 2:
+        return 75
+    if attempts == 3:
+        return 50
+    return 25
+
+
+def _finalize_legacy_answer(
+    selected: str,
+    correct_label: str,
+    qtype: str,
+    qid: str,
+    question_text_map: dict[str, str],
+    question_solution_map: dict[str, str],
+) -> tuple[bool, int]:
+    """Grade a single answer that wasn't checked via the check-answer flow.
+
+    Returns (is_correct, score_0_100).
+    """
+    if not selected:
+        return False, 0
+
+    if qtype == 'multiple_choice':
+        ok = bool(correct_label and selected == correct_label)
+        return ok, 100 if ok else 0
+
+    if qtype == 'true_false':
+        norm_selected = _normalize_true_false_value(selected)
+        norm_correct = _normalize_true_false_value(correct_label)
+        ok = bool(norm_selected and norm_correct and norm_selected == norm_correct)
+        return ok, 100 if ok else 0
+
+    if qtype in ('fill_blank', 'short_answer'):
+        reference = question_solution_map.get(qid) or correct_label
+        qtext = question_text_map.get(qid, '')
+        try:
+            grading_obj, _prov, _model = grade_open_text_answer(
+                question=qtext,
+                reference_answer=reference,
+                student_answer=selected,
+            )
+            q_score = max(0, min(100, int(grading_obj.get('score_0_100') or 0)))
+        except Exception:
+            logger.warning('LLM grading failed for exam-prep qid=%s, falling back to exact match', qid)
+            q_score = 100 if selected == correct_label else 0
+        return q_score >= 60, q_score
+
+    # Unknown type → exact label match
+    ok = bool(correct_label and selected == correct_label)
+    return ok, 100 if ok else 0
+
+
+class StudentExamPrepCheckAnswerView(APIView):
+    """Check a single answer for an exam-prep question and return feedback/hint."""
+
+    permission_classes = [IsAuthenticated, IsStudentUser]
+
+    @extend_schema(
+        tags=['Student Exam Prep'],
+        summary='Check a single exam prep answer',
+        operation_id='student_exam_prep_check_answer',
+        request=StudentExamPrepCheckAnswerRequestSerializer,
+        responses={200: StudentExamPrepCheckAnswerResponseSerializer, 400: OpenApiTypes.OBJECT, 404: OpenApiTypes.OBJECT},
+    )
+    def post(self, request, session_id: int):
+        user = request.user
+        phone = (getattr(user, 'phone', None) or '').strip()
+        if not phone:
+            return Response({'detail': 'شماره موبایل برای حساب کاربری ثبت نشده است.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        session = ClassCreationSession.objects.filter(
+            id=session_id,
+            is_published=True,
+            pipeline_type=ClassCreationSession.PipelineType.EXAM_PREP,
+            invites__phone=phone,
+        ).first()
+
+        if session is None:
+            return Response({'detail': 'آزمون آمادگی پیدا نشد.'}, status=status.HTTP_404_NOT_FOUND)
+
+        serializer = StudentExamPrepCheckAnswerRequestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        question_id = serializer.validated_data['question_id'].strip()
+        student_answer = serializer.validated_data['answer'].strip()
+
+        if not question_id:
+            return Response({'detail': 'question_id الزامی است.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Parse questions from session
+        questions_list = []
+        try:
+            if session.exam_prep_json:
+                data = json.loads(session.exam_prep_json)
+                if isinstance(data, dict):
+                    normalized, changed = _normalize_exam_prep_questions(data)
+                    if changed:
+                        session.exam_prep_json = json.dumps(normalized, ensure_ascii=False)
+                        session.save(update_fields=['exam_prep_json', 'updated_at'])
+                    data = normalized
+                    exam_prep = data.get('exam_prep', {})
+                    raw_questions = exam_prep.get('questions', [])
+                    if isinstance(raw_questions, list):
+                        questions_list = raw_questions
+        except (json.JSONDecodeError, TypeError):
+            questions_list = []
+
+        # Find the target question
+        target_q = None
+        for q in questions_list:
+            if not isinstance(q, dict):
+                continue
+            qid = str(q.get('question_id') or '').strip()
+            if qid == question_id:
+                target_q = q
+                break
+
+        if target_q is None:
+            return Response({'detail': 'سوال مورد نظر پیدا نشد.'}, status=status.HTTP_404_NOT_FOUND)
+
+        qtype = _infer_exam_prep_question_type(target_q)
+        correct_label = str(target_q.get('correct_option_label') or '').strip()
+        question_text = str(target_q.get('question_text_markdown') or '').strip()
+        reference_answer = str(
+            target_q.get('teacher_solution_markdown')
+            or target_q.get('final_answer_markdown')
+            or target_q.get('correct_option_text_markdown')
+            or correct_label
+        ).strip()
+
+        # Get or create attempt record
+        from apps.classes.models import StudentExamPrepAttempt
+
+        total_questions = sum(1 for q in questions_list if isinstance(q, dict) and str(q.get('question_id') or '').strip())
+        attempt, _created = StudentExamPrepAttempt.objects.get_or_create(
+            session=session,
+            student=user,
+            defaults={'answers': {}, 'score_0_100': 0, 'total_questions': total_questions, 'correct_count': 0},
+        )
+
+        if attempt.finalized:
+            return Response({'detail': 'این آزمون قبلاً ثبت نهایی شده است.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Read current answer data for this question
+        answers_data = attempt.answers if isinstance(attempt.answers, dict) else {}
+        q_data = answers_data.get(question_id, {})
+        if not isinstance(q_data, dict):
+            # Legacy format: plain string answer — reset to new format
+            q_data = {}
+
+        prev_attempts = int(q_data.get('attempts', 0))
+        already_correct = bool(q_data.get('is_correct', False))
+
+        # If already answered correctly, don't allow further attempts
+        if already_correct:
+            return Response(StudentExamPrepCheckAnswerResponseSerializer({
+                'is_correct': True,
+                'attempts': prev_attempts,
+                'hint': '',
+                'encouragement': 'شما قبلاً به این سوال پاسخ صحیح داده‌اید.',
+                'score_for_question': _score_for_attempts(prev_attempts, True),
+            }).data)
+
+        # Determine correctness
+        is_correct = False
+
+        if not student_answer:
+            return Response({'detail': 'پاسخ خالی است.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        if qtype == 'multiple_choice':
+            is_correct = bool(correct_label and student_answer == correct_label)
+        elif qtype == 'true_false':
+            norm_selected = _normalize_true_false_value(student_answer)
+            norm_correct = _normalize_true_false_value(correct_label)
+            is_correct = bool(norm_selected and norm_correct and norm_selected == norm_correct)
+        elif qtype in ('fill_blank', 'short_answer'):
+            try:
+                grading_obj, _prov, _model = grade_open_text_answer(
+                    question=question_text,
+                    reference_answer=reference_answer,
+                    student_answer=student_answer,
+                )
+                q_score = max(0, min(100, int(grading_obj.get('score_0_100') or 0)))
+                is_correct = q_score >= 60
+            except Exception:
+                logger.warning('LLM grading failed for check-answer qid=%s, falling back to exact match', question_id)
+                is_correct = student_answer == correct_label
+        else:
+            is_correct = bool(correct_label and student_answer == correct_label)
+
+        new_attempts = prev_attempts + 1
+
+        # Update answer data in attempt record
+        q_data['current_answer'] = student_answer
+        q_data['attempts'] = new_attempts
+        q_data['is_correct'] = is_correct
+
+        hint_text = ''
+        encouragement_text = ''
+
+        if is_correct:
+            q_data['score'] = _score_for_attempts(new_attempts, True)
+        else:
+            q_data['score'] = 0
+            # Generate hint via LLM
+            try:
+                hint_obj, _prov, _model = generate_answer_hint(
+                    question=question_text,
+                    reference_answer=reference_answer,
+                    student_answer=student_answer,
+                    attempt_number=new_attempts,
+                )
+                hint_text = str(hint_obj.get('hint') or '').strip()
+                encouragement_text = str(hint_obj.get('encouragement') or '').strip()
+            except Exception:
+                logger.warning('LLM hint generation failed for qid=%s', question_id)
+                hint_text = 'پاسخ شما صحیح نیست. دوباره تلاش کنید!'
+                encouragement_text = 'اگر به کمک بیشتری نیاز دارید، می‌توانید با دستیار هوشمند صحبت کنید.'
+
+            q_data['last_hint'] = hint_text
+
+        answers_data[question_id] = q_data
+        attempt.answers = answers_data
+        attempt.total_questions = total_questions
+        attempt.save(update_fields=['answers', 'total_questions', 'updated_at'])
+
+        payload = {
+            'is_correct': is_correct,
+            'attempts': new_attempts,
+            'hint': hint_text,
+            'encouragement': encouragement_text,
+            'score_for_question': _score_for_attempts(new_attempts, is_correct),
+        }
+        return Response(StudentExamPrepCheckAnswerResponseSerializer(payload).data)
 
 
 # ---------------------------------------------------------------------------
@@ -3746,38 +3985,58 @@ class StudentExamPrepResultView(APIView):
                 correct_map[qid] = label
 
         answers_raw = attempt.answers if isinstance(attempt.answers, dict) else {}
-        # Normalize JSONField keys to strings to avoid lookup mismatches.
-        answers: dict[str, str] = {}
-        for k, v in answers_raw.items():
-            key = str(k).strip()
-            if not key:
-                continue
-            answers[key] = str(v).strip()
         total_questions = len(correct_map)
 
         items = []
         correct_count = 0
+        score_total = 0
         for qid, correct_label in correct_map.items():
-            selected = str(answers.get(str(qid).strip()) or '').strip()
-            ok = bool(selected) and bool(correct_label) and selected == correct_label
-            if attempt.finalized and ok:
+            q_data = answers_raw.get(qid)
+            if isinstance(q_data, dict):
+                # New check-answer flow data
+                selected = str(q_data.get('current_answer') or '').strip()
+                q_attempts = int(q_data.get('attempts', 0))
+                q_is_correct = bool(q_data.get('is_correct', False))
+                q_score = int(q_data.get('score', 0))
+            else:
+                # Legacy plain-string answer
+                selected = str(q_data or '').strip() if q_data else ''
+                q_attempts = 0
+                q_is_correct = bool(selected) and bool(correct_label) and selected == correct_label
+                q_score = 100 if q_is_correct else 0
+
+            if attempt.finalized and q_is_correct:
                 correct_count += 1
+            if attempt.finalized:
+                score_total += q_score
+
             items.append(
                 {
                     'question_id': qid,
                     'selected_label': selected,
-                    'is_correct': bool(ok) if attempt.finalized else False,
+                    'is_correct': bool(q_is_correct) if attempt.finalized else False,
+                    'attempts': q_attempts,
+                    'score_for_question': q_score if attempt.finalized else 0,
                 }
             )
 
-        score_0_100 = int(round((correct_count / total_questions) * 100)) if (attempt.finalized and total_questions > 0) else 0
+        score_0_100 = int(round(score_total / total_questions)) if (attempt.finalized and total_questions > 0) else 0
+
+        # Build a flat answers dict for backward compatibility
+        flat_answers: dict[str, str] = {}
+        for qid in correct_map:
+            q_data = answers_raw.get(qid)
+            if isinstance(q_data, dict):
+                flat_answers[qid] = str(q_data.get('current_answer') or '')
+            else:
+                flat_answers[qid] = str(q_data or '') if q_data else ''
 
         payload = {
             'finalized': bool(attempt.finalized),
             'score_0_100': score_0_100,
             'correct_count': correct_count,
             'total_questions': total_questions,
-            'answers': {str(k): str(v) for k, v in answers.items()},
+            'answers': flat_answers,
             'items': items,
         }
         return Response(StudentExamPrepResultResponseSerializer(payload).data, status=status.HTTP_200_OK)
