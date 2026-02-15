@@ -141,10 +141,25 @@ export function FinalExam({ courseId, onProgressUpdate }: { courseId: string; on
       <div className="space-y-5">
         {exam.questions.map((q, idx) => {
           const value = answers[q.id] ?? '';
+          const qType = q.type || (Array.isArray(q.options) && q.options.length > 0 ? 'multiple_choice' : 'short_answer');
           return (
             <div key={q.id} className="border border-border rounded-xl p-4 bg-background/20">
               <div className="flex items-center justify-between gap-2 flex-wrap mb-2">
-                <div className="text-sm font-bold text-foreground">سوال {idx + 1}</div>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-bold text-foreground">سوال {idx + 1}</span>
+                  {qType === 'true_false' && (
+                    <span className="text-xs font-semibold px-2 py-0.5 rounded-md bg-blue-500/15 text-blue-400">صحیح / غلط</span>
+                  )}
+                  {qType === 'fill_blank' && (
+                    <span className="text-xs font-semibold px-2 py-0.5 rounded-md bg-amber-500/15 text-amber-400">جای خالی</span>
+                  )}
+                  {qType === 'short_answer' && (
+                    <span className="text-xs font-semibold px-2 py-0.5 rounded-md bg-purple-500/15 text-purple-400">تشریحی</span>
+                  )}
+                  {qType === 'multiple_choice' && (
+                    <span className="text-xs font-semibold px-2 py-0.5 rounded-md bg-green-500/15 text-green-400">چندگزینه‌ای</span>
+                  )}
+                </div>
                 {typeof q.points === 'number' && (
                   <div className="text-xs text-muted-foreground">امتیاز: {q.points}</div>
                 )}
@@ -154,9 +169,39 @@ export function FinalExam({ courseId, onProgressUpdate }: { courseId: string; on
                 <MarkdownWithMath markdown={q.question} />
               </div>
 
-              {Array.isArray(q.options) && q.options.length > 0 ? (
+              {/* True / False */}
+              {qType === 'true_false' && (
+                <div className="mt-3 grid grid-cols-2 gap-3">
+                  {[
+                    { val: 'صحیح', label: 'صحیح ✓' },
+                    { val: 'غلط', label: 'غلط ✗' },
+                  ].map((tf) => (
+                    <label
+                      key={tf.val}
+                      className={`flex items-center justify-center gap-2 p-3 rounded-lg border cursor-pointer text-sm font-semibold ${
+                        value === tf.val
+                          ? 'border-primary bg-primary/10 text-primary'
+                          : 'border-border bg-background hover:bg-secondary/50'
+                      }`}
+                    >
+                      <input
+                        type="radio"
+                        name={`q_${q.id}`}
+                        value={tf.val}
+                        checked={value === tf.val}
+                        onChange={() => setAnswers((prev) => ({ ...prev, [q.id]: tf.val }))}
+                        className="sr-only"
+                      />
+                      {tf.label}
+                    </label>
+                  ))}
+                </div>
+              )}
+
+              {/* Multiple choice */}
+              {(qType === 'multiple_choice' || (!q.type && Array.isArray(q.options) && q.options.length > 0)) && qType !== 'true_false' && (
                 <div className="mt-3 space-y-2">
-                  {q.options.map((opt) => (
+                  {(q.options ?? []).map((opt) => (
                     <label key={opt} className="flex items-start gap-2 cursor-pointer">
                       <input
                         type="radio"
@@ -166,16 +211,22 @@ export function FinalExam({ courseId, onProgressUpdate }: { courseId: string; on
                         onChange={() => setAnswers((prev) => ({ ...prev, [q.id]: opt }))}
                         className="mt-1"
                       />
-                      <span className="text-sm text-foreground">{opt}</span>
+                      <span className="text-sm text-foreground">
+                        <MarkdownWithMath markdown={opt} />
+                      </span>
                     </label>
                   ))}
                 </div>
-              ) : (
+              )}
+
+              {/* Fill blank / Short answer / fallback textarea */}
+              {(qType === 'fill_blank' || qType === 'short_answer' || (!q.type && (!q.options || q.options.length === 0))) && qType !== 'true_false' && qType !== 'multiple_choice' && (
                 <textarea
                   value={value}
                   onChange={(e) => setAnswers((prev) => ({ ...prev, [q.id]: e.target.value }))}
                   className="mt-3 w-full min-h-24 rounded-lg border border-border bg-background p-3 text-sm text-foreground"
-                  placeholder="پاسخ خود را بنویسید..."
+                  placeholder={qType === 'fill_blank' ? 'پاسخ خود را برای جای خالی بنویسید...' : 'پاسخ خود را بنویسید...'}
+                  dir="rtl"
                 />
               )}
             </div>
@@ -207,8 +258,15 @@ export function FinalExam({ courseId, onProgressUpdate }: { courseId: string; on
           <div className="mt-4 space-y-3">
             {submitResult.per_question.map((pq: any) => (
               <div key={pq.id} className="text-sm text-muted-foreground border-t border-border/50 pt-3">
-                <div className="font-bold text-foreground">{pq.question}</div>
-                {pq.feedback && <div className="mt-1">بازخورد: {pq.feedback}</div>}
+                <div className="font-bold text-foreground">
+                  <MarkdownWithMath markdown={pq.question} />
+                </div>
+                {pq.feedback && (
+                  <div className="mt-1">
+                    <span className="font-semibold">بازخورد: </span>
+                    <MarkdownWithMath markdown={pq.feedback} />
+                  </div>
+                )}
               </div>
             ))}
           </div>

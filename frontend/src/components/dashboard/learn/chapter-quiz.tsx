@@ -254,8 +254,15 @@ export function ChapterQuiz({
           <div className="mt-4 space-y-3">
             {submitResult.per_question.map((pq: any) => (
               <div key={pq.id} className="text-sm text-muted-foreground border-t border-border/50 pt-3">
-                <div className="font-bold text-foreground">{pq.question}</div>
-                {pq.feedback && <div className="mt-1">بازخورد: {pq.feedback}</div>}
+                <div className="font-bold text-foreground">
+                  <MarkdownWithMath markdown={pq.question} />
+                </div>
+                {pq.feedback && (
+                  <div className="mt-1">
+                    <span className="font-semibold">بازخورد: </span>
+                    <MarkdownWithMath markdown={pq.feedback} />
+                  </div>
+                )}
               </div>
             ))}
           </div>

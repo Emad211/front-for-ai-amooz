@@ -136,9 +136,16 @@ function getChatErrorInfo(error: unknown, fallbackTitle: string): ChatErrorInfo 
 }
 
 function normalizeChatResponse(resp: ChatApiResponse | null) {
-  const content = String(resp?.content ?? '').trim();
+  let content = String(resp?.content ?? '').trim();
   let suggestions = Array.isArray(resp?.suggestions) ? resp?.suggestions : [];
 
+  // Strip markdown code fences: ```json ... ``` or ``` ... ```
+  const fenceMatch = content.match(/^```(?:json)?\s*\n?([\s\S]*?)\n?\s*```$/);
+  if (fenceMatch) {
+    content = fenceMatch[1].trim();
+  }
+
+  // Unwrap double-wrapped JSON where content itself is a JSON object
   if (content.startsWith('{') && content.includes('"content"')) {
     try {
       const parsed = JSON.parse(content);

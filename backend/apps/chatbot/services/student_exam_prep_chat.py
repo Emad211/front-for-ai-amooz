@@ -99,6 +99,41 @@ def _history_for_prompt(memory: MemoryService) -> str:
     return history_str or 'اولین پیام'
 
 
+import re as _re
+
+def _unwrap_raw_content(content: str, suggestions: list[str]):
+    """Unwrap double-wrapped JSON or markdown-fenced JSON in content.
+
+    Returns either a plain string or a tuple (content, suggestions) if
+    suggestions were also found inside the nested JSON.
+    """
+    if not content:
+        return content
+
+    text = content.strip()
+
+    # Strip markdown code fences: ```json ... ``` or ``` ... ```
+    fence_match = _re.match(r'^```(?:json)?\s*\n?(.*?)\n?\s*```$', text, _re.DOTALL)
+    if fence_match:
+        text = fence_match.group(1).strip()
+
+    # Try to parse as JSON if it looks like a dict
+    if text.startswith('{') and 'content' in text:
+        try:
+            nested = json.loads(text)
+        except Exception:
+            nested = None
+        if isinstance(nested, dict):
+            nested_content = _safe_str(nested.get('content'))
+            if nested_content:
+                nested_suggestions = nested.get('suggestions')
+                if isinstance(nested_suggestions, list):
+                    return nested_content, [s for s in nested_suggestions if _safe_str(s)]
+                return nested_content
+
+    return content
+
+
 def describe_exam_prep_handwriting(*, question_context: str, user_message: str, image_bytes: bytes, mime_type: str) -> str:
     prompt = _safe_template_replace(
         PROMPTS['exam_prep_handwriting_vision']['default'],
@@ -169,24 +204,21 @@ def handle_exam_prep_message(
     suggestions_raw = obj.get('suggestions')
     suggestions = [s for s in (suggestions_raw or []) if _safe_str(s)] if isinstance(suggestions_raw, list) else []
 
-    if content.startswith('{') and 'content' in content:
-        try:
-            nested = json.loads(content)
-        except Exception:
-            nested = None
-        if isinstance(nested, dict):
-            nested_content = _safe_str(nested.get('content'))
-            if nested_content:
-                content = nested_content
-            nested_suggestions = nested.get('suggestions')
-            if isinstance(nested_suggestions, list):
-                suggestions = [s for s in nested_suggestions if _safe_str(s)]
+    # ── Unwrap double-wrapped / malformed JSON in content ──
+    content = _unwrap_raw_content(content, suggestions)
+    if isinstance(content, tuple):
+        content, suggestions = content
 
     if not content:
         try:
             content = generate_text(contents=prompt).text.strip()
         except Exception:
             content = ''
+
+    # Final unwrap attempt on fallback text too
+    content = _unwrap_raw_content(content, suggestions)
+    if isinstance(content, tuple):
+        content, suggestions = content
 
     if not content:
         content = 'می‌خوای قدم‌به‌قدم با هم پیش بریم؟ ازت یه نکته می‌پرسم تا مسیر حل روشن‌تر بشه.'

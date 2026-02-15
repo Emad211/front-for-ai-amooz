@@ -54,12 +54,16 @@ function questionTypeBadge(type?: string): { label: string; color: string } | nu
 
 /**
  * Replace blank placeholders in question text with a visible underline.
+ * Handles multiple formats the LLM might produce.
  */
 function renderBlankPlaceholders(text: string): string {
   return text
     .replace(/\\\{blank\\\}/gi, ' ________ ')
     .replace(/\{\{blank\}\}/gi, ' ________ ')
-    .replace(/\{blank\}/gi, ' ________ ');
+    .replace(/\{blank\}/gi, ' ________ ')
+    .replace(/\bBLANK\b/g, ' ________ ')
+    .replace(/\b_+BLANK_+\b/gi, ' ________ ')
+    .replace(/_{3,}/g, ' ________ ');
 }
 
 export const QuestionContent = ({
@@ -81,8 +85,7 @@ export const QuestionContent = ({
 
   const badge = questionTypeBadge(question.type);
   const qType = question.type || 'multiple_choice';
-  const displayText =
-    qType === 'fill_blank' ? renderBlankPlaceholders(question.text) : question.text;
+  const displayText = renderBlankPlaceholders(question.text);
 
   const hasAnswer = Boolean(selectedOptionId?.trim());
   const alreadyCorrect = feedback?.isCorrect === true;
@@ -121,7 +124,13 @@ export const QuestionContent = ({
             <RadioGroup
               key={question.id}
               value={selectedOptionId || ''}
-              onValueChange={(value) => onSubmit(question.id, value)}
+              onValueChange={(value) => {
+                const y = window.scrollY;
+                onSubmit(question.id, value);
+                requestAnimationFrame(() => {
+                  window.scrollTo({ top: y, behavior: 'instant' as ScrollBehavior });
+                });
+              }}
               dir="rtl"
               className="grid grid-cols-2 gap-3 sm:gap-4"
               disabled={Boolean(isSubmitting) || Boolean(isFinalized) || alreadyCorrect}
@@ -175,7 +184,13 @@ export const QuestionContent = ({
             <RadioGroup
               key={question.id}
               value={selectedOptionId || ''}
-              onValueChange={(value) => onSubmit(question.id, value)}
+              onValueChange={(value) => {
+                const y = window.scrollY;
+                onSubmit(question.id, value);
+                requestAnimationFrame(() => {
+                  window.scrollTo({ top: y, behavior: 'instant' as ScrollBehavior });
+                });
+              }}
               dir="rtl"
               className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4"
               disabled={Boolean(isSubmitting) || Boolean(isFinalized) || alreadyCorrect}
@@ -260,13 +275,17 @@ export const QuestionContent = ({
                   {feedback.hint && (
                     <div className="flex items-start gap-2 bg-background/50 rounded-lg p-3">
                       <Lightbulb className="h-4 w-4 text-amber-400 flex-shrink-0 mt-0.5" />
-                      <p className="text-sm leading-6">{feedback.hint}</p>
+                      <div className="text-sm leading-6">
+                        <MarkdownWithMath markdown={feedback.hint} />
+                      </div>
                     </div>
                   )}
                   {feedback.encouragement && (
                     <div className="flex items-start gap-2 bg-background/50 rounded-lg p-3">
                       <MessageCircle className="h-4 w-4 text-blue-400 flex-shrink-0 mt-0.5" />
-                      <p className="text-sm leading-6 text-muted-foreground">{feedback.encouragement}</p>
+                      <div className="text-sm leading-6 text-muted-foreground">
+                        <MarkdownWithMath markdown={feedback.encouragement} />
+                      </div>
                     </div>
                   )}
                 </div>

@@ -84,7 +84,7 @@ def _send_sms_for_invites(api_key: str, session, invites) -> None:
 
     sms_requests: list[dict] = []
     for inv in invites:
-        text = f'کلاس "{session.title}" منتشر شد. کد دعوت شما: {inv.invite_code}'
+        text = f'AI_AMOOZ\nکلاس "{session.title}" منتشر شد. کد دعوت شما: {inv.invite_code}'
         sms_requests.append(
             {
                 'RefId': str(inv.invite_code),

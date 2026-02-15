@@ -217,9 +217,9 @@ def generate_answer_hint(
     Uses the 'exam_prep_hint' prompt template.
     """
 
-    model = _get_env('QUIZ_MODEL') or _get_env('MODEL_NAME')
+    model = _get_env('HINT_MODEL') or _get_env('MODEL_NAME')
     if not model:
-        model = 'models/gemini-2.5-flash'
+        model = 'gemini-2.0-flash-lite'
 
     prompt = _render_prompt(
         PROMPTS['exam_prep_hint']['default'],
