@@ -32,8 +32,50 @@ interface QuestionContentProps {
   unansweredCount?: number;
 }
 
-export const QuestionContent = ({ question, totalQuestions, onNext, onPrev, onSubmit, onFinalize, isSubmitting, isFinalized, selectedOptionId, unansweredCount }: QuestionContentProps) => {
+/** Map question type to a Persian badge label. */
+function questionTypeBadge(type?: string): { label: string; color: string } | null {
+  switch (type) {
+    case 'true_false':
+      return { label: 'صحیح / غلط', color: 'bg-blue-500/15 text-blue-400' };
+    case 'fill_blank':
+      return { label: 'جای خالی', color: 'bg-amber-500/15 text-amber-400' };
+    case 'short_answer':
+      return { label: 'تشریحی', color: 'bg-purple-500/15 text-purple-400' };
+    case 'multiple_choice':
+      return { label: 'چندگزینه‌ای', color: 'bg-green-500/15 text-green-400' };
+    default:
+      return null;
+  }
+}
+
+/**
+ * Replace blank placeholders in question text with a visible underline.
+ */
+function renderBlankPlaceholders(text: string): string {
+  return text
+    .replace(/\\\{blank\\\}/gi, ' ________ ')
+    .replace(/\{\{blank\}\}/gi, ' ________ ')
+    .replace(/\{blank\}/gi, ' ________ ');
+}
+
+export const QuestionContent = ({
+  question,
+  totalQuestions,
+  onNext,
+  onPrev,
+  onSubmit,
+  onFinalize,
+  isSubmitting,
+  isFinalized,
+  selectedOptionId,
+  unansweredCount,
+}: QuestionContentProps) => {
   if (!question) return null;
+
+  const badge = questionTypeBadge(question.type);
+  const qType = question.type || 'multiple_choice';
+  const displayText =
+    qType === 'fill_blank' ? renderBlankPlaceholders(question.text) : question.text;
 
   return (
     <section className="flex-1 flex flex-col justify-center items-center gap-8 p-4 sm:p-6 md:p-8 w-full min-h-full">
@@ -44,47 +86,110 @@ export const QuestionContent = ({ question, totalQuestions, onNext, onPrev, onSu
             <span className="text-xs font-semibold text-muted-foreground bg-secondary px-2 py-1 rounded-md">
               {question.number} / {totalQuestions}
             </span>
+            {badge && (
+              <span className={`text-xs font-semibold px-2 py-1 rounded-md ${badge.color}`}>
+                {badge.label}
+              </span>
+            )}
           </div>
         </div>
         <div className="space-y-6 flex-grow">
           <MarkdownWithMath
-            markdown={question.text}
+            markdown={displayText}
             renderKey={question.id}
             className="text-foreground leading-8 text-base sm:text-lg"
           />
-          <RadioGroup 
-            key={question.id}
-            value={selectedOptionId || ''}
-            onValueChange={(value) => onSubmit(question.id, value)}
-            dir="rtl" 
-            className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4"
-            disabled={Boolean(isSubmitting) || Boolean(isFinalized)}
-          >
-            {question.options.map((option, optionIndex) => {
-              const displayLabel = toPersianOptionLabel(option.label, optionIndex);
-              return (
+
+          {/* ===== TRUE / FALSE ===== */}
+          {qType === 'true_false' && (
+            <RadioGroup
+              key={question.id}
+              value={selectedOptionId || ''}
+              onValueChange={(value) => onSubmit(question.id, value)}
+              dir="rtl"
+              className="grid grid-cols-2 gap-3 sm:gap-4"
+              disabled={Boolean(isSubmitting) || Boolean(isFinalized)}
+            >
+              {[
+                { value: 'صحیح', label: 'صحیح ✓' },
+                { value: 'غلط', label: 'غلط ✗' },
+              ].map((opt) => (
                 <Label
-                  key={option.id}
-                  htmlFor={`option-${question.id}-${option.id}`}
-                  className="flex items-center justify-between p-3 sm:p-4 bg-background border border-border rounded-lg cursor-pointer hover:bg-secondary/50 has-[:checked]:bg-primary/10 has-[:checked]:border-primary"
+                  key={opt.value}
+                  htmlFor={`tf-${question.id}-${opt.value}`}
+                  className="flex items-center justify-center gap-3 p-4 bg-background border border-border rounded-lg cursor-pointer hover:bg-secondary/50 has-[:checked]:bg-primary/10 has-[:checked]:border-primary text-center"
                 >
-                  <div className="flex items-center gap-3">
-                    <RadioGroupItem value={option.label} id={`option-${question.id}-${option.id}`}
-                    />
-                    <span className="text-sm sm:text-base">{displayLabel})</span>
-                    <div className="text-sm sm:text-base">
-                      <MarkdownWithMath
-                        markdown={option.text}
-                        renderKey={`${question.id}-${option.id}`}
-                        className="leading-7"
-                      />
-                    </div>
-                  </div>
+                  <RadioGroupItem value={opt.value} id={`tf-${question.id}-${opt.value}`} />
+                  <span className="text-sm sm:text-base font-semibold">{opt.label}</span>
                 </Label>
-              );
-            })}
-          </RadioGroup>
+              ))}
+            </RadioGroup>
+          )}
+
+          {/* ===== FILL IN THE BLANK ===== */}
+          {qType === 'fill_blank' && (
+            <div className="mt-3">
+              <textarea
+                value={selectedOptionId || ''}
+                onChange={(e) => onSubmit(question.id, e.target.value)}
+                disabled={Boolean(isSubmitting) || Boolean(isFinalized)}
+                className="w-full min-h-20 rounded-lg border border-border bg-background p-3 text-sm text-foreground resize-y"
+                placeholder="پاسخ خود را برای جای خالی بنویسید..."
+                dir="rtl"
+              />
+            </div>
+          )}
+
+          {/* ===== SHORT ANSWER ===== */}
+          {qType === 'short_answer' && (
+            <div className="mt-3">
+              <textarea
+                value={selectedOptionId || ''}
+                onChange={(e) => onSubmit(question.id, e.target.value)}
+                disabled={Boolean(isSubmitting) || Boolean(isFinalized)}
+                className="w-full min-h-28 rounded-lg border border-border bg-background p-3 text-sm text-foreground resize-y"
+                placeholder="پاسخ تشریحی خود را بنویسید..."
+                dir="rtl"
+              />
+            </div>
+          )}
+
+          {/* ===== MULTIPLE CHOICE ===== */}
+          {qType === 'multiple_choice' && question.options.length > 0 && (
+            <RadioGroup
+              key={question.id}
+              value={selectedOptionId || ''}
+              onValueChange={(value) => onSubmit(question.id, value)}
+              dir="rtl"
+              className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4"
+              disabled={Boolean(isSubmitting) || Boolean(isFinalized)}
+            >
+              {question.options.map((option, optionIndex) => {
+                const displayLabel = toPersianOptionLabel(option.label, optionIndex);
+                return (
+                  <Label
+                    key={option.id}
+                    htmlFor={`option-${question.id}-${option.id}`}
+                    className="flex items-center justify-between p-3 sm:p-4 bg-background border border-border rounded-lg cursor-pointer hover:bg-secondary/50 has-[:checked]:bg-primary/10 has-[:checked]:border-primary"
+                  >
+                    <div className="flex items-center gap-3">
+                      <RadioGroupItem value={option.label} id={`option-${question.id}-${option.id}`} />
+                      <span className="text-sm sm:text-base">{displayLabel})</span>
+                      <div className="text-sm sm:text-base">
+                        <MarkdownWithMath
+                          markdown={option.text}
+                          renderKey={`${question.id}-${option.id}`}
+                          className="leading-7"
+                        />
+                      </div>
+                    </div>
+                  </Label>
+                );
+              })}
+            </RadioGroup>
+          )}
         </div>
+
         <div className="mt-6 flex flex-col sm:flex-row gap-4 justify-between items-center border-t border-border pt-4">
           <div className="flex gap-2 w-full sm:w-auto">
             <Button variant="outline" className="flex-1 sm:flex-none" onClick={onPrev}>

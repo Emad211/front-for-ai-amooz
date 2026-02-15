@@ -403,6 +403,12 @@ CELERY_RESULT_BACKEND = os.getenv('CELERY_RESULT_BACKEND', REDIS_URL)
 CELERY_ACCEPT_CONTENT = ['json']
 CELERY_TASK_SERIALIZER = 'json'
 CELERY_RESULT_SERIALIZER = 'json'
+
+# CRITICAL: Celery's built-in default queue is named "celery", but the
+# worker command uses  -Q default,pipeline .  Without the line below,
+# any task NOT listed in CELERY_TASK_ROUTES (e.g. SMS tasks) would be
+# published to the "celery" queue — which no worker ever consumes.
+CELERY_TASK_DEFAULT_QUEUE = 'default'
 CELERY_TASK_TIME_LIMIT = _get_env_int('CELERY_TASK_TIME_LIMIT', 2 * 60 * 60)       # 2 h
 CELERY_TASK_SOFT_TIME_LIMIT = _get_env_int('CELERY_TASK_SOFT_TIME_LIMIT', 100 * 60)  # 100 min
 CELERY_WORKER_PREFETCH_MULTIPLIER = 1   # important for long-running tasks
@@ -422,7 +428,10 @@ CELERY_TASK_ROUTES = {
     'apps.classes.tasks.process_exam_prep_full_pipeline': {'queue': 'pipeline'},
     'apps.classes.tasks.process_exam_prep_step1_transcription': {'queue': 'pipeline'},
     'apps.classes.tasks.process_exam_prep_step2_structure': {'queue': 'pipeline'},
-    # SMS and lightweight tasks stay on the default queue.
+    # SMS and lightweight tasks explicitly on the default queue.
+    'apps.classes.tasks.send_publish_sms_task': {'queue': 'default'},
+    'apps.classes.tasks.send_new_invites_sms_task': {'queue': 'default'},
+    'apps.classes.tasks.cleanup_stale_sessions': {'queue': 'default'},
 }
 CELERY_TASK_REJECT_ON_WORKER_LOST = True  # requeue tasks if worker is killed (OOM)
 

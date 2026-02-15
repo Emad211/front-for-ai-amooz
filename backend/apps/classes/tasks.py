@@ -643,11 +643,16 @@ def send_publish_sms_task(self, session_id: int) -> dict:
     """
     from .services.mediana_sms import send_publish_sms_for_session
 
+    logger.info(
+        '[SMS] send_publish_sms_task STARTED session=%s attempt=%s/%s',
+        session_id, self.request.retries + 1, self.max_retries + 1,
+    )
     try:
         send_publish_sms_for_session(session_id)
+        logger.info('[SMS] send_publish_sms_task SUCCESS session=%s', session_id)
         return {'status': 'success', 'session_id': session_id}
     except Exception as exc:
-        logger.error('SMS send failed for session %s (attempt %s/%s): %s',
+        logger.error('[SMS] send_publish_sms_task FAILED session=%s (attempt %s/%s): %s',
                      session_id, self.request.retries + 1, self.max_retries + 1,
                      str(exc)[:200])
         if self.request.retries >= self.max_retries:
@@ -664,8 +669,13 @@ def send_new_invites_sms_task(self, session_id: int, invite_ids: list[int]) -> d
     """
     from .services.mediana_sms import send_invite_sms_for_ids
 
+    logger.info(
+        '[SMS] send_new_invites_sms_task STARTED session=%s invites=%d attempt=%s/%s',
+        session_id, len(invite_ids), self.request.retries + 1, self.max_retries + 1,
+    )
     try:
         send_invite_sms_for_ids(session_id, invite_ids)
+        logger.info('[SMS] send_new_invites_sms_task SUCCESS session=%s invites=%d', session_id, len(invite_ids))
         return {'status': 'success', 'session_id': session_id, 'invite_count': len(invite_ids)}
     except Exception as exc:
         logger.error('New-invite SMS failed for session %s (attempt %s/%s): %s',

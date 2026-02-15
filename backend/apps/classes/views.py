@@ -895,7 +895,10 @@ class ClassCreationSessionPublishView(GenericAPIView):
             if updated:
                 session.is_published = True
                 session.published_at = now
-                transaction.on_commit(lambda: send_publish_sms_task.delay(session.id))
+                def _dispatch_publish_sms():
+                    logger.info('[SMS] Dispatching send_publish_sms_task for session=%s', session.id)
+                    send_publish_sms_task.delay(session.id)
+                transaction.on_commit(_dispatch_publish_sms)
 
         return Response(ClassCreationSessionDetailSerializer(session).data)
 
@@ -957,9 +960,11 @@ class ClassInvitationListCreateView(APIView):
                 ).values_list('id', flat=True)
             )
             if invite_ids:
-                transaction.on_commit(
-                    lambda ids=invite_ids: send_new_invites_sms_task.delay(session.id, ids)
-                )
+                _sid = session.id
+                def _dispatch_class_invite_sms(ids=invite_ids, sid=_sid):
+                    logger.info('[SMS] Dispatching send_new_invites_sms_task session=%s invites=%d', sid, len(ids))
+                    send_new_invites_sms_task.delay(sid, ids)
+                transaction.on_commit(_dispatch_class_invite_sms)
 
         qs = ClassInvitation.objects.filter(session=session).order_by('-created_at')
         return Response(ClassInvitationSerializer(qs, many=True).data)
@@ -2922,7 +2927,10 @@ class ExamPrepSessionPublishView(APIView):
         if updated:
             session.is_published = True
             session.published_at = now
-            transaction.on_commit(lambda: send_publish_sms_task.delay(session.id))
+            def _dispatch_exam_publish_sms():
+                logger.info('[SMS] Dispatching send_publish_sms_task for exam-prep session=%s', session.id)
+                send_publish_sms_task.delay(session.id)
+            transaction.on_commit(_dispatch_exam_publish_sms)
 
         return Response(ExamPrepSessionDetailSerializer(session).data)
 
@@ -2998,9 +3006,11 @@ class ExamPrepInvitationListCreateView(APIView):
                 ).values_list('id', flat=True)
             )
             if invite_ids:
-                transaction.on_commit(
-                    lambda ids=invite_ids: send_new_invites_sms_task.delay(session.id, ids)
-                )
+                _sid = session.id
+                def _dispatch_exam_invite_sms(ids=invite_ids, sid=_sid):
+                    logger.info('[SMS] Dispatching send_new_invites_sms_task session=%s invites=%d', sid, len(ids))
+                    send_new_invites_sms_task.delay(sid, ids)
+                transaction.on_commit(_dispatch_exam_invite_sms)
 
         qs = ClassInvitation.objects.filter(session=session).order_by('-created_at')
         return Response(ClassInvitationSerializer(qs, many=True).data)
@@ -3144,6 +3154,71 @@ class ExamPrepAnnouncementDetailView(APIView):
 # ==========================================================================
 
 
+# ---------------------------------------------------------------------------
+# Helpers for exam-prep question type inference & true/false normalization
+# ---------------------------------------------------------------------------
+
+_TRUE_FALSE_LABELS = frozenset({'صحیح', 'غلط', 'درست', 'نادرست', 'true', 'false'})
+
+
+def _infer_exam_prep_question_type(q: dict) -> str:
+    """Infer the question type from the question dict.
+
+    Checks explicit ``type`` field first; falls back to heuristic detection.
+    Returns one of: ``multiple_choice``, ``true_false``, ``fill_blank``, ``short_answer``.
+    """
+    explicit = str(q.get('type') or '').strip().lower()
+    if explicit in ('multiple_choice', 'true_false', 'fill_blank', 'short_answer'):
+        return explicit
+
+    qtext = str(q.get('question_text_markdown') or q.get('question') or '').strip()
+    opts_raw = q.get('options')
+    opts = opts_raw if isinstance(opts_raw, list) else []
+
+    # Fill-blank: question text contains a blank placeholder
+    blank_markers = ('{{blank}}', '{blank}', '\\{blank\\}', '____', '…', '...', '___')
+    qtext_lower = qtext.lower()
+    for marker in blank_markers:
+        if marker in qtext_lower:
+            return 'fill_blank'
+
+    # True/false: exactly 2 options whose labels/text are true/false variants
+    if len(opts) == 2:
+        labels = set()
+        for opt in opts:
+            if isinstance(opt, dict):
+                labels.add(str(opt.get('text_markdown') or opt.get('label') or '').strip().lower())
+            elif isinstance(opt, str):
+                labels.add(opt.strip().lower())
+        if labels & {'صحیح', 'غلط', 'درست', 'نادرست', 'true', 'false'}:
+            return 'true_false'
+        # Persian labels الف/ب only → still check text content
+        for opt in opts:
+            txt = (str(opt.get('text_markdown') or '') if isinstance(opt, dict) else str(opt)).strip().lower()
+            if txt in _TRUE_FALSE_LABELS:
+                return 'true_false'
+
+    # Multiple choice: has 3+ options
+    if len(opts) >= 3:
+        return 'multiple_choice'
+
+    # No options → short answer (or 1-2 options that aren't T/F)
+    if len(opts) == 0:
+        return 'short_answer'
+
+    return 'multiple_choice'
+
+
+def _normalize_true_false_value(value: str) -> str:
+    """Normalize Persian/English true-false answers to 'true' or 'false'."""
+    v = value.strip().lower()
+    if v in ('true', '1', 'yes', 'درست', 'صحیح'):
+        return 'true'
+    if v in ('false', '0', 'no', 'نادرست', 'غلط'):
+        return 'false'
+    return v
+
+
 class StudentExamPrepListView(APIView):
     """List exam prep sessions available to the student."""
     permission_classes = [IsAuthenticated, IsStudentUser]
@@ -3261,6 +3336,7 @@ class StudentExamPrepDetailView(APIView):
 
             qid = str(q.get('question_id') or '').strip()
             qtext = str(q.get('question_text_markdown') or '').strip()
+            qtype = _infer_exam_prep_question_type(q)
             opts_raw = q.get('options')
             opts: list[dict] = []
             if isinstance(opts_raw, list):
@@ -3277,6 +3353,7 @@ class StudentExamPrepDetailView(APIView):
                     {
                         'question_id': qid,
                         'question_text_markdown': qtext,
+                        'type': qtype,
                         'options': opts,
                     }
                 )
@@ -3344,11 +3421,25 @@ class StudentExamPrepSubmitView(APIView):
             questions_list = []
 
         correct_map: dict[str, str] = {}
+        question_type_map: dict[str, str] = {}
+        question_text_map: dict[str, str] = {}
+        question_solution_map: dict[str, str] = {}
         for q in questions_list:
             qid = str(q.get('question_id') or '').strip()
             label = str(q.get('correct_option_label') or '').strip()
+            qtype = _infer_exam_prep_question_type(q)
+            qtext = str(q.get('question_text_markdown') or '').strip()
+            solution = str(
+                q.get('teacher_solution_markdown')
+                or q.get('final_answer_markdown')
+                or q.get('correct_option_text_markdown')
+                or label
+            ).strip()
             if qid:
                 correct_map[qid] = label
+                question_type_map[qid] = qtype
+                question_text_map[qid] = qtext
+                question_solution_map[qid] = solution
 
         total_questions = len(correct_map)
         merged_answers: dict[str, str] = {}
@@ -3388,12 +3479,60 @@ class StudentExamPrepSubmitView(APIView):
         update_fields = ['answers', 'total_questions', 'updated_at']
 
         if finalize:
+            score_total = 0
+            score_count = 0
             for qid, correct_label in correct_map.items():
                 selected = (merged_answers.get(qid) or '').strip()
-                if selected and correct_label and selected == correct_label:
-                    correct_count += 1
+                qtype = question_type_map.get(qid, 'multiple_choice')
 
-            score_0_100 = int(round((correct_count / total_questions) * 100)) if total_questions > 0 else 0
+                if qtype == 'multiple_choice':
+                    # Exact label match (e.g. "الف", "ب")
+                    if selected and correct_label and selected == correct_label:
+                        correct_count += 1
+                        score_total += 100
+                    score_count += 1
+
+                elif qtype == 'true_false':
+                    # Normalized true/false comparison
+                    norm_selected = _normalize_true_false_value(selected)
+                    norm_correct = _normalize_true_false_value(correct_label)
+                    if norm_selected and norm_correct and norm_selected == norm_correct:
+                        correct_count += 1
+                        score_total += 100
+                    score_count += 1
+
+                elif qtype in ('fill_blank', 'short_answer'):
+                    # Use LLM grading for fill_blank and short_answer —
+                    # the student's answer may differ in wording but be conceptually correct.
+                    if not selected:
+                        score_count += 1
+                        continue
+                    reference = question_solution_map.get(qid) or correct_label
+                    qtext = question_text_map.get(qid, '')
+                    try:
+                        grading_obj, _prov, _model = grade_open_text_answer(
+                            question=qtext,
+                            reference_answer=reference,
+                            student_answer=selected,
+                        )
+                        q_score = max(0, min(100, int(grading_obj.get('score_0_100') or 0)))
+                    except Exception:
+                        # Fallback to exact match on LLM failure
+                        logger.warning('LLM grading failed for exam-prep qid=%s, falling back to exact match', qid)
+                        q_score = 100 if selected == correct_label else 0
+                    if q_score >= 60:
+                        correct_count += 1
+                    score_total += q_score
+                    score_count += 1
+
+                else:
+                    # Unknown type → exact label match
+                    if selected and correct_label and selected == correct_label:
+                        correct_count += 1
+                        score_total += 100
+                    score_count += 1
+
+            score_0_100 = int(round(score_total / score_count)) if score_count > 0 else 0
             attempt.correct_count = correct_count
             attempt.score_0_100 = score_0_100
             attempt.finalized = True
@@ -3433,6 +3572,13 @@ def _compute_is_correct(session, question_id: str | None, student_selected: str,
             qid = str(q.get('question_id') or '').strip()
             if qid == question_id:
                 correct_label = str(q.get('correct_option_label') or '').strip()
+                qtype = _infer_exam_prep_question_type(q)
+                if qtype == 'true_false':
+                    return (
+                        bool(correct_label)
+                        and _normalize_true_false_value(student_selected)
+                        == _normalize_true_false_value(correct_label)
+                    )
                 return bool(correct_label) and student_selected == correct_label
     except Exception:
         pass

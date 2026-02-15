@@ -146,14 +146,58 @@ export function ChapterQuiz({
           const value = answers[q.id] ?? '';
           return (
             <div key={q.id} className="border border-border rounded-xl p-4 bg-background/20">
-              <div className="text-sm font-bold text-foreground mb-2">سوال {idx + 1}</div>
+              <div className="flex items-center gap-2 mb-2">
+                <span className="text-sm font-bold text-foreground">سوال {idx + 1}</span>
+                {q.type === 'true_false' && (
+                  <span className="text-xs font-semibold px-2 py-0.5 rounded-md bg-blue-500/15 text-blue-400">صحیح / غلط</span>
+                )}
+                {q.type === 'fill_blank' && (
+                  <span className="text-xs font-semibold px-2 py-0.5 rounded-md bg-amber-500/15 text-amber-400">جای خالی</span>
+                )}
+                {q.type === 'short_answer' && (
+                  <span className="text-xs font-semibold px-2 py-0.5 rounded-md bg-purple-500/15 text-purple-400">تشریحی</span>
+                )}
+                {q.type === 'multiple_choice' && (
+                  <span className="text-xs font-semibold px-2 py-0.5 rounded-md bg-green-500/15 text-green-400">چندگزینه‌ای</span>
+                )}
+              </div>
               <div className="text-sm text-muted-foreground leading-relaxed">
                 <MarkdownWithMath markdown={q.question} />
               </div>
 
-              {Array.isArray(q.options) && q.options.length > 0 ? (
+              {/* True / False */}
+              {q.type === 'true_false' && (
+                <div className="mt-3 grid grid-cols-2 gap-3">
+                  {[
+                    { val: 'صحیح', label: 'صحیح ✓' },
+                    { val: 'غلط', label: 'غلط ✗' },
+                  ].map((tf) => (
+                    <label
+                      key={tf.val}
+                      className={`flex items-center justify-center gap-2 p-3 rounded-lg border cursor-pointer text-sm font-semibold ${
+                        value === tf.val
+                          ? 'border-primary bg-primary/10 text-primary'
+                          : 'border-border bg-background hover:bg-secondary/50'
+                      }`}
+                    >
+                      <input
+                        type="radio"
+                        name={`q_${q.id}`}
+                        value={tf.val}
+                        checked={value === tf.val}
+                        onChange={() => setAnswers((prev) => ({ ...prev, [q.id]: tf.val }))}
+                        className="sr-only"
+                      />
+                      {tf.label}
+                    </label>
+                  ))}
+                </div>
+              )}
+
+              {/* Multiple choice (incl. fallback when type is missing but options exist) */}
+              {(q.type === 'multiple_choice' || (!q.type && Array.isArray(q.options) && q.options.length > 0)) && q.type !== 'true_false' && (
                 <div className="mt-3 space-y-2">
-                  {q.options.map((opt) => (
+                  {(q.options ?? []).map((opt) => (
                     <label key={opt} className="flex items-start gap-2 cursor-pointer">
                       <input
                         type="radio"
@@ -163,16 +207,22 @@ export function ChapterQuiz({
                         onChange={() => setAnswers((prev) => ({ ...prev, [q.id]: opt }))}
                         className="mt-1"
                       />
-                      <span className="text-sm text-foreground">{opt}</span>
+                      <span className="text-sm text-foreground">
+                        <MarkdownWithMath markdown={opt} />
+                      </span>
                     </label>
                   ))}
                 </div>
-              ) : (
+              )}
+
+              {/* Fill blank / Short answer / fallback textarea */}
+              {(q.type === 'fill_blank' || q.type === 'short_answer' || (!q.type && (!q.options || q.options.length === 0))) && q.type !== 'true_false' && q.type !== 'multiple_choice' && (
                 <textarea
                   value={value}
                   onChange={(e) => setAnswers((prev) => ({ ...prev, [q.id]: e.target.value }))}
                   className="mt-3 w-full min-h-24 rounded-lg border border-border bg-background p-3 text-sm text-foreground"
-                  placeholder="پاسخ خود را بنویسید..."
+                  placeholder={q.type === 'fill_blank' ? 'پاسخ خود را برای جای خالی بنویسید...' : 'پاسخ خود را بنویسید...'}
+                  dir="rtl"
                 />
               )}
             </div>

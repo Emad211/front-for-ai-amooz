@@ -95,11 +95,11 @@ function formatMarkdown(md: string): string {
 	html = html.replace(/^# (.+)$/gm, '<h2 class="md-h2">$1</h2>');
 
 	// ============ STEP 4: Bold & Italic ============
-	html = html.replace(/\*\*\*(.+?)\*\*\*/g, '<strong><em>$1</em></strong>');
-	html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
-	html = html.replace(/__(.+?)__/g, '<strong>$1</strong>');
+	html = html.replace(/\*\*\*([\s\S]+?)\*\*\*/g, '<strong><em>$1</em></strong>');
+	html = html.replace(/\*\*([\s\S]+?)\*\*/g, '<strong>$1</strong>');
+	html = html.replace(/__([\s\S]+?)__/g, '<strong>$1</strong>');
 	html = html.replace(/\*([^*]+)\*/g, '<em>$1</em>');
-	html = html.replace(/_([^_]+)_/g, '<em>$1</em>');
+	// NOTE: _.._ italic intentionally omitted — conflicts with LaTeX subscripts (x_1).
 
 	// ============ STEP 5: Lists ============
 	html = html.replace(/^[\*\-•]\s+(.+)$/gm, '<li class="md-li">$1</li>');

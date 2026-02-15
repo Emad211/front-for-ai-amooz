@@ -92,7 +92,7 @@ export const LessonContent = ({
         </div>
         <h2 className="text-lg font-bold text-foreground">{lesson?.title}</h2>
       </div>
-      <div className="prose prose-invert max-w-none text-muted-foreground leading-relaxed space-y-6">
+      <div className="max-w-none text-muted-foreground leading-relaxed space-y-6">
         {lesson?.type === 'quiz' && lesson?.chapterId && courseId ? (
           <ChapterQuiz
             courseId={courseId}

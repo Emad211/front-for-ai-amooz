@@ -35,6 +35,7 @@ export interface Question {
   id: string;
   number: number;
   text: string;
+  type?: 'multiple_choice' | 'true_false' | 'fill_blank' | 'short_answer';
   options: {
     id: string;
     label: string;

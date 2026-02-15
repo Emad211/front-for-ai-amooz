@@ -365,6 +365,7 @@ export const DashboardService = {
       questions: {
         question_id: string;
         question_text_markdown: string;
+        type?: string;
         options: { label: string; text_markdown: string }[];
       }[];
       totalQuestions: number;
@@ -381,6 +382,7 @@ export const DashboardService = {
       id: q.question_id,
       number: idx + 1,
       text: q.question_text_markdown,
+      type: (q.type as 'multiple_choice' | 'true_false' | 'fill_blank' | 'short_answer') || undefined,
       options: q.options.map((opt, optIdx) => ({
         id: String(opt.label || optIdx),
         label: opt.label,

@@ -513,7 +513,7 @@ export function CreateClassPage() {
         window.localStorage.removeItem(CREATE_EXAM_PREP_DRAFT_STORAGE_KEY);
         window.localStorage.removeItem(CREATE_EXAM_PREP_LAST_STATUS_STORAGE_KEY);
         toast.success('آمادگی آزمون با موفقیت منتشر شد');
-        router.push(`/teacher/my-classes/${examPrepSessionIdForActions}`);
+        router.push(`/teacher/my-exams/${examPrepSessionIdForActions}`);
       } catch (e) {
         const msg = e instanceof Error ? e.message : 'خطا در انتشار';
         toast.error(msg);

@@ -21,6 +21,7 @@ import { cn } from '@/lib/utils';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { SidebarItem, SubmenuItem } from './sidebar-items';
 import { SheetClose } from '@/components/ui/sheet';
+import { MarkdownWithMath } from '@/components/content/markdown-with-math';
 import type { CourseContent } from '@/types';
 
 interface CourseSidebarProps {
@@ -99,7 +100,7 @@ export const CourseSidebar = ({
                 <div className="flex items-center gap-3">
                   <Folder className="h-5 w-5 group-data-[state=open]:hidden" />
                   <FolderOpen className="h-5 w-5 hidden group-data-[state=open]:block" />
-                  <span className="text-sm">{chapter.title}</span>
+                  <span className="text-sm"><MarkdownWithMath markdown={chapter.title} /></span>
                 </div>
               </AccordionTrigger>
               <AccordionContent className="p-1 space-y-1">
