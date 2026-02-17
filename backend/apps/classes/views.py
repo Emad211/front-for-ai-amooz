@@ -133,6 +133,8 @@ from .services.student_exam_chat_history import (
     list_messages as list_exam_messages,
 )
 
+from apps.commons.token_tracker import set_current_user
+
 
 def _process_step1_transcription(session_id: int) -> None:
     session = ClassCreationSession.objects.filter(id=session_id).first()
@@ -140,6 +142,7 @@ def _process_step1_transcription(session_id: int) -> None:
         return
     if session.status != ClassCreationSession.Status.TRANSCRIBING:
         return
+    set_current_user(session.teacher)
 
     try:
         session.source_file.open('rb')
@@ -174,6 +177,7 @@ def _process_step2_structure(session_id: int) -> None:
         session.error_detail = 'برای این جلسه هنوز متن درس آماده نیست.'
         session.save(update_fields=['status', 'error_detail', 'updated_at'])
         return
+    set_current_user(session.teacher)
 
     try:
         structure_obj, provider, model_name = structure_transcript_markdown(
@@ -218,6 +222,7 @@ def _process_step3_prerequisites(session_id: int) -> None:
         session.error_detail = 'برای این جلسه هنوز متن درس آماده نیست.'
         session.save(update_fields=['status', 'error_detail', 'updated_at'])
         return
+    set_current_user(session.teacher)
 
     try:
         prereq_obj, provider, model_name = extract_prerequisites(transcript_markdown=session.transcript_markdown)
@@ -241,6 +246,7 @@ def _process_step4_prereq_teaching(session_id: int, prerequisite_name: str | Non
         return
     if session.status != ClassCreationSession.Status.PREREQ_TEACHING:
         return
+    set_current_user(session.teacher)
 
     qs = ClassPrerequisite.objects.filter(session=session).order_by('order')
     if prerequisite_name:
@@ -283,6 +289,7 @@ def _process_step5_recap(session_id: int) -> None:
         session.error_detail = 'برای این جلسه هنوز ساختار مرحله ۲ آماده نیست.'
         session.save(update_fields=['status', 'error_detail', 'updated_at'])
         return
+    set_current_user(session.teacher)
 
     try:
         recap_obj, provider, model_name = generate_recap_from_structure(structure_json=session.structure_json)
@@ -2116,10 +2123,10 @@ class StudentChapterQuizView(APIView):
                     'type': qtype,
                     'question': qtext,
                     'student_answer': student_answer,
-                    'correct_answer': correct,
                     'score_0_100': score,
                     'label': label,
                     'feedback': feedback,
+                    # NOTE: correct_answer intentionally excluded to prevent answer leakage
                 }
             )
 
@@ -2350,9 +2357,7 @@ class StudentFinalExamView(APIView):
                 else:
                     got = 0
                     label = 'incorrect'
-                    feedback = 'پاسخ درست نبود.'
-                    if expl:
-                        feedback = f"{feedback} {expl}".strip()
+                    feedback = 'پاسخ درست نبود. دوباره مرور کن و مطالب درس رو مرور کن.'
             else:
                 grading_obj, _provider, _model = grade_open_text_answer(
                     question=qtext,
@@ -2381,6 +2386,7 @@ class StudentFinalExamView(APIView):
                     'max_points': pts,
                     'label': label,
                     'feedback': feedback,
+                    # NOTE: correct_answer intentionally excluded to prevent answer leakage
                 }
             )
 
@@ -2574,6 +2580,7 @@ def _process_exam_prep_step1_transcription(session_id: int) -> None:
         return
     if session.status != ClassCreationSession.Status.EXAM_TRANSCRIBING:
         return
+    set_current_user(session.teacher)
 
     try:
         session.source_file.open('rb')
@@ -2609,6 +2616,7 @@ def _process_exam_prep_step2_structure(session_id: int) -> None:
         session.error_detail = 'برای این جلسه هنوز ترنسکریپت مرحله ۱ آماده نیست.'
         session.save(update_fields=['status', 'error_detail', 'updated_at'])
         return
+    set_current_user(session.teacher)
 
     try:
         exam_prep_obj, provider, model_name = extract_exam_prep_structure(

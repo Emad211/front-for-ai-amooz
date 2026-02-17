@@ -1,5 +1,6 @@
 import { 
   BarChart3, 
+  Coins,
   Home,
   BookOpen,
   Target,
@@ -48,6 +49,7 @@ export const ADMIN_NAV_MENU: NavSection[] = [
     title: 'گزارشات',
     items: [
       { label: 'آمار و تحلیل', href: '/admin/analytics', icon: BarChart3 },
+      { label: 'مصرف توکن LLM', href: '/admin/llm-usage', icon: Coins },
     ]
   },
 ];

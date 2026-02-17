@@ -124,3 +124,31 @@ def _get_client_ip(request) -> str:
     if forwarded:
         return forwarded.split(',')[0].strip()
     return request.META.get('REMOTE_ADDR', '') or '-'
+
+
+class LLMTrackingMiddleware:
+    """Automatically set thread-local user context for LLM token tracking.
+
+    Must be placed AFTER ``AuthenticationMiddleware`` so ``request.user``
+    is populated.  On every request the current user is stored in
+    thread-local storage so that ``token_tracker.track_llm_usage()`` can
+    associate LLM calls with the requesting user without requiring
+    explicit user propagation through every service layer.
+    """
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        from apps.commons.token_tracker import set_current_user
+
+        user = getattr(request, 'user', None)
+        # Only set authenticated users (avoid AnonymousUser)
+        if user is not None and getattr(user, 'pk', None) is not None:
+            set_current_user(user)
+        else:
+            set_current_user(None)
+        try:
+            return self.get_response(request)
+        finally:
+            set_current_user(None)

@@ -12,6 +12,25 @@ from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_excep
 from apps.commons.llm_prompts import PROMPTS
 from apps.commons.llm_provider import preferred_provider
 from apps.commons.json_utils import extract_json_object
+from apps.commons.token_tracker import (
+    track_llm_usage,
+    track_llm_error,
+    LLMTimer,
+)
+from apps.commons.models import LLMUsageLog
+
+# Thread-local feature context for tracking
+import threading
+_feature_local = threading.local()
+
+
+def set_llm_feature(feature: str) -> None:
+    """Set the current LLM feature for token tracking."""
+    _feature_local.feature = feature
+
+
+def _get_llm_feature() -> str:
+    return getattr(_feature_local, 'feature', LLMUsageLog.Feature.OTHER)
 
 
 def _get_env(name: str) -> str:
@@ -92,12 +111,13 @@ class LlmResult:
     model: str
 
 
-def generate_text(*, contents: Any, model: Optional[str] = None) -> LlmResult:
+def generate_text(*, contents: Any, model: Optional[str] = None, feature: Optional[str] = None) -> LlmResult:
     used_model = model or _default_model()
     gemini_client, avalai_client = _get_clients()
 
     provider = preferred_provider()
     last_error: Optional[Exception] = None
+    resolved_feature = feature or _get_llm_feature()
 
     @retry(
         stop=stop_after_attempt(3),
@@ -106,14 +126,21 @@ def generate_text(*, contents: Any, model: Optional[str] = None) -> LlmResult:
         reraise=True
     )
     def _call_llm(client: genai.Client, prov: str) -> LlmResult:
+        timer = LLMTimer().start()
         try:
             resp = client.models.generate_content(model=used_model, contents=contents)
             text = _extract_text(resp)
             if not text:
                 raise ValueError(f'Empty response from {prov}')
+            track_llm_usage(
+                resp=resp,
+                feature=resolved_feature,
+                provider=prov,
+                model_name=used_model,
+                duration_ms=timer.elapsed_ms,
+            )
             return LlmResult(text=text, provider=prov, model=used_model)
         except Exception as exc:
-            # Check specifically for SSL/Connection errors to log them differently if needed
             err_msg = str(exc)
             if "SSL" in err_msg or "EOF" in err_msg or "ConnectError" in err_msg:
                 print(f"[CHATBOT][RETRY] {prov} encountered connection issue: {err_msg}. Retrying...")
@@ -124,6 +151,12 @@ def generate_text(*, contents: Any, model: Optional[str] = None) -> LlmResult:
             return _call_llm(gemini_client, 'gemini')
         except Exception as exc:
             print(f"[CHATBOT][LLM] gemini failed model={used_model!r} after retries: {type(exc).__name__}: {exc}")
+            track_llm_error(
+                feature=resolved_feature,
+                provider='gemini',
+                model_name=used_model,
+                error_message=str(exc),
+            )
             last_error = exc
 
     if provider != 'gemini' and avalai_client is not None:
@@ -131,6 +164,12 @@ def generate_text(*, contents: Any, model: Optional[str] = None) -> LlmResult:
             return _call_llm(avalai_client, 'avalai')
         except Exception as exc:
             print(f"[CHATBOT][LLM] avalai failed model={used_model!r} after retries: {type(exc).__name__}: {exc}")
+            track_llm_error(
+                feature=resolved_feature,
+                provider='avalai',
+                model_name=used_model,
+                error_message=str(exc),
+            )
             last_error = exc
 
     if last_error is not None:
@@ -149,7 +188,7 @@ def _repair_json_with_llm(*, feature: str, model_output: str) -> dict[str, Any]:
             'raw_text': model_output,
         },
     )
-    repaired = generate_text(contents=prompt).text
+    repaired = generate_text(contents=prompt, feature=LLMUsageLog.Feature.JSON_REPAIR).text
     try:
         obj = extract_json_object(repaired)
         return obj if isinstance(obj, dict) else {'result': obj}
@@ -161,7 +200,8 @@ def _repair_json_with_llm(*, feature: str, model_output: str) -> dict[str, Any]:
 def generate_json(*, feature: str, contents: Any) -> dict[str, Any]:
     """Generate JSON via the LLM; uses `json_repair` prompt if needed."""
 
-    out = generate_text(contents=contents).text
+    set_llm_feature(feature)
+    out = generate_text(contents=contents, feature=feature).text
     if not (out or '').strip():
         return _repair_json_with_llm(feature=feature, model_output=out)
     try:

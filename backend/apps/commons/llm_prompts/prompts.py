@@ -588,7 +588,7 @@ Grade the answer fairly and gently, in the SAME LANGUAGE as the question.
 QUESTION:
 {question}
 
-REFERENCE_ANSWER (ideal solution):
+REFERENCE_ANSWER (ideal solution — for YOUR reference only):
 {reference_answer}
 
 STUDENT_ANSWER:
@@ -600,12 +600,21 @@ Rules:
 If the student is essentially right, mark as "correct" even if wording is different.
 If they captured some but not all important ideas, mark as "partially_correct".
 If they are totally wrong mark as "incorrect".
+
+CRITICAL FEEDBACK RULES:
+- You MUST NOT reveal the correct answer in the feedback.
+- You MUST NOT quote, paraphrase, or explain the reference answer.
+- Do NOT explain WHAT the correct answer is or WHY a particular option is right.
+- Instead, give a gentle, encouraging hint that nudges the student to think deeper.
+- If incorrect, point out what concept they should review WITHOUT giving the solution.
+- Keep feedback short (1-2 sentences) and motivating.
+
 Output JSON ONLY:
 {
 "score_0_100": <integer from 0 to 100>,
 "label": "<correct|partially_correct|incorrect>",
-"feedback": "<short friendly feedback in the SAME LANGUAGE as the question>",
-"missing_points": ["<short phrase for a missing or weak idea>", "..."]
+"feedback": "<short friendly INDIRECT feedback — NEVER reveal the answer>",
+"missing_points": ["<short phrase for a missing or weak idea — no answers>", "..."]
 }
 """.strip()
     },

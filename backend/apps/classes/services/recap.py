@@ -7,6 +7,8 @@ from google import genai
 
 from apps.commons.llm_prompts import PROMPTS
 from apps.commons.llm_provider import preferred_provider
+from apps.commons.models import LLMUsageLog
+from apps.commons.token_tracker import tracked_generate_content
 
 
 def _get_env(name: str) -> str:
@@ -76,14 +78,14 @@ def generate_recap_from_structure(*, structure_json: str) -> tuple[dict[str, Any
 
     if gemini_client is not None:
         try:
-            resp = gemini_client.models.generate_content(model=model, contents=contents)
+            resp = tracked_generate_content(gemini_client, model=model, contents=contents, feature=LLMUsageLog.Feature.RECAP, provider='gemini')
             return _safe_json_from_llm(_extract_text(resp)), 'gemini', model
         except Exception as exc:
             last_error = exc
 
     if avalai_client is not None:
         try:
-            resp = avalai_client.models.generate_content(model=model, contents=contents)
+            resp = tracked_generate_content(avalai_client, model=model, contents=contents, feature=LLMUsageLog.Feature.RECAP, provider='avalai')
             return _safe_json_from_llm(_extract_text(resp)), 'avalai', model
         except Exception as exc:
             last_error = exc

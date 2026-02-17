@@ -11,6 +11,8 @@ from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_excep
 
 from apps.commons.llm_prompts import PROMPTS
 from apps.commons.llm_provider import preferred_provider
+from apps.commons.models import LLMUsageLog
+from apps.commons.token_tracker import tracked_generate_content
 from apps.classes.services.media_compressor import prepare_media_parts_for_api
 
 logger = logging.getLogger(__name__)
@@ -129,13 +131,17 @@ def transcribe_media_bytes(*, data: bytes, mime_type: str) -> tuple[str, str, st
 
             media_part = types.Part.from_bytes(data=part_bytes, mime_type=part_mime)
             try:
-                resp = client.models.generate_content(
+                resp = tracked_generate_content(
+                    client,
                     model=model,
                     contents=[prompt, media_part],
                     config=types.GenerateContentConfig(
                         # google-genai SDK expects timeout in MILLISECONDS
                         http_options={'timeout': _LLM_TIMEOUT_SECONDS * 1000},
                     ),
+                    feature=LLMUsageLog.Feature.TRANSCRIPTION,
+                    provider=provider_name,
+                    detail=f'part {idx}/{total}',
                 )
                 texts.append(_extract_text(resp))
             except Exception as e:

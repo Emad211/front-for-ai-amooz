@@ -165,7 +165,7 @@ def _run_chat_system_prompt(*, unit_content: str, history_str: str, user_message
 
     # Fallback: if the provider fails to output JSON, return a best-effort text answer.
     try:
-        raw = generate_text(contents=prompt).text
+        raw = generate_text(contents=prompt, feature='chat_course').text
         raw = _safe_str(raw)
         if raw:
             return _text_response(content=raw, suggestions=DEFAULT_SUGGESTIONS)
@@ -363,7 +363,7 @@ def describe_image_for_chat(*, unit_content: str, user_message: str, image_bytes
         {'unit_content': unit_content, 'user_message': user_message},
     )
     media_part = part_from_bytes(data=image_bytes, mime_type=mime_type)
-    return generate_text(contents=[prompt, media_part]).text.strip()
+    return generate_text(contents=[prompt, media_part], feature='chat_vision').text.strip()
 
 
 def handle_student_image_upload(

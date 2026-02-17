@@ -7,6 +7,8 @@ from google import genai
 
 from apps.commons.llm_prompts import PROMPTS
 from apps.commons.llm_provider import preferred_provider
+from apps.commons.models import LLMUsageLog
+from apps.commons.token_tracker import tracked_generate_content
 
 from .json_utils import extract_json_object
 
@@ -86,7 +88,7 @@ def generate_section_quiz_questions(*, section_content: str, count: int = 5) -> 
 
     if gemini_client is not None:
         try:
-            resp = gemini_client.models.generate_content(model=model, contents=contents)
+            resp = tracked_generate_content(gemini_client, model=model, contents=contents, feature=LLMUsageLog.Feature.QUIZ_GENERATION, provider='gemini')
             obj = extract_json_object(_extract_text(resp))
             if isinstance(obj, dict):
                 return obj, 'gemini', model
@@ -96,7 +98,7 @@ def generate_section_quiz_questions(*, section_content: str, count: int = 5) -> 
 
     if avalai_client is not None:
         try:
-            resp = avalai_client.models.generate_content(model=model, contents=contents)
+            resp = tracked_generate_content(avalai_client, model=model, contents=contents, feature=LLMUsageLog.Feature.QUIZ_GENERATION, provider='avalai')
             obj = extract_json_object(_extract_text(resp))
             if isinstance(obj, dict):
                 return obj, 'avalai', model
@@ -130,7 +132,7 @@ def grade_open_text_answer(*, question: str, reference_answer: str, student_answ
 
     if gemini_client is not None:
         try:
-            resp = gemini_client.models.generate_content(model=model, contents=contents)
+            resp = tracked_generate_content(gemini_client, model=model, contents=contents, feature=LLMUsageLog.Feature.QUIZ_GRADING, provider='gemini')
             obj = extract_json_object(_extract_text(resp))
             if isinstance(obj, dict):
                 return obj, 'gemini', model
@@ -140,7 +142,7 @@ def grade_open_text_answer(*, question: str, reference_answer: str, student_answ
 
     if avalai_client is not None:
         try:
-            resp = avalai_client.models.generate_content(model=model, contents=contents)
+            resp = tracked_generate_content(avalai_client, model=model, contents=contents, feature=LLMUsageLog.Feature.QUIZ_GRADING, provider='avalai')
             obj = extract_json_object(_extract_text(resp))
             if isinstance(obj, dict):
                 return obj, 'avalai', model
@@ -176,7 +178,7 @@ def generate_final_exam_pool(*, combined_content: str, pool_size: int = 12) -> t
 
     if gemini_client is not None:
         try:
-            resp = gemini_client.models.generate_content(model=model, contents=contents)
+            resp = tracked_generate_content(gemini_client, model=model, contents=contents, feature=LLMUsageLog.Feature.FINAL_EXAM_GENERATION, provider='gemini')
             obj = extract_json_object(_extract_text(resp))
             if isinstance(obj, dict):
                 return obj, 'gemini', model
@@ -186,7 +188,7 @@ def generate_final_exam_pool(*, combined_content: str, pool_size: int = 12) -> t
 
     if avalai_client is not None:
         try:
-            resp = avalai_client.models.generate_content(model=model, contents=contents)
+            resp = tracked_generate_content(avalai_client, model=model, contents=contents, feature=LLMUsageLog.Feature.FINAL_EXAM_GENERATION, provider='avalai')
             obj = extract_json_object(_extract_text(resp))
             if isinstance(obj, dict):
                 return obj, 'avalai', model
@@ -235,7 +237,7 @@ def generate_answer_hint(
 
     if gemini_client is not None:
         try:
-            resp = gemini_client.models.generate_content(model=model, contents=contents)
+            resp = tracked_generate_content(gemini_client, model=model, contents=contents, feature=LLMUsageLog.Feature.HINT_GENERATION, provider='gemini')
             obj = extract_json_object(_extract_text(resp))
             if not isinstance(obj, dict):
                 obj = {'hint': str(obj), 'encouragement': ''}
@@ -245,7 +247,7 @@ def generate_answer_hint(
 
     if avalai_client is not None:
         try:
-            resp = avalai_client.models.generate_content(model=model, contents=contents)
+            resp = tracked_generate_content(avalai_client, model=model, contents=contents, feature=LLMUsageLog.Feature.HINT_GENERATION, provider='avalai')
             obj = extract_json_object(_extract_text(resp))
             if not isinstance(obj, dict):
                 obj = {'hint': str(obj), 'encouragement': ''}

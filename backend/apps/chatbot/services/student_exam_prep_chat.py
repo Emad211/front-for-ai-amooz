@@ -155,7 +155,7 @@ def describe_exam_prep_handwriting(*, question_context: str, user_message: str, 
 
     # Fallback to plain text if JSON parsing failed.
     try:
-        return generate_text(contents=[prompt, media_part]).text.strip()
+        return generate_text(contents=[prompt, media_part], feature='chat_vision').text.strip()
     except Exception:
         return ''
 
@@ -211,7 +211,7 @@ def handle_exam_prep_message(
 
     if not content:
         try:
-            content = generate_text(contents=prompt).text.strip()
+            content = generate_text(contents=prompt, feature='chat_exam_prep').text.strip()
         except Exception:
             content = ''
 

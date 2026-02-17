@@ -7,6 +7,8 @@ from google import genai
 
 from apps.commons.llm_prompts import PROMPTS
 from apps.commons.llm_provider import preferred_provider
+from apps.commons.models import LLMUsageLog
+from apps.commons.token_tracker import tracked_generate_content
 
 from .json_utils import extract_json_object
 
@@ -67,7 +69,7 @@ def structure_transcript_markdown(*, transcript_markdown: str) -> tuple[dict[str
 
     if gemini_client is not None:
         try:
-            resp = gemini_client.models.generate_content(model=model, contents=contents)
+            resp = tracked_generate_content(gemini_client, model=model, contents=contents, feature=LLMUsageLog.Feature.STRUCTURE, provider='gemini')
             txt = _extract_text(resp)
             obj = extract_json_object(txt)
             obj = _restore_latex_escapes(obj)
@@ -77,7 +79,7 @@ def structure_transcript_markdown(*, transcript_markdown: str) -> tuple[dict[str
 
     if avalai_client is not None:
         try:
-            resp = avalai_client.models.generate_content(model=model, contents=contents)
+            resp = tracked_generate_content(avalai_client, model=model, contents=contents, feature=LLMUsageLog.Feature.STRUCTURE, provider='avalai')
             txt = _extract_text(resp)
             obj = extract_json_object(txt)
             obj = _restore_latex_escapes(obj)

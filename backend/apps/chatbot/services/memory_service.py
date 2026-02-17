@@ -179,7 +179,7 @@ class MemoryService:
 
         new_turns = '\n'.join([f"{m['role']}: {m['content']}" for m in to_summarize])
         prompt = PROMPTS['memory_summary']['default'].format(old_summary=state.summary, new_turns=new_turns)
-        updated_summary = generate_text(contents=prompt).text.strip()
+        updated_summary = generate_text(contents=prompt, feature='memory_summary').text.strip()
 
         state.summary = updated_summary
         state.buffer = tail

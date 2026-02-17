@@ -209,4 +209,79 @@ export const AdminService = {
     await new Promise(resolve => setTimeout(resolve, 500));
     return { success: true, data: { ...MOCK_SERVER_SETTINGS, ...data } };
   },
+
+  // ============================================================================
+  // LLM Usage Analytics (Token Tracking)
+  // ============================================================================
+
+  getLLMUsageSummary: async (days = 30) => {
+    return requestJson<{
+      total_requests: number;
+      successful_requests: number;
+      failed_requests: number;
+      total_input_tokens: number;
+      total_output_tokens: number;
+      total_tokens: number;
+      total_cost_usd: number;
+      avg_duration_ms: number;
+    }>(`/admin/llm-usage/summary/?days=${days}`);
+  },
+
+  getLLMUsageByFeature: async (days = 30) => {
+    return requestJson<Array<{
+      feature: string;
+      feature_label: string;
+      count: number;
+      total_tokens: number;
+      total_cost_usd: number;
+      avg_duration_ms: number;
+    }>>(`/admin/llm-usage/by-feature/?days=${days}`);
+  },
+
+  getLLMUsageByUser: async (days = 30) => {
+    return requestJson<Array<{
+      user_id: number | null;
+      username: string;
+      full_name: string;
+      role: string;
+      count: number;
+      total_tokens: number;
+      total_cost_usd: number;
+    }>>(`/admin/llm-usage/by-user/?days=${days}`);
+  },
+
+  getLLMUsageByProvider: async (days = 30) => {
+    return requestJson<Array<{
+      provider: string;
+      count: number;
+      total_tokens: number;
+      total_cost_usd: number;
+    }>>(`/admin/llm-usage/by-provider/?days=${days}`);
+  },
+
+  getLLMUsageDaily: async (days = 30) => {
+    return requestJson<Array<{
+      date: string;
+      count: number;
+      total_tokens: number;
+      total_cost_usd: number;
+    }>>(`/admin/llm-usage/daily/?days=${days}`);
+  },
+
+  getLLMUsageRecentLogs: async (limit = 100) => {
+    return requestJson<Array<{
+      id: number;
+      user: string | null;
+      feature: string;
+      provider: string;
+      model_name: string;
+      input_tokens: number;
+      output_tokens: number;
+      total_tokens: number;
+      estimated_cost_usd: number;
+      duration_ms: number;
+      success: boolean;
+      created_at: string;
+    }>>(`/admin/llm-usage/recent/?limit=${limit}`);
+  },
 };

@@ -16,6 +16,8 @@ from google.genai import types
 
 from apps.commons.llm_prompts import PROMPTS
 from apps.commons.llm_provider import preferred_provider
+from apps.commons.models import LLMUsageLog
+from apps.commons.token_tracker import tracked_generate_content
 
 from .json_utils import extract_json_object
 
@@ -136,7 +138,7 @@ def extract_exam_prep_structure(*, transcript_markdown: str) -> tuple[dict[str, 
     gemini_client, avalai_client = _get_clients()
     last_error: Optional[Exception] = None
 
-    def _parse_with_repair(*, client: genai.Client) -> dict[str, Any]:
+    def _parse_with_repair(*, client: genai.Client, _provider_name: str) -> dict[str, Any]:
         """Parse JSON from model output with multiple safe retries.
 
         Goal: Step 2 should not fail due to minor JSON formatting issues.
@@ -156,13 +158,16 @@ def extract_exam_prep_structure(*, transcript_markdown: str) -> tuple[dict[str, 
                 return None
 
         # Attempt 1: normal generation
-        resp = client.models.generate_content(
+        resp = tracked_generate_content(
+            client,
             model=model,
             contents=contents,
             config=types.GenerateContentConfig(
                 # google-genai SDK expects timeout in MILLISECONDS
                 http_options={'timeout': _LLM_TIMEOUT_SECONDS * 1000},
             ),
+            feature=LLMUsageLog.Feature.EXAM_PREP_STRUCTURE,
+            provider=_provider_name,
         )
         txt = _extract_text(resp)
         obj = _attempt_parse(txt)
@@ -193,12 +198,16 @@ def extract_exam_prep_structure(*, transcript_markdown: str) -> tuple[dict[str, 
                 "You are a strict JSON repair tool.",
                 template + "INVALID_OUTPUT:\n" + (txt or ''),
             ]
-            resp2 = client.models.generate_content(
+            resp2 = tracked_generate_content(
+                client,
                 model=model,
                 contents=repair_contents,
                 config=types.GenerateContentConfig(
                     http_options={'timeout': _LLM_TIMEOUT_SECONDS * 1000},
                 ),
+                feature=LLMUsageLog.Feature.EXAM_PREP_STRUCTURE,
+                provider=_provider_name,
+                detail='json_repair_pass',
             )
             txt2 = _extract_text(resp2)
             obj2 = _attempt_parse(txt2)
@@ -213,7 +222,7 @@ def extract_exam_prep_structure(*, transcript_markdown: str) -> tuple[dict[str, 
 
     if gemini_client is not None:
         try:
-            obj = _parse_with_repair(client=gemini_client)
+            obj = _parse_with_repair(client=gemini_client, _provider_name='gemini')
             obj = _restore_latex_escapes(obj)
             return obj, 'gemini', model
         except Exception as exc:
@@ -221,7 +230,7 @@ def extract_exam_prep_structure(*, transcript_markdown: str) -> tuple[dict[str, 
 
     if avalai_client is not None:
         try:
-            obj = _parse_with_repair(client=avalai_client)
+            obj = _parse_with_repair(client=avalai_client, _provider_name='avalai')
             obj = _restore_latex_escapes(obj)
             return obj, 'avalai', model
         except Exception as exc:
