@@ -22,6 +22,8 @@ class MeSerializer(serializers.Serializer):
     phone = serializers.CharField(read_only=True, allow_null=True, help_text="Phone number of the user.")
     avatar = serializers.ImageField(read_only=True, allow_null=True, help_text="Avatar image.")
     role = serializers.CharField(read_only=True, help_text="Role of the user (STUDENT/TEACHER/ADMIN).")
+    is_staff = serializers.BooleanField(read_only=True, help_text="Indicates if the user can access admin resources.")
+    is_superuser = serializers.BooleanField(read_only=True, help_text="Indicates if the user is a Django superuser.")
     is_profile_completed = serializers.BooleanField(read_only=True, help_text="Indicates if the user has completed their profile.")
 
     join_date = serializers.DateTimeField(source='date_joined', read_only=True)

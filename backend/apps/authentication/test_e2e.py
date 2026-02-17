@@ -200,6 +200,41 @@ class TestCompleteAuthenticationFlows:
         assert teacher_me.data['username'] == teacher_user.username
         assert teacher_me.data['role'] == User.Role.TEACHER
 
+    def test_email_login_prefers_admin_when_same_password_matches_multiple_accounts(self):
+        """When same email+password matches multiple accounts, admin-capable account is selected."""
+        shared_email = 'ambiguous@test.com'
+        shared_password = 'SamePass123!@#'
+
+        teacher_user = User.objects.create_user(
+            username='ambiguous_teacher',
+            email=shared_email,
+            password=shared_password,
+            role=User.Role.TEACHER,
+        )
+        admin_user = User.objects.create_user(
+            username='ambiguous_admin',
+            email=shared_email,
+            password=shared_password,
+            role=User.Role.STUDENT,
+            is_staff=True,
+            is_superuser=True,
+        )
+
+        assert teacher_user.id < admin_user.id
+
+        client = APIClient()
+        login_response = client.post('/api/token/', {
+            'username': shared_email,
+            'password': shared_password,
+        }, format='json')
+        assert login_response.status_code == 200
+
+        client.credentials(HTTP_AUTHORIZATION=f"Bearer {login_response.data['access']}")
+        me = client.get('/api/accounts/me/')
+        assert me.status_code == 200
+        assert me.data['username'] == admin_user.username
+        assert me.data['is_superuser'] is True
+
     def test_token_lifecycle_and_blacklisting(self):
         """Test complete token lifecycle with blacklisting"""
         user = User.objects.create_user(username='token_lifecycle', password='pass123')

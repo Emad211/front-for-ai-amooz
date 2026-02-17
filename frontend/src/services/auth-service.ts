@@ -24,6 +24,8 @@ export type AuthMeResponse = {
   phone?: string | null;
   avatar?: string | null;
   role: string;
+  is_staff?: boolean;
+  is_superuser?: boolean;
   is_profile_completed: boolean;
 };
 

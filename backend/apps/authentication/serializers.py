@@ -160,7 +160,7 @@ class TokenObtainPairByIdentifierSerializer(TokenObtainPairSerializer):
         if identifier and isinstance(identifier, str) and '@' in identifier:
             matches = User.objects.filter(email__iexact=identifier).order_by('id')
 
-            authenticated_user = None
+            authenticated_users: list[User] = []
             if password:
                 for candidate in matches:
                     authed = authenticate(
@@ -169,11 +169,21 @@ class TokenObtainPairByIdentifierSerializer(TokenObtainPairSerializer):
                         password=password,
                     )
                     if authed is not None:
-                        authenticated_user = candidate
-                        break
+                        authenticated_users.append(candidate)
 
-            if authenticated_user is not None:
-                attrs[self.username_field] = getattr(authenticated_user, User.USERNAME_FIELD)
+            if authenticated_users:
+                admin_like = next(
+                    (
+                        user
+                        for user in authenticated_users
+                        if bool(getattr(user, 'is_superuser', False))
+                        or bool(getattr(user, 'is_staff', False))
+                        or getattr(user, 'role', None) == User.Role.ADMIN
+                    ),
+                    None,
+                )
+                selected_user = admin_like or authenticated_users[0]
+                attrs[self.username_field] = getattr(selected_user, User.USERNAME_FIELD)
             else:
                 user = matches.first()
                 if user is not None:

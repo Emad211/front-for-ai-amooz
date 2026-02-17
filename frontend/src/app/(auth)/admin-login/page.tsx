@@ -34,12 +34,16 @@ export default function AdminLoginPage() {
       const user = await fetchMe(tokens.access);
 
       // Step 3: Check role
-      if (user.role.toLowerCase() !== 'admin') {
+      const hasAdminAccess =
+        user.role.toLowerCase() === 'admin' || Boolean(user.is_staff) || Boolean(user.is_superuser);
+
+      if (!hasAdminAccess) {
         toast.error('شما دسترسی مدیریت ندارید.');
         return;
       }
 
-      persistUser(user);
+      const adminUser = user.role.toLowerCase() === 'admin' ? user : { ...user, role: 'ADMIN' };
+      persistUser(adminUser);
       toast.success('خوش آمدید، مدیر!');
       
       // Step 4: Redirect to admin panel
