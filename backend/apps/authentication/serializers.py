@@ -1,4 +1,4 @@
-from django.contrib.auth import get_user_model
+from django.contrib.auth import authenticate, get_user_model
 from django.contrib.auth.password_validation import validate_password
 from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
@@ -66,13 +66,22 @@ class RegisterSerializer(serializers.Serializer):
     def validate_email(self, value: str) -> str:
         if not value:
             return value
-        if User.objects.filter(email=value).exists():
-            raise serializers.ValidationError('Email already exists.')
         return value
 
     def validate_password(self, value: str) -> str:
         validate_password(value)
         return value
+
+    def validate(self, attrs):
+        email = (attrs.get('email') or '').strip()
+        role = attrs.get('role') or User.Role.STUDENT
+
+        if email and User.objects.filter(email__iexact=email, role=role).exists():
+            raise serializers.ValidationError({
+                'email': ['برای این نقش، این ایمیل قبلاً ثبت شده است.'],
+            })
+
+        return attrs
 
     def create(self, validated_data):
         role = validated_data.get('role') or User.Role.STUDENT
@@ -145,15 +154,29 @@ class TokenObtainPairByIdentifierSerializer(TokenObtainPairSerializer):
 
     def validate(self, attrs):
         identifier = attrs.get(self.username_field)
+        password = attrs.get('password')
+        request = self.context.get('request')
 
         if identifier and isinstance(identifier, str) and '@' in identifier:
-            matches = User.objects.filter(email__iexact=identifier)
-            if matches.count() > 1:
-                raise serializers.ValidationError({
-                    self.username_field: ['این ایمیل به چند حساب کاربری متصل است.'],
-                })
-            user = matches.first()
-            if user is not None:
-                attrs[self.username_field] = getattr(user, User.USERNAME_FIELD)
+            matches = User.objects.filter(email__iexact=identifier).order_by('id')
+
+            authenticated_user = None
+            if password:
+                for candidate in matches:
+                    authed = authenticate(
+                        request=request,
+                        username=getattr(candidate, User.USERNAME_FIELD),
+                        password=password,
+                    )
+                    if authed is not None:
+                        authenticated_user = candidate
+                        break
+
+            if authenticated_user is not None:
+                attrs[self.username_field] = getattr(authenticated_user, User.USERNAME_FIELD)
+            else:
+                user = matches.first()
+                if user is not None:
+                    attrs[self.username_field] = getattr(user, User.USERNAME_FIELD)
 
         return super().validate(attrs)

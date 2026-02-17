@@ -157,6 +157,49 @@ class TestCompleteAuthenticationFlows:
         }, format='json')
         assert email_login.status_code == 200
 
+    def test_email_login_with_multiple_accounts_uses_matching_password(self):
+        """Email can be shared by multiple accounts and login resolves by password."""
+        shared_email = 'shared@test.com'
+        admin_user = User.objects.create_user(
+            username='shared_admin',
+            email=shared_email,
+            password='AdminPass123!@#',
+            role=User.Role.ADMIN,
+        )
+        teacher_user = User.objects.create_user(
+            username='shared_teacher',
+            email=shared_email,
+            password='TeacherPass123!@#',
+            role=User.Role.TEACHER,
+        )
+
+        client = APIClient()
+
+        admin_login = client.post('/api/token/', {
+            'username': shared_email,
+            'password': 'AdminPass123!@#',
+        }, format='json')
+        assert admin_login.status_code == 200
+        admin_access = admin_login.data['access']
+        client.credentials(HTTP_AUTHORIZATION=f'Bearer {admin_access}')
+        admin_me = client.get('/api/accounts/me/')
+        assert admin_me.status_code == 200
+        assert admin_me.data['username'] == admin_user.username
+        assert admin_me.data['role'] == User.Role.ADMIN
+
+        client.credentials()
+        teacher_login = client.post('/api/token/', {
+            'username': shared_email,
+            'password': 'TeacherPass123!@#',
+        }, format='json')
+        assert teacher_login.status_code == 200
+        teacher_access = teacher_login.data['access']
+        client.credentials(HTTP_AUTHORIZATION=f'Bearer {teacher_access}')
+        teacher_me = client.get('/api/accounts/me/')
+        assert teacher_me.status_code == 200
+        assert teacher_me.data['username'] == teacher_user.username
+        assert teacher_me.data['role'] == User.Role.TEACHER
+
     def test_token_lifecycle_and_blacklisting(self):
         """Test complete token lifecycle with blacklisting"""
         user = User.objects.create_user(username='token_lifecycle', password='pass123')
@@ -229,7 +272,12 @@ class TestCompleteAuthenticationFlows:
     def test_registration_with_existing_data_edge_cases(self):
         """Test registration edge cases with existing data"""
         # Create existing user
-        User.objects.create_user(username='existing', email='existing@test.com', password='pass123')
+        User.objects.create_user(
+            username='existing',
+            email='existing@test.com',
+            password='pass123',
+            role=User.Role.STUDENT,
+        )
         
         client = APIClient()
         
@@ -243,24 +291,34 @@ class TestCompleteAuthenticationFlows:
         assert response1.data['detail'] == 'Validation error.'
         assert 'username' in response1.data['errors']
         
-        # Test duplicate email
+        # Test duplicate email in same role is rejected
         response2 = client.post('/api/auth/register/', {
             'username': 'newuser',
             'email': 'existing@test.com',
-            'password': 'StrongPass123!@#'
+            'password': 'StrongPass123!@#',
+            'role': 'STUDENT',
         }, format='json')
         assert response2.status_code == 400
         assert response2.data['detail'] == 'Validation error.'
         assert 'email' in response2.data['errors']
+
+        # Test duplicate email in different role is allowed
+        response4 = client.post('/api/auth/register/', {
+            'username': 'newteacher',
+            'email': 'existing@test.com',
+            'password': 'StrongPass123!@#',
+            'role': 'TEACHER',
+        }, format='json')
+        assert response4.status_code == 201
         
-        # Test case sensitivity
+        # Test case sensitivity (username)
         response3 = client.post('/api/auth/register/', {
             'username': 'EXISTING',
             'email': 'EXISTING@TEST.COM',
             'password': 'StrongPass123!@#'
         }, format='json')
-        # Should succeed as Django usernames are case-sensitive by default
-        assert response3.status_code == 201
+        # Should fail because email is compared case-insensitively for same role (default STUDENT)
+        assert response3.status_code == 400
 
     def test_authentication_error_handling(self):
         """Test various authentication error scenarios"""

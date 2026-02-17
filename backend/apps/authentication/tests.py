@@ -166,8 +166,13 @@ class TestAuthRegisterLogout:
         assert response.data['detail'] == 'Validation error.'
         assert 'old_password' in response.data['errors']
 
-    def test_register_rejects_duplicate_email(self):
-        User.objects.create_user(username='user1', email='duplicate@example.com', password='password123')
+    def test_register_rejects_duplicate_email_in_same_role(self):
+        User.objects.create_user(
+            username='user1',
+            email='duplicate@example.com',
+            password='password123',
+            role=User.Role.STUDENT,
+        )
         client = APIClient()
         response = client.post(
             '/api/auth/register/',
@@ -175,12 +180,33 @@ class TestAuthRegisterLogout:
                 'username': 'user2',
                 'email': 'duplicate@example.com',
                 'password': 'StrongPass123!@#',
+                'role': 'STUDENT',
             },
             format='json',
         )
         assert response.status_code == 400
         assert response.data['detail'] == 'Validation error.'
         assert 'email' in response.data['errors']
+
+    def test_register_allows_same_email_for_different_role(self):
+        User.objects.create_user(
+            username='teacher1',
+            email='shared@example.com',
+            password='password123',
+            role=User.Role.TEACHER,
+        )
+        client = APIClient()
+        response = client.post(
+            '/api/auth/register/',
+            {
+                'username': 'student1',
+                'email': 'shared@example.com',
+                'password': 'StrongPass123!@#',
+                'role': 'STUDENT',
+            },
+            format='json',
+        )
+        assert response.status_code == 201
 
     def test_register_rejects_weak_password(self):
         client = APIClient()
