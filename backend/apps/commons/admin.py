@@ -2,7 +2,7 @@ from django.contrib import admin
 from django.db.models import Sum, Count, Avg
 from django.utils.html import format_html
 
-from .models import LLMUsageLog
+from .models import AdminSetting, LLMUsageLog, Ticket, TicketMessage
 
 
 @admin.register(LLMUsageLog)
@@ -109,3 +109,23 @@ class LLMUsageLogAdmin(admin.ModelAdmin):
         }
 
         return super().changelist_view(request, extra_context=extra_context)
+
+
+class TicketMessageInline(admin.TabularInline):
+    model = TicketMessage
+    extra = 0
+    readonly_fields = ['created_at', 'author']
+
+
+@admin.register(Ticket)
+class TicketAdmin(admin.ModelAdmin):
+    list_display = ['id', 'subject', 'user', 'status', 'priority', 'department', 'created_at', 'updated_at']
+    list_filter = ['status', 'priority', 'department']
+    search_fields = ['subject', 'user__username', 'user__email']
+    inlines = [TicketMessageInline]
+
+
+@admin.register(AdminSetting)
+class AdminSettingAdmin(admin.ModelAdmin):
+    list_display = ['key', 'value', 'updated_at']
+    search_fields = ['key']

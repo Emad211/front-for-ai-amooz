@@ -31,8 +31,9 @@ class TestAccountsSecurity:
         # Ensure response doesn't include secrets/privileged fields.
         response_text = str(response.data)
         assert 'password' not in response_text
-        assert 'is_superuser' not in response_text
         assert 'user_permissions' not in response_text
+        # is_staff and is_superuser are intentionally exposed (read-only)
+        # for frontend admin checks.
 
     def test_inactive_user_cannot_access_me_even_with_token(self):
         user = User.objects.create_user(

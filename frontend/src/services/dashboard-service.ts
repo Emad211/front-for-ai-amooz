@@ -2,11 +2,10 @@ import {
   MOCK_DASHBOARD_STATS,
   MOCK_ACTIVITIES,
   MOCK_UPCOMING_EVENTS,
-  MOCK_TICKETS,
   MOCK_NOTIFICATIONS,
   MOCK_CALENDAR_EVENTS,
 } from '@/constants/mock';
-import type { Course, CourseContent, UserProfile } from '@/types';
+import type { Course, CourseContent, Ticket, UserProfile } from '@/types';
 import { clearAuthStorage, getStoredTokens, persistTokens, persistUser, refreshAccessToken } from '@/services/auth-service';
 
 const RAW_API_URL = (process.env.NEXT_PUBLIC_API_URL ?? '').replace(/\/$/, '');
@@ -482,9 +481,14 @@ export const DashboardService = {
     });
   },
 
-  getTickets: async () => {
-    await new Promise(resolve => setTimeout(resolve, 600));
-    return MOCK_TICKETS;
+  getTickets: async (): Promise<Ticket[]> => {
+    const url = `${API_URL}/admin/my-tickets/`;
+    const response = await requestJson<Ticket[]>(url, {
+      headers: {
+        Authorization: `Bearer ${getAccessToken()}`,
+      },
+    });
+    return response || [];
   },
 
   getNotifications: async (): Promise<Notification[]> => {

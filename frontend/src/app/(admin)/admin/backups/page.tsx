@@ -8,7 +8,7 @@ import { ErrorState } from '@/components/shared/error-state';
 import { useAdminBackups } from '@/hooks/use-admin-backups';
 
 export default function BackupsPage() {
-  const { items, isLoading, error, reload, trigger } = useAdminBackups();
+  const { items, info, isLoading, error, reload, trigger } = useAdminBackups();
 
   if (error) {
     return (
@@ -32,6 +32,37 @@ export default function BackupsPage() {
           <Button size="sm" variant="outline" className="rounded-xl" onClick={() => trigger('incremental')}>افزایشی</Button>
         </div>
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>اطلاعات دیتابیس</CardTitle>
+          <CardDescription>وضعیت فعلی پایگاه داده</CardDescription>
+        </CardHeader>
+        <CardContent className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          {isLoading || !info ? (
+            <>
+              <Skeleton className="h-16 rounded-xl" />
+              <Skeleton className="h-16 rounded-xl" />
+            </>
+          ) : (
+            <>
+              <div className="p-4 rounded-xl border bg-muted/50">
+                <p className="text-xs text-muted-foreground">حجم دیتابیس</p>
+                <p className="text-lg font-bold">{info.dbSize}</p>
+              </div>
+              <div className="p-4 rounded-xl border bg-muted/50">
+                <p className="text-xs text-muted-foreground">تعداد جداول</p>
+                <p className="text-lg font-bold">{info.tableCount}</p>
+              </div>
+              {info.note && (
+                <div className="col-span-full p-3 rounded-xl border border-dashed bg-muted/30">
+                  <p className="text-sm text-muted-foreground">{info.note}</p>
+                </div>
+              )}
+            </>
+          )}
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>

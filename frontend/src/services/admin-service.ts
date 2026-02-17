@@ -1,21 +1,14 @@
-import {
-  MOCK_ANALYTICS_STATS, 
-  MOCK_CHART_DATA, 
-  MOCK_DISTRIBUTION_DATA, 
-  MOCK_RECENT_ACTIVITIES,
-  MOCK_TICKETS,
-  MOCK_MESSAGE_RECIPIENTS,
-  MOCK_ADMIN_PROFILE,
-  MOCK_ADMIN_SECURITY,
-  MOCK_ADMIN_NOTIFICATIONS,
-} from '@/constants/mock';
-import { 
-  MOCK_SERVER_HEALTH,
-  MOCK_BACKUPS,
-  MOCK_MAINTENANCE_TASKS,
-  MOCK_SERVER_SETTINGS,
-} from '@/constants/mock';
-import type { AdminNotificationSettings, AdminProfileSettings, AdminSecuritySettings, MessageRecipient } from '@/types';
+import type {
+  AdminAnalyticsStat,
+  AdminChartData,
+  AdminDistributionData,
+  AdminNotificationSettings,
+  AdminProfileSettings,
+  AdminRecentActivity,
+  AdminSecuritySettings,
+  MessageRecipient,
+  Ticket,
+} from '@/types';
 
 const RAW_API_URL = (process.env.NEXT_PUBLIC_API_URL ?? '').replace(/\/$/, '');
 const API_URL = RAW_API_URL.endsWith('/api') ? RAW_API_URL : `${RAW_API_URL}/api`;
@@ -96,72 +89,181 @@ async function requestJson<T>(path: string, options: RequestInit = {}): Promise<
   return payload as T;
 }
 
+// ---------------------------------------------------------------------------
+// Persian number helpers
+// ---------------------------------------------------------------------------
+
+function toPersianDigits(n: number | string): string {
+  return String(n).replace(/\d/g, (d) => '۰۱۲۳۴۵۶۷۸۹'[Number(d)]);
+}
+
+function formatPersianNumber(n: number): string {
+  return toPersianDigits(n.toLocaleString('en-US'));
+}
+
+function formatPersianPercent(n: number): string {
+  const sign = n >= 0 ? '+' : '';
+  return `${toPersianDigits(sign + n)}٪`;
+}
+
+// Map activity type to icon / colour
+const ACTIVITY_STYLE: Record<string, { icon: string; color: string; bg: string }> = {
+  registration: { icon: 'user-plus', color: 'text-blue-500', bg: 'bg-blue-500/10' },
+  class: { icon: 'book', color: 'text-emerald-500', bg: 'bg-emerald-500/10' },
+  broadcast: { icon: 'megaphone', color: 'text-amber-500', bg: 'bg-amber-500/10' },
+  quiz: { icon: 'clipboard-check', color: 'text-purple-500', bg: 'bg-purple-500/10' },
+};
+
+function relativeTime(isoDate: string): string {
+  const diff = Date.now() - new Date(isoDate).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return 'همین الان';
+  if (mins < 60) return `${toPersianDigits(mins)} دقیقه پیش`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${toPersianDigits(hours)} ساعت پیش`;
+  const days = Math.floor(hours / 24);
+  if (days === 1) return 'دیروز';
+  return `${toPersianDigits(days)} روز پیش`;
+}
+
 /**
  * Admin Service
  * Handles all data fetching for the admin dashboard and management.
  */
 export const AdminService = {
-  getAnalyticsStats: async () => {
-    await new Promise(resolve => setTimeout(resolve, 500));
-    return MOCK_ANALYTICS_STATS;
+  // ============================================================================
+  // Analytics
+  // ============================================================================
+
+  getAnalyticsStats: async (): Promise<AdminAnalyticsStat[]> => {
+    const raw = await requestJson<{
+      total_students: number;
+      total_teachers: number;
+      active_classes: number;
+      total_classes: number;
+      recent_messages: number;
+      recent_quiz_attempts: number;
+      new_students_30d: number;
+      student_change: number;
+      llm_cost_this_month: number;
+    }>('/admin/analytics/stats/');
+
+    return [
+      {
+        title: 'کل دانش‌آموزان',
+        value: formatPersianNumber(raw.total_students),
+        change: formatPersianPercent(
+          raw.total_students > 0
+            ? Math.round((raw.student_change / Math.max(raw.total_students - raw.student_change, 1)) * 100)
+            : 0,
+        ),
+        trend: raw.student_change >= 0 ? 'up' : 'down',
+        icon: 'users',
+      },
+      {
+        title: 'کلاس‌های فعال',
+        value: formatPersianNumber(raw.active_classes),
+        change: `${toPersianDigits(raw.total_classes)} کل`,
+        trend: 'up',
+        icon: 'book',
+      },
+      {
+        title: 'معلمان',
+        value: formatPersianNumber(raw.total_teachers),
+        change: '',
+        trend: 'up',
+        icon: 'graduation',
+      },
+      {
+        title: 'پیام‌های ماه',
+        value: formatPersianNumber(raw.recent_messages),
+        change: `${formatPersianNumber(raw.recent_quiz_attempts)} آزمون`,
+        trend: 'up',
+        icon: 'trending',
+      },
+    ];
   },
 
-  getChartData: async () => {
-    await new Promise(resolve => setTimeout(resolve, 500));
-    return MOCK_CHART_DATA;
+  getChartData: async (days = 14): Promise<AdminChartData[]> => {
+    const raw = await requestJson<Array<{ date: string; count: number }>>(
+      `/admin/analytics/chart/?days=${days}`,
+    );
+    const dayNames = ['یکشنبه', 'دوشنبه', 'سه‌شنبه', 'چهارشنبه', 'پنج‌شنبه', 'جمعه', 'شنبه'];
+    return raw.map((item) => {
+      const d = new Date(item.date);
+      return { name: dayNames[d.getDay()] ?? item.date, students: item.count };
+    });
   },
 
-  getDistributionData: async () => {
-    await new Promise(resolve => setTimeout(resolve, 500));
-    return MOCK_DISTRIBUTION_DATA;
+  getDistributionData: async (): Promise<AdminDistributionData[]> => {
+    const raw = await requestJson<{
+      by_pipeline_type: Array<{ pipeline_type: string; count: number }>;
+      by_level: Array<{ level: string; count: number }>;
+    }>('/admin/analytics/distribution/');
+
+    const pipelineLabels: Record<string, string> = {
+      youtube: 'یوتیوب',
+      upload: 'آپلود',
+      text: 'متن',
+    };
+
+    if (raw.by_pipeline_type.length) {
+      return raw.by_pipeline_type.map((item) => ({
+        name: pipelineLabels[item.pipeline_type] ?? item.pipeline_type,
+        value: item.count,
+      }));
+    }
+    return raw.by_level.map((item) => ({ name: item.level, value: item.count }));
   },
 
-  getRecentActivities: async () => {
-    await new Promise(resolve => setTimeout(resolve, 500));
-    return MOCK_RECENT_ACTIVITIES;
+  getRecentActivities: async (): Promise<AdminRecentActivity[]> => {
+    const raw = await requestJson<
+      Array<{ id: string; type: string; user: string; action: string; time: string }>
+    >('/admin/analytics/recent-activity/');
+
+    return raw.map((item, idx) => {
+      const style = ACTIVITY_STYLE[item.type] ?? ACTIVITY_STYLE.registration;
+      return {
+        id: idx + 1,
+        type: item.type,
+        user: item.user,
+        action: item.action,
+        time: relativeTime(item.time),
+        icon: style.icon,
+        color: style.color,
+        bg: style.bg,
+      };
+    });
   },
 
-  getTickets: async () => {
-    await new Promise(resolve => setTimeout(resolve, 600));
-    return MOCK_TICKETS;
+  // ============================================================================
+  // Tickets
+  // ============================================================================
+
+  getTickets: async (): Promise<Ticket[]> => {
+    return requestJson<Ticket[]>('/admin/tickets/');
   },
+
+  replyToTicket: async (ticketPk: number, content: string) => {
+    return requestJson(`/admin/tickets/${ticketPk}/reply/`, {
+      method: 'POST',
+      body: JSON.stringify({ content }),
+    });
+  },
+
+  updateTicket: async (ticketPk: number, data: { status?: string; priority?: string }) => {
+    return requestJson(`/admin/tickets/${ticketPk}/`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+  },
+
+  // ============================================================================
+  // Broadcast
+  // ============================================================================
 
   getMessageRecipients: async (): Promise<MessageRecipient[]> => {
-    try {
-      return await requestJson<MessageRecipient[]>('/notifications/admin/recipients/', { method: 'GET' });
-    } catch {
-      return MOCK_MESSAGE_RECIPIENTS as MessageRecipient[];
-    }
-  },
-
-  getProfileSettings: async (): Promise<AdminProfileSettings> => {
-    await new Promise(resolve => setTimeout(resolve, 400));
-    return MOCK_ADMIN_PROFILE;
-  },
-
-  getSecuritySettings: async (): Promise<AdminSecuritySettings> => {
-    await new Promise(resolve => setTimeout(resolve, 400));
-    return MOCK_ADMIN_SECURITY;
-  },
-
-  getNotificationSettings: async (): Promise<AdminNotificationSettings> => {
-    await new Promise(resolve => setTimeout(resolve, 400));
-    return MOCK_ADMIN_NOTIFICATIONS;
-  },
-
-  updateProfileSettings: async (data: Partial<AdminProfileSettings>) => {
-    await new Promise(resolve => setTimeout(resolve, 800));
-    return { success: true, data };
-  },
-
-  updateSecuritySettings: async (data: Partial<AdminSecuritySettings>) => {
-    await new Promise(resolve => setTimeout(resolve, 800));
-    return { success: true, data };
-  },
-
-  updateNotificationSettings: async (data: Partial<AdminNotificationSettings>) => {
-    await new Promise(resolve => setTimeout(resolve, 800));
-    return { success: true, data };
+    return requestJson<MessageRecipient[]>('/notifications/admin/recipients/', { method: 'GET' });
   },
 
   sendBroadcastNotification: async (payload: {
@@ -177,37 +279,102 @@ export const AdminService = {
   },
 
   // ============================================================================
+  // Admin Profile / Security / Notification Settings
+  // ============================================================================
+
+  getProfileSettings: async (): Promise<AdminProfileSettings> => {
+    return requestJson<AdminProfileSettings>('/admin/settings/profile/');
+  },
+
+  getSecuritySettings: async (): Promise<AdminSecuritySettings> => {
+    return requestJson<AdminSecuritySettings>('/admin/settings/security/');
+  },
+
+  getNotificationSettings: async (): Promise<AdminNotificationSettings> => {
+    return requestJson<AdminNotificationSettings>('/admin/settings/notifications/');
+  },
+
+  updateProfileSettings: async (data: Partial<AdminProfileSettings>) => {
+    return requestJson('/admin/settings/profile/', {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+  },
+
+  updateSecuritySettings: async (data: Partial<AdminSecuritySettings>) => {
+    return requestJson('/admin/settings/security/', {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+  },
+
+  updateNotificationSettings: async (data: Partial<AdminNotificationSettings>) => {
+    return requestJson('/admin/settings/notifications/', {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+  },
+
+  // ============================================================================
   // Ops & Maintenance
   // ============================================================================
 
   getServerHealth: async () => {
-    await new Promise(resolve => setTimeout(resolve, 300));
-    return MOCK_SERVER_HEALTH;
+    return requestJson<{
+      status: string;
+      uptime: string;
+      cpu: number;
+      memory: number;
+      disk: number;
+      incidentsThisMonth: number;
+      lastIncident: string | null;
+    }>('/admin/server/health/');
   },
 
   getMaintenanceTasks: async () => {
-    await new Promise(resolve => setTimeout(resolve, 400));
-    return MOCK_MAINTENANCE_TASKS;
+    return requestJson<
+      Array<{ id: string; title: string; window: string; owner: string; status: string; detail?: string }>
+    >('/admin/maintenance/tasks/');
   },
 
   getBackups: async () => {
-    await new Promise(resolve => setTimeout(resolve, 350));
-    return MOCK_BACKUPS;
+    return requestJson<{
+      db_size: string;
+      table_count: number;
+      backups: Array<{ id: string; createdAt: string; size: string; type: string; status: string }>;
+      note: string;
+    }>('/admin/backups/');
   },
 
-  triggerBackup: async (type: 'full' | 'incremental') => {
-    await new Promise(resolve => setTimeout(resolve, 600));
-    return { success: true, type, id: `new-${Date.now()}` };
+  triggerBackup: async (_type: 'full' | 'incremental') => {
+    return requestJson<{ success: boolean; message: string }>('/admin/backups/trigger/', {
+      method: 'POST',
+      body: JSON.stringify({ type: _type }),
+    });
   },
 
   getServerSettings: async () => {
-    await new Promise(resolve => setTimeout(resolve, 300));
-    return MOCK_SERVER_SETTINGS;
+    return requestJson<{
+      autoBackup: boolean;
+      backupWindow: string;
+      backupRetentionDays: number;
+      maintenanceAutoApprove: boolean;
+      alertEmail: string;
+    }>('/admin/server/settings/');
   },
 
-  updateServerSettings: async (data: Partial<typeof MOCK_SERVER_SETTINGS>) => {
-    await new Promise(resolve => setTimeout(resolve, 500));
-    return { success: true, data: { ...MOCK_SERVER_SETTINGS, ...data } };
+  updateServerSettings: async (data: Record<string, unknown>) => {
+    const result = await requestJson<{
+      autoBackup: boolean;
+      backupWindow: string;
+      backupRetentionDays: number;
+      maintenanceAutoApprove: boolean;
+      alertEmail: string;
+    }>('/admin/server/settings/', {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+    return { success: true, data: result };
   },
 
   // ============================================================================

@@ -36,6 +36,8 @@ class TestAccountsUnit:
             'phone',
             'avatar',
             'role',
+            'is_staff',
+            'is_superuser',
             'is_profile_completed',
             'join_date',
             'bio',

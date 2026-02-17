@@ -113,3 +113,125 @@ def estimate_cost(model: str, input_tokens: int, output_tokens: int) -> float:
     pricing = MODEL_PRICING.get(model, DEFAULT_PRICING)
     cost = (input_tokens * pricing['input'] / 1_000_000) + (output_tokens * pricing['output'] / 1_000_000)
     return round(cost, 6)
+
+
+# ---------------------------------------------------------------------------
+# Support Tickets
+# ---------------------------------------------------------------------------
+
+TICKET_DEPARTMENTS = [
+    ('technical', 'پشتیبانی فنی'),
+    ('education', 'آموزش'),
+    ('financial', 'مالی'),
+    ('suggestions', 'پیشنهادات'),
+    ('other', 'سایر'),
+]
+
+DEPARTMENT_LABELS = dict(TICKET_DEPARTMENTS)
+
+
+class Ticket(models.Model):
+    """Support ticket opened by any user."""
+
+    class Status(models.TextChoices):
+        OPEN = 'open', 'باز'
+        PENDING = 'pending', 'در انتظار'
+        ANSWERED = 'answered', 'پاسخ داده شده'
+        CLOSED = 'closed', 'بسته شده'
+
+    class Priority(models.TextChoices):
+        LOW = 'low', 'کم'
+        MEDIUM = 'medium', 'متوسط'
+        HIGH = 'high', 'زیاد'
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='tickets',
+    )
+    subject = models.CharField(max_length=255)
+    status = models.CharField(
+        max_length=16,
+        choices=Status.choices,
+        default=Status.OPEN,
+        db_index=True,
+    )
+    priority = models.CharField(
+        max_length=16,
+        choices=Priority.choices,
+        default=Priority.MEDIUM,
+    )
+    department = models.CharField(
+        max_length=32,
+        choices=TICKET_DEPARTMENTS,
+        default='other',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-updated_at']
+
+    def __str__(self) -> str:
+        return f'TKT-{self.pk:03d} {self.subject}'
+
+
+class TicketMessage(models.Model):
+    """Single message inside a ticket thread."""
+
+    ticket = models.ForeignKey(Ticket, on_delete=models.CASCADE, related_name='messages')
+    content = models.TextField()
+    is_admin = models.BooleanField(default=False)
+    author = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['created_at']
+
+
+# ---------------------------------------------------------------------------
+# Admin key/value settings
+# ---------------------------------------------------------------------------
+
+class AdminSetting(models.Model):
+    """Simple key-value store for admin-configurable settings."""
+
+    key = models.CharField(max_length=100, unique=True)
+    value = models.TextField(default='')
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self) -> str:
+        return self.key
+
+    # ---------- helpers ----------
+
+    DEFAULTS: dict[str, str] = {
+        'auto_backup': 'true',
+        'backup_window': '03:00-04:00',
+        'backup_retention_days': '14',
+        'maintenance_auto_approve': 'false',
+        'alert_email': '',
+    }
+
+    @classmethod
+    def get(cls, key: str) -> str:
+        try:
+            return cls.objects.get(key=key).value
+        except cls.DoesNotExist:
+            return cls.DEFAULTS.get(key, '')
+
+    @classmethod
+    def get_all(cls) -> dict[str, str]:
+        stored = {s.key: s.value for s in cls.objects.all()}
+        merged = {**cls.DEFAULTS, **stored}
+        return merged
+
+    @classmethod
+    def set_many(cls, data: dict[str, str]) -> None:
+        for key, val in data.items():
+            cls.objects.update_or_create(key=key, defaults={'value': str(val)})

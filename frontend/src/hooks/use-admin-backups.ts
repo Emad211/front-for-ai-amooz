@@ -9,8 +9,15 @@ type BackupItem = {
   status: string;
 };
 
+type BackupInfo = {
+  dbSize: string;
+  tableCount: number;
+  note: string;
+};
+
 export function useAdminBackups(service = AdminService) {
   const [items, setItems] = useState<BackupItem[]>([]);
+  const [info, setInfo] = useState<BackupInfo | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -19,7 +26,16 @@ export function useAdminBackups(service = AdminService) {
       setError(null);
       setIsLoading(true);
       const res = await service.getBackups();
-      setItems(res as BackupItem[]);
+      if (res && typeof res === 'object' && 'backups' in res) {
+        setItems((res.backups ?? []) as BackupItem[]);
+        setInfo({
+          dbSize: res.db_size ?? '?',
+          tableCount: res.table_count ?? 0,
+          note: res.note ?? '',
+        });
+      } else {
+        setItems(res as unknown as BackupItem[]);
+      }
     } catch (e) {
       console.error(e);
       setError('خطا در دریافت لیست بک‌آپ‌ها');
@@ -45,5 +61,5 @@ export function useAdminBackups(service = AdminService) {
     load();
   }, []);
 
-  return { items, isLoading, error, reload: load, trigger };
+  return { items, info, isLoading, error, reload: load, trigger };
 }
