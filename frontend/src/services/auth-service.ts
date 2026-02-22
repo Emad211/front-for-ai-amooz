@@ -32,6 +32,7 @@ export type AuthMeResponse = {
 export type LoginPayload = {
   username: string;
   password: string;
+  role?: string;
 };
 
 export type RegisterPayload = LoginPayload & {
@@ -172,9 +173,16 @@ async function request<T>(path: string, options: RequestInit = {}) {
 }
 
 export async function login(payload: LoginPayload): Promise<TokenResponse> {
+  const body: Record<string, string> = {
+    username: payload.username,
+    password: payload.password,
+  };
+  if (payload.role) {
+    body.role = payload.role;
+  }
   return request<TokenResponse>('/token/', {
     method: 'POST',
-    body: JSON.stringify({ username: payload.username, password: payload.password }),
+    body: JSON.stringify(body),
   });
 }
 

@@ -27,7 +27,7 @@ export default function AdminLoginPage() {
     try {
       // Step 1: Login to get tokens
       // Admin might use email but the login API expects 'username'
-      const tokens = await login({ username: email, password });
+      const tokens = await login({ username: email, password, role: 'ADMIN' });
       persistTokens(tokens);
 
       // Step 2: Fetch user info

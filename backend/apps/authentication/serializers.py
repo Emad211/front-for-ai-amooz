@@ -75,11 +75,26 @@ class RegisterSerializer(serializers.Serializer):
     def validate(self, attrs):
         email = (attrs.get('email') or '').strip()
         role = attrs.get('role') or User.Role.STUDENT
+        password = attrs.get('password', '')
 
         if email and User.objects.filter(email__iexact=email, role=role).exists():
             raise serializers.ValidationError({
                 'email': ['برای این نقش، این ایمیل قبلاً ثبت شده است.'],
             })
+
+        # Prevent same email + same password across different roles.
+        # When multiple accounts share an email, the login endpoint can
+        # only reliably distinguish them when their passwords differ.
+        if email and password:
+            other_accounts = User.objects.filter(email__iexact=email).exclude(role=role)
+            for other in other_accounts:
+                if other.check_password(password):
+                    raise serializers.ValidationError({
+                        'password': [
+                            'این رمز عبور قبلاً برای ایمیلی مشابه در نقش دیگری استفاده شده. '
+                            'لطفاً رمز عبور متفاوتی انتخاب کنید.'
+                        ],
+                    })
 
         return attrs
 
@@ -150,12 +165,19 @@ class TokenObtainPairByIdentifierSerializer(TokenObtainPairSerializer):
 
     Keeps the request payload compatible with the default SimpleJWT contract:
     {"username": "...", "password": "..."}
+
+    An optional ``role`` field lets the caller specify which account to
+    authenticate when multiple accounts share the same email.  When
+    omitted the old admin-priority logic is used.
     """
+
+    role = serializers.CharField(required=False, allow_blank=True, default='')
 
     def validate(self, attrs):
         identifier = attrs.get(self.username_field)
         password = attrs.get('password')
         request = self.context.get('request')
+        requested_role = (attrs.pop('role', '') or '').upper().strip()
 
         if identifier and isinstance(identifier, str) and '@' in identifier:
             matches = User.objects.filter(email__iexact=identifier).order_by('id')
@@ -172,17 +194,38 @@ class TokenObtainPairByIdentifierSerializer(TokenObtainPairSerializer):
                         authenticated_users.append(candidate)
 
             if authenticated_users:
-                admin_like = next(
-                    (
-                        user
-                        for user in authenticated_users
-                        if bool(getattr(user, 'is_superuser', False))
-                        or bool(getattr(user, 'is_staff', False))
-                        or getattr(user, 'role', None) == User.Role.ADMIN
-                    ),
-                    None,
-                )
-                selected_user = admin_like or authenticated_users[0]
+                selected_user = None
+
+                # When the caller explicitly asks for a role, prefer that.
+                if requested_role:
+                    selected_user = next(
+                        (u for u in authenticated_users if u.role == requested_role),
+                        None,
+                    )
+                    # Also match superuser/staff when ADMIN is requested.
+                    if not selected_user and requested_role == User.Role.ADMIN:
+                        selected_user = next(
+                            (
+                                u for u in authenticated_users
+                                if u.is_superuser or u.is_staff
+                            ),
+                            None,
+                        )
+
+                # Fallback: admin-priority heuristic for backwards compat.
+                if not selected_user:
+                    admin_like = next(
+                        (
+                            user
+                            for user in authenticated_users
+                            if bool(getattr(user, 'is_superuser', False))
+                            or bool(getattr(user, 'is_staff', False))
+                            or getattr(user, 'role', None) == User.Role.ADMIN
+                        ),
+                        None,
+                    )
+                    selected_user = admin_like or authenticated_users[0]
+
                 attrs[self.username_field] = getattr(selected_user, User.USERNAME_FIELD)
             else:
                 user = matches.first()

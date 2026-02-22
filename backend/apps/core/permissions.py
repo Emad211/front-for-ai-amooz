@@ -8,14 +8,26 @@ from apps.accounts.models import User
 
 
 class IsPlatformAdmin(BasePermission):
-    """Allow access only to platform admins (role == ADMIN).
+    """Allow access only to platform admins.
 
-    Checks `user.role` instead of Django's `is_staff` flag so that
-    the behaviour is consistent across *all* admin endpoints.
+    A user is considered an admin if *any* of these are true:
+    - ``user.role == 'ADMIN'``
+    - ``user.is_superuser``
+    - ``user.is_staff``
+
+    This ensures Django superusers (created via ``createsuperuser``)
+    always have access, even when their ``role`` field was never
+    explicitly set to ``ADMIN``.
     """
 
     message = 'فقط ادمین‌ها اجازه دسترسی دارند.'
 
     def has_permission(self, request, view) -> bool:
         user = getattr(request, 'user', None)
-        return bool(user and user.is_authenticated and user.role == User.Role.ADMIN)
+        if not user or not user.is_authenticated:
+            return False
+        return (
+            user.role == User.Role.ADMIN
+            or user.is_superuser
+            or user.is_staff
+        )

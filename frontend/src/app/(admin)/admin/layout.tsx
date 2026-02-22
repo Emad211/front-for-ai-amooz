@@ -18,7 +18,12 @@ export default function AdminLayout({
 
   useEffect(() => {
     const user = getStoredUser();
-    if (!user || (user.role || '').toUpperCase() !== 'ADMIN') {
+    const isAdmin =
+      user &&
+      ((user.role || '').toUpperCase() === 'ADMIN' ||
+        Boolean(user.is_staff) ||
+        Boolean(user.is_superuser));
+    if (!isAdmin) {
       router.replace('/login');
     } else {
       setAllowed(true);
