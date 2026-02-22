@@ -1069,3 +1069,140 @@ class AdminNotificationSettingsView(APIView):
             AdminSetting.set_many(to_save)
 
         return self.get(request)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Platform Admin — User Management
+# ═══════════════════════════════════════════════════════════════════════════
+
+class UserListSerializer(serializers.ModelSerializer):
+    """Read-only serializer for user list (camelCase output)."""
+
+    fullName = serializers.SerializerMethodField()
+    dateJoined = serializers.DateTimeField(source='date_joined', read_only=True)
+    lastLogin = serializers.DateTimeField(source='last_login', read_only=True)
+    isActive = serializers.BooleanField(source='is_active', read_only=True)
+    isStaff = serializers.BooleanField(source='is_staff', read_only=True)
+    isSuperuser = serializers.BooleanField(source='is_superuser', read_only=True)
+
+    class Meta:
+        model = User
+        fields = [
+            'id', 'username', 'email', 'first_name', 'last_name',
+            'fullName', 'role', 'phone', 'isActive', 'isStaff',
+            'isSuperuser', 'dateJoined', 'lastLogin', 'avatar',
+        ]
+
+    @staticmethod
+    def get_fullName(obj) -> str:  # noqa: N802
+        return obj.get_full_name() or obj.username
+
+
+class UserUpdateSerializer(serializers.Serializer):
+    """Input serializer for updating a user."""
+
+    role = serializers.ChoiceField(
+        choices=User.Role.choices, required=False,
+    )
+    is_active = serializers.BooleanField(required=False)
+    is_staff = serializers.BooleanField(required=False)
+    first_name = serializers.CharField(max_length=150, required=False, allow_blank=True)
+    last_name = serializers.CharField(max_length=150, required=False, allow_blank=True)
+    email = serializers.EmailField(required=False, allow_blank=True)
+    phone = serializers.CharField(max_length=15, required=False, allow_blank=True)
+
+
+class AdminUserListView(APIView):
+    """GET: list all users with search, role and active filters."""
+
+    permission_classes = [IsAdminUser]
+
+    def get(self, request):
+        qs = User.objects.all().order_by('-date_joined')
+
+        # Search
+        search = request.query_params.get('search', '').strip()
+        if search:
+            qs = qs.filter(
+                Q(username__icontains=search)
+                | Q(first_name__icontains=search)
+                | Q(last_name__icontains=search)
+                | Q(email__icontains=search)
+                | Q(phone__icontains=search)
+            )
+
+        # Filter by role
+        role = request.query_params.get('role', '').strip().upper()
+        if role:
+            qs = qs.filter(role=role)
+
+        # Filter by active status
+        is_active = request.query_params.get('is_active')
+        if is_active is not None:
+            qs = qs.filter(is_active=is_active.lower() in ('true', '1'))
+
+        data = UserListSerializer(qs, many=True).data
+        return Response(data)
+
+
+class AdminUserDetailView(APIView):
+    """GET / PATCH / DELETE a single user (platform admin)."""
+
+    permission_classes = [IsAdminUser]
+
+    def get(self, request, user_pk):
+        try:
+            user = User.objects.get(pk=user_pk)
+        except User.DoesNotExist:
+            return Response(
+                {'detail': 'کاربر یافت نشد.'}, status=status.HTTP_404_NOT_FOUND,
+            )
+        return Response(UserListSerializer(user).data)
+
+    def patch(self, request, user_pk):
+        try:
+            user = User.objects.get(pk=user_pk)
+        except User.DoesNotExist:
+            return Response(
+                {'detail': 'کاربر یافت نشد.'}, status=status.HTTP_404_NOT_FOUND,
+            )
+
+        # Prevent admin from demoting themselves
+        if user.pk == request.user.pk:
+            if 'role' in request.data and request.data['role'] != user.role:
+                return Response(
+                    {'detail': 'نمی‌توانید نقش خودتان را تغییر دهید.'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            if 'is_active' in request.data and not request.data['is_active']:
+                return Response(
+                    {'detail': 'نمی‌توانید حساب خودتان را غیرفعال کنید.'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+        ser = UserUpdateSerializer(data=request.data)
+        ser.is_valid(raise_exception=True)
+
+        for field, value in ser.validated_data.items():
+            setattr(user, field, value)
+        user.save()
+
+        return Response(UserListSerializer(user).data)
+
+    def delete(self, request, user_pk):
+        try:
+            user = User.objects.get(pk=user_pk)
+        except User.DoesNotExist:
+            return Response(
+                {'detail': 'کاربر یافت نشد.'}, status=status.HTTP_404_NOT_FOUND,
+            )
+
+        # Prevent self-deletion
+        if user.pk == request.user.pk:
+            return Response(
+                {'detail': 'نمی‌توانید حساب خودتان را حذف کنید.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        user.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)

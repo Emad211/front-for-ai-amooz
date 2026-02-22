@@ -37,6 +37,9 @@ from .views import (
     AdminProfileSettingsView,
     AdminSecuritySettingsView,
     AdminNotificationSettingsView,
+    # User management
+    AdminUserListView,
+    AdminUserDetailView,
 )
 
 urlpatterns = [
@@ -80,4 +83,8 @@ urlpatterns = [
     path('settings/profile/', AdminProfileSettingsView.as_view(), name='admin-profile-settings'),
     path('settings/security/', AdminSecuritySettingsView.as_view(), name='admin-security-settings'),
     path('settings/notifications/', AdminNotificationSettingsView.as_view(), name='admin-notification-settings'),
+
+    # --- User management ---
+    path('users/', AdminUserListView.as_view(), name='admin-user-list'),
+    path('users/<int:user_pk>/', AdminUserDetailView.as_view(), name='admin-user-detail'),
 ]

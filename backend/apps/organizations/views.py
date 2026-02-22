@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+
 from django.contrib.auth import get_user_model
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError as DjangoValidationError
@@ -30,6 +32,7 @@ from .serializers import (
 )
 
 User = get_user_model()
+logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -96,18 +99,17 @@ class OrganizationListCreateView(APIView):
                     created_by=request.user,
                 )
         except IntegrityError as exc:
-            msg = str(exc).lower()
-            if 'max_students' in msg or 'max_teachers' in msg:
-                return Response(
-                    {
-                        'detail': (
-                            'اسکیما دیتابیس سازمان‌ها به‌روز نیست. '
-                            'ابتدا migration مربوط به organizations را روی سرور اجرا کنید.'
-                        )
-                    },
-                    status=status.HTTP_503_SERVICE_UNAVAILABLE,
-                )
-            raise
+            logger.error('Organization create IntegrityError: %s', exc, exc_info=True)
+            return Response(
+                {
+                    'detail': (
+                        'خطای پایگاه داده هنگام ساخت سازمان. '
+                        'لطفاً migration جدید organizations را اجرا کنید: '
+                        'python manage.py migrate organizations'
+                    )
+                },
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
 
         data = OrganizationSerializer(org).data
         data['adminActivationCode'] = admin_code.code

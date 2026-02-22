@@ -38,6 +38,12 @@ export const ADMIN_NAV_MENU: NavSection[] = [
     ]
   },
   {
+    title: 'مدیریت کاربران',
+    items: [
+      { label: 'کاربران', href: '/admin/users', icon: Users },
+    ]
+  },
+  {
     title: 'ارتباطات',
     items: [
       { label: 'پیام همگانی', href: '/admin/broadcast', icon: Radio },
