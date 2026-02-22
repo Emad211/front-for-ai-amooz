@@ -7,7 +7,7 @@ import logging
 from django.contrib.auth import get_user_model
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError as DjangoValidationError
-from django.db import IntegrityError, transaction
+from django.db import DatabaseError, IntegrityError, transaction
 from django.db.models import Count, F, Q
 from django.utils import timezone
 from rest_framework import status
@@ -86,6 +86,7 @@ class OrganizationListCreateView(APIView):
     def post(self, request):
         ser = OrganizationCreateSerializer(data=request.data)
         ser.is_valid(raise_exception=True)
+        admin_code_value = None
         try:
             with transaction.atomic():
                 org_data = dict(ser.validated_data)
@@ -94,13 +95,20 @@ class OrganizationListCreateView(APIView):
                 org = Organization.objects.create(**org_data)
 
                 # Auto-generate an admin activation code for this org
-                admin_code = InvitationCode.objects.create(
-                    organization=org,
-                    target_role=InvitationCode.TargetRole.ADMIN,
-                    label='کد فعالسازی مدیر',
-                    max_uses=1,
-                    created_by=request.user,
-                )
+                try:
+                    admin_code = InvitationCode.objects.create(
+                        organization=org,
+                        target_role=InvitationCode.TargetRole.ADMIN,
+                        label='کد فعالسازی مدیر',
+                        max_uses=1,
+                        created_by=request.user,
+                    )
+                    admin_code_value = admin_code.code
+                except DatabaseError:
+                    logger.exception(
+                        'Organization created but InvitationCode table/insert failed. '
+                        'Run organizations migrations to repair schema drift.'
+                    )
         except IntegrityError as exc:
             logger.error('Organization create IntegrityError: %s', exc, exc_info=True)
             return Response(
@@ -115,7 +123,7 @@ class OrganizationListCreateView(APIView):
             )
 
         data = OrganizationSerializer(org).data
-        data['adminActivationCode'] = admin_code.code
+        data['adminActivationCode'] = admin_code_value
         return Response(data, status=status.HTTP_201_CREATED)
 
 
