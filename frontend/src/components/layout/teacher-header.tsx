@@ -8,14 +8,18 @@ import { Logo } from '@/components/ui/logo';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetTrigger, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet';
 import { SidebarContent } from './sidebar-content';
-import { TEACHER_NAV_MENU } from '@/constants/navigation';
+import { TEACHER_NAV_MENU, ORG_TEACHER_NAV_MENU } from '@/constants/navigation';
 import { NotificationPopover } from '@/components/dashboard/notification-popover';
 import { ThemeToggle } from '@/components/ui/theme-toggle';
 import { fetchMe, getStoredTokens, getStoredUser, persistUser } from '@/services/auth-service';
+import { useWorkspace } from '@/hooks/use-workspace';
 
 export function TeacherHeader() {
   const pathname = usePathname();
   const [isOpen, setIsOpen] = useState(false);
+  const { isOrgMode, activeWorkspace } = useWorkspace();
+  const currentNavMenu = isOrgMode ? ORG_TEACHER_NAV_MENU : TEACHER_NAV_MENU;
+  const currentPanelLabel = isOrgMode ? (activeWorkspace?.name ?? 'سازمان') : 'پنل معلم';
 
   // Avoid SSR/CSR hydration mismatch by not reading localStorage during the initial render.
   const [me, setMe] = useState<ReturnType<typeof getStoredUser>>(null);
@@ -65,15 +69,27 @@ export function TeacherHeader() {
   }, [me]);
 
   const lastSegment = pathname.split('/').filter(Boolean).pop() || 'teacher';
-  const titleMap: Record<string, string> = {
+  const personalTitleMap: Record<string, string> = {
     teacher: 'داشبورد معلم',
     analytics: 'آمار و تحلیل',
     'create-class': 'ایجاد کلاس جدید',
     'my-classes': 'کلاس‌های من',
+    'my-exams': 'آزمون‌های من',
     students: 'مدیریت دانش‌آموزان',
     messages: 'پیام‌رسانی',
     settings: 'تنظیمات پنل',
   };
+  const orgTitleMap: Record<string, string> = {
+    teacher: 'داشبورد سازمان',
+    analytics: 'آمار و تحلیل',
+    'create-class': 'ایجاد کلاس جدید',
+    'my-classes': 'کلاس‌های سازمان',
+    'my-exams': 'آزمون‌های سازمان',
+    students: 'مدیریت دانش‌آموزان',
+    messages: 'پیام‌رسانی',
+    settings: 'تنظیمات پنل',
+  };
+  const titleMap = isOrgMode ? orgTitleMap : personalTitleMap;
   const pageTitle = titleMap[lastSegment] ?? titleMap.teacher;
 
   return (
@@ -94,8 +110,8 @@ export function TeacherHeader() {
                 </SheetHeader>
               </div>
               <SidebarContent
-                navMenu={TEACHER_NAV_MENU}
-                panelLabel="پنل معلم"
+                navMenu={currentNavMenu}
+                panelLabel={currentPanelLabel}
                 logoHref="/teacher"
                 settingsHref="/teacher/settings"
                 onItemClick={() => setIsOpen(false)}

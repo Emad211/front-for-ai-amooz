@@ -5,10 +5,10 @@ import { Course } from '@/types';
 import { useMountedRef } from '@/hooks/use-mounted-ref';
 
 type CoursesService = {
-  getCourses: () => Promise<Course[]>;
+  getCourses: (organizationId?: number | null) => Promise<Course[]>;
 };
 
-export function useAdminCourses(service: CoursesService) {
+export function useAdminCourses(service: CoursesService, organizationId?: number | null) {
   const mountedRef = useMountedRef();
   const [courses, setCourses] = useState<Course[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -20,7 +20,7 @@ export function useAdminCourses(service: CoursesService) {
     try {
       setError(null);
       setIsLoading(true);
-      const data = await service.getCourses();
+      const data = await service.getCourses(organizationId);
       if (mountedRef.current) setCourses(data);
     } catch (err) {
       console.error(err);
@@ -28,7 +28,7 @@ export function useAdminCourses(service: CoursesService) {
     } finally {
       if (mountedRef.current) setIsLoading(false);
     }
-  }, [mountedRef]);
+  }, [mountedRef, service, organizationId]);
 
   useEffect(() => {
     reload();

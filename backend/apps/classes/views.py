@@ -24,7 +24,7 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from drf_spectacular.utils import extend_schema
+from drf_spectacular.utils import extend_schema, OpenApiParameter
 from drf_spectacular.types import OpenApiTypes
 
 from .models import ClassAnnouncement, ClassCreationSession, ClassInvitation, ClassPrerequisite
@@ -444,6 +444,30 @@ class Step1TranscribeView(APIView):
                         status=status.HTTP_429_TOO_MANY_REQUESTS,
                     )
 
+                # Resolve optional organization from request data.
+                org_id = request.data.get('organization')
+                organization = None
+                if org_id:
+                    from apps.organizations.models import Organization, OrganizationMembership
+                    try:
+                        org_id_int = int(org_id)
+                    except (ValueError, TypeError):
+                        return Response(
+                            {'detail': 'شناسه سازمان نامعتبر است.'},
+                            status=status.HTTP_400_BAD_REQUEST,
+                        )
+                    # Verify user is an active member of the organization.
+                    if not OrganizationMembership.objects.filter(
+                        user=request.user,
+                        organization_id=org_id_int,
+                        status=OrganizationMembership.MemberStatus.ACTIVE,
+                    ).exists():
+                        return Response(
+                            {'detail': 'شما عضو فعال این سازمان نیستید.'},
+                            status=status.HTTP_403_FORBIDDEN,
+                        )
+                    organization = Organization.objects.filter(id=org_id_int).first()
+
                 session = ClassCreationSession.objects.create(
                     teacher=request.user,
                     title=title,
@@ -453,6 +477,7 @@ class Step1TranscribeView(APIView):
                     source_original_name=getattr(upload, 'name', '') or '',
                     status=ClassCreationSession.Status.TRANSCRIBING,
                     client_request_id=client_request_id,
+                    organization=organization,
                 )
         except IntegrityError:
             # Double-submit race: another request already created the session.
@@ -790,13 +815,31 @@ class ClassCreationSessionListView(APIView):
         tags=['Classes'],
         summary='List class creation sessions (teacher)',
         operation_id='classes_creation_sessions_list',
+        parameters=[
+            OpenApiParameter(
+                name='organization',
+                type=str,
+                location=OpenApiParameter.QUERY,
+                required=False,
+                description='Filter by organization ID, or "personal" for classes without an organization.',
+            ),
+        ],
         responses={200: ClassCreationSessionListSerializer(many=True)},
     )
     def get(self, request):
         qs = ClassCreationSession.objects.filter(
             teacher=request.user,
             pipeline_type=ClassCreationSession.PipelineType.CLASS,
-        ).annotate(
+        )
+
+        org_param = request.query_params.get('organization')
+        if org_param == 'personal':
+            qs = qs.filter(organization__isnull=True)
+        elif org_param and org_param.isdigit():
+            qs = qs.filter(organization_id=int(org_param))
+        # If no param given, return all classes (backward compatible)
+
+        qs = qs.annotate(
             _invites_count=Count('invites', distinct=True),
             _lessons_count=Count('units', distinct=True),
         ).order_by('-created_at')
@@ -2711,6 +2754,29 @@ class ExamPrepStep1TranscribeView(APIView):
                         status=status.HTTP_429_TOO_MANY_REQUESTS,
                     )
 
+                # Resolve optional organization from request data.
+                org_id = request.data.get('organization')
+                organization = None
+                if org_id:
+                    from apps.organizations.models import Organization, OrganizationMembership
+                    try:
+                        org_id_int = int(org_id)
+                    except (ValueError, TypeError):
+                        return Response(
+                            {'detail': 'شناسه سازمان نامعتبر است.'},
+                            status=status.HTTP_400_BAD_REQUEST,
+                        )
+                    if not OrganizationMembership.objects.filter(
+                        user=request.user,
+                        organization_id=org_id_int,
+                        status=OrganizationMembership.MemberStatus.ACTIVE,
+                    ).exists():
+                        return Response(
+                            {'detail': 'شما عضو فعال این سازمان نیستید.'},
+                            status=status.HTTP_403_FORBIDDEN,
+                        )
+                    organization = Organization.objects.filter(id=org_id_int).first()
+
                 session = ClassCreationSession.objects.create(
                     teacher=request.user,
                     title=title,
@@ -2721,6 +2787,7 @@ class ExamPrepStep1TranscribeView(APIView):
                     pipeline_type=ClassCreationSession.PipelineType.EXAM_PREP,
                     status=ClassCreationSession.Status.EXAM_TRANSCRIBING,
                     client_request_id=client_request_id,
+                    organization=organization,
                 )
         except IntegrityError:
             if client_request_id is not None:
@@ -2890,13 +2957,30 @@ class ExamPrepSessionListView(APIView):
     @extend_schema(
         tags=['Exam Prep'],
         summary='List Exam Prep Sessions',
+        parameters=[
+            OpenApiParameter(
+                name='organization',
+                type=str,
+                location=OpenApiParameter.QUERY,
+                required=False,
+                description='Filter by organization ID, or "personal" for exams without an organization.',
+            ),
+        ],
         responses={200: ExamPrepSessionDetailSerializer(many=True)},
     )
     def get(self, request):
         sessions = ClassCreationSession.objects.filter(
             teacher=request.user,
             pipeline_type=ClassCreationSession.PipelineType.EXAM_PREP,
-        ).annotate(
+        )
+
+        org_param = request.query_params.get('organization')
+        if org_param == 'personal':
+            sessions = sessions.filter(organization__isnull=True)
+        elif org_param and org_param.isdigit():
+            sessions = sessions.filter(organization_id=int(org_param))
+
+        sessions = sessions.annotate(
             _invites_count=Count('invites', distinct=True),
         ).order_by('-created_at')
 

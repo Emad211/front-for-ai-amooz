@@ -13,6 +13,7 @@ import { toast } from 'sonner';
 import { Loader2 } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { fetchMe, login as loginRequest, persistUser, persistTokens } from '@/services/auth-service';
+import { OrganizationService } from '@/services/organization-service';
 
 const GoogleIcon = (props: React.SVGProps<SVGSVGElement>) => (
     <svg role="img" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" {...props}>
@@ -53,6 +54,20 @@ export function LoginForm({ onSwitchToJoin }: LoginFormProps) {
 
       toast.success('ورود با موفقیت انجام شد');
 
+      // Check if user has org admin/deputy membership for smart redirect
+      let orgRedirect: string | null = null;
+      try {
+        const workspaces = await OrganizationService.getMyWorkspaces();
+        const adminWorkspace = workspaces.find(
+          (w) => w.orgRole === 'admin' || w.orgRole === 'deputy'
+        );
+        if (adminWorkspace) {
+          orgRedirect = `/admin/organizations/${adminWorkspace.id}`;
+        }
+      } catch {
+        // If workspace fetch fails, fall through to role-based redirect
+      }
+
       const roleRedirectMap: Record<string, string> = {
         teacher: '/teacher',
         admin: '/admin',
@@ -60,13 +75,15 @@ export function LoginForm({ onSwitchToJoin }: LoginFormProps) {
       };
 
       const normalizedRole = me.role?.toLowerCase() ?? 'student';
-      const defaultRedirect = roleRedirectMap[normalizedRole] ?? '/home';
+      const defaultRedirect = orgRedirect ?? (roleRedirectMap[normalizedRole] ?? '/home');
       const next = searchParams.get('next');
 
       const isSafePath = (path: string) =>
         path.startsWith('/') && !path.startsWith('//') && !path.includes('://');
 
       const isAllowedByRole = (path: string) => {
+        // Org admins (any platform role) can access org dashboard
+        if (orgRedirect && path.startsWith('/admin/organizations/')) return true;
         if (normalizedRole === 'teacher') return path.startsWith('/teacher');
         if (normalizedRole === 'admin') return path.startsWith('/admin');
         // student
@@ -165,19 +182,27 @@ export function LoginForm({ onSwitchToJoin }: LoginFormProps) {
         </Button>
       </form>
 
-      {onSwitchToJoin && (
-        <p className="mt-8 text-sm text-muted-foreground text-center">
-          حساب کاربری ندارید؟{' '}
-          <button 
-            type="button"
-            onClick={onSwitchToJoin} 
-            className="font-semibold text-primary hover:underline focus:outline-none"
-            disabled={isLoading}
-          >
-            ثبت‌نام با کد دعوت
-          </button>
+      <div className="mt-8 space-y-3 text-center">
+        <p className="text-sm text-muted-foreground">
+          کد فعالسازی مدرسه یا سازمان دارید؟{' '}
+          <Link href="/org-login" className="font-semibold text-primary hover:underline">
+            ورود سازمانی
+          </Link>
         </p>
-      )}
+        {onSwitchToJoin && (
+          <p className="text-sm text-muted-foreground">
+            حساب کاربری ندارید؟{' '}
+            <button
+              type="button"
+              onClick={onSwitchToJoin}
+              className="font-semibold text-primary hover:underline focus:outline-none"
+              disabled={isLoading}
+            >
+              ثبت‌نام با کد دعوت
+            </button>
+          </p>
+        )}
+      </div>
     </>
   );
 }

@@ -28,6 +28,7 @@ import {
   type UploadProgress,
 } from '@/services/classes-service';
 import { PipelineTracker } from './pipeline-tracker';
+import { useWorkspace } from '@/hooks/use-workspace';
 
 type PipelineType = 'class' | 'exam_prep';
 
@@ -110,6 +111,7 @@ function getExamPrepPipelineMessage(status?: string | null) {
 
 export function CreateClassPage() {
   const router = useRouter();
+  const { activeWorkspace } = useWorkspace();
   const [pipelineType, setPipelineType] = useState<PipelineType>('class');
   const [expandedSections, setExpandedSections] = useState<string[]>(['info', 'files', 'exercises', 'students']);
   const [title, setTitle] = useState('');
@@ -402,6 +404,7 @@ export function CreateClassPage() {
             file: lessonFile,
             clientRequestId: clientRequestId ?? undefined,
             runFullPipeline: true,
+            organizationId: activeWorkspace?.id ?? undefined,
           },
           { onProgress: (p) => setUploadProgress(p) },
         );
@@ -437,6 +440,7 @@ export function CreateClassPage() {
             file: lessonFile,
             clientRequestId: clientRequestId ?? undefined,
             runFullPipeline: true,
+            organizationId: activeWorkspace?.id ?? undefined,
           },
           { onProgress: (p) => setUploadProgress(p) },
         );

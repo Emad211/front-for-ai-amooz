@@ -114,6 +114,7 @@ class Step5RecapResponseSerializer(serializers.ModelSerializer):
 class ClassCreationSessionListSerializer(serializers.ModelSerializer):
     invites_count = serializers.IntegerField(read_only=True, source='_invites_count')
     lessons_count = serializers.IntegerField(read_only=True, source='_lessons_count')
+    organization_id = serializers.IntegerField(read_only=True, allow_null=True)
 
     class Meta:
         model = ClassCreationSession
@@ -126,6 +127,7 @@ class ClassCreationSessionListSerializer(serializers.ModelSerializer):
             'published_at',
             'invites_count',
             'lessons_count',
+            'organization_id',
             'created_at',
             'updated_at',
         ]

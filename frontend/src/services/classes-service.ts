@@ -564,6 +564,7 @@ export async function transcribeClassCreationStep1(
     file: File;
     clientRequestId?: string;
     runFullPipeline?: boolean;
+    organizationId?: number;
   },
   options?: { onProgress?: (p: UploadProgress) => void },
 ): Promise<Step1TranscribeResponse> {
@@ -580,6 +581,9 @@ export async function transcribeClassCreationStep1(
   }
   if (params.runFullPipeline) {
     formData.append('run_full_pipeline', 'true');
+  }
+  if (params.organizationId) {
+    formData.append('organization', String(params.organizationId));
   }
 
   const url = `${API_URL}/classes/creation-sessions/step-1/`;
@@ -706,6 +710,7 @@ export async function transcribeExamPrepStep1(
     file: File;
     clientRequestId?: string;
     runFullPipeline?: boolean;
+    organizationId?: number;
   },
   options?: { onProgress?: (p: UploadProgress) => void },
 ): Promise<ExamPrepStep1Response> {
@@ -722,6 +727,9 @@ export async function transcribeExamPrepStep1(
   }
   if (params.runFullPipeline) {
     formData.append('run_full_pipeline', 'true');
+  }
+  if (params.organizationId) {
+    formData.append('organization', String(params.organizationId));
   }
 
   const url = `${API_URL}/classes/exam-prep-sessions/step-1/`;
@@ -782,12 +790,13 @@ export async function publishExamPrepSession(sessionId: number): Promise<ExamPre
 /**
  * List all exam prep sessions for the teacher.
  */
-export async function listExamPrepSessions(): Promise<ExamPrepSessionDetail[]> {
+export async function listExamPrepSessions(organizationId?: number | null): Promise<ExamPrepSessionDetail[]> {
   if (!RAW_API_URL) {
     throw new Error('NEXT_PUBLIC_API_URL تنظیم نشده است.');
   }
 
-  const url = `${API_URL}/classes/exam-prep-sessions/`;
+  const orgParam = organizationId ? `?organization=${organizationId}` : '?organization=personal';
+  const url = `${API_URL}/classes/exam-prep-sessions/${orgParam}`;
   const payload = await requestJson(url, {
     method: 'GET',
     headers: {

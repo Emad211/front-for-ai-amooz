@@ -47,6 +47,7 @@ type ClassCreationSessionListItem = {
   is_published?: boolean;
   invites_count?: number;
   lessons_count?: number;
+  organization_id?: number | null;
   created_at: string;
   updated_at: string;
 };
@@ -186,8 +187,9 @@ export const TeacherService = {
     return requestJson<Student[]>('/classes/teacher/students/', { method: 'GET' });
   },
 
-  getCourses: async () => {
-    const sessions = await requestJson<ClassCreationSessionListItem[]>('/classes/creation-sessions/', { method: 'GET' });
+  getCourses: async (organizationId?: number | null) => {
+    const orgParam = organizationId ? `?organization=${organizationId}` : '?organization=personal';
+    const sessions = await requestJson<ClassCreationSessionListItem[]>(`/classes/creation-sessions/${orgParam}`, { method: 'GET' });
     const courses: Course[] = sessions.map((s) => ({
       id: s.id,
       title: s.title,

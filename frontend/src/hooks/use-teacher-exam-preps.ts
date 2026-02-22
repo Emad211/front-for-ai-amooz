@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { listExamPrepSessions, type ExamPrepSessionDetail } from '@/services/classes-service';
+import { useWorkspace } from '@/hooks/use-workspace';
 
 export interface UseTeacherExamPrepsReturn {
   examPreps: ExamPrepSessionDetail[];
@@ -23,6 +24,7 @@ export interface UseTeacherExamPrepsReturn {
 }
 
 export function useTeacherExamPreps(): UseTeacherExamPrepsReturn {
+  const { activeWorkspace } = useWorkspace();
   const [examPreps, setExamPreps] = useState<ExamPrepSessionDetail[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -33,14 +35,14 @@ export function useTeacherExamPreps(): UseTeacherExamPrepsReturn {
     setIsLoading(true);
     setError(null);
     try {
-      const data = await listExamPrepSessions();
+      const data = await listExamPrepSessions(activeWorkspace?.id ?? null);
       setExamPreps(data);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'خطا در دریافت اطلاعات');
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [activeWorkspace?.id]);
 
   useEffect(() => {
     fetchData();

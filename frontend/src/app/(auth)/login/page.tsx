@@ -28,9 +28,16 @@ export default function LoginPage() {
         <Suspense fallback={<div className="h-96 flex items-center justify-center">در حال بارگذاری...</div>}>
           <LoginForm />
         </Suspense>
-        <p className="mt-6 text-sm text-center text-muted-foreground">
-          تازه هستید؟ <Link href="/start" className="font-semibold text-primary hover:underline">شروع رایگان</Link>
-        </p>
+        <div className="mt-6 space-y-3 text-center">
+          <p className="text-sm text-muted-foreground">
+            عضو یک مدرسه یا سازمان هستید؟{' '}
+            <Link href="/org-login" className="font-semibold text-primary hover:underline">ورود سازمانی</Link>
+          </p>
+          <p className="text-sm text-muted-foreground">
+            تازه هستید؟{' '}
+            <Link href="/start" className="font-semibold text-primary hover:underline">شروع رایگان</Link>
+          </p>
+        </div>
       </div>
     </div>
   );

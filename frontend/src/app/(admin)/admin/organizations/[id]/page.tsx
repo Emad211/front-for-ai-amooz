@@ -386,12 +386,12 @@ export default function OrganizationDetailPage({
                   className="pr-9 rounded-xl"
                 />
               </div>
-              <Select value={roleFilter} onValueChange={(v) => setRoleFilter(v as OrgRole | '')}>
+              <Select value={roleFilter || 'all'} onValueChange={(v) => setRoleFilter(v === 'all' ? '' : v as OrgRole)}>
                 <SelectTrigger className="w-[150px] rounded-xl">
                   <SelectValue placeholder="همه نقش‌ها" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">همه نقش‌ها</SelectItem>
+                  <SelectItem value="all">همه نقش‌ها</SelectItem>
                   {ROLE_OPTIONS.map((r) => (
                     <SelectItem key={r.value} value={r.value}>
                       {r.label}

@@ -14,7 +14,9 @@ import {
   PlusCircle,
   FolderOpen,
   Users,
-  FileQuestion
+  FileQuestion,
+  LayoutDashboard,
+  KeyRound,
 } from 'lucide-react';
 import { NavSection, NavItem } from '@/types';
 
@@ -74,6 +76,38 @@ export const TEACHER_NAV_MENU: NavSection[] = [
       { label: 'ایجاد کلاس جدید', href: '/teacher/create-class', icon: PlusCircle },
       { label: 'کلاس‌های من', href: '/teacher/my-classes', icon: FolderOpen },
       { label: 'آزمون‌های من', href: '/teacher/my-exams', icon: FileQuestion },
+      { label: 'دانش‌آموزان', href: '/teacher/students', icon: Users },
+    ]
+  },
+  {
+    title: 'ارتباطات و پشتیبانی',
+    items: [
+      { label: 'ارسال پیام', href: '/teacher/messages', icon: MessageSquare },
+      { label: 'تیکت‌های پشتیبانی', href: '/teacher/tickets', icon: Ticket },
+    ]
+  },
+  {
+    title: 'گزارشات',
+    items: [
+      { label: 'آمار و تحلیل', href: '/teacher/analytics', icon: BarChart3 },
+    ]
+  },
+];
+
+/** Navigation menu for teachers/admins when in org workspace mode. */
+export const ORG_TEACHER_NAV_MENU: NavSection[] = [
+  {
+    title: 'سازمان',
+    items: [
+      { label: 'داشبورد سازمان', href: '/teacher', icon: LayoutDashboard },
+    ]
+  },
+  {
+    title: 'مدیریت کلاس‌ها',
+    items: [
+      { label: 'ایجاد کلاس جدید', href: '/teacher/create-class', icon: PlusCircle },
+      { label: 'کلاس‌های سازمان', href: '/teacher/my-classes', icon: FolderOpen },
+      { label: 'آزمون‌های سازمان', href: '/teacher/my-exams', icon: FileQuestion },
       { label: 'دانش‌آموزان', href: '/teacher/students', icon: Users },
     ]
   },
