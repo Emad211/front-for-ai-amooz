@@ -56,8 +56,6 @@ const ROLE_OPTIONS = [
   { value: 'student', label: 'دانش‌آموز' },
 ] as const;
 
-const ALL_ROLES_VALUE = '__all_roles__';
-
 export default function OrganizationDetailPage({
   params: paramsPromise,
 }: {
@@ -388,15 +386,12 @@ export default function OrganizationDetailPage({
                   className="pr-9 rounded-xl"
                 />
               </div>
-              <Select
-                value={roleFilter || ALL_ROLES_VALUE}
-                onValueChange={(v) => setRoleFilter(v === ALL_ROLES_VALUE ? '' : (v as OrgRole))}
-              >
+              <Select value={roleFilter} onValueChange={(v) => setRoleFilter(v as OrgRole | '')}>
                 <SelectTrigger className="w-[150px] rounded-xl">
                   <SelectValue placeholder="همه نقش‌ها" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value={ALL_ROLES_VALUE}>همه نقش‌ها</SelectItem>
+                  <SelectItem value="">همه نقش‌ها</SelectItem>
                   {ROLE_OPTIONS.map((r) => (
                     <SelectItem key={r.value} value={r.value}>
                       {r.label}

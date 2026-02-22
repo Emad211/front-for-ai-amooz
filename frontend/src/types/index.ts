@@ -356,13 +356,6 @@ export type SubscriptionStatus = 'active' | 'expired' | 'suspended';
 export type OrgRole = 'admin' | 'deputy' | 'teacher' | 'student';
 export type MemberStatus = 'active' | 'suspended';
 
-export interface InitialInvitationCode {
-  targetRole: OrgRole;
-  label: string;
-  maxUses: number;
-  code: string;
-}
-
 export interface Organization {
   id: number;
   name: string;
@@ -377,7 +370,6 @@ export interface Organization {
   address: string;
   createdAt: string;
   adminActivationCode?: string;
-  initialInvitationCodes?: InitialInvitationCode[];
 }
 
 export interface OrgMembership {

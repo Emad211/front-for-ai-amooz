@@ -28,16 +28,6 @@ export default function LoginPage() {
         <Suspense fallback={<div className="h-96 flex items-center justify-center">در حال بارگذاری...</div>}>
           <LoginForm />
         </Suspense>
-        <div className="mt-4 rounded-xl border border-border/60 bg-card/40 px-4 py-3 text-center text-sm">
-          <span className="text-muted-foreground">ورود سازمانی:</span>{' '}
-          <Link href="/join-code" className="font-semibold text-primary hover:underline">
-            ورود با کد دعوت
-          </Link>
-          <span className="text-muted-foreground">{' '}·{' '}</span>
-          <Link href="/admin-login" className="font-semibold text-primary hover:underline">
-            ورود مدیر سازمان
-          </Link>
-        </div>
         <p className="mt-6 text-sm text-center text-muted-foreground">
           تازه هستید؟ <Link href="/start" className="font-semibold text-primary hover:underline">شروع رایگان</Link>
         </p>

@@ -24,7 +24,6 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { toast } from 'sonner';
-import type { InitialInvitationCode } from '@/types';
 import {
   Building2,
   Plus,
@@ -71,7 +70,7 @@ export default function OrganizationsPage() {
   const [formDescription, setFormDescription] = useState('');
   const [formPhone, setFormPhone] = useState('');
   const [formAddress, setFormAddress] = useState('');
-  const [createdCodes, setCreatedCodes] = useState<InitialInvitationCode[]>([]);
+  const [createdCode, setCreatedCode] = useState<string | null>(null);
 
   const resetForm = () => {
     setFormName('');
@@ -80,7 +79,7 @@ export default function OrganizationsPage() {
     setFormDescription('');
     setFormPhone('');
     setFormAddress('');
-    setCreatedCodes([]);
+    setCreatedCode(null);
   };
 
   const handleCreate = async () => {
@@ -99,17 +98,8 @@ export default function OrganizationsPage() {
         address: formAddress.trim(),
       });
       toast.success(`سازمان «${created.name}» با موفقیت ایجاد شد.`);
-      if (created.initialInvitationCodes?.length) {
-        setCreatedCodes(created.initialInvitationCodes);
-      } else if (created.adminActivationCode) {
-        setCreatedCodes([
-          {
-            targetRole: 'admin',
-            label: 'کد فعالسازی مدیر',
-            maxUses: 1,
-            code: created.adminActivationCode,
-          },
-        ]);
+      if (created.adminActivationCode) {
+        setCreatedCode(created.adminActivationCode);
       } else {
         setIsCreateOpen(false);
         resetForm();
@@ -225,39 +215,28 @@ export default function OrganizationsPage() {
               </Button>
             </DialogTrigger>
             <DialogContent className="sm:max-w-lg" dir="rtl">
-              {createdCodes.length > 0 ? (
+              {createdCode ? (
                 <>
                   <DialogHeader>
                     <DialogTitle>سازمان ایجاد شد!</DialogTitle>
                     <DialogDescription>
-                      کدهای نقش‌های مختلف را کپی کرده و به اعضای سازمان ارسال کنید.
+                      کد فعالسازی مدیر را کپی کرده و به مدیر سازمان ارسال کنید.
                     </DialogDescription>
                   </DialogHeader>
                   <div className="mt-4 space-y-4">
-                    {createdCodes.map((item) => (
-                      <div
-                        key={`${item.targetRole}-${item.code}`}
-                        className="space-y-2 bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/20 rounded-xl px-4 py-3"
+                    <div className="flex items-center gap-2 bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/20 rounded-xl px-4 py-3">
+                      <code
+                        className="flex-1 text-lg font-mono font-bold text-emerald-700 dark:text-emerald-400 tracking-widest"
+                        dir="ltr"
                       >
-                        <div className="flex items-center justify-between text-xs text-emerald-700 dark:text-emerald-300">
-                          <span>{item.label}</span>
-                          <span>ظرفیت: {item.maxUses}</span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <code
-                            className="flex-1 text-lg font-mono font-bold text-emerald-700 dark:text-emerald-400 tracking-widest"
-                            dir="ltr"
-                          >
-                            {item.code}
-                          </code>
-                          <Button variant="ghost" size="icon" onClick={() => copyToClipboard(item.code)}>
-                            <Copy className="w-4 h-4" />
-                          </Button>
-                        </div>
-                      </div>
-                    ))}
+                        {createdCode}
+                      </code>
+                      <Button variant="ghost" size="icon" onClick={() => copyToClipboard(createdCode)}>
+                        <Copy className="w-4 h-4" />
+                      </Button>
+                    </div>
                     <p className="text-xs text-muted-foreground text-center">
-                      هر کد برای نقش مشخص خودش معتبر است.
+                      این کد یکبار مصرف است. مدیر با استفاده از آن وارد سازمان خواهد شد.
                     </p>
                     <DialogFooter>
                       <Button
@@ -277,7 +256,7 @@ export default function OrganizationsPage() {
                   <DialogHeader>
                     <DialogTitle>ایجاد سازمان جدید</DialogTitle>
                     <DialogDescription>
-                      اطلاعات سازمان را وارد کنید. پس از ایجاد، کدهای دعوت اولیه برای نقش‌های اصلی ساخته می‌شود.
+                      اطلاعات سازمان را وارد کنید. پس از ایجاد، کد فعالسازی مدیر ساخته خواهد شد.
                     </DialogDescription>
                   </DialogHeader>
                   <div className="space-y-4 mt-2">
