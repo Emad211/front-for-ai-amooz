@@ -3,7 +3,6 @@
 import django.db.models.deletion
 from django.db import migrations, models
 
-
 class Migration(migrations.Migration):
 
     dependencies = [
@@ -12,9 +11,31 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
-        migrations.AddField(
-            model_name='classcreationsession',
-            name='organization',
-            field=models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='classes', to='organizations.organization', verbose_name='سازمان'),
+        migrations.RunSQL(
+            sql="""
+            DO $$
+            BEGIN
+                IF NOT EXISTS (
+                    SELECT 1
+                    FROM information_schema.columns
+                    WHERE table_name='classes_classcreationsession' AND column_name='organization_id'
+                ) THEN
+                    ALTER TABLE "classes_classcreationsession" ADD COLUMN "organization_id" bigint NULL;
+                    ALTER TABLE "classes_classcreationsession" ADD CONSTRAINT "classes_classcreations_organization_id_fk" FOREIGN KEY ("organization_id") REFERENCES "organizations_organization"("id") DEFERRABLE INITIALLY DEFERRED;
+                    CREATE INDEX "classes_classcreationsession_organization_id_idx" ON "classes_classcreationsession" ("organization_id");
+                END IF;
+            END
+            $$;
+            """,
+            reverse_sql="""
+            ALTER TABLE "classes_classcreationsession" DROP COLUMN IF EXISTS "organization_id";
+            """,
+            state_operations=[
+                migrations.AddField(
+                    model_name='classcreationsession',
+                    name='organization',
+                    field=models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='classes', to='organizations.organization', verbose_name='سازمان'),
+                ),
+            ]
         ),
     ]
