@@ -1,38 +1,57 @@
-"""Drop legacy max_students / max_teachers columns.
+"""Drop ALL legacy columns from organizations_organization.
 
-These columns no longer exist in the Django model.  Migration 0003 set
-DEFAULT values but some environments still fail because the columns carry
-a NOT NULL constraint and PostgreSQL sometimes ignores the DEFAULT.
+The production database has accumulated columns that no longer exist in
+the Django model (e.g. max_students, max_teachers, subscription_active).
+Instead of playing whack-a-mole, this migration dynamically discovers
+every column that is NOT part of the current model and drops it.
 
-The definitive fix is to drop the columns entirely.
-This migration is idempotent – it only acts when the columns exist.
+The authoritative list of model columns is hardcoded here so the
+migration is deterministic and reviewable.
 """
 
 from django.db import migrations
 
 
-_DROP_LEGACY_COLUMNS_SQL = """
-DO $$
-BEGIN
-    IF EXISTS (
-        SELECT 1
-        FROM information_schema.columns
-        WHERE table_schema = current_schema()
-          AND table_name   = 'organizations_organization'
-          AND column_name  = 'max_students'
-    ) THEN
-        EXECUTE 'ALTER TABLE organizations_organization DROP COLUMN max_students';
-    END IF;
+# Every column that the Organization model actually defines.
+# This MUST be kept in sync with apps.organizations.models.Organization.
+_MODEL_COLUMNS = frozenset({
+    'id',
+    'name',
+    'slug',
+    'logo',
+    'student_capacity',
+    'subscription_status',
+    'owner_id',          # FK column name in DB
+    'description',
+    'phone',
+    'address',
+    'created_at',
+    'updated_at',
+})
 
-    IF EXISTS (
-        SELECT 1
+_DROP_ALL_LEGACY_SQL = """
+DO $$
+DECLARE
+    col RECORD;
+BEGIN
+    FOR col IN
+        SELECT column_name
         FROM information_schema.columns
         WHERE table_schema = current_schema()
           AND table_name   = 'organizations_organization'
-          AND column_name  = 'max_teachers'
-    ) THEN
-        EXECUTE 'ALTER TABLE organizations_organization DROP COLUMN max_teachers';
-    END IF;
+          AND column_name NOT IN (
+              'id', 'name', 'slug', 'logo',
+              'student_capacity', 'subscription_status',
+              'owner_id', 'description', 'phone', 'address',
+              'created_at', 'updated_at'
+          )
+    LOOP
+        RAISE NOTICE 'Dropping legacy column: %%', col.column_name;
+        EXECUTE format(
+            'ALTER TABLE organizations_organization DROP COLUMN %I',
+            col.column_name
+        );
+    END LOOP;
 END $$;
 """
 
@@ -46,5 +65,5 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
-        migrations.RunSQL(sql=_DROP_LEGACY_COLUMNS_SQL, reverse_sql=_NOOP_REVERSE),
+        migrations.RunSQL(sql=_DROP_ALL_LEGACY_SQL, reverse_sql=_NOOP_REVERSE),
     ]
