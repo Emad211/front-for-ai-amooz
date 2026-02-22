@@ -24,6 +24,8 @@ export function AdminHeader() {
     broadcast: 'پیام همگانی',
     tickets: 'تیکت‌ها',
     settings: 'تنظیمات',
+    organizations: 'سازمان‌ها',
+    'llm-usage': 'مصرف توکن LLM',
   };
   const pageTitle = titleMap[lastSegment] ?? titleMap.admin;
 

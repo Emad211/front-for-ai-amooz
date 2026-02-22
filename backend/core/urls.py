@@ -76,6 +76,7 @@ urlpatterns = [
     path('api/classes/', include('apps.classes.urls')),
     path('api/notifications/', include('apps.notification.urls')),
     path('api/admin/', include('apps.commons.urls')),
+    path('api/organizations/', include('apps.organizations.urls')),
 ]
 
 from django.conf import settings

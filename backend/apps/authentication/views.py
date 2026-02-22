@@ -199,12 +199,18 @@ class InviteCodeLoginView(APIView):
             # Persist legacy code as the global code if it doesn't exist yet.
             StudentInviteCode.objects.get_or_create(phone=phone, defaults={'code': code})
 
-        qs = User.objects.filter(phone=phone)
-        if qs.count() > 1:
-            return Response({'detail': 'برای این شماره بیش از یک حساب وجود دارد.'}, status=status.HTTP_400_BAD_REQUEST)
+        # Look for an existing STUDENT account with this phone.
+        # A phone number can belong to multiple User records (different roles),
+        # so we filter by STUDENT specifically — invite-code login is student-only.
+        user = User.objects.filter(phone=phone, role=User.Role.STUDENT).first()
 
-        user = qs.first()
         if user is None:
+            # Check if a non-student account exists with this phone
+            # (they cannot use invite-code login).
+            if User.objects.filter(phone=phone).exists():
+                # There are users with this phone but none is a STUDENT — create one.
+                pass
+
             base_username = f"student_{phone}"
             username = base_username
             # Guarantee uniqueness even if another user already uses this username.
@@ -216,8 +222,6 @@ class InviteCodeLoginView(APIView):
             user.save()
             StudentProfile.objects.get_or_create(user=user)
         else:
-            if getattr(user, 'role', None) != User.Role.STUDENT:
-                return Response({'detail': 'فقط دانش آموز می تواند با کد دعوت وارد شود.'}, status=status.HTTP_403_FORBIDDEN)
             if (getattr(user, 'phone', None) or '').strip() != phone:
                 user.phone = phone
                 user.save(update_fields=['phone'])

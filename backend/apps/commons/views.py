@@ -25,6 +25,7 @@ from apps.commons.models import (
     Ticket,
     TicketMessage,
 )
+from apps.commons.exchange_rate import get_usdt_toman_rate, usd_to_toman
 
 User = get_user_model()
 
@@ -113,7 +114,7 @@ def _get_date_filter(request) -> dict:
 
 
 class LLMUsageSummaryView(APIView):
-    """Overall usage summary."""
+    """Overall usage summary with Toman conversion."""
     permission_classes = [IsAdminUser]
 
     def get(self, request):
@@ -128,11 +129,22 @@ class LLMUsageSummaryView(APIView):
             total_tokens=Sum('total_tokens'),
             total_cost_usd=Sum('estimated_cost_usd'),
             avg_duration_ms=Avg('duration_ms'),
+            total_audio_input_tokens=Sum('audio_input_tokens'),
+            total_cached_input_tokens=Sum('cached_input_tokens'),
+            total_thinking_tokens=Sum('thinking_tokens'),
         )
         # Replace None with 0
         for key in agg:
             if agg[key] is None:
                 agg[key] = 0
+
+        # USD → Toman conversion
+        cost_usd = float(agg['total_cost_usd'])
+        toman_amount, rate_err = usd_to_toman(cost_usd)
+        usdt_rate, _ = get_usdt_toman_rate()
+        agg['total_cost_toman'] = toman_amount
+        agg['usdt_toman_rate'] = usdt_rate
+
         return Response(agg)
 
 
@@ -275,12 +287,31 @@ class LLMUsageRecentLogsView(APIView):
                 'input_tokens': log.input_tokens,
                 'output_tokens': log.output_tokens,
                 'total_tokens': log.total_tokens,
+                'audio_input_tokens': log.audio_input_tokens,
+                'cached_input_tokens': log.cached_input_tokens,
+                'thinking_tokens': log.thinking_tokens,
                 'estimated_cost_usd': float(log.estimated_cost_usd),
                 'duration_ms': log.duration_ms,
                 'success': log.success,
                 'created_at': log.created_at.isoformat(),
             })
         return Response(result)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Exchange Rate
+# ═══════════════════════════════════════════════════════════════════════════
+
+class ExchangeRateView(APIView):
+    """Get live USDT→Toman exchange rate."""
+    permission_classes = [IsAdminUser]
+
+    def get(self, request):
+        rate, err = get_usdt_toman_rate()
+        return Response({
+            'usdt_toman_rate': rate,
+            'error': err,
+        })
 
 
 # ═══════════════════════════════════════════════════════════════════════════

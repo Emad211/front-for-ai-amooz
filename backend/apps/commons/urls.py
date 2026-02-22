@@ -10,6 +10,8 @@ from .views import (
     LLMUsageByProviderView,
     LLMUsageDailyView,
     LLMUsageRecentLogsView,
+    # Exchange rate
+    ExchangeRateView,
     # Analytics
     AnalyticsStatsView,
     AnalyticsChartView,
@@ -45,6 +47,7 @@ urlpatterns = [
     path('llm-usage/by-provider/', LLMUsageByProviderView.as_view(), name='llm-usage-by-provider'),
     path('llm-usage/daily/', LLMUsageDailyView.as_view(), name='llm-usage-daily'),
     path('llm-usage/recent/', LLMUsageRecentLogsView.as_view(), name='llm-usage-recent'),
+    path('exchange-rate/', ExchangeRateView.as_view(), name='exchange-rate'),
 
     # --- Analytics ---
     path('analytics/stats/', AnalyticsStatsView.as_view(), name='analytics-stats'),

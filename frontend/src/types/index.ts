@@ -347,3 +347,104 @@ export interface ClassDetail extends Course {
   structureJson?: string;
   pipelineErrorDetail?: string;
 }
+
+// ============================================================================
+// Organization Types - تایپ‌های سازمان
+// ============================================================================
+
+export type SubscriptionStatus = 'active' | 'expired' | 'suspended';
+export type OrgRole = 'admin' | 'deputy' | 'teacher' | 'student';
+export type MemberStatus = 'active' | 'suspended';
+
+export interface Organization {
+  id: number;
+  name: string;
+  slug: string;
+  logo: string | null;
+  studentCapacity: number;
+  subscriptionStatus: SubscriptionStatus;
+  currentStudentCount: number;
+  ownerName: string;
+  description: string;
+  phone: string;
+  address: string;
+  createdAt: string;
+  adminActivationCode?: string;
+}
+
+export interface OrgMembership {
+  id: number;
+  userId: number;
+  userName: string;
+  userEmail: string;
+  userPhone: string;
+  orgRole: OrgRole;
+  orgRoleDisplay: string;
+  status: MemberStatus;
+  statusDisplay: string;
+  internalId: string;
+  joinedAt: string;
+}
+
+export interface InvitationCode {
+  id: number;
+  code: string;
+  targetRole: OrgRole;
+  targetRoleDisplay: string;
+  label: string;
+  maxUses: number;
+  useCount: number;
+  remainingUses: number;
+  isActive: boolean;
+  isValid: boolean;
+  expiresAt: string | null;
+  organizationName: string;
+  createdAt: string;
+}
+
+export interface Workspace {
+  id: number;
+  name: string;
+  slug: string;
+  logo: string | null;
+  orgRole: OrgRole;
+  orgRoleDisplay: string;
+}
+
+export interface OrgDashboardStats {
+  totalMembers: number;
+  students: number;
+  teachers: number;
+  studentCapacity: number;
+  totalClasses: number;
+  publishedClasses: number;
+  activeInviteCodes: number;
+}
+
+export interface OrgDashboard {
+  organization: Organization;
+  stats: OrgDashboardStats;
+}
+
+export interface ValidateCodeResult {
+  valid: boolean;
+  detail?: string;
+  organization?: {
+    id: number;
+    name: string;
+    slug: string;
+    logo: string | null;
+  };
+  targetRole?: OrgRole;
+  targetRoleDisplay?: string;
+  remainingUses?: number;
+  needsRegistration?: boolean;
+}
+
+export interface RedeemCodeResult {
+  success: boolean;
+  organization: { id: number; name: string; slug: string };
+  membership: { orgRole: OrgRole; orgRoleDisplay: string };
+  access?: string;
+  refresh?: string;
+}

@@ -391,6 +391,11 @@ export const AdminService = {
       total_tokens: number;
       total_cost_usd: number;
       avg_duration_ms: number;
+      total_audio_input_tokens: number;
+      total_cached_input_tokens: number;
+      total_thinking_tokens: number;
+      total_cost_toman: number | null;
+      usdt_toman_rate: number | null;
     }>(`/admin/llm-usage/summary/?days=${days}`);
   },
 
@@ -445,6 +450,9 @@ export const AdminService = {
       input_tokens: number;
       output_tokens: number;
       total_tokens: number;
+      audio_input_tokens: number;
+      cached_input_tokens: number;
+      thinking_tokens: number;
       estimated_cost_usd: number;
       duration_ms: number;
       success: boolean;

@@ -1,6 +1,7 @@
 // app/admin/layout.tsx
 import { AdminHeader } from "@/components/layout/admin-header";
 import { AdminSidebar } from "@/components/layout/admin-sidebar";
+import { WorkspaceProvider } from "@/hooks/use-workspace";
 
 export default function AdminLayout({
   children,
@@ -8,7 +9,8 @@ export default function AdminLayout({
   children: React.ReactNode;
 }) {
   return (
-    <div className="flex min-h-screen w-full bg-background" dir="rtl">
+    <WorkspaceProvider>
+      <div className="flex min-h-screen w-full bg-background" dir="rtl">
       {/* سایدبار - فقط در دسکتاپ */}
       <div className="hidden lg:block">
         <AdminSidebar />
@@ -24,5 +26,6 @@ export default function AdminLayout({
         </main>
       </div>
     </div>
+    </WorkspaceProvider>
   );
 }

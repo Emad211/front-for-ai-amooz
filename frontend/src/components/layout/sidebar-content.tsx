@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { ADMIN_NAV_MENU, TEACHER_NAV_MENU } from '@/constants/navigation';
 import { Logo } from '@/components/ui/logo';
+import { WorkspaceSwitcher } from '@/components/layout/workspace-switcher';
 import { clearAuthStorage, getStoredTokens, logout as logoutApi } from '@/services/auth-service';
 
 interface SidebarContentProps {
@@ -36,6 +37,13 @@ export function SidebarContent({ onItemClick, navMenu = ADMIN_NAV_MENU, panelLab
           textClassName="text-lg"
         />
         <p className="text-xs text-muted-foreground ms-[72px] -mt-1 font-medium">{panelLabel}</p>
+      </div>
+
+      <Separator className="bg-border/50" />
+
+      {/* Workspace Switcher */}
+      <div className="px-4 py-2">
+        <WorkspaceSwitcher />
       </div>
 
       <Separator className="bg-border/50" />

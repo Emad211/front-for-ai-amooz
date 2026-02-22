@@ -1,5 +1,6 @@
 import { 
   BarChart3, 
+  Building2,
   Coins,
   Home,
   BookOpen,
@@ -30,6 +31,12 @@ export const DASHBOARD_NAV_LINKS: NavItem[] = [
 ];
 
 export const ADMIN_NAV_MENU: NavSection[] = [
+  {
+    title: 'مدیریت سازمان‌ها',
+    items: [
+      { label: 'سازمان‌ها', href: '/admin/organizations', icon: Building2 },
+    ]
+  },
   {
     title: 'ارتباطات',
     items: [

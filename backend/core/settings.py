@@ -61,6 +61,7 @@ INSTALLED_APPS = [
     'apps.notification',
     'apps.chatbot',
     'apps.material',
+    'apps.organizations',
 ]
 
 AUTH_USER_MODEL = 'accounts.User'

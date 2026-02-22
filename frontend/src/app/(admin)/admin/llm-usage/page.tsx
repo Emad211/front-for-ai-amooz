@@ -33,6 +33,11 @@ interface Summary {
   total_tokens: number;
   total_cost_usd: number;
   avg_duration_ms: number;
+  total_audio_input_tokens: number;
+  total_cached_input_tokens: number;
+  total_thinking_tokens: number;
+  total_cost_toman: number | null;
+  usdt_toman_rate: number | null;
 }
 
 interface ByFeature {
@@ -77,6 +82,9 @@ interface RecentLog {
   input_tokens: number;
   output_tokens: number;
   total_tokens: number;
+  audio_input_tokens: number;
+  cached_input_tokens: number;
+  thinking_tokens: number;
   estimated_cost_usd: number;
   duration_ms: number;
   success: boolean;
@@ -99,6 +107,11 @@ function formatCost(usd: number): string {
 function formatDuration(ms: number): string {
   if (ms < 1000) return `${Math.round(ms)} ms`;
   return `${(ms / 1000).toFixed(1)} s`;
+}
+
+function formatToman(amount: number | null): string {
+  if (amount === null || amount === undefined) return '—';
+  return `${new Intl.NumberFormat('fa-IR').format(Math.round(amount))} تومان`;
 }
 
 const ROLE_MAP: Record<string, string> = {
@@ -232,9 +245,9 @@ export default function LLMUsagePage() {
           />
           <SummaryCard
             icon={<DollarSign className="w-5 h-5 text-green-500" />}
-            label="هزینه تخمینی"
+            label="هزینه (دلار)"
             value={formatCost(s.total_cost_usd)}
-            sub="USD"
+            sub={formatToman(s.total_cost_toman)}
           />
           <SummaryCard
             icon={<Clock className="w-5 h-5 text-purple-500" />}
@@ -243,6 +256,37 @@ export default function LLMUsagePage() {
             sub={`${formatNumber(s.successful_requests)} موفق`}
           />
         </div>
+
+        {/* ── Token Type Breakdown ── */}
+        {(s.total_audio_input_tokens > 0 || s.total_cached_input_tokens > 0 || s.total_thinking_tokens > 0) && (
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <SummaryCard
+              icon={<Layers className="w-5 h-5 text-orange-500" />}
+              label="توکن صوتی ورودی"
+              value={formatNumber(s.total_audio_input_tokens)}
+              sub="$1.00 / 1M توکن"
+            />
+            <SummaryCard
+              icon={<Layers className="w-5 h-5 text-teal-500" />}
+              label="توکن کش شده"
+              value={formatNumber(s.total_cached_input_tokens)}
+              sub="$0.03 / 1M توکن"
+            />
+            <SummaryCard
+              icon={<Layers className="w-5 h-5 text-indigo-500" />}
+              label="توکن تفکر"
+              value={formatNumber(s.total_thinking_tokens)}
+              sub="جزو خروجی محاسبه می‌شود"
+            />
+          </div>
+        )}
+
+        {/* ── Exchange Rate ── */}
+        {s.usdt_toman_rate && (
+          <div className="text-xs text-muted-foreground text-left">
+            نرخ USDT: {new Intl.NumberFormat('fa-IR').format(Math.round(s.usdt_toman_rate))} تومان
+          </div>
+        )}
 
         {/* ── By Feature + By Provider ── */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">

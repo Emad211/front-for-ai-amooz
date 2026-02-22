@@ -34,6 +34,14 @@ class ClassCreationSession(models.Model):
         on_delete=models.CASCADE,
         related_name='class_creation_sessions',
     )
+    organization = models.ForeignKey(
+        'organizations.Organization',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='classes',
+        verbose_name='سازمان',
+    )
 
     title = models.CharField(max_length=255)
     description = models.TextField(blank=True)
