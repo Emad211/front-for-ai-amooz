@@ -9,7 +9,7 @@ from drf_spectacular.utils import extend_schema, OpenApiResponse
 from apps.accounts.models import User
 from apps.classes.permissions import IsTeacherUser
 from .models import AdminNotification, NotificationReadReceipt
-from .permissions import IsAdminUser
+from apps.core.permissions import IsPlatformAdmin as IsAdminUser
 from .serializers import (
     AdminNotificationCreateSerializer,
     AdminNotificationSerializer,

@@ -9,6 +9,7 @@ import { TicketPageHeader } from '@/components/dashboard/tickets';
 import { TicketList, TicketDetail, NewTicketDialog } from '@/components/shared/tickets';
 import { Ticket, TicketMessage } from '@/types';
 import { useTickets } from '@/hooks/use-tickets';
+import { DashboardService } from '@/services/dashboard-service';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ErrorState } from '@/components/shared/error-state';
 
@@ -17,58 +18,62 @@ export default function TicketsPage() {
   const [selectedTicket, setSelectedTicket] = useState<Ticket | null>(null);
   const [isNewTicketOpen, setIsNewTicketOpen] = useState(false);
 
-  const handleNewTicket = (data: { subject: string; department: string; message: string }) => {
-    const newTicket: Ticket = {
-      id: `TKT-${String(Date.now()).slice(-3)}`,
-      subject: data.subject,
-      status: 'open',
-      priority: 'medium',
-      department: data.department,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      userId: 'user-1',
-      messages: [
-        {
-          id: `m-${Date.now()}`,
-          content: data.message,
-          isAdmin: false,
-          createdAt: new Date().toISOString(),
-        },
-      ],
-    };
+  /** Extract numeric PK from 'TKT-003' format. */
+  const extractPk = (ticketId: string): number =>
+    parseInt(ticketId.replace(/^TKT-0*/i, ''), 10);
 
-    setTickets((prev) => [newTicket, ...prev]);
-    toast.success('تیکت با موفقیت ارسال شد');
+  const handleNewTicket = async (data: { subject: string; department: string; message: string }) => {
+    try {
+      const result = await DashboardService.createTicket({
+        subject: data.subject,
+        department: data.department,
+        content: data.message,
+      });
+
+      // Reload to get the full ticket with messages from server
+      await reload();
+      setIsNewTicketOpen(false);
+      toast.success('تیکت با موفقیت ارسال شد');
+    } catch {
+      toast.error('خطا در ارسال تیکت');
+    }
   };
 
-  const handleReply = (ticketId: string, message: string) => {
-    const newMessage: TicketMessage = {
-      id: `m-${Date.now()}`,
-      content: message,
-      isAdmin: false,
-      createdAt: new Date().toISOString(),
-    };
+  const handleReply = async (ticketId: string, message: string) => {
+    try {
+      const pk = extractPk(ticketId);
+      const result = await DashboardService.replyToTicket(pk, message);
 
-    setTickets((prev) =>
-      prev.map((t) =>
-        t.id === ticketId
-          ? {
-              ...t,
-              messages: [...t.messages, newMessage],
-              updatedAt: new Date().toISOString(),
-              status: 'pending',
-            }
-          : t
-      )
-    );
+      const newMessage: TicketMessage = {
+        id: result?.id ?? `m-${Date.now()}`,
+        content: message,
+        isAdmin: false,
+        createdAt: result?.createdAt ?? new Date().toISOString(),
+      };
 
-    if (selectedTicket?.id === ticketId) {
-      setSelectedTicket((prev) =>
-        prev ? { ...prev, messages: [...prev.messages, newMessage] } : null
+      setTickets((prev) =>
+        prev.map((t) =>
+          t.id === ticketId
+            ? {
+                ...t,
+                messages: [...t.messages, newMessage],
+                updatedAt: new Date().toISOString(),
+                status: 'pending',
+              }
+            : t
+        )
       );
-    }
 
-    toast.success('پاسخ شما ارسال شد');
+      if (selectedTicket?.id === ticketId) {
+        setSelectedTicket((prev) =>
+          prev ? { ...prev, messages: [...prev.messages, newMessage] } : null
+        );
+      }
+
+      toast.success('پاسخ شما ارسال شد');
+    } catch {
+      toast.error('خطا در ارسال پاسخ');
+    }
   };
 
   const handleTicketClick = (ticketId: string) => {

@@ -1,13 +1,33 @@
 // app/admin/layout.tsx
+'use client';
+
+import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { AdminHeader } from "@/components/layout/admin-header";
 import { AdminSidebar } from "@/components/layout/admin-sidebar";
 import { WorkspaceProvider } from "@/hooks/use-workspace";
+import { getStoredUser } from '@/services/auth-service';
 
 export default function AdminLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
+  const router = useRouter();
+  const [allowed, setAllowed] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    const user = getStoredUser();
+    if (!user || (user.role || '').toUpperCase() !== 'ADMIN') {
+      router.replace('/login');
+    } else {
+      setAllowed(true);
+    }
+  }, [router]);
+
+  // Don't render admin UI until role is verified
+  if (!allowed) return null;
+
   return (
     <WorkspaceProvider>
       <div className="flex min-h-screen w-full bg-background" dir="rtl">

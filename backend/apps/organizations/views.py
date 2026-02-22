@@ -9,9 +9,11 @@ from django.db import IntegrityError, transaction
 from django.db.models import Count, F, Q
 from django.utils import timezone
 from rest_framework import status
-from rest_framework.permissions import IsAdminUser, IsAuthenticated
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
+
+from apps.core.permissions import IsPlatformAdmin as IsAdminUser
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from apps.classes.models import ClassCreationSession

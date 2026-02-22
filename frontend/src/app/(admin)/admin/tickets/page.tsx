@@ -11,6 +11,7 @@ import {
 } from '@/components/admin/tickets';
 import { Ticket, TicketMessage, TicketStatus, TicketPriority } from '@/types';
 import { useTickets } from '@/hooks/use-tickets';
+import { AdminService } from '@/services/admin-service';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ErrorState } from '@/components/shared/error-state';
 
@@ -46,64 +47,89 @@ export default function AdminTicketsPage() {
     }
   };
 
-  const handleReply = (ticketId: string, message: string) => {
-    const newMessage: TicketMessage = {
-      id: `m-${Date.now()}`,
-      content: message,
-      isAdmin: true,
-      createdAt: new Date().toISOString(),
-    };
+  /** Extract numeric PK from 'TKT-003' format. */
+  const extractPk = (ticketId: string): number =>
+    parseInt(ticketId.replace(/^TKT-0*/i, ''), 10);
 
-    setTickets((prev) =>
-      prev.map((t) =>
-        t.id === ticketId
-          ? {
-              ...t,
-              messages: [...t.messages, newMessage],
-              updatedAt: new Date().toISOString(),
-              status: 'answered' as TicketStatus,
-            }
-          : t
-      )
-    );
+  const handleReply = async (ticketId: string, message: string) => {
+    try {
+      const pk = extractPk(ticketId);
+      const result = await AdminService.replyToTicket(pk, message);
 
-    if (selectedTicket?.id === ticketId) {
-      setSelectedTicket((prev) =>
-        prev
-          ? { ...prev, messages: [...prev.messages, newMessage], status: 'answered' }
-          : null
+      const newMessage: TicketMessage = {
+        id: result?.id ?? `m-${Date.now()}`,
+        content: message,
+        isAdmin: true,
+        createdAt: result?.createdAt ?? new Date().toISOString(),
+      };
+
+      setTickets((prev) =>
+        prev.map((t) =>
+          t.id === ticketId
+            ? {
+                ...t,
+                messages: [...t.messages, newMessage],
+                updatedAt: new Date().toISOString(),
+                status: 'answered' as TicketStatus,
+              }
+            : t
+        )
       );
-    }
 
-    toast.success('پاسخ ارسال شد');
+      if (selectedTicket?.id === ticketId) {
+        setSelectedTicket((prev) =>
+          prev
+            ? { ...prev, messages: [...prev.messages, newMessage], status: 'answered' }
+            : null
+        );
+      }
+
+      toast.success('پاسخ ارسال شد');
+    } catch {
+      toast.error('خطا در ارسال پاسخ');
+    }
   };
 
-  const handleStatusChange = (ticketId: string, status: TicketStatus) => {
-    setTickets((prev) =>
-      prev.map((t) =>
-        t.id === ticketId ? { ...t, status, updatedAt: new Date().toISOString() } : t
-      )
-    );
+  const handleStatusChange = async (ticketId: string, newStatus: TicketStatus) => {
+    try {
+      const pk = extractPk(ticketId);
+      await AdminService.updateTicket(pk, { status: newStatus });
 
-    if (selectedTicket?.id === ticketId) {
-      setSelectedTicket((prev) => (prev ? { ...prev, status } : null));
+      setTickets((prev) =>
+        prev.map((t) =>
+          t.id === ticketId ? { ...t, status: newStatus, updatedAt: new Date().toISOString() } : t
+        )
+      );
+
+      if (selectedTicket?.id === ticketId) {
+        setSelectedTicket((prev) => (prev ? { ...prev, status: newStatus } : null));
+      }
+
+      toast.success('وضعیت تیکت تغییر کرد');
+    } catch {
+      toast.error('خطا در تغییر وضعیت');
     }
-
-    toast.success('وضعیت تیکت تغییر کرد');
   };
 
-  const handlePriorityChange = (ticketId: string, priority: TicketPriority) => {
-    setTickets((prev) =>
-      prev.map((t) =>
-        t.id === ticketId ? { ...t, priority, updatedAt: new Date().toISOString() } : t
-      )
-    );
+  const handlePriorityChange = async (ticketId: string, newPriority: TicketPriority) => {
+    try {
+      const pk = extractPk(ticketId);
+      await AdminService.updateTicket(pk, { priority: newPriority });
 
-    if (selectedTicket?.id === ticketId) {
-      setSelectedTicket((prev) => (prev ? { ...prev, priority } : null));
+      setTickets((prev) =>
+        prev.map((t) =>
+          t.id === ticketId ? { ...t, priority: newPriority, updatedAt: new Date().toISOString() } : t
+        )
+      );
+
+      if (selectedTicket?.id === ticketId) {
+        setSelectedTicket((prev) => (prev ? { ...prev, priority: newPriority } : null));
+      }
+
+      toast.success('اولویت تیکت تغییر کرد');
+    } catch {
+      toast.error('خطا در تغییر اولویت');
     }
-
-    toast.success('اولویت تیکت تغییر کرد');
   };
 
   if (error) {

@@ -12,13 +12,12 @@ type TicketService = {
 
 type TicketsOptions = {
   isAdmin?: boolean;
-  userId?: string;
   userService?: TicketService;
   adminService?: TicketService;
 };
 
 export function useTickets(options: boolean | TicketsOptions = {}) {
-  const { isAdmin = false, userId = 'user-1', userService = DashboardService, adminService = AdminService } =
+  const { isAdmin = false, userService = DashboardService, adminService = AdminService } =
     typeof options === 'boolean' ? { isAdmin: options } : options;
   const mountedRef = useMountedRef();
   const [tickets, setTickets] = useState<Ticket[]>([]);
@@ -32,15 +31,15 @@ export function useTickets(options: boolean | TicketsOptions = {}) {
       const data = isAdmin 
         ? await adminService.getTickets() 
         : await userService.getTickets();
-      const filteredData = isAdmin ? data : data.filter(t => t.userId === userId);
-      if (mountedRef.current) setTickets(filteredData);
+      // Server already filters user tickets by authenticated user — no client-side filter needed.
+      if (mountedRef.current) setTickets(data);
     } catch (err) {
       console.error(err);
       if (mountedRef.current) setError('خطا در دریافت تیکت‌ها');
     } finally {
       if (mountedRef.current) setIsLoading(false);
     }
-  }, [adminService, isAdmin, mountedRef, userId, userService]);
+  }, [adminService, isAdmin, mountedRef, userService]);
 
   useEffect(() => {
     reload();

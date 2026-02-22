@@ -491,6 +491,43 @@ export const DashboardService = {
     return response || [];
   },
 
+  createTicket: async (data: {
+    subject: string;
+    department: string;
+    content: string;
+    priority?: string;
+  }): Promise<{ id: string; subject: string; status: string }> => {
+    const url = `${API_URL}/admin/my-tickets/create/`;
+    return requestJson(url, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${getAccessToken()}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        subject: data.subject,
+        department: data.department,
+        content: data.content,
+        priority: data.priority ?? 'medium',
+      }),
+    });
+  },
+
+  replyToTicket: async (
+    ticketPk: number,
+    content: string,
+  ): Promise<{ id: string; content: string; isAdmin: boolean; createdAt: string }> => {
+    const url = `${API_URL}/admin/my-tickets/${ticketPk}/reply/`;
+    return requestJson(url, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${getAccessToken()}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ content }),
+    });
+  },
+
   getNotifications: async (): Promise<Notification[]> => {
     if (!RAW_API_URL) {
       throw new Error('NEXT_PUBLIC_API_URL تنظیم نشده است.');
