@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { PageTransition } from '@/components/ui/page-transition';
 import { ErrorState } from '@/components/shared/error-state';
+import { formatPersianDateTime, formatPersianMonthDay } from '@/lib/date-utils';
 import {
   Coins,
   TrendingUp,
@@ -436,7 +437,7 @@ export default function LLMUsagePage() {
         {/* ── Daily Chart (simple bar representation) ── */}
         {daily.length > 0 && (() => {
           const maxTokens = Math.max(...daily.map((x) => x.total_tokens), 1);
-          const BAR_MAX_HEIGHT = 120; // px
+          const BAR_MAX_HEIGHT = 180;
           return (
           <Card className="rounded-2xl">
             <CardHeader className="pb-3">
@@ -447,23 +448,39 @@ export default function LLMUsagePage() {
             </CardHeader>
             <CardContent>
               <div className="overflow-x-auto">
-                <div className="flex items-end gap-1 min-w-[600px]" style={{ height: `${BAR_MAX_HEIGHT + 40}px` }}>
+                <div className="space-y-2 min-w-[700px]">
+                  <div className="flex items-center justify-between text-[11px] text-muted-foreground">
+                    <span>توکن مصرفی روزانه</span>
+                    <span>حداکثر: {formatNumber(maxTokens)}</span>
+                  </div>
+                  <div className="relative rounded-xl border border-border/60 bg-muted/20 p-3">
+                    <div className="absolute inset-x-3 top-3 bottom-10 pointer-events-none">
+                      <div className="h-full flex flex-col justify-between">
+                        {[0, 1, 2, 3].map((tick) => (
+                          <div key={tick} className="border-t border-dashed border-border/50" />
+                        ))}
+                      </div>
+                    </div>
+                    <div className="relative flex items-end gap-1" style={{ height: `${BAR_MAX_HEIGHT + 32}px` }}>
                   {daily.map((d) => {
                     const barH = Math.max(4, (d.total_tokens / maxTokens) * BAR_MAX_HEIGHT);
+                    const jalaliLabel = formatPersianMonthDay(d.date);
                     return (
                       <div key={d.date} className="flex-1 flex flex-col items-center justify-end gap-1" style={{ height: '100%' }}>
                         <div className="text-[10px] text-muted-foreground">{formatNumber(d.count)}</div>
                         <div
-                          className="w-full bg-primary/70 rounded-t-md transition-all"
+                          className="w-full bg-primary/80 hover:bg-primary rounded-t-md transition-all"
                           style={{ height: `${barH}px` }}
-                          title={`${d.date}: ${formatNumber(d.total_tokens)} توکن | ${formatCost(d.total_cost_usd)}`}
+                          title={`${formatPersianDateTime(d.date)}: ${formatNumber(d.total_tokens)} توکن | ${formatCost(d.total_cost_usd)}`}
                         />
-                        <div className="text-[9px] text-muted-foreground -rotate-45 origin-top-right whitespace-nowrap">
-                          {d.date.slice(5)}
+                        <div className="text-[10px] text-muted-foreground whitespace-nowrap">
+                          {jalaliLabel}
                         </div>
                       </div>
                     );
                   })}
+                    </div>
+                  </div>
                 </div>
               </div>
             </CardContent>
@@ -500,12 +517,7 @@ export default function LLMUsagePage() {
                   {recentLogs.map((log) => (
                     <tr key={log.id} className="border-b border-border/50 hover:bg-muted/30">
                       <td className="py-1.5 whitespace-nowrap">
-                        {new Date(log.created_at).toLocaleString('fa-IR', {
-                          month: 'short',
-                          day: 'numeric',
-                          hour: '2-digit',
-                          minute: '2-digit',
-                        })}
+                        {formatPersianDateTime(log.created_at)}
                       </td>
                       <td className="py-1.5">{log.user ?? 'سیستم'}</td>
                       <td className="py-1.5">{log.feature}</td>

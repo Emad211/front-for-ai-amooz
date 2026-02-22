@@ -139,13 +139,35 @@ class LLMTrackingMiddleware:
     def __init__(self, get_response):
         self.get_response = get_response
 
+    @staticmethod
+    def _resolve_user_from_request(request):
+        user = getattr(request, 'user', None)
+        if user is not None and getattr(user, 'is_authenticated', False):
+            return user
+
+        auth_header = (request.META.get('HTTP_AUTHORIZATION') or '').strip()
+        if not auth_header.lower().startswith('bearer '):
+            return None
+
+        token = auth_header[7:].strip()
+        if not token:
+            return None
+
+        try:
+            from rest_framework_simplejwt.authentication import JWTAuthentication
+
+            jwt_auth = JWTAuthentication()
+            validated_token = jwt_auth.get_validated_token(token)
+            return jwt_auth.get_user(validated_token)
+        except Exception:
+            return None
+
     def __call__(self, request):
         from apps.commons.token_tracker import set_current_user
 
-        user = getattr(request, 'user', None)
-        # Only set authenticated users (avoid AnonymousUser)
-        if user is not None and getattr(user, 'pk', None) is not None:
-            set_current_user(user)
+        resolved_user = self._resolve_user_from_request(request)
+        if resolved_user is not None and getattr(resolved_user, 'pk', None) is not None:
+            set_current_user(resolved_user)
         else:
             set_current_user(None)
         try:

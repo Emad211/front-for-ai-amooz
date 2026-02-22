@@ -83,17 +83,31 @@ class OrganizationListCreateView(APIView):
     def post(self, request):
         ser = OrganizationCreateSerializer(data=request.data)
         ser.is_valid(raise_exception=True)
+        try:
+            with transaction.atomic():
+                org = Organization.objects.create(**ser.validated_data)
 
-        org = Organization.objects.create(**ser.validated_data)
-
-        # Auto-generate an admin activation code for this org
-        admin_code = InvitationCode.objects.create(
-            organization=org,
-            target_role=InvitationCode.TargetRole.ADMIN,
-            label='کد فعالسازی مدیر',
-            max_uses=1,
-            created_by=request.user,
-        )
+                # Auto-generate an admin activation code for this org
+                admin_code = InvitationCode.objects.create(
+                    organization=org,
+                    target_role=InvitationCode.TargetRole.ADMIN,
+                    label='کد فعالسازی مدیر',
+                    max_uses=1,
+                    created_by=request.user,
+                )
+        except IntegrityError as exc:
+            msg = str(exc).lower()
+            if 'max_students' in msg or 'max_teachers' in msg:
+                return Response(
+                    {
+                        'detail': (
+                            'اسکیما دیتابیس سازمان‌ها به‌روز نیست. '
+                            'ابتدا migration مربوط به organizations را روی سرور اجرا کنید.'
+                        )
+                    },
+                    status=status.HTTP_503_SERVICE_UNAVAILABLE,
+                )
+            raise
 
         data = OrganizationSerializer(org).data
         data['adminActivationCode'] = admin_code.code
