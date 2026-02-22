@@ -88,7 +88,10 @@ class OrganizationListCreateView(APIView):
         ser.is_valid(raise_exception=True)
         try:
             with transaction.atomic():
-                org = Organization.objects.create(**ser.validated_data)
+                org_data = dict(ser.validated_data)
+                if not org_data.get('owner'):
+                    org_data['owner'] = request.user
+                org = Organization.objects.create(**org_data)
 
                 # Auto-generate an admin activation code for this org
                 admin_code = InvitationCode.objects.create(
