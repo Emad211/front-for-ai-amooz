@@ -410,7 +410,9 @@ export const AdminService = {
     }>>(`/admin/llm-usage/by-feature/?days=${days}`);
   },
 
-  getLLMUsageByUser: async (days = 30) => {
+  getLLMUsageByUser: async (days = 30, role?: string) => {
+    const params = new URLSearchParams({ days: String(days) });
+    if (role) params.set('role', role);
     return requestJson<Array<{
       user_id: number | null;
       username: string;
@@ -419,7 +421,7 @@ export const AdminService = {
       count: number;
       total_tokens: number;
       total_cost_usd: number;
-    }>>(`/admin/llm-usage/by-user/?days=${days}`);
+    }>>(`/admin/llm-usage/by-user/?${params.toString()}`);
   },
 
   getLLMUsageByProvider: async (days = 30) => {

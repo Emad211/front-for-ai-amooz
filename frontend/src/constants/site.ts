@@ -2,7 +2,7 @@ export const SITE_CONFIG = {
   name: "AI-Amooz",
   description: "یادگیری سفری است که از کلاس درس آغاز می‌شود؛ و ما همسفر توایم.",
   url: "https://ai-amooz.ir",
-  ogImage: "/logo (2).png",
+  ogImage: "/logo.png",
   links: {
     instagram: "#",
     telegram: "#",

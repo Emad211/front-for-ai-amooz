@@ -24,7 +24,7 @@ class OrganizationSerializer(serializers.ModelSerializer):
 
     studentCapacity = serializers.IntegerField(source='student_capacity', read_only=True)
     subscriptionStatus = serializers.CharField(source='subscription_status', read_only=True)
-    currentStudentCount = serializers.IntegerField(source='current_student_count', read_only=True)
+    currentStudentCount = serializers.SerializerMethodField()
     ownerName = serializers.SerializerMethodField()
     createdAt = serializers.DateTimeField(source='created_at', read_only=True)
     updatedAt = serializers.DateTimeField(source='updated_at', read_only=True)
@@ -37,6 +37,11 @@ class OrganizationSerializer(serializers.ModelSerializer):
             'description', 'phone', 'address',
             'currentStudentCount', 'createdAt', 'updatedAt',
         ]
+
+    @staticmethod
+    def get_currentStudentCount(obj) -> int:  # noqa: N802
+        """Use annotated count if available, else fall back to property."""
+        return getattr(obj, '_student_count', obj.current_student_count)
 
     @staticmethod
     def get_ownerName(obj) -> str:  # noqa: N802

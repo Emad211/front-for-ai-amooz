@@ -122,12 +122,20 @@ const ROLE_MAP: Record<string, string> = {
 
 const DAYS_OPTIONS = [7, 14, 30, 60, 90];
 
+const ROLE_FILTER_OPTIONS = [
+  { value: '', label: 'همه' },
+  { value: 'teacher', label: 'معلم' },
+  { value: 'student', label: 'دانش‌آموز' },
+  { value: 'admin', label: 'مدیر' },
+];
+
 /* ------------------------------------------------------------------ */
 /* Component                                                           */
 /* ------------------------------------------------------------------ */
 
 export default function LLMUsagePage() {
   const [days, setDays] = useState(30);
+  const [roleFilter, setRoleFilter] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -145,7 +153,7 @@ export default function LLMUsagePage() {
       const [s, f, u, p, d, r] = await Promise.all([
         AdminService.getLLMUsageSummary(days),
         AdminService.getLLMUsageByFeature(days),
-        AdminService.getLLMUsageByUser(days),
+        AdminService.getLLMUsageByUser(days, roleFilter || undefined),
         AdminService.getLLMUsageByProvider(days),
         AdminService.getLLMUsageDaily(days),
         AdminService.getLLMUsageRecentLogs(50),
@@ -161,7 +169,7 @@ export default function LLMUsagePage() {
     } finally {
       setLoading(false);
     }
-  }, [days]);
+  }, [days, roleFilter]);
 
   useEffect(() => {
     fetchAll();
@@ -363,10 +371,25 @@ export default function LLMUsagePage() {
         {/* ── By User ── */}
         <Card className="rounded-2xl">
           <CardHeader className="pb-3">
-            <CardTitle className="flex items-center gap-2 text-lg">
-              <Users className="w-5 h-5" />
-              مصرف بر اساس کاربر (بیشترین هزینه)
-            </CardTitle>
+            <div className="flex items-center justify-between flex-wrap gap-2">
+              <CardTitle className="flex items-center gap-2 text-lg">
+                <Users className="w-5 h-5" />
+                مصرف بر اساس کاربر
+              </CardTitle>
+              <div className="flex items-center gap-2">
+                {ROLE_FILTER_OPTIONS.map((opt) => (
+                  <Button
+                    key={opt.value}
+                    variant={roleFilter === opt.value ? 'default' : 'outline'}
+                    size="sm"
+                    className="h-7 rounded-lg text-xs"
+                    onClick={() => setRoleFilter(opt.value)}
+                  >
+                    {opt.label}
+                  </Button>
+                ))}
+              </div>
+            </div>
           </CardHeader>
           <CardContent>
             <div className="overflow-x-auto">
@@ -411,7 +434,10 @@ export default function LLMUsagePage() {
         </Card>
 
         {/* ── Daily Chart (simple bar representation) ── */}
-        {daily.length > 0 && (
+        {daily.length > 0 && (() => {
+          const maxTokens = Math.max(...daily.map((x) => x.total_tokens), 1);
+          const BAR_MAX_HEIGHT = 120; // px
+          return (
           <Card className="rounded-2xl">
             <CardHeader className="pb-3">
               <CardTitle className="flex items-center gap-2 text-lg">
@@ -421,16 +447,15 @@ export default function LLMUsagePage() {
             </CardHeader>
             <CardContent>
               <div className="overflow-x-auto">
-                <div className="flex items-end gap-1 min-w-[600px] h-40">
+                <div className="flex items-end gap-1 min-w-[600px]" style={{ height: `${BAR_MAX_HEIGHT + 40}px` }}>
                   {daily.map((d) => {
-                    const maxTokens = Math.max(...daily.map((x) => x.total_tokens), 1);
-                    const height = Math.max(4, (d.total_tokens / maxTokens) * 100);
+                    const barH = Math.max(4, (d.total_tokens / maxTokens) * BAR_MAX_HEIGHT);
                     return (
-                      <div key={d.date} className="flex-1 flex flex-col items-center gap-1">
+                      <div key={d.date} className="flex-1 flex flex-col items-center justify-end gap-1" style={{ height: '100%' }}>
                         <div className="text-[10px] text-muted-foreground">{formatNumber(d.count)}</div>
                         <div
                           className="w-full bg-primary/70 rounded-t-md transition-all"
-                          style={{ height: `${height}%` }}
+                          style={{ height: `${barH}px` }}
                           title={`${d.date}: ${formatNumber(d.total_tokens)} توکن | ${formatCost(d.total_cost_usd)}`}
                         />
                         <div className="text-[9px] text-muted-foreground -rotate-45 origin-top-right whitespace-nowrap">
@@ -443,7 +468,8 @@ export default function LLMUsagePage() {
               </div>
             </CardContent>
           </Card>
-        )}
+          );
+        })()}
 
         {/* ── Recent Logs ── */}
         <Card className="rounded-2xl">

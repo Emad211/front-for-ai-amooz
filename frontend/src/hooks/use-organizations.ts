@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { OrganizationService } from '@/services/organization-service';
 import type { Organization, OrgMembership, InvitationCode, OrgDashboard, OrgRole } from '@/types';
 import { useMountedRef } from '@/hooks/use-mounted-ref';
@@ -45,6 +45,14 @@ export function useOrgMembers(orgId: number) {
   const [error, setError] = useState<string | null>(null);
   const [roleFilter, setRoleFilter] = useState<OrgRole | ''>('');
   const [search, setSearch] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+
+  // Debounce search input by 300ms
+  useEffect(() => {
+    debounceRef.current = setTimeout(() => setDebouncedSearch(search), 300);
+    return () => clearTimeout(debounceRef.current);
+  }, [search]);
 
   const reload = useCallback(async () => {
     try {
@@ -52,7 +60,7 @@ export function useOrgMembers(orgId: number) {
       setIsLoading(true);
       const data = await OrganizationService.getMembers(orgId, {
         role: roleFilter || undefined,
-        search: search || undefined,
+        search: debouncedSearch || undefined,
       });
       if (mountedRef.current) setMembers(data);
     } catch (err) {
@@ -61,7 +69,7 @@ export function useOrgMembers(orgId: number) {
     } finally {
       if (mountedRef.current) setIsLoading(false);
     }
-  }, [mountedRef, orgId, roleFilter, search]);
+  }, [mountedRef, orgId, roleFilter, debouncedSearch]);
 
   useEffect(() => { reload(); }, [reload]);
 

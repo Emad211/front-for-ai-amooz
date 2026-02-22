@@ -46,6 +46,10 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       if (savedSlug) {
         const saved = data.find((w) => w.slug === savedSlug) ?? null;
         setActiveWorkspace(saved);
+        // Clear stale slug if the saved workspace no longer exists
+        if (!saved) {
+          localStorage.removeItem(STORAGE_KEY);
+        }
       }
     } catch {
       // User may not be logged in yet — silently fail

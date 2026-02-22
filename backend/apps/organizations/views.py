@@ -6,7 +6,7 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import IntegrityError, transaction
-from django.db.models import F, Q
+from django.db.models import Count, F, Q
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.permissions import IsAdminUser, IsAuthenticated
@@ -62,7 +62,20 @@ class OrganizationListCreateView(APIView):
     permission_classes = [IsAdminUser]
 
     def get(self, request):
-        qs = Organization.objects.select_related('owner').all()
+        qs = (
+            Organization.objects
+            .select_related('owner')
+            .annotate(
+                _student_count=Count(
+                    'memberships',
+                    filter=Q(
+                        memberships__org_role=OrganizationMembership.OrgRole.STUDENT,
+                        memberships__status=OrganizationMembership.MemberStatus.ACTIVE,
+                    ),
+                ),
+            )
+            .all()
+        )
         return Response(OrganizationSerializer(qs, many=True).data)
 
     def post(self, request):
@@ -113,10 +126,25 @@ class OrganizationDetailView(APIView):
                 )
 
         allowed = ['name', 'slug', 'student_capacity', 'subscription_status',
-                    'description', 'phone', 'address', 'owner']
+                    'description', 'phone', 'address']
         for field in allowed:
             if field in request.data:
                 setattr(org, field, request.data[field])
+
+        # Handle owner FK separately
+        if 'owner' in request.data:
+            owner_id = request.data['owner']
+            if owner_id is None:
+                org.owner = None
+            else:
+                try:
+                    org.owner = User.objects.get(pk=owner_id)
+                except User.DoesNotExist:
+                    return Response(
+                        {'owner': ['کاربر یافت نشد.']},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+
         org.save()
         return Response(OrganizationSerializer(org).data)
 
@@ -325,12 +353,18 @@ class RedeemInvitationView(APIView):
 
         code_value = data['code'].strip().upper()
         # Lock the row to prevent race conditions on concurrent redemptions
-        invite = (
-            InvitationCode.objects
-            .select_related('organization')
-            .select_for_update()
-            .get(code__iexact=code_value)
-        )
+        try:
+            invite = (
+                InvitationCode.objects
+                .select_related('organization')
+                .select_for_update()
+                .get(code__iexact=code_value)
+            )
+        except InvitationCode.DoesNotExist:
+            return Response(
+                {'detail': 'کد نامعتبر است.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         # Determine the user
         user = request.user if request.user.is_authenticated else None
@@ -481,7 +515,11 @@ class MyWorkspacesView(APIView):
     def get(self, request):
         memberships = (
             OrganizationMembership.objects
-            .filter(user=request.user, status=OrganizationMembership.MemberStatus.ACTIVE)
+            .filter(
+                user=request.user,
+                status=OrganizationMembership.MemberStatus.ACTIVE,
+                organization__subscription_status=Organization.SubscriptionStatus.ACTIVE,
+            )
             .select_related('organization')
             .order_by('organization__name')
         )

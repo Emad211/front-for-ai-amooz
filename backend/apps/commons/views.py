@@ -178,11 +178,17 @@ class LLMUsageByFeatureView(APIView):
 
 
 class LLMUsageByUserView(APIView):
-    """Usage breakdown by user (top consumers)."""
+    """Usage breakdown by user (all users, with optional role filter)."""
     permission_classes = [IsAdminUser]
 
     def get(self, request):
         filters = _get_date_filter(request)
+
+        # Optional role filter: ?role=teacher or ?role=student
+        role = request.query_params.get('role', '').strip().lower()
+        if role in ('teacher', 'student', 'admin'):
+            filters['user__role'] = role
+
         qs = (
             LLMUsageLog.objects
             .filter(**filters)
@@ -192,7 +198,7 @@ class LLMUsageByUserView(APIView):
                 total_tokens=Sum('total_tokens'),
                 total_cost_usd=Sum('estimated_cost_usd'),
             )
-            .order_by('-total_cost_usd')[:50]
+            .order_by('-total_cost_usd')
         )
         result = []
         for row in qs:
@@ -241,7 +247,6 @@ class LLMUsageDailyView(APIView):
     permission_classes = [IsAdminUser]
 
     def get(self, request):
-        from django.db.models.functions import TruncDate
         filters = _get_date_filter(request)
         qs = (
             LLMUsageLog.objects
@@ -260,7 +265,12 @@ class LLMUsageDailyView(APIView):
             for k in ('total_tokens', 'total_cost_usd'):
                 if row[k] is None:
                     row[k] = 0
-            result.append(row)
+            result.append({
+                'date': row['date'].isoformat() if row['date'] else None,
+                'count': row['count'],
+                'total_tokens': row['total_tokens'],
+                'total_cost_usd': float(row['total_cost_usd']),
+            })
         return Response(result)
 
 

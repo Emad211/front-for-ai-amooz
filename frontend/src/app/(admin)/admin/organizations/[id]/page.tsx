@@ -65,6 +65,19 @@ export default function OrganizationDetailPage({
   const params = use(paramsPromise);
   const orgId = parseInt(params.id);
 
+  // Guard against invalid/NaN org ID
+  if (Number.isNaN(orgId)) {
+    return (
+      <PageTransition>
+        <div className="flex items-center justify-center h-[60vh] px-4">
+          <div className="w-full max-w-2xl">
+            <ErrorState title="خطا" description="شناسه سازمان نامعتبر است." onRetry={() => router.push('/admin/organizations')} />
+          </div>
+        </div>
+      </PageTransition>
+    );
+  }
+
   const { dashboard, isLoading: dashLoading, error: dashError, reload: reloadDash } = useOrgDashboard(orgId);
   const {
     members,
@@ -88,6 +101,8 @@ export default function OrganizationDetailPage({
 
   // ── Delete member confirmation ──
   const [deleteMemberTarget, setDeleteMemberTarget] = useState<{ id: number; name: string } | null>(null);
+  // ── Delete code confirmation ──
+  const [deleteCodeTarget, setDeleteCodeTarget] = useState<{ id: number; code: string } | null>(null);
 
   const resetCodeForm = useCallback(() => {
     setCodeRole('student');
@@ -126,10 +141,12 @@ export default function OrganizationDetailPage({
     }
   };
 
-  const handleDeleteCode = async (codeId: number) => {
+  const handleDeleteCode = async () => {
+    if (!deleteCodeTarget) return;
     try {
-      await OrganizationService.deleteInvitationCode(orgId, codeId);
+      await OrganizationService.deleteInvitationCode(orgId, deleteCodeTarget.id);
       toast.success('کد حذف شد.');
+      setDeleteCodeTarget(null);
       reloadCodes();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'خطا');
@@ -162,9 +179,13 @@ export default function OrganizationDetailPage({
     }
   };
 
-  const copyToClipboard = (text: string) => {
-    navigator.clipboard.writeText(text);
-    toast.success('کپی شد!');
+  const copyToClipboard = async (text: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      toast.success('کپی شد!');
+    } catch {
+      toast.error('کپی انجام نشد.');
+    }
   };
 
   // ── Loading ──
@@ -208,6 +229,14 @@ export default function OrganizationDetailPage({
     ? Math.round((stats.students / stats.studentCapacity) * 100)
     : 0;
 
+  const orgInfoItems = [
+    { label: 'مدیر', value: org.ownerName || '—' },
+    { label: 'توضیحات', value: org.description || '—' },
+    { label: 'تلفن', value: org.phone || '—' },
+    { label: 'آدرس', value: org.address || '—' },
+    { label: 'تاریخ ایجاد', value: org.createdAt ? new Date(org.createdAt).toLocaleDateString('fa-IR') : '—' },
+  ];
+
   return (
     <PageTransition>
       <div className="space-y-8">
@@ -228,12 +257,33 @@ export default function OrganizationDetailPage({
                 <Building2 className="w-7 h-7 text-primary" />
               </div>
             )}
-            <div>
+            <div className="flex-1 min-w-0">
               <h1 className="text-2xl md:text-3xl font-black text-foreground">{org.name}</h1>
               <p className="text-sm text-muted-foreground font-mono" dir="ltr">
                 {org.slug}
               </p>
             </div>
+            <Badge
+              className={`shrink-0 text-xs border ${
+                org.subscriptionStatus === 'active'
+                  ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border-emerald-500/20'
+                  : org.subscriptionStatus === 'expired'
+                    ? 'bg-amber-500/15 text-amber-700 dark:text-amber-400 border-amber-500/20'
+                    : 'bg-red-500/15 text-red-700 dark:text-red-400 border-red-500/20'
+              }`}
+            >
+              {org.subscriptionStatus === 'active' ? 'فعال' : org.subscriptionStatus === 'expired' ? 'منقضی' : 'معلق'}
+            </Badge>
+          </div>
+
+          {/* Org Info Row */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3 mt-4 p-4 bg-muted/50 rounded-xl">
+            {orgInfoItems.map((item) => (
+              <div key={item.label}>
+                <p className="text-[11px] text-muted-foreground">{item.label}</p>
+                <p className="text-sm font-medium truncate">{item.value}</p>
+              </div>
+            ))}
           </div>
         </div>
 
@@ -591,7 +641,7 @@ export default function OrganizationDetailPage({
                               variant="ghost"
                               size="icon"
                               className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10"
-                              onClick={() => handleDeleteCode(c.id)}
+                              onClick={() => setDeleteCodeTarget({ id: c.id, code: c.code })}
                             >
                               <Trash2 className="w-3.5 h-3.5" />
                             </Button>
@@ -629,6 +679,34 @@ export default function OrganizationDetailPage({
                 disabled={isSubmitting}
               >
                 {isSubmitting ? 'در حال حذف...' : 'حذف عضو'}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* ── Delete Code Confirmation Dialog ── */}
+        <Dialog open={!!deleteCodeTarget} onOpenChange={(open) => !open && setDeleteCodeTarget(null)}>
+          <DialogContent className="sm:max-w-sm" dir="rtl">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2 text-destructive">
+                <AlertTriangle className="w-5 h-5" />
+                حذف کد دعوت
+              </DialogTitle>
+              <DialogDescription>
+                آیا از حذف کد <strong className="font-mono" dir="ltr">{deleteCodeTarget?.code}</strong> اطمینان دارید؟
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter className="flex gap-2 sm:gap-2">
+              <Button variant="outline" className="flex-1 rounded-xl" onClick={() => setDeleteCodeTarget(null)}>
+                انصراف
+              </Button>
+              <Button
+                variant="destructive"
+                className="flex-1 rounded-xl"
+                onClick={handleDeleteCode}
+                disabled={isSubmitting}
+              >
+                حذف کد
               </Button>
             </DialogFooter>
           </DialogContent>

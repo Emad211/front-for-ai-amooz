@@ -29,7 +29,7 @@ export function Logo({
     <Link href={href} className={cn("flex items-center gap-2 group relative", className)}>
       <div className={cn("relative", currentSize.h, currentSize.w)}>
         <Image
-          src="/logo (2).png"
+          src="/logo.png"
           alt="AI-Amooz logo"
           fill
           sizes="128px"

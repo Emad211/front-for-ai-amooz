@@ -61,6 +61,7 @@ export default function OrganizationsPage() {
   const [deleteTarget, setDeleteTarget] = useState<{ id: number; name: string } | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
 
   // ── Create Form ──
   const [formName, setFormName] = useState('');
@@ -126,16 +127,24 @@ export default function OrganizationsPage() {
     }
   };
 
-  const copyToClipboard = (text: string) => {
-    navigator.clipboard.writeText(text);
-    toast.success('کپی شد!');
+  const copyToClipboard = async (text: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      toast.success('کپی شد!');
+    } catch {
+      toast.error('کپی انجام نشد.');
+    }
   };
 
   const filteredOrgs = organizations.filter(
-    (org) =>
-      !searchQuery.trim() ||
-      org.name.includes(searchQuery) ||
-      org.slug.includes(searchQuery.toLowerCase()),
+    (org) => {
+      const matchesSearch =
+        !searchQuery.trim() ||
+        org.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        org.slug.toLowerCase().includes(searchQuery.toLowerCase());
+      const matchesStatus = !statusFilter || org.subscriptionStatus === statusFilter;
+      return matchesSearch && matchesStatus;
+    },
   );
 
   // ── Loading ──
@@ -375,16 +384,36 @@ export default function OrganizationsPage() {
           </Card>
         </div>
 
-        {/* ── Search ── */}
+        {/* ── Search & Filter ── */}
         {organizations.length > 0 && (
-          <div className="relative max-w-sm">
-            <Search className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-            <Input
-              placeholder="جستجوی سازمان..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="pr-9 rounded-xl"
-            />
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="relative max-w-sm flex-1 min-w-[200px]">
+              <Search className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+              <Input
+                placeholder="جستجوی سازمان..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pr-9 rounded-xl"
+              />
+            </div>
+            <div className="flex items-center gap-1.5">
+              {[
+                { value: '', label: 'همه' },
+                { value: 'active', label: 'فعال' },
+                { value: 'expired', label: 'منقضی' },
+                { value: 'suspended', label: 'معلق' },
+              ].map((opt) => (
+                <Button
+                  key={opt.value}
+                  variant={statusFilter === opt.value ? 'default' : 'outline'}
+                  size="sm"
+                  className="h-8 rounded-lg text-xs"
+                  onClick={() => setStatusFilter(opt.value)}
+                >
+                  {opt.label}
+                </Button>
+              ))}
+            </div>
           </div>
         )}
 

@@ -89,7 +89,7 @@ export default function AdminLoginPage() {
             <div className="relative p-4 rounded-2xl bg-primary/10">
               <div className="relative h-16 w-20">
                 <Image
-                  src="/logo (2).png"
+                  src="/logo.png"
                   alt="AI-Amooz logo"
                   fill
                   sizes="80px"

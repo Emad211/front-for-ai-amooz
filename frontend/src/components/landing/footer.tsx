@@ -32,7 +32,7 @@ export function LandingFooter() {
             <Link href="/" className="inline-flex items-center gap-2 mb-4 group relative">
               <div className="relative h-12 w-16">
                 <Image
-                  src="/logo (2).png"
+                  src="/logo.png"
                   alt="AI-Amooz logo"
                   fill
                   sizes="128px"
@@ -115,7 +115,7 @@ export function LandingFooter() {
               <Link href="/" className="flex items-center gap-2 mb-6 group relative">
                 <div className="relative h-14 w-18">
                   <Image
-                    src="/logo (2).png"
+                    src="/logo.png"
                     alt="AI-Amooz logo"
                     fill
                     sizes="128px"

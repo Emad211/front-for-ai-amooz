@@ -238,6 +238,7 @@ export function clearAuthStorage() {
   window.localStorage.removeItem(STORAGE_KEYS.refresh);
   window.localStorage.removeItem(STORAGE_KEYS.user);
   window.localStorage.removeItem('userRole');
+  window.localStorage.removeItem('ai_amooz_active_workspace');
 }
 
 export function getStoredTokens(): TokenResponse | null {
