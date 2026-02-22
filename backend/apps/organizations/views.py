@@ -86,7 +86,7 @@ class OrganizationListCreateView(APIView):
     def post(self, request):
         ser = OrganizationCreateSerializer(data=request.data)
         ser.is_valid(raise_exception=True)
-        admin_code_value = None
+        created_codes: list[dict[str, object]] = []
         try:
             with transaction.atomic():
                 org_data = dict(ser.validated_data)
@@ -94,21 +94,52 @@ class OrganizationListCreateView(APIView):
                     org_data['owner'] = request.user
                 org = Organization.objects.create(**org_data)
 
-                # Auto-generate an admin activation code for this org
-                try:
-                    admin_code = InvitationCode.objects.create(
-                        organization=org,
-                        target_role=InvitationCode.TargetRole.ADMIN,
-                        label='کد فعالسازی مدیر',
-                        max_uses=1,
-                        created_by=request.user,
-                    )
-                    admin_code_value = admin_code.code
-                except DatabaseError:
-                    logger.exception(
-                        'Organization created but InvitationCode table/insert failed. '
-                        'Run organizations migrations to repair schema drift.'
-                    )
+                initial_code_specs = [
+                    {
+                        'target_role': InvitationCode.TargetRole.ADMIN,
+                        'label': 'کد فعالسازی مدیر',
+                        'max_uses': 1,
+                    },
+                    {
+                        'target_role': InvitationCode.TargetRole.DEPUTY,
+                        'label': 'کد دعوت معاون',
+                        'max_uses': 5,
+                    },
+                    {
+                        'target_role': InvitationCode.TargetRole.TEACHER,
+                        'label': 'کد دعوت معلم',
+                        'max_uses': 30,
+                    },
+                    {
+                        'target_role': InvitationCode.TargetRole.STUDENT,
+                        'label': 'کد دعوت دانش‌آموز',
+                        'max_uses': 100,
+                    },
+                ]
+
+                for spec in initial_code_specs:
+                    try:
+                        code = InvitationCode.objects.create(
+                            organization=org,
+                            target_role=spec['target_role'],
+                            label=spec['label'],
+                            max_uses=spec['max_uses'],
+                            created_by=request.user,
+                        )
+                        created_codes.append(
+                            {
+                                'targetRole': spec['target_role'],
+                                'label': spec['label'],
+                                'maxUses': spec['max_uses'],
+                                'code': code.code,
+                            }
+                        )
+                    except DatabaseError:
+                        logger.exception(
+                            'Organization created but InvitationCode insert failed for role=%s. '
+                            'Run organizations migrations to repair schema drift.',
+                            spec['target_role'],
+                        )
         except IntegrityError as exc:
             logger.error('Organization create IntegrityError: %s', exc, exc_info=True)
             return Response(
@@ -123,7 +154,9 @@ class OrganizationListCreateView(APIView):
             )
 
         data = OrganizationSerializer(org).data
-        data['adminActivationCode'] = admin_code_value
+        admin_code = next((c for c in created_codes if c.get('targetRole') == InvitationCode.TargetRole.ADMIN), None)
+        data['adminActivationCode'] = admin_code.get('code') if admin_code else None
+        data['initialInvitationCodes'] = created_codes
         return Response(data, status=status.HTTP_201_CREATED)
 
 

@@ -12,6 +12,7 @@ import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
 import { toast } from 'sonner';
 import { login, fetchMe, persistTokens, persistUser } from '@/services/auth-service';
+import { OrganizationService } from '@/services/organization-service';
 
 export default function AdminLoginPage() {
   const router = useRouter();
@@ -46,7 +47,17 @@ export default function AdminLoginPage() {
       persistUser(adminUser);
       toast.success('خوش آمدید، مدیر!');
       
-      // Step 4: Redirect to admin panel
+      // Step 4: Redirect to organization dashboard when available
+      try {
+        const workspaces = await OrganizationService.getMyWorkspaces();
+        if (workspaces.length > 0) {
+          router.push(`/admin/organizations/${workspaces[0].id}`);
+          return;
+        }
+      } catch {
+        // Fallback to generic admin panel when workspace lookup fails
+      }
+
       router.push('/admin');
     } catch (error: any) {
       console.error('Admin login error:', error);
