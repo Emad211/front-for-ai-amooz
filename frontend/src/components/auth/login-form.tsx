@@ -183,13 +183,6 @@ export function LoginForm({ onSwitchToJoin }: LoginFormProps) {
       </form>
 
       <div className="mt-8 space-y-3 text-center">
-        <p className="text-sm text-muted-foreground">
-          کد فعالسازی مدرسه یا سازمان دارید؟{' '}
-          <Link href="/org-login" className="font-semibold text-primary hover:underline">
-            ورود سازمانی
-          </Link>
-        </p>
-        {onSwitchToJoin && (
           <p className="text-sm text-muted-foreground">
             حساب کاربری ندارید؟{' '}
             <button
@@ -201,7 +194,6 @@ export function LoginForm({ onSwitchToJoin }: LoginFormProps) {
               ثبت‌نام با کد دعوت
             </button>
           </p>
-        )}
       </div>
     </>
   );
