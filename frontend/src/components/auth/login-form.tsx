@@ -182,19 +182,6 @@ export function LoginForm({ onSwitchToJoin }: LoginFormProps) {
         </Button>
       </form>
 
-      <div className="mt-8 space-y-3 text-center">
-          <p className="text-sm text-muted-foreground">
-            حساب کاربری ندارید؟{' '}
-            <button
-              type="button"
-              onClick={onSwitchToJoin}
-              className="font-semibold text-primary hover:underline focus:outline-none"
-              disabled={isLoading}
-            >
-              ثبت‌نام با کد دعوت
-            </button>
-          </p>
-      </div>
     </>
   );
 }
