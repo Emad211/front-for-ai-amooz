@@ -1,25 +1,19 @@
 FROM python:3.12-slim
 
-ENV PYTHONUNBUFFERED=1 \
-    PYTHONDONTWRITEBYTECODE=1 \
-    PORT=8000 \
-    GUNICORN_TIMEOUT=300 \
-    GUNICORN_WORKERS=4 \
-    GUNICORN_THREADS=4 \
-    GUNICORN_WORKER_CLASS=gthread \
-    GUNICORN_GRACEFUL_TIMEOUT=60 \
-    GUNICORN_KEEP_ALIVE=5 \
-    GUNICORN_MAX_REQUESTS=1000 \
-    GUNICORN_MAX_REQUESTS_JITTER=50
+# جلوگیری از ساخت pyc و بافر لاگ
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
 
 WORKDIR /app
 
-# ✅ Use Iran mirror instead of deb.debian.org
+# تنظیم mirror ایران + حل مشکل Release expired
 RUN rm -f /etc/apt/sources.list.d/* && \
     echo "deb https://mirror.arvancloud.ir/debian bookworm main contrib non-free non-free-firmware" > /etc/apt/sources.list && \
     echo "deb https://mirror.arvancloud.ir/debian bookworm-updates main contrib non-free non-free-firmware" >> /etc/apt/sources.list && \
-    echo "deb https://mirror.arvancloud.ir/debian-security bookworm-security main contrib non-free non-free-firmware" >> /etc/apt/sources.list
+    echo "deb https://mirror.arvancloud.ir/debian-security bookworm-security main contrib non-free non-free-firmware" >> /etc/apt/sources.list && \
+    echo 'Acquire::Check-Valid-Until "false";' > /etc/apt/apt.conf.d/99no-check-valid
 
+# نصب پکیج‌های سیستم
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         ffmpeg \
@@ -31,13 +25,20 @@ RUN apt-get update && \
         fontconfig \
     && rm -rf /var/lib/apt/lists/*
 
-# ── Python dependencies ─────────────────────────────────────────────
-COPY requirements.txt .
+# آپدیت pip
+RUN pip install --upgrade pip
+
+# کپی requirements
+COPY backend/requirements.txt .
+
+# نصب پکیج‌های پایتون
 RUN pip install --no-cache-dir -r requirements.txt
 
-# ── Application code ────────────────────────────────────────────────
-COPY . .
+# کپی کل پروژه
+COPY backend/ .
 
-EXPOSE 8000
+# جمع‌آوری static
+RUN python manage.py collectstatic --noinput || true
 
-CMD ["sh", "-c", "python manage.py migrate --noinput && python manage.py collectstatic --noinput && python manage.py setup_s3_bucket 2>/dev/null || true && exec gunicorn core.wsgi:application --bind 0.0.0.0:${PORT:-8000} --timeout ${GUNICORN_TIMEOUT} --workers ${GUNICORN_WORKERS} --threads ${GUNICORN_THREADS} --worker-class ${GUNICORN_WORKER_CLASS} --graceful-timeout ${GUNICORN_GRACEFUL_TIMEOUT} --keep-alive ${GUNICORN_KEEP_ALIVE} --max-requests ${GUNICORN_MAX_REQUESTS} --max-requests-jitter ${GUNICORN_MAX_REQUESTS_JITTER} --worker-tmp-dir /dev/shm"]
+# اجرای سرور
+CMD ["gunicorn", "config.wsgi:application", "--bind", "0.0.0.0:8000"]
