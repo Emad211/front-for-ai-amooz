@@ -12,14 +12,13 @@ RUN rm -f /etc/apt/sources.list.d/* && \
     echo "deb https://mirror.arvancloud.ir/debian-security bookworm-security main contrib non-free non-free-firmware" >> /etc/apt/sources.list && \
     echo 'Acquire::Check-Valid-Until "false";' > /etc/apt/apt.conf.d/99no-check-valid
 
-# نصب dependency های سیستم
+# نصب پکیج‌های سیستم
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         ffmpeg \
         libpango-1.0-0 \
         libpangocairo-1.0-0 \
         libgdk-pixbuf-2.0-0 \
-        libffi-dev \
         shared-mime-info \
         fontconfig \
     && rm -rf /var/lib/apt/lists/*
@@ -31,11 +30,11 @@ RUN pip install --upgrade pip
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# کپی کل پروژه
+# کپی پروژه
 COPY . .
 
 # collect static
 RUN python manage.py collectstatic --noinput || true
 
-# اجرای django با gunicorn
+# اجرا
 CMD ["gunicorn", "config.wsgi:application", "--bind", "0.0.0.0:8000"]
