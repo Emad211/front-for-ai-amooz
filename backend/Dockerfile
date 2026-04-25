@@ -15,11 +15,11 @@ ENV PYTHONUNBUFFERED=1 \
 WORKDIR /app
 
 # ✅ Use Iran mirror instead of deb.debian.org
-RUN echo "deb http://mirror.iranserver.com/debian bookworm main contrib non-free" > /etc/apt/sources.list && \
-    echo "deb http://mirror.iranserver.com/debian bookworm-updates main contrib non-free" >> /etc/apt/sources.list && \
-    echo "deb http://mirror.iranserver.com/debian-security bookworm-security main contrib non-free" >> /etc/apt/sources.list
+RUN rm -f /etc/apt/sources.list.d/* && \
+    echo "deb https://mirror.arvancloud.ir/debian bookworm main contrib non-free non-free-firmware" > /etc/apt/sources.list && \
+    echo "deb https://mirror.arvancloud.ir/debian bookworm-updates main contrib non-free non-free-firmware" >> /etc/apt/sources.list && \
+    echo "deb https://mirror.arvancloud.ir/debian-security bookworm-security main contrib non-free non-free-firmware" >> /etc/apt/sources.list
 
-# ── System dependencies ─────────────────────────────────────────────
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         ffmpeg \
