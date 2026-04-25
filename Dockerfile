@@ -1,12 +1,8 @@
 FROM python:3.12-slim
 
-# ✅ استفاده از mirror داخلی به جای deb.debian.org
-RUN echo "deb http://mirror.iranserver.com/debian bookworm main contrib non-free" > /etc/apt/sources.list && \
-    echo "deb http://mirror.iranserver.com/debian bookworm-updates main contrib non-free" >> /etc/apt/sources.list && \
-    echo "deb http://mirror.iranserver.com/debian-security bookworm-security main contrib non-free" >> /etc/apt/sources.list && \
-    apt-get update && \
-    apt-get install -y --no-install-recommends \
-        ffmpeg \
+# Install ffmpeg, ffprobe and build essentials for weasyprint/Pillow
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
 # Environment
@@ -28,4 +24,5 @@ COPY backend/ .
 
 EXPOSE 8000
 
+# Run gunicorn with env-configurable settings.
 CMD ["sh", "-c", "python manage.py migrate --noinput && python manage.py collectstatic --noinput && gunicorn core.wsgi:application --bind 0.0.0.0:${PORT:-8000} --timeout ${GUNICORN_TIMEOUT} --workers ${GUNICORN_WORKERS} --worker-class ${GUNICORN_WORKER_CLASS} --graceful-timeout ${GUNICORN_GRACEFUL_TIMEOUT} --keep-alive ${GUNICORN_KEEP_ALIVE}"]
