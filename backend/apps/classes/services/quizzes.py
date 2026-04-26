@@ -24,12 +24,25 @@ def _get_env(name: str) -> str:
     return (os.getenv(name) or "").strip()
 
 
-def _select_model(*names: str, default: str = "gpt-4.1") -> str:
+def _select_model(*names: str) -> str:
+    """
+    Correct, architecture‑aligned model resolver:
+    1) first available specific model
+    2) fallback → MODEL_NAME
+    3) else → error (mandatory: no hard‑coded defaults)
+    """
     for n in names:
         val = _get_env(n)
         if val:
             return val
-    return default
+
+    fallback = _get_env("MODEL_NAME")
+    if fallback:
+        return fallback
+
+    raise RuntimeError(
+        f"No LLM model found in ENV. Checked: {names} and fallback MODEL_NAME"
+    )
 
 
 def _render_prompt(template: str, **values: Any) -> str:
@@ -52,11 +65,6 @@ def _call_llm(
     prompt: str,
     feature: LLMUsageLog.Feature,
 ) -> str:
-    """
-    Centralized LLM invocation.
-    Handles provider routing, logging, timeout, and response extraction.
-    """
-
     provider = preferred_provider()
 
     messages = [
@@ -76,13 +84,6 @@ def _call_llm(
 
 
 def _parse_json_result(text: str, *, root_key: str | None = None) -> dict[str, Any]:
-    """
-    Safely parse JSON returned from the LLM.
-
-    If the model returns a list or primitive instead of dict,
-    wrap it in root_key to preserve schema compatibility.
-    """
-
     obj = extract_json_object(text)
 
     if isinstance(obj, dict):
@@ -102,7 +103,7 @@ def generate_section_quiz_questions(
     *, section_content: str, count: int = 5
 ) -> tuple[dict[str, Any], str, str]:
 
-    model = _select_model("QUIZ_MODEL", "MODEL_NAME")
+    model = _select_model("QUIZ_MODEL")
 
     provider = preferred_provider()
 
@@ -136,7 +137,7 @@ def grade_open_text_answer(
     *, question: str, reference_answer: str, student_answer: str
 ) -> tuple[dict[str, Any], str, str]:
 
-    model = _select_model("GRADING_MODEL", "QUIZ_MODEL", "MODEL_NAME")
+    model = _select_model("GRADING_MODEL", "QUIZ_MODEL")
 
     provider = preferred_provider()
 
@@ -171,7 +172,7 @@ def generate_final_exam_pool(
     *, combined_content: str, pool_size: int = 12
 ) -> tuple[dict[str, Any], str, str]:
 
-    model = _select_model("FINAL_EXAM_MODEL", "QUIZ_MODEL", "MODEL_NAME")
+    model = _select_model("FINAL_EXAM_MODEL", "QUIZ_MODEL")
 
     provider = preferred_provider()
 
@@ -209,7 +210,7 @@ def generate_answer_hint(
     attempt_number: int = 1,
 ) -> tuple[dict[str, Any], str, str]:
 
-    model = _select_model("HINT_MODEL", "MODEL_NAME")
+    model = _select_model("HINT_MODEL")
 
     provider = preferred_provider()
 
