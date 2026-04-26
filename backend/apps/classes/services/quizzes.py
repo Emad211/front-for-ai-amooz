@@ -1,210 +1,205 @@
 from __future__ import annotations
 
+import logging
 import os
-from typing import Any, Optional, Tuple
-
-from google import genai
+from typing import Any
 
 from apps.commons.llm_prompts import PROMPTS
 from apps.commons.llm_provider import preferred_provider
 from apps.commons.models import LLMUsageLog
-from apps.commons.token_tracker import tracked_generate_content
+from apps.commons.services.llm_client import generate_text
 
 from .json_utils import extract_json_object
 
+logger = logging.getLogger(__name__)
+
+_LLM_TIMEOUT_SECONDS = int(os.getenv("LLM_TIMEOUT_SECONDS", "600"))
+
+
+# ---------------------------------------------------------------------
+# Utilities
+# ---------------------------------------------------------------------
 
 def _get_env(name: str) -> str:
-    return (os.getenv(name) or '').strip()
+    return (os.getenv(name) or "").strip()
 
 
-def _get_clients() -> Tuple[Optional[genai.Client], Optional[genai.Client]]:
-    gemini_api_key = _get_env('GEMINI_API_KEY')
-    avalai_api_key = _get_env('AVALAI_API_KEY')
-    avalai_base_url = _get_env('AVALAI_BASE_URL')
-
-    provider = preferred_provider()
-
-    gemini_client = genai.Client(api_key=gemini_api_key) if gemini_api_key and provider != 'avalai' else None
-
-    avalai_client: Optional[genai.Client] = None
-    if avalai_api_key and provider != 'gemini':
-        http_options = {'base_url': avalai_base_url} if avalai_base_url else None
-        avalai_client = genai.Client(api_key=avalai_api_key, http_options=http_options)
-
-    return gemini_client, avalai_client
-
-
-def _extract_text(resp: Any) -> str:
-    text = (getattr(resp, 'text', '') or '').strip()
-    if text:
-        return text
-
-    candidates = getattr(resp, 'candidates', None) or []
-    buf: list[str] = []
-    for c in candidates:
-        content = getattr(c, 'content', None)
-        parts = getattr(content, 'parts', None) if content else None
-        if not parts:
-            continue
-        for p in parts:
-            t = getattr(p, 'text', None)
-            if t:
-                buf.append(t)
-    return ('\n'.join(buf)).strip()
+def _select_model(*names: str, default: str = "gpt-4.1") -> str:
+    for n in names:
+        val = _get_env(n)
+        if val:
+            return val
+    return default
 
 
 def _render_prompt(template: str, **values: Any) -> str:
-    """Render a prompt template without interpreting JSON braces.
+    """
+    Render prompt safely without using str.format().
 
-    We avoid `str.format()` because many prompt templates intentionally contain
-    literal JSON objects using `{` / `}` which would be treated as format fields.
+    Many prompt templates contain JSON braces { } which would break
+    format() so we do a safe key replacement instead.
     """
 
     rendered = template
     for key, value in values.items():
-        rendered = rendered.replace('{' + key + '}', str(value))
+        rendered = rendered.replace("{" + key + "}", str(value))
     return rendered
 
 
-def generate_section_quiz_questions(*, section_content: str, count: int = 5) -> tuple[dict[str, Any], str, str]:
-    """Return (quiz_obj, provider, model_name).
-
-    quiz_obj schema comes from PROMPTS['section_quiz'].
+def _call_llm(
+    *,
+    model: str,
+    prompt: str,
+    feature: LLMUsageLog.Feature,
+) -> str:
+    """
+    Centralized LLM invocation.
+    Handles provider routing, logging, timeout, and response extraction.
     """
 
-    model = _get_env('QUIZ_MODEL') or _get_env('MODEL_NAME')
-    if not model:
-        model = 'models/gemini-2.5-flash'
+    provider = preferred_provider()
+
+    messages = [
+        {"role": "user", "content": prompt},
+    ]
+
+    resp = generate_text(
+        model=model,
+        messages=messages,
+        timeout=_LLM_TIMEOUT_SECONDS,
+        feature=feature,
+    )
+
+    text = resp.text if hasattr(resp, "text") else str(resp)
+
+    return text.strip()
+
+
+def _parse_json_result(text: str, *, root_key: str | None = None) -> dict[str, Any]:
+    """
+    Safely parse JSON returned from the LLM.
+
+    If the model returns a list or primitive instead of dict,
+    wrap it in root_key to preserve schema compatibility.
+    """
+
+    obj = extract_json_object(text)
+
+    if isinstance(obj, dict):
+        return obj
+
+    if root_key:
+        return {root_key: obj}
+
+    return {"result": obj}
+
+
+# ---------------------------------------------------------------------
+# Quiz Generation
+# ---------------------------------------------------------------------
+
+def generate_section_quiz_questions(
+    *, section_content: str, count: int = 5
+) -> tuple[dict[str, Any], str, str]:
+
+    model = _select_model("QUIZ_MODEL", "MODEL_NAME")
+
+    provider = preferred_provider()
 
     prompt = _render_prompt(
-        PROMPTS['section_quiz']['default'],
+        PROMPTS["section_quiz"]["default"],
         count=count,
         section_content=section_content,
     )
-    contents = [prompt]
 
-    gemini_client, avalai_client = _get_clients()
-    last_error: Optional[Exception] = None
+    try:
+        text = _call_llm(
+            model=model,
+            prompt=prompt,
+            feature=LLMUsageLog.Feature.QUIZ_GENERATION,
+        )
 
-    if gemini_client is not None:
-        try:
-            resp = tracked_generate_content(gemini_client, model=model, contents=contents, feature=LLMUsageLog.Feature.QUIZ_GENERATION, provider='gemini')
-            obj = extract_json_object(_extract_text(resp))
-            if isinstance(obj, dict):
-                return obj, 'gemini', model
-            return {'questions': obj}, 'gemini', model
-        except Exception as exc:
-            last_error = exc
+        obj = _parse_json_result(text, root_key="questions")
 
-    if avalai_client is not None:
-        try:
-            resp = tracked_generate_content(avalai_client, model=model, contents=contents, feature=LLMUsageLog.Feature.QUIZ_GENERATION, provider='avalai')
-            obj = extract_json_object(_extract_text(resp))
-            if isinstance(obj, dict):
-                return obj, 'avalai', model
-            return {'questions': obj}, 'avalai', model
-        except Exception as exc:
-            last_error = exc
+        return obj, provider, model
 
-    if last_error is not None:
-        raise last_error
-
-    raise RuntimeError('No LLM credentials configured. Set GEMINI_API_KEY and/or AVALAI_API_KEY.')
+    except Exception as exc:
+        logger.exception("Quiz generation failed")
+        raise RuntimeError(f"Quiz generation failed: {exc}") from exc
 
 
-def grade_open_text_answer(*, question: str, reference_answer: str, student_answer: str) -> tuple[dict[str, Any], str, str]:
-    """Grade an open-ended answer using PROMPTS['text_grading']."""
+# ---------------------------------------------------------------------
+# Open Text Grading
+# ---------------------------------------------------------------------
 
-    model = _get_env('GRADING_MODEL') or _get_env('QUIZ_MODEL') or _get_env('MODEL_NAME')
-    if not model:
-        model = 'models/gemini-2.5-flash'
+def grade_open_text_answer(
+    *, question: str, reference_answer: str, student_answer: str
+) -> tuple[dict[str, Any], str, str]:
+
+    model = _select_model("GRADING_MODEL", "QUIZ_MODEL", "MODEL_NAME")
+
+    provider = preferred_provider()
 
     prompt = _render_prompt(
-        PROMPTS['text_grading']['default'],
+        PROMPTS["text_grading"]["default"],
         question=question,
         reference_answer=reference_answer,
         student_answer=student_answer,
     )
-    contents = [prompt]
 
-    gemini_client, avalai_client = _get_clients()
-    last_error: Optional[Exception] = None
+    try:
+        text = _call_llm(
+            model=model,
+            prompt=prompt,
+            feature=LLMUsageLog.Feature.QUIZ_GRADING,
+        )
 
-    if gemini_client is not None:
-        try:
-            resp = tracked_generate_content(gemini_client, model=model, contents=contents, feature=LLMUsageLog.Feature.QUIZ_GRADING, provider='gemini')
-            obj = extract_json_object(_extract_text(resp))
-            if isinstance(obj, dict):
-                return obj, 'gemini', model
-            return {'result': obj}, 'gemini', model
-        except Exception as exc:
-            last_error = exc
+        obj = _parse_json_result(text, root_key="result")
 
-    if avalai_client is not None:
-        try:
-            resp = tracked_generate_content(avalai_client, model=model, contents=contents, feature=LLMUsageLog.Feature.QUIZ_GRADING, provider='avalai')
-            obj = extract_json_object(_extract_text(resp))
-            if isinstance(obj, dict):
-                return obj, 'avalai', model
-            return {'result': obj}, 'avalai', model
-        except Exception as exc:
-            last_error = exc
+        return obj, provider, model
 
-    if last_error is not None:
-        raise last_error
-
-    raise RuntimeError('No LLM credentials configured. Set GEMINI_API_KEY and/or AVALAI_API_KEY.')
+    except Exception as exc:
+        logger.exception("Quiz grading failed")
+        raise RuntimeError(f"Quiz grading failed: {exc}") from exc
 
 
-def generate_final_exam_pool(*, combined_content: str, pool_size: int = 12) -> tuple[dict[str, Any], str, str]:
-    """Return (exam_obj, provider, model_name).
+# ---------------------------------------------------------------------
+# Final Exam Pool
+# ---------------------------------------------------------------------
 
-    exam_obj schema comes from PROMPTS['final_exam_pool'].
-    """
+def generate_final_exam_pool(
+    *, combined_content: str, pool_size: int = 12
+) -> tuple[dict[str, Any], str, str]:
 
-    model = _get_env('FINAL_EXAM_MODEL') or _get_env('QUIZ_MODEL') or _get_env('MODEL_NAME')
-    if not model:
-        model = 'models/gemini-2.5-flash'
+    model = _select_model("FINAL_EXAM_MODEL", "QUIZ_MODEL", "MODEL_NAME")
+
+    provider = preferred_provider()
 
     prompt = _render_prompt(
-        PROMPTS['final_exam_pool']['default'],
+        PROMPTS["final_exam_pool"]["default"],
         pool_size=pool_size,
         combined_content=combined_content,
     )
-    contents = [prompt]
 
-    gemini_client, avalai_client = _get_clients()
-    last_error: Optional[Exception] = None
+    try:
+        text = _call_llm(
+            model=model,
+            prompt=prompt,
+            feature=LLMUsageLog.Feature.FINAL_EXAM_GENERATION,
+        )
 
-    if gemini_client is not None:
-        try:
-            resp = tracked_generate_content(gemini_client, model=model, contents=contents, feature=LLMUsageLog.Feature.FINAL_EXAM_GENERATION, provider='gemini')
-            obj = extract_json_object(_extract_text(resp))
-            if isinstance(obj, dict):
-                return obj, 'gemini', model
-            return {'questions': obj}, 'gemini', model
-        except Exception as exc:
-            last_error = exc
+        obj = _parse_json_result(text, root_key="questions")
 
-    if avalai_client is not None:
-        try:
-            resp = tracked_generate_content(avalai_client, model=model, contents=contents, feature=LLMUsageLog.Feature.FINAL_EXAM_GENERATION, provider='avalai')
-            obj = extract_json_object(_extract_text(resp))
-            if isinstance(obj, dict):
-                return obj, 'avalai', model
-            return {'questions': obj}, 'avalai', model
-        except Exception as exc:
-            last_error = exc
+        return obj, provider, model
 
-    if last_error is not None:
-        raise last_error
-
-    raise RuntimeError('No LLM credentials configured. Set GEMINI_API_KEY and/or AVALAI_API_KEY.')
+    except Exception as exc:
+        logger.exception("Final exam pool generation failed")
+        raise RuntimeError(f"Final exam pool generation failed: {exc}") from exc
 
 
-# ---------------------------------------------------------------------------
-# Hint generation for per-question feedback (exam prep)
-# ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------
+# Hint Generation
+# ---------------------------------------------------------------------
 
 def generate_answer_hint(
     *,
@@ -213,49 +208,33 @@ def generate_answer_hint(
     student_answer: str,
     attempt_number: int = 1,
 ) -> tuple[dict[str, Any], str, str]:
-    """Return (hint_obj, provider, model_name).
 
-    hint_obj schema: {"hint": str, "encouragement": str}
-    Uses the 'exam_prep_hint' prompt template.
-    """
+    model = _select_model("HINT_MODEL", "MODEL_NAME")
 
-    model = _get_env('HINT_MODEL') or _get_env('MODEL_NAME')
-    if not model:
-        model = 'gemini-2.0-flash-lite'
+    provider = preferred_provider()
 
     prompt = _render_prompt(
-        PROMPTS['exam_prep_hint']['default'],
+        PROMPTS["exam_prep_hint"]["default"],
         question=question,
         reference_answer=reference_answer,
         student_answer=student_answer,
         attempt_number=attempt_number,
     )
-    contents = [prompt]
 
-    gemini_client, avalai_client = _get_clients()
-    last_error: Optional[Exception] = None
+    try:
+        text = _call_llm(
+            model=model,
+            prompt=prompt,
+            feature=LLMUsageLog.Feature.HINT_GENERATION,
+        )
 
-    if gemini_client is not None:
-        try:
-            resp = tracked_generate_content(gemini_client, model=model, contents=contents, feature=LLMUsageLog.Feature.HINT_GENERATION, provider='gemini')
-            obj = extract_json_object(_extract_text(resp))
-            if not isinstance(obj, dict):
-                obj = {'hint': str(obj), 'encouragement': ''}
-            return obj, 'gemini', model
-        except Exception as exc:
-            last_error = exc
+        obj = extract_json_object(text)
 
-    if avalai_client is not None:
-        try:
-            resp = tracked_generate_content(avalai_client, model=model, contents=contents, feature=LLMUsageLog.Feature.HINT_GENERATION, provider='avalai')
-            obj = extract_json_object(_extract_text(resp))
-            if not isinstance(obj, dict):
-                obj = {'hint': str(obj), 'encouragement': ''}
-            return obj, 'avalai', model
-        except Exception as exc:
-            last_error = exc
+        if not isinstance(obj, dict):
+            obj = {"hint": str(obj), "encouragement": ""}
 
-    if last_error is not None:
-        raise last_error
+        return obj, provider, model
 
-    raise RuntimeError('No LLM credentials configured. Set GEMINI_API_KEY and/or AVALAI_API_KEY.')
+    except Exception as exc:
+        logger.exception("Hint generation failed")
+        raise RuntimeError(f"Hint generation failed: {exc}") from exc
