@@ -17,8 +17,9 @@ spec:
     spec:
       containers:
         - name: worker
-          # Same backend image – different entrypoint.
           image: registry.hamdocker.ir/ai-products/ai-amooz-backend:latest
+          imagePullPolicy: Always
+
           command: ["celery"]
           args:
             - "-A"
@@ -27,9 +28,11 @@ spec:
             - "--loglevel=info"
             - "--concurrency=2"
             - "--max-tasks-per-child=50"
+
           envFrom:
             - secretRef:
                 name: ai-amooz-backend-secrets
+
           resources:
             requests:
               memory: "1Gi"
@@ -37,7 +40,7 @@ spec:
             limits:
               memory: "4Gi"
               cpu: "2000m"
-          # Liveness: make sure the worker is alive.
+
           livenessProbe:
             exec:
               command:
@@ -50,4 +53,5 @@ spec:
             initialDelaySeconds: 30
             periodSeconds: 60
             timeoutSeconds: 15
+
       restartPolicy: Always
