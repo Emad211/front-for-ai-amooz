@@ -25,10 +25,10 @@ def _get_env(name: str) -> str:
 
 def _select_model(*names: str) -> str:
     """
-    Correct, architecture‑aligned model resolver:
-    1) first available specific model
-    2) fallback → MODEL_NAME
-    3) else → error (mandatory: no hard‑coded defaults)
+    Model resolution via ENV only:
+    1. first defined variable in provided names
+    2. fallback → MODEL_NAME
+    3. otherwise raise error
     """
     for n in names:
         val = _get_env(n)
@@ -45,6 +45,11 @@ def _select_model(*names: str) -> str:
 
 
 def _strip_outer_fence(text: str) -> str:
+    """
+    Remove
+``` or 
+```json fences if the model wrapped output.
+    """
     s = (text or "").strip()
     if not s:
         return s
@@ -60,14 +65,24 @@ def _strip_outer_fence(text: str) -> str:
 
 
 def _safe_json_from_llm(text: str) -> dict[str, Any]:
+    """
+    Safely extract JSON from model output.
+    """
     obj = extract_json_object(text)
-    return obj if isinstance(obj, dict) else {"prerequisites": obj}
+
+    if isinstance(obj, dict):
+        return obj
+
+    return {"prerequisites": obj}
 
 
 def _call_llm(
-    *, model: str, system_prompt: str, user_content: str, feature: LLMUsageLog.Feature
+    *,
+    model: str,
+    system_prompt: str,
+    user_content: str,
+    feature: LLMUsageLog.Feature,
 ) -> str:
-    provider = preferred_provider()
 
     messages = [
         {"role": "system", "content": system_prompt},
@@ -89,11 +104,14 @@ def _call_llm(
 # Public API
 # ---------------------------------------------------------------------
 
-def extract_prerequisites(*, transcript_markdown: str) -> tuple[dict[str, Any], str, str]:
+def extract_prerequisites(
+    *, transcript_markdown: str
+) -> tuple[dict[str, Any], str, str]:
     """
     Extract prerequisite structure JSON from transcript.
-    Model resolution strictly via ENV (no defaults).
+    Model resolution strictly via ENV.
     """
+
     model = _select_model(
         "PREREQUISITES_MODEL",
         "STRUCTURE_MODEL",
@@ -101,8 +119,13 @@ def extract_prerequisites(*, transcript_markdown: str) -> tuple[dict[str, Any], 
     )
 
     provider = preferred_provider()
+
     prompt = PROMPTS["prerequisites_prompt"]["default"]
-    user_content = f"FULL_TRANSCRIPT_MARKDOWN:\n{transcript_markdown}"
+
+    user_content = f"""
+FULL_TRANSCRIPT_MARKDOWN:
+{transcript_markdown}
+""".strip()
 
     try:
         raw_text = _call_llm(
@@ -118,14 +141,18 @@ def extract_prerequisites(*, transcript_markdown: str) -> tuple[dict[str, Any], 
 
     except Exception as exc:
         logger.exception("Prerequisite extraction failed")
-        raise RuntimeError(f"Prerequisite extraction failed: {exc}") from exc
+        raise RuntimeError(
+            f"Prerequisite extraction failed: {exc}"
+        ) from exc
 
 
-def generate_prerequisite_teaching(*, prerequisite_name: str) -> tuple[str, str, str]:
+def generate_prerequisite_teaching(
+    *, prerequisite_name: str
+) -> tuple[str, str, str]:
     """
-    Generate structured teaching content for a single prerequisite.
-    Strict ENV-based model resolution. No defaults.
+    Generate structured teaching content for a prerequisite.
     """
+
     model = _select_model(
         "PREREQ_TEACHING_MODEL",
         "STRUCTURE_MODEL",
@@ -133,8 +160,13 @@ def generate_prerequisite_teaching(*, prerequisite_name: str) -> tuple[str, str,
     )
 
     provider = preferred_provider()
+
     prompt = PROMPTS["prerequisite_teaching"]["default"]
-    user_content = f"PREREQUISITE_NAME:\n{prerequisite_name}"
+
+    user_content = f"""
+PREREQUISITE_NAME:
+{prerequisite_name}
+""".strip()
 
     try:
         raw_text = _call_llm(
@@ -150,4 +182,6 @@ def generate_prerequisite_teaching(*, prerequisite_name: str) -> tuple[str, str,
 
     except Exception as exc:
         logger.exception("Prerequisite teaching generation failed")
-        raise RuntimeError(f"Prerequisite teaching failed: {exc}") from exc
+        raise RuntimeError(
+            f"Prerequisite teaching failed: {exc}"
+        ) from exc
