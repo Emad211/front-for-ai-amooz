@@ -54,9 +54,14 @@ def _strip_outer_fence(text: str) -> str:
     if not s:
         return s
 
-    if s.startswith("
+    if (
+        (s.startswith("
 ```") and s.endswith("
-```"):
+```"))
+        or (s.startswith("
+```json") and s.endswith("
+```"))
+    ):
         lines = s.splitlines()
         if len(lines) >= 3:
             return "\n".join(lines[1:-1]).strip()
