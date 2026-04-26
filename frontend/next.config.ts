@@ -1,5 +1,10 @@
 import type { NextConfig } from "next";
 
+const backendUrl =
+  process.env.NEXT_PUBLIC_API_URL ||
+  process.env.BACKEND_URL ||
+  "http://localhost:8000";
+
 const nextConfig: NextConfig = {
   output: "standalone",
 
@@ -12,8 +17,6 @@ const nextConfig: NextConfig = {
   },
 
   async rewrites() {
-    const backendUrl = process.env.BACKEND_URL || "http://localhost:8000";
-
     return [
       {
         source: "/api/:path*",
@@ -32,17 +35,22 @@ const nextConfig: NextConfig = {
       },
       {
         protocol: "https",
+        hostname: "aiamoooz.darkube.ir",
+        pathname: "/**",
+      },
+      {
+        protocol: "https",
+        hostname: "aiamoooz.darkube.app",
+        pathname: "/**",
+      },
+      {
+        protocol: "https",
         hostname: "placehold.co",
         pathname: "/**",
       },
       {
         protocol: "https",
         hostname: "images.unsplash.com",
-        pathname: "/**",
-      },
-      {
-        protocol: "https",
-        hostname: "aiamoooz.darkube.app",
         pathname: "/**",
       },
       {
