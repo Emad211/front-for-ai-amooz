@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import os
 from dataclasses import dataclass
 from typing import Any, Optional, Tuple
@@ -19,13 +18,11 @@ from apps.commons.token_tracker import (
 )
 from apps.commons.models import LLMUsageLog
 
-# Thread-local feature context for tracking
 import threading
 _feature_local = threading.local()
 
 
 def set_llm_feature(feature: str) -> None:
-    """Set the current LLM feature for token tracking."""
     _feature_local.feature = feature
 
 
@@ -38,11 +35,6 @@ def _get_env(name: str) -> str:
 
 
 def _safe_template_replace(template: str, values: dict[str, Any]) -> str:
-    """Replace `{name}` placeholders without calling `.format()`.
-
-    Some prompts contain JSON examples with `{}` which would break `.format()`.
-    """
-
     out = str(template or '')
     for key, val in (values or {}).items():
         if not isinstance(key, str):
@@ -52,26 +44,45 @@ def _safe_template_replace(template: str, values: dict[str, Any]) -> str:
 
 
 def _schema_hint_for_feature(feature: str) -> str:
-    """Return a small JSON shape hint to guide repair."""
-
     f = (feature or '').strip()
     if f == 'chat_intent':
         return '{"intent": "<string>"}'
     if f == 'chat_system_prompt':
         return '{"content": "<string>", "suggestions": ["<string>"]}'
-    # Generic fallback: return a JSON object.
     return '{"...": "..."}'
 
 
+# --------------------------------------------------------------------
+# ONLY GEMINI PART UPDATED → Now uses GapGPT endpoint
+# AvalAI stays EXACTLY as before
+# --------------------------------------------------------------------
 def _get_clients() -> Tuple[Optional[genai.Client], Optional[genai.Client]]:
-    gemini_api_key = _get_env('GEMINI_API_KEY')
+
+    # Gemini through GapGPT
+    gemini_api_key = _get_env('GAPGPT_API_KEY')
+
+    # AvalAI untouched (exact names preserved)
     avalai_api_key = _get_env('AVALAI_API_KEY')
     avalai_base_url = _get_env('AVALAI_BASE_URL')
 
     provider = preferred_provider()
 
-    gemini_client = genai.Client(api_key=gemini_api_key) if gemini_api_key and provider != 'avalai' else None
+    # -------------------------------
+    # GEMINI → via GapGPT
+    # -------------------------------
+    gemini_client = None
+    if gemini_api_key and provider != 'avalai':
 
+        gapgpt_base = _get_env('GAPGPT_BASE_URL') or 'https://api.gapgpt.app/'
+
+        gemini_client = genai.Client(
+            api_key=gemini_api_key,
+            http_options=types.HttpOptions(base_url=gapgpt_base),
+        )
+
+    # -------------------------------
+    # AvalAI unchanged
+    # -------------------------------
     avalai_client: Optional[genai.Client] = None
     if avalai_api_key and provider != 'gemini':
         http_options = {'base_url': avalai_base_url} if avalai_base_url else None
@@ -88,8 +99,7 @@ def _extract_text(resp: Any) -> str:
     candidates = getattr(resp, 'candidates', None) or []
     buf: list[str] = []
     for c in candidates:
-        content = getattr(c, 'content', None)
-        parts = getattr(content, 'parts', None) if content else None
+        parts = getattr(getattr(c, 'content', None), 'parts', None)
         if not parts:
             continue
         for p in parts:
@@ -101,7 +111,7 @@ def _extract_text(resp: Any) -> str:
 
 def _default_model() -> str:
     model = _get_env('CHAT_MODEL') or _get_env('MODEL_NAME')
-    return model or 'models/gemini-2.5-flash'
+    return model or 'gemini-2.5-flash'
 
 
 @dataclass(frozen=True)
@@ -112,6 +122,7 @@ class LlmResult:
 
 
 def generate_text(*, contents: Any, model: Optional[str] = None, feature: Optional[str] = None) -> LlmResult:
+
     used_model = model or _default_model()
     gemini_client, avalai_client = _get_clients()
 
@@ -128,10 +139,16 @@ def generate_text(*, contents: Any, model: Optional[str] = None, feature: Option
     def _call_llm(client: genai.Client, prov: str) -> LlmResult:
         timer = LLMTimer().start()
         try:
-            resp = client.models.generate_content(model=used_model, contents=contents)
+
+            resp = client.models.generate_content(
+                model=used_model,
+                contents=contents,
+            )
+
             text = _extract_text(resp)
             if not text:
                 raise ValueError(f'Empty response from {prov}')
+
             track_llm_usage(
                 resp=resp,
                 feature=resolved_feature,
@@ -139,43 +156,38 @@ def generate_text(*, contents: Any, model: Optional[str] = None, feature: Option
                 model_name=used_model,
                 duration_ms=timer.elapsed_ms,
             )
-            return LlmResult(text=text, provider=prov, model=used_model)
-        except Exception as exc:
-            err_msg = str(exc)
-            if "SSL" in err_msg or "EOF" in err_msg or "ConnectError" in err_msg:
-                print(f"[CHATBOT][RETRY] {prov} encountered connection issue: {err_msg}. Retrying...")
-            raise
 
-    if provider != 'avalai' and gemini_client is not None:
-        try:
-            return _call_llm(gemini_client, 'gemini')
+            return LlmResult(text=text, provider=prov, model=used_model)
+
         except Exception as exc:
-            print(f"[CHATBOT][LLM] gemini failed model={used_model!r} after retries: {type(exc).__name__}: {exc}")
             track_llm_error(
                 feature=resolved_feature,
-                provider='gemini',
+                provider=prov,
                 model_name=used_model,
                 error_message=str(exc),
             )
+            raise
+
+    # Try Gemini (via GapGPT)
+    if provider != 'avalai' and gemini_client is not None:
+        try:
+            return _call_llm(gemini_client, 'gemini-gapgpt')
+        except Exception as exc:
+            print(f"[CHATBOT][LLM] gemini-gapgpt failed: {exc}")
             last_error = exc
 
+    # Try AvalAI (unchanged)
     if provider != 'gemini' and avalai_client is not None:
         try:
             return _call_llm(avalai_client, 'avalai')
         except Exception as exc:
-            print(f"[CHATBOT][LLM] avalai failed model={used_model!r} after retries: {type(exc).__name__}: {exc}")
-            track_llm_error(
-                feature=resolved_feature,
-                provider='avalai',
-                model_name=used_model,
-                error_message=str(exc),
-            )
+            print(f"[CHATBOT][LLM] avalai failed: {exc}")
             last_error = exc
 
-    if last_error is not None:
+    if last_error:
         raise last_error
 
-    raise RuntimeError('No LLM credentials configured. Set GEMINI_API_KEY and/or AVALAI_API_KEY.')
+    raise RuntimeError('No LLM credentials configured. Set GAPGPT_API_KEY or AVALAI_API_KEY.')
 
 
 def _repair_json_with_llm(*, feature: str, model_output: str) -> dict[str, Any]:
@@ -189,21 +201,22 @@ def _repair_json_with_llm(*, feature: str, model_output: str) -> dict[str, Any]:
         },
     )
     repaired = generate_text(contents=prompt, feature=LLMUsageLog.Feature.JSON_REPAIR).text
+
     try:
         obj = extract_json_object(repaired)
         return obj if isinstance(obj, dict) else {'result': obj}
-    except Exception as exc:
-        print(f"[CHATBOT][LLM] json_repair failed feature={feature!r}: {type(exc).__name__}: {exc}")
+    except Exception:
         return {}
 
 
 def generate_json(*, feature: str, contents: Any) -> dict[str, Any]:
-    """Generate JSON via the LLM; uses `json_repair` prompt if needed."""
 
     set_llm_feature(feature)
     out = generate_text(contents=contents, feature=feature).text
+
     if not (out or '').strip():
         return _repair_json_with_llm(feature=feature, model_output=out)
+
     try:
         obj = extract_json_object(out)
         return obj if isinstance(obj, dict) else {'result': obj}
