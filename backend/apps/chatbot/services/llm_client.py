@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 import threading
 from dataclasses import dataclass
-from typing import Any, Optional
+from typing import Any, Optional, List, Dict, Union
 
 from openai import OpenAI
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
@@ -74,7 +74,7 @@ class LlmResult:
 
 
 # ====================================================================
-# Core LLM Call
+# Core LLM Call (بازنویسی شده برای پذیرش messages)
 # ====================================================================
 @retry(
     stop=stop_after_attempt(3),
@@ -82,7 +82,12 @@ class LlmResult:
     retry=retry_if_exception_type(Exception),
     reraise=True,
 )
-def _call_gapgpt(*, contents: Any, used_model: str, feature: str) -> LlmResult:
+def _call_gapgpt_with_messages(
+    *, 
+    messages: List[Dict[str, str]], 
+    used_model: str, 
+    feature: str
+) -> LlmResult:
 
     client = _get_gapgpt_client()
     timer = LLMTimer().start()
@@ -90,14 +95,11 @@ def _call_gapgpt(*, contents: Any, used_model: str, feature: str) -> LlmResult:
     try:
         response = client.chat.completions.create(
             model=used_model,
-            messages=[
-                {"role": "user", "content": contents}
-            ],
-            timeout=45,   # hard timeout
+            messages=messages,   # مستقیماً لیست پیام‌ها
+            timeout=45,
         )
 
         text = response.choices[0].message.content.strip()
-
         if not text:
             raise ValueError("Empty response from GAPGPT")
 
@@ -116,43 +118,64 @@ def _call_gapgpt(*, contents: Any, used_model: str, feature: str) -> LlmResult:
         )
 
     except Exception as exc:
-
         track_llm_error(
             feature=feature,
             provider="gapgpt",
             model_name=used_model,
             error_message=str(exc),
         )
-
         raise
 
 
 # ====================================================================
-# Public API: generate_text (same signature)
+# Public API: generate_text (اکنون از messages پشتیبانی می‌کند)
 # ====================================================================
-def generate_text(*, contents: Any, model: Optional[str] = None, feature: Optional[str] = None) -> LlmResult:
+def generate_text(
+    *,
+    messages: Optional[List[Dict[str, str]]] = None,
+    contents: Optional[Any] = None,
+    model: Optional[str] = None,
+    feature: Optional[str] = None,
+    timeout: Optional[int] = None,   # اختیاری (برای سازگاری با فراخوانی‌های قبلی)
+) -> LlmResult:
+    """
+    Unified LLM caller.
+
+    Args:
+        messages: List of message dicts with 'role' and 'content' (OpenAI format)
+        contents: Legacy parameter – single content (will be wrapped as user message)
+        model: Model name (optional)
+        feature: Feature name for tracking
+        timeout: Ignored (kept for compatibility)
+
+    Returns:
+        LlmResult with text, provider, model
+    """
 
     used_model = model or _default_model()
     resolved_feature = feature or _get_llm_feature()
 
-    try:
-        return _call_gapgpt(
-            contents=contents,
-            used_model=used_model,
-            feature=resolved_feature,
-        )
-    except Exception as exc:
-        print(f"[LLM ERROR] GAPGPT failed for model={used_model}: {exc}")
-        raise
+    # ساختار پیام‌ها بر اساس ورودی
+    if messages is not None:
+        final_messages = messages
+    elif contents is not None:
+        final_messages = [{"role": "user", "content": contents}]
+    else:
+        raise ValueError("Either 'messages' or 'contents' must be provided")
+
+    return _call_gapgpt_with_messages(
+        messages=final_messages,
+        used_model=used_model,
+        feature=resolved_feature,
+    )
 
 
 # ====================================================================
-# JSON REPAIR
+# JSON REPAIR (بدون تغییر)
 # ====================================================================
 def _repair_json_with_llm(*, feature: str, model_output: str) -> dict[str, Any]:
 
     template = PROMPTS["json_repair"]["default"]
-
     prompt = template.replace("{raw_text}", model_output)
 
     repaired = generate_text(
@@ -168,7 +191,7 @@ def _repair_json_with_llm(*, feature: str, model_output: str) -> dict[str, Any]:
 
 
 # ====================================================================
-# Public API: generate_json (same signature)
+# Public API: generate_json (بدون تغییر)
 # ====================================================================
 def generate_json(*, feature: str, contents: Any) -> dict[str, Any]:
 
@@ -186,7 +209,7 @@ def generate_json(*, feature: str, contents: Any) -> dict[str, Any]:
 
 
 # ====================================================================
-# File upload support (same signature)
+# File upload support (بدون تغییر)
 # ====================================================================
 def part_from_bytes(*, data: bytes, mime_type: str):
     return {
