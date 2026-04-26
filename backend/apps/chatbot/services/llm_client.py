@@ -1,15 +1,14 @@
 from __future__ import annotations
 
 import os
+import time
 from dataclasses import dataclass
-from typing import Any, Optional, Tuple
+from typing import Any, Optional
 
-from google import genai
-from google.genai import types
+from openai import OpenAI
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
 from apps.commons.llm_prompts import PROMPTS
-from apps.commons.llm_provider import preferred_provider
 from apps.commons.json_utils import extract_json_object
 from apps.commons.token_tracker import (
     track_llm_usage,
@@ -18,211 +17,134 @@ from apps.commons.token_tracker import (
 )
 from apps.commons.models import LLMUsageLog
 
-import threading
-_feature_local = threading.local()
-
-
-def set_llm_feature(feature: str) -> None:
-    _feature_local.feature = feature
-
-
-def _get_llm_feature() -> str:
-    return getattr(_feature_local, 'feature', LLMUsageLog.Feature.OTHER)
-
 
 def _get_env(name: str) -> str:
-    return (os.getenv(name) or '').strip()
-
-
-def _safe_template_replace(template: str, values: dict[str, Any]) -> str:
-    out = str(template or '')
-    for key, val in (values or {}).items():
-        if not isinstance(key, str):
-            continue
-        out = out.replace('{' + key + '}', str(val))
-    return out
-
-
-def _schema_hint_for_feature(feature: str) -> str:
-    f = (feature or '').strip()
-    if f == 'chat_intent':
-        return '{"intent": "<string>"}'
-    if f == 'chat_system_prompt':
-        return '{"content": "<string>", "suggestions": ["<string>"]}'
-    return '{"...": "..."}'
-
-
-# --------------------------------------------------------------------
-# ONLY GEMINI PART UPDATED → Now uses GapGPT endpoint
-# AvalAI stays EXACTLY as before
-# --------------------------------------------------------------------
-def _get_clients() -> Tuple[Optional[genai.Client], Optional[genai.Client]]:
-
-    # Gemini through GapGPT
-    gemini_api_key = _get_env('GAPGPT_API_KEY')
-
-    # AvalAI untouched (exact names preserved)
-    avalai_api_key = _get_env('AVALAI_API_KEY')
-    avalai_base_url = _get_env('AVALAI_BASE_URL')
-
-    provider = preferred_provider()
-
-    # -------------------------------
-    # GEMINI → via GapGPT
-    # -------------------------------
-    gemini_client = None
-    if gemini_api_key and provider != 'avalai':
-
-        gapgpt_base = _get_env('GAPGPT_BASE_URL') or 'https://api.gapgpt.app/'
-
-        gemini_client = genai.Client(
-            api_key=gemini_api_key,
-            http_options=types.HttpOptions(base_url=gapgpt_base),
-        )
-
-    # -------------------------------
-    # AvalAI unchanged
-    # -------------------------------
-    avalai_client: Optional[genai.Client] = None
-    if avalai_api_key and provider != 'gemini':
-        http_options = {'base_url': avalai_base_url} if avalai_base_url else None
-        avalai_client = genai.Client(api_key=avalai_api_key, http_options=http_options)
-
-    return gemini_client, avalai_client
-
-
-def _extract_text(resp: Any) -> str:
-    text = (getattr(resp, 'text', '') or '').strip()
-    if text:
-        return text
-
-    candidates = getattr(resp, 'candidates', None) or []
-    buf: list[str] = []
-    for c in candidates:
-        parts = getattr(getattr(c, 'content', None), 'parts', None)
-        if not parts:
-            continue
-        for p in parts:
-            t = getattr(p, 'text', None)
-            if t:
-                buf.append(t)
-    return ('\n'.join(buf)).strip()
+    return (os.getenv(name) or "").strip()
 
 
 def _default_model() -> str:
-    model = _get_env('CHAT_MODEL') or _get_env('MODEL_NAME')
-    return model or 'gemini-2.5-flash'
+    return _get_env("CHAT_MODEL") or "gemini-2.5-flash"
 
 
-@dataclass(frozen=True)
+# ----------------------------------------
+# GapGPT Client (using AVALAI env names)
+# ----------------------------------------
+def _get_client() -> OpenAI:
+
+    api_key = _get_env("AVALAI_API_KEY")
+    base_url = _get_env("AVALAI_BASE_URL") or "https://api.gapgpt.app/v1"
+
+    if not api_key:
+        raise RuntimeError("AVALAI_API_KEY is not configured")
+
+    return OpenAI(
+        api_key=api_key,
+        base_url=base_url,
+    )
+
+
+@dataclass
 class LlmResult:
     text: str
     provider: str
     model: str
 
 
+def _extract_text(resp: Any) -> str:
+
+    try:
+        return resp.choices[0].message.content.strip()
+    except Exception:
+        return ""
+
+
+@retry(
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=1, min=1, max=10),
+    retry=retry_if_exception_type(Exception),
+    reraise=True,
+)
 def generate_text(*, contents: Any, model: Optional[str] = None, feature: Optional[str] = None) -> LlmResult:
 
+    client = _get_client()
     used_model = model or _default_model()
-    gemini_client, avalai_client = _get_clients()
 
-    provider = preferred_provider()
-    last_error: Optional[Exception] = None
-    resolved_feature = feature or _get_llm_feature()
+    timer = LLMTimer().start()
 
-    @retry(
-        stop=stop_after_attempt(3),
-        wait=wait_exponential(multiplier=1, min=1, max=10),
-        retry=retry_if_exception_type(Exception),
-        reraise=True
-    )
-    def _call_llm(client: genai.Client, prov: str) -> LlmResult:
-        timer = LLMTimer().start()
-        try:
+    try:
 
-            resp = client.models.generate_content(
-                model=used_model,
-                contents=contents,
-            )
+        response = client.chat.completions.create(
+            model=used_model,
+            messages=[
+                {"role": "user", "content": contents}
+            ],
+        )
 
-            text = _extract_text(resp)
-            if not text:
-                raise ValueError(f'Empty response from {prov}')
+        text = _extract_text(response)
 
-            track_llm_usage(
-                resp=resp,
-                feature=resolved_feature,
-                provider=prov,
-                model_name=used_model,
-                duration_ms=timer.elapsed_ms,
-            )
+        if not text:
+            raise ValueError("Empty LLM response")
 
-            return LlmResult(text=text, provider=prov, model=used_model)
+        track_llm_usage(
+            resp=response,
+            feature=feature or LLMUsageLog.Feature.OTHER,
+            provider="gapgpt",
+            model_name=used_model,
+            duration_ms=timer.elapsed_ms,
+        )
 
-        except Exception as exc:
-            track_llm_error(
-                feature=resolved_feature,
-                provider=prov,
-                model_name=used_model,
-                error_message=str(exc),
-            )
-            raise
+        return LlmResult(
+            text=text,
+            provider="gapgpt",
+            model=used_model,
+        )
 
-    # Try Gemini (via GapGPT)
-    if provider != 'avalai' and gemini_client is not None:
-        try:
-            return _call_llm(gemini_client, 'gemini-gapgpt')
-        except Exception as exc:
-            print(f"[CHATBOT][LLM] gemini-gapgpt failed: {exc}")
-            last_error = exc
+    except Exception as exc:
 
-    # Try AvalAI (unchanged)
-    if provider != 'gemini' and avalai_client is not None:
-        try:
-            return _call_llm(avalai_client, 'avalai')
-        except Exception as exc:
-            print(f"[CHATBOT][LLM] avalai failed: {exc}")
-            last_error = exc
+        track_llm_error(
+            feature=feature or LLMUsageLog.Feature.OTHER,
+            provider="gapgpt",
+            model_name=used_model,
+            error_message=str(exc),
+        )
 
-    if last_error:
-        raise last_error
-
-    raise RuntimeError('No LLM credentials configured. Set GAPGPT_API_KEY or AVALAI_API_KEY.')
+        raise
 
 
+# ----------------------------------------
+# JSON generation helper
+# ----------------------------------------
 def _repair_json_with_llm(*, feature: str, model_output: str) -> dict[str, Any]:
-    template = PROMPTS['json_repair']['default']
-    prompt = _safe_template_replace(
-        template,
-        {
-            'feature': feature,
-            'schema_hint': _schema_hint_for_feature(feature),
-            'raw_text': model_output,
-        },
-    )
-    repaired = generate_text(contents=prompt, feature=LLMUsageLog.Feature.JSON_REPAIR).text
+
+    template = PROMPTS["json_repair"]["default"]
+
+    prompt = template.replace("{raw_text}", model_output)
+
+    repaired = generate_text(
+        contents=prompt,
+        feature=LLMUsageLog.Feature.JSON_REPAIR,
+    ).text
 
     try:
         obj = extract_json_object(repaired)
-        return obj if isinstance(obj, dict) else {'result': obj}
+        return obj if isinstance(obj, dict) else {"result": obj}
     except Exception:
         return {}
 
 
 def generate_json(*, feature: str, contents: Any) -> dict[str, Any]:
 
-    set_llm_feature(feature)
-    out = generate_text(contents=contents, feature=feature).text
+    out = generate_text(
+        contents=contents,
+        feature=feature,
+    ).text
 
-    if not (out or '').strip():
+    if not out.strip():
         return _repair_json_with_llm(feature=feature, model_output=out)
 
     try:
         obj = extract_json_object(out)
-        return obj if isinstance(obj, dict) else {'result': obj}
+        return obj if isinstance(obj, dict) else {"result": obj}
+
     except Exception:
         return _repair_json_with_llm(feature=feature, model_output=out)
-
-
-def part_from_bytes(*, data: bytes, mime_type: str) -> types.Part:
-    return types.Part.from_bytes(data=data, mime_type=mime_type)
