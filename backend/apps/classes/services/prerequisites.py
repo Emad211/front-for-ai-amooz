@@ -7,7 +7,7 @@ from typing import Any
 from apps.commons.llm_prompts import PROMPTS
 from apps.commons.llm_provider import preferred_provider
 from apps.commons.models import LLMUsageLog
-from apps.commons.services.llm_client import generate_text
+from apps.chatbot.services.llm_client import generate_text
 from apps.classes.services.json_utils import extract_json_object
 
 logger = logging.getLogger(__name__)
