@@ -321,6 +321,14 @@ CORS_ALLOW_HEADERS = [
     'content-disposition',
     'cache-control',
 ]
+CORS_ALLOW_METHODS = [
+    "DELETE",
+    "GET",
+    "OPTIONS",
+    "PATCH",
+    "POST",
+    "PUT",
+]
 
 # Reverse proxy / HTTPS support.
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
