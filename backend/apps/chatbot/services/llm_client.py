@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 import threading
 from dataclasses import dataclass
-from typing import Any, Optional, List, Dict, Union
+from typing import Any, Optional, List, Dict
 
 from openai import OpenAI
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
@@ -41,12 +41,6 @@ def _get_env(name: str) -> str:
 # OpenAI-Compatible Client for GAPGPT
 # ====================================================================
 def _get_gapgpt_client() -> OpenAI:
-    """
-    This uses the SAME env names as the original project:
-        AVALAI_API_KEY   -> now contains GapGPT key
-        AVALAI_BASE_URL  -> now contains https://api.gapgpt.app/v1
-    """
-
     api_key = _get_env("AVALAI_API_KEY")
     base_url = _get_env("AVALAI_BASE_URL") or "https://api.gapgpt.app/v1"
 
@@ -74,7 +68,7 @@ class LlmResult:
 
 
 # ====================================================================
-# Core LLM Call (بازنویسی شده برای پذیرش messages)
+# Core LLM Call (با پشتیبانی از messages)
 # ====================================================================
 @retry(
     stop=stop_after_attempt(3),
@@ -95,7 +89,7 @@ def _call_gapgpt_with_messages(
     try:
         response = client.chat.completions.create(
             model=used_model,
-            messages=messages,   # مستقیماً لیست پیام‌ها
+            messages=messages,
             timeout=45,
         )
 
@@ -128,7 +122,7 @@ def _call_gapgpt_with_messages(
 
 
 # ====================================================================
-# Public API: generate_text (اکنون از messages پشتیبانی می‌کند)
+# Public API: generate_text (پذیرش تمام پارامترهای احتمالی)
 # ====================================================================
 def generate_text(
     *,
@@ -136,17 +130,19 @@ def generate_text(
     contents: Optional[Any] = None,
     model: Optional[str] = None,
     feature: Optional[str] = None,
-    timeout: Optional[int] = None,   # اختیاری (برای سازگاری با فراخوانی‌های قبلی)
+    timeout: Optional[int] = None,      # پذیرفته می‌شود ولی فعلاً نادیده گرفته می‌شود
+    **kwargs,                           # جزئیات اضافی مثل detail را نادیده می‌گیرد
 ) -> LlmResult:
     """
     Unified LLM caller.
 
     Args:
         messages: List of message dicts with 'role' and 'content' (OpenAI format)
-        contents: Legacy parameter – single content (will be wrapped as user message)
+        contents: Legacy parameter – single content (wrapped as user message)
         model: Model name (optional)
         feature: Feature name for tracking
         timeout: Ignored (kept for compatibility)
+        **kwargs: Any extra arguments (e.g., 'detail') are ignored
 
     Returns:
         LlmResult with text, provider, model
@@ -155,7 +151,6 @@ def generate_text(
     used_model = model or _default_model()
     resolved_feature = feature or _get_llm_feature()
 
-    # ساختار پیام‌ها بر اساس ورودی
     if messages is not None:
         final_messages = messages
     elif contents is not None:
@@ -163,6 +158,7 @@ def generate_text(
     else:
         raise ValueError("Either 'messages' or 'contents' must be provided")
 
+    # در آینده می‌توان از timeout استفاده کرد، ولی فعلاً نادیده گرفته می‌شود
     return _call_gapgpt_with_messages(
         messages=final_messages,
         used_model=used_model,
@@ -171,7 +167,7 @@ def generate_text(
 
 
 # ====================================================================
-# JSON REPAIR (بدون تغییر)
+# JSON REPAIR
 # ====================================================================
 def _repair_json_with_llm(*, feature: str, model_output: str) -> dict[str, Any]:
 
@@ -191,7 +187,7 @@ def _repair_json_with_llm(*, feature: str, model_output: str) -> dict[str, Any]:
 
 
 # ====================================================================
-# Public API: generate_json (بدون تغییر)
+# Public API: generate_json
 # ====================================================================
 def generate_json(*, feature: str, contents: Any) -> dict[str, Any]:
 
@@ -209,7 +205,7 @@ def generate_json(*, feature: str, contents: Any) -> dict[str, Any]:
 
 
 # ====================================================================
-# File upload support (بدون تغییر)
+# File upload support
 # ====================================================================
 def part_from_bytes(*, data: bytes, mime_type: str):
     return {
