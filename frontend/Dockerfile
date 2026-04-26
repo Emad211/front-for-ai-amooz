@@ -1,4 +1,4 @@
-# --- build stage ---
+# ---------- build stage ----------
 FROM node:20-slim AS builder
 
 WORKDIR /app
@@ -7,18 +7,21 @@ COPY package*.json ./
 RUN npm install
 
 COPY . .
+
 RUN npm run build
 
 
-# --- production stage ---
+# ---------- production stage ----------
 FROM node:20-slim AS runner
 
 WORKDIR /app
 
-COPY --from=builder /app/dist ./dist
+ENV NODE_ENV=production
 
-RUN npm install -g serve
+COPY --from=builder /app ./
+
+RUN npm install --omit=dev
 
 EXPOSE 3000
 
-CMD ["serve", "-s", "dist", "-l", "3000"]
+CMD ["npm","start"]
