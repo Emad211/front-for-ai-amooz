@@ -10,7 +10,7 @@ from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_excep
 from apps.commons.llm_prompts import PROMPTS
 from apps.commons.llm_provider import preferred_provider
 from apps.commons.models import LLMUsageLog
-from apps.commons.services.llm_client import generate_text
+from apps.chatbot.services.llm_client import generate_text
 from apps.classes.services.media_compressor import prepare_media_parts_for_api
 
 logger = logging.getLogger(__name__)
