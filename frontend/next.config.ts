@@ -8,7 +8,6 @@ const nextConfig: NextConfig = {
   eslint: {
     ignoreDuringBuilds: true,
   },
-  // Proxy /api/* requests to the Django backend in local development.
   // In production the frontend env should set NEXT_PUBLIC_API_URL to the
   // full backend URL (e.g. https://aiamoooz.darkube.app).
   async rewrites() {
