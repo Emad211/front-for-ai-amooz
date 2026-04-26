@@ -1,99 +1,111 @@
 from __future__ import annotations
 
+import logging
 import os
-from typing import Any, Optional, Tuple
-
-from google import genai
+from typing import Any, Tuple
 
 from apps.commons.llm_prompts import PROMPTS
 from apps.commons.llm_provider import preferred_provider
 from apps.commons.models import LLMUsageLog
-from apps.commons.token_tracker import tracked_generate_content
+from apps.commons.services.llm_client import generate_text
+
+logger = logging.getLogger(__name__)
+
+_LLM_TIMEOUT_SECONDS = int(os.getenv("LLM_TIMEOUT_SECONDS", "600"))
 
 
 def _get_env(name: str) -> str:
-    return (os.getenv(name) or '').strip()
+    return (os.getenv(name) or "").strip()
 
 
-def _get_clients() -> Tuple[Optional[genai.Client], Optional[genai.Client]]:
-    gemini_api_key = _get_env('GEMINI_API_KEY')
-    avalai_api_key = _get_env('AVALAI_API_KEY')
-    avalai_base_url = _get_env('AVALAI_BASE_URL')
+def _select_model(*names: str) -> str:
+    for n in names:
+        val = _get_env(n)
+        if val:
+            return val
 
-    provider = preferred_provider()
+    fallback = _get_env("MODEL_NAME")
+    if fallback:
+        return fallback
 
-    gemini_client = genai.Client(api_key=gemini_api_key) if gemini_api_key and provider != 'avalai' else None
-
-    avalai_client: Optional[genai.Client] = None
-    if avalai_api_key and provider != 'gemini':
-        http_options = {'base_url': avalai_base_url} if avalai_base_url else None
-        avalai_client = genai.Client(api_key=avalai_api_key, http_options=http_options)
-
-    return gemini_client, avalai_client
+    raise RuntimeError(
+        f"No LLM model found in ENV. Checked: {names} and fallback MODEL_NAME"
+    )
 
 
-def _extract_text(resp: Any) -> str:
-    text = (getattr(resp, 'text', '') or '').strip()
-    if text:
-        return text
+def _render_prompt(template: str, **values: Any) -> str:
+    rendered = template
+    for key, value in values.items():
+        rendered = rendered.replace("{" + key + "}", str(value))
+    return rendered
 
-    candidates = getattr(resp, 'candidates', None) or []
-    buf: list[str] = []
-    for c in candidates:
-        content = getattr(c, 'content', None)
-        parts = getattr(content, 'parts', None) if content else None
-        if not parts:
-            continue
-        for p in parts:
-            t = getattr(p, 'text', None)
-            if t:
-                buf.append(t)
-    return ('\n'.join(buf)).strip()
+
+def _call_llm(
+    *,
+    model: str,
+    prompt: str,
+    feature: LLMUsageLog.Feature,
+) -> str:
+
+    messages = [
+        {"role": "user", "content": prompt},
+    ]
+
+    resp = generate_text(
+        model=model,
+        messages=messages,
+        timeout=_LLM_TIMEOUT_SECONDS,
+        feature=feature,
+    )
+
+    text = resp.text if hasattr(resp, "text") else str(resp)
+    return text.strip()
 
 
 def _safe_json_from_llm(text: str) -> dict[str, Any]:
     from apps.classes.services.json_utils import extract_json_object
 
     obj = extract_json_object(text)
+
     if isinstance(obj, dict):
         return obj
-    return {'recap': obj}
+
+    return {"recap": obj}
 
 
-def generate_recap_from_structure(*, structure_json: str) -> tuple[dict[str, Any], str, str]:
-    model = (
-        _get_env('RECAP_MODEL')
-        or _get_env('STRUCTURE_MODEL')
-        or _get_env('REWRITE_MODEL')
-        or _get_env('MODEL_NAME')
+def generate_recap_from_structure(*, structure_json: str) -> Tuple[dict[str, Any], str, str]:
+
+    model = _select_model(
+        "RECAP_MODEL",
+        "STRUCTURE_MODEL",
+        "REWRITE_MODEL",
     )
-    if not model:
-        model = 'models/gemini-2.5-flash'
 
-    prompt = PROMPTS['recap_and_notes']['default']
-    contents = [prompt, f"COURSE_STRUCTURE_JSON:\n{structure_json}"]
+    provider = preferred_provider()
 
-    gemini_client, avalai_client = _get_clients()
-    last_error: Optional[Exception] = None
+    base_prompt = PROMPTS["recap_and_notes"]["default"]
 
-    if gemini_client is not None:
-        try:
-            resp = tracked_generate_content(gemini_client, model=model, contents=contents, feature=LLMUsageLog.Feature.RECAP, provider='gemini')
-            return _safe_json_from_llm(_extract_text(resp)), 'gemini', model
-        except Exception as exc:
-            last_error = exc
+    prompt = _render_prompt(
+        base_prompt,
+        structure_json=structure_json,
+    )
 
-    if avalai_client is not None:
-        try:
-            resp = tracked_generate_content(avalai_client, model=model, contents=contents, feature=LLMUsageLog.Feature.RECAP, provider='avalai')
-            return _safe_json_from_llm(_extract_text(resp)), 'avalai', model
-        except Exception as exc:
-            last_error = exc
+    full_prompt = f"{prompt}\n\nCOURSE_STRUCTURE_JSON:\n{structure_json}"
 
-    if last_error is not None:
-        raise last_error
+    try:
+        text = _call_llm(
+            model=model,
+            prompt=full_prompt,
+            feature=LLMUsageLog.Feature.RECAP,
+        )
 
-    raise RuntimeError('No LLM credentials configured. Set GEMINI_API_KEY and/or AVALAI_API_KEY.')
+        obj = _safe_json_from_llm(text)
+
+        return obj, provider, model
+
+    except Exception as exc:
+        logger.exception("Recap generation failed")
+        raise RuntimeError(f"Recap generation failed: {exc}") from exc
 
 
 def recap_json_to_markdown(recap_obj: dict[str, Any]) -> str:
@@ -109,6 +121,7 @@ def recap_json_to_markdown(recap_obj: dict[str, Any]) -> str:
     formula_sheet = str(recap.get('formula_sheet_markdown') or '').strip()
 
     parts: list[str] = []
+
     if title:
         parts.append(f"# {title}")
 
@@ -121,24 +134,30 @@ def recap_json_to_markdown(recap_obj: dict[str, Any]) -> str:
         parts.append(key_notes)
 
     by_unit = recap.get('by_unit')
+
     if isinstance(by_unit, list) and by_unit:
         parts.append("## مرور بر اساس درس‌ها")
+
         for item in by_unit:
             if not isinstance(item, dict):
                 continue
+
             section_title = str(item.get('section_title') or '').strip()
             unit_title = str(item.get('unit_title') or '').strip()
             unit_recap = str(item.get('unit_recap_markdown') or '').strip()
             unit_points = str(item.get('unit_key_points_markdown') or '').strip()
 
             heading = unit_title
+
             if section_title:
                 heading = f"{section_title} — {unit_title}" if unit_title else section_title
 
             if heading:
                 parts.append(f"### {heading}")
+
             if unit_recap:
                 parts.append(unit_recap)
+
             if unit_points:
                 parts.append(unit_points)
 
