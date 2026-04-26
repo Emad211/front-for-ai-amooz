@@ -112,43 +112,42 @@ def extract_exam_prep_structure(
     # --------------------------------------------------------------
     repair_systems = [
         "خروجی قبلی قرار بوده یک JSON معتبر باشد ولی قابل parse نیست. "
-        "لطفاً فقط یک JSON معتبر بده. بدون توضیح، بدون
-```.",
-"ONLY OUTPUT VALID JSON. No prose. Escape all backslashes inside strings.",
-"Return STRICT JSON ONLY. If any field breaks JSON, replace with safe string.",
-]
+        "لطفاً فقط یک JSON معتبر بده. بدون توضیح، بدون ```.",
+        "ONLY OUTPUT VALID JSON. No prose. Escape all backslashes inside strings.",
+        "Return STRICT JSON ONLY. If any field breaks JSON, replace with safe string.",
+    ]
 
-last_preview = preview
-last_error = None
+    last_preview = preview
+    last_error = None
 
-for i, repair_sys in enumerate(repair_systems, start=2):
-repair_messages = [
-{"role": "system", "content": repair_sys},
-{
-"role": "user",
-"content": f"INVALID_OUTPUT:\n{text or ''}",
-},
-]
+    for i, repair_sys in enumerate(repair_systems, start=2):
+        repair_messages = [
+            {"role": "system", "content": repair_sys},
+            {
+                "role": "user",
+                "content": f"INVALID_OUTPUT:\n{text or ''}",
+            },
+        ]
 
-try:
-repair_resp = generate_text(
-model=model,
-messages=repair_messages,
-timeout=_LLM_TIMEOUT_SECONDS,
-feature=LLMUsageLog.Feature.EXAM_PREP_STRUCTURE,
-)
-repair_text = repair_resp.text
-except Exception as exc:
-last_error = exc
-continue
+        try:
+            repair_resp = generate_text(
+                model=model,
+                messages=repair_messages,
+                timeout=_LLM_TIMEOUT_SECONDS,
+                feature=LLMUsageLog.Feature.EXAM_PREP_STRUCTURE,
+            )
+            repair_text = repair_resp.text
+        except Exception as exc:
+            last_error = exc
+            continue
 
-parsed, preview = _attempt_parse_with_repair(text=repair_text)
-if parsed is not None:
-return _restore_latex_escapes(parsed), provider, model
+        parsed, preview = _attempt_parse_with_repair(text=repair_text)
+        if parsed is not None:
+            return _restore_latex_escapes(parsed), provider, model
 
-text = repair_text
-last_preview = preview
+        text = repair_text
+        last_preview = preview
 
-raise RuntimeError(
-f"LLM returned invalid JSON for exam prep structure. last_preview={last_preview!r}, last_error={last_error}"
-)
+    raise RuntimeError(
+        f"LLM returned invalid JSON for exam prep structure. last_preview={last_preview!r}, last_error={last_error}"
+    )
