@@ -38,6 +38,16 @@ def _get_env(name: str) -> str:
 
 
 # ====================================================================
+# Helper to strip "models/" prefix if present
+# ====================================================================
+def _strip_model_prefix(model_name: str) -> str:
+    """Remove any leading 'models/' prefix from model name."""
+    if model_name.startswith("models/"):
+        return model_name[7:]  # len("models/") == 7
+    return model_name
+
+
+# ====================================================================
 # OpenAI-Compatible Client for GAPGPT
 # ====================================================================
 def _get_gapgpt_client() -> OpenAI:
@@ -54,7 +64,8 @@ def _get_gapgpt_client() -> OpenAI:
 # Selecting model
 # ====================================================================
 def _default_model() -> str:
-    return _get_env("CHAT_MODEL") or "gemini-2.5-flash"
+    raw = _get_env("CHAT_MODEL") or "gemini-2.5-flash"
+    return _strip_model_prefix(raw)
 
 
 # ====================================================================
@@ -83,12 +94,15 @@ def _call_gapgpt_with_messages(
     feature: str
 ) -> LlmResult:
 
+    # Strip any "models/" prefix just before sending
+    clean_model = _strip_model_prefix(used_model)
+
     client = _get_gapgpt_client()
     timer = LLMTimer().start()
 
     try:
         response = client.chat.completions.create(
-            model=used_model,
+            model=clean_model,
             messages=messages,
             timeout=45,
         )
@@ -101,21 +115,21 @@ def _call_gapgpt_with_messages(
             resp=response,
             feature=feature,
             provider="gapgpt",
-            model_name=used_model,
+            model_name=clean_model,
             duration_ms=timer.elapsed_ms,
         )
 
         return LlmResult(
             text=text,
             provider="gapgpt",
-            model=used_model
+            model=clean_model
         )
 
     except Exception as exc:
         track_llm_error(
             feature=feature,
             provider="gapgpt",
-            model_name=used_model,
+            model_name=clean_model,
             error_message=str(exc),
         )
         raise
@@ -130,25 +144,15 @@ def generate_text(
     contents: Optional[Any] = None,
     model: Optional[str] = None,
     feature: Optional[str] = None,
-    timeout: Optional[int] = None,      # پذیرفته می‌شود ولی فعلاً نادیده گرفته می‌شود
-    **kwargs,                           # جزئیات اضافی مثل detail را نادیده می‌گیرد
+    timeout: Optional[int] = None,
+    **kwargs,
 ) -> LlmResult:
     """
     Unified LLM caller.
-
-    Args:
-        messages: List of message dicts with 'role' and 'content' (OpenAI format)
-        contents: Legacy parameter – single content (wrapped as user message)
-        model: Model name (optional)
-        feature: Feature name for tracking
-        timeout: Ignored (kept for compatibility)
-        **kwargs: Any extra arguments (e.g., 'detail') are ignored
-
-    Returns:
-        LlmResult with text, provider, model
     """
-
     used_model = model or _default_model()
+    # Strip prefix here as well, in case model passed directly
+    used_model = _strip_model_prefix(used_model)
     resolved_feature = feature or _get_llm_feature()
 
     if messages is not None:
@@ -158,7 +162,6 @@ def generate_text(
     else:
         raise ValueError("Either 'messages' or 'contents' must be provided")
 
-    # در آینده می‌توان از timeout استفاده کرد، ولی فعلاً نادیده گرفته می‌شود
     return _call_gapgpt_with_messages(
         messages=final_messages,
         used_model=used_model,
@@ -167,10 +170,9 @@ def generate_text(
 
 
 # ====================================================================
-# JSON REPAIR
+# JSON REPAIR (بدون تغییر)
 # ====================================================================
 def _repair_json_with_llm(*, feature: str, model_output: str) -> dict[str, Any]:
-
     template = PROMPTS["json_repair"]["default"]
     prompt = template.replace("{raw_text}", model_output)
 
@@ -190,7 +192,6 @@ def _repair_json_with_llm(*, feature: str, model_output: str) -> dict[str, Any]:
 # Public API: generate_json
 # ====================================================================
 def generate_json(*, feature: str, contents: Any) -> dict[str, Any]:
-
     set_llm_feature(feature)
     out = generate_text(contents=contents, feature=feature).text
 
