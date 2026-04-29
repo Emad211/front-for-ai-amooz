@@ -1,45 +1,61 @@
-'use client';
+"use client";
 
-import { useState } from 'react';
-import Link from 'next/link';
-import Image from 'next/image';
-import { useRouter } from 'next/navigation';
-import { useForm } from 'react-hook-form';
-import { zodResolver } from '@hookform/resolvers/zod';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Separator } from '@/components/ui/separator';
-import { teacherSignupSchema, type TeacherSignupFormValues } from '@/lib/validations/auth';
-import { toast } from 'sonner';
-import { Loader2 } from 'lucide-react';
-import { persistTokens, persistUser, register as registerRequest } from '@/services/auth-service';
+import Link from "next/link";
+import Image from "next/image";
+import { useRouter } from "next/navigation";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { Loader2 } from "lucide-react";
+import { toast } from "sonner";
+
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Separator } from "@/components/ui/separator";
+
+import { teacherSignupSchema, type TeacherSignupFormValues } from "@/lib/validations/auth";
+import {
+  ApiRequestError,
+  normalizeApiError,
+  persistTokens,
+  persistUser,
+  register as registerRequest,
+} from "@/services/auth-service";
+
+function inputErrorClass(hasError: boolean) {
+  return hasError ? "border-destructive focus-visible:ring-destructive" : "";
+}
 
 export default function TeacherSignupPage() {
   const router = useRouter();
-  const { register, handleSubmit, formState: { errors } } = useForm<TeacherSignupFormValues>({
+
+  const {
+    register,
+    handleSubmit,
+    setError,
+    setFocus,
+    formState: { errors, isSubmitting },
+  } = useForm<TeacherSignupFormValues>({
     resolver: zodResolver(teacherSignupSchema),
+    mode: "onTouched",
     defaultValues: {
-      firstName: '',
-      lastName: '',
-      email: '',
-      phone: '',
-      password: '',
-      confirmPassword: '',
+      firstName: "",
+      lastName: "",
+      email: "",
+      phone: "",
+      password: "",
+      confirmPassword: "",
     },
   });
 
-  const [isLoading, setIsLoading] = useState(false);
-
   async function onSubmit(data: TeacherSignupFormValues) {
-    setIsLoading(true);
-
+    // پاکسازی UX: اگر شماره تلفن transform شده باشد، همین data.phone از schema خروجیِ نهایی است.
     try {
       const response = await registerRequest({
         username: data.email,
         email: data.email,
         password: data.password,
-        role: 'TEACHER',
+        role: "TEACHER",
         first_name: data.firstName,
         last_name: data.lastName,
         phone: data.phone,
@@ -48,13 +64,56 @@ export default function TeacherSignupPage() {
       persistTokens(response.tokens);
       persistUser(response.user);
 
-      toast.success('حساب معلم با موفقیت ساخته شد. به پنل هدایت می‌شوید.');
-      router.push('/teacher');
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'ثبت‌نام با خطا مواجه شد';
+      toast.success("حساب معلم با موفقیت ساخته شد. به پنل هدایت می‌شوید.");
+      router.push("/teacher");
+    } catch (err) {
+      // 1) اگر خطا از API بود، سعی می‌کنیم خطاها را فیلدمحور کنیم
+      if (err instanceof ApiRequestError) {
+        const normalized = normalizeApiError(err);
+
+        const fieldMap: Record<string, keyof TeacherSignupFormValues | undefined> = {
+          first_name: "firstName",
+          last_name: "lastName",
+          email: "email",
+          username: "email", // در بک‌اند ممکن است خطا روی username بیاید
+          phone: "phone",
+          password: "password",
+          confirm_password: "confirmPassword",
+          confirmPassword: "confirmPassword",
+        };
+
+        let firstFocus: keyof TeacherSignupFormValues | null = null;
+        let appliedAnyFieldError = false;
+
+        for (const [backendField, messages] of Object.entries(normalized.fieldErrors)) {
+          const formField = fieldMap[backendField];
+
+          if (!formField) continue;
+
+          appliedAnyFieldError = true;
+
+          const message = messages?.[0] ?? "اطلاعات وارد شده صحیح نیست";
+          setError(formField, { type: "server", message });
+
+          if (!firstFocus) firstFocus = formField;
+        }
+
+        if (firstFocus) setFocus(firstFocus);
+
+        // اگر حداقل یکی از خطاها را روی فیلدها نشاندیم، toast را کلی نگه داریم
+        if (appliedAnyFieldError) {
+          toast.error("لطفاً خطاهای فرم را بررسی کنید");
+          return;
+        }
+
+        // اگر خطا فیلدی نبود (مثلاً خطای کلی/اجازه دسترسی/…)
+        toast.error(normalized.message);
+        return;
+      }
+
+      // 2) خطاهای غیر API
+      const message = err instanceof Error ? err.message : "ثبت‌نام با خطا مواجه شد";
       toast.error(message);
-    } finally {
-      setIsLoading(false);
     }
   }
 
@@ -82,29 +141,62 @@ export default function TeacherSignupPage() {
           <p className="text-sm text-muted-foreground">اطلاعات خود را وارد کنید تا پنل معلم فعال شود.</p>
         </div>
 
-        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4 bg-card/60 border border-border/80 rounded-2xl p-6 shadow-sm">
+        <form
+          onSubmit={handleSubmit(onSubmit)}
+          className="space-y-4 bg-card/60 border border-border/80 rounded-2xl p-6 shadow-sm"
+        >
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label htmlFor="firstName">نام</Label>
-              <Input id="firstName" disabled={isLoading} {...register('firstName')} />
+              <Input
+                id="firstName"
+                disabled={isSubmitting}
+                autoComplete="given-name"
+                className={inputErrorClass(!!errors.firstName)}
+                {...register("firstName")}
+              />
               {errors.firstName && <p className="text-xs text-destructive">{errors.firstName.message}</p>}
             </div>
+
             <div className="space-y-2">
               <Label htmlFor="lastName">نام خانوادگی</Label>
-              <Input id="lastName" disabled={isLoading} {...register('lastName')} />
+              <Input
+                id="lastName"
+                disabled={isSubmitting}
+                autoComplete="family-name"
+                className={inputErrorClass(!!errors.lastName)}
+                {...register("lastName")}
+              />
               {errors.lastName && <p className="text-xs text-destructive">{errors.lastName.message}</p>}
             </div>
           </div>
 
           <div className="space-y-2">
             <Label htmlFor="email">ایمیل کاری</Label>
-            <Input id="email" type="email" dir="ltr" disabled={isLoading} {...register('email')} />
+            <Input
+              id="email"
+              type="email"
+              dir="ltr"
+              disabled={isSubmitting}
+              autoComplete="email"
+              className={inputErrorClass(!!errors.email)}
+              {...register("email")}
+            />
             {errors.email && <p className="text-xs text-destructive">{errors.email.message}</p>}
           </div>
 
           <div className="space-y-2">
             <Label htmlFor="phone">شماره تماس</Label>
-            <Input id="phone" type="tel" dir="ltr" disabled={isLoading} {...register('phone')} />
+            <Input
+              id="phone"
+              type="tel"
+              dir="ltr"
+              disabled={isSubmitting}
+              autoComplete="tel"
+              placeholder="0912xxxxxxx"
+              className={inputErrorClass(!!errors.phone)}
+              {...register("phone")}
+            />
             {errors.phone && <p className="text-xs text-destructive">{errors.phone.message}</p>}
           </div>
 
@@ -112,28 +204,55 @@ export default function TeacherSignupPage() {
 
           <div className="space-y-2">
             <Label htmlFor="password">رمز عبور</Label>
-            <Input id="password" type="password" dir="ltr" disabled={isLoading} {...register('password')} />
+            <Input
+              id="password"
+              type="password"
+              dir="ltr"
+              disabled={isSubmitting}
+              autoComplete="new-password"
+              className={inputErrorClass(!!errors.password)}
+              {...register("password")}
+            />
             {errors.password && <p className="text-xs text-destructive">{errors.password.message}</p>}
+
+            <p className="text-xs text-muted-foreground">
+              حداقل ۸ کاراکتر و بهتر است فقط عدد نباشد.
+            </p>
           </div>
 
           <div className="space-y-2">
             <Label htmlFor="confirmPassword">تکرار رمز عبور</Label>
-            <Input id="confirmPassword" type="password" dir="ltr" disabled={isLoading} {...register('confirmPassword')} />
-            {errors.confirmPassword && <p className="text-xs text-destructive">{errors.confirmPassword.message}</p>}
+            <Input
+              id="confirmPassword"
+              type="password"
+              dir="ltr"
+              disabled={isSubmitting}
+              autoComplete="new-password"
+              className={inputErrorClass(!!errors.confirmPassword)}
+              {...register("confirmPassword")}
+            />
+            {errors.confirmPassword && (
+              <p className="text-xs text-destructive">{errors.confirmPassword.message}</p>
+            )}
           </div>
 
-          <Button type="submit" className="w-full h-12 text-base" disabled={isLoading}>
-            {isLoading ? (
+          <Button type="submit" className="w-full h-12 text-base" disabled={isSubmitting}>
+            {isSubmitting ? (
               <>
                 <Loader2 className="ms-2 h-4 w-4 animate-spin" />
                 در حال ثبت‌نام...
               </>
-            ) : 'ایجاد حساب معلم'}
+            ) : (
+              "ایجاد حساب معلم"
+            )}
           </Button>
         </form>
 
         <p className="mt-6 text-sm text-center text-muted-foreground">
-          قبلاً حساب دارید؟ <Link href="/login" className="font-semibold text-primary hover:underline">ورود</Link>
+          قبلاً حساب دارید؟{" "}
+          <Link href="/login" className="font-semibold text-primary hover:underline">
+            ورود
+          </Link>
         </p>
       </div>
     </div>
