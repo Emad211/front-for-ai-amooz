@@ -1,4 +1,4 @@
-name: Pull MinIO Image from quay.io
+name: Pull MinIO Image
 
 on:
   workflow_dispatch:
