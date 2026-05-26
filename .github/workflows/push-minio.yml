@@ -1,21 +1,20 @@
-name: Push MinIO Image to Hamravesh
+name: Pull MinIO Image from quay.io
 
 on:
   workflow_dispatch:
 
 jobs:
-  push-minio:
+  pull-minio:
     runs-on: ubuntu-latest
     steps:
       - name: Pull MinIO from quay.io
         run: |
           docker pull quay.io/minio/minio:latest
-          docker tag quay.io/minio/minio:latest registry.hamdocker.ir/ai-products/ai-amooz-minio:latest
+          docker save quay.io/minio/minio:latest | gzip > minio-latest.tar.gz
 
-      - name: Login to Hamravesh Registry
-        run: |
-          echo "${{ secrets.HAMRAVESH_REGISTRY_PASSWORD }}" | docker login registry.hamdocker.ir -u "${{ secrets.HAMRAVESH_REGISTRY_USERNAME }}" --password-stdin
-
-      - name: Push to Hamravesh
-        run: |
-          docker push registry.hamdocker.ir/ai-products/ai-amooz-minio:latest
+      - name: Upload image archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: minio-image
+          path: minio-latest.tar.gz
+          retention-days: 1
