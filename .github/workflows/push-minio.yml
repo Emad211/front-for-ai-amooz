@@ -1,0 +1,21 @@
+name: Push MinIO Image to Hamravesh
+
+on:
+  workflow_dispatch:
+
+jobs:
+  push-minio:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Pull MinIO from quay.io
+        run: |
+          docker pull quay.io/minio/minio:latest
+          docker tag quay.io/minio/minio:latest registry.hamdocker.ir/ai-products/ai-amooz-minio:latest
+
+      - name: Login to Hamravesh Registry
+        run: |
+          echo "${{ secrets.HAMRAVESH_REGISTRY_PASSWORD }}" | docker login registry.hamdocker.ir -u "${{ secrets.HAMRAVESH_REGISTRY_USERNAME }}" --password-stdin
+
+      - name: Push to Hamravesh
+        run: |
+          docker push registry.hamdocker.ir/ai-products/ai-amooz-minio:latest
