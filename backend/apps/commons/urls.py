@@ -10,6 +10,11 @@ from .views import (
     LLMUsageByProviderView,
     LLMUsageDailyView,
     LLMUsageRecentLogsView,
+    LLMUsageBreakdownView,
+    LLMUsageExportCSVView,
+    # Model prices
+    ModelPriceListCreateView,
+    ModelPriceDetailView,
     # Exchange rate
     ExchangeRateView,
     # Analytics
@@ -50,7 +55,13 @@ urlpatterns = [
     path('llm-usage/by-provider/', LLMUsageByProviderView.as_view(), name='llm-usage-by-provider'),
     path('llm-usage/daily/', LLMUsageDailyView.as_view(), name='llm-usage-daily'),
     path('llm-usage/recent/', LLMUsageRecentLogsView.as_view(), name='llm-usage-recent'),
+    path('llm-usage/breakdown/', LLMUsageBreakdownView.as_view(), name='llm-usage-breakdown'),
+    path('llm-usage/export-csv/', LLMUsageExportCSVView.as_view(), name='llm-usage-export-csv'),
     path('exchange-rate/', ExchangeRateView.as_view(), name='exchange-rate'),
+
+    # --- Model price table (admin-editable) ---
+    path('model-prices/', ModelPriceListCreateView.as_view(), name='model-price-list-create'),
+    path('model-prices/<int:price_pk>/', ModelPriceDetailView.as_view(), name='model-price-detail'),
 
     # --- Analytics ---
     path('analytics/stats/', AnalyticsStatsView.as_view(), name='analytics-stats'),

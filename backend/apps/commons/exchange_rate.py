@@ -128,3 +128,19 @@ def usd_to_toman(usd_amount: float) -> Tuple[Optional[float], Optional[str]]:
     if rate is None:
         return None, err
     return round(usd_amount * rate, 0), None
+
+
+def convert_usd_to_toman(usd_amount: float) -> Tuple[Optional[float], Optional[float], Optional[str]]:
+    """Convert USD to Toman and also return the rate that was applied.
+
+    Unlike :func:`usd_to_toman`, this exposes the rate so callers (e.g. the
+    token tracker) can snapshot it on each row for an audit trail.
+
+    Returns:
+        (toman_amount, rate, error) — ``toman_amount``/``rate`` are ``None``
+        when no rate (live, stale, or fallback) is available.
+    """
+    rate, err = get_usdt_toman_rate()
+    if rate is None:
+        return None, None, err
+    return round(usd_amount * rate, 0), rate, err

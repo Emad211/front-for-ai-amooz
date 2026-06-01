@@ -10,7 +10,17 @@ from django.contrib.auth import get_user_model
 from model_bakery import baker
 from rest_framework.test import APIClient
 
-from apps.commons.models import LLMUsageLog, estimate_cost, MODEL_PRICING
+from types import SimpleNamespace
+
+from apps.commons.models import (
+    LLMUsageLog,
+    ModelPrice,
+    estimate_cost,
+    invalidate_price_cache,
+    MODEL_PRICING,
+)
+from apps.commons import token_tracker
+from apps.commons.token_tracker import _extract_usage_metadata, track_llm_usage
 from apps.commons.exchange_rate import (
     fetch_usdt_toman_rate,
     get_usdt_toman_rate,
@@ -400,3 +410,180 @@ class TestLLMUsageLogModel:
         s = str(log)
         assert 'testuser' in s
         assert '1500' in s
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Token extraction — provider-agnostic (regression for the $0 cost bug)
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+class TestExtractUsageMetadata:
+    def test_openai_avalai_shape(self):
+        """OpenAI/Avalai responses expose `.usage` (prompt/completion_tokens)."""
+        resp = SimpleNamespace(
+            usage=SimpleNamespace(
+                prompt_tokens=1000,
+                completion_tokens=500,
+                total_tokens=1500,
+                prompt_tokens_details=SimpleNamespace(cached_tokens=100, audio_tokens=200),
+                completion_tokens_details=SimpleNamespace(reasoning_tokens=50),
+            )
+        )
+        out = _extract_usage_metadata(resp)
+        assert out['input'] == 1000
+        assert out['output'] == 500
+        assert out['total'] == 1500
+        assert out['cached_input'] == 100
+        assert out['audio_input'] == 200
+        assert out['thinking'] == 50
+
+    def test_openai_total_fallback(self):
+        """When total_tokens is absent it is derived from input+output."""
+        resp = SimpleNamespace(
+            usage=SimpleNamespace(prompt_tokens=300, completion_tokens=200, total_tokens=0)
+        )
+        out = _extract_usage_metadata(resp)
+        assert out['total'] == 500
+
+    def test_gemini_shape(self):
+        """Google Gemini responses expose `.usage_metadata`."""
+        resp = SimpleNamespace(
+            usage_metadata=SimpleNamespace(
+                prompt_token_count=800,
+                candidates_token_count=400,
+                total_token_count=1200,
+                cached_content_token_count=60,
+                thoughts_token_count=40,
+            )
+        )
+        out = _extract_usage_metadata(resp)
+        assert out['input'] == 800
+        assert out['output'] == 400
+        assert out['total'] == 1200
+        assert out['cached_input'] == 60
+        assert out['thinking'] == 40
+
+    def test_no_usage_returns_zeros(self):
+        out = _extract_usage_metadata(SimpleNamespace())
+        assert out == {
+            'input': 0, 'output': 0, 'total': 0,
+            'audio_input': 0, 'cached_input': 0, 'thinking': 0,
+        }
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# track_llm_usage — tokens, USD, and Toman snapshot all populated
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+@pytest.mark.django_db
+class TestTrackLLMUsage:
+    @patch('apps.commons.token_tracker.convert_usd_to_toman')
+    def test_records_tokens_user_and_toman(self, mock_convert):
+        mock_convert.return_value = (1654.0, 165450.0, None)
+        user = baker.make('accounts.User', role='STUDENT')
+        resp = SimpleNamespace(
+            usage=SimpleNamespace(prompt_tokens=1000, completion_tokens=500, total_tokens=1500)
+        )
+
+        log = track_llm_usage(
+            resp=resp,
+            feature='chat_course',
+            provider='gapgpt',
+            model_name='gemini-2.5-flash',
+            user=user,
+        )
+
+        assert log is not None
+        assert log.total_tokens == 1500
+        assert log.input_tokens == 1000
+        assert log.output_tokens == 500
+        assert float(log.estimated_cost_usd) > 0  # the $0 bug is fixed
+        assert float(log.estimated_cost_toman) == 1654.0
+        assert float(log.usd_toman_rate) == 165450.0
+        assert log.user_id == user.id
+
+    @patch('apps.commons.token_tracker.convert_usd_to_toman')
+    def test_uses_thread_local_user(self, mock_convert):
+        """When no user is passed, it falls back to the tracking context."""
+        mock_convert.return_value = (10.0, 100.0, None)
+        teacher = baker.make('accounts.User', role='TEACHER')
+        resp = SimpleNamespace(
+            usage=SimpleNamespace(prompt_tokens=10, completion_tokens=10, total_tokens=20)
+        )
+        token_tracker.set_current_user(teacher)
+        try:
+            log = track_llm_usage(
+                resp=resp, feature='transcription', provider='gapgpt',
+                model_name='gemini-2.5-flash',
+            )
+        finally:
+            token_tracker.set_current_user(None)
+        assert log is not None
+        assert log.user_id == teacher.id
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# DB-backed pricing (ModelPrice)
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+@pytest.mark.django_db
+class TestModelPricePricing:
+    def test_db_price_overrides_hardcoded(self):
+        ModelPrice.objects.create(
+            provider='avalai',
+            model_name='gemini-2.5-flash',
+            input_usd_per_1m=Decimal('10'),
+            output_usd_per_1m=Decimal('20'),
+            is_active=True,
+        )
+        invalidate_price_cache()
+        cost = estimate_cost(
+            'gemini-2.5-flash', 1_000_000, 1_000_000, provider='avalai',
+        )
+        # $10 input + $20 output = $30
+        assert abs(cost - 30.0) < 0.0001
+
+    def test_blank_provider_is_fallback(self):
+        ModelPrice.objects.create(
+            provider='',
+            model_name='gemini-2.5-flash',
+            input_usd_per_1m=Decimal('5'),
+            output_usd_per_1m=Decimal('5'),
+            is_active=True,
+        )
+        invalidate_price_cache()
+        cost = estimate_cost(
+            'gemini-2.5-flash', 1_000_000, 1_000_000, provider='some-other',
+        )
+        assert abs(cost - 10.0) < 0.0001
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Celery user attribution (pipeline cost → teacher)
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+@pytest.mark.django_db
+class TestCeleryUsageAttribution:
+    def test_decorator_binds_session_teacher(self):
+        from apps.classes.tasks import _attribute_llm_usage_to_teacher
+        from apps.commons.token_tracker import get_current_user
+
+        teacher = baker.make('accounts.User', role='TEACHER')
+        session = baker.make('classes.ClassCreationSession', teacher=teacher)
+
+        captured = {}
+
+        @_attribute_llm_usage_to_teacher
+        def fake_task(self, session_id):
+            captured['user'] = get_current_user()
+            return 'ok'
+
+        result = fake_task(None, session.id)
+        assert result == 'ok'
+        assert captured['user'] is not None
+        assert captured['user'].id == teacher.id
+        # context is cleared after the task returns
+        assert get_current_user() is None

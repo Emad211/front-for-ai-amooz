@@ -29,7 +29,17 @@ class LLMUsageLog(models.Model):
         CHAT_INTENT = 'chat_intent', 'Chat Intent Classifier'
         CHAT_WIDGET = 'chat_widget', 'Chat Widget'
         CHAT_VISION = 'chat_vision', 'Chat Vision'
+        CHAT_SYSTEM_PROMPT = 'chat_system_prompt', 'Chat System Prompt'
         MEMORY_SUMMARY = 'memory_summary', 'Memory Summarization'
+        # Chat widgets / learning tools
+        FLASH_CARDS = 'flash_cards', 'Flash Cards'
+        FETCH_QUIZZES = 'fetch_quizzes', 'Quiz Widget'
+        MATCH_GAMES = 'match_games', 'Match Game'
+        PRACTICE_TESTS = 'practice_tests', 'Practice Test'
+        MERIL = 'meril', 'Merrill Content'
+        NOTES_AI = 'notes_ai', 'AI Notes'
+        IMAGE_PLAN = 'image_plan', 'Image Plan'
+        EXAM_PREP_HANDWRITING_VISION = 'exam_prep_handwriting_vision', 'Exam Prep Handwriting Vision'
         JSON_REPAIR = 'json_repair', 'JSON Repair'
         # Other
         OTHER = 'other', 'Other'
@@ -43,7 +53,7 @@ class LLMUsageLog(models.Model):
         db_index=True,
     )
     feature = models.CharField(
-        max_length=30,
+        max_length=40,
         choices=Feature.choices,
         default=Feature.OTHER,
         db_index=True,
@@ -73,6 +83,22 @@ class LLMUsageLog(models.Model):
         default=0,
     )
 
+    # Estimated cost in Toman, snapshotted at write time using the live
+    # USD→Toman rate so historical totals never drift with today's FX.
+    estimated_cost_toman = models.DecimalField(
+        max_digits=14,
+        decimal_places=2,
+        default=0,
+        help_text='Cost in Toman, computed at call time from the live USD rate.',
+    )
+    # The USD→Toman rate that was applied for this row (audit trail).
+    usd_toman_rate = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        default=0,
+        help_text='USDT→Toman rate applied when this row was written.',
+    )
+
     # Optional context
     session_id = models.PositiveIntegerField(null=True, blank=True, db_index=True)
     detail = models.CharField(max_length=200, blank=True, default='')
@@ -90,6 +116,8 @@ class LLMUsageLog(models.Model):
             models.Index(fields=['user', 'created_at']),
             models.Index(fields=['feature', 'created_at']),
             models.Index(fields=['session_id', 'created_at']),
+            # Hot path for the per-user × per-task breakdown over a date range.
+            models.Index(fields=['user', 'feature', 'created_at'], name='idx_llm_user_feat_created'),
         ]
 
     def __str__(self) -> str:
@@ -135,11 +163,170 @@ MODEL_PRICING: dict[str, dict[str, float]] = {
 DEFAULT_PRICING = {'input': 0.30, 'output': 2.50}
 
 
+def _strip_models_prefix(name: str) -> str:
+    """Drop a leading 'models/' so DB and hardcoded keys match the wire model."""
+    name = name or ''
+    return name[7:] if name.startswith('models/') else name
+
+
+class ModelPrice(models.Model):
+    """Admin-editable per-model price table (USD per 1M tokens).
+
+    Cost is computed in USD from these rates, then converted to Toman at
+    call time using the live exchange rate.  This lets an admin update the
+    real Avalai rates from the panel without a redeploy.  Lookup picks the
+    active row with the latest ``effective_from`` for a (provider, model);
+    a blank ``provider`` row acts as a fallback for any provider.
+    """
+
+    provider = models.CharField(
+        max_length=32,
+        blank=True,
+        default='',
+        help_text="Provider key (e.g. 'avalai', 'gapgpt', 'gemini'). Blank = any provider.",
+    )
+    model_name = models.CharField(
+        max_length=100,
+        help_text="Model name without the 'models/' prefix, e.g. 'gemini-2.5-flash'.",
+    )
+
+    input_usd_per_1m = models.DecimalField(max_digits=12, decimal_places=6, default=0)
+    output_usd_per_1m = models.DecimalField(max_digits=12, decimal_places=6, default=0)
+    audio_input_usd_per_1m = models.DecimalField(
+        max_digits=12, decimal_places=6, null=True, blank=True,
+    )
+    cached_input_usd_per_1m = models.DecimalField(
+        max_digits=12, decimal_places=6, null=True, blank=True,
+    )
+
+    is_active = models.BooleanField(default=True, db_index=True)
+    effective_from = models.DateTimeField(default=timezone.now, db_index=True)
+    note = models.CharField(max_length=255, blank=True, default='')
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['provider', 'model_name', '-effective_from']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['provider', 'model_name', 'effective_from'],
+                name='uniq_model_price_provider_model_effective',
+            ),
+        ]
+
+    def __str__(self) -> str:
+        prov = self.provider or 'any'
+        return f'{prov}:{self.model_name} (in={self.input_usd_per_1m}, out={self.output_usd_per_1m})'
+
+    def as_pricing_dict(self) -> dict[str, float]:
+        d: dict[str, float] = {
+            'input': float(self.input_usd_per_1m or 0),
+            'output': float(self.output_usd_per_1m or 0),
+        }
+        if self.audio_input_usd_per_1m is not None:
+            d['audio_input'] = float(self.audio_input_usd_per_1m)
+        if self.cached_input_usd_per_1m is not None:
+            d['input_cached'] = float(self.cached_input_usd_per_1m)
+        return d
+
+    def save(self, *args, **kwargs):
+        super().save(*args, **kwargs)
+        invalidate_price_cache()
+
+    def delete(self, *args, **kwargs):
+        super().delete(*args, **kwargs)
+        invalidate_price_cache()
+
+
+# ---------------------------------------------------------------------------
+# Price resolution (DB-backed, cached) with hardcoded fallback
+# ---------------------------------------------------------------------------
+
+_PRICE_CACHE_KEY = 'llm_model_price_table_v1'
+_PRICE_CACHE_TTL = 60  # seconds
+
+
+def invalidate_price_cache() -> None:
+    """Drop the in-process price table cache (called on ModelPrice writes)."""
+    try:
+        from django.core.cache import cache
+        cache.delete(_PRICE_CACHE_KEY)
+    except Exception:
+        pass
+
+
+def _load_price_table() -> dict[tuple[str, str], dict[str, float]]:
+    """Return active ModelPrice rows as a lookup, cached briefly.
+
+    Keys are ``(provider_lower, model_key)`` and ``('', model_key)``; later
+    ``effective_from`` rows override earlier ones.  Returns ``{}`` if the DB
+    is unavailable (e.g. during initial migrations) so callers fall back to
+    the hardcoded table.
+    """
+    try:
+        from django.core.cache import cache
+    except Exception:
+        cache = None
+
+    if cache is not None:
+        try:
+            cached = cache.get(_PRICE_CACHE_KEY)
+            if cached is not None:
+                return cached
+        except Exception:
+            cache = None  # cache backend unavailable — skip caching entirely
+
+    table: dict[tuple[str, str], dict[str, float]] = {}
+    try:
+        now = timezone.now()
+        rows = (
+            ModelPrice.objects
+            .filter(is_active=True, effective_from__lte=now)
+            .order_by('effective_from')
+        )
+        for row in rows:
+            pricing = row.as_pricing_dict()
+            model_key = _strip_models_prefix(row.model_name)
+            table[('', model_key)] = pricing
+            if row.provider:
+                table[(row.provider.lower(), model_key)] = pricing
+    except Exception:
+        return {}
+
+    if cache is not None:
+        try:
+            cache.set(_PRICE_CACHE_KEY, table, _PRICE_CACHE_TTL)
+        except Exception:
+            pass
+    return table
+
+
+def get_pricing(model: str, provider: str = '') -> dict[str, float]:
+    """Resolve the pricing dict for a (model, provider), DB first then code."""
+    model_key = _strip_models_prefix(model)
+    table = _load_price_table()
+    prov = (provider or '').lower()
+
+    if prov and (prov, model_key) in table:
+        return table[(prov, model_key)]
+    if ('', model_key) in table:
+        return table[('', model_key)]
+
+    # Hardcoded fallback (try both prefixed and stripped keys).
+    if model in MODEL_PRICING:
+        return MODEL_PRICING[model]
+    if model_key in MODEL_PRICING:
+        return MODEL_PRICING[model_key]
+    return DEFAULT_PRICING
+
+
 def estimate_cost(
     model: str,
     input_tokens: int,
     output_tokens: int,
     *,
+    provider: str = '',
     audio_input_tokens: int = 0,
     cached_input_tokens: int = 0,
     audio_cached_tokens: int = 0,
@@ -147,9 +334,11 @@ def estimate_cost(
     """Return estimated cost in USD for a given LLM call.
 
     Differentiates between text/image/video input, audio input, cached
-    input, and output tokens using per-model pricing from MODEL_PRICING.
+    input, and output tokens using per-model pricing resolved from the
+    DB price table (``ModelPrice``) with a hardcoded fallback.  Output
+    already includes thinking/reasoning tokens for both Gemini and OpenAI.
     """
-    pricing = MODEL_PRICING.get(model, DEFAULT_PRICING)
+    pricing = get_pricing(model, provider)
     per_m = 1_000_000
 
     # Text/image/video input (subtract audio and cached from total)

@@ -2,16 +2,19 @@
 
 from __future__ import annotations
 
+import csv
 import os
 import shutil
 import time
-from datetime import timedelta
+from datetime import datetime, time as dtime, timedelta
 
 from django.conf import settings as django_settings
 from django.contrib.auth import get_user_model
 from django.db.models import Avg, Count, F, Q, Sum
 from django.db.models.functions import TruncDate
+from django.http import HttpResponse
 from django.utils import timezone
+from django.utils.dateparse import parse_date, parse_datetime
 
 from rest_framework import serializers, status
 from rest_framework.permissions import IsAuthenticated
@@ -24,6 +27,7 @@ from apps.commons.models import (
     AdminSetting,
     DEPARTMENT_LABELS,
     LLMUsageLog,
+    ModelPrice,
     Ticket,
     TicketMessage,
 )
@@ -58,6 +62,7 @@ class LLMUsageByFeatureSerializer(serializers.Serializer):
     count = serializers.IntegerField()
     total_tokens = serializers.IntegerField()
     total_cost_usd = serializers.FloatField()
+    total_cost_toman = serializers.FloatField()
     avg_duration_ms = serializers.FloatField()
 
 
@@ -69,6 +74,7 @@ class LLMUsageByUserSerializer(serializers.Serializer):
     count = serializers.IntegerField()
     total_tokens = serializers.IntegerField()
     total_cost_usd = serializers.FloatField()
+    total_cost_toman = serializers.FloatField()
 
 
 class LLMUsageByProviderSerializer(serializers.Serializer):
@@ -76,6 +82,7 @@ class LLMUsageByProviderSerializer(serializers.Serializer):
     count = serializers.IntegerField()
     total_tokens = serializers.IntegerField()
     total_cost_usd = serializers.FloatField()
+    total_cost_toman = serializers.FloatField()
 
 
 class LLMUsageDailySerializer(serializers.Serializer):
@@ -83,6 +90,20 @@ class LLMUsageDailySerializer(serializers.Serializer):
     count = serializers.IntegerField()
     total_tokens = serializers.IntegerField()
     total_cost_usd = serializers.FloatField()
+    total_cost_toman = serializers.FloatField()
+
+
+class ModelPriceSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ModelPrice
+        fields = [
+            'id', 'provider', 'model_name',
+            'input_usd_per_1m', 'output_usd_per_1m',
+            'audio_input_usd_per_1m', 'cached_input_usd_per_1m',
+            'is_active', 'effective_from', 'note',
+            'created_at', 'updated_at',
+        ]
+        read_only_fields = ['id', 'created_at', 'updated_at']
 
 
 class LLMUsageRecentLogSerializer(serializers.Serializer):
@@ -104,15 +125,50 @@ class LLMUsageRecentLogSerializer(serializers.Serializer):
 # Views
 # ---------------------------------------------------------------------------
 
+def _parse_boundary(value: str, *, end: bool):
+    """Parse an ISO date or datetime into an aware datetime.
+
+    For a bare ``YYYY-MM-DD`` used as the ``to`` boundary we snap to the end
+    of that day so the range is inclusive.
+    """
+    value = (value or '').strip()
+    if not value:
+        return None
+    dt = parse_datetime(value)
+    if dt is None:
+        d = parse_date(value)
+        if d is None:
+            return None
+        dt = datetime.combine(d, dtime.max if end else dtime.min)
+    if timezone.is_naive(dt):
+        dt = timezone.make_aware(dt, timezone.get_current_timezone())
+    return dt
+
+
 def _get_date_filter(request) -> dict:
-    """Parse optional ``days`` query param (default 30)."""
+    """Build a ``created_at`` range filter from ``from``/``to`` or ``days``.
+
+    ``from``/``to`` accept ISO date (``YYYY-MM-DD``) or datetime. When neither
+    is provided (or both unparseable), falls back to ``days`` (default 30).
+    """
+    qp = request.query_params
+    filters: dict = {}
+
+    dt_from = _parse_boundary(qp.get('from', ''), end=False)
+    dt_to = _parse_boundary(qp.get('to', ''), end=True)
+    if dt_from is not None:
+        filters['created_at__gte'] = dt_from
+    if dt_to is not None:
+        filters['created_at__lte'] = dt_to
+    if filters:
+        return filters
+
     try:
-        days = int(request.query_params.get('days', 30))
+        days = int(qp.get('days', 30))
     except (TypeError, ValueError):
         days = 30
     days = max(1, min(days, 365))
-    since = timezone.now() - timedelta(days=days)
-    return {'created_at__gte': since}
+    return {'created_at__gte': timezone.now() - timedelta(days=days)}
 
 
 class LLMUsageSummaryView(APIView):
@@ -130,6 +186,7 @@ class LLMUsageSummaryView(APIView):
             total_output_tokens=Sum('output_tokens'),
             total_tokens=Sum('total_tokens'),
             total_cost_usd=Sum('estimated_cost_usd'),
+            total_cost_toman=Sum('estimated_cost_toman'),
             avg_duration_ms=Avg('duration_ms'),
             total_audio_input_tokens=Sum('audio_input_tokens'),
             total_cached_input_tokens=Sum('cached_input_tokens'),
@@ -140,11 +197,10 @@ class LLMUsageSummaryView(APIView):
             if agg[key] is None:
                 agg[key] = 0
 
-        # USD → Toman conversion
-        cost_usd = float(agg['total_cost_usd'])
-        toman_amount, rate_err = usd_to_toman(cost_usd)
+        # total_cost_toman is the historically-accurate sum of per-row Toman
+        # snapshots. Also expose the current live rate for reference / display.
+        agg['total_cost_toman'] = float(agg['total_cost_toman'])
         usdt_rate, _ = get_usdt_toman_rate()
-        agg['total_cost_toman'] = toman_amount
         agg['usdt_toman_rate'] = usdt_rate
 
         return Response(agg)
@@ -164,15 +220,16 @@ class LLMUsageByFeatureView(APIView):
                 count=Count('id'),
                 total_tokens=Sum('total_tokens'),
                 total_cost_usd=Sum('estimated_cost_usd'),
+                total_cost_toman=Sum('estimated_cost_toman'),
                 avg_duration_ms=Avg('duration_ms'),
             )
-            .order_by('-total_cost_usd')
+            .order_by('-total_cost_toman')
         )
         feature_labels = dict(LLMUsageLog.Feature.choices)
         result = []
         for row in qs:
             row['feature_label'] = feature_labels.get(row['feature'], row['feature'])
-            for k in ('total_tokens', 'total_cost_usd', 'avg_duration_ms'):
+            for k in ('total_tokens', 'total_cost_usd', 'total_cost_toman', 'avg_duration_ms'):
                 if row[k] is None:
                     row[k] = 0
             result.append(row)
@@ -199,8 +256,9 @@ class LLMUsageByUserView(APIView):
                 count=Count('id'),
                 total_tokens=Sum('total_tokens'),
                 total_cost_usd=Sum('estimated_cost_usd'),
+                total_cost_toman=Sum('estimated_cost_toman'),
             )
-            .order_by('-total_cost_usd')
+            .order_by('-total_cost_toman')
         )
         result = []
         for row in qs:
@@ -214,6 +272,7 @@ class LLMUsageByUserView(APIView):
                 'count': row['count'],
                 'total_tokens': row['total_tokens'] or 0,
                 'total_cost_usd': float(row['total_cost_usd'] or 0),
+                'total_cost_toman': float(row['total_cost_toman'] or 0),
             })
         return Response(result)
 
@@ -232,12 +291,13 @@ class LLMUsageByProviderView(APIView):
                 count=Count('id'),
                 total_tokens=Sum('total_tokens'),
                 total_cost_usd=Sum('estimated_cost_usd'),
+                total_cost_toman=Sum('estimated_cost_toman'),
             )
-            .order_by('-total_cost_usd')
+            .order_by('-total_cost_toman')
         )
         result = []
         for row in qs:
-            for k in ('total_tokens', 'total_cost_usd'):
+            for k in ('total_tokens', 'total_cost_usd', 'total_cost_toman'):
                 if row[k] is None:
                     row[k] = 0
             result.append(row)
@@ -259,12 +319,13 @@ class LLMUsageDailyView(APIView):
                 count=Count('id'),
                 total_tokens=Sum('total_tokens'),
                 total_cost_usd=Sum('estimated_cost_usd'),
+                total_cost_toman=Sum('estimated_cost_toman'),
             )
             .order_by('date')
         )
         result = []
         for row in qs:
-            for k in ('total_tokens', 'total_cost_usd'):
+            for k in ('total_tokens', 'total_cost_usd', 'total_cost_toman'):
                 if row[k] is None:
                     row[k] = 0
             result.append({
@@ -272,6 +333,7 @@ class LLMUsageDailyView(APIView):
                 'count': row['count'],
                 'total_tokens': row['total_tokens'],
                 'total_cost_usd': float(row['total_cost_usd']),
+                'total_cost_toman': float(row['total_cost_toman']),
             })
         return Response(result)
 
@@ -303,11 +365,225 @@ class LLMUsageRecentLogsView(APIView):
                 'cached_input_tokens': log.cached_input_tokens,
                 'thinking_tokens': log.thinking_tokens,
                 'estimated_cost_usd': float(log.estimated_cost_usd),
+                'estimated_cost_toman': float(log.estimated_cost_toman),
                 'duration_ms': log.duration_ms,
                 'success': log.success,
                 'created_at': log.created_at.isoformat(),
             })
         return Response(result)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Flexible breakdown (per-user × per-task, any range) + CSV export
+# ═══════════════════════════════════════════════════════════════════════════
+
+_BREAKDOWN_GROUPS = {'user', 'feature', 'provider', 'day'}
+_GROUP_VALUE_FIELDS = {
+    'user': ['user', 'user__username', 'user__first_name', 'user__last_name', 'user__role'],
+    'feature': ['feature'],
+    'provider': ['provider'],
+}
+
+
+def _apply_usage_filters(request) -> dict:
+    """Date range (from/to or days) + optional user_id/role/feature/provider."""
+    filters = _get_date_filter(request)
+    qp = request.query_params
+
+    role = (qp.get('role') or '').strip().lower()
+    if role in ('teacher', 'student', 'admin'):
+        filters['user__role'] = role
+
+    user_id = (qp.get('user_id') or '').strip()
+    if user_id.isdigit():
+        filters['user_id'] = int(user_id)
+
+    feature = (qp.get('feature') or '').strip()
+    if feature:
+        filters['feature'] = feature
+
+    provider = (qp.get('provider') or '').strip()
+    if provider:
+        filters['provider'] = provider
+
+    return filters
+
+
+def _aggregate_usage(request):
+    """Return (groups, rows) aggregated by the requested group_by dimensions.
+
+    Each row carries count, token sums, and USD + Toman cost sums. Powers both
+    the breakdown JSON endpoint and the CSV export.
+    """
+    filters = _apply_usage_filters(request)
+
+    raw_group = request.query_params.get('group_by', 'user,feature')
+    groups = [g.strip() for g in raw_group.split(',') if g.strip() in _BREAKDOWN_GROUPS]
+    if not groups:
+        groups = ['user', 'feature']
+
+    qs = LLMUsageLog.objects.filter(**filters)
+    if 'day' in groups:
+        qs = qs.annotate(day=TruncDate('created_at'))
+
+    value_fields: list[str] = []
+    for g in groups:
+        if g == 'day':
+            value_fields.append('day')
+        else:
+            value_fields.extend(_GROUP_VALUE_FIELDS[g])
+    # de-dupe, preserve order
+    seen: set[str] = set()
+    value_fields = [f for f in value_fields if not (f in seen or seen.add(f))]
+
+    rows = (
+        qs.values(*value_fields)
+        .annotate(
+            count=Count('id'),
+            total_tokens=Sum('total_tokens'),
+            total_input_tokens=Sum('input_tokens'),
+            total_output_tokens=Sum('output_tokens'),
+            total_cost_usd=Sum('estimated_cost_usd'),
+            total_cost_toman=Sum('estimated_cost_toman'),
+        )
+        .order_by('-total_cost_toman')
+    )
+
+    feature_labels = dict(LLMUsageLog.Feature.choices)
+    result = []
+    for row in rows:
+        item = {
+            'count': row['count'],
+            'total_tokens': row['total_tokens'] or 0,
+            'total_input_tokens': row['total_input_tokens'] or 0,
+            'total_output_tokens': row['total_output_tokens'] or 0,
+            'total_cost_usd': float(row['total_cost_usd'] or 0),
+            'total_cost_toman': float(row['total_cost_toman'] or 0),
+        }
+        if 'user' in groups:
+            first = row.get('user__first_name') or ''
+            last = row.get('user__last_name') or ''
+            item['user_id'] = row.get('user')
+            item['username'] = row.get('user__username') or 'system'
+            item['full_name'] = f'{first} {last}'.strip() or '-'
+            item['role'] = row.get('user__role') or '-'
+        if 'feature' in groups:
+            item['feature'] = row.get('feature')
+            item['feature_label'] = feature_labels.get(row.get('feature'), row.get('feature'))
+        if 'provider' in groups:
+            item['provider'] = row.get('provider')
+        if 'day' in groups:
+            d = row.get('day')
+            item['date'] = d.isoformat() if d else None
+        result.append(item)
+
+    return groups, result
+
+
+class LLMUsageBreakdownView(APIView):
+    """Flexible cost breakdown grouped by any of user/feature/provider/day.
+
+    Query params: ``from``/``to`` (ISO) or ``days``; optional ``user_id``,
+    ``role``, ``feature``, ``provider``; ``group_by`` = comma list of
+    ``user,feature,provider,day`` (default ``user,feature``). Returns Toman
+    (snapshotted, historically accurate) and USD per group.
+    """
+    permission_classes = [IsAdminUser]
+
+    def get(self, request):
+        groups, result = _aggregate_usage(request)
+        usdt_rate, _ = get_usdt_toman_rate()
+        return Response({
+            'group_by': groups,
+            'usdt_toman_rate': usdt_rate,
+            'results': result,
+        })
+
+
+class LLMUsageExportCSVView(APIView):
+    """CSV export of the same breakdown (per-user × per-task Toman, etc.)."""
+    permission_classes = [IsAdminUser]
+
+    def get(self, request):
+        groups, result = _aggregate_usage(request)
+
+        response = HttpResponse(content_type='text/csv; charset=utf-8-sig')
+        response['Content-Disposition'] = 'attachment; filename="llm_usage_report.csv"'
+        writer = csv.writer(response)
+
+        header: list[str] = []
+        if 'user' in groups:
+            header += ['User ID', 'Username', 'Full Name', 'Role']
+        if 'feature' in groups:
+            header += ['Feature', 'Feature Label']
+        if 'provider' in groups:
+            header += ['Provider']
+        if 'day' in groups:
+            header += ['Date']
+        header += ['Requests', 'Total Tokens', 'Input Tokens', 'Output Tokens', 'Cost (USD)', 'Cost (Toman)']
+        writer.writerow(header)
+
+        for item in result:
+            row: list = []
+            if 'user' in groups:
+                row += [item.get('user_id'), item.get('username'), item.get('full_name'), item.get('role')]
+            if 'feature' in groups:
+                row += [item.get('feature'), item.get('feature_label')]
+            if 'provider' in groups:
+                row += [item.get('provider')]
+            if 'day' in groups:
+                row += [item.get('date')]
+            row += [
+                item['count'], item['total_tokens'],
+                item['total_input_tokens'], item['total_output_tokens'],
+                f"{item['total_cost_usd']:.6f}", f"{item['total_cost_toman']:.2f}",
+            ]
+            writer.writerow(row)
+
+        return response
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Model price table (admin-editable)
+# ═══════════════════════════════════════════════════════════════════════════
+
+class ModelPriceListCreateView(APIView):
+    """List all model prices or create a new one."""
+    permission_classes = [IsAdminUser]
+
+    def get(self, request):
+        prices = ModelPrice.objects.all()
+        return Response(ModelPriceSerializer(prices, many=True).data)
+
+    def post(self, request):
+        serializer = ModelPriceSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+
+class ModelPriceDetailView(APIView):
+    """Retrieve, update, or delete a single model price row."""
+    permission_classes = [IsAdminUser]
+
+    def _get(self, pk):
+        return ModelPrice.objects.filter(pk=pk).first()
+
+    def patch(self, request, price_pk):
+        obj = self._get(price_pk)
+        if obj is None:
+            return Response({'detail': 'not found'}, status=status.HTTP_404_NOT_FOUND)
+        serializer = ModelPriceSerializer(obj, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(serializer.data)
+
+    def delete(self, request, price_pk):
+        obj = self._get(price_pk)
+        if obj is None:
+            return Response({'detail': 'not found'}, status=status.HTTP_404_NOT_FOUND)
+        obj.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 # ═══════════════════════════════════════════════════════════════════════════
