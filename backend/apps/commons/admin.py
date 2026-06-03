@@ -2,7 +2,7 @@ from django.contrib import admin
 from django.db.models import Sum, Count, Avg
 from django.utils.html import format_html
 
-from .models import AdminSetting, LLMUsageLog, Ticket, TicketMessage
+from .models import AdminSetting, LLMUsageLog, ModelPrice, Ticket, TicketMessage
 
 
 @admin.register(LLMUsageLog)
@@ -17,6 +17,7 @@ class LLMUsageLogAdmin(admin.ModelAdmin):
         'output_tokens',
         'total_tokens',
         'cost_display',
+        'cost_toman_display',
         'duration_display',
         'success',
     ]
@@ -41,7 +42,12 @@ class LLMUsageLogAdmin(admin.ModelAdmin):
         'input_tokens',
         'output_tokens',
         'total_tokens',
+        'audio_input_tokens',
+        'cached_input_tokens',
+        'thinking_tokens',
         'estimated_cost_usd',
+        'estimated_cost_toman',
+        'usd_toman_rate',
         'session_id',
         'detail',
         'duration_ms',
@@ -65,6 +71,11 @@ class LLMUsageLogAdmin(admin.ModelAdmin):
             return format_html('<span style="color: #e74c3c; font-weight: bold;">${:.4f}</span>', cost)
         return f'${cost:.6f}'
     cost_display.short_description = 'Cost (USD)'
+
+    def cost_toman_display(self, obj):
+        toman = float(obj.estimated_cost_toman or 0)
+        return f'{toman:,.0f} ﷼'
+    cost_toman_display.short_description = 'Cost (Toman)'
 
     def duration_display(self, obj):
         ms = obj.duration_ms or 0
@@ -129,3 +140,22 @@ class TicketAdmin(admin.ModelAdmin):
 class AdminSettingAdmin(admin.ModelAdmin):
     list_display = ['key', 'value', 'updated_at']
     search_fields = ['key']
+
+
+@admin.register(ModelPrice)
+class ModelPriceAdmin(admin.ModelAdmin):
+    list_display = [
+        'provider',
+        'model_name',
+        'input_usd_per_1m',
+        'output_usd_per_1m',
+        'audio_input_usd_per_1m',
+        'cached_input_usd_per_1m',
+        'is_active',
+        'effective_from',
+        'updated_at',
+    ]
+    list_filter = ['provider', 'is_active']
+    search_fields = ['provider', 'model_name', 'note']
+    list_editable = ['is_active']
+    ordering = ['provider', 'model_name', '-effective_from']

@@ -23,6 +23,7 @@ from contextlib import contextmanager
 from typing import Any, Optional
 
 from apps.commons.models import LLMUsageLog, estimate_cost
+from apps.commons.exchange_rate import convert_usd_to_toman
 
 logger = logging.getLogger(__name__)
 
@@ -66,20 +67,69 @@ def llm_tracking_context(*, user=None, session_id: int | None = None):
         _local.session_id = old_session
 
 
-def _extract_usage_metadata(resp: Any) -> tuple[int, int, int]:
-    """Extract token counts from a google.genai response object."""
-    usage = getattr(resp, 'usage_metadata', None)
-    if usage is None:
-        return 0, 0, 0
+def _as_int(value: Any) -> int:
+    try:
+        return int(value or 0)
+    except (TypeError, ValueError):
+        return 0
 
-    input_tokens = getattr(usage, 'prompt_token_count', 0) or 0
-    output_tokens = getattr(usage, 'candidates_token_count', 0) or 0
-    total = getattr(usage, 'total_token_count', 0) or 0
 
-    if total == 0:
-        total = input_tokens + output_tokens
+def _extract_usage_metadata(resp: Any) -> dict[str, int]:
+    """Extract token counts from an LLM response, provider-agnostically.
 
-    return input_tokens, output_tokens, total
+    Handles both shapes:
+
+    * **OpenAI / Avalai** (``resp.usage``): ``prompt_tokens`` /
+      ``completion_tokens`` / ``total_tokens``, plus
+      ``prompt_tokens_details.cached_tokens`` / ``.audio_tokens`` and
+      ``completion_tokens_details.reasoning_tokens``.
+    * **Google Gemini** (``resp.usage_metadata``): ``prompt_token_count`` /
+      ``candidates_token_count`` / ``total_token_count``, plus
+      ``cached_content_token_count`` and ``thoughts_token_count``.
+
+    Returns a dict with keys: ``input``, ``output``, ``total``,
+    ``audio_input``, ``cached_input``, ``thinking`` (all ints).
+    """
+    out = {
+        'input': 0, 'output': 0, 'total': 0,
+        'audio_input': 0, 'cached_input': 0, 'thinking': 0,
+    }
+
+    # --- OpenAI / Avalai shape -------------------------------------------
+    usage = getattr(resp, 'usage', None)
+    if usage is not None and (
+        hasattr(usage, 'prompt_tokens') or hasattr(usage, 'completion_tokens')
+    ):
+        out['input'] = _as_int(getattr(usage, 'prompt_tokens', 0))
+        out['output'] = _as_int(getattr(usage, 'completion_tokens', 0))
+        out['total'] = _as_int(getattr(usage, 'total_tokens', 0))
+
+        prompt_details = getattr(usage, 'prompt_tokens_details', None)
+        if prompt_details is not None:
+            out['cached_input'] = _as_int(getattr(prompt_details, 'cached_tokens', 0))
+            out['audio_input'] = _as_int(getattr(prompt_details, 'audio_tokens', 0))
+
+        completion_details = getattr(usage, 'completion_tokens_details', None)
+        if completion_details is not None:
+            out['thinking'] = _as_int(getattr(completion_details, 'reasoning_tokens', 0))
+
+        if out['total'] == 0:
+            out['total'] = out['input'] + out['output']
+        return out
+
+    # --- Google Gemini shape ---------------------------------------------
+    meta = getattr(resp, 'usage_metadata', None)
+    if meta is not None:
+        out['input'] = _as_int(getattr(meta, 'prompt_token_count', 0))
+        out['output'] = _as_int(getattr(meta, 'candidates_token_count', 0))
+        out['total'] = _as_int(getattr(meta, 'total_token_count', 0))
+        out['cached_input'] = _as_int(getattr(meta, 'cached_content_token_count', 0))
+        out['thinking'] = _as_int(getattr(meta, 'thoughts_token_count', 0))
+        if out['total'] == 0:
+            out['total'] = out['input'] + out['output'] + out['thinking']
+        return out
+
+    return out
 
 
 def track_llm_usage(
@@ -102,7 +152,10 @@ def track_llm_usage(
     so that tracking never breaks the main application flow.
     """
     try:
-        input_tokens, output_tokens, total_tokens = _extract_usage_metadata(resp)
+        usage = _extract_usage_metadata(resp)
+        input_tokens = usage['input']
+        output_tokens = usage['output']
+        total_tokens = usage['total']
 
         resolved_user = user or get_current_user()
         resolved_session = session_id or get_current_session_id()
@@ -113,7 +166,18 @@ def track_llm_usage(
             if pk is None:
                 resolved_user = None
 
-        cost = estimate_cost(model_name, input_tokens, output_tokens)
+        cost = estimate_cost(
+            model_name,
+            input_tokens,
+            output_tokens,
+            provider=provider,
+            audio_input_tokens=usage['audio_input'],
+            cached_input_tokens=usage['cached_input'],
+        )
+
+        # Snapshot the Toman cost (and the rate applied) at write time so
+        # historical totals never drift with today's exchange rate.
+        cost_toman, rate, _rate_err = convert_usd_to_toman(float(cost))
 
         log = LLMUsageLog(
             user=resolved_user,
@@ -123,7 +187,12 @@ def track_llm_usage(
             input_tokens=input_tokens,
             output_tokens=output_tokens,
             total_tokens=total_tokens,
+            audio_input_tokens=usage['audio_input'],
+            cached_input_tokens=usage['cached_input'],
+            thinking_tokens=usage['thinking'],
             estimated_cost_usd=cost,
+            estimated_cost_toman=cost_toman or 0,
+            usd_toman_rate=rate or 0,
             session_id=resolved_session,
             detail=detail[:200] if detail else '',
             duration_ms=duration_ms,

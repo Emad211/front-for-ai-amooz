@@ -126,6 +126,125 @@ function relativeTime(isoDate: string): string {
   return `${toPersianDigits(days)} روز پیش`;
 }
 
+// ---------------------------------------------------------------------------
+// LLM usage types
+// ---------------------------------------------------------------------------
+
+export interface LLMUsageFilter {
+  days?: number;
+  from?: string; // ISO date or datetime
+  to?: string;
+  role?: string;
+  feature?: string;
+  provider?: string;
+  user_id?: number;
+  group_by?: string; // comma list: user,feature,provider,day
+}
+
+export interface LLMUsageSummary {
+  total_requests: number;
+  successful_requests: number;
+  failed_requests: number;
+  total_input_tokens: number;
+  total_output_tokens: number;
+  total_tokens: number;
+  total_cost_usd: number;
+  avg_duration_ms: number;
+  total_audio_input_tokens: number;
+  total_cached_input_tokens: number;
+  total_thinking_tokens: number;
+  total_cost_toman: number;
+  usdt_toman_rate: number | null;
+}
+
+export interface LLMUsageByFeature {
+  feature: string;
+  feature_label: string;
+  count: number;
+  total_tokens: number;
+  total_cost_usd: number;
+  total_cost_toman: number;
+  avg_duration_ms: number;
+}
+
+export interface LLMUsageByUser {
+  user_id: number | null;
+  username: string;
+  full_name: string;
+  role: string;
+  count: number;
+  total_tokens: number;
+  total_cost_usd: number;
+  total_cost_toman: number;
+}
+
+export interface LLMUsageByProvider {
+  provider: string;
+  count: number;
+  total_tokens: number;
+  total_cost_usd: number;
+  total_cost_toman: number;
+}
+
+export interface LLMUsageDaily {
+  date: string;
+  count: number;
+  total_tokens: number;
+  total_cost_usd: number;
+  total_cost_toman: number;
+}
+
+export interface LLMUsageBreakdownRow {
+  count: number;
+  total_tokens: number;
+  total_input_tokens: number;
+  total_output_tokens: number;
+  total_cost_usd: number;
+  total_cost_toman: number;
+  // present depending on group_by
+  user_id?: number | null;
+  username?: string;
+  full_name?: string;
+  role?: string;
+  feature?: string;
+  feature_label?: string;
+  provider?: string;
+  date?: string | null;
+}
+
+export interface LLMUsageBreakdownResponse {
+  group_by: string[];
+  usdt_toman_rate: number | null;
+  results: LLMUsageBreakdownRow[];
+}
+
+export interface ModelPrice {
+  id: number;
+  provider: string;
+  model_name: string;
+  input_usd_per_1m: string;
+  output_usd_per_1m: string;
+  audio_input_usd_per_1m: string | null;
+  cached_input_usd_per_1m: string | null;
+  is_active: boolean;
+  effective_from: string;
+  note: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ModelPricePayload {
+  provider?: string;
+  model_name: string;
+  input_usd_per_1m: number | string;
+  output_usd_per_1m: number | string;
+  audio_input_usd_per_1m?: number | string | null;
+  cached_input_usd_per_1m?: number | string | null;
+  is_active?: boolean;
+  effective_from?: string;
+  note?: string;
+}
+
 /**
  * Admin Service
  * Handles all data fetching for the admin dashboard and management.
@@ -381,65 +500,70 @@ export const AdminService = {
   // LLM Usage Analytics (Token Tracking)
   // ============================================================================
 
-  getLLMUsageSummary: async (days = 30) => {
-    return requestJson<{
-      total_requests: number;
-      successful_requests: number;
-      failed_requests: number;
-      total_input_tokens: number;
-      total_output_tokens: number;
-      total_tokens: number;
-      total_cost_usd: number;
-      avg_duration_ms: number;
-      total_audio_input_tokens: number;
-      total_cached_input_tokens: number;
-      total_thinking_tokens: number;
-      total_cost_toman: number | null;
-      usdt_toman_rate: number | null;
-    }>(`/admin/llm-usage/summary/?days=${days}`);
+  // Build a query string from a usage filter (from/to take precedence over days).
+  _usageQuery: (filter: LLMUsageFilter = {}): string => {
+    const params = new URLSearchParams();
+    if (filter.from) params.set('from', filter.from);
+    if (filter.to) params.set('to', filter.to);
+    if (!filter.from && !filter.to && filter.days != null) {
+      params.set('days', String(filter.days));
+    }
+    if (filter.role) params.set('role', filter.role);
+    if (filter.feature) params.set('feature', filter.feature);
+    if (filter.provider) params.set('provider', filter.provider);
+    if (filter.user_id != null) params.set('user_id', String(filter.user_id));
+    if (filter.group_by) params.set('group_by', filter.group_by);
+    const qs = params.toString();
+    return qs ? `?${qs}` : '';
   },
 
-  getLLMUsageByFeature: async (days = 30) => {
-    return requestJson<Array<{
-      feature: string;
-      feature_label: string;
-      count: number;
-      total_tokens: number;
-      total_cost_usd: number;
-      avg_duration_ms: number;
-    }>>(`/admin/llm-usage/by-feature/?days=${days}`);
+  getLLMUsageSummary: async (filter: LLMUsageFilter = {}) => {
+    return requestJson<LLMUsageSummary>(
+      `/admin/llm-usage/summary/${AdminService._usageQuery(filter)}`,
+    );
   },
 
-  getLLMUsageByUser: async (days = 30, role?: string) => {
-    const params = new URLSearchParams({ days: String(days) });
-    if (role) params.set('role', role);
-    return requestJson<Array<{
-      user_id: number | null;
-      username: string;
-      full_name: string;
-      role: string;
-      count: number;
-      total_tokens: number;
-      total_cost_usd: number;
-    }>>(`/admin/llm-usage/by-user/?${params.toString()}`);
+  getLLMUsageByFeature: async (filter: LLMUsageFilter = {}) => {
+    return requestJson<LLMUsageByFeature[]>(
+      `/admin/llm-usage/by-feature/${AdminService._usageQuery(filter)}`,
+    );
   },
 
-  getLLMUsageByProvider: async (days = 30) => {
-    return requestJson<Array<{
-      provider: string;
-      count: number;
-      total_tokens: number;
-      total_cost_usd: number;
-    }>>(`/admin/llm-usage/by-provider/?days=${days}`);
+  getLLMUsageByUser: async (filter: LLMUsageFilter = {}) => {
+    return requestJson<LLMUsageByUser[]>(
+      `/admin/llm-usage/by-user/${AdminService._usageQuery(filter)}`,
+    );
   },
 
-  getLLMUsageDaily: async (days = 30) => {
-    return requestJson<Array<{
-      date: string;
-      count: number;
-      total_tokens: number;
-      total_cost_usd: number;
-    }>>(`/admin/llm-usage/daily/?days=${days}`);
+  getLLMUsageByProvider: async (filter: LLMUsageFilter = {}) => {
+    return requestJson<LLMUsageByProvider[]>(
+      `/admin/llm-usage/by-provider/${AdminService._usageQuery(filter)}`,
+    );
+  },
+
+  getLLMUsageDaily: async (filter: LLMUsageFilter = {}) => {
+    return requestJson<LLMUsageDaily[]>(
+      `/admin/llm-usage/daily/${AdminService._usageQuery(filter)}`,
+    );
+  },
+
+  // Flexible breakdown — group_by any of user,feature,provider,day.
+  getLLMUsageBreakdown: async (filter: LLMUsageFilter = {}) => {
+    return requestJson<LLMUsageBreakdownResponse>(
+      `/admin/llm-usage/breakdown/${AdminService._usageQuery(filter)}`,
+    );
+  },
+
+  // CSV export — returns a Blob the caller can download.
+  exportLLMUsageCSV: async (filter: LLMUsageFilter = {}): Promise<Blob> => {
+    const url = `${API_URL}/admin/llm-usage/export-csv/${AdminService._usageQuery(filter)}`;
+    const response = await fetch(url, {
+      headers: { Authorization: `Bearer ${getAccessToken()}` },
+    });
+    if (!response.ok) {
+      throw new Error('دانلود گزارش CSV ناموفق بود.');
+    }
+    return response.blob();
   },
 
   getLLMUsageRecentLogs: async (limit = 100) => {
@@ -456,9 +580,36 @@ export const AdminService = {
       cached_input_tokens: number;
       thinking_tokens: number;
       estimated_cost_usd: number;
+      estimated_cost_toman: number;
       duration_ms: number;
       success: boolean;
       created_at: string;
     }>>(`/admin/llm-usage/recent/?limit=${limit}`);
+  },
+
+  // ============================================================================
+  // Model Price table (admin-editable USD-per-1M-token rates)
+  // ============================================================================
+
+  getModelPrices: async () => {
+    return requestJson<ModelPrice[]>(`/admin/model-prices/`);
+  },
+
+  createModelPrice: async (payload: ModelPricePayload) => {
+    return requestJson<ModelPrice>(`/admin/model-prices/`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+
+  updateModelPrice: async (id: number, payload: Partial<ModelPricePayload>) => {
+    return requestJson<ModelPrice>(`/admin/model-prices/${id}/`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    });
+  },
+
+  deleteModelPrice: async (id: number) => {
+    await requestJson<null>(`/admin/model-prices/${id}/`, { method: 'DELETE' });
   },
 };

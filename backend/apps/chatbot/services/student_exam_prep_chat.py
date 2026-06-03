@@ -199,7 +199,7 @@ def handle_exam_prep_message(
         },
     )
 
-    obj = generate_json(feature='exam_prep_chat', contents=prompt)
+    obj = generate_json(feature='chat_exam_prep', contents=prompt)
     content = _safe_str(obj.get('content'))
     suggestions_raw = obj.get('suggestions')
     suggestions = [s for s in (suggestions_raw or []) if _safe_str(s)] if isinstance(suggestions_raw, list) else []

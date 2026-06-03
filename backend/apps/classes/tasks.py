@@ -21,6 +21,7 @@ Design principles
 """
 from __future__ import annotations
 
+import functools
 import json
 import logging
 import os
@@ -32,6 +33,42 @@ from celery import shared_task
 from celery.exceptions import Retry as CeleryRetry
 
 logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# LLM usage attribution
+# ---------------------------------------------------------------------------
+
+def _attribute_llm_usage_to_teacher(task_fn):
+    """Attribute all LLM usage inside a pipeline task to the session teacher.
+
+    Celery workers run outside the HTTP request cycle, so the request-scoped
+    ``LLMTrackingMiddleware`` never sets the current user — pipeline LLM calls
+    would otherwise be logged with ``user=NULL``.  This decorator looks up the
+    session's teacher and binds it (plus the session id) into the token
+    tracker's thread-local context for the duration of the task.
+
+    Applied *inside* ``@shared_task`` (i.e. listed below it) so Celery still
+    sees the original task name.  The first positional argument of every
+    wrapped task is ``session_id``.
+    """
+
+    @functools.wraps(task_fn)
+    def _wrapper(self, session_id, *args, **kwargs):
+        from .models import ClassCreationSession
+        from apps.commons.token_tracker import llm_tracking_context
+
+        session = (
+            ClassCreationSession.objects
+            .filter(id=session_id)
+            .select_related('teacher')
+            .first()
+        )
+        teacher_user = session.teacher if session else None
+        with llm_tracking_context(user=teacher_user, session_id=session_id):
+            return task_fn(self, session_id, *args, **kwargs)
+
+    return _wrapper
 
 
 # ---------------------------------------------------------------------------
@@ -230,6 +267,7 @@ def _run_pipeline_step(
 # ---------------------------------------------------------------------------
 
 @shared_task(bind=True, max_retries=3, default_retry_delay=60, acks_late=True)
+@_attribute_llm_usage_to_teacher
 def process_class_step1_transcription(self, session_id: int) -> dict:
     """Transcribe uploaded media for a class creation session."""
     from .models import ClassCreationSession
@@ -276,6 +314,7 @@ def process_class_step1_transcription(self, session_id: int) -> dict:
 
 
 @shared_task(bind=True, max_retries=3, default_retry_delay=60, acks_late=True)
+@_attribute_llm_usage_to_teacher
 def process_class_step2_structure(self, session_id: int) -> dict:
     """Structure transcript into outline/units."""
     from .models import ClassCreationSession
@@ -312,6 +351,7 @@ def process_class_step2_structure(self, session_id: int) -> dict:
 
 
 @shared_task(bind=True, max_retries=3, default_retry_delay=60, acks_late=True)
+@_attribute_llm_usage_to_teacher
 def process_class_step3_prerequisites(self, session_id: int) -> dict:
     """Extract prerequisites from transcript."""
     from .models import ClassCreationSession, ClassPrerequisite
@@ -357,6 +397,7 @@ def process_class_step3_prerequisites(self, session_id: int) -> dict:
 
 
 @shared_task(bind=True, max_retries=3, default_retry_delay=60, acks_late=True)
+@_attribute_llm_usage_to_teacher
 def process_class_step4_prereq_teaching(self, session_id: int, prerequisite_name: str | None = None) -> dict:
     """Generate teaching notes for prerequisites."""
     from .models import ClassCreationSession, ClassPrerequisite
@@ -399,6 +440,7 @@ def process_class_step4_prereq_teaching(self, session_id: int, prerequisite_name
 
 
 @shared_task(bind=True, max_retries=3, default_retry_delay=60, acks_late=True)
+@_attribute_llm_usage_to_teacher
 def process_class_step5_recap(self, session_id: int) -> dict:
     """Generate recap markdown from structured content."""
     from .models import ClassCreationSession
@@ -431,6 +473,7 @@ def process_class_step5_recap(self, session_id: int) -> dict:
 
 
 @shared_task(bind=True, max_retries=0, acks_late=True)
+@_attribute_llm_usage_to_teacher
 def process_class_full_pipeline(self, session_id: int) -> dict:
     """Run class creation steps 1-5 sequentially (one-click pipeline).
 
@@ -515,6 +558,7 @@ def process_class_full_pipeline(self, session_id: int) -> dict:
 # ---------------------------------------------------------------------------
 
 @shared_task(bind=True, max_retries=3, default_retry_delay=60, acks_late=True)
+@_attribute_llm_usage_to_teacher
 def process_exam_prep_step1_transcription(self, session_id: int) -> dict:
     """Transcribe uploaded media for exam prep pipeline."""
     from .models import ClassCreationSession
@@ -559,6 +603,7 @@ def process_exam_prep_step1_transcription(self, session_id: int) -> dict:
 
 
 @shared_task(bind=True, max_retries=3, default_retry_delay=60, acks_late=True)
+@_attribute_llm_usage_to_teacher
 def process_exam_prep_step2_structure(self, session_id: int) -> dict:
     """Extract Q&A structure from exam prep transcript."""
     import json as _json
@@ -596,6 +641,7 @@ def process_exam_prep_step2_structure(self, session_id: int) -> dict:
 
 
 @shared_task(bind=True, max_retries=0, acks_late=True)
+@_attribute_llm_usage_to_teacher
 def process_exam_prep_full_pipeline(self, session_id: int) -> dict:
     """Run exam prep steps 1-2 sequentially with inline retry logic."""
     from .models import ClassCreationSession
