@@ -58,9 +58,24 @@ class ClassCreationSession(models.Model):
     level = models.CharField(max_length=64, blank=True, default='')
     duration = models.CharField(max_length=64, blank=True, default='')
 
+    class SourceType(models.TextChoices):
+        MEDIA = 'media', 'Media (audio/video)'
+        PDF = 'pdf', 'PDF'
+
+    # Ingestion source: media (audio/video transcription) or pdf (hybrid
+    # text + vision extraction). Both produce ``transcript_markdown`` so the
+    # whole downstream pipeline is source-agnostic.
+    source_type = models.CharField(
+        max_length=16,
+        choices=SourceType.choices,
+        default=SourceType.MEDIA,
+        db_index=True,
+    )
     source_file = models.FileField(upload_to='class_creation/source/')
     source_mime_type = models.CharField(max_length=127, blank=True)
     source_original_name = models.CharField(max_length=255, blank=True)
+    # Number of pages for PDF sources (0 for media).
+    source_page_count = models.PositiveIntegerField(default=0)
 
     status = models.CharField(max_length=32, choices=Status.choices, default=Status.TRANSCRIBING, db_index=True)
 

@@ -263,15 +263,37 @@ def _run_pipeline_step(
 
 
 # ---------------------------------------------------------------------------
+# Step-1 ingestion dispatch (media transcription OR PDF extraction)
+# ---------------------------------------------------------------------------
+
+def _ingest_source_to_markdown(session, data):
+    """Branch step-1 ingestion on ``source_type``.
+
+    Returns ``(markdown, provider, model, page_count)``. PDF sources go through
+    the hybrid PDF engine; media through transcription.
+    """
+    from .models import ClassCreationSession
+    from .services.transcription import transcribe_media_bytes
+    from .services.pdf_extraction import extract_pdf_to_markdown
+
+    mime = session.source_mime_type or ''
+    if session.source_type == ClassCreationSession.SourceType.PDF:
+        return extract_pdf_to_markdown(data=data, mime_type=mime or 'application/pdf')
+    markdown, provider, model_name = transcribe_media_bytes(
+        data=data, mime_type=mime or 'application/octet-stream',
+    )
+    return markdown, provider, model_name, 0
+
+
+# ---------------------------------------------------------------------------
 # CLASS pipeline tasks (steps 1-5 + full pipeline)
 # ---------------------------------------------------------------------------
 
 @shared_task(bind=True, max_retries=3, default_retry_delay=60, acks_late=True)
 @_attribute_llm_usage_to_teacher
 def process_class_step1_transcription(self, session_id: int) -> dict:
-    """Transcribe uploaded media for a class creation session."""
+    """Transcribe uploaded media (or extract a PDF) for a class creation session."""
     from .models import ClassCreationSession
-    from .services.transcription import transcribe_media_bytes
 
     session = ClassCreationSession.objects.filter(id=session_id).first()
     if session is None:
@@ -284,15 +306,13 @@ def process_class_step1_transcription(self, session_id: int) -> dict:
         tmp_path = _read_session_file_to_disk(session)
         data = _read_file_bytes(tmp_path)
 
-        transcript, provider, model_name = transcribe_media_bytes(
-            data=data,
-            mime_type=session.source_mime_type or 'application/octet-stream',
-        )
+        transcript, provider, model_name, page_count = _ingest_source_to_markdown(session, data)
         session.transcript_markdown = transcript
         session.llm_provider = provider
         session.llm_model = model_name
+        session.source_page_count = page_count
         session.status = ClassCreationSession.Status.TRANSCRIBED
-        session.save(update_fields=['transcript_markdown', 'llm_provider', 'llm_model', 'status', 'updated_at'])
+        session.save(update_fields=['transcript_markdown', 'llm_provider', 'llm_model', 'source_page_count', 'status', 'updated_at'])
 
         # Delete the uploaded source file to free disk space.
         # Only the transcript text is needed from this point on.
@@ -560,9 +580,8 @@ def process_class_full_pipeline(self, session_id: int) -> dict:
 @shared_task(bind=True, max_retries=3, default_retry_delay=60, acks_late=True)
 @_attribute_llm_usage_to_teacher
 def process_exam_prep_step1_transcription(self, session_id: int) -> dict:
-    """Transcribe uploaded media for exam prep pipeline."""
+    """Transcribe uploaded media (or extract a PDF) for exam prep pipeline."""
     from .models import ClassCreationSession
-    from .services.transcription import transcribe_media_bytes
 
     session = ClassCreationSession.objects.filter(id=session_id).first()
     if session is None:
@@ -575,15 +594,13 @@ def process_exam_prep_step1_transcription(self, session_id: int) -> dict:
         tmp_path = _read_session_file_to_disk(session)
         data = _read_file_bytes(tmp_path)
 
-        transcript, provider, model_name = transcribe_media_bytes(
-            data=data,
-            mime_type=session.source_mime_type or 'application/octet-stream',
-        )
+        transcript, provider, model_name, page_count = _ingest_source_to_markdown(session, data)
         session.transcript_markdown = transcript
         session.llm_provider = provider
         session.llm_model = model_name
+        session.source_page_count = page_count
         session.status = ClassCreationSession.Status.EXAM_TRANSCRIBED
-        session.save(update_fields=['transcript_markdown', 'llm_provider', 'llm_model', 'status', 'updated_at'])
+        session.save(update_fields=['transcript_markdown', 'llm_provider', 'llm_model', 'source_page_count', 'status', 'updated_at'])
 
         # Delete the uploaded source file to free disk space.
         _cleanup_source_file(session)

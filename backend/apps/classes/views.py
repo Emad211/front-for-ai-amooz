@@ -34,6 +34,7 @@ from .models import StudentInviteCode
 from apps.notification.models import AdminNotification
 from .permissions import IsTeacherUser, IsStudentUser
 from .serializers import (
+    is_pdf_upload,
     ClassCreationSessionDetailSerializer,
     ClassCreationSessionListSerializer,
     ClassCreationSessionUpdateSerializer,
@@ -86,6 +87,7 @@ from .serializers import (
     StudentExamPrepResultResponseSerializer,
 )
 from .services.transcription import transcribe_media_bytes
+from .services.pdf_extraction import extract_pdf_to_markdown
 from .services.structure import structure_transcript_markdown
 from .services.prerequisites import extract_prerequisites, generate_prerequisite_teaching
 from .services.recap import generate_recap_from_structure, recap_json_to_markdown
@@ -136,6 +138,26 @@ from .services.student_exam_chat_history import (
 from apps.commons.token_tracker import set_current_user
 
 
+def _ingest_for_session(session, data):
+    """Step-1 ingestion dispatch: branch on ``source_type``.
+
+    Returns ``(markdown, provider, model, page_count)``. PDF sources go through
+    the hybrid PDF engine; everything else through media transcription. Both
+    ``transcribe_media_bytes`` and ``extract_pdf_to_markdown`` are module-level
+    names so tests can monkeypatch them at ``apps.classes.views.*``.
+    """
+    mime = session.source_mime_type or ''
+    if session.source_type == ClassCreationSession.SourceType.PDF:
+        markdown, provider, model_name, page_count = extract_pdf_to_markdown(
+            data=data, mime_type=mime or 'application/pdf',
+        )
+        return markdown, provider, model_name, page_count
+    markdown, provider, model_name = transcribe_media_bytes(
+        data=data, mime_type=mime or 'application/octet-stream',
+    )
+    return markdown, provider, model_name, 0
+
+
 def _process_step1_transcription(session_id: int) -> None:
     session = ClassCreationSession.objects.filter(id=session_id).first()
     if session is None:
@@ -151,15 +173,13 @@ def _process_step1_transcription(session_id: int) -> None:
         finally:
             session.source_file.close()
 
-        transcript, provider, model_name = transcribe_media_bytes(
-            data=data,
-            mime_type=session.source_mime_type or 'application/octet-stream',
-        )
+        transcript, provider, model_name, page_count = _ingest_for_session(session, data)
         session.transcript_markdown = transcript
         session.llm_provider = provider
         session.llm_model = model_name
+        session.source_page_count = page_count
         session.status = ClassCreationSession.Status.TRANSCRIBED
-        session.save(update_fields=['transcript_markdown', 'llm_provider', 'llm_model', 'status', 'updated_at'])
+        session.save(update_fields=['transcript_markdown', 'llm_provider', 'llm_model', 'source_page_count', 'status', 'updated_at'])
     except Exception as exc:
         session.status = ClassCreationSession.Status.FAILED
         session.error_detail = str(exc)
@@ -472,6 +492,10 @@ class Step1TranscribeView(APIView):
                     teacher=request.user,
                     title=title,
                     description=description,
+                    source_type=(
+                        ClassCreationSession.SourceType.PDF if is_pdf_upload(upload)
+                        else ClassCreationSession.SourceType.MEDIA
+                    ),
                     source_file=upload,
                     source_mime_type=getattr(upload, 'content_type', '') or '',
                     source_original_name=getattr(upload, 'name', '') or '',
@@ -519,15 +543,13 @@ class Step1TranscribeView(APIView):
             finally:
                 session.source_file.close()
 
-            transcript, provider, model_name = transcribe_media_bytes(
-                data=data,
-                mime_type=session.source_mime_type or 'application/octet-stream',
-            )
+            transcript, provider, model_name, page_count = _ingest_for_session(session, data)
             session.transcript_markdown = transcript
             session.llm_provider = provider
             session.llm_model = model_name
+            session.source_page_count = page_count
             session.status = ClassCreationSession.Status.TRANSCRIBED
-            session.save(update_fields=['transcript_markdown', 'llm_provider', 'llm_model', 'status', 'updated_at'])
+            session.save(update_fields=['transcript_markdown', 'llm_provider', 'llm_model', 'source_page_count', 'status', 'updated_at'])
 
             # Delete uploaded file — only transcript text is needed from now on.
             try:
@@ -2632,15 +2654,13 @@ def _process_exam_prep_step1_transcription(session_id: int) -> None:
         finally:
             session.source_file.close()
 
-        transcript, provider, model_name = transcribe_media_bytes(
-            data=data,
-            mime_type=session.source_mime_type or 'application/octet-stream',
-        )
+        transcript, provider, model_name, page_count = _ingest_for_session(session, data)
         session.transcript_markdown = transcript
         session.llm_provider = provider
         session.llm_model = model_name
+        session.source_page_count = page_count
         session.status = ClassCreationSession.Status.EXAM_TRANSCRIBED
-        session.save(update_fields=['transcript_markdown', 'llm_provider', 'llm_model', 'status', 'updated_at'])
+        session.save(update_fields=['transcript_markdown', 'llm_provider', 'llm_model', 'source_page_count', 'status', 'updated_at'])
     except Exception as exc:
         session.status = ClassCreationSession.Status.FAILED
         session.error_detail = str(exc)
@@ -2781,6 +2801,10 @@ class ExamPrepStep1TranscribeView(APIView):
                     teacher=request.user,
                     title=title,
                     description=description,
+                    source_type=(
+                        ClassCreationSession.SourceType.PDF if is_pdf_upload(upload)
+                        else ClassCreationSession.SourceType.MEDIA
+                    ),
                     source_file=upload,
                     source_mime_type=getattr(upload, 'content_type', '') or '',
                     source_original_name=getattr(upload, 'name', '') or '',

@@ -1,0 +1,6 @@
+# Keep binary test fixtures byte-exact across platforms (no EOL conversion).
+*.pdf binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.ico binary

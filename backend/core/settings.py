@@ -379,6 +379,23 @@ FILE_UPLOAD_HANDLERS = [
 TRANSCRIPTION_MAX_UPLOAD_MB = _get_env_int('TRANSCRIPTION_MAX_UPLOAD_MB', 500)
 TRANSCRIPTION_MAX_UPLOAD_BYTES = TRANSCRIPTION_MAX_UPLOAD_MB * 1024 * 1024
 
+# ---------------------------------------------------------------------------
+# PDF ingestion pipeline (Step 1 alternative to media transcription).
+# Hybrid extraction: digital text fast-path + LLM-vision fallback. Defaults
+# favour accuracy (Persian-first); all knobs are env-tunable.
+# ---------------------------------------------------------------------------
+PDF_MAX_UPLOAD_MB = _get_env_int('PDF_MAX_UPLOAD_MB', 100)
+PDF_MAX_UPLOAD_BYTES = PDF_MAX_UPLOAD_MB * 1024 * 1024
+PDF_MAX_PAGES = _get_env_int('PDF_MAX_PAGES', 200)
+PDF_RENDER_DPI = _get_env_int('PDF_RENDER_DPI', 170)
+PDF_EXTRACTION_CONCURRENCY = _get_env_int('PDF_EXTRACTION_CONCURRENCY', 4)
+PDF_MAX_IMAGE_BYTES_MB = _get_env_int('PDF_MAX_IMAGE_BYTES_MB', 3)
+# A page qualifies for the deterministic text fast-path only when its
+# extracted text layer has at least this many usable characters.
+PDF_TEXT_LAYER_MIN_CHARS = _get_env_int('PDF_TEXT_LAYER_MIN_CHARS', 80)
+# Force every page through the vision model (max accuracy, higher cost).
+PDF_FORCE_VISION = _get_env_bool('PDF_FORCE_VISION', False)
+
 # Pipeline execution: when enabled, Step 1/2 return quickly and work continues in background.
 # Default is disabled to keep request/response deterministic (and test-friendly).
 CLASS_PIPELINE_ASYNC = os.getenv(

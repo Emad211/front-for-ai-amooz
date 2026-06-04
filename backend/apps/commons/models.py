@@ -18,6 +18,7 @@ class LLMUsageLog(models.Model):
         PREREQ_TEACH = 'prereq_teach', 'Prerequisite Teaching'
         RECAP = 'recap', 'Recap Generation'
         EXAM_PREP_STRUCTURE = 'exam_prep_structure', 'Exam Prep Structure'
+        PDF_EXTRACTION = 'pdf_extraction', 'PDF Extraction (Vision)'
         # Quiz / Exam
         QUIZ_GENERATION = 'quiz_generation', 'Quiz Generation'
         QUIZ_GRADING = 'quiz_grading', 'Quiz Grading'

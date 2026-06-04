@@ -24,6 +24,41 @@ MATH_FORMAT_INSTRUCTIONS = """
 
 PROMPTS = {
     # ==========================================================================
+    # 0. PDF INGESTION (Step 1 alternative): page image -> faithful Markdown
+    # ==========================================================================
+    # Feature: pdf_extraction
+    # Used in: services/pdf_extraction.py (vision path, one page image per call)
+    # Purpose: Transcribe a single rendered PDF page to clean Markdown with
+    #          maximum fidelity. Persian is the top priority.
+    "pdf_extraction": {
+    "default": (
+"""### Role
+You transcribe ONE page image of a document into faithful Markdown. This is OCR + layout transcription, NOT summarization.
+
+### Absolute rules
+- Output ONLY the page content as GitHub-Flavored Markdown. No preamble, no explanations, no code fences around the whole answer.
+- Preserve the ORIGINAL language exactly. NEVER translate. Persian/Arabic text must stay Persian/Arabic; keep correct right-to-left wording and word order as a human reads it.
+- Transcribe every visible word, number, and symbol. Do not invent, summarize, or skip content. If a region is unreadable, write `[ناخوانا]` in its place.
+- Keep numbers and units exactly as written (do not convert digit systems or units).
+- Preserve reading order. For multi-column layouts, transcribe the natural reading order (for RTL pages: right column first, then left).
+
+### Structure
+- Use Markdown headings (#, ##, ###) only where the page clearly shows headings/titles.
+- Lists: use `-` or `1.` matching the page.
+- Tables: reproduce as GitHub Markdown tables with the EXACT cell values, same rows/columns. Do not merge or drop cells.
+- Figures/diagrams/photos/charts: do not fabricate. Insert a short caption line: `> [تصویر: <one-line description of what the figure shows>]`.
+- Mathematics: transcribe as LaTeX using the rules below.
+
+"""
+        + MATH_FORMAT_INSTRUCTIONS +
+"""
+### Output
+Return only the Markdown transcription of THIS page.
+"""
+    )
+    },
+
+    # ==========================================================================
     # 1. COURSE PIPELINE PROMPTS (Step 2: Analysis & Structure)
     # ==========================================================================
 

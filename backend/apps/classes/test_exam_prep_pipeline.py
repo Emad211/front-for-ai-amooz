@@ -109,15 +109,15 @@ class TestExamPrepStep1Transcription:
         assert session.title == 'ریاضی کنکور'
         assert session.pipeline_type == ClassCreationSession.PipelineType.EXAM_PREP
 
-    def test_rejects_non_audio_video_file(self):
-        """Should reject non-audio/video files."""
+    def test_rejects_unsupported_file(self):
+        """Should reject files that are not audio, video, or PDF."""
         user = User.objects.create_user(username='teacher2', password='pass', role=User.Role.TEACHER)
         token = str(RefreshToken.for_user(user).access_token)
 
         client = APIClient()
         client.credentials(HTTP_AUTHORIZATION=f'Bearer {token}')
 
-        upload = SimpleUploadedFile('doc.pdf', b'fake-pdf', content_type='application/pdf')
+        upload = SimpleUploadedFile('notes.txt', b'just text', content_type='text/plain')
         res = client.post(
             '/api/classes/exam-prep-sessions/step-1/',
             {'title': 'Test', 'file': upload},

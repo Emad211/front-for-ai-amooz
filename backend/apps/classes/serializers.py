@@ -8,6 +8,37 @@ from drf_spectacular.utils import extend_schema_field
 from .models import ClassAnnouncement, ClassCreationSession, ClassInvitation, ClassPrerequisite
 
 
+def is_pdf_upload(value) -> bool:
+    """True when an uploaded file is a PDF (by MIME or .pdf extension)."""
+    content_type = (getattr(value, 'content_type', '') or '').lower()
+    name = str(getattr(value, 'name', '') or '').lower()
+    return content_type == 'application/pdf' or name.endswith('.pdf')
+
+
+def validate_step1_upload(value):
+    """Shared validation for Step 1 uploads: audio, video, or PDF.
+
+    PDFs use the (smaller) PDF size cap; media uses the transcription cap.
+    """
+    content_type = (getattr(value, 'content_type', '') or '').lower()
+    is_media = content_type.startswith('audio/') or content_type.startswith('video/')
+    is_pdf = is_pdf_upload(value)
+    if not (is_media or is_pdf):
+        raise serializers.ValidationError(
+            'Only audio, video, or PDF uploads are supported.'
+        )
+
+    if is_pdf:
+        max_bytes = getattr(settings, 'PDF_MAX_UPLOAD_BYTES', 100 * 1024 * 1024)
+    else:
+        max_bytes = getattr(settings, 'TRANSCRIPTION_MAX_UPLOAD_BYTES', 500 * 1024 * 1024)
+    max_mb = max_bytes // (1024 * 1024)
+    if getattr(value, 'size', 0) > max_bytes:
+        raise serializers.ValidationError(f'File is too large (max {max_mb}MB).')
+
+    return value
+
+
 class Step1TranscribeRequestSerializer(serializers.Serializer):
     title = serializers.CharField(max_length=255)
     description = serializers.CharField(required=False, allow_blank=True)
@@ -16,16 +47,7 @@ class Step1TranscribeRequestSerializer(serializers.Serializer):
     run_full_pipeline = serializers.BooleanField(required=False, default=False)
 
     def validate_file(self, value):
-        max_bytes = getattr(settings, 'TRANSCRIPTION_MAX_UPLOAD_BYTES', 500 * 1024 * 1024)
-        max_mb = max_bytes // (1024 * 1024)
-        if getattr(value, 'size', 0) > max_bytes:
-            raise serializers.ValidationError(f'File is too large (max {max_mb}MB).')
-
-        content_type = getattr(value, 'content_type', '') or ''
-        if not (content_type.startswith('audio/') or content_type.startswith('video/')):
-            raise serializers.ValidationError('Only audio/video uploads are supported for transcription.')
-
-        return value
+        return validate_step1_upload(value)
 
 
 class Step1TranscribeResponseSerializer(serializers.ModelSerializer):
@@ -36,6 +58,8 @@ class Step1TranscribeResponseSerializer(serializers.ModelSerializer):
             'status',
             'title',
             'description',
+            'source_type',
+            'source_page_count',
             'source_mime_type',
             'source_original_name',
             'transcript_markdown',
@@ -123,6 +147,7 @@ class ClassCreationSessionListSerializer(serializers.ModelSerializer):
             'status',
             'title',
             'description',
+            'source_type',
             'is_published',
             'published_at',
             'invites_count',
@@ -151,6 +176,8 @@ class ClassCreationSessionDetailSerializer(serializers.ModelSerializer):
             'description',
             'level',
             'duration',
+            'source_type',
+            'source_page_count',
             'source_mime_type',
             'source_original_name',
             'transcript_markdown',
@@ -435,16 +462,7 @@ class ExamPrepStep1TranscribeRequestSerializer(serializers.Serializer):
     run_full_pipeline = serializers.BooleanField(required=False, default=False)
 
     def validate_file(self, value):
-        max_bytes = getattr(settings, 'TRANSCRIPTION_MAX_UPLOAD_BYTES', 500 * 1024 * 1024)
-        max_mb = max_bytes // (1024 * 1024)
-        if getattr(value, 'size', 0) > max_bytes:
-            raise serializers.ValidationError(f'File is too large (max {max_mb}MB).')
-
-        content_type = getattr(value, 'content_type', '') or ''
-        if not (content_type.startswith('audio/') or content_type.startswith('video/')):
-            raise serializers.ValidationError('Only audio/video uploads are supported for transcription.')
-
-        return value
+        return validate_step1_upload(value)
 
 
 class ExamPrepStep1TranscribeResponseSerializer(serializers.ModelSerializer):
@@ -457,6 +475,8 @@ class ExamPrepStep1TranscribeResponseSerializer(serializers.ModelSerializer):
             'pipeline_type',
             'title',
             'description',
+            'source_type',
+            'source_page_count',
             'source_mime_type',
             'source_original_name',
             'transcript_markdown',
@@ -515,6 +535,8 @@ class ExamPrepSessionDetailSerializer(serializers.ModelSerializer):
             'description',
             'level',
             'duration',
+            'source_type',
+            'source_page_count',
             'transcript_markdown',
             'exam_prep_json',
             'exam_prep_data',

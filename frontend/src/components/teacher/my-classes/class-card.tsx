@@ -42,6 +42,7 @@ interface ClassCardProps {
     category: string;
     level: string;
     rating: number;
+    sourceType?: string;
   };
   basePath?: string;
   onDelete?: () => void;
@@ -110,6 +111,11 @@ export function ClassCard({ cls, basePath = '/admin', onDelete }: ClassCardProps
               <Badge variant="outline" className={`rounded-md px-2 py-0.5 text-[10px] font-normal border ${levelConfig[cls.level] || ''}`}>
                 {cls.level}
               </Badge>
+              {cls.sourceType === 'pdf' && (
+                <Badge variant="outline" className="rounded-md px-2 py-0.5 text-[10px] font-normal border bg-rose-500/10 text-rose-600 border-rose-500/20">
+                  PDF
+                </Badge>
+              )}
             </div>
             <CardTitle className="text-lg font-bold text-foreground group-hover:text-primary transition-colors line-clamp-1">
               {cls.title}

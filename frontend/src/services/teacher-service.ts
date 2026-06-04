@@ -44,6 +44,7 @@ type ClassCreationSessionListItem = {
   description: string;
   level?: string;
   duration?: string;
+  source_type?: string;
   is_published?: boolean;
   invites_count?: number;
   lessons_count?: number;
@@ -202,6 +203,7 @@ export const TeacherService = {
       lessonsCount: Number(s.lessons_count ?? 0) || 0,
       level: (s.level as any) || undefined,
       duration: s.duration || undefined,
+      sourceType: (s.source_type as 'media' | 'pdf') || undefined,
     }));
     return courses;
   },

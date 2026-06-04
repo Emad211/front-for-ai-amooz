@@ -547,11 +547,12 @@ class TestFileValidation:
     def _setup(self, settings):
         settings.CLASS_PIPELINE_ASYNC = True
 
-    def test_rejects_non_media_file(self):
+    def test_rejects_unsupported_file(self):
         teacher = baker.make(User, role=User.Role.TEACHER)
         client = _auth_client(teacher)
 
-        upload = SimpleUploadedFile('test.pdf', b'fake-pdf', content_type='application/pdf')
+        # Audio, video, and PDF are supported; a plain text file is not.
+        upload = SimpleUploadedFile('notes.txt', b'just text', content_type='text/plain')
         resp = client.post(
             '/api/classes/creation-sessions/step-1/',
             {'title': 'test', 'file': upload, 'client_request_id': str(uuid.uuid4())},

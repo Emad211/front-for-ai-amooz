@@ -16,6 +16,7 @@ export interface Course {
   duration?: string;
   rating?: number;
   reviews?: number;
+  sourceType?: 'media' | 'pdf';
 }
 
 export interface Exam {

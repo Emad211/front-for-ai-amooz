@@ -1,0 +1,55 @@
+{
+  "english.pdf": {
+    "text": "The quick brown fox jumps over the lazy dog. Photosynthesis converts light energy into chemical energy stored in glucose.",
+    "pages": 1,
+    "route": "text"
+  },
+  "persian.pdf": {
+    "text": "زبان فارسی یکی از زبان های کهن جهان است و ادبیات بسیار غنی دارد. ریاضیات پایه علوم مهندسی محسوب می شود.",
+    "pages": 1,
+    "route": "text"
+  },
+  "twopage.pdf": {
+    "text": "This is the first page about algebra and equations.\nThis is the second page about geometry and triangles.",
+    "pages": 2,
+    "route": "text",
+    "page_texts": [
+      "This is the first page about algebra and equations.",
+      "This is the second page about geometry and triangles."
+    ]
+  },
+  "table.pdf": {
+    "pages": 1,
+    "route": "text",
+    "table": [
+      [
+        "Name",
+        "Score",
+        "City"
+      ],
+      [
+        "Ali",
+        "20",
+        "Tehran"
+      ],
+      [
+        "Sara",
+        "18",
+        "Shiraz"
+      ],
+      [
+        "Reza",
+        "15",
+        "Yazd"
+      ]
+    ]
+  },
+  "scanned.pdf": {
+    "pages": 1,
+    "route": "vision"
+  },
+  "encrypted.pdf": {
+    "pages": 1,
+    "encrypted": true
+  }
+}

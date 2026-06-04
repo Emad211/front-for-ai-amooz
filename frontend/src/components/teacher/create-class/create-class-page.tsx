@@ -613,7 +613,7 @@ export function CreateClassPage() {
         type="lesson"
         isExpanded={expandedSections.includes('files')}
         onToggle={() => toggleSection('files')}
-        accept="audio/*,video/*"
+        accept="audio/*,video/*,application/pdf,.pdf"
         multiple={false}
         onFilesSelected={(files) => {
           const file = files && files.length ? files[0] : null;

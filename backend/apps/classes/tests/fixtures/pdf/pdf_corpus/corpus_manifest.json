@@ -1,0 +1,10 @@
+{
+  "english_scanned.pdf": {
+    "lang": "english",
+    "text": "Newton's second law states that force equals mass times acceleration."
+  },
+  "persian_scanned.pdf": {
+    "lang": "persian",
+    "text": "قانون دوم نیوتن بیان می کند که نیرو برابر است با جرم ضرب در شتاب"
+  }
+}
