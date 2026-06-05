@@ -308,8 +308,16 @@ def process_class_step1_transcription(self, session_id: int) -> dict:
     try:
         tmp_path = _read_session_file_to_disk(session)
         data = _read_file_bytes(tmp_path)
+        logger.info(
+            "STEP1 task: session=%s source_type=%s file=%r bytes=%d",
+            session.id, session.source_type, session.source_file.name if session.source_file else None, len(data),
+        )
 
         transcript, provider, model_name, page_count = _ingest_source_to_markdown(session, data)
+        logger.info(
+            "STEP1 task done: session=%s transcript_chars=%d pages=%s provider=%s",
+            session.id, len(transcript or ""), page_count, provider,
+        )
         session.transcript_markdown = transcript
         session.llm_provider = provider
         session.llm_model = model_name
@@ -596,8 +604,16 @@ def process_exam_prep_step1_transcription(self, session_id: int) -> dict:
     try:
         tmp_path = _read_session_file_to_disk(session)
         data = _read_file_bytes(tmp_path)
+        logger.info(
+            "STEP1 task: session=%s source_type=%s file=%r bytes=%d",
+            session.id, session.source_type, session.source_file.name if session.source_file else None, len(data),
+        )
 
         transcript, provider, model_name, page_count = _ingest_source_to_markdown(session, data)
+        logger.info(
+            "STEP1 task done: session=%s transcript_chars=%d pages=%s provider=%s",
+            session.id, len(transcript or ""), page_count, provider,
+        )
         session.transcript_markdown = transcript
         session.llm_provider = provider
         session.llm_model = model_name

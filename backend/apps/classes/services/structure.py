@@ -106,19 +106,28 @@ def structure_transcript_markdown(
         f"{prompt}\n\nFULL_TRANSCRIPT_MARKDOWN:\n{transcript_markdown}"
     )
 
+    logger.info(
+        "STRUCTURE start: model=%s transcript_chars=%d prompt_chars=%d",
+        model, len(transcript_markdown or ""), len(full_prompt),
+    )
     try:
         text = _call_llm(
             model=model,
             prompt=full_prompt,
             feature=LLMUsageLog.Feature.STRUCTURE,
         )
+        logger.info("STRUCTURE response: chars=%d has_brace=%s",
+                    len(text or ""), ("{" in (text or "")))
 
         try:
             obj = extract_json_object(text)
         except Exception:
             # The model sometimes replies with prose / fenced text and no JSON.
-            # One strict repair pass (only on failure) recovers it without
-            # re-sending the whole transcript again.
+            # Log exactly what came back, then do one strict repair pass.
+            logger.error(
+                "STRUCTURE no-JSON in primary response (chars=%d). HEAD=%r TAIL=%r",
+                len(text or ""), (text or "")[:2000], (text or "")[-800:],
+            )
             repair_prompt = (
                 "The text below was supposed to be a single JSON object but is "
                 "malformed or wrapped in prose. Return ONLY one valid JSON object "
@@ -129,7 +138,14 @@ def structure_transcript_markdown(
                 prompt=repair_prompt,
                 feature=LLMUsageLog.Feature.STRUCTURE,
             )
-            obj = extract_json_object(repaired)
+            try:
+                obj = extract_json_object(repaired)
+            except Exception:
+                logger.error(
+                    "STRUCTURE no-JSON after repair (chars=%d). HEAD=%r",
+                    len(repaired or ""), (repaired or "")[:2000],
+                )
+                raise
 
         obj = _restore_latex_escapes(obj)
         obj = _reinject_unit_assets(obj)

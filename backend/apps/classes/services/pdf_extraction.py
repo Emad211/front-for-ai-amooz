@@ -307,4 +307,12 @@ def extract_pdf_to_markdown(
 
     provider = used_provider or "local"
     model = used_model or vision_model
+
+    # --- debug instrumentation ---
+    per_page_len = {i + 1: len(vision_md.get(i, "")) for i in range(page_count) if not is_blank[i]}
+    logger.info(
+        "PDF extract done: pages=%d non_blank=%d total_chars=%d provider=%s model=%s per_page=%s",
+        page_count, len(todo), len(markdown), provider, model, per_page_len,
+    )
+    logger.info("PDF transcript HEAD=%r", markdown[:1500])
     return markdown, provider, model, page_count

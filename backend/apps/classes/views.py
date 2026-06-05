@@ -436,6 +436,15 @@ class Step1TranscribeView(APIView):
             ClassCreationSession.Status.RECAPPING,
         ]
 
+        logger.info(
+            "STEP1 upload: teacher=%s file=%r size=%s content_type=%s client_request_id=%s",
+            request.user.id,
+            getattr(upload, 'name', '?'),
+            getattr(upload, 'size', '?'),
+            getattr(upload, 'content_type', '?'),
+            client_request_id,
+        )
+
         # Idempotency: return existing session if client_request_id matches.
         if client_request_id is not None:
             existing = ClassCreationSession.objects.filter(
@@ -443,6 +452,12 @@ class Step1TranscribeView(APIView):
                 client_request_id=client_request_id,
             ).first()
             if existing is not None:
+                logger.warning(
+                    "STEP1 IDEMPOTENT HIT: returning EXISTING session=%s (file=%r status=%s) "
+                    "for client_request_id=%s — new upload %r is IGNORED.",
+                    existing.id, existing.source_original_name, existing.status,
+                    client_request_id, getattr(upload, 'name', '?'),
+                )
                 payload = Step1TranscribeResponseSerializer(existing).data
                 http_status = (
                     status.HTTP_202_ACCEPTED
@@ -527,6 +542,12 @@ class Step1TranscribeView(APIView):
                 {'detail': 'فایل آپلود نشد. لطفاً دوباره تلاش کنید.'},
                 status=status.HTTP_503_SERVICE_UNAVAILABLE,
             )
+
+        logger.info(
+            "STEP1 CREATED session=%s source_type=%s stored_file=%r async=%s full=%s",
+            session.id, session.source_type, session.source_file.name,
+            getattr(settings, 'CLASS_PIPELINE_ASYNC', False), run_full_pipeline,
+        )
 
         if run_full_pipeline:
             transaction.on_commit(lambda: process_class_full_pipeline.delay(session.id))
