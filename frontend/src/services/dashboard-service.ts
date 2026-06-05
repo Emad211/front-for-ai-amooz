@@ -335,6 +335,7 @@ export const DashboardService = {
       questions: number;
       createdAt?: string;
       instructor?: string;
+      sourceType?: 'media' | 'pdf';
     }[]>(url, {
       method: 'GET',
       headers: {
@@ -348,6 +349,7 @@ export const DashboardService = {
       description: item.description,
       tags: item.tags || [],
       questions: item.questions,
+      sourceType: item.sourceType,
     }));
   },
 

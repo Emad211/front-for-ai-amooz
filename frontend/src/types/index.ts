@@ -30,6 +30,7 @@ export interface Exam {
   currentQuestionIndex?: number;
   questionsList?: Question[];
   timeRemaining?: number; // in seconds
+  sourceType?: 'media' | 'pdf';
 }
 
 export interface Question {

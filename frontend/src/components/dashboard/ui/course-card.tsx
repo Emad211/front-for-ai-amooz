@@ -29,10 +29,15 @@ export const CourseCard = ({ course }: CourseCardProps) => {
   return (
     <Card className="group bg-card border-border/50 hover:border-primary/30 transition-all duration-300 overflow-hidden flex flex-col justify-between h-full rounded-3xl hover:shadow-2xl hover:shadow-primary/5">
       <CardContent className="p-6 md:p-8">
-        <div className="flex justify-start mb-6 gap-2">
+        <div className="flex justify-start mb-6 gap-2 flex-wrap items-center">
           {course.tags.map((tag) => (
             <TagBadge key={tag} tag={tag} />
           ))}
+          {course.sourceType === 'pdf' && (
+            <span className="rounded-md px-2 py-0.5 text-[10px] font-bold border bg-rose-500/10 text-rose-600 border-rose-500/20">
+              PDF
+            </span>
+          )}
         </div>
         <h3 className="font-black text-xl md:text-2xl text-foreground mb-3 group-hover:text-primary transition-colors">{course.title}</h3>
         <p className="text-muted-foreground text-sm md:text-base leading-relaxed font-medium">{course.description}</p>

@@ -678,6 +678,7 @@ export interface ExamPrepSessionDetail {
   error_detail: string;
   created_at: string;
   updated_at: string;
+  source_type?: 'media' | 'pdf';
 }
 
 export interface ExamPrepData {
