@@ -78,9 +78,8 @@ def test_real_persian_corpus():
     print(f'mean recall = {mean_recall:.4f} (min required {REAL_RECALL_MIN})')
 
     assert mean_recall >= REAL_RECALL_MIN, f'Persian recall {mean_recall:.4f} too low'
-    for name, provider, rec, imgs, expect_image in rows:
-        if expect_image:
-            assert imgs >= 1, f'{name}: expected at least one extracted figure, got {imgs}'
+    # Text-only engine: figures are interpreted inline as text, not extracted as
+    # image files, so we no longer assert an embedded-image count here.
 
 
 @pytest.mark.benchmark
@@ -104,13 +103,5 @@ def test_table_and_figure_fidelity():
         print(f'\ntable_doc cell_accuracy = {acc:.4f} (min {TABLE_MIN_ACCURACY})')
         assert acc >= TABLE_MIN_ACCURACY, f'table cell accuracy {acc:.4f} too low'
 
-    # Exact extracted-figure count.
-    fig_doc = 'figure_doc.pdf'
-    if fig_doc in manifest and 'expected_images' in manifest[fig_doc]:
-        with open(os.path.join(SYNTH, fig_doc), 'rb') as fh:
-            data = fh.read()
-        md, *_ = extract_pdf_to_markdown(data=data, asset_prefix='benchmark/synth/fig')
-        exp = manifest[fig_doc]['expected_images']
-        got = _count_images(md)
-        print(f'figure_doc images expected={exp} got={got}')
-        assert got == exp, f'figure_doc extracted {got} images, expected {exp}'
+    # Figure handling is text-only now (no extracted image files), so the exact
+    # embedded-figure-count check was removed.

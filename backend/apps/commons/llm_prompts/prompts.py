@@ -46,7 +46,7 @@ You transcribe ONE page image of a document into faithful Markdown. This is OCR 
 - Use Markdown headings (#, ##, ###) only where the page clearly shows headings/titles.
 - Lists: use `-` or `1.` matching the page.
 - Tables: reproduce as GitHub Markdown tables with the EXACT cell values, same rows/columns. Do not merge or drop cells. Always include the header separator row (`| --- | --- |`).
-- Figures/diagrams/photos/charts/embedded images: do NOT describe or redraw them. Instead, at the exact spot in the reading order where each figure appears, emit a placement marker on its own line: `[[IMAGE_1: <very short caption>]]`, then `[[IMAGE_2: ...]]`, etc. Number them in reading order, starting at 1 for THIS page. Only emit a marker for an actual picture/figure/diagram/chart/photo — never for plain text, tables, or math. The real image will be inserted in place of the marker automatically.
+- Figures/diagrams/photos/charts/embedded images: do NOT output image links, base64, or markers. Instead, at the exact spot in the reading order, write a concise TEXT interpretation on its own line as a blockquote: `> [تصویر: <short description AND every data point it conveys — axis labels, numbers, trends, legend, table-like values>]`. Pull ALL information out of the figure into this text so the page is fully usable as plain text. Never emit `![...]()` or any URL.
 - Mathematics: transcribe as LaTeX using the rules below.
 
 """

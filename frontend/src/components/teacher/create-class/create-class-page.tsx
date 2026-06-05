@@ -303,6 +303,13 @@ export function CreateClassPage() {
   };
 
   useEffect(() => {
+    // A newly selected file must get a fresh idempotency key. Otherwise the
+    // backend's client_request_id de-duplication returns the PREVIOUS session
+    // (the old video). Reset on any change to the selected lesson file.
+    setStep1ClientRequestId(null);
+  }, [lessonFile]);
+
+  useEffect(() => {
     // Resume active session if user navigated away.
     const stored = window.localStorage.getItem(ACTIVE_SESSION_STORAGE_KEY);
     const sessionId = stored ? Number(stored) : NaN;

@@ -155,38 +155,14 @@ class TestLlmOnlyExtraction:
         parsed = [r for r in parsed if len(r) == len(gt[0])]
         assert table_cell_accuracy(gt, parsed) == 1.0
 
-    def test_images_extracted_saved_and_referenced(self, monkeypatch):
-        _mock_vision(
-            monkeypatch,
-            lambda detail: 'مقدمه\n\n[[IMAGE_1: شکل الف]]\n\n[[IMAGE_2: شکل ب]]',
-        )
-        md, *_ = extract_pdf_to_markdown(data=_fx('images.pdf'), asset_prefix='test_assets/imgs')
-        # exactly two figures referenced (the tiny decorative icon is filtered out)
-        assert md.count('![') == 2
-        assert 'شکل الف' in md and 'شکل ب' in md
-        # markers fully resolved
-        assert '[[IMAGE' not in md
-        # the real bitmaps were saved to storage under the asset prefix
-        names = [_media_name(u) for u in _img_urls(md)]
-        assert len(names) == 2
-        for n in names:
-            assert n.startswith('test_assets/imgs/')
-            assert default_storage.exists(n)
-
-    def test_marker_fewer_than_images_appends_leftovers(self, monkeypatch):
-        _mock_vision(monkeypatch, lambda detail: 'متن\n\n[[IMAGE_1: تنها]]')
-        md, *_ = extract_pdf_to_markdown(data=_fx('images.pdf'), asset_prefix='test_assets/few')
-        assert md.count('![') == 2  # second image appended so nothing is lost
-        assert '[[IMAGE' not in md
-
-    def test_marker_more_than_images_drops_dangling(self, monkeypatch):
-        _mock_vision(
-            monkeypatch,
-            lambda detail: '[[IMAGE_1: a]]\n[[IMAGE_2: b]]\n[[IMAGE_3: c]]',
-        )
-        md, *_ = extract_pdf_to_markdown(data=_fx('images.pdf'), asset_prefix='test_assets/many')
-        assert md.count('![') == 2  # only two real images exist
-        assert '[[IMAGE' not in md  # extra marker dropped, none left dangling
+    def test_text_only_no_image_links(self, monkeypatch):
+        # Figures are interpreted INLINE AS TEXT by the model; the engine passes
+        # the text through verbatim and never produces image links or URLs.
+        _mock_vision(monkeypatch, lambda detail: 'مقدمه\n\n> [تصویر: نمودار رشد ۱۰ تا ۲۰]')
+        md, *_ = extract_pdf_to_markdown(data=_fx('images.pdf'), asset_prefix='test_assets/x')
+        assert '> [تصویر:' in md
+        assert '![' not in md
+        assert 'http' not in md
 
     def test_blank_page_skipped_no_llm_call(self, monkeypatch):
         calls = _mock_vision(monkeypatch, lambda detail: 'should not be called')
