@@ -1,25 +1,29 @@
-"""Hybrid PDF → Markdown extraction (Persian-first, production-grade).
+"""LLM-only PDF → Markdown extraction (Persian-first, production-grade).
 
 Drop-in replacement for ``transcription.transcribe_media_bytes`` at pipeline
 step 1: same return contract so every downstream step (structure, prereqs,
 recap, exam-prep Q&A, dashboards) runs unchanged.
 
-Strategy (confirmed design):
-  * Per page, a quality gate decides TEXT vs VISION.
-  * TEXT path: deterministic ``pdfplumber`` text + tables → Markdown. Fast,
-    cheap, exact for clean digital PDFs.
-  * VISION path: render the page with ``pypdfium2`` and send the image to the
-    multimodal model (Gemini/Avalai) with a Persian-first prompt. Used for
-    scanned/image/complex pages and any page whose text layer looks broken —
-    which is common for Persian (RTL reordering, glued words, cid glyphs).
+Strategy (LLM-only, token-optimized):
+  * Every non-blank page is transcribed by the multimodal model (one vision
+    call per page). The deterministic ``pdfplumber`` text fast-path was removed
+    — Persian text layers are too often reordered/glued/cid-broken to trust.
+  * Tables come back as exact GitHub-Flavored Markdown from the model.
+  * Embedded raster images/figures are extracted DETERMINISTICALLY from the PDF
+    (``pypdf``) — no extra LLM tokens — saved to persistent storage, and woven
+    into the page Markdown using ``[[IMAGE_k: caption]]`` placement markers the
+    model emits. The real bitmap is shown (not an LLM redraw). Full-page scans
+    are NOT treated as figures (area-ratio guard).
+  * Token savers: a lower default render DPI, and blank pages are detected and
+    skipped without any LLM call.
   * Vision calls (the slow, IO-bound part) run with bounded concurrency so one
-    large PDF never starves other users. Text/table extraction stays serial
-    and cheap.
-  * Never lose a page: if vision fails after retries, fall back to that page's
-    text layer and flag it.
+    large PDF never starves other users. Image extraction stays serial + cheap.
+  * Never lose a page: if a vision call fails after retries, the page falls back
+    to a warning note plus any extracted images for that page.
 
 Public entry:
-    extract_pdf_to_markdown(*, data, mime_type) -> (markdown, provider, model, page_count)
+    extract_pdf_to_markdown(*, data, mime_type, asset_prefix=None)
+        -> (markdown, provider, model, page_count)
 """
 
 from __future__ import annotations
@@ -28,10 +32,14 @@ import base64
 import io
 import logging
 import os
+import re
+import uuid
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Optional
 
 from django.conf import settings
+from django.core.files.base import ContentFile
+from django.core.files.storage import default_storage
 
 from apps.commons.models import LLMUsageLog
 from apps.chatbot.services.llm_client import generate_text
@@ -40,6 +48,17 @@ from apps.commons.llm_prompts import PROMPTS
 logger = logging.getLogger(__name__)
 
 _LLM_TIMEOUT_SECONDS = int(os.getenv("LLM_TIMEOUT_SECONDS", "600"))
+
+# An embedded image covering more than this fraction of the page area is treated
+# as a full-page background/scan (already OCR'd by vision), not a figure to save.
+_FULLPAGE_AREA_RATIO = 0.6
+
+# Matches the model's image placement markers: [[IMAGE_1: caption]], [[IMAGE: x]],
+# or a bare [[IMAGE]]. The caption (group 1) is optional.
+_MARKER_RE = re.compile(
+    r"\[\[\s*IMAGE(?:[_\s]*\d+)?\s*(?::\s*([^\]]*?))?\s*\]\]",
+    re.IGNORECASE,
+)
 
 
 class PdfExtractionError(RuntimeError):
@@ -64,7 +83,7 @@ def _select_vision_model() -> str:
 
 
 # ---------------------------------------------------------------------------
-# Quality gate (pure, unit-testable)
+# Pure helpers retained for reuse / unit-testing (no longer in the hot path)
 # ---------------------------------------------------------------------------
 
 def classify_text_quality(
@@ -73,11 +92,10 @@ def classify_text_quality(
     min_chars: int,
     force_vision: bool = False,
 ) -> bool:
-    """Return True when the digital TEXT layer is trustworthy for this page.
+    """Return True when a digital TEXT layer looks trustworthy for a page.
 
-    False → route the page through the VISION model. Conservative toward
-    accuracy: Persian text layers frequently come out reordered/glued/with
-    ``(cid:NN)`` glyphs, so any such signal forces vision.
+    Retained as a pure, unit-tested helper. The LLM-only content path no longer
+    routes on it, but it remains useful for diagnostics and blank/quality checks.
     """
     if force_vision:
         return False
@@ -86,32 +104,20 @@ def classify_text_quality(
     stripped = raw.strip()
     usable = len(stripped.replace(" ", "").replace("\n", ""))
     if usable < min_chars:
-        return False  # likely scanned / image-only page
-
-    # Unmapped font glyphs — pdfminer emits "(cid:NN)" tokens.
+        return False
     if "(cid:" in raw:
         return False
-
-    # Unicode replacement char ratio (mojibake / undecodable glyphs).
     if stripped:
         bad = raw.count("�")
         if bad / max(1, len(stripped)) > 0.01:
             return False
-
-    # Glued text: Persian extraction often drops spaces, producing very long
-    # "words". If the mean token length is implausible, trust vision instead.
     tokens = stripped.split()
     if tokens:
         mean_len = sum(len(t) for t in tokens) / len(tokens)
         if mean_len > 25:
             return False
-
     return True
 
-
-# ---------------------------------------------------------------------------
-# Tables → Markdown
-# ---------------------------------------------------------------------------
 
 def _cell(value) -> str:
     if value is None:
@@ -120,7 +126,10 @@ def _cell(value) -> str:
 
 
 def tables_to_markdown(tables) -> str:
-    """Convert pdfplumber tables (list of rows of cells) to GFM Markdown."""
+    """Convert pdfplumber-style tables (rows of cells) to GFM Markdown.
+
+    Retained as a pure helper for tests/diagnostics.
+    """
     blocks = []
     for table in tables or []:
         rows = [r for r in table if r is not None]
@@ -139,33 +148,97 @@ def tables_to_markdown(tables) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Vision rendering + call
+# Rendering (pypdfium2): one render per page reused for blank-check + vision
 # ---------------------------------------------------------------------------
 
-def _render_page_png(data: bytes, index: int, dpi: int, max_bytes: int) -> bytes:
-    """Render one PDF page to PNG bytes, downscaling to honour ``max_bytes``."""
-    import pypdfium2 as pdfium
+def _encode_png(pil, max_bytes: int) -> bytes:
+    """Encode a PIL image to PNG, downscaling until it fits ``max_bytes``."""
+    img = pil.convert("RGB")
+    for _ in range(5):
+        buf = io.BytesIO()
+        img.save(buf, format="PNG", optimize=True)
+        png = buf.getvalue()
+        if len(png) <= max_bytes or min(img.size) <= 320:
+            return png
+        w, h = img.size
+        img = img.resize((max(320, int(w * 0.75)), max(320, int(h * 0.75))))
+    return png
 
-    pdf = pdfium.PdfDocument(data)
+
+def _grayscale_std(pil) -> float:
+    from PIL import ImageStat
     try:
-        page = pdf[index]
-        scale = max(0.5, dpi / 72.0)
-        for _ in range(5):
-            bitmap = page.render(scale=scale)
-            pil = bitmap.to_pil()
+        return float(ImageStat.Stat(pil.convert("L")).stddev[0])
+    except Exception:
+        return 255.0  # treat as non-blank on failure
+
+
+# ---------------------------------------------------------------------------
+# Deterministic embedded-image extraction (no LLM tokens)
+# ---------------------------------------------------------------------------
+
+def _extract_page_images(
+    reader_page,
+    *,
+    page_w_px: float,
+    page_h_px: float,
+    min_px: int,
+    min_bytes: int,
+    prefix: str,
+    page_no: int,
+) -> "list[str]":
+    """Pull meaningful embedded raster images from a page, save them, return URLs.
+
+    Filters out tiny/decorative images and full-page background scans. Each kept
+    image is saved to ``default_storage`` and its public URL returned, in page
+    reading order.
+    """
+    urls: list[str] = []
+    try:
+        images = list(getattr(reader_page, "images", []) or [])
+    except Exception as exc:  # pragma: no cover - depends on PDF internals
+        logger.debug("image enumeration failed on page %s: %s", page_no, exc)
+        return urls
+
+    page_area = max(1.0, page_w_px * page_h_px)
+    idx = 0
+    for img_file in images:
+        try:
+            pil = img_file.image  # PIL.Image (decoded by pypdf)
+            if pil is None:
+                continue
+            w, h = pil.size
+            if w < min_px or h < min_px:
+                continue  # decorative / icon
+            if (w * h) / page_area > _FULLPAGE_AREA_RATIO:
+                continue  # full-page scan/background — handled by vision OCR
             buf = io.BytesIO()
             pil.convert("RGB").save(buf, format="PNG", optimize=True)
             png = buf.getvalue()
-            if len(png) <= max_bytes or scale <= 0.5:
-                return png
-            scale *= 0.75  # too big — render smaller and retry
-        return png
-    finally:
-        pdf.close()
+            if len(png) < min_bytes:
+                continue
+            key = f"{prefix.rstrip('/')}/p{page_no}_{idx}.png"
+            saved = default_storage.save(key, ContentFile(png))
+            urls.append(default_storage.url(saved))
+            idx += 1
+        except Exception as exc:  # never let one bad image break the page
+            logger.debug("skipping undecodable image on page %s: %s", page_no, exc)
+            continue
+    return urls
 
+
+# ---------------------------------------------------------------------------
+# Vision call + marker mapping
+# ---------------------------------------------------------------------------
 
 def _vision_extract_page(*, png: bytes, page_no: int, model: str) -> "tuple[str, str, str]":
-    """Send one rendered page to the multimodal model. Returns (md, provider, model)."""
+    """Send one rendered page to the multimodal model. Returns (md, provider, model).
+
+    Uses the standard OpenAI-compatible multimodal shape (a ``content`` list with
+    a ``text`` part and an ``image_url`` data-URI part). The Avalai/Gemini gateway
+    only actually *sees* the image with this shape — the legacy ``attachments``
+    shape is silently ignored (the model hallucinates), so do not use it here.
+    """
     prompt = PROMPTS["pdf_extraction"]["default"]
     b64 = base64.b64encode(png).decode()
     res = generate_text(
@@ -173,13 +246,12 @@ def _vision_extract_page(*, png: bytes, page_no: int, model: str) -> "tuple[str,
         messages=[
             {
                 "role": "user",
-                "content": prompt,
-                "attachments": [
+                "content": [
+                    {"type": "text", "text": prompt},
                     {
-                        "type": "input_media",
-                        "mime_type": "image/png",
-                        "data_base64": b64,
-                    }
+                        "type": "image_url",
+                        "image_url": {"url": f"data:image/png;base64,{b64}"},
+                    },
                 ],
             }
         ],
@@ -191,30 +263,48 @@ def _vision_extract_page(*, png: bytes, page_no: int, model: str) -> "tuple[str,
     return text.strip(), getattr(res, "provider", "gapgpt"), getattr(res, "model", model)
 
 
-# ---------------------------------------------------------------------------
-# Page text/table extraction (serial, cheap)
-# ---------------------------------------------------------------------------
+def _apply_image_markers(page_md: str, urls: "list[str]") -> str:
+    """Replace ``[[IMAGE_k: caption]]`` markers with real ``![caption](url)``.
 
-def _build_text_markdown(page_text: str, tables_md: str) -> str:
-    parts = []
-    if (page_text or "").strip():
-        parts.append(page_text.strip())
-    if tables_md.strip():
-        parts.append(tables_md.strip())
-    return "\n\n".join(parts)
+    Maps markers to extracted images by order. Extra markers (model saw more
+    figures than we could extract) are dropped; extra images (we extracted more
+    than the model marked) are appended at the end so nothing is lost.
+    """
+    counter = {"i": 0}
+
+    def _repl(m: "re.Match") -> str:
+        i = counter["i"]
+        counter["i"] += 1
+        caption = (m.group(1) or "").strip()
+        if i < len(urls):
+            return f"![{caption}]({urls[i]})"
+        return ""  # dangling marker — no image to back it
+
+    new_md = _MARKER_RE.sub(_repl, page_md)
+    used = counter["i"]
+    if used < len(urls):
+        extras = "\n\n".join(f"![]({u})" for u in urls[used:])
+        new_md = (new_md.rstrip() + "\n\n" + extras).strip()
+    return new_md
 
 
 # ---------------------------------------------------------------------------
 # Public entry
 # ---------------------------------------------------------------------------
 
-def extract_pdf_to_markdown(*, data: bytes, mime_type: str = "application/pdf") -> "tuple[str, str, str, int]":
+def extract_pdf_to_markdown(
+    *,
+    data: bytes,
+    mime_type: str = "application/pdf",
+    asset_prefix: Optional[str] = None,
+) -> "tuple[str, str, str, int]":
     """Extract a PDF to Markdown. Returns (markdown, provider, model, page_count).
 
-    Mirrors ``transcribe_media_bytes`` so step 1 can dispatch by source type
-    with zero downstream change.
+    ``asset_prefix`` is the storage folder for extracted figure images
+    (e.g. ``class_creation/extracted/<session_id>``). When omitted, a unique
+    throwaway prefix is used so callers without a session (benchmarks) still work.
     """
-    import pdfplumber
+    import pypdfium2 as pdfium
     from pypdf import PdfReader
     from pypdf.errors import PdfReadError
 
@@ -225,7 +315,6 @@ def extract_pdf_to_markdown(*, data: bytes, mime_type: str = "application/pdf") 
     try:
         reader = PdfReader(io.BytesIO(data))
         if reader.is_encrypted:
-            # Try empty-password decrypt; if it fails, give a clear error.
             try:
                 if reader.decrypt("") == 0:  # 0 = failed
                     raise PdfExtractionError(
@@ -252,69 +341,111 @@ def extract_pdf_to_markdown(*, data: bytes, mime_type: str = "application/pdf") 
             f"تعداد صفحات ({page_count}) از حداکثر مجاز ({max_pages}) بیشتر است."
         )
 
-    min_chars = int(_cfg("PDF_TEXT_LAYER_MIN_CHARS", 80))
-    force_vision = bool(_cfg("PDF_FORCE_VISION", False))
-    dpi = int(_cfg("PDF_RENDER_DPI", 170))
+    dpi = int(_cfg("PDF_RENDER_DPI", 150))
     max_img_bytes = int(_cfg("PDF_MAX_IMAGE_BYTES_MB", 3)) * 1024 * 1024
     concurrency = max(1, int(_cfg("PDF_EXTRACTION_CONCURRENCY", 4)))
+    skip_blank = bool(_cfg("PDF_SKIP_BLANK_PAGES", True))
+    blank_std = float(_cfg("PDF_BLANK_STD_THRESHOLD", 3.0))
+    img_min_px = int(_cfg("PDF_IMAGE_MIN_PX", 64))
+    img_min_bytes = int(_cfg("PDF_IMAGE_MIN_BYTES", 3000))
+    prefix = asset_prefix or f"class_creation/extracted/nosession-{uuid.uuid4().hex}"
 
-    # --- pass 1 (serial): per-page text + tables + routing decision ---
-    page_text_md: list[str] = [""] * page_count
-    vision_pages: list[int] = []
+    scale = max(0.5, dpi / 72.0)
+
+    # --- pass 1 (serial): render once, detect blanks, extract figure images ---
+    page_png: dict[int, bytes] = {}
+    images_by_page: dict[int, list[str]] = {}
+    is_blank: list[bool] = [False] * page_count
+
+    pdf = pdfium.PdfDocument(data)
     try:
-        with pdfplumber.open(io.BytesIO(data)) as pdf:
-            for i, page in enumerate(pdf.pages):
-                try:
-                    txt = page.extract_text() or ""
-                except Exception:
-                    txt = ""
-                try:
-                    tables = page.extract_tables() or []
-                except Exception:
-                    tables = []
-                page_text_md[i] = _build_text_markdown(txt, tables_to_markdown(tables))
-                if not classify_text_quality(txt, min_chars=min_chars, force_vision=force_vision):
-                    vision_pages.append(i)
-    except Exception as exc:
-        raise PdfExtractionError(f"تحلیل ساختار PDF ناموفق بود: {exc}") from exc
+        for i in range(page_count):
+            # Embedded figures (deterministic, no tokens).
+            try:
+                rp = reader.pages[i]
+                mb = rp.mediabox
+                page_w_px = float(mb.width) / 72.0 * dpi
+                page_h_px = float(mb.height) / 72.0 * dpi
+            except Exception:
+                rp = None
+                page_w_px = page_h_px = float(dpi) * 8.0
+            if rp is not None:
+                images_by_page[i] = _extract_page_images(
+                    rp,
+                    page_w_px=page_w_px,
+                    page_h_px=page_h_px,
+                    min_px=img_min_px,
+                    min_bytes=img_min_bytes,
+                    prefix=prefix,
+                    page_no=i + 1,
+                )
 
-    # --- pass 2 (bounded parallel): vision for flagged pages ---
+            # Render the page once (reused for blank-check + vision).
+            try:
+                pil = pdf[i].render(scale=scale).to_pil()
+            except Exception as exc:
+                logger.warning("render failed on page %s: %s", i + 1, exc)
+                pil = None
+
+            has_images = bool(images_by_page.get(i))
+            text_len = 0
+            if rp is not None:
+                try:
+                    text_len = len((rp.extract_text() or "").strip())
+                except Exception:
+                    text_len = 0
+
+            if (
+                skip_blank
+                and pil is not None
+                and not has_images
+                and text_len == 0
+                and _grayscale_std(pil) < blank_std
+            ):
+                is_blank[i] = True
+                continue
+
+            if pil is not None:
+                page_png[i] = _encode_png(pil, max_img_bytes)
+    finally:
+        pdf.close()
+
+    # --- pass 2 (bounded parallel): vision for every non-blank page ---
     vision_model = _select_vision_model()
     vision_md: dict[int, str] = {}
     used_provider: Optional[str] = None
     used_model: Optional[str] = None
 
     def _worker(index: int):
-        png = _render_page_png(data, index, dpi, max_img_bytes)
-        return _vision_extract_page(png=png, page_no=index + 1, model=vision_model)
+        return _vision_extract_page(png=page_png[index], page_no=index + 1, model=vision_model)
 
-    if vision_pages:
-        with ThreadPoolExecutor(max_workers=min(concurrency, len(vision_pages))) as pool:
-            futures = {pool.submit(_worker, i): i for i in vision_pages}
+    todo = [i for i in range(page_count) if i in page_png]
+    if todo:
+        with ThreadPoolExecutor(max_workers=min(concurrency, len(todo))) as pool:
+            futures = {pool.submit(_worker, i): i for i in todo}
             for fut in as_completed(futures):
                 i = futures[fut]
                 try:
                     md, provider, model = fut.result()
-                    if md:
-                        vision_md[i] = md
-                        used_provider = used_provider or provider
-                        used_model = used_model or model
-                    else:
+                    if not md:
                         raise ValueError("empty vision output")
+                    vision_md[i] = _apply_image_markers(md, images_by_page.get(i, []))
+                    used_provider = used_provider or provider
+                    used_model = used_model or model
                 except Exception as exc:
-                    # Never drop a page — fall back to its text layer.
                     logger.warning("PDF vision failed on page %s: %s", i + 1, exc)
-                    fallback = page_text_md[i].strip()
-                    vision_md[i] = (
-                        (fallback + "\n\n" if fallback else "")
-                        + "> [هشدار: استخراج تصویری این صفحه ناموفق بود؛ متن خام نمایش داده شد.]"
-                    )
+                    urls = images_by_page.get(i, [])
+                    imgs = "\n\n".join(f"![]({u})" for u in urls)
+                    note = "> [هشدار: استخراج این صفحه ناموفق بود.]"
+                    vision_md[i] = (imgs + "\n\n" + note).strip() if imgs else note
 
     # --- assemble in page order ---
     out_pages = []
     for i in range(page_count):
-        body = vision_md.get(i) if i in vision_md else page_text_md[i]
-        body = (body or "").strip()
+        if is_blank[i]:
+            body = ""
+        else:
+            body = (vision_md.get(i) or "").strip()
         if page_count > 1:
             out_pages.append(f"## صفحه {i + 1}\n\n{body}".rstrip())
         else:
@@ -325,5 +456,5 @@ def extract_pdf_to_markdown(*, data: bytes, mime_type: str = "application/pdf") 
         raise PdfExtractionError("هیچ محتوایی از این PDF استخراج نشد.")
 
     provider = used_provider or "local"
-    model = used_model or "pdfplumber"
+    model = used_model or vision_model
     return markdown, provider, model, page_count

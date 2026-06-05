@@ -98,6 +98,67 @@ def _scanned_pdf(text: str) -> bytes:
     return buf.getvalue()
 
 
+def _make_png(color: str, w: int, h: int, label: str) -> "io.BytesIO":
+    """A non-trivial PNG (gradient + shapes + label) — stands in for a figure.
+
+    The gradient/noise keeps the encoded size realistic (>3KB) so the size
+    filter in the extractor treats it as a real figure, not decorative.
+    """
+    from PIL import Image, ImageDraw, ImageFont
+    img = Image.new("RGB", (w, h), color)
+    draw = ImageDraw.Draw(img)
+    # Diagonal gradient + grid so the PNG does not compress to a few bytes.
+    for x in range(0, w, 3):
+        shade = (x * 7) % 255
+        draw.line([(x, 0), (x, h)], fill=(shade, (shade + 80) % 255, (255 - shade) % 255))
+    for yy in range(0, h, 12):
+        draw.line([(0, yy), (w, yy)], fill="white")
+    try:
+        font = ImageFont.truetype(FONT_PATH, 28)
+    except Exception:
+        font = ImageFont.load_default()
+    if label:
+        draw.text((10, h // 2 - 14), label, fill="black", font=font)
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    buf.seek(0)
+    return buf
+
+
+def _images_pdf(text: str, figures, decorative=True) -> bytes:
+    """A digital page with body text plus embedded figure images.
+
+    ``figures`` is a list of (color, w, h, label). If ``decorative`` is set, a
+    tiny 20x20 icon is also embedded — it must be filtered out by the extractor.
+    """
+    from reportlab.lib.utils import ImageReader
+
+    buf = io.BytesIO()
+    c = canvas.Canvas(buf, pagesize=A4)
+    c.setFont("Tahoma", 14)
+    c.drawString(56, 800, text)
+    y = 560
+    for (color, w, h, label) in figures:
+        png = _make_png(color, w, h, label)
+        c.drawImage(ImageReader(png), 56, y, width=w * 0.6, height=h * 0.6)
+        y -= int(h * 0.6) + 30
+    if decorative:
+        tiny = _make_png("gray", 20, 20, "")
+        c.drawImage(ImageReader(tiny), 500, 800, width=14, height=14)
+    c.showPage()
+    c.save()
+    return buf.getvalue()
+
+
+def _blank_pdf() -> bytes:
+    """A single empty page — must be detected and skipped (no LLM call)."""
+    buf = io.BytesIO()
+    c = canvas.Canvas(buf, pagesize=A4)
+    c.showPage()
+    c.save()
+    return buf.getvalue()
+
+
 def _scanned_text_pdf(lines, persian: bool = False) -> bytes:
     """Image-only PDF (no text layer) showing correctly-shaped text.
 
@@ -138,11 +199,19 @@ def _scanned_text_pdf(lines, persian: bool = False) -> bytes:
 
 
 def _build_corpus() -> None:
-    """Curated VISION benchmark corpus (image-only) with ground truth."""
+    """Curated REAL-model benchmark corpus with measurable ground truth.
+
+    Kept intentionally small (single-page docs) to bound token spend. Covers:
+    English + Persian OCR, a richer Persian paragraph, a table (GFM fidelity),
+    and a figure page (deterministic image-extraction count).
+    """
     corpus_dir = os.path.join(HERE, "pdf_corpus")
     os.makedirs(corpus_dir, exist_ok=True)
 
-    items = {
+    manifest = {}
+
+    # --- scanned OCR docs (image-only) ---
+    scanned = {
         "english_scanned.pdf": {
             "lang": "english",
             "lines": [
@@ -157,14 +226,35 @@ def _build_corpus() -> None:
                 "نیرو برابر است با جرم ضرب در شتاب",
             ],
         },
+        "persian_paragraph.pdf": {
+            "lang": "persian",
+            "lines": [
+                "فتوسنتز فرایندی است که در آن گیاهان",
+                "انرژی نور خورشید را به انرژی شیمیایی",
+                "تبدیل می کنند و در گلوکز ذخیره می شود.",
+            ],
+        },
     }
-
-    manifest = {}
-    for name, meta in items.items():
+    for name, meta in scanned.items():
         data = _scanned_text_pdf(meta["lines"], persian=(meta["lang"] == "persian"))
         with open(os.path.join(corpus_dir, name), "wb") as fh:
             fh.write(data)
         manifest[name] = {"lang": meta["lang"], "text": " ".join(meta["lines"])}
+
+    # --- table fidelity doc (digital table; vision must emit GFM) ---
+    with open(os.path.join(corpus_dir, "table_doc.pdf"), "wb") as fh:
+        fh.write(_table_pdf(TABLE))
+    manifest["table_doc.pdf"] = {"lang": "english", "table": TABLE}
+
+    # --- figure doc (deterministic image-extraction count) ---
+    fig_text = "Two figures are shown below for the experiment."
+    with open(os.path.join(corpus_dir, "figure_doc.pdf"), "wb") as fh:
+        fh.write(_images_pdf(
+            fig_text,
+            [("red", 300, 200, "Fig A"), ("navy", 280, 180, "Fig B")],
+            decorative=True,
+        ))
+    manifest["figure_doc.pdf"] = {"lang": "english", "text": fig_text, "expected_images": 2}
 
     with open(os.path.join(corpus_dir, "corpus_manifest.json"), "w", encoding="utf-8") as fh:
         json.dump(manifest, fh, ensure_ascii=False, indent=2)
@@ -202,6 +292,15 @@ def main() -> None:
     files["scanned.pdf"] = (_scanned_pdf("OCR ME PLEASE"), {
         "pages": 1, "route": "vision",
     })
+    files["images.pdf"] = (
+        _images_pdf(
+            "Figure demonstration page.",
+            [("red", 300, 200, "Fig A"), ("navy", 280, 180, "Fig B")],
+            decorative=True,
+        ),
+        {"pages": 1, "route": "vision", "embedded_images": 2},
+    )
+    files["blank.pdf"] = (_blank_pdf(), {"pages": 1, "blank": True})
 
     manifest = {}
     for name, (data, meta) in files.items():

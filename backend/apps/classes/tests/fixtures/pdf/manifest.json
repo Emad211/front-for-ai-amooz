@@ -48,6 +48,15 @@
     "pages": 1,
     "route": "vision"
   },
+  "images.pdf": {
+    "pages": 1,
+    "route": "vision",
+    "embedded_images": 2
+  },
+  "blank.pdf": {
+    "pages": 1,
+    "blank": true
+  },
   "encrypted.pdf": {
     "pages": 1,
     "encrypted": true

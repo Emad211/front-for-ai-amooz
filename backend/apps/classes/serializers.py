@@ -327,6 +327,7 @@ class StudentCourseSerializer(serializers.Serializer):
     status = serializers.CharField(required=False)
     createdAt = serializers.CharField(required=False, allow_blank=True)
     lastActivity = serializers.CharField(required=False, allow_blank=True)
+    sourceType = serializers.CharField(required=False, allow_blank=True)
 
 
 class StudentLessonSerializer(serializers.Serializer):
@@ -588,6 +589,7 @@ class StudentExamPrepListSerializer(serializers.Serializer):
     questions = serializers.IntegerField()
     createdAt = serializers.CharField(required=False, allow_blank=True)
     instructor = serializers.CharField(required=False, allow_blank=True)
+    sourceType = serializers.CharField(required=False, allow_blank=True)
 
 
 class StudentExamPrepQuestionSerializer(serializers.Serializer):

@@ -45,8 +45,8 @@ You transcribe ONE page image of a document into faithful Markdown. This is OCR 
 ### Structure
 - Use Markdown headings (#, ##, ###) only where the page clearly shows headings/titles.
 - Lists: use `-` or `1.` matching the page.
-- Tables: reproduce as GitHub Markdown tables with the EXACT cell values, same rows/columns. Do not merge or drop cells.
-- Figures/diagrams/photos/charts: do not fabricate. Insert a short caption line: `> [تصویر: <one-line description of what the figure shows>]`.
+- Tables: reproduce as GitHub Markdown tables with the EXACT cell values, same rows/columns. Do not merge or drop cells. Always include the header separator row (`| --- | --- |`).
+- Figures/diagrams/photos/charts/embedded images: do NOT describe or redraw them. Instead, at the exact spot in the reading order where each figure appears, emit a placement marker on its own line: `[[IMAGE_1: <very short caption>]]`, then `[[IMAGE_2: ...]]`, etc. Number them in reading order, starting at 1 for THIS page. Only emit a marker for an actual picture/figure/diagram/chart/photo — never for plain text, tables, or math. The real image will be inserted in place of the marker automatically.
 - Mathematics: transcribe as LaTeX using the rules below.
 
 """
@@ -232,6 +232,7 @@ Keep technical terms (chemistry symbols, math notation, code, etc.) in their nat
 CRITICAL:
 source_markdown MUST contain verbatim transcript text for that unit.
 content_markdown MUST contain the rewritten teaching text for the student. Do NOT include objectives here.
+ASSET PRESERVATION (MANDATORY): If the transcript text for a unit contains a Markdown image (`![caption](url)`) or a Markdown table (lines starting with `|`), you MUST copy that image/table VERBATIM into this unit's content_markdown, at the natural place in the explanation. Never drop, summarize, rewrite, or invent image URLs or table cells. Keep the exact `![...](...)` syntax and the exact table rows/columns.
 Do NOT include teaching_markdown. Only provide content_markdown.
 If you include LaTeX commands inside JSON strings, you MUST escape backslashes as \\ (e.g., write \\text{...}, \\frac{a}{b}).
 Output JSON Schema:
@@ -294,6 +295,7 @@ The recap must be **very precise** and **cover all units** without turning into 
 - Do NOT invent new topics, steps, formulas, or facts.
 - If a unit is vague, keep the recap generic and clearly aligned to that unit’s wording (do not over-specify).
 - Prefer the rewritten text (content_markdown) over raw transcript wording.
+- If a Markdown image (`![...](...)`) or table appears in the source and is essential to a key point, you MAY reproduce it verbatim; never invent image URLs or table cells.
 
 ### Language rules
 - Detect the main language of the course (from root_object.title and unit titles).
@@ -397,6 +399,7 @@ Convert the transcript into a STRICT, machine-readable JSON that contains:
 - If something is missing/unclear, set the field to null and add a short note in `issues`.
 - The `question_text_markdown` and each option `text_markdown` MUST be as close to verbatim as possible.
 - The `teacher_solution_markdown` should be a clean, readable reconstruction of the teacher’s reasoning, but MUST be grounded in what the teacher actually said.
+- ASSET PRESERVATION (MANDATORY): If a question, option, or solution in the transcript contains a Markdown image (`![caption](url)`) or a Markdown table (lines starting with `|`), copy it VERBATIM into the matching field (`question_text_markdown`, option `text_markdown`, or `teacher_solution_markdown`). Never drop or alter image URLs or table cells.
 - Preserve math using LaTeX exactly as instructed below.
 - The output must be valid JSON (no trailing commas, no comments).
 

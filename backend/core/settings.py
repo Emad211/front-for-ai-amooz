@@ -381,19 +381,29 @@ TRANSCRIPTION_MAX_UPLOAD_BYTES = TRANSCRIPTION_MAX_UPLOAD_MB * 1024 * 1024
 
 # ---------------------------------------------------------------------------
 # PDF ingestion pipeline (Step 1 alternative to media transcription).
-# Hybrid extraction: digital text fast-path + LLM-vision fallback. Defaults
-# favour accuracy (Persian-first); all knobs are env-tunable.
+# LLM-only extraction: every non-blank page is transcribed by the multimodal
+# model; embedded figures are extracted deterministically (no tokens). Defaults
+# favour accuracy (Persian-first) while keeping token use low; all knobs are
+# env-tunable.
 # ---------------------------------------------------------------------------
 PDF_MAX_UPLOAD_MB = _get_env_int('PDF_MAX_UPLOAD_MB', 100)
 PDF_MAX_UPLOAD_BYTES = PDF_MAX_UPLOAD_MB * 1024 * 1024
 PDF_MAX_PAGES = _get_env_int('PDF_MAX_PAGES', 200)
-PDF_RENDER_DPI = _get_env_int('PDF_RENDER_DPI', 170)
+# Page render resolution sent to the vision model. Lower = fewer image tokens.
+PDF_RENDER_DPI = _get_env_int('PDF_RENDER_DPI', 150)
 PDF_EXTRACTION_CONCURRENCY = _get_env_int('PDF_EXTRACTION_CONCURRENCY', 4)
 PDF_MAX_IMAGE_BYTES_MB = _get_env_int('PDF_MAX_IMAGE_BYTES_MB', 3)
-# A page qualifies for the deterministic text fast-path only when its
-# extracted text layer has at least this many usable characters.
+# Skip blank pages (no text, no figures, near-uniform render) — saves an LLM
+# call per blank page.
+PDF_SKIP_BLANK_PAGES = _get_env_bool('PDF_SKIP_BLANK_PAGES', True)
+# Grayscale std-dev below which a rendered page is considered blank.
+PDF_BLANK_STD_THRESHOLD = float(os.getenv('PDF_BLANK_STD_THRESHOLD', '3.0'))
+# Embedded-image filters: ignore figures smaller than this (decorative/icons).
+PDF_IMAGE_MIN_PX = _get_env_int('PDF_IMAGE_MIN_PX', 64)
+PDF_IMAGE_MIN_BYTES = _get_env_int('PDF_IMAGE_MIN_BYTES', 1024)
+# Deprecated (LLM-only path no longer routes on a text layer); kept for
+# back-compat so existing env files don't break.
 PDF_TEXT_LAYER_MIN_CHARS = _get_env_int('PDF_TEXT_LAYER_MIN_CHARS', 80)
-# Force every page through the vision model (max accuracy, higher cost).
 PDF_FORCE_VISION = _get_env_bool('PDF_FORCE_VISION', False)
 
 # Pipeline execution: when enabled, Step 1/2 return quickly and work continues in background.

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 import threading
 from dataclasses import dataclass
 from typing import Any, Optional, List, Dict
@@ -50,9 +51,24 @@ def _strip_model_prefix(model_name: str) -> str:
 # ====================================================================
 # OpenAI-Compatible Client for GAPGPT
 # ====================================================================
+def _normalize_base_url(url: str) -> str:
+    """Ensure the OpenAI-compatible ``/v{n}`` route is present.
+
+    Some env values (e.g. ``https://api.avalai.ir``) omit the version segment,
+    which makes the SDK POST to ``/chat/completions`` and 404 at the gateway.
+    Idempotent: a URL already ending in ``/v1`` (gapgpt default) is unchanged.
+    """
+    u = (url or "").strip().rstrip("/")
+    if not u:
+        return u
+    if not re.search(r"/v\d+$", u):
+        u = u + "/v1"
+    return u
+
+
 def _get_gapgpt_client() -> OpenAI:
     api_key = _get_env("AVALAI_API_KEY")
-    base_url = _get_env("AVALAI_BASE_URL") or "https://api.gapgpt.app/v1"
+    base_url = _normalize_base_url(_get_env("AVALAI_BASE_URL") or "https://api.gapgpt.app/v1")
 
     if not api_key:
         raise RuntimeError("AVALAI_API_KEY missing (expected to contain GAPGPT key).")

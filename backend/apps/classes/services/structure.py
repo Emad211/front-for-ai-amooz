@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 from typing import Any, Tuple
 
 from apps.commons.llm_prompts import PROMPTS
@@ -114,12 +115,43 @@ def structure_transcript_markdown(
 
         obj = extract_json_object(text)
         obj = _restore_latex_escapes(obj)
+        obj = _reinject_unit_assets(obj)
 
         return obj, provider, model
 
     except Exception as exc:
         logger.exception("Structure generation failed")
         raise RuntimeError(f"Structure generation failed: {exc}") from exc
+
+
+# -------------------------------------------------------------------
+# Asset preservation (deterministic safety net)
+# -------------------------------------------------------------------
+
+def _reinject_unit_assets(obj: Any) -> Any:
+    """Ensure images/tables in each unit's verbatim source survive the rewrite.
+
+    The LLM is instructed to preserve `![](url)` images and GFM tables in
+    content_markdown, but we do NOT rely on it: any asset present in a unit's
+    source_markdown yet missing from its content_markdown is appended back.
+    """
+    from .markdown_assets import reinject
+
+    try:
+        outline = obj.get("outline") if isinstance(obj, dict) else None
+        if not isinstance(outline, list):
+            return obj
+        for section in outline:
+            for unit in (section or {}).get("units", []) or []:
+                if not isinstance(unit, dict):
+                    continue
+                src = unit.get("source_markdown") or ""
+                content = unit.get("content_markdown") or ""
+                if "![" in src or "|" in src:
+                    unit["content_markdown"] = reinject(src, content)
+    except Exception:  # never let preservation break structuring
+        logger.exception("asset reinjection failed; returning structure as-is")
+    return obj
 
 
 # -------------------------------------------------------------------

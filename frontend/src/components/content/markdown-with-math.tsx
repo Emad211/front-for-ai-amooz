@@ -19,6 +19,70 @@ function escapeHtml(text: string): string {
 		.replaceAll("'", '&#39;');
 }
 
+// Backend (Django) serves extracted figure images at /media/...; the Next.js
+// origin differs, so relative media URLs are resolved against the API base.
+const API_BASE = (process.env.NEXT_PUBLIC_API_URL || '').replace(/\/+$/, '');
+
+function resolveImgSrc(src: string): string {
+	const s = String(src).trim();
+	if (/^(https?:)?\/\//i.test(s) || s.startsWith('data:')) return s;
+	if (s.startsWith('/')) return API_BASE + s;
+	return s;
+}
+
+// ---- GFM table support ------------------------------------------------------
+function splitTableCells(line: string): string[] {
+	const ESC = '@@PIPE@@';
+	return line
+		.trim()
+		.replace(/^\|/, '')
+		.replace(/\|$/, '')
+		.replace(/\\\|/g, ESC)
+		.split('|')
+		.map((c) => c.split(ESC).join('|').trim());
+}
+
+function buildTableHtml(header: string, body: string[]): string {
+	const head = splitTableCells(header)
+		.map((c) => `<th>${escapeHtml(c)}</th>`)
+		.join('');
+	const rows = body
+		.map(
+			(r) =>
+				`<tr>${splitTableCells(r)
+					.map((c) => `<td>${escapeHtml(c)}</td>`)
+					.join('')}</tr>`
+		)
+		.join('');
+	return `<table class="md-table"><thead><tr>${head}</tr></thead><tbody>${rows}</tbody></table>`;
+}
+
+function protectTables(src: string, store: string[]): string {
+	const lines = src.split('\n');
+	const out: string[] = [];
+	const isRow = (l: string) => /^\s*\|.*\|\s*$/.test(l);
+	const isSep = (l: string) => /^\s*\|(\s*:?-+:?\s*\|)+\s*$/.test(l);
+	let i = 0;
+	while (i < lines.length) {
+		if (isRow(lines[i]) && i + 1 < lines.length && isSep(lines[i + 1])) {
+			const header = lines[i];
+			const body: string[] = [];
+			let j = i + 2;
+			while (j < lines.length && isRow(lines[j])) {
+				body.push(lines[j]);
+				j++;
+			}
+			store.push(buildTableHtml(header, body));
+			out.push(`%%TABLEBLOCK${store.length - 1}%%`);
+			i = j;
+		} else {
+			out.push(lines[i]);
+			i++;
+		}
+	}
+	return out.join('\n');
+}
+
 // Ported from transcripter-main/static/js/learn.js (formatMarkdown + tryRenderMath)
 // with one safety tweak: we escape HTML outside of LaTeX/code to avoid injection.
 function formatMarkdown(md: string): string {
@@ -58,6 +122,12 @@ function formatMarkdown(md: string): string {
 		latexInlines.push(String(content));
 		return `%%LATEXINLINE${latexInlines.length - 1}%%`;
 	});
+
+	// ============ STEP 1b: Protect GFM tables (built before escaping) ============
+	// Cell text may contain %%LATEXINLINE..%% placeholders — those survive and are
+	// restored after the table HTML is re-inserted (see STEP 9).
+	const tableBlocks: string[] = [];
+	html = protectTables(html, tableBlocks);
 
 	// ============ STEP 2: Code blocks ============
 	function looksLikeLatex(s: string): boolean {
@@ -111,6 +181,12 @@ function formatMarkdown(md: string): string {
 	html = html.replace(/^---+$/gm, '<hr class="md-hr">');
 	html = html.replace(/^\*\*\*+$/gm, '<hr class="md-hr">');
 
+	// ============ STEP 6b: Images (MUST run before links) ============
+	// ![alt](src) → <img>. Relative /media/... srcs resolve to the backend.
+	html = html.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (_m, alt, src) => {
+		return `<img src="${resolveImgSrc(src)}" alt="${alt}" class="md-img" loading="lazy" />`;
+	});
+
 	// ============ STEP 7: Links ============
 	html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noreferrer" class="md-link">$1</a>');
 
@@ -125,7 +201,15 @@ function formatMarkdown(md: string): string {
 	html = html.replace(/<p class="md-p"><\/p>/g, '');
 	html = html.replace(/<p class="md-p"><br>/g, '<p class="md-p">');
 
-	// ============ STEP 9: Restore LaTeX ============
+	// ============ STEP 9: Restore tables (before LaTeX so cell math resolves) ============
+	html = html.replace(/%%TABLEBLOCK(\d+)%%/g, (_match, idx) => {
+		const n = Number.parseInt(String(idx), 10);
+		return tableBlocks[n] ?? '';
+	});
+	// Unwrap a lone table accidentally wrapped in a paragraph (invalid nesting).
+	html = html.replace(/<p class="md-p">\s*(<table[\s\S]*?<\/table>)\s*<\/p>/g, '$1');
+
+	// ============ STEP 9b: Restore LaTeX ============
 	html = html.replace(/%%LATEXBLOCK(\d+)%%/g, (_match, idx) => {
 		const n = Number.parseInt(String(idx), 10);
 		return `<div class="math-block" dir="ltr">$$${latexBlocks[n] ?? ''}$$</div>`;

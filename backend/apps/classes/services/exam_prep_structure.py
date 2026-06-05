@@ -47,6 +47,37 @@ def _restore_latex_escapes(value: Any) -> Any:
     return value
 
 
+def _reinject_exam_assets(parsed: dict, transcript_markdown: str) -> dict:
+    """Guarantee no extracted image is lost from the exam Q&A.
+
+    The prompt asks the model to keep `![](url)` images verbatim, but we do not
+    rely on it. If the transcript contains image URLs absent from the entire
+    serialized exam JSON, append them to the last question's solution so they
+    still reach the student. Conservative: only acts when an image would be lost.
+    """
+    import json as _json
+    from .markdown_assets import image_refs, image_urls
+
+    try:
+        refs = image_refs(transcript_markdown)
+        if not refs:
+            return parsed
+        blob = _json.dumps(parsed, ensure_ascii=False)
+        present = set(image_urls(blob))
+        missing = [r for r, u in zip(refs, image_urls(transcript_markdown)) if u not in present]
+        if not missing:
+            return parsed
+        questions = (parsed.get("exam_prep") or {}).get("questions") or []
+        if questions and isinstance(questions[-1], dict):
+            sol = questions[-1].get("teacher_solution_markdown") or ""
+            questions[-1]["teacher_solution_markdown"] = (
+                sol.rstrip() + "\n\n" + "\n\n".join(missing)
+            ).strip()
+    except Exception:
+        logger.exception("exam asset reinjection failed; returning as-is")
+    return parsed
+
+
 def _attempt_parse_with_repair(*, text: str) -> tuple[Optional[dict], Optional[str]]:
     """
     Try to parse JSON; return (parsed_json, preview_on_error).
@@ -105,6 +136,7 @@ def extract_exam_prep_structure(
     parsed, preview = _attempt_parse_with_repair(text=text)
 
     if parsed is not None:
+        parsed = _reinject_exam_assets(parsed, transcript_markdown)
         return _restore_latex_escapes(parsed), provider, model
 
     # --------------------------------------------------------------
@@ -143,6 +175,7 @@ def extract_exam_prep_structure(
 
         parsed, preview = _attempt_parse_with_repair(text=repair_text)
         if parsed is not None:
+            parsed = _reinject_exam_assets(parsed, transcript_markdown)
             return _restore_latex_escapes(parsed), provider, model
 
         text = repair_text

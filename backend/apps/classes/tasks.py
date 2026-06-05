@@ -278,7 +278,10 @@ def _ingest_source_to_markdown(session, data):
 
     mime = session.source_mime_type or ''
     if session.source_type == ClassCreationSession.SourceType.PDF:
-        return extract_pdf_to_markdown(data=data, mime_type=mime or 'application/pdf')
+        return extract_pdf_to_markdown(
+            data=data, mime_type=mime or 'application/pdf',
+            asset_prefix=f'class_creation/extracted/{session.id}',
+        )
     markdown, provider, model_name = transcribe_media_bytes(
         data=data, mime_type=mime or 'application/octet-stream',
     )

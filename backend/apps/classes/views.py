@@ -150,6 +150,7 @@ def _ingest_for_session(session, data):
     if session.source_type == ClassCreationSession.SourceType.PDF:
         markdown, provider, model_name, page_count = extract_pdf_to_markdown(
             data=data, mime_type=mime or 'application/pdf',
+            asset_prefix=f'class_creation/extracted/{session.id}',
         )
         return markdown, provider, model_name, page_count
     markdown, provider, model_name = transcribe_media_bytes(
@@ -1541,6 +1542,7 @@ class StudentCourseListView(APIView):
                     'status': 'active',
                     'createdAt': (session.published_at or session.created_at).date().isoformat(),
                     'lastActivity': (session.updated_at or session.created_at).date().isoformat(),
+                    'sourceType': session.source_type,
                 }
             )
 
@@ -3395,6 +3397,7 @@ class StudentExamPrepListView(APIView):
                     'questions': questions_count,
                     'createdAt': (session.published_at or session.created_at).date().isoformat(),
                     'instructor': instructor,
+                    'sourceType': session.source_type,
                 }
             )
 

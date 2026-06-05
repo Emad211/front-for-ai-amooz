@@ -46,7 +46,7 @@ class TestPdfClassPipeline:
     def test_pdf_upload_sets_source_type_and_transcribes(self, monkeypatch):
         calls = {'n': 0}
 
-        def fake_extract(*, data, mime_type):
+        def fake_extract(*, data, mime_type, asset_prefix=None):
             calls['n'] += 1
             assert data  # bytes were read and passed through
             assert mime_type == 'application/pdf'
@@ -105,7 +105,7 @@ class TestPdfClassPipeline:
     def test_pdf_transcript_flows_into_downstream_structure(self, monkeypatch):
         monkeypatch.setattr(
             'apps.classes.views.extract_pdf_to_markdown',
-            lambda *, data, mime_type: ('# md from pdf', 'local', 'pdfplumber', 2),
+            lambda *, data, mime_type, asset_prefix=None: ('# md from pdf', 'local', 'pdfplumber', 2),
         )
         monkeypatch.setattr(
             'apps.classes.views.structure_transcript_markdown',
@@ -125,7 +125,7 @@ class TestPdfClassPipeline:
     def test_pdf_idempotency_does_not_re_extract(self, monkeypatch):
         calls = {'n': 0}
 
-        def fake_extract(*, data, mime_type):
+        def fake_extract(*, data, mime_type, asset_prefix=None):
             calls['n'] += 1
             return ('# md', 'local', 'pdfplumber', 1)
 
@@ -147,7 +147,7 @@ class TestPdfExamPipeline:
 
         monkeypatch.setattr(
             'apps.classes.services.pdf_extraction.extract_pdf_to_markdown',
-            lambda *, data, mime_type: ('# سوالات استخراج‌شده', 'local', 'pdfplumber', 5),
+            lambda *, data, mime_type, asset_prefix=None: ('# سوالات استخراج‌شده', 'local', 'pdfplumber', 5),
         )
 
         user = User.objects.create_user(username='te_pdf', password='p', role=User.Role.TEACHER)

@@ -6,5 +6,39 @@
   "persian_scanned.pdf": {
     "lang": "persian",
     "text": "قانون دوم نیوتن بیان می کند که نیرو برابر است با جرم ضرب در شتاب"
+  },
+  "persian_paragraph.pdf": {
+    "lang": "persian",
+    "text": "فتوسنتز فرایندی است که در آن گیاهان انرژی نور خورشید را به انرژی شیمیایی تبدیل می کنند و در گلوکز ذخیره می شود."
+  },
+  "table_doc.pdf": {
+    "lang": "english",
+    "table": [
+      [
+        "Name",
+        "Score",
+        "City"
+      ],
+      [
+        "Ali",
+        "20",
+        "Tehran"
+      ],
+      [
+        "Sara",
+        "18",
+        "Shiraz"
+      ],
+      [
+        "Reza",
+        "15",
+        "Yazd"
+      ]
+    ]
+  },
+  "figure_doc.pdf": {
+    "lang": "english",
+    "text": "Two figures are shown below for the experiment.",
+    "expected_images": 2
   }
 }

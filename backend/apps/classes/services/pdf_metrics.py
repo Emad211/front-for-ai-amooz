@@ -124,6 +124,44 @@ def wer(reference: str, hypothesis: str, *, normalize: bool = True) -> float:
     return levenshtein(ref, hyp) / len(ref)
 
 
+def word_recall(reference: str, hypothesis: str, *, normalize: bool = True) -> float:
+    """Fraction of reference words that appear anywhere in the hypothesis.
+
+    Order-insensitive recall — robust when the hypothesis legitimately contains
+    extra layout text (captions, infobox, references) around a known reference
+    passage, as with real document pages. Returns 1.0 for an empty reference.
+    """
+    ref = (normalize_persian(reference) if normalize else reference).split()
+    if not ref:
+        return 1.0
+    hyp = set((normalize_persian(hypothesis) if normalize else hypothesis).split())
+    found = sum(1 for w in ref if w in hyp)
+    return found / len(ref)
+
+
+def parse_markdown_table(md: str) -> "list[list[str]]":
+    """Parse the first GFM table found in ``md`` into a matrix of cell strings.
+
+    Skips the `|---|---|` separator row. Returns ``[]`` if no table is present.
+    Used by tests/benchmarks to score table fidelity via ``table_cell_accuracy``.
+    """
+    rows: list[list[str]] = []
+    in_table = False
+    for line in (md or "").splitlines():
+        s = line.strip()
+        if not s.startswith("|"):
+            if in_table:
+                break  # table ended
+            continue
+        in_table = True
+        cells = [c.strip() for c in s.strip("|").split("|")]
+        # Separator row: every cell is only dashes/colons.
+        if cells and all(set(c) <= set("-:") and c for c in cells):
+            continue
+        rows.append(cells)
+    return rows
+
+
 def table_cell_accuracy(
     reference: Sequence[Sequence[str]],
     hypothesis: Sequence[Sequence[str]],

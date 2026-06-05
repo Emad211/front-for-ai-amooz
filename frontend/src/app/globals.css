@@ -125,6 +125,23 @@
     @apply underline underline-offset-4 text-primary;
   }
 
+  .md-img {
+    @apply my-3 max-w-full h-auto rounded-xl border border-border/60 mx-auto block;
+  }
+
+  .md-table {
+    @apply my-3 w-full border-collapse overflow-hidden rounded-xl border border-border/60 text-sm;
+  }
+
+  .md-table th,
+  .md-table td {
+    @apply border border-border/60 px-3 py-2 text-right align-top;
+  }
+
+  .md-table thead th {
+    @apply bg-muted/40 font-bold;
+  }
+
   .math-block {
     @apply my-3;
   }
