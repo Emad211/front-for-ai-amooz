@@ -6,11 +6,11 @@ ENV BUILD_VERSION=3
 
 WORKDIR /app
 
-# تنظیم mirror ایران
+# تنظیم mirror ایران (با اصلاح آدرس بخش security)
 RUN rm -f /etc/apt/sources.list.d/* && \
     echo "deb https://mirror.arvancloud.ir/debian bookworm main contrib non-free non-free-firmware" > /etc/apt/sources.list && \
     echo "deb https://mirror.arvancloud.ir/debian bookworm-updates main contrib non-free non-free-firmware" >> /etc/apt/sources.list && \
-    echo "deb https://mirror.arvancloud.ir/debian-security bookworm-security main contrib non-free non-free-firmware" >> /etc/apt/sources.list && \
+    echo "deb http://security.debian.org/debian-security bookworm-security main contrib non-free non-free-firmware" >> /etc/apt/sources.list && \
     echo 'Acquire::Check-Valid-Until "false";' > /etc/apt/apt.conf.d/99no-check-valid
 
 # نصب پکیج‌های سیستم
@@ -24,14 +24,14 @@ RUN apt-get update && \
         fontconfig \
     && rm -rf /var/lib/apt/lists/*
 
-# upgrade pip
-RUN pip install --upgrade pip
-
-# نصب requirements
+# کپی کردن فقط فایل نیازمندی‌ها برای استفاده بهتر از کش داکر
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
 
-# کپی پروژه
+# آپگرید pip و نصب پکیج‌های پایتون در یک مرحله
+RUN pip install --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt
+
+# کپی کردن کل پروژه
 COPY . .
 
 # collect static
