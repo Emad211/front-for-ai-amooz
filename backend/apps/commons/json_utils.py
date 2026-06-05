@@ -9,7 +9,10 @@ from typing import Any, Optional, Tuple
 logger = logging.getLogger(__name__)
 
 
-_FENCE_RE = re.compile(r"```(?:json)?\s*(.*?)\s*```", re.DOTALL | re.IGNORECASE)
+# Greedy on purpose: capture up to the LAST closing fence. A non-greedy (.*?)
+# truncates JSON whose own string values contain markdown code fences
+# (```python ... ```), yielding "no JSON object/array found".
+_FENCE_RE = re.compile(r"```(?:json)?\s*(.*)```", re.DOTALL | re.IGNORECASE)
 _BROKEN_FLOAT_JOIN_1 = re.compile(r"(?<=\d)\s*\r?\n\s*(?=\.\d)")
 _BROKEN_FLOAT_JOIN_2 = re.compile(r"(?<=\.)\s*\r?\n\s*(?=\d)")
 

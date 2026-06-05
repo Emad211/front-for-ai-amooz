@@ -5,7 +5,10 @@ import re
 from typing import Any, Optional, Tuple
 
 
-_FENCE_RE = re.compile(r"```(?:json)?\s*(.*?)\s*```", re.DOTALL | re.IGNORECASE)
+# Greedy on purpose: capture up to the LAST closing fence, not the first.
+# A non-greedy (.*?) truncates JSON whose own string values contain markdown
+# code fences (```python ... ```), which is common for programming lessons.
+_FENCE_RE = re.compile(r"```(?:json)?\s*(.*)```", re.DOTALL | re.IGNORECASE)
 _BROKEN_FLOAT_JOIN_1 = re.compile(r"(?<=\d)\s*\r?\n\s*(?=\.\d)")
 _BROKEN_FLOAT_JOIN_2 = re.compile(r"(?<=\.)\s*\r?\n\s*(?=\d)")
 
@@ -55,6 +58,14 @@ def _escape_invalid_backslashes_in_strings(s: str) -> str:
                 i += 1
                 continue
 
+            # Over-escaped single quote (\'): the model meant a literal '.
+            # Drop the backslash entirely so the text renders cleanly. This can
+            # never be a real LaTeX command (those are letters: \cdot, \alpha).
+            if nxt == "'":
+                out.append("'")
+                i += 2
+                continue
+
             # invalid escape (e.g., \c, \x, \ , end-of-string) -> escape the backslash
             out.append('\\\\')
             i += 1
@@ -76,15 +87,12 @@ def _strip_code_fences(text: str) -> str:
     return inner if inner is not None else text
 
 
-def _normalize_llm_text(text: str) -> str:
+def _normalize_quotes(text: str) -> str:
     s = (text or "").strip().lstrip("\ufeff")
     if not s:
         return s
-
-    s = _strip_code_fences(s).strip()
-
     # Smart quotes etc can break JSON.
-    s = (
+    return (
         s.replace("\u201c", '"')
         .replace("\u201d", '"')
         .replace("\u201e", '"')
@@ -92,6 +100,14 @@ def _normalize_llm_text(text: str) -> str:
         .replace("\u2018", "'")
         .replace("\u2019", "'")
     )
+
+
+def _normalize_llm_text(text: str) -> str:
+    s = _normalize_quotes(text)
+    if not s:
+        return s
+
+    s = _strip_code_fences(s).strip()
 
     # Fix invalid \ escapes inside strings (e.g., LaTeX commands).
     return _escape_invalid_backslashes_in_strings(s)
@@ -158,28 +174,47 @@ def _repair_broken_numbers(s: str) -> str:
     return s
 
 
-def extract_json_object(text: str) -> Any:
-    s = _normalize_llm_text(text)
-    if not s:
-        raise ValueError("empty text")
+def _parse_balanced_block(source: str) -> Any:
+    """Find the outermost balanced {...}/[...] in `source`, repair, and parse.
 
-    # 1) direct parse
-    try:
-        return json.loads(s)
-    except Exception:
-        pass
-
-    # 2) extract balanced JSON
-    block = _find_balanced_json_block(s)
+    The balanced scanner is string-aware: it skips braces, code fences, and any
+    other characters that appear *inside* JSON string values, so it recovers the
+    JSON even when content_markdown contains markdown code fences (```...```).
+    Raises if no parseable block is found.
+    """
+    block = _find_balanced_json_block(source)
     if not block:
         raise ValueError("no JSON object/array found")
 
     start, end = block
-    candidate = s[start : end + 1]
+    candidate = source[start : end + 1]
     candidate = _repair_broken_numbers(candidate)
     candidate = _remove_trailing_commas(candidate)
-
     # One more pass of backslash repair over the extracted JSON block.
     candidate = _escape_invalid_backslashes_in_strings(candidate)
-
     return json.loads(candidate)
+
+
+def extract_json_object(text: str) -> Any:
+    normalized = _normalize_llm_text(text)
+    if not normalized:
+        raise ValueError("empty text")
+
+    # 1) direct parse of the fence-stripped, normalized text (fast path).
+    try:
+        return json.loads(normalized)
+    except Exception:
+        pass
+
+    # 2) balanced-block extraction on the normalized text.
+    try:
+        return _parse_balanced_block(normalized)
+    except Exception:
+        pass
+
+    # 3) Safety net: run the balanced scanner on the text WITHOUT fence
+    #    stripping. If fence handling ever truncated the JSON (e.g. the content
+    #    itself contains ``` fences), the string-aware scanner still finds the
+    #    full object by skipping over string contents.
+    raw = _escape_invalid_backslashes_in_strings(_normalize_quotes(text))
+    return _parse_balanced_block(raw)
