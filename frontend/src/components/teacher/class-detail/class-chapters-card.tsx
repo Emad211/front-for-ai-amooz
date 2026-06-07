@@ -50,7 +50,7 @@ export function ClassChaptersCard({ classId, chapters, basePath = '/admin' }: Cl
             </div>
             <div className="space-y-2">
               {chapter.lessons.map(lesson => (
-                <div key={lesson.id} className="flex items-center justify-between p-2 rounded-lg bg-muted/50 text-sm">
+                <div key={lesson.id} className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 sm:gap-2 p-2 rounded-lg bg-muted/50 text-[13px] sm:text-sm">
                   <div className="flex items-center gap-2">
                     <span className="text-muted-foreground">{lessonTypeIcon[lesson.type]}</span>
                     <span>{lesson.title}</span>

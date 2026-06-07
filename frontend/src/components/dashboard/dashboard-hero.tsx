@@ -32,16 +32,17 @@ export const DashboardHero = () => {
         </div>
       </div>
       
-      <div className="md:w-2/5 flex justify-center items-center relative z-10">
+      <div className="w-full md:w-2/5 flex justify-center items-center relative z-10">
         <div className="relative">
           <div className="absolute -inset-4 bg-primary/20 rounded-full blur-2xl opacity-50"></div>
-          <Image 
-            src="/homee.png" 
-            alt="AI Learning" 
-            width={450} 
-            height={250} 
-            className="rounded-2xl relative z-10 drop-shadow-2xl transform group-hover:scale-105 transition-transform duration-500" 
-            priority 
+          <Image
+            src="/homee.png"
+            alt="AI Learning"
+            width={450}
+            height={250}
+            sizes="(max-width:768px) 80vw, 40vw"
+            className="rounded-2xl relative z-10 drop-shadow-2xl transform group-hover:scale-105 transition-transform duration-500 max-w-xs md:max-w-none h-auto w-full"
+            priority
           />
         </div>
       </div>

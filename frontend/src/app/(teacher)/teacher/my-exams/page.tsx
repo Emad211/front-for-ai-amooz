@@ -43,7 +43,7 @@ function ExamPrepStats({ stats }: { stats: { total: number; published: number; p
   ];
 
   return (
-    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
       {statItems.map((item) => (
         <Card key={item.label} className="rounded-xl border-border/50">
           <CardContent className="p-4 flex items-center gap-3">
@@ -89,7 +89,7 @@ function ExamPrepFilters({
         />
       </div>
       <Select value={statusFilter} onValueChange={setStatusFilter}>
-        <SelectTrigger className="w-full md:w-40 rounded-xl h-10">
+        <SelectTrigger className="w-full md:w-40 rounded-xl h-9 md:h-10">
           <SelectValue placeholder="وضعیت" />
         </SelectTrigger>
         <SelectContent>
@@ -100,7 +100,7 @@ function ExamPrepFilters({
         </SelectContent>
       </Select>
       <Select value={sortBy} onValueChange={setSortBy}>
-        <SelectTrigger className="w-full md:w-40 rounded-xl h-10">
+        <SelectTrigger className="w-full md:w-40 rounded-xl h-9 md:h-10">
           <SelectValue placeholder="مرتب‌سازی" />
         </SelectTrigger>
         <SelectContent>
@@ -218,7 +218,7 @@ function ExamPrepCard({ examPrep, onDeleted }: { examPrep: ExamPrepSessionDetail
         </CardHeader>
 
         <CardContent className="px-5 pb-5">
-          <div className="grid grid-cols-2 gap-3 mb-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
             <div className="flex items-center gap-2 bg-muted/50 p-2 rounded-lg">
               <div className="h-8 w-8 rounded-full bg-background flex items-center justify-center text-muted-foreground shrink-0">
                 <FileQuestion className="h-4 w-4" />
@@ -345,13 +345,13 @@ export default function TeacherMyExamsPage() {
         </div>
 
         {isLoading ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 md:gap-6">
             <Skeleton className="h-48 rounded-2xl" />
             <Skeleton className="h-48 rounded-2xl" />
             <Skeleton className="h-48 rounded-2xl" />
           </div>
         ) : sortedExamPreps.length > 0 ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 md:gap-6">
             {sortedExamPreps.map((ep) => (
               <ExamPrepCard key={ep.id} examPrep={ep} onDeleted={reload} />
             ))}

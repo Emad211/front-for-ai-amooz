@@ -68,7 +68,7 @@ export function OrgDashboardPage() {
   return (
     <div className="space-y-8">
       {/* Title */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 sm:gap-4">
         <div className="flex items-center gap-3">
           {organization.logo ? (
             <img src={organization.logo} alt={organization.name} className="h-10 w-10 rounded-xl object-cover" />
@@ -106,7 +106,7 @@ export function OrgDashboardPage() {
         <CardHeader className="pb-3">
           <CardTitle className="text-lg font-bold">دسترسی سریع</CardTitle>
         </CardHeader>
-        <CardContent className="flex flex-wrap gap-3">
+        <CardContent className="flex flex-wrap gap-2 sm:gap-3">
           <Button variant="outline" size="sm" asChild>
             <Link href="/teacher/my-classes">کلاس‌های سازمان</Link>
           </Button>

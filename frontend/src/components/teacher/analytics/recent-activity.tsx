@@ -77,7 +77,7 @@ export function RecentActivity({ activities, isFullWidth = false }: RecentActivi
         <CardTitle className="text-xl font-black text-foreground">فعالیت‌های اخیر</CardTitle>
       </CardHeader>
       <CardContent className="flex-1">
-        <ScrollArea className="h-[400px] pr-4">
+        <ScrollArea className="h-[280px] sm:h-[400px] pr-4">
           {content}
         </ScrollArea>
       </CardContent>

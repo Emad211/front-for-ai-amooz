@@ -204,7 +204,7 @@ export function StudentInviteSection({ isExpanded, onToggle, sessionId, pipeline
           {/* افزودن دستی */}
           <div className="space-y-2 text-start">
             <Label>افزودن دستی (شماره تلفن اجباری)</Label>
-            <div className="flex flex-col sm:flex-row gap-3">
+            <div className="flex flex-col sm:flex-row gap-2 sm:gap-3">
               <Input 
                 value={newPhone}
                 onChange={(e) => {
@@ -251,10 +251,10 @@ export function StudentInviteSection({ isExpanded, onToggle, sessionId, pipeline
                           <User className="h-4 w-4" />
                         </AvatarFallback>
                       </Avatar>
-                      <div className="flex flex-col">
+                      <div className="flex flex-col min-w-0">
                         <span className="text-sm font-medium text-foreground">{student.phone}</span>
                         <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                          <code className="px-2 py-1 rounded-md bg-background border border-border/50 font-mono tracking-tight">
+                          <code className="px-2 py-1 rounded-md bg-background border border-border/50 font-mono tracking-tight break-all text-[10px] sm:text-xs">
                             {student.inviteCode}
                           </code>
                           <Button 
@@ -276,7 +276,7 @@ export function StudentInviteSection({ isExpanded, onToggle, sessionId, pipeline
                       variant="ghost" 
                       size="icon" 
                       onClick={() => handleRemoveStudent(student)} 
-                      className="opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-lg"
+                      className="opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-lg"
                     >
                       <Trash2 className="h-4 w-4" />
                     </Button>

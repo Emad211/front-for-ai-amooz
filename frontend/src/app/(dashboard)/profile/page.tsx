@@ -32,7 +32,7 @@ export default function ProfilePage() {
                       key={tab.id}
                       onClick={() => setActiveTab(tab.id)}
                       className={cn(
-                        "flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all shrink-0",
+                        "flex items-center gap-3 px-3 py-2 sm:px-4 sm:py-3 rounded-xl text-xs sm:text-sm font-medium transition-all shrink-0",
                         activeTab === tab.id
                           ? "bg-primary text-primary-foreground shadow-lg shadow-primary/20"
                           : "text-muted-foreground hover:bg-muted hover:text-foreground"

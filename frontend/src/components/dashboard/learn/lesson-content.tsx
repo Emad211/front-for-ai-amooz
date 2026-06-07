@@ -58,7 +58,7 @@ export const LessonContent = ({
     <div className="bg-card border border-border rounded-2xl p-4 shadow-lg relative overflow-hidden flex-shrink-0">
       <div className="flex flex-col gap-4">
         <div>
-          <h1 className="text-lg font-bold text-foreground mb-1">{content.title}</h1>
+          <h1 className="text-base sm:text-lg font-bold text-foreground mb-1">{content.title}</h1>
           <p className="text-sm text-muted-foreground leading-relaxed line-clamp-1">
             {content.description}
           </p>
@@ -85,7 +85,7 @@ export const LessonContent = ({
         </div>
       </div>
     </div>
-    <div className="bg-card border border-border rounded-2xl p-6 sm:p-8 flex-1 shadow-xl overflow-y-auto no-scrollbar">
+    <div className="bg-card border border-border rounded-2xl p-3 sm:p-4 md:p-6 lg:p-8 flex-1 shadow-xl overflow-y-auto no-scrollbar">
       <div className="flex items-center gap-3 mb-6 pb-3 border-b border-border/50">
         <div className="h-8 w-8 rounded-lg bg-primary/10 flex items-center justify-center text-primary">
           <PlayCircle className="h-5 w-5" />
@@ -115,10 +115,10 @@ export const LessonContent = ({
                     key={p.id}
                     type="button"
                     variant="outline"
-                    className="w-full justify-between h-auto py-3 px-4 rounded-xl"
+                    className="w-full justify-between h-auto py-2 sm:py-3 px-2 sm:px-4 text-xs sm:text-sm rounded-xl"
                     onClick={() => onSelectPrerequisiteTeaching?.(p.id)}
                   >
-                    <div className="text-right flex-1">
+                    <div className="flex-1 text-right min-w-0 break-words line-clamp-2">
                       <MarkdownWithMath markdown={p.name} className="text-sm leading-6" />
                     </div>
                     <span className="text-xs text-muted-foreground mr-3">آموزش</span>

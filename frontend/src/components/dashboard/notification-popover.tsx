@@ -38,14 +38,14 @@ export function NotificationPopover() {
   return (
     <Popover>
       <PopoverTrigger asChild>
-        <Button variant="ghost" size="icon" className="relative h-9 w-9 md:h-10 md:w-10">
+        <Button variant="ghost" size="icon" className="relative h-10 w-10">
           <Bell className="h-5 w-5" />
           {unreadCount > 0 && (
             <span className="absolute top-2.5 right-2.5 w-2 h-2 bg-primary rounded-full border-2 border-background animate-pulse"></span>
           )}
         </Button>
       </PopoverTrigger>
-      <PopoverContent align="end" className="w-80 p-0" dir="rtl">
+      <PopoverContent align="end" className="w-[calc(100vw-2rem)] max-w-sm p-0 md:w-80" dir="rtl">
         <div className="flex items-center justify-between p-4 border-b">
           <div className="flex items-center gap-2">
             <h4 className="font-bold">اعلان‌ها</h4>
@@ -67,7 +67,7 @@ export function NotificationPopover() {
           )}
         </div>
         
-        <ScrollArea className="h-[350px]">
+        <ScrollArea className="h-[260px] sm:h-[350px]">
           {isLoading ? (
             <div className="flex flex-col items-center justify-center h-[300px] text-muted-foreground space-y-2">
               <Bell className="h-8 w-8 opacity-20" />
@@ -105,7 +105,7 @@ export function NotificationPopover() {
                     </div>
                   </div>
                   
-                  <div className="absolute left-2 top-1/2 -translate-y-1/2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity bg-background/80 backdrop-blur-sm p-1 rounded-lg border shadow-sm">
+                  <div className="absolute left-2 top-1/2 -translate-y-1/2 flex gap-1 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity bg-background/80 backdrop-blur-sm p-1 rounded-lg border shadow-sm">
                     {!notification.isRead && (
                       <Button 
                         variant="ghost" 

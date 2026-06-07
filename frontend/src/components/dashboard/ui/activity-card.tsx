@@ -20,7 +20,7 @@ export const ActivityCard = ({ title, time, type, icon }: ActivityCardProps) => 
         </div>
       </div>
     </div>
-    <div className="flex items-center justify-center w-8 h-8 rounded-full bg-background border border-border group-hover:border-primary/50 group-hover:text-primary transition-all duration-300 opacity-0 group-hover:opacity-100 -translate-x-2 group-hover:translate-x-0">
+    <div className="flex items-center justify-center w-8 h-8 rounded-full bg-background border border-border group-hover:border-primary/50 group-hover:text-primary transition-all duration-300 opacity-50 group-hover:opacity-100 md:opacity-0 md:group-hover:opacity-100 translate-x-0 md:-translate-x-2 md:group-hover:translate-x-0">
       <ArrowLeft className="h-4 w-4" />
     </div>
   </div>

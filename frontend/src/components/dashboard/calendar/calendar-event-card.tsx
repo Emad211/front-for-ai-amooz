@@ -59,12 +59,12 @@ export function CalendarEventCard({ event, onClick, compact = false }: CalendarE
     <div
       onClick={onClick}
       className={cn(
-        'flex gap-4 p-4 rounded-2xl bg-card border border-border/50 cursor-pointer',
+        'flex gap-2 md:gap-4 p-3 md:p-4 rounded-2xl bg-card border border-border/50 cursor-pointer',
         'hover:shadow-lg hover:border-border transition-all'
       )}
     >
       {/* Date Badge */}
-      <div className={cn('w-16 h-16 rounded-2xl flex flex-col items-center justify-center shrink-0', config.bgColor)}>
+      <div className={cn('w-12 h-12 md:w-16 md:h-16 rounded-2xl flex flex-col items-center justify-center shrink-0', config.bgColor)}>
         <span className={cn('text-2xl font-bold leading-none', config.color)}>{day}</span>
         <span className={cn('text-xs mt-1', config.color)}>{month}</span>
       </div>
@@ -72,7 +72,7 @@ export function CalendarEventCard({ event, onClick, compact = false }: CalendarE
       {/* Content */}
       <div className="flex-1 min-w-0">
         <div className="flex items-start justify-between gap-2">
-          <h4 className="font-bold text-base">{event.title}</h4>
+          <h4 className="font-bold text-base truncate min-w-0">{event.title}</h4>
           <span className={cn('text-xs px-2 py-1 rounded-lg shrink-0', config.bgColor, config.color)}>
             {config.label}
           </span>

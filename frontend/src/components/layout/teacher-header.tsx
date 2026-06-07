@@ -94,7 +94,7 @@ export function TeacherHeader() {
 
   return (
     <header className="flex items-center justify-between gap-4 bg-card/50 backdrop-blur-md p-4 rounded-3xl border border-border/50 shadow-sm">
-      <div className="flex items-center gap-2 md:gap-4">
+      <div className="flex items-center gap-1 sm:gap-2 md:gap-4 min-w-0">
         <div className="lg:hidden">
           <Sheet open={isOpen} onOpenChange={setIsOpen}>
             <SheetTrigger asChild>
@@ -125,10 +125,10 @@ export function TeacherHeader() {
         </div>
         
         <div className="flex flex-col">
-          <h1 className="text-lg md:text-xl font-black text-foreground leading-none">
+          <h1 className="text-base sm:text-lg md:text-xl font-black text-foreground leading-none truncate">
             {pageTitle}
           </h1>
-          <p className="text-[10px] text-muted-foreground font-medium mt-1 hidden md:block">
+          <p className="text-[10px] text-muted-foreground font-medium mt-1 hidden sm:block truncate">
             خوش آمدید، {hasMounted ? displayName : 'کاربر'} عزیز
           </p>
         </div>
@@ -136,9 +136,9 @@ export function TeacherHeader() {
 
       <div className="flex items-center gap-2 md:gap-3">
         <div className="flex items-center gap-1 md:gap-2 bg-background/50 p-1 rounded-2xl border border-border/50">
-          <ThemeToggle className="h-9 w-9 rounded-xl hover:bg-primary/10 hover:text-primary transition-colors" />
+          <ThemeToggle className="h-10 w-10 rounded-xl hover:bg-primary/10 hover:text-primary transition-colors" />
           <NotificationPopover />
-          <div className="w-px h-6 bg-border/50 mx-1"></div>
+          <div className="w-px h-6 bg-border/50 mx-1 hidden sm:block"></div>
           <UserProfile isAdmin={false} />
         </div>
       </div>

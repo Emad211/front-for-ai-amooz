@@ -150,7 +150,7 @@ export function ClassChaptersEditor({ chapters, onChange }: ClassChaptersEditorP
                 <Button 
                   variant="ghost" 
                   size="icon" 
-                  className="h-8 w-8"
+                  className="h-9 w-9 md:h-8 md:w-8"
                   onClick={(e) => { e.stopPropagation(); deleteChapter(chapter.id); }}
                 >
                   <Trash2 className="h-4 w-4 text-destructive" />
@@ -184,7 +184,7 @@ export function ClassChaptersEditor({ chapters, onChange }: ClassChaptersEditorP
                         <Switch 
                           checked={lesson.isPublished}
                           onCheckedChange={() => toggleLessonPublish(chapter.id, lesson.id)}
-                          className="scale-75"
+                          className="md:scale-75"
                         />
                         <span className="text-[10px] sm:text-xs text-muted-foreground">
                           {lesson.isPublished ? 'منتشر شده' : 'پیش‌نویس'}
@@ -194,7 +194,7 @@ export function ClassChaptersEditor({ chapters, onChange }: ClassChaptersEditorP
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="h-8 w-8"
+                          className="h-9 w-9 md:h-8 md:w-8"
                           onClick={(e) => {
                             e.stopPropagation();
                             setEditingLesson({ chapterId: chapter.id, lesson });
@@ -205,7 +205,7 @@ export function ClassChaptersEditor({ chapters, onChange }: ClassChaptersEditorP
                         <Button 
                           variant="ghost" 
                           size="icon" 
-                          className="h-8 w-8"
+                          className="h-9 w-9 md:h-8 md:w-8"
                           onClick={() => deleteLesson(chapter.id, lesson.id)}
                         >
                           <Trash2 className="h-4 w-4 text-destructive" />

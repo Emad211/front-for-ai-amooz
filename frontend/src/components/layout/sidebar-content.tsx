@@ -30,7 +30,7 @@ export function SidebarContent({ onItemClick, navMenu = ADMIN_NAV_MENU, panelLab
   return (
     <div className="flex flex-col h-full">
       {/* لوگو */}
-      <div className="p-6">
+      <div className="p-4 sm:p-6">
         <Logo 
           href={logoHref} 
           imageSize="lg" 

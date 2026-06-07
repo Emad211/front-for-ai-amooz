@@ -135,14 +135,14 @@ export function ExamEditForm({ examDetail, onSave, isSaving }: ExamEditFormProps
   };
 
   return (
-    <div className="space-y-8 pb-20">
+    <div className="space-y-8 pb-8">
       <Card>
         <CardHeader>
           <CardTitle className="text-lg">اطلاعات کلی</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="space-y-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
               <div className="space-y-2">
                 <Label htmlFor="title">عنوان آزمون (الزامی)</Label>
                 <Input
@@ -224,7 +224,7 @@ export function ExamEditForm({ examDetail, onSave, isSaving }: ExamEditFormProps
                     <span className="bg-primary/10 text-primary w-6 h-6 rounded-full flex items-center justify-center text-xs shrink-0">
                       {qIndex + 1}
                     </span>
-                    <span className="font-bold text-sm truncate max-w-[250px] md:max-w-[500px]">
+                    <span className="font-bold text-sm flex-1 min-w-0 truncate">
                       {q.question_text_markdown ? q.question_text_markdown.split('\n')[0] : 'سؤال جدید'}
                     </span>
                   </div>
@@ -276,7 +276,7 @@ export function ExamEditForm({ examDetail, onSave, isSaving }: ExamEditFormProps
                   ))}
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
                   <div className="space-y-2">
                     <Label>انتخاب گزینه صحیح</Label>
                     <Select
@@ -315,7 +315,7 @@ export function ExamEditForm({ examDetail, onSave, isSaving }: ExamEditFormProps
                     onChange={(e) => updateQuestion(qIndex, { teacher_solution_markdown: e.target.value })}
                     placeholder="توضیحات و راه حل تشریحی مدرس را اینجا وارد کنید"
                     rows={6}
-                    className="bg-muted/30 resize-y min-h-[150px]"
+                    className="bg-muted/30 resize-none md:resize-y min-h-[150px]"
                   />
                 </div>
               </AccordionContent>
@@ -334,7 +334,7 @@ export function ExamEditForm({ examDetail, onSave, isSaving }: ExamEditFormProps
         )}
       </div>
 
-      <div className="fixed bottom-6 left-6 right-6 flex justify-end z-50">
+      <div className="sticky bottom-0 left-0 right-0 z-40 border-t bg-background/95 backdrop-blur p-4 flex justify-end gap-2">
         <Button onClick={handleSubmit} disabled={isSaving} size="lg" className="shadow-lg px-8">
           {isSaving ? (
             <Loader2 className="h-5 w-5 animate-spin ml-2" />

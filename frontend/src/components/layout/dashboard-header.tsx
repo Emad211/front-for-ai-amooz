@@ -31,7 +31,7 @@ const NavLink = ({ href, children }: NavLinkProps) => {
 
 export function DashboardHeader() {
   return (
-    <header dir="rtl" className="h-16 md:h-20 flex items-center justify-between px-4 md:px-10 bg-card/80 backdrop-blur-md border-b border-border sticky top-0 z-50">
+    <header dir="rtl" className="h-14 sm:h-16 md:h-20 flex items-center justify-between px-3 sm:px-4 md:px-10 bg-card/80 backdrop-blur-md border-b border-border sticky top-0 z-50">
         {/* Logo */}
         <Logo imageSize="md" href="/home" className="md:hidden" showText={false} />
         <Logo imageSize="lg" href="/home" className="hidden md:flex" />
@@ -46,7 +46,7 @@ export function DashboardHeader() {
         {/* Actions */}
         <div className="flex items-center gap-1 md:gap-2">
             <NotificationPopover />
-            <div className="w-px h-6 md:h-8 bg-border mx-1 md:mx-2"></div>
+            <div className="w-px h-6 md:h-8 bg-border mx-1 md:mx-2 hidden sm:block"></div>
             <UserProfile />
         </div>
     </header>

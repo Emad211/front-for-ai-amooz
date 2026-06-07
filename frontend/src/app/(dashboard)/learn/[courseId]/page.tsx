@@ -337,14 +337,14 @@ export default function LearnPage() {
                     </Link>
                     <div className="flex flex-col">
                         <span className="text-[10px] text-muted-foreground">{content.title}</span>
-                        <span className="text-xs font-bold truncate max-w-[150px]">{currentLesson?.title}</span>
+                        <span className="text-xs font-bold truncate max-w-[160px] sm:max-w-[240px]">{currentLesson?.title}</span>
                     </div>
                 </div>
                 
                 <div className="flex items-center gap-2">
                     <Sheet>
                         <SheetTrigger asChild>
-                            <Button variant="outline" size="icon" className="rounded-xl h-9 w-9">
+                            <Button variant="outline" size="icon" className="rounded-xl h-10 w-10">
                                 <List className="h-4 w-4" />
                             </Button>
                         </SheetTrigger>
@@ -370,7 +370,7 @@ export default function LearnPage() {
 
                     <Sheet>
                         <SheetTrigger asChild>
-                            <Button variant="outline" size="icon" className="rounded-xl h-9 w-9">
+                            <Button variant="outline" size="icon" className="rounded-xl h-10 w-10">
                                 <Bot className="h-4 w-4" />
                             </Button>
                         </SheetTrigger>

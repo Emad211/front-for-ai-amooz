@@ -78,13 +78,13 @@ export function FileUploadSection({
             )}
             aria-disabled={disabled ? 'true' : undefined}
           >
-            <div className="flex flex-col items-center gap-2 px-4 text-center">
+            <div className="flex flex-col items-center gap-2 px-3 sm:px-4 text-center">
               {type === 'lesson' ? (
                 <>
                   <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center">
                     <FileText className="h-6 w-6 text-primary" />
                   </div>
-                  <p className="text-sm text-muted-foreground">
+                  <p className="text-xs sm:text-sm text-muted-foreground">
                     فایل‌ها را بکشید و رها کنید یا <span className="text-primary font-medium">کلیک کنید</span>
                   </p>
                   <p className="text-[10px] sm:text-xs text-muted-foreground">
@@ -94,7 +94,7 @@ export function FileUploadSection({
               ) : (
                 <>
                   <Plus className="h-6 w-6 text-muted-foreground" />
-                  <p className="text-sm text-muted-foreground">
+                  <p className="text-xs sm:text-sm text-muted-foreground">
                     {disabled ? 'به‌زودی' : 'افزودن فایل تمرین'}
                   </p>
                 </>

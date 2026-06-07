@@ -14,7 +14,7 @@ interface ClassStatsProps {
 
 export function ClassStats({ stats }: ClassStatsProps) {
   return (
-    <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
       <Card className="bg-card border-border/60 hover:border-primary/30 transition-colors">
         <CardContent className="flex items-center p-4 md:p-6">
           <div className="flex-shrink-0">

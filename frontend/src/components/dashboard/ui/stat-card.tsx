@@ -33,7 +33,7 @@ export const StatCard = ({ title, value, subValue, icon, tag, progress }: StatCa
           </div>
         )}
         <div className="flex-grow">
-          <p className="text-3xl font-black text-foreground tracking-tight">{value}</p>
+          <p className="text-2xl sm:text-3xl font-black text-foreground tracking-tight">{value}</p>
           <p className="text-xs text-muted-foreground font-medium mt-0.5">{subValue}</p>
         </div>
       </div>

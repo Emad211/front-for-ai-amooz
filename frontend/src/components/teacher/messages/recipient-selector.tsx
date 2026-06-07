@@ -124,7 +124,7 @@ export function RecipientSelector({
             </Button>
           </div>
 
-          <ScrollArea className="h-[200px] rounded-lg border bg-background p-2">
+          <ScrollArea className="h-[150px] sm:h-[200px] md:h-[250px] rounded-lg border bg-background p-2">
             <div className="space-y-2">
               {filteredStudents.map((student) => (
                 <div 

@@ -17,7 +17,7 @@ export function CalendarDayCell({ dayData, onDayClick, onEventClick }: CalendarD
     <div
       onClick={() => isCurrentMonth && onDayClick(day, events)}
       className={cn(
-        'min-h-[80px] sm:min-h-[100px] p-1.5 sm:p-2 border-b border-e border-border/50 transition-colors',
+        'min-h-[68px] sm:min-h-[90px] md:min-h-[110px] p-1.5 sm:p-2 border-b border-e border-border/50 transition-colors',
         isCurrentMonth ? 'bg-card hover:bg-muted/30 cursor-pointer' : 'bg-muted/20',
         isToday && 'bg-primary/5 ring-2 ring-primary/20 ring-inset',
       )}
@@ -61,7 +61,7 @@ export function CalendarDayCell({ dayData, onDayClick, onEventClick }: CalendarD
 
       {/* Events Dots - Mobile */}
       <div className="flex sm:hidden items-center gap-0.5 flex-wrap">
-        {events.slice(0, 4).map((event) => (
+        {events.slice(0, 3).map((event) => (
           <CalendarEventBadge
             key={event.id}
             event={event}

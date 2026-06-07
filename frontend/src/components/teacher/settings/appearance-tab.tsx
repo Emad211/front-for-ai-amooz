@@ -25,12 +25,12 @@ return (
 <Label className="text-lg font-bold">تم سیستم</Label>
 <Monitor className="w-5 h-5 text-primary" />
 </div>
-<RadioGroup defaultValue="system" className="grid grid-cols-1 sm:grid-cols-3 gap-6">
+<RadioGroup defaultValue="system" className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-6">
 <div>
 <RadioGroupItem value="light" id="light" className="peer sr-only" />
 <Label
 htmlFor="light"
-className="flex flex-col items-center justify-center rounded-2xl border-2 border-muted bg-popover/50 p-6 hover:bg-accent/50 hover:text-accent-foreground peer-data-[state=checked]:border-primary peer-data-[state=checked]:bg-primary/5 [&:has([data-state=checked])]:border-primary cursor-pointer transition-all duration-300 shadow-sm"
+className="flex flex-col items-center justify-center rounded-2xl border-2 border-muted bg-popover/50 p-4 sm:p-6 hover:bg-accent/50 hover:text-accent-foreground peer-data-[state=checked]:border-primary peer-data-[state=checked]:bg-primary/5 [&:has([data-state=checked])]:border-primary cursor-pointer transition-all duration-300 shadow-sm"
 >
 <Sun className="mb-3 h-8 w-8 text-orange-400" />
 <span className="font-bold text-base">روشن</span>
@@ -40,7 +40,7 @@ className="flex flex-col items-center justify-center rounded-2xl border-2 border
 <RadioGroupItem value="dark" id="dark" className="peer sr-only" />
 <Label
 htmlFor="dark"
-className="flex flex-col items-center justify-center rounded-2xl border-2 border-muted bg-popover/50 p-6 hover:bg-accent/50 hover:text-accent-foreground peer-data-[state=checked]:border-primary peer-data-[state=checked]:bg-primary/5 [&:has([data-state=checked])]:border-primary cursor-pointer transition-all duration-300 shadow-sm"
+className="flex flex-col items-center justify-center rounded-2xl border-2 border-muted bg-popover/50 p-4 sm:p-6 hover:bg-accent/50 hover:text-accent-foreground peer-data-[state=checked]:border-primary peer-data-[state=checked]:bg-primary/5 [&:has([data-state=checked])]:border-primary cursor-pointer transition-all duration-300 shadow-sm"
 >
 <Moon className="mb-3 h-8 w-8 text-indigo-400" />
 <span className="font-bold text-base">تاریک</span>
@@ -50,7 +50,7 @@ className="flex flex-col items-center justify-center rounded-2xl border-2 border
 <RadioGroupItem value="system" id="system" className="peer sr-only" />
 <Label
 htmlFor="system"
-className="flex flex-col items-center justify-center rounded-2xl border-2 border-muted bg-popover/50 p-6 hover:bg-accent/50 hover:text-accent-foreground peer-data-[state=checked]:border-primary peer-data-[state=checked]:bg-primary/5 [&:has([data-state=checked])]:border-primary cursor-pointer transition-all duration-300 shadow-sm"
+className="flex flex-col items-center justify-center rounded-2xl border-2 border-muted bg-popover/50 p-4 sm:p-6 hover:bg-accent/50 hover:text-accent-foreground peer-data-[state=checked]:border-primary peer-data-[state=checked]:bg-primary/5 [&:has([data-state=checked])]:border-primary cursor-pointer transition-all duration-300 shadow-sm"
 >
 <Monitor className="mb-3 h-8 w-8 text-primary" />
 <span className="font-bold text-base">سیستم</span>
@@ -59,7 +59,7 @@ className="flex flex-col items-center justify-center rounded-2xl border-2 border
 </RadioGroup>
 </div>
 
-<div className="grid grid-cols-1 md:grid-cols-2 gap-8 pt-10 border-t border-border/50">
+<div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-8 pt-6 md:pt-10 border-t border-border/50">
 <div className="space-y-3 text-right">
 <div className="flex items-center gap-2 justify-end px-1">
 <Label className="text-base font-bold">زبان پنل</Label>

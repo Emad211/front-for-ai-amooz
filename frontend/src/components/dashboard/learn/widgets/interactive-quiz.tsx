@@ -99,7 +99,7 @@ export function InteractiveQuiz({ questions }: InteractiveQuizProps) {
       </div>
 
       {/* Question */}
-      <div className="mb-3 p-3 rounded-xl border border-border bg-card">
+      <div className="mb-3 p-2 sm:p-3 rounded-xl border border-border bg-card">
         <MarkdownWithMath markdown={String(current.question ?? '')} className="text-sm font-medium" renderKey={`q-${currentIndex}`} />
       </div>
 
@@ -126,7 +126,7 @@ export function InteractiveQuiz({ questions }: InteractiveQuizProps) {
                 <span className="flex-shrink-0 w-5 h-5 rounded-full border border-border flex items-center justify-center text-[10px] font-bold">
                   {showRight ? <Check className="h-3 w-3 text-green-600" /> : showWrong ? <X className="h-3 w-3 text-destructive" /> : String.fromCharCode(65 + i)}
                 </span>
-                <MarkdownWithMath markdown={String(opt)} className="text-xs flex-1" renderKey={`opt-${currentIndex}-${i}-${currentAnswer ? 'a' : 'u'}`} />
+                <MarkdownWithMath markdown={String(opt)} className="text-xs sm:text-sm flex-1" renderKey={`opt-${currentIndex}-${i}-${currentAnswer ? 'a' : 'u'}`} />
               </div>
             );
           })}
@@ -149,11 +149,11 @@ export function InteractiveQuiz({ questions }: InteractiveQuizProps) {
 
       {/* Navigation */}
       <div className="flex items-center justify-center gap-2">
-        <Button variant="outline" size="sm" className="h-8 px-3 text-xs" disabled={currentIndex === 0} onClick={prev}>
+        <Button variant="outline" size="sm" className="h-10 sm:h-8 px-2 sm:px-3 text-xs sm:text-sm" disabled={currentIndex === 0} onClick={prev}>
           <ChevronRight className="h-4 w-4 ml-1" />
           قبلی
         </Button>
-        <Button variant="outline" size="sm" className="h-8 px-3 text-xs" onClick={next}>
+        <Button variant="outline" size="sm" className="h-10 sm:h-8 px-2 sm:px-3 text-xs sm:text-sm" onClick={next}>
           {currentIndex === total - 1 ? 'پایان' : 'بعدی'}
           <ChevronLeft className="h-4 w-4 mr-1" />
         </Button>

@@ -51,7 +51,7 @@ export function InteractiveScenario({ scenarios }: InteractiveScenarioProps) {
         const isExpanded = expandedHints.has(idx);
 
         return (
-          <div key={idx} className="rounded-xl border border-border bg-card p-3">
+          <div key={idx} className="rounded-xl border border-border bg-card p-2 sm:p-3">
             {/* Title */}
             <div className="text-sm font-bold text-foreground mb-2">{title}</div>
 
@@ -75,7 +75,7 @@ export function InteractiveScenario({ scenarios }: InteractiveScenarioProps) {
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="h-7 text-xs text-muted-foreground"
+                  className="h-7 min-h-[44px] text-xs sm:text-sm text-muted-foreground"
                   onClick={() => toggleHint(idx)}
                 >
                   💡 {isExpanded ? 'مخفی کردن راهنمایی' : 'نمایش راهنمایی'}

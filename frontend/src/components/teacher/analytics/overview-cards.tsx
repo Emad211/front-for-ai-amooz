@@ -37,7 +37,7 @@ export function OverviewCards({ stats }: OverviewCardsProps) {
             <Card className="group relative overflow-hidden bg-card border-border/40 hover:border-primary/40 hover:shadow-xl hover:shadow-primary/5 transition-all duration-500 rounded-3xl">
               <div className="absolute top-0 right-0 w-24 h-24 bg-primary/5 rounded-full -mr-12 -mt-12 transition-transform group-hover:scale-150 duration-700" />
               
-              <CardContent className="p-5 sm:p-7 relative z-10">
+              <CardContent className="p-4 sm:p-5 md:p-7 relative z-10">
                 <div className="flex items-center justify-between mb-5">
                   <div className={`p-3 ${config.bg} rounded-2xl group-hover:scale-110 transition-transform duration-300`}>
                     <Icon className={`w-5 h-5 sm:w-6 sm:h-6 ${config.color}`} />

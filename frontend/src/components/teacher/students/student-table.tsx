@@ -92,7 +92,7 @@ export function StudentTable({ students }: StudentTableProps) {
                 <StudentTableActions studentId={student.id} />
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-3 gap-2 sm:gap-3">
                 <div className="bg-muted/30 p-2 rounded-lg text-start">
                   <p className="text-[10px] text-muted-foreground mb-1">کلاس‌ها</p>
                   <p className="text-sm font-bold">{student.enrolledClasses} کلاس</p>

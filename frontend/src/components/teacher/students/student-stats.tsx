@@ -14,7 +14,7 @@ interface StudentStatsProps {
 
 export function StudentStats({ stats }: StudentStatsProps) {
   return (
-    <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
+    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 md:gap-4">
       <Card className="bg-card border-border/60 shadow-sm hover:shadow-md transition-all duration-300">
         <CardContent className="flex items-center justify-between p-4 md:p-6">
           <div className="space-y-1">

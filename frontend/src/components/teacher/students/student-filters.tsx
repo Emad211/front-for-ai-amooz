@@ -46,7 +46,7 @@ export function StudentFilters({
             />
           </div>
 
-          <div className="flex flex-wrap gap-3">
+          <div className="flex flex-wrap gap-2 sm:gap-3">
             <Select value={statusFilter} onValueChange={setStatusFilter}>
               <SelectTrigger className="w-full sm:w-[140px] bg-background/50">
                 <SelectValue placeholder="وضعیت" />

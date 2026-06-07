@@ -21,11 +21,11 @@ export function StructuredContentView({ structureJson }: StructuredContentViewPr
   }
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-3 md:space-y-5">
       <div className="space-y-2">
         <div className="text-sm font-bold">اهداف یادگیری</div>
         {objectives.length ? (
-          <ul className="list-disc pr-6 space-y-1 text-sm">
+          <ul className="list-disc pr-6 space-y-1 text-[13px] sm:text-sm">
             {objectives.map((obj, i) => (
               <li key={`${i}-${obj}`}>
                 <MarkdownWithMath markdown={String(obj)} />
@@ -40,14 +40,14 @@ export function StructuredContentView({ structureJson }: StructuredContentViewPr
       <div className="space-y-2">
         <div className="text-sm font-bold">فهرست مطالب</div>
         {outline.length ? (
-          <ol className="list-decimal pr-6 space-y-1 text-sm">
+          <ol className="list-decimal pr-4 sm:pr-6 space-y-1 text-[13px] sm:text-sm">
             {outline.map((section, sectionIndex) => {
               const units = Array.isArray(section?.units) ? section.units : [];
               return (
                 <li key={String(section?.id || sectionIndex)} className="space-y-1">
                   <MarkdownWithMath markdown={String(section?.title || `فصل ${sectionIndex + 1}`)} />
                   {units.length ? (
-                    <ol className="list-decimal pr-6 space-y-1 text-sm">
+                    <ol className="list-decimal pr-4 sm:pr-6 space-y-1 text-[13px] sm:text-sm">
                       {units.map((unit, unitIndex) => (
                         <li key={String(unit?.id || unitIndex)}>
                           <MarkdownWithMath markdown={String(unit?.title || `درس ${unitIndex + 1}`)} />
@@ -90,7 +90,7 @@ export function StructuredContentView({ structureJson }: StructuredContentViewPr
                         ].join('');
 
                         return (
-                          <div key={String(unit?.id || unitIndex)} className="rounded-2xl border border-border/60 bg-background/80 p-4 max-h-[70vh] overflow-y-auto">
+                          <div key={String(unit?.id || unitIndex)} className="rounded-2xl border border-border/60 bg-background/80 p-4 max-h-[50vh] md:max-h-[70vh] overflow-y-auto">
                             <MarkdownWithMath markdown={combined} className="space-y-2" />
                           </div>
                         );

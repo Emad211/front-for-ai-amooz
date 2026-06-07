@@ -62,7 +62,7 @@ export function ActivityChart({ data, days = 7 }: ActivityChartProps) {
           </div>
         </CardHeader>
         <CardContent>
-          <div className="h-[320px] w-full mt-4">
+          <div className="h-[260px] sm:h-[320px] w-full mt-4">
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={data} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                 <defs>

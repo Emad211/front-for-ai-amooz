@@ -32,11 +32,11 @@ export function ClassStudentsHeader({
         </div>
       </div>
       <div className="flex items-center gap-2 w-full sm:w-auto">
-        <Button variant="outline" size="sm" onClick={onExport} className="flex-1 sm:flex-none">
+        <Button variant="outline" size="sm" onClick={onExport} className="h-10 sm:h-9 flex-1 sm:flex-none">
           <Download className="h-4 w-4 sm:ml-2" />
           <span className="hidden sm:inline">خروجی اکسل</span>
         </Button>
-        <Button size="sm" onClick={onAddStudent} className="flex-1 sm:flex-none">
+        <Button size="sm" onClick={onAddStudent} className="h-10 sm:h-9 flex-1 sm:flex-none">
           <UserPlus className="h-4 w-4 sm:ml-2" />
           <span className="hidden sm:inline">افزودن دانش‌آموز</span>
         </Button>

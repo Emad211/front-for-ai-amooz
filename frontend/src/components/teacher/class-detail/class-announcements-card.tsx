@@ -173,7 +173,7 @@ export function ClassAnnouncementsCard({ sessionId, sessionType }: ClassAnnounce
                 key={announcement.id}
                 className="p-4 rounded-xl border hover:bg-muted/50 transition-colors"
               >
-                <div className="flex items-start justify-between gap-3">
+                <div className="flex items-start justify-between gap-2 sm:gap-3">
                   <div className="flex-1">
                     <div className="flex items-center gap-2 mb-2">
                       <h4 className="font-medium">{announcement.title}</h4>
@@ -190,7 +190,7 @@ export function ClassAnnouncementsCard({ sessionId, sessionType }: ClassAnnounce
                   </div>
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
-                      <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0">
+                      <Button variant="ghost" size="icon" className="h-9 w-9 sm:h-8 sm:w-8 shrink-0">
                         <MoreHorizontal className="h-4 w-4" />
                       </Button>
                     </DropdownMenuTrigger>

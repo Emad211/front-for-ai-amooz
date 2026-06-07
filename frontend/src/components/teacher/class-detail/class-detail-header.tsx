@@ -33,7 +33,7 @@ export function ClassDetailHeader({
   const router = useRouter();
   
   return (
-    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 sm:gap-4">
       <div className="flex items-center gap-3 sm:gap-4">
         <Button variant="ghost" size="icon" onClick={() => router.back()} className="rounded-full shrink-0">
           <ArrowRight className="h-5 w-5" />
@@ -49,7 +49,7 @@ export function ClassDetailHeader({
           <h1 className="text-xl sm:text-2xl font-bold truncate">{title}</h1>
         </div>
       </div>
-      <div className="flex items-center gap-2 mr-10 sm:mr-0">
+      <div className="flex items-center gap-2">
         <Button variant="outline" size="sm" className="sm:size-default" asChild>
           <Link href={`${basePath}/my-classes/${classId}/students`}>
             <Users className="h-4 w-4 sm:ml-2" />

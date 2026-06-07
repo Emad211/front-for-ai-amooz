@@ -28,7 +28,7 @@ export const CourseCard = ({ course }: CourseCardProps) => {
 
   return (
     <Card className="group bg-card border-border/50 hover:border-primary/30 transition-all duration-300 overflow-hidden flex flex-col justify-between h-full rounded-3xl hover:shadow-2xl hover:shadow-primary/5">
-      <CardContent className="p-6 md:p-8">
+      <CardContent className="p-4 md:p-6 lg:p-8">
         <div className="flex justify-start mb-6 gap-2 flex-wrap items-center">
           {course.tags.map((tag) => (
             <TagBadge key={tag} tag={tag} />

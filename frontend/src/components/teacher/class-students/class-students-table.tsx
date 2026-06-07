@@ -67,7 +67,7 @@ export function ClassStudentsTable({
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
           <CardTitle className="text-lg">لیست دانش‌آموزان</CardTitle>
           <div className="flex items-center gap-3 w-full sm:w-auto">
-            <div className="relative flex-1 sm:w-64">
+            <div className="relative flex-1 sm:w-64 md:w-auto">
               <Search className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
                 placeholder="جستجوی دانش‌آموز..."
@@ -99,7 +99,7 @@ export function ClassStudentsTable({
             </div>
           ) : (
             filteredStudents.map((student) => (
-              <div key={student.id} className="p-4 rounded-xl border bg-card hover:bg-muted/50 transition-colors">
+              <div key={student.id} className="p-3 sm:p-4 rounded-xl border bg-card hover:bg-muted/50 transition-colors">
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex items-center gap-3 min-w-0 flex-1">
                     <Avatar className="h-10 w-10 shrink-0">
@@ -139,7 +139,7 @@ export function ClassStudentsTable({
                 </div>
                 <div className="flex items-center justify-between mt-3 pt-3 border-t">
                   <div className="flex items-center gap-2">
-                    <Progress value={student.progress} className="h-2 w-16" />
+                    <Progress value={student.progress} className="h-2 w-12 sm:w-16" />
                     <span className="text-sm font-medium text-primary">{student.progress}%</span>
                   </div>
                   <Badge variant="outline" className={statusConfig[student.status]?.color}>

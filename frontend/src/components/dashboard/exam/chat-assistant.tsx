@@ -476,7 +476,7 @@ export const ChatAssistant = ({ onToggle, isOpen, isMobile = false, className, e
       className={cn(
         'flex-shrink-0 flex-col bg-card border-border overflow-hidden transition-all duration-300 ease-in-out',
         isMobile ? 'flex w-full h-[100dvh] rounded-none border-none' : 'rounded-l-2xl shadow-xl h-full border-l',
-        !isMobile && 'hidden md:flex',
+        !isMobile && 'hidden lg:flex',
         !isMobile && (isOpen ? 'w-[36rem]' : 'w-0 p-0 border-none'),
         className
       )}

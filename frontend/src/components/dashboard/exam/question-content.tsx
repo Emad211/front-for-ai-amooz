@@ -201,7 +201,7 @@ export const QuestionContent = ({
                   <Label
                     key={option.id}
                     htmlFor={`option-${question.id}-${option.id}`}
-                    className="flex items-center justify-between p-3 sm:p-4 bg-background border border-border rounded-lg cursor-pointer hover:bg-secondary/50 has-[:checked]:bg-primary/10 has-[:checked]:border-primary"
+                    className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 p-3 sm:p-4 bg-background border border-border rounded-lg cursor-pointer hover:bg-secondary/50 has-[:checked]:bg-primary/10 has-[:checked]:border-primary"
                   >
                     <div className="flex items-center gap-3">
                       <RadioGroupItem value={option.label} id={`option-${question.id}-${option.id}`} />

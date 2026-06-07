@@ -29,7 +29,7 @@ export function ClassInfoCard({ description, tags, objectives }: ClassInfoCardPr
           </div>
         )}
 
-        <div className="flex flex-wrap gap-2 mt-4">
+        <div className="flex flex-wrap gap-2 sm:gap-3 mt-3 sm:mt-4">
           {tags.map(tag => (
             <Badge key={tag} variant="secondary" className="rounded-full">{tag}</Badge>
           ))}

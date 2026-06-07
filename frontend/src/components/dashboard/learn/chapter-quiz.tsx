@@ -167,14 +167,14 @@ export function ChapterQuiz({
 
               {/* True / False */}
               {q.type === 'true_false' && (
-                <div className="mt-3 grid grid-cols-2 gap-3">
+                <div className="mt-3 grid grid-cols-2 gap-2 sm:gap-3">
                   {[
                     { val: 'صحیح', label: 'صحیح ✓' },
                     { val: 'غلط', label: 'غلط ✗' },
                   ].map((tf) => (
                     <label
                       key={tf.val}
-                      className={`flex items-center justify-center gap-2 p-3 rounded-lg border cursor-pointer text-sm font-semibold ${
+                      className={`flex items-center justify-center gap-2 p-3 rounded-lg border cursor-pointer text-xs sm:text-sm font-semibold ${
                         value === tf.val
                           ? 'border-primary bg-primary/10 text-primary'
                           : 'border-border bg-background hover:bg-secondary/50'
@@ -207,7 +207,7 @@ export function ChapterQuiz({
                         onChange={() => setAnswers((prev) => ({ ...prev, [q.id]: opt }))}
                         className="mt-1"
                       />
-                      <span className="text-sm text-foreground">
+                      <span className="text-xs sm:text-sm text-foreground break-words">
                         <MarkdownWithMath markdown={opt} />
                       </span>
                     </label>

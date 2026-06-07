@@ -147,7 +147,7 @@ export default function ExamResultPage() {
           </Badge>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 sm:gap-3">
           <div className="bg-background border border-border rounded-xl p-4">
             <div className="text-xs text-muted-foreground">نمره</div>
             <div className="text-2xl font-bold">{result.score_0_100}</div>

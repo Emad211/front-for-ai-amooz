@@ -43,7 +43,7 @@ export default function TeacherMyClassesPage() {
 	}
 
 	return (
-		<div className="space-y-8">
+		<div className="space-y-4 md:space-y-6 lg:space-y-8">
 			<div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
 				<div>
 					<h1 className="text-2xl md:text-3xl font-black text-foreground">کلاس‌های من</h1>
@@ -88,13 +88,13 @@ export default function TeacherMyClassesPage() {
 				</div>
 
 				{isLoading ? (
-					<div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+					<div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 md:gap-6">
 						<Skeleton className="h-64 rounded-2xl" />
 						<Skeleton className="h-64 rounded-2xl" />
 						<Skeleton className="h-64 rounded-2xl" />
 					</div>
 				) : sortedClasses.length > 0 ? (
-					<div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+					<div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 md:gap-6">
 						{sortedClasses.map((cls) => (
 							<ClassCard key={cls.id} cls={cls as any} basePath="/teacher" onDelete={reload} />
 						))}

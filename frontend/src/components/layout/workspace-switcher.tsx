@@ -36,7 +36,7 @@ export function WorkspaceSwitcher() {
               ) : (
                 <Building2 className="w-5 h-5 text-primary" />
               )}
-              <span className="flex-1 text-right truncate">{activeWorkspace.name}</span>
+              <span className="flex-1 text-right truncate min-w-0">{activeWorkspace.name}</span>
             </>
           ) : (
             <>
@@ -47,7 +47,7 @@ export function WorkspaceSwitcher() {
           <ChevronDown className="w-4 h-4 text-muted-foreground" />
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" className="w-56">
+      <DropdownMenuContent align="start" className="w-56 max-w-[calc(100vw-2rem)]">
         <DropdownMenuItem
           onClick={() => switchWorkspace(null)}
           className={cn('gap-2 cursor-pointer', !activeWorkspace && 'bg-muted')}
@@ -67,8 +67,8 @@ export function WorkspaceSwitcher() {
             ) : (
               <Building2 className="w-4 h-4" />
             )}
-            <span className="flex-1 truncate">{ws.name}</span>
-            <span className="text-[10px] text-muted-foreground">{ws.orgRoleDisplay}</span>
+            <span className="flex-1 truncate min-w-0">{ws.name}</span>
+            <span className="text-[10px] text-muted-foreground shrink-0">{ws.orgRoleDisplay}</span>
           </DropdownMenuItem>
         ))}
       </DropdownMenuContent>

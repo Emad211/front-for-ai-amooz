@@ -101,7 +101,7 @@ export default function TeacherAnalyticsPage() {
 
 	return (
 		<PageTransition>
-			<div className="space-y-8">
+			<div className="space-y-6 md:space-y-8">
 				<div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
 					<div>
 						<h1 className="text-2xl md:text-3xl font-black text-foreground">آمار و تحلیل معلم</h1>
@@ -115,7 +115,7 @@ export default function TeacherAnalyticsPage() {
 									گزارش فعالیت‌ها
 								</Button>
 							</DialogTrigger>
-							<DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto rounded-3xl p-0 border-none">
+							<DialogContent className="max-w-[90vw] md:max-w-2xl max-h-[80vh] overflow-y-auto rounded-3xl p-0 border-none">
 								<DialogHeader className="sr-only">
 									<DialogTitle>گزارش فعالیت‌های اخیر</DialogTitle>
 								</DialogHeader>

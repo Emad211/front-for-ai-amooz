@@ -116,7 +116,7 @@ export function InteractiveMatchGame({ pairs }: InteractiveMatchGameProps) {
       </div>
 
       {/* Columns */}
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-3">
         {/* Terms */}
         <div className="space-y-2">
           <div className="text-[10px] text-muted-foreground text-center mb-1">مفاهیم</div>
@@ -127,14 +127,14 @@ export function InteractiveMatchGame({ pairs }: InteractiveMatchGameProps) {
                 key={`term-${i}`}
                 onClick={() => selectTerm(i)}
                 className={cn(
-                  'rounded-lg border p-2 cursor-pointer transition-all text-xs',
+                  'rounded-lg border p-1.5 sm:p-2 cursor-pointer transition-all text-xs',
                   state === 'idle' && 'border-border bg-card hover:border-primary/40',
                   state === 'selected' && 'border-primary bg-primary/10',
                   state === 'matched' && 'border-green-500/50 bg-green-500/10 opacity-60 cursor-default',
                   state === 'wrong' && 'border-destructive bg-destructive/10 animate-shake'
                 )}
               >
-                <MarkdownWithMath markdown={String(p.term ?? '')} className="text-xs" renderKey={`term-${i}-${state}`} />
+                <MarkdownWithMath markdown={String(p.term ?? '')} className="break-words text-xs" renderKey={`term-${i}-${state}`} />
               </div>
             );
           })}
@@ -150,13 +150,13 @@ export function InteractiveMatchGame({ pairs }: InteractiveMatchGameProps) {
                 key={`def-${d.id}`}
                 onClick={() => selectDefinition(d.id)}
                 className={cn(
-                  'rounded-lg border p-2 cursor-pointer transition-all text-xs',
+                  'rounded-lg border p-1.5 sm:p-2 cursor-pointer transition-all text-xs',
                   state === 'idle' && 'border-border bg-card hover:border-primary/40',
                   state === 'matched' && 'border-green-500/50 bg-green-500/10 opacity-60 cursor-default',
                   state === 'wrong' && 'border-destructive bg-destructive/10 animate-shake'
                 )}
               >
-                <MarkdownWithMath markdown={d.text} className="text-xs" renderKey={`def-${d.id}-${state}`} />
+                <MarkdownWithMath markdown={d.text} className="break-words text-xs" renderKey={`def-${d.id}-${state}`} />
               </div>
             );
           })}
@@ -180,7 +180,7 @@ export function InteractiveMatchGame({ pairs }: InteractiveMatchGameProps) {
 
       {/* Reset */}
       <div className="flex justify-center mt-3">
-        <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={reset}>
+        <Button variant="ghost" size="sm" className="h-9 sm:h-7 text-xs" onClick={reset}>
           <RotateCcw className="h-3 w-3 ml-1" />
           شروع مجدد
         </Button>

@@ -92,11 +92,11 @@ export function UserProfile({
           </Avatar>
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent className="w-64 p-2 rounded-2xl shadow-2xl border-border/50" align="start" forceMount>
+      <DropdownMenuContent className="w-64 max-w-[calc(100vw-2rem)] p-2 rounded-2xl shadow-2xl border-border/50" align="start" forceMount>
         <DropdownMenuLabel className="font-normal p-3">
           <div className="flex flex-col space-y-1 text-start">
-            <p className="text-sm font-black leading-none text-foreground">{displayName}</p>
-            <p className="text-xs leading-none text-muted-foreground font-medium">
+            <p className="text-sm font-black leading-none text-foreground truncate">{displayName}</p>
+            <p className="text-xs leading-none text-muted-foreground font-medium truncate">
               {displayEmail}
             </p>
           </div>

@@ -175,7 +175,7 @@ export default function TeacherExamDetailPage({ params }: PageProps) {
             <h1 className="text-xl sm:text-2xl font-bold truncate">{examPrep.title}</h1>
           </div>
         </div>
-        <div className="flex items-center gap-2 mr-10 sm:mr-0">
+        <div className="flex flex-wrap items-center gap-2 justify-end sm:mr-0">
           <Button
             variant="outline"
             size="sm"
@@ -205,9 +205,9 @@ export default function TeacherExamDetailPage({ params }: PageProps) {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6">
         {/* Main Content */}
-        <div className="lg:col-span-2 space-y-6">
+        <div className="md:col-span-2 space-y-6">
           {/* Pipeline Output */}
           <Card className="p-4 md:p-6 rounded-3xl border border-border/60">
             <div className="flex flex-col gap-3" dir="rtl">
@@ -265,7 +265,7 @@ export default function TeacherExamDetailPage({ params }: PageProps) {
                               </div>
 
                               {q.options && q.options.length > 0 && (
-                                <div className="space-y-2 pr-10">
+                                <div className="space-y-2 pr-6 sm:pr-10">
                                   {q.options.map((opt) => (
                                     <div
                                       key={opt.label}
@@ -326,7 +326,7 @@ export default function TeacherExamDetailPage({ params }: PageProps) {
         </div>
 
         {/* Sidebar */}
-        <div className="lg:col-span-1 space-y-4">
+        <div className="md:col-span-1 space-y-4">
           {/* Stats Card */}
           <Card>
             <CardHeader>

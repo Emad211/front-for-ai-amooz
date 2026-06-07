@@ -42,7 +42,7 @@ export default function CalendarPage() {
         />
 
         {/* Main Content */}
-        <div className="flex gap-6">
+        <div className="flex flex-col lg:flex-row gap-4 md:gap-5 lg:gap-6">
           {/* Calendar Section */}
           <div className="flex-1">
             {/* Desktop: Always show calendar */}

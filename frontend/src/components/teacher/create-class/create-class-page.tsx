@@ -535,7 +535,7 @@ export function CreateClassPage() {
   return (
     <div className="space-y-8" dir="rtl">
       <Card className="relative overflow-hidden border-border/40 bg-gradient-to-l from-primary/10 via-background to-background rounded-3xl shadow-xl shadow-primary/5">
-        <div className="absolute inset-y-0 left-0 w-40 bg-primary/10 blur-3xl" />
+        <div className="absolute inset-y-0 left-0 w-32 sm:w-40 bg-primary/10 blur-3xl" />
         <div className="relative p-6 sm:p-8 flex flex-col gap-3">
           <div className="flex items-center gap-3 text-primary">
             <span className="h-10 w-10 rounded-2xl bg-primary/10 flex items-center justify-center font-black text-lg">+</span>
@@ -701,7 +701,7 @@ export function CreateClassPage() {
       {/* Only show level/duration for class pipeline */}
       {pipelineType === 'class' && (
         <Card className="p-4 sm:p-5 rounded-3xl border-border/40">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-5" dir="rtl">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-5" dir="rtl">
             <div className="space-y-2">
               <Label>سطح (اختیاری)</Label>
               <Select value={level} onValueChange={(value) => setLevel(value)}>

@@ -73,7 +73,7 @@ export function ClassStudentsPreview({ classId, students, maxDisplay = 5, basePa
                   <p className="text-xs text-muted-foreground truncate">{student.email}</p>
                 </div>
               </div>
-              <div className="flex items-center justify-between sm:justify-end gap-3 mr-[52px] sm:mr-0">
+              <div className="flex items-center justify-between sm:justify-end gap-2 sm:gap-3">
                 <div className="text-left">
                   <p className="text-sm font-medium text-primary">{student.progress}%</p>
                   <p className="text-xs text-muted-foreground">پیشرفت</p>

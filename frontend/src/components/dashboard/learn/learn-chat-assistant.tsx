@@ -142,7 +142,7 @@ export const ChatMessage = ({ sender, time, message, widget }: ChatMessageProps)
         )}
         <div
           className={cn(
-            'p-3 rounded-2xl leading-6 shadow-sm border max-w-[90%]',
+            'p-3 rounded-2xl leading-6 shadow-sm border max-w-[85%] sm:max-w-[90%] break-words',
             isAI ? 'bg-card text-foreground rounded-tr-none border-border/50' : 'bg-primary/10 text-foreground rounded-tl-none border-primary/20'
           )}
         >
@@ -150,7 +150,7 @@ export const ChatMessage = ({ sender, time, message, widget }: ChatMessageProps)
           {isAI && widget?.widget_type ? <WidgetCard widgetType={widget.widget_type} data={widget.data} /> : null}
         </div>
       </div>
-      <span className={`text-[9px] text-muted-foreground ${isAI ? 'pr-11' : 'pl-1'}`}>{time}</span>
+      <span className={`text-[10px] sm:text-[9px] text-muted-foreground ${isAI ? 'pr-11' : 'pl-1'}`}>{time}</span>
     </div>
   );
 };
@@ -577,7 +577,7 @@ export const ChatAssistant = ({ onToggle, isOpen, className, isMobile = false, c
       className={cn(
         'flex-shrink-0 flex-col bg-card border border-border overflow-hidden transition-all duration-300 ease-in-out',
         isMobile ? 'fixed inset-0 z-[100] w-full h-[100dvh] rounded-none border-none flex' : 'rounded-2xl shadow-xl h-full',
-        !isMobile && 'hidden md:flex',
+        !isMobile && 'hidden lg:flex',
         !isMobile && (isOpen ? 'w-96' : 'w-0 p-0 border-none'),
         className
       )}
@@ -696,7 +696,7 @@ export const ChatAssistant = ({ onToggle, isOpen, className, isMobile = false, c
                   <Button
                     key={s}
                     variant="outline"
-                    className="text-xs h-8 flex-shrink-0"
+                    className="text-xs h-10 sm:h-8 flex-shrink-0"
                     disabled={isSending}
                     onClick={() => sendMessage(s)}
                   >

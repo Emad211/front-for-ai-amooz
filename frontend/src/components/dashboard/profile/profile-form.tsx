@@ -114,11 +114,11 @@ export function ProfileForm({ user, isLoading = false, error = null, onSave }: P
 
   return (
     <Card className="border-none shadow-xl shadow-foreground/5 bg-card/50 backdrop-blur-sm rounded-3xl overflow-hidden">
-      <CardHeader className="pb-8 pt-10 px-8 border-b border-border/50 bg-muted/30">
-        <div className="flex flex-col md:flex-row items-center gap-8">
+      <CardHeader className="pb-8 px-4 pt-6 sm:px-6 sm:pt-8 md:px-8 md:pt-10 border-b border-border/50 bg-muted/30">
+        <div className="flex flex-col md:flex-row items-center md:items-start gap-4 md:gap-8">
           <div className="relative group">
             <div className="absolute -inset-1 bg-gradient-to-tr from-primary to-primary/30 rounded-full blur opacity-25 group-hover:opacity-50 transition duration-500"></div>
-            <Avatar className="h-32 w-32 border-4 border-background relative">
+            <Avatar className="h-24 w-24 md:h-32 md:w-32 border-4 border-background relative">
               <AvatarImage src={(avatarPreview || profile.avatar) || undefined} alt={user.name} />
               <AvatarFallback className="text-2xl bg-primary/10 text-primary">
                 {(user.name || profile.username || 'U').substring(0, 2).toUpperCase()}
@@ -163,10 +163,10 @@ export function ProfileForm({ user, isLoading = false, error = null, onSave }: P
         </div>
       </CardHeader>
 
-      <CardContent className="p-8 space-y-8">
+      <CardContent className="p-4 sm:p-6 md:p-8 space-y-8">
         {error && <div className="text-sm text-destructive">{error}</div>}
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6 md:gap-x-8 md:gap-y-6">
           <div className="space-y-2.5">
             <Label htmlFor="first_name" className="text-sm font-semibold flex items-center gap-2 px-1">
               <User className="w-4 h-4 text-primary" />
@@ -261,7 +261,7 @@ export function ProfileForm({ user, isLoading = false, error = null, onSave }: P
         </div>
       </CardContent>
 
-      <CardFooter className="p-8 pt-0 flex flex-col sm:flex-row justify-end gap-3">
+      <CardFooter className="p-4 pt-0 sm:p-6 sm:pt-0 md:p-8 md:pt-0 flex flex-col sm:flex-row justify-end gap-3">
         <Button
           variant="ghost"
           className="h-12 px-8 rounded-xl font-semibold gap-2 order-2 sm:order-1"

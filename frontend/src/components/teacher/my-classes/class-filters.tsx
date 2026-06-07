@@ -48,9 +48,9 @@ export function ClassFilters({
             />
           </div>
 
-          <div className="flex flex-wrap gap-3">
+          <div className="flex flex-col sm:flex-row gap-2 sm:gap-3">
             <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger className="w-full sm:w-[140px] bg-background/50 rounded-xl">
+              <SelectTrigger className="w-full sm:w-[130px] bg-background/50 rounded-xl">
                 <SelectValue placeholder="وضعیت" />
               </SelectTrigger>
               <SelectContent className="rounded-xl">
@@ -62,7 +62,7 @@ export function ClassFilters({
             </Select>
 
             <Select value={categoryFilter} onValueChange={setCategoryFilter}>
-              <SelectTrigger className="w-full sm:w-[140px] bg-background/50 rounded-xl">
+              <SelectTrigger className="w-full sm:w-[130px] bg-background/50 rounded-xl">
                 <SelectValue placeholder="دسته‌بندی" />
               </SelectTrigger>
               <SelectContent className="rounded-xl">
@@ -74,7 +74,7 @@ export function ClassFilters({
             </Select>
 
             <Select value={sortBy} onValueChange={setSortBy}>
-              <SelectTrigger className="w-full sm:w-[140px] bg-background/50 rounded-xl">
+              <SelectTrigger className="w-full sm:w-[130px] bg-background/50 rounded-xl">
                 <SelectValue placeholder="مرتب‌سازی" />
               </SelectTrigger>
               <SelectContent className="rounded-xl">

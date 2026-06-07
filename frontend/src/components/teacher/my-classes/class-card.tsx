@@ -117,7 +117,7 @@ export function ClassCard({ cls, basePath = '/admin', onDelete }: ClassCardProps
                 </Badge>
               )}
             </div>
-            <CardTitle className="text-lg font-bold text-foreground group-hover:text-primary transition-colors line-clamp-1">
+            <CardTitle className="text-base sm:text-lg font-bold text-foreground group-hover:text-primary transition-colors line-clamp-1">
               {cls.title}
             </CardTitle>
             <p className="text-xs text-muted-foreground line-clamp-2 leading-relaxed h-9">
@@ -128,11 +128,11 @@ export function ClassCard({ cls, basePath = '/admin', onDelete }: ClassCardProps
           <div onClick={(e) => e.stopPropagation()}>
             <DropdownMenu>
               <DropdownMenuTrigger asChild className="dropdown-trigger">
-                <Button variant="ghost" size="icon" className="h-8 w-8 -ml-2 text-muted-foreground hover:text-foreground">
+                <Button variant="ghost" size="icon" className="h-9 w-9 sm:h-8 sm:w-8 -ml-2 text-muted-foreground hover:text-foreground">
                   <MoreVertical className="h-4 w-4" />
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-48 font-bold">
+              <DropdownMenuContent align="end" className="w-48 max-w-[90vw] font-bold">
                 <DropdownMenuItem asChild>
                   <Link href={`${basePath}/my-classes/${cls.id}`}>
                     <Eye className="w-4 h-4 ml-2" />

@@ -34,14 +34,14 @@ export function CalendarMobileEvents({
             variant="ghost"
             size="icon"
             onClick={onBack}
-            className="h-9 w-9 rounded-xl"
+            className="h-10 w-10 rounded-xl"
           >
             <ChevronLeft className="w-5 h-5" />
           </Button>
         )}
         <div className="flex items-center gap-2">
           <CalendarDays className="w-5 h-5 text-primary" />
-          <h3 className="font-bold text-lg">{title}</h3>
+          <h3 className="font-bold text-base sm:text-lg">{title}</h3>
         </div>
         <span className="text-xs text-muted-foreground bg-muted px-2 py-1 rounded-lg">
           {eventsToShow.length} رویداد

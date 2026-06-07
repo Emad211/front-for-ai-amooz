@@ -53,8 +53,8 @@ export function CalendarHeader({
             <ChevronRight className="w-4 h-4" />
           </Button>
           
-          <div className="min-w-[140px] text-center">
-            <span className="font-bold text-base">
+          <div className="min-w-[110px] sm:min-w-[140px] text-center">
+            <span className="font-bold text-sm sm:text-base">
               {PERSIAN_MONTHS[currentMonth - 1]} {currentYear}
             </span>
           </div>

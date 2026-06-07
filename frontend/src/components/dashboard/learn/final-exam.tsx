@@ -144,7 +144,7 @@ export function FinalExam({ courseId, onProgressUpdate }: { courseId: string; on
           const qType = q.type || (Array.isArray(q.options) && q.options.length > 0 ? 'multiple_choice' : 'short_answer');
           return (
             <div key={q.id} className="border border-border rounded-xl p-4 bg-background/20">
-              <div className="flex items-center justify-between gap-2 flex-wrap mb-2">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-2">
                 <div className="flex items-center gap-2">
                   <span className="text-sm font-bold text-foreground">سوال {idx + 1}</span>
                   {qType === 'true_false' && (
@@ -171,7 +171,7 @@ export function FinalExam({ courseId, onProgressUpdate }: { courseId: string; on
 
               {/* True / False */}
               {qType === 'true_false' && (
-                <div className="mt-3 grid grid-cols-2 gap-3">
+                <div className="mt-3 grid grid-cols-2 gap-2 sm:gap-3">
                   {[
                     { val: 'صحیح', label: 'صحیح ✓' },
                     { val: 'غلط', label: 'غلط ✗' },
@@ -211,7 +211,7 @@ export function FinalExam({ courseId, onProgressUpdate }: { courseId: string; on
                         onChange={() => setAnswers((prev) => ({ ...prev, [q.id]: opt }))}
                         className="mt-1"
                       />
-                      <span className="text-sm text-foreground">
+                      <span className="break-words text-xs sm:text-sm text-foreground">
                         <MarkdownWithMath markdown={opt} />
                       </span>
                     </label>

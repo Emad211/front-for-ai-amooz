@@ -38,7 +38,7 @@ export function ClassDistribution({ data }: ClassDistributionProps) {
           <CardTitle className="text-xl font-black text-foreground">توزیع دانش‌آموزان</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="h-[320px] w-full">
+          <div className="h-[240px] sm:h-[320px] w-full">
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
                 <Pie
@@ -64,7 +64,7 @@ export function ClassDistribution({ data }: ClassDistributionProps) {
                   verticalAlign="bottom" 
                   height={36}
                   content={({ payload }) => (
-                    <div className="flex flex-wrap justify-center gap-4 mt-4">
+                    <div className="flex flex-wrap justify-center gap-2 sm:gap-4 mt-4">
                       {payload?.map((entry: any, index: number) => (
                         <div key={`item-${index}`} className="flex items-center gap-2">
                           <div 
@@ -83,7 +83,7 @@ export function ClassDistribution({ data }: ClassDistributionProps) {
             </ResponsiveContainer>
           </div>
           
-          <div className="mt-6 grid grid-cols-2 gap-3">
+          <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 gap-3">
             {data.slice(0, 2).map((item, idx) => (
               <div key={idx} className="bg-muted/30 p-3 rounded-2xl border border-border/20">
                 <p className="text-[10px] font-bold text-muted-foreground mb-1">{item.name}</p>

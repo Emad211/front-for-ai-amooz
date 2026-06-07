@@ -56,7 +56,7 @@ export function InteractiveFlashcard({ flashcards }: InteractiveFlashcardProps) 
       </div>
 
       {/* Card Container */}
-      <div className="perspective-[1000px] w-full h-48 cursor-pointer" onClick={flip}>
+      <div className="perspective-[1000px] w-full h-40 sm:h-48 md:h-56 cursor-pointer" onClick={flip}>
         <div
           className={cn(
             'relative w-full h-full transition-transform duration-500 [transform-style:preserve-3d]',
@@ -64,11 +64,11 @@ export function InteractiveFlashcard({ flashcards }: InteractiveFlashcardProps) 
           )}
         >
           {/* Front */}
-          <div className="absolute inset-0 [backface-visibility:hidden] rounded-xl border border-border bg-card flex items-center justify-center p-4 overflow-auto">
+          <div className="absolute inset-0 [backface-visibility:hidden] rounded-xl border border-border bg-card flex items-center justify-center p-2 sm:p-4 overflow-auto">
             <MarkdownWithMath markdown={String(current.front ?? '')} className="text-sm text-center" renderKey={`front-${currentIndex}-${isFlipped}`} />
           </div>
           {/* Back */}
-          <div className="absolute inset-0 [backface-visibility:hidden] [transform:rotateY(180deg)] rounded-xl border border-primary/30 bg-primary/5 flex items-center justify-center p-4 overflow-auto">
+          <div className="absolute inset-0 [backface-visibility:hidden] [transform:rotateY(180deg)] rounded-xl border border-primary/30 bg-primary/5 flex items-center justify-center p-2 sm:p-4 overflow-auto">
             <MarkdownWithMath markdown={String(current.back ?? '')} className="text-sm text-center text-foreground" renderKey={`back-${currentIndex}-${isFlipped}`} />
           </div>
         </div>
@@ -82,7 +82,7 @@ export function InteractiveFlashcard({ flashcards }: InteractiveFlashcardProps) 
         <Button
           variant="outline"
           size="sm"
-          className="h-8 px-3 text-xs rounded-lg"
+          className="h-10 sm:h-8 px-2 sm:px-3 text-xs rounded-lg"
           disabled={currentIndex === 0}
           onClick={(e) => {
             e.stopPropagation();
@@ -106,7 +106,7 @@ export function InteractiveFlashcard({ flashcards }: InteractiveFlashcardProps) 
         <Button
           variant="outline"
           size="sm"
-          className="h-8 px-3 text-xs rounded-lg"
+          className="h-10 sm:h-8 px-2 sm:px-3 text-xs rounded-lg"
           disabled={currentIndex === total - 1}
           onClick={(e) => {
             e.stopPropagation();
