@@ -18,6 +18,22 @@ def _get_env(name: str) -> str:
     return (os.getenv(name) or '').strip()
 
 
+def _safe_template_replace(template: str, values: dict) -> str:
+    """Replace ``{name}`` placeholders without Python's ``str.format``.
+
+    The conversation text being summarized may contain literal braces (LaTeX
+    like ``{x}``, code, or JSON). ``str.format`` would treat those as fields and
+    raise ``KeyError``/``IndexError``, crashing summarization. This does plain
+    substitution instead.
+    """
+    out = str(template or '')
+    for key, val in (values or {}).items():
+        if not isinstance(key, str):
+            continue
+        out = out.replace('{' + key + '}', str(val))
+    return out
+
+
 def _default_redis_url() -> str:
     # Works for local dev (host network) and docker-compose (service name).
     return _get_env('CHAT_REDIS_URL') or 'redis://localhost:6379/0'
@@ -178,7 +194,10 @@ class MemoryService:
         tail = state.buffer[overflow_count:]
 
         new_turns = '\n'.join([f"{m['role']}: {m['content']}" for m in to_summarize])
-        prompt = PROMPTS['memory_summary']['default'].format(old_summary=state.summary, new_turns=new_turns)
+        prompt = _safe_template_replace(
+            PROMPTS['memory_summary']['default'],
+            {'old_summary': state.summary, 'new_turns': new_turns},
+        )
         updated_summary = generate_text(contents=prompt, feature='memory_summary').text.strip()
 
         state.summary = updated_summary

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import os
 import re
 import threading
@@ -7,7 +8,7 @@ from dataclasses import dataclass
 from typing import Any, Optional, List, Dict
 
 from openai import OpenAI
-from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception
 
 from apps.commons.llm_prompts import PROMPTS
 from apps.commons.llm_provider import preferred_provider
@@ -106,12 +107,69 @@ class LlmResult:
 
 
 # ====================================================================
+# Multimodal content normalization
+# ====================================================================
+def _normalize_content(content: Any) -> Any:
+    """Normalize a message ``content`` into a valid OpenAI shape.
+
+    A plain string stays a string. A LIST may contain raw strings and/or media
+    parts produced by ``part_from_bytes``; OpenAI requires every list item to be
+    a typed part, so raw strings are wrapped as ``{"type": "text", ...}``. Dict
+    parts (image_url / input_audio / text) pass through unchanged.
+    """
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts: List[Any] = []
+        for item in content:
+            if isinstance(item, str):
+                parts.append({"type": "text", "text": item})
+            else:
+                parts.append(item)
+        return parts
+    return content
+
+
+def _normalize_messages(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    out: List[Dict[str, Any]] = []
+    for msg in messages:
+        if isinstance(msg, dict) and "content" in msg:
+            out.append({**msg, "content": _normalize_content(msg["content"])})
+        else:
+            out.append(msg)
+    return out
+
+
+def _response_format_unsupported(exc: Exception) -> bool:
+    """Heuristic: did the provider reject the ``response_format`` parameter?"""
+    msg = str(exc).lower()
+    if "response_format" in msg or "response format" in msg:
+        return True
+    if "json_object" in msg or "json mode" in msg:
+        return True
+    if ("unsupported" in msg or "unknown" in msg or "not supported" in msg) and "param" in msg:
+        return True
+    return False
+
+
+def _should_retry_llm_call(exc: BaseException) -> bool:
+    """Retry transient errors, but NOT a permanent ``response_format`` rejection.
+
+    Retrying a 400 about an unsupported parameter just wastes calls; ``generate_json``
+    handles that case by retrying once WITHOUT json mode, so fail fast here.
+    """
+    if isinstance(exc, Exception) and _response_format_unsupported(exc):
+        return False
+    return True
+
+
+# ====================================================================
 # Core LLM Call (با پشتیبانی از messages)
 # ====================================================================
 @retry(
     stop=stop_after_attempt(3),
     wait=wait_exponential(multiplier=1, min=1, max=12),
-    retry=retry_if_exception_type(Exception),
+    retry=retry_if_exception(_should_retry_llm_call),
     reraise=True,
 )
 def _call_gapgpt_with_messages(
@@ -131,7 +189,7 @@ def _call_gapgpt_with_messages(
 
     create_kwargs: Dict[str, Any] = {
         "model": clean_model,
-        "messages": messages,
+        "messages": _normalize_messages(messages),
         "timeout": timeout if timeout is not None else _default_llm_timeout(),
     }
     if response_format is not None:
@@ -239,9 +297,32 @@ def _repair_json_with_llm(*, feature: str, model_output: str, schema_hint: str =
 # ====================================================================
 # Public API: generate_json
 # ====================================================================
+def _json_object_mode_enabled() -> bool:
+    return (os.getenv("LLM_JSON_OBJECT_MODE", "1") or "1").strip().lower() in {"1", "true", "yes"}
+
+
 def generate_json(*, feature: str, contents: Any) -> dict[str, Any]:
+    """Free-text → dict, now using provider JSON mode when available.
+
+    Requesting ``response_format={"type": "json_object"}`` makes the model emit
+    parseable JSON far more reliably, so the repair round-trip (and the silent
+    ``{}`` fallback) fire much less often. If the provider/model rejects
+    ``response_format``, we transparently retry without it.
+    """
     set_llm_feature(feature)
-    out = generate_text(contents=contents, feature=feature).text
+
+    use_json_mode = _json_object_mode_enabled()
+    try:
+        out = generate_text(
+            contents=contents,
+            feature=feature,
+            response_format={"type": "json_object"} if use_json_mode else None,
+        ).text
+    except Exception as exc:
+        if use_json_mode and _response_format_unsupported(exc):
+            out = generate_text(contents=contents, feature=feature).text
+        else:
+            raise
 
     if not out.strip():
         return _repair_json_with_llm(feature=feature, model_output=out)
@@ -254,11 +335,48 @@ def generate_json(*, feature: str, contents: Any) -> dict[str, Any]:
 
 
 # ====================================================================
-# File upload support
+# File upload support (standard OpenAI multimodal shapes)
 # ====================================================================
+def _audio_format_from_mime(mime_type: str) -> str:
+    mt = (mime_type or "").lower().strip()
+    mapping = {
+        "audio/mpeg": "mp3",
+        "audio/mp3": "mp3",
+        "audio/wav": "wav",
+        "audio/x-wav": "wav",
+        "audio/wave": "wav",
+        "audio/ogg": "ogg",
+        "audio/webm": "webm",
+        "audio/flac": "flac",
+        "audio/mp4": "mp4",
+        "audio/m4a": "m4a",
+        "audio/x-m4a": "m4a",
+    }
+    if mt in mapping:
+        return mapping[mt]
+    return mt.split("/")[-1] or "mp3"
+
+
 def part_from_bytes(*, data: bytes, mime_type: str):
+    """Build a STANDARD OpenAI multimodal content part from raw bytes.
+
+    The Avalai gateway silently ignores the legacy ``{type:'input_file',data,
+    mime_type}`` shape (the historical cause of empty/hallucinated vision
+    output). Images MUST use ``image_url`` with a base64 data URI and audio MUST
+    use ``input_audio`` — mirroring the already-fixed transcription path.
+    See AvalAI-Developer-Documentation.md.
+    """
+    mt = (mime_type or "").lower().strip() or "application/octet-stream"
+    b64 = base64.b64encode(data).decode("ascii")
+
+    if mt.startswith("audio/"):
+        return {
+            "type": "input_audio",
+            "input_audio": {"data": b64, "format": _audio_format_from_mime(mt)},
+        }
+
+    # Images (and any other type) → data-URI image_url (the shape the gateway honors).
     return {
-        "type": "input_file",
-        "data": data,
-        "mime_type": mime_type,
+        "type": "image_url",
+        "image_url": {"url": f"data:{mt};base64,{b64}"},
     }
