@@ -1,6 +1,8 @@
 'use client';
 
 import React from 'react';
+import { useRouter } from 'next/navigation';
+import { toast } from 'sonner';
 import { UserPlus, Download } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { StudentStats } from '@/components/teacher/students/student-stats';
@@ -9,9 +11,55 @@ import { StudentTable } from '@/components/teacher/students/student-table';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ErrorState } from '@/components/shared/error-state';
 import { useTeacherStudents } from '@/hooks/use-teacher-students';
+import { formatPersianDate } from '@/lib/date-utils';
+
+/** Quote a CSV cell (escape embedded quotes; wrap if it contains , " or newline). */
+function csvCell(value: unknown): string {
+	const s = value === null || value === undefined ? '' : String(value);
+	return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
 
 export default function TeacherStudentsPage() {
+	const router = useRouter();
 	const { students, stats, isLoading, error, reload, filters } = useTeacherStudents();
+
+	const handleExport = () => {
+		if (!students.length) {
+			toast.error('دانش‌آموزی برای خروجی گرفتن وجود ندارد');
+			return;
+		}
+		const headers = ['نام', 'ایمیل', 'تلفن', 'کلاس‌ها', 'دروس تکمیل‌شده', 'کل دروس', 'میانگین نمره', 'وضعیت', 'تاریخ عضویت'];
+		const rows = students.map((s) => [
+			s.name,
+			s.email,
+			s.phone,
+			s.enrolledClasses,
+			s.completedLessons,
+			s.totalLessons,
+			s.averageScore,
+			s.status === 'active' ? 'فعال' : 'غیرفعال',
+			formatPersianDate(s.joinDate),
+		]);
+		// Prepend a UTF-8 BOM so Excel renders Persian text correctly.
+		const csv = '﻿' + [headers, ...rows].map((r) => r.map(csvCell).join(',')).join('\n');
+		const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+		const url = URL.createObjectURL(blob);
+		const link = document.createElement('a');
+		link.href = url;
+		link.download = `students-${new Date().toISOString().slice(0, 10)}.csv`;
+		document.body.appendChild(link);
+		link.click();
+		document.body.removeChild(link);
+		URL.revokeObjectURL(url);
+		toast.success('خروجی دانش‌آموزان آماده شد');
+	};
+
+	const handleAddStudent = () => {
+		// Students are invited per class (by phone). Send the teacher to their
+		// classes to pick one and add students there.
+		toast.info('برای افزودن دانش‌آموز، یک کلاس را انتخاب کنید');
+		router.push('/teacher/my-classes');
+	};
 
 	if (isLoading) {
 		return (
@@ -54,11 +102,11 @@ export default function TeacherStudentsPage() {
 					</p>
 				</div>
 				<div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
-					<Button variant="outline" size="sm" className="w-full sm:w-auto h-10 rounded-xl gap-2">
+					<Button variant="outline" size="sm" onClick={handleExport} className="w-full sm:w-auto h-10 rounded-xl gap-2">
 						<Download className="w-4 h-4" />
 						خروجی Excel
 					</Button>
-					<Button size="sm" className="w-full sm:w-auto h-10 rounded-xl gap-2">
+					<Button size="sm" onClick={handleAddStudent} className="w-full sm:w-auto h-10 rounded-xl gap-2">
 						<UserPlus className="w-4 h-4" />
 						افزودن دانش‌آموز
 					</Button>

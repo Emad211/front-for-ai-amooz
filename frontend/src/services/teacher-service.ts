@@ -10,7 +10,18 @@ import type {
   Course,
   Student,
   Notification,
+  MessageRecipient,
 } from '@/types';
+
+export type TeacherBroadcastResult = {
+  id: number;
+  title: string;
+  message: string;
+  type: string;
+  recipientCount: number;
+  smsQueued: boolean;
+  createdAt: string;
+};
 
 import {
   courseStructureToChapters,
@@ -208,8 +219,46 @@ export const TeacherService = {
     return courses;
   },
 
-  getMessageRecipients: async () => {
-    return [];
+  getMessageRecipients: async (): Promise<MessageRecipient[]> => {
+    // Backend returns the teacher's own students; `id` is the phone (stable key),
+    // which is exactly what the broadcast endpoint expects as a recipient phone.
+    const rows = await requestJson<
+      Array<{ id: string; name: string; phone: string; email: string; hasAccount: boolean }>
+    >('/notifications/teacher/recipients/', { method: 'GET' });
+    return rows.map((r) => ({
+      id: r.id,
+      name: r.name || r.phone,
+      email: r.email || '',
+      avatar: '',
+      role: 'student' as const,
+    }));
+  },
+
+  sendTeacherBroadcast: async (payload: {
+    title: string;
+    message: string;
+    recipientPhones?: string[];
+    sendToAll?: boolean;
+    sendSms?: boolean;
+  }): Promise<TeacherBroadcastResult> => {
+    return requestJson<TeacherBroadcastResult>('/notifications/teacher/broadcast/', {
+      method: 'POST',
+      body: JSON.stringify({
+        title: payload.title,
+        message: payload.message,
+        recipientPhones: payload.recipientPhones ?? [],
+        sendToAll: Boolean(payload.sendToAll),
+        sendSms: Boolean(payload.sendSms),
+      }),
+    });
+  },
+
+  changePassword: async (oldPassword: string, newPassword: string) => {
+    await requestJson('/auth/password-change/', {
+      method: 'POST',
+      body: JSON.stringify({ old_password: oldPassword, new_password: newPassword }),
+    });
+    return { success: true as const };
   },
 
   getProfileSettings: async (): Promise<AdminProfileSettings> => {
@@ -235,12 +284,7 @@ export const TeacherService = {
   },
 
   getNotificationSettings: async (): Promise<AdminNotificationSettings> => {
-    return {
-      emailNotifications: false,
-      browserNotifications: false,
-      smsNotifications: false,
-      marketingEmails: false,
-    };
+    return requestJson<AdminNotificationSettings>('/notifications/preferences/', { method: 'GET' });
   },
 
   updateProfileSettings: async (data: Partial<AdminProfileSettings>) => {
@@ -278,7 +322,11 @@ export const TeacherService = {
   },
 
   updateNotificationSettings: async (data: Partial<AdminNotificationSettings>) => {
-    return { success: false, data };
+    const updated = await requestJson<AdminNotificationSettings>('/notifications/preferences/', {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+    return { success: true as const, data: updated };
   },
 
   getNotifications: async (): Promise<Notification[]> => {
@@ -330,16 +378,35 @@ export const TeacherService = {
   getClassStudents: async (classId: string) => {
     const id = Number(classId);
     if (!Number.isFinite(id)) return [];
-    const invites = await requestJson<ClassInvite[]>(`/classes/creation-sessions/${id}/invites/`, { method: 'GET' });
-    return invites.map((inv) => ({
-      id: String(inv.id),
-      name: inv.phone,
-      email: inv.invite_code,
-      avatar: '',
-      joinDate: inv.created_at,
-      progress: 0,
-      lastActivity: inv.created_at,
-      status: 'inactive' as const,
+    // Real per-student roster (progress, average score, activity status) — replaces
+    // the old invite stubs that hardcoded progress:0 / status:'inactive'.
+    const rows = await requestJson<
+      Array<{
+        id: string;
+        name: string;
+        email: string;
+        phone: string;
+        inviteCode: string;
+        avatar: string;
+        progress: number;
+        completedLessons: number;
+        totalLessons: number;
+        averageScore: number;
+        status: 'active' | 'inactive';
+        joinDate: string;
+        lastActivity: string;
+      }>
+    >(`/classes/creation-sessions/${id}/students/`, { method: 'GET' });
+    return rows.map((r) => ({
+      id: r.id,
+      name: r.name,
+      email: r.email,
+      avatar: r.avatar || '',
+      joinDate: r.joinDate,
+      progress: r.progress,
+      lastActivity: r.lastActivity,
+      status: r.status,
+      grade: r.averageScore,
     }));
   },
 

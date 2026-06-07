@@ -10,6 +10,8 @@ import { MessageTips } from '@/components/teacher/messages/message-tips';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ErrorState } from '@/components/shared/error-state';
 import { useTeacherMessageRecipients } from '@/hooks/use-teacher-message-recipients';
+import { TeacherService } from '@/services/teacher-service';
+import { toPersianDigits } from '@/lib/persian-digits';
 
 export default function TeacherMessagesPage() {
 	const { recipients, isLoading, error, reload } = useTeacherMessageRecipients();
@@ -28,7 +30,7 @@ export default function TeacherMessagesPage() {
 		);
 	};
 
-	const handleSend = () => {
+	const handleSend = async () => {
 		if (!subject || !message) {
 			toast.error('لطفاً موضوع و متن پیام را وارد کنید');
 			return;
@@ -40,15 +42,24 @@ export default function TeacherMessagesPage() {
 		}
 
 		setIsSending(true);
-
-		setTimeout(() => {
-			setIsSending(false);
-			toast.success('پیام با موفقیت ارسال شد');
+		try {
+			// Recipient ids ARE phone numbers (the backend uses phone as the stable id).
+			const result = await TeacherService.sendTeacherBroadcast({
+				title: subject,
+				message,
+				sendToAll: recipientType === 'all',
+				recipientPhones: recipientType === 'specific' ? selectedStudents : [],
+			});
+			toast.success(`پیام برای ${toPersianDigits(result.recipientCount)} دانش‌آموز ارسال شد`);
 			setSubject('');
 			setMessage('');
 			setSelectedStudents([]);
 			setRecipientType('all');
-		}, 1500);
+		} catch (e) {
+			toast.error(e instanceof Error ? e.message : 'ارسال پیام ناموفق بود');
+		} finally {
+			setIsSending(false);
+		}
 	};
 
 	if (error) {

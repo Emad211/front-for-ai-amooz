@@ -10,14 +10,17 @@ import { Switch } from '@/components/ui/switch';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 
 import { useTeacherSettings } from '@/hooks/use-teacher-settings';
+import { TeacherService } from '@/services/teacher-service';
+import { toast } from 'sonner';
 
 interface SecurityTabProps {
 useSettings?: typeof useTeacherSettings;
 }
 
 export function SecurityTab({ useSettings = useTeacherSettings }: SecurityTabProps) {
-const { security, updateSecurity, isLoading } = useSettings();
+const { security, updateSecurity } = useSettings();
 const [showSuccessDialog, setShowSuccessDialog] = useState(false);
+const [isSavingPassword, setIsSavingPassword] = useState(false);
 const [passwordState, setPasswordState] = useState({
 current: '',
 new: '',
@@ -25,16 +28,28 @@ confirm: ''
 });
 
 const handleUpdatePassword = async () => {
-// Mock logic for password update
-if (!passwordState.current || !passwordState.new || !passwordState.confirm) return;
+if (!passwordState.current || !passwordState.new || !passwordState.confirm) {
+toast.error('لطفاً همه فیلدهای رمز عبور را پر کنید');
+return;
+}
+if (passwordState.new !== passwordState.confirm) {
+toast.error('رمز عبور جدید و تکرار آن یکسان نیستند');
+return;
+}
+if (passwordState.new.length < 8) {
+toast.error('رمز عبور جدید باید حداقل ۸ کاراکتر باشد');
+return;
+}
 
+setIsSavingPassword(true);
 try {
-// Simulate API call
-await new Promise(resolve => setTimeout(resolve, 800));
+await TeacherService.changePassword(passwordState.current, passwordState.new);
 setShowSuccessDialog(true);
 setPasswordState({ current: '', new: '', confirm: '' });
 } catch (error) {
-console.error('Failed to update password:', error);
+toast.error(error instanceof Error ? error.message : 'تغییر رمز عبور ناموفق بود');
+} finally {
+setIsSavingPassword(false);
 }
 };
 
@@ -98,12 +113,12 @@ dir="ltr"
 </CardContent>
 <CardFooter className="p-8 pt-0 flex justify-end">
 <Button 
-onClick={handleUpdatePassword} 
-disabled={isLoading || !passwordState.new} 
+onClick={handleUpdatePassword}
+disabled={isSavingPassword || !passwordState.new}
 className="h-12 px-10 rounded-xl font-semibold gap-2 bg-primary hover:bg-primary/90 shadow-lg shadow-primary/20"
 >
 <Save className="w-4 h-4" />
-{isLoading ? 'در حال به‌روزرسانی...' : 'به‌روزرسانی رمز عبور'}
+{isSavingPassword ? 'در حال به‌روزرسانی...' : 'به‌روزرسانی رمز عبور'}
 </Button>
 </CardFooter>
 </Card>

@@ -71,14 +71,14 @@ export default function TeacherExamDetailPage({ params }: PageProps) {
         }
 
         // Start polling if processing
-        if (['transcribing', 'qa_extracting'].includes(data.status)) {
+        if (['exam_transcribing', 'exam_structuring'].includes(data.status)) {
           if (!pollTimer.current) {
             pollTimer.current = window.setInterval(async () => {
               try {
                 const updated = await fetchExamPrepSession(sessionId);
                 setExamPrep(updated);
 
-                if (!['transcribing', 'qa_extracting'].includes(updated.status)) {
+                if (!['exam_transcribing', 'exam_structuring'].includes(updated.status)) {
                   if (pollTimer.current) {
                     window.clearInterval(pollTimer.current);
                     pollTimer.current = null;
