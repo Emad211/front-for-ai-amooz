@@ -8,6 +8,12 @@ const backendUrl =
 const nextConfig: NextConfig = {
   output: "standalone",
 
+  // Django/DRF URLs end in a slash and APPEND_SLASH cannot redirect POSTs with a
+  // body (it raises RuntimeError -> 500). By default Next issues a 308 that strips
+  // the trailing slash before the /api rewrite, breaking every POST/PUT/PATCH/DELETE
+  // proxied to the backend. Skip that redirect so "/api/foo/" reaches Django intact.
+  skipTrailingSlashRedirect: true,
+
   typescript: {
     ignoreBuildErrors: true,
   },
@@ -17,10 +23,13 @@ const nextConfig: NextConfig = {
   },
 
   async rewrites() {
+    // Capture the remainder with (.*) instead of :path* so the trailing slash is
+    // preserved verbatim — :path* drops it, which (combined with Django's
+    // APPEND_SLASH) breaks proxied POSTs. Paired with skipTrailingSlashRedirect.
     return [
       {
-        source: "/api/:path*",
-        destination: `${backendUrl}/api/:path*`,
+        source: "/api/:path(.*)",
+        destination: `${backendUrl}/api/:path`,
       },
     ];
   },
