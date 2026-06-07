@@ -6,15 +6,28 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from drf_spectacular.utils import extend_schema, OpenApiResponse
 
+from django.db import transaction
+
 from apps.accounts.models import User
 from apps.classes.permissions import IsTeacherUser
-from .models import AdminNotification, NotificationReadReceipt
+from .models import (
+    AdminNotification,
+    NotificationReadReceipt,
+    TeacherNotification,
+    TeacherNotificationRecipient,
+    UserNotificationPreference,
+)
 from apps.core.permissions import IsPlatformAdmin as IsAdminUser
 from .serializers import (
     AdminNotificationCreateSerializer,
     AdminNotificationSerializer,
+    NotificationPreferenceSerializer,
+    TeacherBroadcastCreateSerializer,
+    TeacherBroadcastResultSerializer,
+    TeacherMessageRecipientSerializer,
     UserRecipientSerializer,
 )
+from .services import teacher_student_phones, teacher_student_recipients
 
 
 class AdminNotificationBroadcastView(APIView):
@@ -96,6 +109,137 @@ class TeacherNotificationListView(APIView):
         return Response(out, status=status.HTTP_200_OK)
 
 
+class TeacherMessageRecipientsView(APIView):
+    """List the teacher's own students for the message recipient picker."""
+
+    permission_classes = [IsAuthenticated, IsTeacherUser]
+
+    @extend_schema(
+        tags=['Notifications'],
+        summary='List the teacher\'s students (message recipients)',
+        operation_id='teacher_message_recipients',
+        responses={200: TeacherMessageRecipientSerializer(many=True)},
+    )
+    def get(self, request):
+        recipients = teacher_student_recipients(teacher=request.user)
+        return Response(TeacherMessageRecipientSerializer(recipients, many=True).data)
+
+
+class TeacherNotificationBroadcastView(APIView):
+    """Send a message from a teacher to their own students.
+
+    Delivered in-app (student notification feed) and, optionally, by SMS. A
+    teacher can only target phones that belong to their own students.
+    """
+
+    permission_classes = [IsAuthenticated, IsTeacherUser]
+
+    @extend_schema(
+        tags=['Notifications'],
+        summary='Send a teacher broadcast message to students',
+        operation_id='teacher_notifications_broadcast',
+        request=TeacherBroadcastCreateSerializer,
+        responses={201: TeacherBroadcastResultSerializer},
+    )
+    def post(self, request):
+        serializer = TeacherBroadcastCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+
+        own_students = teacher_student_phones(teacher=request.user)
+        if not own_students:
+            return Response(
+                {'detail': 'هنوز دانش‌آموزی برای ارسال پیام ندارید.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if data.get('sendToAll'):
+            target_phones = set(own_students)
+        else:
+            requested = {(p or '').strip() for p in data.get('recipientPhones') or []}
+            # Security: silently drop anyone who is not this teacher's student.
+            target_phones = requested & own_students
+
+        if not target_phones:
+            return Response(
+                {'detail': 'گیرنده‌ای انتخاب نشده است.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        send_sms = bool(data.get('sendSms'))
+
+        with transaction.atomic():
+            notif = TeacherNotification.objects.create(
+                teacher=request.user,
+                title=data['title'],
+                message=data['message'],
+                notification_type=data.get(
+                    'notification_type', AdminNotification.NotificationType.MESSAGE
+                ),
+                sms_sent=send_sms,
+            )
+            TeacherNotificationRecipient.objects.bulk_create(
+                [
+                    TeacherNotificationRecipient(notification=notif, phone=phone)
+                    for phone in sorted(target_phones)
+                ],
+                ignore_conflicts=True,
+            )
+
+        if send_sms:
+            from apps.classes.tasks import send_teacher_message_sms_task
+
+            notif_id = notif.id
+
+            def _dispatch_sms(nid=notif_id):
+                send_teacher_message_sms_task.delay(nid)
+
+            transaction.on_commit(_dispatch_sms)
+
+        payload = {
+            'id': notif.id,
+            'title': notif.title,
+            'message': notif.message,
+            'type': notif.notification_type,
+            'recipientCount': len(target_phones),
+            'smsQueued': send_sms,
+            'createdAt': notif.created_at.isoformat(),
+        }
+        return Response(
+            TeacherBroadcastResultSerializer(payload).data, status=status.HTTP_201_CREATED
+        )
+
+
+class NotificationPreferencesView(APIView):
+    """Per-user notification channel preferences (GET/PATCH). Role-agnostic."""
+
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        tags=['Notifications'],
+        summary='Get notification preferences',
+        operation_id='notification_preferences_get',
+        responses={200: NotificationPreferenceSerializer},
+    )
+    def get(self, request):
+        prefs, _ = UserNotificationPreference.objects.get_or_create(user=request.user)
+        return Response(NotificationPreferenceSerializer(prefs).data)
+
+    @extend_schema(
+        tags=['Notifications'],
+        summary='Update notification preferences',
+        operation_id='notification_preferences_update',
+        request=NotificationPreferenceSerializer,
+        responses={200: NotificationPreferenceSerializer},
+    )
+    def patch(self, request):
+        prefs, _ = UserNotificationPreference.objects.get_or_create(user=request.user)
+        serializer = NotificationPreferenceSerializer(prefs, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(NotificationPreferenceSerializer(prefs).data)
+
+
 class MarkNotificationReadView(APIView):
     """Mark a specific notification as read by the current user."""
 
@@ -144,15 +288,22 @@ class MarkAllNotificationsReadView(APIView):
         
         ids_to_mark.extend([f'admin-{item.id}' for item in admin_qs])
 
-        # If student, also handle ClassAnnouncements
+        # If student, also handle ClassAnnouncements + teacher messages addressed to them.
         if user.role == User.Role.STUDENT:
-            from apps.classes.models import ClassAnnouncement, ClassCreationSession
+            from apps.classes.models import ClassAnnouncement
             phone = (getattr(user, 'phone', None) or '').strip()
             if phone:
                 announcements = ClassAnnouncement.objects.filter(
                     session__invites__phone=phone
                 ).distinct()
                 ids_to_mark.extend([f'announcement-{a.id}' for a in announcements])
+
+                teacher_notif_ids = (
+                    TeacherNotification.objects.filter(recipients__phone=phone)
+                    .values_list('id', flat=True)
+                    .distinct()
+                )
+                ids_to_mark.extend([f'teacher-{nid}' for nid in teacher_notif_ids])
 
         # Bulk create receipts
         receipts = [

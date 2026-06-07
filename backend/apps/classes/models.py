@@ -159,6 +159,86 @@ class StudentInviteCode(models.Model):
         return f"{self.phone}:{self.code}"
 
 
+class Enrollment(models.Model):
+    """A real student↔class link, created when a student joins/opens a class.
+
+    Historically the platform had no enrollment table: a student's class list
+    was derived purely from ``ClassInvitation.phone == user.phone`` and teacher
+    rosters showed invite rows (phone-as-name, progress hardcoded to 0). This
+    model records the actual student User behind an invite, plus a
+    ``last_activity_at`` heartbeat so rosters can show real "active/inactive"
+    status and join dates. Per-unit completion lives in ``StudentUnitProgress``;
+    quiz/exam scores live in their existing per-student tables.
+    """
+
+    session = models.ForeignKey(
+        ClassCreationSession,
+        on_delete=models.CASCADE,
+        related_name='enrollments',
+    )
+    student = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='enrollments',
+    )
+
+    joined_at = models.DateTimeField(auto_now_add=True)
+    # Heartbeat updated on any meaningful student action (open content, chat,
+    # quiz/exam attempt). NULL until the first tracked action. Drives the
+    # active/inactive status shown on teacher rosters.
+    last_activity_at = models.DateTimeField(null=True, blank=True, db_index=True)
+
+    def __str__(self) -> str:
+        return f"{self.session_id}:{self.student_id}"
+
+    class Meta:
+        constraints = [
+            UniqueConstraint(fields=['session', 'student'], name='uniq_enrollment_session_student'),
+        ]
+        indexes = [
+            models.Index(fields=['student', 'session']),
+        ]
+
+
+class StudentUnitProgress(models.Model):
+    """Per-unit completion for a student inside a class session.
+
+    Keyed by the unit's stable ``external_id`` (e.g. ``"u-1"``) rather than a FK
+    to ``ClassUnit`` so it survives structure re-syncs and works directly from
+    the structure JSON the student UI renders. ``completedLessons`` for a
+    roster = count of these rows; ``totalLessons`` = ``ClassUnit`` count (or the
+    unit count parsed from ``structure_json``).
+    """
+
+    session = models.ForeignKey(
+        ClassCreationSession,
+        on_delete=models.CASCADE,
+        related_name='unit_progress',
+    )
+    student = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='unit_progress',
+    )
+    unit_external_id = models.CharField(max_length=128)
+
+    completed_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self) -> str:
+        return f"{self.session_id}:{self.student_id}:{self.unit_external_id}"
+
+    class Meta:
+        constraints = [
+            UniqueConstraint(
+                fields=['session', 'student', 'unit_external_id'],
+                name='uniq_unit_progress_session_student_unit',
+            ),
+        ]
+        indexes = [
+            models.Index(fields=['session', 'student']),
+        ]
+
+
 class StudentExamPrepAttempt(models.Model):
     session = models.ForeignKey(
         ClassCreationSession,

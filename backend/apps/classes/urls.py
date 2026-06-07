@@ -6,6 +6,7 @@ from .views import (
     ClassCreationSessionDetailView,
     ClassCreationSessionListView,
     ClassInvitationDetailView,
+    ClassSessionStudentsView,
     ClassAnnouncementListCreateView,
     ClassAnnouncementDetailView,
     ClassInvitationListCreateView,
@@ -22,6 +23,7 @@ from .views import (
     TeacherStudentsListView,
     StudentCourseListView,
     StudentCourseContentView,
+    StudentLessonCompleteView,
     StudentCoursePdfExportView,
     StudentCourseChatView,
     StudentCourseChatMediaView,
@@ -66,6 +68,7 @@ urlpatterns = [
     path('creation-sessions/<int:session_id>/prerequisites/', ClassPrerequisiteListView.as_view(), name='class_creation_session_prerequisites'),
     path('creation-sessions/<int:session_id>/invites/', ClassInvitationListCreateView.as_view(), name='class_creation_session_invites'),
     path('creation-sessions/<int:session_id>/invites/<int:invite_id>/', ClassInvitationDetailView.as_view(), name='class_creation_session_invite_detail'),
+    path('creation-sessions/<int:session_id>/students/', ClassSessionStudentsView.as_view(), name='class_creation_session_students'),
     path('creation-sessions/<int:session_id>/announcements/', ClassAnnouncementListCreateView.as_view(), name='class_creation_session_announcements'),
     path('creation-sessions/<int:session_id>/announcements/<int:announcement_id>/', ClassAnnouncementDetailView.as_view(), name='class_creation_session_announcement_detail'),
 
@@ -104,6 +107,7 @@ urlpatterns = [
     # Student endpoints
     path('student/courses/', StudentCourseListView.as_view(), name='student_courses_list'),
     path('student/courses/<int:session_id>/content/', StudentCourseContentView.as_view(), name='student_course_content'),
+    path('student/courses/<int:session_id>/lessons/<str:lesson_id>/complete/', StudentLessonCompleteView.as_view(), name='student_lesson_complete'),
     path('student/courses/<int:session_id>/export-pdf/', StudentCoursePdfExportView.as_view(), name='student_course_export_pdf'),
     path('student/courses/<int:session_id>/chat/', StudentCourseChatView.as_view(), name='student_course_chat'),
     path('student/courses/<int:session_id>/chat-media/', StudentCourseChatMediaView.as_view(), name='student_course_chat_media'),

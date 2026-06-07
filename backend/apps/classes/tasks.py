@@ -794,6 +794,32 @@ def _get_in_progress_statuses() -> list[str]:
     return _IN_PROGRESS_STATUSES
 
 
+@shared_task(bind=True, max_retries=5, acks_late=True)
+def send_teacher_message_sms_task(self, notification_id: int) -> dict:
+    """Send a teacher broadcast message to its recipients via SMS.
+
+    Uses exponential back-off: 30 s → 60 s → 120 s → 240 s → 480 s.
+    """
+    from .services.mediana_sms import send_teacher_message_sms
+
+    logger.info(
+        '[SMS] send_teacher_message_sms_task STARTED notif=%s attempt=%s/%s',
+        notification_id, self.request.retries + 1, self.max_retries + 1,
+    )
+    try:
+        send_teacher_message_sms(notification_id)
+        logger.info('[SMS] send_teacher_message_sms_task SUCCESS notif=%s', notification_id)
+        return {'status': 'success', 'notification_id': notification_id}
+    except Exception as exc:
+        logger.error('Teacher message SMS failed for notif %s (attempt %s/%s): %s',
+                     notification_id, self.request.retries + 1, self.max_retries + 1,
+                     str(exc)[:200])
+        if self.request.retries >= self.max_retries:
+            return {'status': 'failed', 'error': str(exc)[:500]}
+        backoff = 30 * (2 ** self.request.retries)
+        raise self.retry(exc=exc, countdown=backoff)
+
+
 @shared_task(bind=True, max_retries=0)
 def cleanup_stale_sessions(self) -> dict:
     """Mark sessions stuck in *ING statuses for >2 hours as FAILED.

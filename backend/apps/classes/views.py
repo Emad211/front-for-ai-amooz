@@ -48,6 +48,7 @@ from .serializers import (
     TeacherAnalyticsDistributionItemSerializer,
     TeacherAnalyticsStatSerializer,
     TeacherStudentSerializer,
+    ClassSessionStudentSerializer,
     Step1TranscribeRequestSerializer,
     Step1TranscribeResponseSerializer,
     Step2StructureRequestSerializer,
@@ -326,30 +327,15 @@ def _process_step5_recap(session_id: int) -> None:
 
 
 def _compute_student_course_progress(*, session: ClassCreationSession, student) -> int:
-    """Compute completion percent for a student in a session.
+    """Completion percent for a student in a session.
 
-    MVP rule: each chapter quiz passed counts equally + final exam passed counts equally.
+    Delegates to ``services.progress.course_progress_percent`` which is now
+    lesson-completion based (completed units / total units) with a fallback to
+    the legacy quiz/exam measure when a session has no normalized units.
     """
+    from .services.progress import course_progress_percent
 
-    try:
-        total_sections = session.sections.count()
-    except Exception:
-        total_sections = 0
-
-    total_parts = total_sections + 1
-    if total_parts <= 0:
-        return 0
-
-    passed_sections = (
-        ClassSectionQuiz.objects.filter(session=session, student=student, last_passed=True).count()
-        if total_sections > 0
-        else 0
-    )
-    passed_final = ClassFinalExam.objects.filter(session=session, student=student, last_passed=True).exists()
-    passed_parts = passed_sections + (1 if passed_final else 0)
-
-    pct = int(round((passed_parts / total_parts) * 100))
-    return max(0, min(100, pct))
+    return course_progress_percent(session=session, student=student)
 
 
 def _process_full_pipeline(session_id: int) -> None:
@@ -1129,6 +1115,105 @@ class ClassInvitationDetailView(APIView):
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
+class ClassSessionStudentsView(APIView):
+    """Real per-session student roster for the teacher (name, progress, score, status).
+
+    Unlike ``.../invites/`` (raw invite rows), this resolves the actual student
+    User behind each invited phone and reports real per-session progress
+    (completed units), average quiz/exam score, and active/inactive status.
+    """
+
+    permission_classes = [IsAuthenticated, IsTeacherUser]
+
+    @extend_schema(
+        tags=['Classes'],
+        summary='Real per-session student roster (teacher)',
+        operation_id='classes_creation_sessions_students',
+        responses={200: ClassSessionStudentSerializer(many=True)},
+    )
+    def get(self, request, session_id: int):
+        session = ClassCreationSession.objects.filter(id=session_id, teacher=request.user).first()
+        if session is None:
+            return Response({'detail': 'جلسه پیدا نشد.'}, status=status.HTTP_404_NOT_FOUND)
+
+        from django.contrib.auth import get_user_model
+
+        from .services.progress import activity_status, session_roster_stats
+
+        User = get_user_model()
+
+        invites = list(
+            ClassInvitation.objects.filter(session=session).order_by('-created_at').values(
+                'phone', 'invite_code', 'created_at'
+            )
+        )
+        teacher_phone = (getattr(request.user, 'phone', '') or '').strip()
+        phones = [i['phone'] for i in invites if (i['phone'] or '').strip() != teacher_phone]
+
+        users_by_phone: dict[str, object] = {}
+        if phones:
+            for u in User.objects.filter(phone__in=phones).only(
+                'id', 'first_name', 'last_name', 'username', 'email', 'phone'
+            ):
+                p = (getattr(u, 'phone', None) or '').strip()
+                if p:
+                    users_by_phone[p] = u
+
+        user_ids = [u.id for u in users_by_phone.values()]
+        roster = session_roster_stats(session=session, user_ids=user_ids)
+        total = roster.get(user_ids[0], {}).get('totalLessons', 0) if user_ids else 0
+        if not total:
+            from .services.progress import total_units
+            total = total_units(session=session)
+
+        out: list[dict] = []
+        for inv in invites:
+            phone = (inv['phone'] or '').strip()
+            if phone == teacher_phone:
+                continue
+            user = users_by_phone.get(phone)
+            name = phone
+            email = ''
+            completed = 0
+            average = None
+            progress = 0
+            last_dt = None
+            if user is not None:
+                first = (getattr(user, 'first_name', '') or '').strip()
+                last = (getattr(user, 'last_name', '') or '').strip()
+                name = f"{first} {last}".strip() or (getattr(user, 'username', '') or '').strip() or phone
+                email = (getattr(user, 'email', '') or '').strip()
+                ustats = roster.get(user.id) or {}
+                completed = int(ustats.get('completedLessons') or 0)
+                average = ustats.get('averageScore')
+                progress = int(ustats.get('progress') or 0)
+                last_dt = ustats.get('lastActivity')
+
+            join_dt = inv['created_at']
+            join_date = join_dt.date().isoformat() if join_dt else timezone.localdate().isoformat()
+            last_activity = last_dt.date().isoformat() if last_dt else join_date
+
+            out.append(
+                {
+                    'id': phone,
+                    'name': name,
+                    'email': email,
+                    'phone': phone,
+                    'inviteCode': inv['invite_code'] or '',
+                    'avatar': '',
+                    'progress': progress,
+                    'completedLessons': completed,
+                    'totalLessons': total,
+                    'averageScore': int(average) if average is not None else 0,
+                    'status': activity_status(last_dt),
+                    'joinDate': join_date,
+                    'lastActivity': last_activity,
+                }
+            )
+
+        return Response(ClassSessionStudentSerializer(out, many=True).data, status=status.HTTP_200_OK)
+
+
 class ClassAnnouncementListCreateView(APIView):
     permission_classes = [IsAuthenticated, IsTeacherUser]
 
@@ -1269,8 +1354,14 @@ class TeacherStudentsListView(APIView):
         responses={200: TeacherStudentSerializer(many=True)},
     )
     def get(self, request):
-        # We currently treat "students" as unique invited phone numbers across the teacher's sessions.
-        # If/when an enrollment model is added, this should be updated.
+        # "Students" are unique invited phone numbers across the teacher's sessions.
+        # Real per-student progress/score/activity now comes from the Enrollment +
+        # StudentUnitProgress + quiz/exam tables (see services.progress).
+        from .services.progress import (
+            activity_status,
+            teacher_roster_stats,
+            units_per_session,
+        )
 
         base_qs = ClassInvitation.objects.filter(session__teacher=request.user)
         teacher_phone = (getattr(request.user, 'phone', '') or '').strip()
@@ -1282,9 +1373,8 @@ class TeacherStudentsListView(APIView):
             .annotate(
                 enrolled_classes=Count('session', filter=Q(session__is_published=True), distinct=True),
                 join_date=Min('created_at'),
-                last_activity=Max('session__updated_at'),
             )
-            .order_by('-last_activity', 'phone')
+            .order_by('phone')
         )
 
         # Resolve known users by phone (best-effort). We only expose minimal info.
@@ -1313,6 +1403,16 @@ class TeacherStudentsListView(APIView):
                 continue
             invite_codes_by_phone[normalized] = get_or_create_invite_code_for_phone(normalized)
 
+        # --- Real aggregates (batched) ---
+        # Per-user progress/score/activity across all of the teacher's sessions.
+        user_ids = [u.id for u in users_by_phone.values()]
+        roster = teacher_roster_stats(teacher=request.user, user_ids=user_ids)
+        # totalLessons = sum of units across the published sessions each phone is in.
+        units_map = units_per_session(teacher=request.user)
+        published_sessions_by_phone: dict[str, set[int]] = {}
+        for pair in base_qs.filter(session__is_published=True).values('phone', 'session_id'):
+            published_sessions_by_phone.setdefault(pair['phone'], set()).add(pair['session_id'])
+
         out: list[dict] = []
         for r in rows:
             phone = (r.get('phone') or '').strip()
@@ -1321,26 +1421,40 @@ class TeacherStudentsListView(APIView):
             name = phone
             email = ''
             avatar = ''
-            status_value = 'inactive'
 
+            completed_lessons = 0
+            average_score: int | None = None
+            last_activity_dt = None
             if user is not None:
                 first = (getattr(user, 'first_name', '') or '').strip()
                 last = (getattr(user, 'last_name', '') or '').strip()
                 full = f"{first} {last}".strip()
                 name = full or (getattr(user, 'username', '') or '').strip() or phone
                 email = (getattr(user, 'email', '') or '').strip()
-                status_value = 'active'
+                ustats = roster.get(user.id) or {}
+                completed_lessons = int(ustats.get('completedLessons') or 0)
+                average_score = ustats.get('averageScore')
+                last_activity_dt = ustats.get('lastActivity')
 
             enrolled_classes = int(r.get('enrolled_classes') or 0)
-            join_dt = r.get('join_date')
-            last_dt = r.get('last_activity')
-            join_date = (join_dt.date().isoformat() if join_dt else timezone.localdate().isoformat())
-            last_activity = (last_dt.date().isoformat() if last_dt else join_date)
+            total_lessons = sum(
+                units_map.get(sid, 0) for sid in published_sessions_by_phone.get(phone, set())
+            )
+            completed_lessons = min(completed_lessons, total_lessons) if total_lessons else completed_lessons
 
-            average_score = 0
-            if average_score >= 85:
+            join_dt = r.get('join_date')
+            join_date = (join_dt.date().isoformat() if join_dt else timezone.localdate().isoformat())
+            last_activity = (
+                last_activity_dt.date().isoformat() if last_activity_dt else join_date
+            )
+            status_value = activity_status(last_activity_dt)
+
+            score_for_perf = average_score if average_score is not None else 0
+            if average_score is None:
+                performance = 'needs-improvement'
+            elif score_for_perf >= 85:
                 performance = 'excellent'
-            elif average_score >= 70:
+            elif score_for_perf >= 70:
                 performance = 'good'
             else:
                 performance = 'needs-improvement'
@@ -1354,9 +1468,9 @@ class TeacherStudentsListView(APIView):
                     'inviteCode': invite_codes_by_phone.get(phone, ''),
                     'avatar': avatar,
                     'enrolledClasses': enrolled_classes,
-                    'completedLessons': 0,
-                    'totalLessons': 0,
-                    'averageScore': average_score,
+                    'completedLessons': completed_lessons,
+                    'totalLessons': total_lessons,
+                    'averageScore': int(score_for_perf),
                     'status': status_value,
                     'joinDate': join_date,
                     'lastActivity': last_activity,
@@ -1640,6 +1754,12 @@ class StudentCourseContentView(APIView):
         if session is None:
             return Response({'detail': 'کلاس پیدا نشد.'}, status=status.HTTP_404_NOT_FOUND)
 
+        # Opening course content enrolls the student (lazily) and counts as activity.
+        from .services.progress import completed_unit_ids, touch_enrollment
+
+        touch_enrollment(session=session, student=user)
+        done_units = completed_unit_ids(session=session, student=user)
+
         chapters: list[dict] = []
         first_lesson_marked = False
         for section in session.sections.order_by('order'):
@@ -1657,6 +1777,7 @@ class StudentCourseContentView(APIView):
                         'title': unit.title,
                         'type': 'text',
                         'isActive': is_active,
+                        'isCompleted': unit.external_id in done_units,
                         'content': lesson_content,
                     }
                 )
@@ -1683,6 +1804,58 @@ class StudentCourseContentView(APIView):
         }
 
         return Response(StudentCourseContentSerializer(payload).data)
+
+
+class StudentLessonCompleteView(APIView):
+    """Mark a single lesson/unit complete for the current student.
+
+    Powers real course progress (completed units / total units) and the
+    teacher roster's ``completedLessons``. Idempotent: re-marking is a no-op.
+    """
+
+    permission_classes = [IsAuthenticated, IsStudentUser]
+
+    @extend_schema(
+        tags=['Classes'],
+        summary='Mark a lesson complete for the current student',
+        operation_id='student_lesson_complete',
+        request=None,
+        responses={200: OpenApiTypes.OBJECT},
+    )
+    def post(self, request, session_id: int, lesson_id: str):
+        user = request.user
+        phone = (getattr(user, 'phone', None) or '').strip()
+        if not phone:
+            return Response({'detail': 'شماره موبایل برای حساب کاربری ثبت نشده است.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        session = (
+            ClassCreationSession.objects.filter(
+                id=session_id,
+                is_published=True,
+                pipeline_type=ClassCreationSession.PipelineType.CLASS,
+                invites__phone=phone,
+            )
+            .first()
+        )
+        if session is None:
+            return Response({'detail': 'کلاس پیدا نشد.'}, status=status.HTTP_404_NOT_FOUND)
+
+        from .services.progress import lesson_progress_percent, mark_unit_complete, resolve_unit
+
+        unit = resolve_unit(session=session, lesson_id=lesson_id)
+        if unit is None:
+            return Response({'detail': 'درس پیدا نشد.'}, status=status.HTTP_404_NOT_FOUND)
+
+        mark_unit_complete(session=session, student=user, unit=unit)
+
+        return Response(
+            {
+                'lessonId': lesson_id,
+                'isCompleted': True,
+                'progress': lesson_progress_percent(session=session, student=user),
+            },
+            status=status.HTTP_200_OK,
+        )
 
 
 class StudentCoursePdfExportView(APIView):
@@ -2283,6 +2456,13 @@ class StudentChapterQuizView(APIView):
             passed=passed,
         )
 
+        # Submitting a quiz is activity; passing it completes the section's units.
+        from .services.progress import mark_section_units_complete, touch_enrollment
+
+        touch_enrollment(session=session, student=user)
+        if passed:
+            mark_section_units_complete(session=session, student=user, section=section)
+
         payload = {
             'score_0_100': final_score,
             'passed': passed,
@@ -2543,6 +2723,11 @@ class StudentFinalExamView(APIView):
             passed=passed,
         )
 
+        # Submitting the final exam counts as activity.
+        from .services.progress import touch_enrollment
+
+        touch_enrollment(session=session, student=user)
+
         payload = {
             'score_0_100': score_0_100,
             'passed': passed,
@@ -2662,6 +2847,29 @@ class StudentNotificationListView(APIView):
                     'link': '/notifications',
                 }
             )
+
+        # Teacher messages addressed to this student.
+        if phone:
+            from apps.notification.models import TeacherNotification
+
+            teacher_msgs = (
+                TeacherNotification.objects.filter(recipients__phone=phone)
+                .distinct()
+                .order_by('-created_at')
+            )
+            for msg in teacher_msgs:
+                item_id = f'teacher-{msg.id}'
+                out.append(
+                    {
+                        'id': item_id,
+                        'title': msg.title,
+                        'message': msg.message,
+                        'type': msg.notification_type,
+                        'isRead': item_id in read_ids,
+                        'createdAt': msg.created_at.isoformat(),
+                        'link': '/notifications',
+                    }
+                )
 
         for session in sessions:
             for announcement in session.announcements.all():

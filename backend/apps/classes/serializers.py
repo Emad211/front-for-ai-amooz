@@ -285,6 +285,24 @@ class TeacherStudentSerializer(serializers.Serializer):
     performance = serializers.CharField()
 
 
+class ClassSessionStudentSerializer(serializers.Serializer):
+    """Real per-student roster for a single class session (replaces invite stubs)."""
+
+    id = serializers.CharField()
+    name = serializers.CharField()
+    email = serializers.CharField(allow_blank=True)
+    phone = serializers.CharField(allow_blank=True)
+    inviteCode = serializers.CharField(allow_blank=True)
+    avatar = serializers.CharField(allow_blank=True)
+    progress = serializers.IntegerField(min_value=0)
+    completedLessons = serializers.IntegerField(min_value=0)
+    totalLessons = serializers.IntegerField(min_value=0)
+    averageScore = serializers.IntegerField(min_value=0)
+    status = serializers.CharField()
+    joinDate = serializers.CharField()
+    lastActivity = serializers.CharField()
+
+
 class TeacherAnalyticsStatSerializer(serializers.Serializer):
     title = serializers.CharField()
     value = serializers.CharField()

@@ -132,6 +132,51 @@ def send_publish_sms_for_session(session_id: int) -> None:
     _send_sms_for_invites(api_key, session, invites)
 
 
+def send_teacher_message_sms(notification_id: int) -> None:
+    """Send a teacher broadcast message to its recipient phones via SMS."""
+    from apps.notification.models import TeacherNotification
+
+    api_key = _get_env('MEDIANA_API_KEY')
+    if not api_key:
+        logger.info('MEDIANA_API_KEY not set; skipping teacher message SMS notif=%s', notification_id)
+        return
+
+    notif = (
+        TeacherNotification.objects.filter(id=notification_id)
+        .prefetch_related('recipients')
+        .first()
+    )
+    if notif is None:
+        logger.info('Teacher message SMS skipped: notification not found id=%s', notification_id)
+        return
+
+    phones = [r.phone for r in notif.recipients.all() if (r.phone or '').strip()]
+    if not phones:
+        logger.info('Teacher message SMS skipped: no recipients notif=%s', notification_id)
+        return
+
+    title = (notif.title or '').strip()
+    body = (notif.message or '').strip()
+    text = f'AI_AMOOZ\n{title}\n{body}' if title else f'AI_AMOOZ\n{body}'
+
+    sms_requests = [
+        {
+            'RefId': f'tmsg-{notif.id}-{idx}',
+            'TextMessage': text,
+            'Recipients': [phone],
+        }
+        for idx, phone in enumerate(phones)
+    ]
+
+    chunk_size = 1000
+    for i in range(0, len(sms_requests), chunk_size):
+        chunk = sms_requests[i : i + chunk_size]
+        result = send_peer_to_peer_sms(api_key=api_key, requests=chunk)
+        meta = result.get('meta') if isinstance(result, dict) else None
+        if isinstance(meta, dict) and meta.get('errorMessage'):
+            logger.warning('Mediana teacher-message SMS errorMessage: %s', meta.get('errorMessage'))
+
+
 def send_invite_sms_for_ids(session_id: int, invite_ids: list[int]) -> None:
     """Send SMS to specific invitations (e.g. newly added to a published session)."""
     from apps.classes.models import ClassInvitation

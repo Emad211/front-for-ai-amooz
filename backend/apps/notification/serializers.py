@@ -1,7 +1,7 @@
 from rest_framework import serializers
 
 from apps.accounts.models import User
-from .models import AdminNotification
+from .models import AdminNotification, UserNotificationPreference
 
 
 class AdminNotificationSerializer(serializers.ModelSerializer):
@@ -57,3 +57,51 @@ class UserRecipientSerializer(serializers.ModelSerializer):
             return value.url
         except Exception:
             return str(value)
+
+
+class TeacherMessageRecipientSerializer(serializers.Serializer):
+    """A student the teacher can message (for the recipient picker)."""
+
+    id = serializers.CharField()  # phone (stable key)
+    name = serializers.CharField()
+    phone = serializers.CharField()
+    email = serializers.CharField(allow_blank=True)
+    hasAccount = serializers.BooleanField()
+
+
+class TeacherBroadcastCreateSerializer(serializers.Serializer):
+    title = serializers.CharField(max_length=255)
+    message = serializers.CharField()
+    notification_type = serializers.ChoiceField(
+        choices=AdminNotification.NotificationType.choices,
+        default=AdminNotification.NotificationType.MESSAGE,
+    )
+    # Either pass explicit recipient phones, or set sendToAll to message every student.
+    recipientPhones = serializers.ListField(
+        child=serializers.CharField(), required=False, default=list,
+    )
+    sendToAll = serializers.BooleanField(required=False, default=False)
+    sendSms = serializers.BooleanField(required=False, default=False)
+
+
+class TeacherBroadcastResultSerializer(serializers.Serializer):
+    id = serializers.IntegerField()
+    title = serializers.CharField()
+    message = serializers.CharField()
+    type = serializers.CharField()
+    recipientCount = serializers.IntegerField()
+    smsQueued = serializers.BooleanField()
+    createdAt = serializers.CharField()
+
+
+class NotificationPreferenceSerializer(serializers.ModelSerializer):
+    """Maps the per-user preference model to the frontend's settings shape."""
+
+    emailNotifications = serializers.BooleanField(source='email_enabled', required=False)
+    browserNotifications = serializers.BooleanField(source='browser_enabled', required=False)
+    smsNotifications = serializers.BooleanField(source='sms_enabled', required=False)
+    marketingEmails = serializers.BooleanField(source='marketing_enabled', required=False)
+
+    class Meta:
+        model = UserNotificationPreference
+        fields = ['emailNotifications', 'browserNotifications', 'smsNotifications', 'marketingEmails']
