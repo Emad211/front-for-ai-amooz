@@ -9,6 +9,11 @@ import type {
   MessageRecipient,
   Ticket,
 } from '@/types';
+import {
+  toPersianDigits,
+  formatPersianNumber,
+  formatPersianDelta,
+} from '@/lib/persian-digits';
 
 const RAW_API_URL = (process.env.NEXT_PUBLIC_API_URL ?? '').replace(/\/$/, '');
 const API_URL = RAW_API_URL.endsWith('/api') ? RAW_API_URL : `${RAW_API_URL}/api`;
@@ -89,22 +94,7 @@ async function requestJson<T>(path: string, options: RequestInit = {}): Promise<
   return payload as T;
 }
 
-// ---------------------------------------------------------------------------
-// Persian number helpers
-// ---------------------------------------------------------------------------
-
-function toPersianDigits(n: number | string): string {
-  return String(n).replace(/\d/g, (d) => '۰۱۲۳۴۵۶۷۸۹'[Number(d)]);
-}
-
-function formatPersianNumber(n: number): string {
-  return toPersianDigits(n.toLocaleString('en-US'));
-}
-
-function formatPersianPercent(n: number): string {
-  const sign = n >= 0 ? '+' : '';
-  return `${toPersianDigits(sign + n)}٪`;
-}
+// Persian number helpers now live in `@/lib/persian-digits` (shared app-wide).
 
 // Map activity type to icon / colour
 const ACTIVITY_STYLE: Record<string, { icon: string; color: string; bg: string }> = {
@@ -271,7 +261,7 @@ export const AdminService = {
       {
         title: 'کل دانش‌آموزان',
         value: formatPersianNumber(raw.total_students),
-        change: formatPersianPercent(
+        change: formatPersianDelta(
           raw.total_students > 0
             ? Math.round((raw.student_change / Math.max(raw.total_students - raw.student_change, 1)) * 100)
             : 0,

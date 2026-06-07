@@ -17,7 +17,7 @@ export function formatPersianDateTime(dateInput: string | Date | number | undefi
       minute: '2-digit',
       hour12: false,
       calendar: 'persian',
-      numberingSystem: 'latn', 
+      numberingSystem: 'arabext',
     }).format(date);
   } catch (error) {
     console.error('Date formatting error:', error);
@@ -41,7 +41,7 @@ export function formatPersianDate(dateInput: string | Date | number | undefined 
       month: '2-digit',
       day: '2-digit',
       calendar: 'persian',
-      numberingSystem: 'latn',
+      numberingSystem: 'arabext',
     }).format(date);
   } catch (error) {
     console.error('Date formatting error:', error);
@@ -63,7 +63,7 @@ export function formatPersianMonthDay(dateInput: string | Date | number | undefi
       month: '2-digit',
       day: '2-digit',
       calendar: 'persian',
-      numberingSystem: 'latn',
+      numberingSystem: 'arabext',
     }).format(date);
   } catch (error) {
     console.error('Date formatting error:', error);
