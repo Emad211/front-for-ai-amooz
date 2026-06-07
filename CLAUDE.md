@@ -117,10 +117,14 @@ Long-running LLM work runs as Celery tasks on the dedicated **`pipeline`** queue
 
 `process_class_full_pipeline` chains them; an analogous `process_exam_prep_*` set handles exam prep. SMS notifications and `cleanup_stale_sessions` (a Celery-beat job) run on the **`default`** queue.
 
-Pure logic lives in `apps/classes/services/` (keep it out of views/tasks): `pdf_extraction.py`, `structure.py`, `transcription.py`, `prerequisites.py`, `recap.py`, `quizzes.py`, `pdf_export.py` (WeasyPrint), `media_compressor.py` (ffmpeg), `json_utils.py` (robust LLM-JSON parsing), `mediana_sms.py`. `views.py` is very large — search before editing.
+Pure logic lives in `apps/classes/services/` (keep it out of views/tasks): `pdf_extraction.py`, `structure.py`, `transcription.py`, `prerequisites.py`, `recap.py`, `quizzes.py`, `pdf_export.py` (WeasyPrint), `media_compressor.py` (ffmpeg), `mediana_sms.py`. `views.py` is very large — search before editing.
+
+**LLM → JSON handling (new convention):** the canonical robust extractor is `apps/commons/json_utils.py` (`extract_json_object`); `apps/classes/services/json_utils.py` just re-exports it. For any NEW pipeline JSON, prefer `apps/commons/structured_llm.py` — `generate_structured(schema=PydanticModel, ...)` (JSON-mode + Pydantic validation + one repair round-trip, **raises** instead of returning `{}`) or `validate_keep_dict(text, schema)` when you must preserve the model's exact dict (e.g. `structure.py`). Pydantic schemas live in `apps/classes/services/schemas.py`. Don't reintroduce raw `extract_json_object` + silent-`{}`.
 
 ### LLM providers
-`LLM_PROVIDER = gemini | avalai | auto` (env). Gemini via `google-genai`; **Avalai** (`https://api.avalai.ir`, Iranian gateway) via the OpenAI client. Models are env-driven (`MODEL_NAME`, `TRANSCRIPTION_MODEL`, `IMAGE_MODEL`, `EMBEDDING_MODEL_NAME`, …). Never hardcode model names or keys.
+`LLM_PROVIDER = gemini | avalai | auto` (env; legacy alias **`MODE`**, which is what prod actually sets — `MODE=avalai`). Gemini via `google-genai`; **Avalai** (`https://api.avalai.ir`, Iranian gateway) via the OpenAI client. `AVALAI_BASE_URL` **must** include `/v1` — `llm_client._normalize_base_url` auto-appends it if missing. Models are env-driven (`MODEL_NAME`, `TRANSCRIPTION_MODEL`, `IMAGE_MODEL`, `EMBEDDING_MODEL_NAME`, …). Never hardcode model names or keys.
+
+**Avalai API reference: [`AvalAI-Developer-Documentation.md`](AvalAI-Developer-Documentation.md)** (repo root) — the gateway's full developer docs (endpoints, models, multimodal shapes, limits/errors). Consult it before touching any LLM call. Key rule: multimodal MUST use the **standard** OpenAI shapes — `content:[{type:'image_url',image_url:{url:'data:…'}}]` for images, `{type:'input_audio',input_audio:{data,format}}` for audio (or the dedicated `POST /v1/audio/transcriptions`). The legacy `attachments/input_media/data_base64` shape is **silently ignored** by the gateway (that historical bug caused hallucinated/empty transcripts; large payloads over a flaky link also surfaced as `SSL: UNEXPECTED_EOF_WHILE_READING`). **Fixed:** `transcription.py` now extracts audio (mp3 → `input_audio`) + sampled frames (jpeg → `image_url`, governed by the `FRAME_*` env knobs) via `transcription_media.py` and sends the standard shape. Build any new multimodal call the same way.
 
 ### Storage
 S3-compatible via django-storages. Active only when `AWS_STORAGE_BUCKET_NAME` is set (MinIO locally, object storage in prod). When no public custom domain is configured, media is served through a Django proxy (`/media/<path>`); otherwise from the bucket.
@@ -149,15 +153,25 @@ Follow `.github/instructions/develop.instructions.md` (the team's standing rules
 - Tests live next to code as `test_*.py` inside each app (e.g. `apps/classes/test_*`).
 - Frontend has no unit runner wired up yet — Vitest/Playwright are planned per the instructions file; for now `tsc --noEmit` is the gate.
 
+## Production deployment (Hamravesh / Darkube)
+
+Prod runs on **Hamravesh** — its managed-Kubernetes PaaS is branded **Darkube**, so the `*.darkube.ir` / `*.darkube.app` domains and the `registry.hamdocker.ir` image registry are all Hamravesh. Cluster namespace `ai-products-ai-amooz`; services talk over internal DNS `*.ai-products-ai-amooz.svc`; each has a random `*.hsvc.ir` external ingress.
+
+- **Services:** `ai-amooz-backend` (gunicorn `core.wsgi`, port 8000) · `aiamooz-celery-worker` (`celery -A core worker -Q default,pipeline`) · `aiamooz` (redis) · `minio` · `front` (Next standalone, port 3000). Backend + worker share **one image** (`registry.hamdocker.ir/ai-products/ai-amooz-backend`) and one env set.
+- **Frontend → backend:** the `front` service sets `NEXT_PUBLIC_API_URL` = `BACKEND_URL` = `https://aiamoooz.darkube.ir`. (Note: that single var is BOTH the browser fetch-base for several services AND the `next.config.ts` rewrite target — keep it pointed at the real backend.)
+- **Secrets + the full env-var dump live ONLY in the local memory file `production-deployment.md`** (outside this repo). Never paste prod secrets into any tracked file — `.env` is git-ignored; only `*.env.example` are committed.
+- **Known prod config bugs** (see the memory file for detail): `CORS_ALLOWED_ORIGINS` is misspelled `aiamooz` (2 o's) vs the real `aiamoooz` (3 o's) and omits the Vercel/`hsvc.ir` frontends that `CSRF_TRUSTED_ORIGINS` lists → cross-origin XHRs blocked under `DEBUG=False`; `ALLOWED_HOSTS` omits the `*.hsvc.ir` hosts; MinIO uses default `minioadmin/minioadmin`.
+
 ## Gotchas
 
 - **Frontend dev port is 9002**, not 3000 (the README's "3000" is the production `npm start` port).
+- **Local dev requires `frontend/.env.local` with `NEXT_PUBLIC_API_URL=http://localhost:8000`.** Five services (`teacher`/`admin`/`classes`/`dashboard`/`organization`) build absolute URLs from this var and **throw `NEXT_PUBLIC_API_URL تنظیم نشده است`** if it's unset (only `auth`/`user` fall back to the relative `/api` proxy). Don't set it to the frontend's own origin (`:9002`) — `next.config.ts` uses the same var as its rewrite target, so that makes the `/api` proxy loop into itself and 500.
 - `next.config.ts` sets `typescript.ignoreBuildErrors: true` and `eslint.ignoreDuringBuilds: true`, so **`next build` will not catch type/lint errors** — always run `npm run typecheck` and `npm run lint` yourself.
 - The Django project package is **`core`**, not `config` — `WSGI_APPLICATION = 'core.wsgi.application'`, so use `core.wsgi` / `celery -A core`. There are two backend Dockerfiles, both now correctly targeting `core.wsgi`: the **root `Dockerfile`** (production — copies `backend/`, runs `migrate` + `collectstatic` + env-tunable gunicorn) and the simpler **`backend/Dockerfile`**. (Historically `backend/Dockerfile` pointed at the nonexistent `config.wsgi:application` — that bug is now fixed; flag any reappearance.)
 - Celery long-task limits are large (hard 2h / soft 100min) and `prefetch=1` — the pipeline is meant for slow LLM/media work; don't put quick tasks on the `pipeline` queue.
 - `.env` files are git-ignored; only `*.env.example` are committed. Never commit real keys (Gemini, Avalai, Mediana, AWS/MinIO).
 - **Mediana** = the SMS provider (`apps/classes/services/mediana_sms.py`, `MEDIANA_API_KEY`); `MEDIANA DOCUMENT.json` is its API reference.
-- Production host is Darkube (`aiamoooz.darkube.ir` / `.app`); see `backend/DEPLOY_CHECKLIST.md`, `docker-compose.prod.yml`, and `k8s/`.
+- Production host is **Hamravesh/Darkube** (`aiamoooz.darkube.ir` / `.app`) — see the **Production deployment** section above and `backend/DEPLOY_CHECKLIST.md`, `docker-compose.prod.yml`, `k8s/`.
 
 ## Reducing token usage
 

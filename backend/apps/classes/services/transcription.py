@@ -3,7 +3,7 @@ from __future__ import annotations
 import base64
 import logging
 import os
-from typing import Optional, Tuple
+from typing import Tuple
 
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
@@ -11,7 +11,8 @@ from apps.commons.llm_prompts import PROMPTS
 from apps.commons.llm_provider import preferred_provider
 from apps.commons.models import LLMUsageLog
 from apps.chatbot.services.llm_client import generate_text
-from apps.classes.services.media_compressor import prepare_media_parts_for_api
+
+from .transcription_media import extract_audio_mp3, extract_frames_jpeg
 
 logger = logging.getLogger(__name__)
 
@@ -27,55 +28,55 @@ def _get_env(name: str) -> str:
 
 
 def _select_model() -> str:
-    """
-    Model selection (ENV only).
-    """
+    """Model selection (ENV only)."""
     model = _get_env("TRANSCRIPTION_MODEL") or _get_env("MODEL_NAME")
     if model:
         return model
-
     raise RuntimeError(
         "No transcription model defined. Set TRANSCRIPTION_MODEL or MODEL_NAME."
     )
 
 
 # -------------------------------------------------------------------
-# Central LLM caller
+# Standard OpenAI multimodal message shape
 # -------------------------------------------------------------------
+#
+# The Avalai gateway (OpenAI-compatible) ONLY understands the standard content
+# shapes — `image_url` for images and `input_audio` for audio. The legacy
+# `attachments: [{type: input_media, data_base64}]` shape this module used to send
+# was silently ignored by the gateway (hallucinated/empty transcripts; large
+# payloads also surfaced as `SSL: UNEXPECTED_EOF_WHILE_READING`). See
+# AvalAI-Developer-Documentation.md.
 
-def _call_llm(
+def _build_transcription_messages(
     *,
-    model: str,
     prompt: str,
-    media_bytes: bytes,
-    mime_type: str,
-    detail: str,
-) -> str:
+    audio_b64: str,
+    audio_format: str,
+    frames_b64: list[str],
+    image_format: str = "jpeg",
+) -> list[dict]:
+    content: list[dict] = [{"type": "text", "text": prompt}]
+    if audio_b64:
+        content.append(
+            {"type": "input_audio", "input_audio": {"data": audio_b64, "format": audio_format}}
+        )
+    for fb in frames_b64:
+        content.append(
+            {"type": "image_url", "image_url": {"url": f"data:image/{image_format};base64,{fb}"}}
+        )
+    return [{"role": "user", "content": content}]
 
-    media_b64 = base64.b64encode(media_bytes).decode()
 
+def _call_llm(*, model: str, messages: list[dict], detail: str) -> str:
     resp = generate_text(
         model=model,
-        messages=[
-            {
-                "role": "user",
-                "content": prompt,
-                "attachments": [
-                    {
-                        "type": "input_media",
-                        "mime_type": mime_type,
-                        "data_base64": media_b64,
-                    }
-                ],
-            }
-        ],
-        timeout=_LLM_TIMEOUT_SECONDS,
+        messages=messages,
+        timeout=_LLM_TIMEOUT_SECONDS,  # now actually honoured by the client
         feature=LLMUsageLog.Feature.TRANSCRIPTION,
-        detail=detail,
     )
-
     text = resp.text if hasattr(resp, "text") else str(resp)
-    return text.strip()
+    return (text or "").strip()
 
 
 # -------------------------------------------------------------------
@@ -83,28 +84,42 @@ def _call_llm(
 # -------------------------------------------------------------------
 
 def transcribe_media_bytes(*, data: bytes, mime_type: str) -> Tuple[str, str, str]:
+    """Transcribe lecture media and return (transcript_markdown, provider, model).
+
+    Video -> audio (mp3, input_audio) + sampled frames (jpeg, image_url).
+    Audio -> normalised mp3 (input_audio) only.
+    Both go through the standard OpenAI multimodal content shape.
     """
-    Return (transcript_markdown, provider, model_name)
-
-    If media is too large it will be compressed/split into multiple parts.
-    """
-
-    original_size = len(data)
-
-    media_parts = prepare_media_parts_for_api(data, mime_type)
-
-    logger.info(
-        "Prepared %d media part(s) for transcription (original=%d bytes)",
-        len(media_parts),
-        original_size,
-    )
-
     model = _select_model()
     provider = preferred_provider()
-
     base_prompt = PROMPTS["transcribe_media"]["default"]
 
-    total = len(media_parts)
+    is_audio = (mime_type or "").lower().startswith("audio/")
+
+    # Extract audio track (mp3) for everything; extract frames only for video.
+    audio_bytes, audio_format = extract_audio_mp3(data, mime_type)
+    audio_b64 = base64.b64encode(audio_bytes).decode()
+
+    frames_b64: list[str] = []
+    if not is_audio:
+        try:
+            frames = extract_frames_jpeg(data, mime_type)
+            frames_b64 = [base64.b64encode(f).decode() for f in frames]
+        except Exception:
+            # Visual frames are a bonus; never fail transcription if they error.
+            logger.exception("frame extraction failed; proceeding audio-only")
+
+    messages = _build_transcription_messages(
+        prompt=base_prompt,
+        audio_b64=audio_b64,
+        audio_format=audio_format,
+        frames_b64=frames_b64,
+    )
+
+    logger.info(
+        "TRANSCRIBE start: model=%s is_audio=%s audio_bytes=%d frames=%d",
+        model, is_audio, len(audio_bytes), len(frames_b64),
+    )
 
     @retry(
         stop=stop_after_attempt(3),
@@ -112,47 +127,12 @@ def transcribe_media_bytes(*, data: bytes, mime_type: str) -> Tuple[str, str, st
         retry=retry_if_exception_type(Exception),
         reraise=True,
     )
-    def _transcribe_part(idx: int, part_bytes: bytes, part_mime: str) -> str:
-
-        if total == 1:
-            prompt = base_prompt
-        else:
-            prompt = (
-                base_prompt
-                + "\n\n---\n"
-                + f"این فایل بخش {idx} از {total} یک ویدیوی طولانی است. "
-                + "فقط محتوای همین بخش را ترنسکریپت کن و از تکرار بخش‌های قبلی خودداری کن. "
-                + "خروجی را به صورت Markdown بده."
-            )
-
+    def _do_call() -> str:
         try:
-            return _call_llm(
-                model=model,
-                prompt=prompt,
-                media_bytes=part_bytes,
-                mime_type=part_mime,
-                detail=f"part {idx}/{total}",
-            )
+            return _call_llm(model=model, messages=messages, detail="single")
         except Exception as e:
-            logger.error(
-                "Transcription error (%s part %d/%d): %s",
-                provider,
-                idx,
-                total,
-                str(e),
-            )
+            logger.error("Transcription error with %s: %s", provider, str(e))
             raise
 
-    texts: list[str] = []
-
-    for idx, (part_bytes, part_mime) in enumerate(media_parts, start=1):
-        texts.append(_transcribe_part(idx, part_bytes, part_mime))
-
-    if len(texts) == 1:
-        transcript = texts[0]
-    else:
-        transcript = "\n\n".join(
-            [f"## Part {i+1}/{len(texts)}\n\n{texts[i]}" for i in range(len(texts))]
-        )
-
+    transcript = _do_call()
     return transcript, provider, model

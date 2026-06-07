@@ -407,6 +407,36 @@ def _process_full_pipeline(session_id: int) -> None:
         _process_step5_recap(session_id)
 
 
+def _is_same_uploaded_source(existing, upload) -> bool:
+    """Whether ``upload`` looks like the SAME file already stored on ``existing``.
+
+    This keeps ``client_request_id`` idempotency honest. A genuine retry resubmits
+    the SAME file and should dedupe to the existing session. But if the SAME key
+    arrives with a DIFFERENT file, returning the old session would emit the OLD
+    media's transcript/output for a brand-new upload (the "new input, stale output"
+    bug). We compare original filename and byte size; when a signal is unavailable
+    (e.g. a completed session whose source_file was already deleted) we err toward
+    "same" so legitimate retries still dedupe.
+    """
+    new_name = (getattr(upload, 'name', '') or '').strip()
+    existing_name = (getattr(existing, 'source_original_name', '') or '').strip()
+    if new_name and existing_name and new_name != existing_name:
+        return False
+
+    new_size = getattr(upload, 'size', None)
+    existing_size = None
+    try:
+        source_file = getattr(existing, 'source_file', None)
+        if source_file:
+            existing_size = source_file.size
+    except Exception:
+        existing_size = None
+    if isinstance(new_size, int) and isinstance(existing_size, int) and new_size != existing_size:
+        return False
+
+    return True
+
+
 class Step1TranscribeView(APIView):
     permission_classes = [IsAuthenticated, IsTeacherUser]
     parser_classes = [FormParser, MultiPartParser]
@@ -445,26 +475,38 @@ class Step1TranscribeView(APIView):
             client_request_id,
         )
 
-        # Idempotency: return existing session if client_request_id matches.
+        # Idempotency: a genuine retry resubmits the SAME file -> dedupe to the
+        # existing session. But if the SAME client_request_id arrives with a
+        # DIFFERENT file, returning the old session would emit the OLD media's
+        # output for a NEW upload (the "new input, stale output" bug). In that case
+        # we must NOT return the stale session and must NOT silently drop the new
+        # file: mint a fresh key and fall through to process the new upload.
         if client_request_id is not None:
             existing = ClassCreationSession.objects.filter(
                 teacher=request.user,
                 client_request_id=client_request_id,
             ).first()
             if existing is not None:
+                if _is_same_uploaded_source(existing, upload):
+                    logger.info(
+                        "STEP1 IDEMPOTENT HIT: same file resubmitted; returning EXISTING "
+                        "session=%s (status=%s) for client_request_id=%s.",
+                        existing.id, existing.status, client_request_id,
+                    )
+                    payload = Step1TranscribeResponseSerializer(existing).data
+                    http_status = (
+                        status.HTTP_202_ACCEPTED
+                        if getattr(settings, 'CLASS_PIPELINE_ASYNC', False) and existing.status == ClassCreationSession.Status.TRANSCRIBING
+                        else status.HTTP_200_OK
+                    )
+                    return Response(payload, status=http_status)
                 logger.warning(
-                    "STEP1 IDEMPOTENT HIT: returning EXISTING session=%s (file=%r status=%s) "
-                    "for client_request_id=%s — new upload %r is IGNORED.",
-                    existing.id, existing.source_original_name, existing.status,
-                    client_request_id, getattr(upload, 'name', '?'),
+                    "STEP1 IDEMPOTENT KEY REUSED for a DIFFERENT file (existing session=%s "
+                    "name=%r vs new upload name=%r) — NOT returning stale output; processing "
+                    "the new upload as a fresh session.",
+                    existing.id, existing.source_original_name, getattr(upload, 'name', '?'),
                 )
-                payload = Step1TranscribeResponseSerializer(existing).data
-                http_status = (
-                    status.HTTP_202_ACCEPTED
-                    if getattr(settings, 'CLASS_PIPELINE_ASYNC', False) and existing.status == ClassCreationSession.Status.TRANSCRIBING
-                    else status.HTTP_200_OK
-                )
-                return Response(payload, status=http_status)
+                client_request_id = None
 
         # Atomic check + create to prevent TOCTOU race on concurrent limit.
         try:
@@ -2768,20 +2810,35 @@ class ExamPrepStep1TranscribeView(APIView):
             ClassCreationSession.Status.EXAM_STRUCTURING,
         ]
 
-        # Idempotency check
+        # Idempotency: same as the class Step-1 path. A genuine retry (same file)
+        # dedupes to the existing session; a reused key with a DIFFERENT file must
+        # NOT return the old session's stale output, so we process the new upload.
         if client_request_id is not None:
             existing = ClassCreationSession.objects.filter(
                 teacher=request.user,
                 client_request_id=client_request_id,
             ).first()
             if existing is not None:
-                payload = ExamPrepStep1TranscribeResponseSerializer(existing).data
-                http_status = (
-                    status.HTTP_202_ACCEPTED
-                    if existing.status == ClassCreationSession.Status.EXAM_TRANSCRIBING
-                    else status.HTTP_200_OK
+                if _is_same_uploaded_source(existing, upload):
+                    logger.info(
+                        "EXAM STEP1 IDEMPOTENT HIT: same file resubmitted; returning "
+                        "EXISTING session=%s (status=%s) for client_request_id=%s.",
+                        existing.id, existing.status, client_request_id,
+                    )
+                    payload = ExamPrepStep1TranscribeResponseSerializer(existing).data
+                    http_status = (
+                        status.HTTP_202_ACCEPTED
+                        if existing.status == ClassCreationSession.Status.EXAM_TRANSCRIBING
+                        else status.HTTP_200_OK
+                    )
+                    return Response(payload, status=http_status)
+                logger.warning(
+                    "EXAM STEP1 IDEMPOTENT KEY REUSED for a DIFFERENT file (existing "
+                    "session=%s name=%r vs new upload name=%r) — NOT returning stale "
+                    "output; processing the new upload as a fresh session.",
+                    existing.id, existing.source_original_name, getattr(upload, 'name', '?'),
                 )
-                return Response(payload, status=http_status)
+                client_request_id = None
 
         # Atomic check + create to prevent TOCTOU race.
         try:

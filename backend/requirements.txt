@@ -11,6 +11,10 @@ Pillow
 google-genai>=1.0.0,<2.0.0
 openai>=1.40.0
 
+# Schema validation for LLM JSON outputs (also a transitive dep of openai, but we
+# import it directly in apps/commons/structured_llm.py and apps/classes/services/schemas.py)
+pydantic>=2.0,<3.0
+
 Markdown
 weasyprint
 

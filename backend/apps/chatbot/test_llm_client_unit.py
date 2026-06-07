@@ -7,7 +7,7 @@ def test_generate_json_repairs_invalid_json_without_format_keyerror(monkeypatch)
 
     calls = {"n": 0, "repair_prompt": ""}
 
-    def _fake_generate_text(*, contents, model=None):
+    def _fake_generate_text(*, contents, model=None, feature=None, timeout=None, response_format=None, **kwargs):
         calls["n"] += 1
         # First call returns invalid JSON, forcing repair path.
         if calls["n"] == 1:

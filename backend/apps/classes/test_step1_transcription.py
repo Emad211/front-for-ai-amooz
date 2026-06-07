@@ -107,8 +107,11 @@ class TestClassCreationStep1Transcription:
         session_id = res1.data['id']
         assert calls['count'] == 1
 
-        # Retry same request id -> should NOT create a new session or re-run transcription.
-        upload2 = SimpleUploadedFile('audio2.ogg', b'fake-audio-2', content_type='audio/ogg')
+        # Genuine retry: SAME request id AND the SAME file (e.g. a network re-send)
+        # -> dedupe to the existing session, no re-transcription. (A DIFFERENT file
+        # under the same key intentionally creates a fresh session — covered in
+        # test_step1_idempotency.py — so that a new upload never yields stale output.)
+        upload2 = SimpleUploadedFile('audio.ogg', b'fake-audio', content_type='audio/ogg')
         res2 = client.post(
             '/api/classes/creation-sessions/step-1/',
             {'title': 't', 'description': 'd', 'file': upload2, 'client_request_id': req_id},

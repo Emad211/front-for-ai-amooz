@@ -9,8 +9,9 @@ from apps.commons.llm_prompts import PROMPTS
 from apps.commons.llm_provider import preferred_provider
 from apps.commons.models import LLMUsageLog
 from apps.chatbot.services.llm_client import generate_text
+from apps.commons.structured_llm import StructuredOutputError, validate_keep_dict
 
-from .json_utils import extract_json_object
+from .schemas import StructureOutput
 
 logger = logging.getLogger(__name__)
 
@@ -120,18 +121,22 @@ def structure_transcript_markdown(
                     len(text or ""), ("{" in (text or "")))
 
         try:
-            obj = extract_json_object(text)
-        except Exception:
-            # The model sometimes replies with prose / fenced text and no JSON.
+            # Validate the SHAPE (not just "is it parseable"), but keep the model's
+            # exact dict so downstream consumers see unmodified data.
+            obj = validate_keep_dict(text, StructureOutput)
+        except StructuredOutputError:
+            # The model sometimes replies with prose / fenced text / wrong shape.
             # Log exactly what came back, then do one strict repair pass.
             logger.error(
-                "STRUCTURE no-JSON in primary response (chars=%d). HEAD=%r TAIL=%r",
+                "STRUCTURE invalid/no-JSON in primary response (chars=%d). HEAD=%r TAIL=%r",
                 len(text or ""), (text or "")[:2000], (text or "")[-800:],
             )
             repair_prompt = (
-                "The text below was supposed to be a single JSON object but is "
-                "malformed or wrapped in prose. Return ONLY one valid JSON object "
-                "(no markdown fences, no commentary).\n\n" + text
+                "The text below was supposed to be a single JSON object matching the "
+                "course-structure schema (top-level keys: root_object, outline; each "
+                "outline item has a units list) but is malformed or wrapped in prose. "
+                "Return ONLY one valid JSON object (no markdown fences, no commentary).\n\n"
+                + text
             )
             repaired = _call_llm(
                 model=model,
@@ -139,10 +144,10 @@ def structure_transcript_markdown(
                 feature=LLMUsageLog.Feature.STRUCTURE,
             )
             try:
-                obj = extract_json_object(repaired)
-            except Exception:
+                obj = validate_keep_dict(repaired, StructureOutput)
+            except StructuredOutputError:
                 logger.error(
-                    "STRUCTURE no-JSON after repair (chars=%d). HEAD=%r",
+                    "STRUCTURE invalid/no-JSON after repair (chars=%d). HEAD=%r",
                     len(repaired or ""), (repaired or "")[:2000],
                 )
                 raise

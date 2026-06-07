@@ -38,6 +38,17 @@ def _get_env(name: str) -> str:
     return (os.getenv(name) or "").strip()
 
 
+# Per-request client timeout (seconds). Long pipeline/transcription calls need a
+# generous timeout; callers may override per call. (Previously a 45s literal was
+# hardcoded in the create() call AND the caller-supplied timeout was silently
+# dropped into **kwargs — both fixed.)
+def _default_llm_timeout() -> float:
+    try:
+        return float(os.getenv("LLM_TIMEOUT_SECONDS", "600"))
+    except (TypeError, ValueError):
+        return 600.0
+
+
 # ====================================================================
 # Helper to strip "models/" prefix if present
 # ====================================================================
@@ -104,10 +115,12 @@ class LlmResult:
     reraise=True,
 )
 def _call_gapgpt_with_messages(
-    *, 
-    messages: List[Dict[str, str]], 
-    used_model: str, 
-    feature: str
+    *,
+    messages: List[Dict[str, Any]],
+    used_model: str,
+    feature: str,
+    timeout: Optional[float] = None,
+    response_format: Optional[Dict[str, Any]] = None,
 ) -> LlmResult:
 
     # Strip any "models/" prefix just before sending
@@ -116,12 +129,16 @@ def _call_gapgpt_with_messages(
     client = _get_gapgpt_client()
     timer = LLMTimer().start()
 
+    create_kwargs: Dict[str, Any] = {
+        "model": clean_model,
+        "messages": messages,
+        "timeout": timeout if timeout is not None else _default_llm_timeout(),
+    }
+    if response_format is not None:
+        create_kwargs["response_format"] = response_format
+
     try:
-        response = client.chat.completions.create(
-            model=clean_model,
-            messages=messages,
-            timeout=45,
-        )
+        response = client.chat.completions.create(**create_kwargs)
 
         text = response.choices[0].message.content.strip()
         if not text:
@@ -156,15 +173,20 @@ def _call_gapgpt_with_messages(
 # ====================================================================
 def generate_text(
     *,
-    messages: Optional[List[Dict[str, str]]] = None,
+    messages: Optional[List[Dict[str, Any]]] = None,
     contents: Optional[Any] = None,
     model: Optional[str] = None,
     feature: Optional[str] = None,
-    timeout: Optional[int] = None,
+    timeout: Optional[float] = None,
+    response_format: Optional[Dict[str, Any]] = None,
     **kwargs,
 ) -> LlmResult:
     """
     Unified LLM caller.
+
+    ``timeout`` (seconds) is now honoured and forwarded to the underlying client
+    instead of being swallowed by ``**kwargs``. ``response_format`` enables JSON
+    mode (``{"type": "json_object"}``) for structured-output callers.
     """
     used_model = model or _default_model()
     # Strip prefix here as well, in case model passed directly
@@ -182,15 +204,25 @@ def generate_text(
         messages=final_messages,
         used_model=used_model,
         feature=resolved_feature,
+        timeout=timeout,
+        response_format=response_format,
     )
 
 
 # ====================================================================
 # JSON REPAIR (بدون تغییر)
 # ====================================================================
-def _repair_json_with_llm(*, feature: str, model_output: str) -> dict[str, Any]:
+def _repair_json_with_llm(*, feature: str, model_output: str, schema_hint: str = "") -> dict[str, Any]:
     template = PROMPTS["json_repair"]["default"]
-    prompt = template.replace("{raw_text}", model_output)
+    # The template carries THREE placeholders: {feature}, {schema_hint}, {raw_text}.
+    # Previously only {raw_text} was substituted, so the model received literal
+    # "{feature}"/"{schema_hint}" text. Substitute all of them.
+    prompt = (
+        template
+        .replace("{feature}", str(feature or "unknown"))
+        .replace("{schema_hint}", schema_hint or "(no explicit schema; return a single valid JSON object)")
+        .replace("{raw_text}", model_output)
+    )
 
     repaired = generate_text(
         contents=prompt,
