@@ -2,7 +2,7 @@
 
 import { useState, useMemo, useEffect } from 'react';
 import { CalendarEvent, CalendarDay } from '@/types';
-import { generateMonthDays, getUpcomingEvents } from '@/lib/calendar';
+import { generateMonthDays, getUpcomingEvents, getTodayJalali } from '@/lib/calendar';
 import { DashboardService } from '@/services/dashboard-service';
 
 type CalendarService = {
@@ -10,9 +10,10 @@ type CalendarService = {
 };
 
 export function useCalendar(service: CalendarService = DashboardService) {
-  // State for current month/year (Jalali)
-  const [currentMonth, setCurrentMonth] = useState(10); // دی
-  const [currentYear, setCurrentYear] = useState(1404);
+  // State for current month/year (Jalali) — initialized to the real today.
+  const today = getTodayJalali();
+  const [currentMonth, setCurrentMonth] = useState(today.month);
+  const [currentYear, setCurrentYear] = useState(today.year);
   
   // State for selected day and events
   const [events, setEvents] = useState<CalendarEvent[]>([]);
@@ -73,9 +74,9 @@ export function useCalendar(service: CalendarService = DashboardService) {
   };
 
   const handleToday = () => {
-    // In a real app, this would get the current Jalali date
-    setCurrentMonth(10); // دی
-    setCurrentYear(1404);
+    const now = getTodayJalali();
+    setCurrentMonth(now.month);
+    setCurrentYear(now.year);
   };
 
   // Day click handler
