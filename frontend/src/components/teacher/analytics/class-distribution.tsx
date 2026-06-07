@@ -3,6 +3,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { PieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip } from 'recharts';
 import { motion } from 'framer-motion';
+import { toPersianDigits } from '@/lib/persian-digits';
 
 interface ClassDistributionProps {
   data: any[];
@@ -16,7 +17,7 @@ const CustomTooltip = ({ active, payload }: any) => {
       <div className="bg-background/95 backdrop-blur-md border border-border/50 p-3 rounded-2xl shadow-xl">
         <p className="text-sm font-black text-foreground">{payload[0].name}</p>
         <p className="text-xs font-bold text-primary mt-1">
-          {payload[0].value} دانش‌آموز
+          {toPersianDigits(payload[0].value)} دانش‌آموز
         </p>
       </div>
     );
@@ -86,7 +87,7 @@ export function ClassDistribution({ data }: ClassDistributionProps) {
             {data.slice(0, 2).map((item, idx) => (
               <div key={idx} className="bg-muted/30 p-3 rounded-2xl border border-border/20">
                 <p className="text-[10px] font-bold text-muted-foreground mb-1">{item.name}</p>
-                <p className="text-lg font-black text-foreground">{item.value}</p>
+                <p className="text-lg font-black text-foreground">{toPersianDigits(item.value)}</p>
               </div>
             ))}
           </div>

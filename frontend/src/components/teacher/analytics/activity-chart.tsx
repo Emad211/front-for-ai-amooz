@@ -1,8 +1,9 @@
 'use client';
 
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { 
-  AreaChart, 
+import { toPersianDigits } from '@/lib/persian-digits';
+import {
+  AreaChart,
   Area, 
   XAxis, 
   YAxis, 
@@ -26,7 +27,7 @@ const CustomTooltip = ({ active, payload, label }: any) => {
         <div className="flex items-center gap-2">
           <div className="w-2 h-2 rounded-full bg-primary" />
           <p className="text-sm font-black text-foreground">
-            {payload[0].value} <span className="text-[10px] text-muted-foreground font-medium">دانش‌آموز جدید</span>
+            {toPersianDigits(payload[0].value)} <span className="text-[10px] text-muted-foreground font-medium">دانش‌آموز جدید</span>
           </p>
         </div>
       </div>

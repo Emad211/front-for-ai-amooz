@@ -12,7 +12,7 @@ export function MessageTips() {
         <ul className="space-y-3">
           <li className="flex items-start gap-2">
             <div className="h-1.5 w-1.5 rounded-full bg-primary mt-1.5 shrink-0" />
-            <span>پیام‌ها به صورت اعلان (Notification) برای دانش‌آموزان ارسال می‌شود.</span>
+            <span>پیام‌ها به صورت اعلان برای دانش‌آموزان ارسال می‌شود.</span>
           </li>
           <li className="flex items-start gap-2">
             <div className="h-1.5 w-1.5 rounded-full bg-primary mt-1.5 shrink-0" />

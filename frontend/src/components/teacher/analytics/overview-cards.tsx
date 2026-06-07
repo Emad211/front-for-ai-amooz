@@ -3,6 +3,7 @@
 import { Users, BookOpen, GraduationCap, TrendingUp } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { motion } from 'framer-motion';
+import { toPersianDigits } from '@/lib/persian-digits';
 
 const ICON_MAP = {
   users: { icon: Users, color: 'text-blue-500', bg: 'bg-blue-500/10' },
@@ -49,9 +50,8 @@ export function OverviewCards({ stats }: OverviewCardsProps) {
                   </p>
                   <div className="flex items-baseline gap-1">
                     <h3 className="text-2xl sm:text-3xl font-black text-foreground tracking-tighter">
-                      {stat.value}
+                      {toPersianDigits(stat.value)}
                     </h3>
-                    <span className="text-[10px] font-bold text-muted-foreground/50">واحد</span>
                   </div>
                 </div>
               </CardContent>
