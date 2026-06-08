@@ -42,6 +42,14 @@ class ClassCreationSession(models.Model):
         related_name='classes',
         verbose_name='سازمان',
     )
+    study_group = models.ForeignKey(
+        'organizations.StudyGroup',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='classes',
+        verbose_name='گروه آموزشی',
+    )
 
     title = models.CharField(max_length=255)
     description = models.TextField(blank=True)

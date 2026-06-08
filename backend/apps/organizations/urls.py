@@ -34,6 +34,43 @@ urlpatterns = [
     # ── Org admin: dashboard stats ───────────────────────────────
     path('<int:org_pk>/dashboard/', views.OrgDashboardView.as_view(), name='org-dashboard'),
 
+    # ── Study groups (گروه آموزشی) ───────────────────────────────
+    path(
+        '<int:org_pk>/study-groups/',
+        views.StudyGroupListCreateView.as_view(),
+        name='study-group-list-create',
+    ),
+    path(
+        '<int:org_pk>/study-groups/<int:group_pk>/',
+        views.StudyGroupDetailView.as_view(),
+        name='study-group-detail',
+    ),
+    path(
+        '<int:org_pk>/study-groups/<int:group_pk>/teachers/',
+        views.StudyGroupTeacherView.as_view(),
+        name='study-group-teacher-add',
+    ),
+    path(
+        '<int:org_pk>/study-groups/<int:group_pk>/teachers/<int:user_id>/',
+        views.StudyGroupTeacherView.as_view(),
+        name='study-group-teacher-remove',
+    ),
+    path(
+        '<int:org_pk>/study-groups/<int:group_pk>/students/',
+        views.StudyGroupStudentView.as_view(),
+        name='study-group-student-add',
+    ),
+    path(
+        '<int:org_pk>/study-groups/<int:group_pk>/students/<int:user_id>/',
+        views.StudyGroupStudentView.as_view(),
+        name='study-group-student-remove',
+    ),
+    path(
+        '<int:org_pk>/my-study-groups/',
+        views.MyStudyGroupsView.as_view(),
+        name='my-study-groups',
+    ),
+
     # ── Invitation code validation & redemption ──────────────────
     path('validate-code/', views.ValidateInvitationView.as_view(), name='validate-code'),
     path('redeem-code/', views.RedeemInvitationView.as_view(), name='redeem-code'),

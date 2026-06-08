@@ -2,7 +2,14 @@
 
 from django.contrib import admin
 
-from .models import InvitationCode, Organization, OrganizationMembership
+from .models import (
+    InvitationCode,
+    Organization,
+    OrganizationMembership,
+    StudyGroup,
+    StudyGroupMembership,
+    StudyGroupTeacher,
+)
 
 
 class OrganizationMembershipInline(admin.TabularInline):
@@ -43,3 +50,26 @@ class InvitationCodeAdmin(admin.ModelAdmin):
     search_fields = ('code', 'label')
     raw_id_fields = ('organization', 'created_by')
     readonly_fields = ('code', 'use_count')
+
+
+class StudyGroupTeacherInline(admin.TabularInline):
+    model = StudyGroupTeacher
+    extra = 0
+    raw_id_fields = ('teacher', 'assigned_by')
+    readonly_fields = ('assigned_at',)
+
+
+class StudyGroupMembershipInline(admin.TabularInline):
+    model = StudyGroupMembership
+    extra = 0
+    raw_id_fields = ('student', 'added_by')
+    readonly_fields = ('joined_at',)
+
+
+@admin.register(StudyGroup)
+class StudyGroupAdmin(admin.ModelAdmin):
+    list_display = ('name', 'organization', 'grade_label', 'subject', 'status', 'created_at')
+    list_filter = ('status', 'organization')
+    search_fields = ('name', 'subject', 'grade_label')
+    raw_id_fields = ('organization', 'created_by')
+    inlines = [StudyGroupTeacherInline, StudyGroupMembershipInline]

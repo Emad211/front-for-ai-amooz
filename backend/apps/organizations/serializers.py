@@ -10,7 +10,14 @@ from django.contrib.auth import get_user_model
 from django.utils import timezone
 from rest_framework import serializers
 
-from .models import InvitationCode, Organization, OrganizationMembership
+from .models import (
+    InvitationCode,
+    Organization,
+    OrganizationMembership,
+    StudyGroup,
+    StudyGroupMembership,
+    StudyGroupTeacher,
+)
 
 User = get_user_model()
 
@@ -203,3 +210,71 @@ class RedeemInvitationSerializer(serializers.Serializer):
                 raise serializers.ValidationError('ظرفیت دانش‌آموز سازمان تکمیل شده است.')
 
         return value
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Study Group — READ
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class StudyGroupTeacherBriefSerializer(serializers.Serializer):
+    """Compact representation of a teacher assigned to a study group."""
+
+    id = serializers.IntegerField(source='teacher_id', read_only=True)
+    name = serializers.SerializerMethodField()
+    assignedAt = serializers.DateTimeField(source='assigned_at', read_only=True)
+
+    @staticmethod
+    def get_name(obj) -> str:
+        return obj.teacher.get_full_name() or obj.teacher.username
+
+
+class StudyGroupSerializer(serializers.ModelSerializer):
+    """Read-only representation of a study group (camelCase output)."""
+
+    gradeLabel = serializers.CharField(source='grade_label', read_only=True)
+    statusDisplay = serializers.CharField(source='get_status_display', read_only=True)
+    studentCount = serializers.SerializerMethodField()
+    teacherCount = serializers.SerializerMethodField()
+    classCount = serializers.SerializerMethodField()
+    teachers = serializers.SerializerMethodField()
+    createdAt = serializers.DateTimeField(source='created_at', read_only=True)
+
+    class Meta:
+        model = StudyGroup
+        fields = [
+            'id', 'name', 'gradeLabel', 'subject', 'description',
+            'status', 'statusDisplay',
+            'studentCount', 'teacherCount', 'classCount', 'teachers',
+            'createdAt',
+        ]
+
+    @staticmethod
+    def get_studentCount(obj) -> int:  # noqa: N802
+        return getattr(obj, '_student_count', obj.student_count)
+
+    @staticmethod
+    def get_teacherCount(obj) -> int:  # noqa: N802
+        return getattr(obj, '_teacher_count', obj.teacher_count)
+
+    @staticmethod
+    def get_classCount(obj) -> int:  # noqa: N802
+        return getattr(obj, '_class_count', obj.classes.count())
+
+    @staticmethod
+    def get_teachers(obj):  # noqa: N802
+        links = obj.teacher_links.select_related('teacher').all()
+        return StudyGroupTeacherBriefSerializer(links, many=True).data
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Study Group — WRITE (create / update)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class StudyGroupWriteSerializer(serializers.Serializer):
+    """Input serializer for creating/updating a study group (snake_case)."""
+
+    name = serializers.CharField(max_length=128)
+    grade_label = serializers.CharField(max_length=64, required=False, allow_blank=True, default='')
+    subject = serializers.CharField(max_length=128, required=False, allow_blank=True, default='')
+    description = serializers.CharField(required=False, allow_blank=True, default='')
+    status = serializers.ChoiceField(choices=StudyGroup.Status.choices, required=False)
