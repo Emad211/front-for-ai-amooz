@@ -102,6 +102,25 @@ class LLMUsageLog(models.Model):
 
     # Optional context
     session_id = models.PositiveIntegerField(null=True, blank=True, db_index=True)
+    # Org attribution (denormalized from the session at write time) so cost can
+    # be rolled up per organization / per study group even if the class is later
+    # deleted. Both null for personal/freelancer or non-class LLM calls.
+    organization = models.ForeignKey(
+        'organizations.Organization',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='llm_usage_logs',
+        db_index=True,
+    )
+    study_group = models.ForeignKey(
+        'organizations.StudyGroup',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='llm_usage_logs',
+        db_index=True,
+    )
     detail = models.CharField(max_length=200, blank=True, default='')
 
     duration_ms = models.PositiveIntegerField(default=0, help_text='LLM call duration in milliseconds')
@@ -119,6 +138,9 @@ class LLMUsageLog(models.Model):
             models.Index(fields=['session_id', 'created_at']),
             # Hot path for the per-user × per-task breakdown over a date range.
             models.Index(fields=['user', 'feature', 'created_at'], name='idx_llm_user_feat_created'),
+            # Hot paths for per-organization / per-study-group cost rollups.
+            models.Index(fields=['organization', 'created_at'], name='idx_llm_org_created'),
+            models.Index(fields=['study_group', 'created_at'], name='idx_llm_group_created'),
         ]
 
     def __str__(self) -> str:

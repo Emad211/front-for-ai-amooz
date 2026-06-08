@@ -74,6 +74,30 @@ def _as_int(value: Any) -> int:
         return 0
 
 
+def _resolve_session_org_group(session_id: int | None) -> tuple[int | None, int | None]:
+    """Map a ClassCreationSession id → (organization_id, study_group_id).
+
+    Best-effort denormalization so each LLM cost row can be rolled up per
+    organization / per study group. Returns (None, None) for personal classes
+    or when the session can't be resolved.
+    """
+    if not session_id:
+        return None, None
+    try:
+        from apps.classes.models import ClassCreationSession
+        row = (
+            ClassCreationSession.objects
+            .filter(pk=session_id)
+            .values_list('organization_id', 'study_group_id')
+            .first()
+        )
+        if row:
+            return row[0], row[1]
+    except Exception:  # pragma: no cover - never break tracking
+        logger.debug('Could not resolve org/group for session %s', session_id, exc_info=True)
+    return None, None
+
+
 def _extract_usage_metadata(resp: Any) -> dict[str, int]:
     """Extract token counts from an LLM response, provider-agnostically.
 
@@ -159,6 +183,7 @@ def track_llm_usage(
 
         resolved_user = user or get_current_user()
         resolved_session = session_id or get_current_session_id()
+        org_id, group_id = _resolve_session_org_group(resolved_session)
 
         # If resolved_user is an AnonymousUser or not a model instance, set to None
         if resolved_user is not None:
@@ -194,6 +219,8 @@ def track_llm_usage(
             estimated_cost_toman=cost_toman or 0,
             usd_toman_rate=rate or 0,
             session_id=resolved_session,
+            organization_id=org_id,
+            study_group_id=group_id,
             detail=detail[:200] if detail else '',
             duration_ms=duration_ms,
             success=success,
@@ -221,6 +248,7 @@ def track_llm_error(
     try:
         resolved_user = user or get_current_user()
         resolved_session = session_id or get_current_session_id()
+        org_id, group_id = _resolve_session_org_group(resolved_session)
 
         if resolved_user is not None:
             pk = getattr(resolved_user, 'pk', None)
@@ -237,6 +265,8 @@ def track_llm_error(
             total_tokens=0,
             estimated_cost_usd=0,
             session_id=resolved_session,
+            organization_id=org_id,
+            study_group_id=group_id,
             detail=detail[:200] if detail else '',
             duration_ms=duration_ms,
             success=False,

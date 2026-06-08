@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import logging
+from datetime import timedelta
 
 from django.contrib.auth import get_user_model
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import DatabaseError, IntegrityError, transaction
-from django.db.models import Count, F, Q
+from django.db.models import Count, F, Q, Sum
+from django.db.models.functions import TruncDate
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
@@ -975,3 +977,110 @@ class MyStudyGroupsView(APIView):
 
         qs = _annotated_study_groups(org_pk).filter(teacher_links__teacher=request.user)
         return Response(StudyGroupSerializer(qs.distinct(), many=True).data)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Org cost dashboard — AI usage cost broken down by teacher + study group
+# ═══════════════════════════════════════════════════════════════════════════
+
+class OrgCostsView(APIView):
+    """AI/LLM cost for ONE organization, by teacher + study group (org admin).
+
+    Query: ``days`` (default 30, max 365). Costs are the historically-accurate
+    Toman snapshots recorded at call time.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, org_pk):
+        if not (request.user.is_staff or IsOrgAdmin.check(request.user, org_pk)):
+            return Response({'detail': 'دسترسی ندارید.'}, status=status.HTTP_403_FORBIDDEN)
+
+        from apps.commons.models import LLMUsageLog
+
+        try:
+            days = int(request.query_params.get('days', 30))
+        except (TypeError, ValueError):
+            days = 30
+        days = max(1, min(days, 365))
+        since = timezone.now() - timedelta(days=days)
+
+        qs = LLMUsageLog.objects.filter(organization_id=org_pk, created_at__gte=since)
+
+        summary = qs.aggregate(
+            total_requests=Count('id'),
+            total_tokens=Sum('total_tokens'),
+            total_cost_toman=Sum('estimated_cost_toman'),
+            total_cost_usd=Sum('estimated_cost_usd'),
+        )
+
+        by_teacher = (
+            qs.values('user', 'user__username', 'user__first_name', 'user__last_name')
+            .annotate(
+                cost_toman=Sum('estimated_cost_toman'),
+                requests=Count('id'),
+                tokens=Sum('total_tokens'),
+            )
+            .order_by('-cost_toman')
+        )
+        teachers = [
+            {
+                'teacherId': r['user'],
+                'name': (
+                    f"{r['user__first_name'] or ''} {r['user__last_name'] or ''}".strip()
+                    or (r['user__username'] or 'سیستم')
+                ),
+                'costToman': float(r['cost_toman'] or 0),
+                'requests': r['requests'],
+                'tokens': r['tokens'] or 0,
+            }
+            for r in by_teacher
+        ]
+
+        by_group = (
+            qs.values('study_group', 'study_group__name')
+            .annotate(
+                cost_toman=Sum('estimated_cost_toman'),
+                requests=Count('id'),
+                tokens=Sum('total_tokens'),
+            )
+            .order_by('-cost_toman')
+        )
+        groups = [
+            {
+                'studyGroupId': r['study_group'],
+                'name': r['study_group__name'] or 'بدون گروه',
+                'costToman': float(r['cost_toman'] or 0),
+                'requests': r['requests'],
+                'tokens': r['tokens'] or 0,
+            }
+            for r in by_group
+        ]
+
+        daily = (
+            qs.annotate(day=TruncDate('created_at'))
+            .values('day')
+            .annotate(cost_toman=Sum('estimated_cost_toman'), requests=Count('id'))
+            .order_by('day')
+        )
+        daily_out = [
+            {
+                'date': r['day'].isoformat() if r['day'] else None,
+                'costToman': float(r['cost_toman'] or 0),
+                'requests': r['requests'],
+            }
+            for r in daily
+        ]
+
+        return Response({
+            'days': days,
+            'summary': {
+                'totalRequests': summary['total_requests'] or 0,
+                'totalTokens': summary['total_tokens'] or 0,
+                'totalCostToman': float(summary['total_cost_toman'] or 0),
+                'totalCostUsd': float(summary['total_cost_usd'] or 0),
+            },
+            'byTeacher': teachers,
+            'byStudyGroup': groups,
+            'daily': daily_out,
+        })

@@ -71,6 +71,9 @@ urlpatterns = [
         name='my-study-groups',
     ),
 
+    # ── Org cost dashboard (AI usage by teacher + study group) ───
+    path('<int:org_pk>/costs/', views.OrgCostsView.as_view(), name='org-costs'),
+
     # ── Invitation code validation & redemption ──────────────────
     path('validate-code/', views.ValidateInvitationView.as_view(), name='validate-code'),
     path('redeem-code/', views.RedeemInvitationView.as_view(), name='redeem-code'),

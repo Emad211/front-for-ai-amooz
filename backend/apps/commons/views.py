@@ -377,11 +377,13 @@ class LLMUsageRecentLogsView(APIView):
 # Flexible breakdown (per-user × per-task, any range) + CSV export
 # ═══════════════════════════════════════════════════════════════════════════
 
-_BREAKDOWN_GROUPS = {'user', 'feature', 'provider', 'day'}
+_BREAKDOWN_GROUPS = {'user', 'feature', 'provider', 'day', 'organization', 'study_group'}
 _GROUP_VALUE_FIELDS = {
     'user': ['user', 'user__username', 'user__first_name', 'user__last_name', 'user__role'],
     'feature': ['feature'],
     'provider': ['provider'],
+    'organization': ['organization', 'organization__name'],
+    'study_group': ['study_group', 'study_group__name'],
 }
 
 
@@ -405,6 +407,14 @@ def _apply_usage_filters(request) -> dict:
     provider = (qp.get('provider') or '').strip()
     if provider:
         filters['provider'] = provider
+
+    org_id = (qp.get('organization_id') or '').strip()
+    if org_id.isdigit():
+        filters['organization_id'] = int(org_id)
+
+    group_id = (qp.get('study_group_id') or '').strip()
+    if group_id.isdigit():
+        filters['study_group_id'] = int(group_id)
 
     return filters
 
@@ -472,6 +482,12 @@ def _aggregate_usage(request):
             item['feature_label'] = feature_labels.get(row.get('feature'), row.get('feature'))
         if 'provider' in groups:
             item['provider'] = row.get('provider')
+        if 'organization' in groups:
+            item['organization_id'] = row.get('organization')
+            item['organization_name'] = row.get('organization__name') or '— شخصی —'
+        if 'study_group' in groups:
+            item['study_group_id'] = row.get('study_group')
+            item['study_group_name'] = row.get('study_group__name') or '—'
         if 'day' in groups:
             d = row.get('day')
             item['date'] = d.isoformat() if d else None
