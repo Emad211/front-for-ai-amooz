@@ -263,6 +263,9 @@ REST_FRAMEWORK = {
     'DEFAULT_THROTTLE_RATES': {
         'anon': os.getenv('THROTTLE_RATE_ANON', '60/minute'),
         'user': os.getenv('THROTTLE_RATE_USER', '300/minute'),
+        # Tight bucket for credential/code endpoints (login, redeem, verify) to
+        # blunt brute-force. Applied via ScopedRateThrottle(throttle_scope='auth').
+        'auth': os.getenv('THROTTLE_RATE_AUTH', '10/minute'),
     },
     # Global pagination — all list endpoints return at most PAGE_SIZE items.
     'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',

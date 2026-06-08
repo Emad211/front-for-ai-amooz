@@ -13,6 +13,7 @@ from django.db.models import Count, F, Q, Sum
 from django.db.models.functions import TruncDate
 from django.utils import timezone
 from rest_framework import status
+from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -420,6 +421,8 @@ class RedeemInvitationView(APIView):
     """
 
     permission_classes = []  # allow unauthenticated
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'auth'  # tight anti-brute-force bucket for code redemption
 
     @transaction.atomic
     def post(self, request):

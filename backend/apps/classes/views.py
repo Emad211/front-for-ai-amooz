@@ -18,6 +18,7 @@ from django.db.models import Count, Max, Min, Q
 
 from rest_framework import status
 from rest_framework import serializers
+from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.generics import GenericAPIView
 from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.permissions import AllowAny, IsAuthenticated
@@ -2763,6 +2764,8 @@ class StudentFinalExamView(APIView):
 
 class InviteCodeVerifyView(APIView):
     permission_classes = [AllowAny]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'auth'  # tight anti-brute-force bucket
 
     @extend_schema(
         tags=['Classes'],

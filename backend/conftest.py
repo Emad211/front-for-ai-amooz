@@ -9,10 +9,21 @@ import pytest
 
 @pytest.fixture(autouse=True)
 def _disable_throttling(settings):
-    """Disable DRF throttling for every test."""
+    """Disable DRF throttling for every test.
+
+    Global throttle classes are removed, but views that pin their own
+    ``throttle_classes`` (e.g. ScopedRateThrottle on auth endpoints) still run —
+    so we keep every scope defined with an effectively-infinite rate. Leaving a
+    scope undefined would make ScopedRateThrottle.get_rate() raise
+    ImproperlyConfigured instead of simply not throttling.
+    """
     rf = {**settings.REST_FRAMEWORK}
     rf["DEFAULT_THROTTLE_CLASSES"] = []
-    rf["DEFAULT_THROTTLE_RATES"] = {}
+    rf["DEFAULT_THROTTLE_RATES"] = {
+        "anon": "1000000/minute",
+        "user": "1000000/minute",
+        "auth": "1000000/minute",
+    }
     settings.REST_FRAMEWORK = rf
 
     # Clear throttle cache to prevent stale rate-limit data.
