@@ -1,6 +1,11 @@
-"""Fetch live USDT→Toman exchange rate from Tetherland API.
+"""USDT→Toman exchange rate.
 
-Cached in-memory with a configurable TTL to avoid hammering the API.
+The live rate is fetched from the Tetherland API by a Celery-beat task
+(``apps.commons.tasks.refresh_usdt_toman_rate_task``) and stored in the SHARED
+Redis cache. The request / LLM-write path (``get_usdt_toman_rate`` →
+``convert_usd_to_toman``) only ever reads the cache (or a settings fallback) and
+must NEVER make a blocking network call — token tracking runs on every LLM write,
+so a slow/down external FX API there would tie up gunicorn workers under load.
 """
 
 from __future__ import annotations
@@ -8,12 +13,11 @@ from __future__ import annotations
 import json
 import logging
 import ssl
-import threading
-import time
 import urllib.request
 from typing import Optional, Tuple
 
 from django.conf import settings
+from django.core.cache import cache
 
 logger = logging.getLogger(__name__)
 
@@ -23,10 +27,10 @@ TETHERLAND_API_URL = getattr(
     'https://api.tetherland.com/currencies',
 )
 
-# In-memory cache
-_lock = threading.Lock()
-_cached_rate: Optional[float] = None
-_cached_at: float = 0.0
+# Shared-cache key + TTL. The TTL is comfortably longer than the beat interval
+# so a single missed refresh doesn't drop callers back to the fallback.
+_RATE_CACHE_KEY = 'usdt_toman_rate'
+_RATE_CACHE_TTL = 60 * 60  # 1 hour
 
 
 def _parse_float(value: object) -> Optional[float]:
@@ -81,41 +85,48 @@ def fetch_usdt_toman_rate(timeout_sec: float = 5.0) -> Tuple[Optional[float], Op
         return None, str(exc)
 
 
-def get_usdt_toman_rate(ttl_sec: float = 60.0) -> Tuple[Optional[float], Optional[str]]:
-    """Get cached USDT→Toman rate with a short TTL.
+def _fallback_rate() -> Optional[float]:
+    return _parse_float(getattr(settings, 'USDT_TOMAN_FALLBACK', None))
+
+
+def refresh_usdt_toman_rate(timeout_sec: float = 8.0) -> Tuple[Optional[float], Optional[str]]:
+    """Fetch the live rate and store it in the SHARED cache.
+
+    Called by the Celery-beat task — NEVER on the request path. Returns
+    ``(rate, error)``.
+    """
+    rate, err = fetch_usdt_toman_rate(timeout_sec=timeout_sec)
+    if rate is not None:
+        try:
+            cache.set(_RATE_CACHE_KEY, rate, _RATE_CACHE_TTL)
+        except Exception:  # pragma: no cover - cache write must never break refresh
+            logger.warning('Could not write USDT rate to cache', exc_info=True)
+    return rate, err
+
+
+def get_usdt_toman_rate(ttl_sec: float | None = None) -> Tuple[Optional[float], Optional[str]]:
+    """Return the USDT→Toman rate WITHOUT any blocking network call.
+
+    Reads the shared cache (kept fresh by ``refresh_usdt_toman_rate_task``);
+    falls back to ``settings.USDT_TOMAN_FALLBACK`` until the first refresh lands
+    or if the FX API is unavailable. ``ttl_sec`` is accepted for backwards
+    compatibility and ignored.
 
     Returns:
-        (rate, error) — rate is Toman per 1 USDT.
+        (rate, error) — rate is Toman per 1 USDT, or ``None`` if neither a
+        cached rate nor a fallback is configured.
     """
-    global _cached_rate, _cached_at
-    now = time.time()
+    try:
+        cached = cache.get(_RATE_CACHE_KEY)
+    except Exception:  # pragma: no cover - cache read must never break tracking
+        cached = None
+    if cached is not None:
+        return cached, None
 
-    with _lock:
-        if _cached_rate is not None and (now - _cached_at) <= ttl_sec:
-            return _cached_rate, None
-
-    rate, err = fetch_usdt_toman_rate(timeout_sec=5.0)
-    if rate is None:
-        # Return stale cache if available
-        with _lock:
-            if _cached_rate is not None:
-                logger.warning('Tetherland API failed (%s), using stale rate', err)
-                return _cached_rate, err
-
-        # Fallback from settings
-        fallback = getattr(settings, 'USDT_TOMAN_FALLBACK', None)
-        if fallback:
-            fb_rate = _parse_float(fallback)
-            if fb_rate is not None:
-                return fb_rate, err
-
-        return None, err
-
-    with _lock:
-        _cached_rate = rate
-        _cached_at = now
-
-    return rate, None
+    fb = _fallback_rate()
+    if fb is not None:
+        return fb, 'using fallback rate (live rate not cached yet)'
+    return None, 'no USDT rate available (cache empty and no USDT_TOMAN_FALLBACK)'
 
 
 def usd_to_toman(usd_amount: float) -> Tuple[Optional[float], Optional[str]]:

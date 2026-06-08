@@ -486,16 +486,28 @@ CELERY_TASK_ROUTES = {
     'apps.classes.tasks.send_publish_sms_task': {'queue': 'default'},
     'apps.classes.tasks.send_new_invites_sms_task': {'queue': 'default'},
     'apps.classes.tasks.cleanup_stale_sessions': {'queue': 'default'},
+    'apps.commons.tasks.refresh_usdt_toman_rate_task': {'queue': 'default'},
 }
 CELERY_TASK_REJECT_ON_WORKER_LOST = True  # requeue tasks if worker is killed (OOM)
 
-# Periodic tasks (celery beat) — run cleanup_stale_sessions every 30 min.
+# Periodic tasks (celery beat).
 CELERY_BEAT_SCHEDULE = {
     'cleanup-stale-sessions': {
         'task': 'apps.classes.tasks.cleanup_stale_sessions',
         'schedule': 30 * 60,  # every 30 minutes
     },
+    # Keep the USDT→Toman rate fresh in the shared cache so the LLM-write path
+    # never blocks on the external FX API.
+    'refresh-usdt-toman-rate': {
+        'task': 'apps.commons.tasks.refresh_usdt_toman_rate_task',
+        'schedule': 10 * 60,  # every 10 minutes
+    },
 }
+
+# USDT→Toman fallback used only until the first beat refresh lands (or if the FX
+# API is down). The authoritative rate is the cached one; env-override per market.
+USDT_TOMAN_FALLBACK = _get_env_int('USDT_TOMAN_FALLBACK', 100000)
+TETHERLAND_API_URL = os.getenv('TETHERLAND_API_URL', 'https://api.tetherland.com/currencies')
 
 # ---------------------------------------------------------------------------
 # Logging — structured JSON-ready logging for production.
