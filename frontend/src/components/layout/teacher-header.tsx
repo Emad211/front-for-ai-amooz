@@ -8,7 +8,7 @@ import { Logo } from '@/components/ui/logo';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetTrigger, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet';
 import { SidebarContent } from './sidebar-content';
-import { TEACHER_NAV_MENU, ORG_TEACHER_NAV_MENU } from '@/constants/navigation';
+import { TEACHER_NAV_MENU, orgNavMenuForRole } from '@/constants/navigation';
 import { NotificationPopover } from '@/components/dashboard/notification-popover';
 import { ThemeToggle } from '@/components/ui/theme-toggle';
 import { fetchMe, getStoredTokens, getStoredUser, persistUser } from '@/services/auth-service';
@@ -18,7 +18,7 @@ export function TeacherHeader() {
   const pathname = usePathname();
   const [isOpen, setIsOpen] = useState(false);
   const { isOrgMode, activeWorkspace } = useWorkspace();
-  const currentNavMenu = isOrgMode ? ORG_TEACHER_NAV_MENU : TEACHER_NAV_MENU;
+  const currentNavMenu = isOrgMode ? orgNavMenuForRole(activeWorkspace?.orgRole) : TEACHER_NAV_MENU;
   const currentPanelLabel = isOrgMode ? (activeWorkspace?.name ?? 'سازمان') : 'پنل معلم';
 
   // Avoid SSR/CSR hydration mismatch by not reading localStorage during the initial render.
@@ -87,7 +87,13 @@ export function TeacherHeader() {
     'my-exams': 'آزمون‌های سازمان',
     students: 'مدیریت دانش‌آموزان',
     messages: 'پیام‌رسانی',
-    settings: 'تنظیمات پنل',
+    settings: 'تنظیمات سازمان',
+    // Org management sub-routes (/teacher/org/*)
+    'study-groups': 'گروه‌های آموزشی',
+    'my-groups': 'گروه‌های من',
+    teachers: 'مدیریت معلمان',
+    members: 'اعضا و کدهای دعوت',
+    costs: 'هزینه و مصرف هوش مصنوعی',
   };
   const titleMap = isOrgMode ? orgTitleMap : personalTitleMap;
   const pageTitle = titleMap[lastSegment] ?? titleMap.teacher;

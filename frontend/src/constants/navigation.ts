@@ -1,5 +1,5 @@
-import { 
-  BarChart3, 
+import {
+  BarChart3,
   Building2,
   Coins,
   Home,
@@ -17,8 +17,12 @@ import {
   FileQuestion,
   LayoutDashboard,
   KeyRound,
+  GraduationCap,
+  UserCog,
+  Wallet,
+  Settings,
 } from 'lucide-react';
-import { NavSection, NavItem } from '@/types';
+import { NavSection, NavItem, OrgRole } from '@/types';
 
 export const LANDING_NAV_LINKS = [
   { href: "#features", label: "ویژگی‌ها" },
@@ -94,12 +98,16 @@ export const TEACHER_NAV_MENU: NavSection[] = [
   },
 ];
 
-/** Navigation menu for teachers/admins when in org workspace mode. */
+/**
+ * Org **teacher** menu (orgRole = teacher): scoped to their own study groups
+ * and content. No member management, billing, or org settings.
+ */
 export const ORG_TEACHER_NAV_MENU: NavSection[] = [
   {
     title: 'سازمان',
     items: [
       { label: 'داشبورد سازمان', href: '/teacher', icon: LayoutDashboard },
+      { label: 'گروه‌های من', href: '/teacher/org/my-groups', icon: GraduationCap },
     ]
   },
   {
@@ -125,3 +133,46 @@ export const ORG_TEACHER_NAV_MENU: NavSection[] = [
     ]
   },
 ];
+
+/**
+ * Org **manager** menu (orgRole = admin / deputy): full management console —
+ * study groups, teachers, members & codes, AI cost tracking, org settings.
+ * Managers can also build content (they are platform-role TEACHER).
+ */
+export const ORG_ADMIN_NAV_MENU: NavSection[] = [
+  {
+    title: 'مدیریت سازمان',
+    items: [
+      { label: 'داشبورد سازمان', href: '/teacher', icon: LayoutDashboard },
+      { label: 'گروه‌های آموزشی', href: '/teacher/org/study-groups', icon: GraduationCap },
+      { label: 'معلمان', href: '/teacher/org/teachers', icon: UserCog },
+      { label: 'اعضا و کدهای دعوت', href: '/teacher/org/members', icon: KeyRound },
+      { label: 'هزینه و مصرف هوش مصنوعی', href: '/teacher/org/costs', icon: Wallet },
+      { label: 'تنظیمات سازمان', href: '/teacher/org/settings', icon: Settings },
+    ]
+  },
+  {
+    title: 'محتوای آموزشی',
+    items: [
+      { label: 'ایجاد کلاس جدید', href: '/teacher/create-class', icon: PlusCircle },
+      { label: 'کلاس‌های سازمان', href: '/teacher/my-classes', icon: FolderOpen },
+      { label: 'آزمون‌های سازمان', href: '/teacher/my-exams', icon: FileQuestion },
+    ]
+  },
+  {
+    title: 'ارتباطات و پشتیبانی',
+    items: [
+      { label: 'ارسال پیام', href: '/teacher/messages', icon: MessageSquare },
+      { label: 'تیکت‌های پشتیبانی', href: '/teacher/tickets', icon: Ticket },
+    ]
+  },
+];
+
+/**
+ * Pick the right org-mode menu for a workspace role. Managers (admin/deputy)
+ * get the management console; plain org teachers get the scoped teacher menu.
+ */
+export function orgNavMenuForRole(orgRole: OrgRole | undefined): NavSection[] {
+  if (orgRole === 'admin' || orgRole === 'deputy') return ORG_ADMIN_NAV_MENU;
+  return ORG_TEACHER_NAV_MENU;
+}

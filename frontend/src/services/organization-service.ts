@@ -7,6 +7,10 @@ import type {
   ValidateCodeResult,
   RedeemCodeResult,
   OrgRole,
+  StudyGroup,
+  StudyGroupDetail,
+  StudyGroupStatus,
+  OrgCosts,
 } from '@/types';
 
 const RAW_API_URL = (process.env.NEXT_PUBLIC_API_URL ?? '').replace(/\/$/, '');
@@ -244,6 +248,108 @@ export const OrganizationService = {
   }): Promise<RedeemCodeResult> => {
     return requestJson<RedeemCodeResult>('/organizations/redeem-code/', {
       method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  // ============================================================================
+  // Study Groups (گروه آموزشی) — cohorts
+  // ============================================================================
+
+  getStudyGroups: async (orgId: number): Promise<StudyGroup[]> => {
+    return requestJson<StudyGroup[]>(`/organizations/${orgId}/study-groups/`);
+  },
+
+  getStudyGroup: async (orgId: number, groupId: number): Promise<StudyGroupDetail> => {
+    return requestJson<StudyGroupDetail>(`/organizations/${orgId}/study-groups/${groupId}/`);
+  },
+
+  createStudyGroup: async (orgId: number, data: {
+    name: string;
+    grade_label?: string;
+    subject?: string;
+    description?: string;
+  }): Promise<StudyGroup> => {
+    return requestJson<StudyGroup>(`/organizations/${orgId}/study-groups/`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  updateStudyGroup: async (orgId: number, groupId: number, data: Partial<{
+    name: string;
+    grade_label: string;
+    subject: string;
+    description: string;
+    status: StudyGroupStatus;
+  }>): Promise<StudyGroupDetail> => {
+    return requestJson<StudyGroupDetail>(`/organizations/${orgId}/study-groups/${groupId}/`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+  },
+
+  deleteStudyGroup: async (orgId: number, groupId: number): Promise<void> => {
+    await requestJson(`/organizations/${orgId}/study-groups/${groupId}/`, { method: 'DELETE' });
+  },
+
+  assignTeacherToGroup: async (orgId: number, groupId: number, userId: number): Promise<StudyGroup> => {
+    return requestJson<StudyGroup>(
+      `/organizations/${orgId}/study-groups/${groupId}/teachers/`,
+      { method: 'POST', body: JSON.stringify({ user_id: userId }) },
+    );
+  },
+
+  unassignTeacherFromGroup: async (orgId: number, groupId: number, userId: number): Promise<void> => {
+    await requestJson(
+      `/organizations/${orgId}/study-groups/${groupId}/teachers/${userId}/`,
+      { method: 'DELETE' },
+    );
+  },
+
+  addStudentToGroup: async (orgId: number, groupId: number, userId: number): Promise<StudyGroup> => {
+    return requestJson<StudyGroup>(
+      `/organizations/${orgId}/study-groups/${groupId}/students/`,
+      { method: 'POST', body: JSON.stringify({ user_id: userId }) },
+    );
+  },
+
+  removeStudentFromGroup: async (orgId: number, groupId: number, userId: number): Promise<void> => {
+    await requestJson(
+      `/organizations/${orgId}/study-groups/${groupId}/students/${userId}/`,
+      { method: 'DELETE' },
+    );
+  },
+
+  /** Study groups the current user teaches in (org-teacher view). */
+  getMyStudyGroups: async (orgId: number): Promise<StudyGroup[]> => {
+    return requestJson<StudyGroup[]>(`/organizations/${orgId}/my-study-groups/`);
+  },
+
+  // ============================================================================
+  // Org cost dashboard (AI usage by teacher + study group, in Toman)
+  // ============================================================================
+
+  getOrgCosts: async (orgId: number, days = 30): Promise<OrgCosts> => {
+    return requestJson<OrgCosts>(`/organizations/${orgId}/costs/?days=${days}`);
+  },
+
+  // ============================================================================
+  // Org settings (manager-editable org profile subset)
+  // ============================================================================
+
+  getOrgSettings: async (orgId: number): Promise<Organization> => {
+    return requestJson<Organization>(`/organizations/${orgId}/settings/`);
+  },
+
+  updateOrgSettings: async (orgId: number, data: Partial<{
+    name: string;
+    phone: string;
+    address: string;
+    description: string;
+  }>): Promise<Organization> => {
+    return requestJson<Organization>(`/organizations/${orgId}/settings/`, {
+      method: 'PATCH',
       body: JSON.stringify(data),
     });
   },

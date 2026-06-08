@@ -1084,3 +1084,55 @@ class OrgCostsView(APIView):
             'byStudyGroup': groups,
             'daily': daily_out,
         })
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Org settings — org-admin-editable subset of the organization profile
+# ═══════════════════════════════════════════════════════════════════════════
+
+class OrgSettingsView(APIView):
+    """GET / PATCH the organization profile, for the org manager (org admin).
+
+    Distinct from the platform-admin ``OrganizationDetailView``: a manager may
+    edit only the descriptive profile (name, phone, address, description). The
+    billing/capacity levers (slug, student_capacity, subscription_status,
+    owner) stay platform-admin-only.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    # Fields an org manager is allowed to change about their own org.
+    EDITABLE = ('name', 'phone', 'address', 'description')
+
+    def get(self, request, org_pk):
+        if not (request.user.is_staff or IsOrgAdmin.check(request.user, org_pk)):
+            return Response({'detail': 'دسترسی ندارید.'}, status=status.HTTP_403_FORBIDDEN)
+        try:
+            org = Organization.objects.select_related('owner').get(pk=org_pk)
+        except Organization.DoesNotExist:
+            return Response({'detail': 'سازمان یافت نشد.'}, status=status.HTTP_404_NOT_FOUND)
+        return Response(OrganizationSerializer(org).data)
+
+    def patch(self, request, org_pk):
+        if not (request.user.is_staff or IsOrgAdmin.check(request.user, org_pk)):
+            return Response({'detail': 'دسترسی ندارید.'}, status=status.HTTP_403_FORBIDDEN)
+        try:
+            org = Organization.objects.get(pk=org_pk)
+        except Organization.DoesNotExist:
+            return Response({'detail': 'سازمان یافت نشد.'}, status=status.HTTP_404_NOT_FOUND)
+
+        name = request.data.get('name')
+        if name is not None and not str(name).strip():
+            return Response(
+                {'name': ['نام سازمان نمی‌تواند خالی باشد.']},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        changed = False
+        for field in self.EDITABLE:
+            if field in request.data:
+                setattr(org, field, request.data[field])
+                changed = True
+        if changed:
+            org.save()
+        return Response(OrganizationSerializer(org).data)

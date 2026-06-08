@@ -99,7 +99,7 @@ export default function OrgLoginPage() {
     try {
       const result = await OrganizationService.redeemCode({ code: codeValue });
       toast.success(`به ${result.organization.name} خوش آمدید!`);
-      redirectAfterJoin(result.membership.orgRole, result.organization.id);
+      redirectAfterJoin(result.membership.orgRole, result.organization.slug);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'خطا در عضویت');
     } finally {
@@ -148,7 +148,7 @@ export default function OrgLoginPage() {
       }
 
       toast.success(`حساب شما ساخته شد و به ${result.organization.name} پیوستید!`);
-      redirectAfterJoin(result.membership.orgRole, result.organization.id);
+      redirectAfterJoin(result.membership.orgRole, result.organization.slug);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'خطا در ثبت‌نام');
     } finally {
@@ -157,11 +157,17 @@ export default function OrgLoginPage() {
   };
 
   // ── Redirect based on org role ──
-  const redirectAfterJoin = (orgRole: string, orgId: number) => {
-    if (orgRole === 'admin' || orgRole === 'deputy') {
-      // Org admin/deputy → org management dashboard
-      router.push(`/admin/organizations/${orgId}`);
-    } else if (orgRole === 'teacher') {
+  // Org admin/deputy/teacher all live in the (teacher) area in ORG mode — NOT the
+  // platform-admin routes (org managers are platform-role TEACHER and cannot access
+  // /admin/*). Pre-select the org workspace so the dashboard opens in org mode.
+  const redirectAfterJoin = (orgRole: string, orgSlug: string) => {
+    if (orgRole === 'admin' || orgRole === 'deputy' || orgRole === 'teacher') {
+      try {
+        // Mirrors STORAGE_KEY in use-workspace.tsx (active workspace = org slug).
+        window.localStorage.setItem('ai_amooz_active_workspace', orgSlug);
+      } catch {
+        // Non-fatal: the user can switch workspace manually.
+      }
       router.push('/teacher');
     } else {
       router.push('/home');

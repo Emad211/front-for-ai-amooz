@@ -450,3 +450,89 @@ export interface RedeemCodeResult {
   access?: string;
   refresh?: string;
 }
+
+// ── Study groups (گروه آموزشی) ──────────────────────────────────────────────
+
+export type StudyGroupStatus = 'active' | 'archived';
+
+export interface StudyGroupTeacherBrief {
+  id: number;
+  name: string;
+  assignedAt: string;
+}
+
+export interface StudyGroup {
+  id: number;
+  name: string;
+  gradeLabel: string;
+  subject: string;
+  description: string;
+  status: StudyGroupStatus;
+  statusDisplay: string;
+  studentCount: number;
+  teacherCount: number;
+  classCount: number;
+  teachers: StudyGroupTeacherBrief[];
+  createdAt: string;
+}
+
+export interface StudyGroupStudentBrief {
+  membershipId: number;
+  id: number;
+  name: string;
+  phone: string;
+  joinedAt: string;
+}
+
+export interface StudyGroupCourseBrief {
+  id: number;
+  title: string;
+  teacherId: number;
+  teacherName: string;
+  isPublished: boolean;
+}
+
+/** Detail response = StudyGroup + roster + courses. */
+export interface StudyGroupDetail extends StudyGroup {
+  students: StudyGroupStudentBrief[];
+  courses: StudyGroupCourseBrief[];
+}
+
+// ── Org cost dashboard (AI usage in Toman, by teacher + study group) ─────────
+
+export interface OrgCostSummary {
+  totalRequests: number;
+  totalTokens: number;
+  totalCostToman: number;
+  totalCostUsd: number;
+}
+
+export interface OrgCostByTeacher {
+  teacherId: number | null;
+  name: string;
+  costToman: number;
+  requests: number;
+  tokens: number;
+}
+
+export interface OrgCostByStudyGroup {
+  studyGroupId: number | null;
+  name: string;
+  costToman: number;
+  requests: number;
+  tokens: number;
+}
+
+export interface OrgCostDaily {
+  date: string | null;
+  costToman: number;
+  requests: number;
+}
+
+export interface OrgCosts {
+  days: number;
+  summary: OrgCostSummary;
+  byTeacher: OrgCostByTeacher[];
+  byStudyGroup: OrgCostByStudyGroup[];
+  daily: OrgCostDaily[];
+}

@@ -2,12 +2,12 @@
 'use client';
 
 import { SidebarContent } from './sidebar-content';
-import { TEACHER_NAV_MENU, ORG_TEACHER_NAV_MENU } from '@/constants/navigation';
+import { TEACHER_NAV_MENU, orgNavMenuForRole } from '@/constants/navigation';
 import { useWorkspace } from '@/hooks/use-workspace';
 
 export function TeacherSidebar() {
   const { isOrgMode, activeWorkspace } = useWorkspace();
-  const navMenu = isOrgMode ? ORG_TEACHER_NAV_MENU : TEACHER_NAV_MENU;
+  const navMenu = isOrgMode ? orgNavMenuForRole(activeWorkspace?.orgRole) : TEACHER_NAV_MENU;
   const panelLabel = isOrgMode ? (activeWorkspace?.name ?? 'سازمان') : 'پنل معلم';
 
   return (
