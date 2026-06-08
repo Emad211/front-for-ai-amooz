@@ -34,6 +34,8 @@ import {
   Plus,
   Trash2,
   Save,
+  Building2,
+  GraduationCap,
 } from 'lucide-react';
 
 /* ------------------------------------------------------------------ */
@@ -134,6 +136,8 @@ export default function LLMUsagePage() {
   const [byProvider, setByProvider] = useState<LLMUsageByProvider[]>([]);
   const [daily, setDaily] = useState<LLMUsageDaily[]>([]);
   const [breakdown, setBreakdown] = useState<LLMUsageBreakdownRow[]>([]);
+  const [byOrg, setByOrg] = useState<LLMUsageBreakdownRow[]>([]);
+  const [byStudyGroup, setByStudyGroup] = useState<LLMUsageBreakdownRow[]>([]);
   const [recentLogs, setRecentLogs] = useState<RecentLog[]>([]);
 
   // Base date filter (no role) — applies to global aggregations.
@@ -149,12 +153,14 @@ export default function LLMUsagePage() {
       const roleFilterObj: LLMUsageFilter = roleFilter
         ? { ...baseFilter, role: roleFilter }
         : baseFilter;
-      const [s, f, p, d, b, r] = await Promise.all([
+      const [s, f, p, d, b, org, sg, r] = await Promise.all([
         AdminService.getLLMUsageSummary(baseFilter),
         AdminService.getLLMUsageByFeature(baseFilter),
         AdminService.getLLMUsageByProvider(baseFilter),
         AdminService.getLLMUsageDaily(baseFilter),
         AdminService.getLLMUsageBreakdown({ ...roleFilterObj, group_by: 'user,feature' }),
+        AdminService.getLLMUsageBreakdown({ ...baseFilter, group_by: 'organization' }),
+        AdminService.getLLMUsageBreakdown({ ...baseFilter, group_by: 'study_group' }),
         AdminService.getLLMUsageRecentLogs(50),
       ]);
       setSummary(s);
@@ -162,6 +168,8 @@ export default function LLMUsagePage() {
       setByProvider(p);
       setDaily(d);
       setBreakdown(b.results);
+      setByOrg(org.results);
+      setByStudyGroup(sg.results);
       setRecentLogs(r);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'خطا در دریافت اطلاعات');
@@ -517,6 +525,93 @@ export default function LLMUsagePage() {
               {byProvider.length === 0 && (
                 <p className="text-center text-muted-foreground py-4">بدون داده</p>
               )}
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* ── By Organization + By Study Group ── */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <Card className="rounded-2xl">
+            <CardHeader className="pb-3">
+              <CardTitle className="flex items-center gap-2 text-lg">
+                <Building2 className="w-5 h-5" />
+                هزینه به تفکیک سازمان
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b text-muted-foreground">
+                      <th className="text-right pb-2 font-medium">سازمان</th>
+                      <th className="text-center pb-2 font-medium">درخواست</th>
+                      <th className="text-center pb-2 font-medium">توکن</th>
+                      <th className="text-center pb-2 font-medium">هزینه (تومان)</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {byOrg.map((o) => (
+                      <tr key={o.organization_id ?? 'personal'} className="border-b border-border/50 hover:bg-muted/30">
+                        <td className="py-2 font-medium">{o.organization_name || '— شخصی —'}</td>
+                        <td className="py-2 text-center">{formatNumber(o.count)}</td>
+                        <td className="py-2 text-center">{formatNumber(o.total_tokens)}</td>
+                        <td className="py-2 text-center font-medium text-amber-600 dark:text-amber-400">
+                          {formatToman(o.total_cost_toman)}
+                        </td>
+                      </tr>
+                    ))}
+                    {byOrg.length === 0 && (
+                      <tr>
+                        <td colSpan={4} className="py-8 text-center text-muted-foreground">
+                          هنوز داده‌ای ثبت نشده
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="rounded-2xl">
+            <CardHeader className="pb-3">
+              <CardTitle className="flex items-center gap-2 text-lg">
+                <GraduationCap className="w-5 h-5" />
+                هزینه به تفکیک گروه آموزشی
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b text-muted-foreground">
+                      <th className="text-right pb-2 font-medium">گروه آموزشی</th>
+                      <th className="text-center pb-2 font-medium">درخواست</th>
+                      <th className="text-center pb-2 font-medium">توکن</th>
+                      <th className="text-center pb-2 font-medium">هزینه (تومان)</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {byStudyGroup.map((g) => (
+                      <tr key={g.study_group_id ?? 'none'} className="border-b border-border/50 hover:bg-muted/30">
+                        <td className="py-2 font-medium">{g.study_group_name || '—'}</td>
+                        <td className="py-2 text-center">{formatNumber(g.count)}</td>
+                        <td className="py-2 text-center">{formatNumber(g.total_tokens)}</td>
+                        <td className="py-2 text-center font-medium text-amber-600 dark:text-amber-400">
+                          {formatToman(g.total_cost_toman)}
+                        </td>
+                      </tr>
+                    ))}
+                    {byStudyGroup.length === 0 && (
+                      <tr>
+                        <td colSpan={4} className="py-8 text-center text-muted-foreground">
+                          هنوز داده‌ای ثبت نشده
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
             </CardContent>
           </Card>
         </div>

@@ -1,6 +1,6 @@
 'use client';
 
-import { use, useState, useCallback } from 'react';
+import { use, useState, useCallback, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useOrgDashboard, useOrgMembers, useInvitationCodes } from '@/hooks/use-organizations';
 import { OrganizationService } from '@/services/organization-service';
@@ -46,8 +46,10 @@ import {
   GraduationCap,
   UserCog,
   AlertTriangle,
+  Wallet,
 } from 'lucide-react';
-import type { OrgRole } from '@/types';
+import type { OrgRole, OrgCosts } from '@/types';
+import { formatPersianNumber } from '@/lib/persian-digits';
 
 const ROLE_OPTIONS = [
   { value: 'admin', label: 'مدیر' },
@@ -90,6 +92,19 @@ export default function OrganizationDetailPage({
     reload: reloadMembers,
   } = useOrgMembers(orgId);
   const { codes, isLoading: codesLoading, error: codesError, reload: reloadCodes } = useInvitationCodes(orgId);
+
+  // ── AI cost (30d) — platform admin is is_staff, so the org-costs endpoint allows it ──
+  const [costs, setCosts] = useState<OrgCosts | null>(null);
+  const [costsLoading, setCostsLoading] = useState(true);
+  useEffect(() => {
+    let cancelled = false;
+    setCostsLoading(true);
+    OrganizationService.getOrgCosts(orgId, 30)
+      .then((c) => { if (!cancelled) setCosts(c); })
+      .catch(() => { if (!cancelled) setCosts(null); })
+      .finally(() => { if (!cancelled) setCostsLoading(false); });
+    return () => { cancelled = true; };
+  }, [orgId]);
 
   // ── Create Code Dialog ──
   const [isCreateCodeOpen, setIsCreateCodeOpen] = useState(false);
@@ -372,6 +387,10 @@ export default function OrganizationDetailPage({
               <KeyRound className="w-4 h-4" />
               کدهای دعوت
             </TabsTrigger>
+            <TabsTrigger value="costs" className="gap-1.5 rounded-lg">
+              <Wallet className="w-4 h-4" />
+              هزینه هوش مصنوعی
+            </TabsTrigger>
           </TabsList>
 
           {/* ═════ Members Tab ═════ */}
@@ -652,6 +671,114 @@ export default function OrganizationDetailPage({
                   );
                 })}
               </div>
+            )}
+          </TabsContent>
+
+          {/* ═════ Costs Tab ═════ */}
+          <TabsContent value="costs" className="space-y-4 mt-6">
+            {costsLoading ? (
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <Skeleton className="h-24 rounded-2xl" />
+                <Skeleton className="h-24 rounded-2xl" />
+                <Skeleton className="h-24 rounded-2xl" />
+              </div>
+            ) : !costs ? (
+              <p className="py-8 text-center text-muted-foreground text-sm">
+                داده‌ای برای هزینه هوش مصنوعی این سازمان موجود نیست.
+              </p>
+            ) : (
+              <>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <Card className="rounded-2xl">
+                    <CardContent className="p-5">
+                      <p className="text-sm text-muted-foreground">هزینه کل (۳۰ روز اخیر)</p>
+                      <p className="text-2xl font-black text-amber-600 dark:text-amber-400">
+                        {formatPersianNumber(Math.round(costs.summary.totalCostToman))} تومان
+                      </p>
+                    </CardContent>
+                  </Card>
+                  <Card className="rounded-2xl">
+                    <CardContent className="p-5">
+                      <p className="text-sm text-muted-foreground">تعداد درخواست</p>
+                      <p className="text-2xl font-black">{formatPersianNumber(costs.summary.totalRequests)}</p>
+                    </CardContent>
+                  </Card>
+                  <Card className="rounded-2xl">
+                    <CardContent className="p-5">
+                      <p className="text-sm text-muted-foreground">مجموع توکن</p>
+                      <p className="text-2xl font-black">{formatPersianNumber(costs.summary.totalTokens)}</p>
+                    </CardContent>
+                  </Card>
+                </div>
+
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  <Card className="rounded-2xl">
+                    <CardContent className="p-5">
+                      <h3 className="flex items-center gap-2 font-bold mb-3">
+                        <UserCog className="w-4 h-4" /> هزینه به تفکیک معلم
+                      </h3>
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-sm">
+                          <thead>
+                            <tr className="border-b text-muted-foreground">
+                              <th className="text-right pb-2 font-medium">نام</th>
+                              <th className="text-center pb-2 font-medium">درخواست</th>
+                              <th className="text-center pb-2 font-medium">هزینه (تومان)</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {costs.byTeacher.map((t) => (
+                              <tr key={t.teacherId ?? `n-${t.name}`} className="border-b border-border/50">
+                                <td className="py-2 font-medium">{t.name}</td>
+                                <td className="py-2 text-center">{formatPersianNumber(t.requests)}</td>
+                                <td className="py-2 text-center font-medium text-amber-600 dark:text-amber-400">
+                                  {formatPersianNumber(Math.round(t.costToman))}
+                                </td>
+                              </tr>
+                            ))}
+                            {costs.byTeacher.length === 0 && (
+                              <tr><td colSpan={3} className="py-6 text-center text-muted-foreground">بدون داده</td></tr>
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  <Card className="rounded-2xl">
+                    <CardContent className="p-5">
+                      <h3 className="flex items-center gap-2 font-bold mb-3">
+                        <GraduationCap className="w-4 h-4" /> هزینه به تفکیک گروه آموزشی
+                      </h3>
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-sm">
+                          <thead>
+                            <tr className="border-b text-muted-foreground">
+                              <th className="text-right pb-2 font-medium">گروه</th>
+                              <th className="text-center pb-2 font-medium">درخواست</th>
+                              <th className="text-center pb-2 font-medium">هزینه (تومان)</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {costs.byStudyGroup.map((g) => (
+                              <tr key={g.studyGroupId ?? `ng-${g.name}`} className="border-b border-border/50">
+                                <td className="py-2 font-medium">{g.name || '—'}</td>
+                                <td className="py-2 text-center">{formatPersianNumber(g.requests)}</td>
+                                <td className="py-2 text-center font-medium text-amber-600 dark:text-amber-400">
+                                  {formatPersianNumber(Math.round(g.costToman))}
+                                </td>
+                              </tr>
+                            ))}
+                            {costs.byStudyGroup.length === 0 && (
+                              <tr><td colSpan={3} className="py-6 text-center text-muted-foreground">بدون داده</td></tr>
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </div>
+              </>
             )}
           </TabsContent>
         </Tabs>

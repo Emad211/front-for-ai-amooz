@@ -200,6 +200,10 @@ export interface LLMUsageBreakdownRow {
   feature_label?: string;
   provider?: string;
   date?: string | null;
+  organization_id?: number | null;
+  organization_name?: string;
+  study_group_id?: number | null;
+  study_group_name?: string;
 }
 
 export interface LLMUsageBreakdownResponse {
