@@ -34,6 +34,8 @@ import {
   GraduationCap,
   Search,
   AlertTriangle,
+  ShieldCheck,
+  Smartphone,
 } from 'lucide-react';
 
 const STATUS_MAP: Record<
@@ -70,7 +72,10 @@ export default function OrganizationsPage() {
   const [formDescription, setFormDescription] = useState('');
   const [formPhone, setFormPhone] = useState('');
   const [formAddress, setFormAddress] = useState('');
+  const [formManagerName, setFormManagerName] = useState('');
+  const [formManagerPhone, setFormManagerPhone] = useState('');
   const [createdCode, setCreatedCode] = useState<string | null>(null);
+  const [sentToPhone, setSentToPhone] = useState<string | null>(null);
 
   const resetForm = () => {
     setFormName('');
@@ -79,7 +84,10 @@ export default function OrganizationsPage() {
     setFormDescription('');
     setFormPhone('');
     setFormAddress('');
+    setFormManagerName('');
+    setFormManagerPhone('');
     setCreatedCode(null);
+    setSentToPhone(null);
   };
 
   const handleCreate = async () => {
@@ -89,6 +97,7 @@ export default function OrganizationsPage() {
     }
     try {
       setIsSubmitting(true);
+      const managerPhone = formManagerPhone.replace(/\D/g, '');
       const created = await OrganizationService.createOrganization({
         name: formName.trim(),
         slug: formSlug.trim(),
@@ -96,10 +105,13 @@ export default function OrganizationsPage() {
         description: formDescription.trim(),
         phone: formPhone.trim(),
         address: formAddress.trim(),
+        manager_phone: managerPhone || undefined,
+        manager_name: formManagerName.trim() || undefined,
       });
       toast.success(`سازمان «${created.name}» با موفقیت ایجاد شد.`);
       if (created.adminActivationCode) {
         setCreatedCode(created.adminActivationCode);
+        setSentToPhone(created.managerPhone || null);
       } else {
         setIsCreateOpen(false);
         resetForm();
@@ -220,7 +232,9 @@ export default function OrganizationsPage() {
                   <DialogHeader>
                     <DialogTitle>سازمان ایجاد شد!</DialogTitle>
                     <DialogDescription>
-                      کد فعالسازی مدیر را کپی کرده و به مدیر سازمان ارسال کنید.
+                      {sentToPhone
+                        ? `کد فعالسازی به شماره ${sentToPhone} پیامک شد. می‌توانید آن را نیز کپی کنید.`
+                        : 'کد فعالسازی مدیر را کپی کرده و به مدیر سازمان ارسال کنید.'}
                     </DialogDescription>
                   </DialogHeader>
                   <div className="mt-4 space-y-4">
@@ -318,6 +332,39 @@ export default function OrganizationsPage() {
                           onChange={(e) => setFormAddress(e.target.value)}
                           placeholder="تهران، خیابان..."
                         />
+                      </div>
+                    </div>
+                    <div className="rounded-xl border border-primary/20 bg-primary/5 p-4 space-y-3">
+                      <div className="flex items-center gap-2 text-sm font-bold text-foreground">
+                        <ShieldCheck className="w-4 h-4 text-primary" />
+                        مدیر سازمان (اختیاری)
+                      </div>
+                      <p className="text-[11px] text-muted-foreground -mt-1 leading-relaxed">
+                        با وارد کردن موبایل مدیر، کد فعالسازی به‌صورت پیامک برای او ارسال می‌شود و فقط
+                        همان شماره می‌تواند کد را فعال کند.
+                      </p>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <Label>نام مدیر</Label>
+                          <Input
+                            value={formManagerName}
+                            onChange={(e) => setFormManagerName(e.target.value)}
+                            placeholder="نام و نام خانوادگی"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label className="flex items-center gap-1">
+                            <Smartphone className="w-3.5 h-3.5" /> موبایل مدیر
+                          </Label>
+                          <Input
+                            value={formManagerPhone}
+                            onChange={(e) => setFormManagerPhone(e.target.value)}
+                            dir="ltr"
+                            className="text-left"
+                            inputMode="numeric"
+                            placeholder="09123456789"
+                          />
+                        </div>
                       </div>
                     </div>
                     <DialogFooter>

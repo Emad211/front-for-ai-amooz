@@ -25,6 +25,7 @@ import {
   BookOpen,
   UserCog,
   CheckCircle2,
+  Smartphone,
 } from 'lucide-react';
 import { OrganizationService } from '@/services/organization-service';
 import { persistTokens, persistUser, fetchMe } from '@/services/auth-service';
@@ -53,7 +54,7 @@ export default function OrgLoginPage() {
   // ── Register step ──
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
-  const [username, setUsername] = useState('');
+  const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -113,12 +114,13 @@ export default function OrgLoginPage() {
       toast.error('نام و نام خانوادگی الزامی است.');
       return;
     }
-    if (!username.trim() || username.trim().length < 3) {
-      toast.error('نام کاربری باید حداقل ۳ کاراکتر باشد.');
+    const normalizedPhone = phone.replace(/\D/g, '');
+    if (!/^09\d{9}$/.test(normalizedPhone)) {
+      toast.error('شماره موبایل معتبر نیست (مثال: ۰۹۱۲۳۴۵۶۷۸۹).');
       return;
     }
-    if (!password || password.length < 6) {
-      toast.error('رمز عبور باید حداقل ۶ کاراکتر باشد.');
+    if (!password || password.length < 8) {
+      toast.error('رمز عبور باید حداقل ۸ کاراکتر باشد.');
       return;
     }
     if (password !== confirmPassword) {
@@ -130,7 +132,7 @@ export default function OrgLoginPage() {
     try {
       const result = await OrganizationService.redeemCode({
         code: code.trim(),
-        username: username.trim(),
+        phone: phone.replace(/\D/g, ''),
         password,
         first_name: firstName.trim(),
         last_name: lastName.trim(),
@@ -348,19 +350,23 @@ export default function OrgLoginPage() {
                   </div>
 
                   <div className="space-y-2">
-                    <Label htmlFor="username">نام کاربری *</Label>
+                    <Label htmlFor="phone">شماره موبایل *</Label>
                     <div className="relative">
-                      <User className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                      <Smartphone className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                       <Input
-                        id="username"
-                        value={username}
-                        onChange={(e) => setUsername(e.target.value)}
-                        placeholder="ali_ahmadi"
+                        id="phone"
+                        value={phone}
+                        onChange={(e) => setPhone(e.target.value)}
+                        placeholder="09123456789"
                         className="pr-10 h-11 bg-background/50 border-border/50"
                         dir="ltr"
+                        inputMode="numeric"
                         disabled={submitting}
                       />
                     </div>
+                    <p className="text-[11px] text-muted-foreground">
+                      شماره موبایل شما، نام کاربری ورود خواهد بود.
+                    </p>
                   </div>
 
                   <div className="space-y-2">

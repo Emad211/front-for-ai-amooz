@@ -112,11 +112,14 @@ export const OrganizationService = {
     description?: string;
     phone?: string;
     address?: string;
-  }): Promise<Organization> => {
-    return requestJson<Organization>('/organizations/', {
-      method: 'POST',
-      body: JSON.stringify(data),
-    });
+    /** Manager's mobile — binds the admin activation code & SMS-es it to them. */
+    manager_phone?: string;
+    manager_name?: string;
+  }): Promise<Organization & { adminActivationCode?: string; managerPhone?: string }> => {
+    return requestJson<Organization & { adminActivationCode?: string; managerPhone?: string }>(
+      '/organizations/',
+      { method: 'POST', body: JSON.stringify(data) },
+    );
   },
 
   updateOrganization: async (orgId: number, data: Partial<{
@@ -233,6 +236,7 @@ export const OrganizationService = {
 
   redeemCode: async (data: {
     code: string;
+    phone?: string;
     username?: string;
     password?: string;
     first_name?: string;
