@@ -56,6 +56,8 @@ export default function TeacherExamDetailPage({ params }: PageProps) {
       return;
     }
 
+    let cancelled = false;
+
     const fetchData = async () => {
       try {
         const data = await fetchExamPrepSession(sessionId);
@@ -70,25 +72,22 @@ export default function TeacherExamDetailPage({ params }: PageProps) {
           // Ignore invite fetch errors
         }
 
-        // Start polling if processing
-        if (['exam_transcribing', 'exam_structuring'].includes(data.status)) {
-          if (!pollTimer.current) {
-            pollTimer.current = window.setInterval(async () => {
-              try {
-                const updated = await fetchExamPrepSession(sessionId);
-                setExamPrep(updated);
-
-                if (!['exam_transcribing', 'exam_structuring'].includes(updated.status)) {
-                  if (pollTimer.current) {
-                    window.clearInterval(pollTimer.current);
-                    pollTimer.current = null;
-                  }
-                }
-              } catch {
-                // Ignore polling errors
-              }
-            }, 2000);
-          }
+        // Start a self-chaining poll while processing (next request scheduled
+        // only after the current settles → no pile-up on a slow backend).
+        const POLL_STATUSES = ['exam_transcribing', 'exam_structuring'];
+        if (POLL_STATUSES.includes(data.status) && !pollTimer.current) {
+          const poll = async () => {
+            try {
+              const updated = await fetchExamPrepSession(sessionId);
+              if (cancelled) return;
+              setExamPrep(updated);
+              if (!POLL_STATUSES.includes(updated.status)) return; // terminal → stop
+            } catch {
+              if (cancelled) return; // transient failure → keep polling
+            }
+            if (!cancelled) pollTimer.current = window.setTimeout(poll, 2500);
+          };
+          pollTimer.current = window.setTimeout(poll, 2500);
         }
       } catch (err) {
         setError(err instanceof Error ? err.message : 'خطا در دریافت اطلاعات آزمون');
@@ -100,8 +99,9 @@ export default function TeacherExamDetailPage({ params }: PageProps) {
     fetchData();
 
     return () => {
+      cancelled = true;
       if (pollTimer.current) {
-        window.clearInterval(pollTimer.current);
+        window.clearTimeout(pollTimer.current);
         pollTimer.current = null;
       }
     };

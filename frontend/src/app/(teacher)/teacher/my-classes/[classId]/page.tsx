@@ -67,29 +67,31 @@ export default function TeacherClassDetailPage({ params }: PageProps) {
         // ignore transient failures
       });
 
-    const shouldPoll = ['transcribing', 'structuring', 'prereq_extracting', 'prereq_teaching', 'recapping'].includes(detail.pipelineStatus ?? '');
-    if (!shouldPoll) return;
+    const POLL_STATUSES = ['transcribing', 'structuring', 'prereq_extracting', 'prereq_teaching', 'recapping'];
+    if (!POLL_STATUSES.includes(detail.pipelineStatus ?? '')) return;
 
-    if (pollTimer.current) window.clearInterval(pollTimer.current);
-    pollTimer.current = window.setInterval(async () => {
+    // Self-chaining poll: schedule the NEXT request only after the current one
+    // settles, so a slow/loaded backend can't make requests pile up (setInterval
+    // would keep firing every interval regardless).
+    if (pollTimer.current) window.clearTimeout(pollTimer.current);
+    let cancelled = false;
+    const poll = async () => {
       try {
         const next = await getClassCreationSessionDetail(sessionId);
+        if (cancelled) return;
         setSessionDetail(next);
-
-        if (!['transcribing', 'structuring', 'prereq_extracting', 'prereq_teaching', 'recapping'].includes(next.status)) {
-          if (pollTimer.current) {
-            window.clearInterval(pollTimer.current);
-            pollTimer.current = null;
-          }
-        }
+        if (!POLL_STATUSES.includes(next.status)) return; // terminal → stop
       } catch {
-        // ignore transient failures
+        if (cancelled) return; // transient failure → keep polling
       }
-    }, 1500);
+      if (!cancelled) pollTimer.current = window.setTimeout(poll, 2000);
+    };
+    pollTimer.current = window.setTimeout(poll, 2000);
 
     return () => {
+      cancelled = true;
       if (pollTimer.current) {
-        window.clearInterval(pollTimer.current);
+        window.clearTimeout(pollTimer.current);
         pollTimer.current = null;
       }
     };

@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { DashboardService } from '@/services/dashboard-service';
 import { Notification } from '@/types';
 import { useMountedRef } from '@/hooks/use-mounted-ref';
@@ -16,21 +16,26 @@ export function useNotifications(service: NotificationsService = DashboardServic
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // Track first load with a ref so `reload` stays referentially stable. Putting
+  // notifications.length in the dep array recreated `reload` after the first
+  // fetch, which re-fired the effect below → a guaranteed double-fetch on mount.
+  const hasLoadedRef = useRef(false);
 
   const reload = useCallback(async () => {
     try {
       setError(null);
-      // Only set loading on initial fetch to avoid flickering during read-sync
-      if (notifications.length === 0) setIsLoading(true);
+      // Only show the loading state on the initial fetch (avoid flicker on refresh).
+      if (!hasLoadedRef.current) setIsLoading(true);
       const data = await service.getNotifications();
       if (mountedRef.current) setNotifications(data);
     } catch (err) {
       console.error(err);
       if (mountedRef.current) setError('خطا در دریافت اعلان‌ها');
     } finally {
+      hasLoadedRef.current = true;
       if (mountedRef.current) setIsLoading(false);
     }
-  }, [mountedRef, service, notifications.length]);
+  }, [mountedRef, service]);
 
   useEffect(() => {
     reload();
