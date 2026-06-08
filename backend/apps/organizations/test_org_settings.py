@@ -1,8 +1,8 @@
-"""Tests for the org-manager-scoped settings endpoint.
+"""Tests for the org-manager-scoped settings endpoint (READ-ONLY).
 
-The manager (platform role TEACHER, org_role admin) may edit the descriptive
-profile of their own org, but NOT the platform-controlled billing levers
-(slug, student_capacity, subscription_status, owner).
+Product decision: the org manager (platform role TEACHER, org_role admin) may
+*view* their organization's settings but never change them — editing the org
+profile is reserved for the platform admin. The endpoint exposes GET only.
 """
 import pytest
 from django.contrib.auth import get_user_model
@@ -26,72 +26,34 @@ def _url(org):
     return f'/api/organizations/{org.id}/settings/'
 
 
-def test_manager_can_read_org_settings():
-    org = _org()
-    manager = _user('mgr')
+def _manager(org):
+    m = _user('mgr')
     OrganizationMembership.objects.create(
-        organization=org, user=manager, org_role=OrganizationMembership.OrgRole.ADMIN
+        organization=org, user=m, org_role=OrganizationMembership.OrgRole.ADMIN
     )
     client = APIClient()
-    client.force_authenticate(user=manager)
+    client.force_authenticate(user=m)
+    return client
+
+
+def test_manager_can_read_org_settings():
+    org = _org()
+    client = _manager(org)
     res = client.get(_url(org))
     assert res.status_code == 200
     assert res.data['name'] == 'Org'
     assert res.data['studentCapacity'] == 100
 
 
-def test_manager_can_edit_profile_fields():
+def test_manager_cannot_edit_settings():
+    """A manager must not be able to mutate the org via this endpoint."""
     org = _org()
-    manager = _user('mgr')
-    OrganizationMembership.objects.create(
-        organization=org, user=manager, org_role=OrganizationMembership.OrgRole.ADMIN
-    )
-    client = APIClient()
-    client.force_authenticate(user=manager)
-    res = client.patch(
-        _url(org),
-        {'name': 'دبیرستان نمونه', 'phone': '02112345678', 'address': 'تهران'},
-        format='json',
-    )
-    assert res.status_code == 200
+    client = _manager(org)
+    # No write verb is allowed — read-only endpoint → 405 Method Not Allowed.
+    assert client.patch(_url(org), {'name': 'X'}, format='json').status_code == 405
+    assert client.put(_url(org), {'name': 'X'}, format='json').status_code == 405
     org.refresh_from_db()
-    assert org.name == 'دبیرستان نمونه'
-    assert org.phone == '02112345678'
-    assert org.address == 'تهران'
-
-
-def test_manager_cannot_change_capacity_or_slug():
-    org = _org()
-    manager = _user('mgr')
-    OrganizationMembership.objects.create(
-        organization=org, user=manager, org_role=OrganizationMembership.OrgRole.ADMIN
-    )
-    client = APIClient()
-    client.force_authenticate(user=manager)
-    res = client.patch(
-        _url(org),
-        {'name': 'X', 'student_capacity': 99999, 'slug': 'hacked',
-         'subscription_status': 'suspended'},
-        format='json',
-    )
-    assert res.status_code == 200
-    org.refresh_from_db()
-    assert org.name == 'X'                 # editable field applied
-    assert org.student_capacity == 100     # billing lever untouched
-    assert org.slug == 'org'               # slug untouched
-    assert org.subscription_status != 'suspended'
-
-
-def test_blank_name_rejected():
-    org = _org()
-    manager = _user('mgr')
-    OrganizationMembership.objects.create(
-        organization=org, user=manager, org_role=OrganizationMembership.OrgRole.ADMIN
-    )
-    client = APIClient()
-    client.force_authenticate(user=manager)
-    res = client.patch(_url(org), {'name': '   '}, format='json')
-    assert res.status_code == 400
+    assert org.name == 'Org'  # unchanged
 
 
 def test_plain_teacher_forbidden():
@@ -103,7 +65,6 @@ def test_plain_teacher_forbidden():
     client = APIClient()
     client.force_authenticate(user=teacher)
     assert client.get(_url(org)).status_code == 403
-    assert client.patch(_url(org), {'name': 'x'}, format='json').status_code == 403
 
 
 def test_non_member_forbidden():

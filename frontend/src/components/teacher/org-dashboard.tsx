@@ -14,14 +14,13 @@ import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { formatPersianNumber } from '@/lib/persian-digits';
 
-/** Quick-action tiles shown to org managers (admin/deputy). */
+/** Quick-action tiles shown to org managers (admin/deputy) — management only. */
 const MANAGER_ACTIONS = [
   { label: 'گروه‌های آموزشی', href: '/teacher/org/study-groups', icon: GraduationCap, desc: 'ساخت و مدیریت گروه‌های کلاسی' },
   { label: 'معلمان', href: '/teacher/org/teachers', icon: UserCog, desc: 'دعوت معلم و تخصیص به گروه‌ها' },
   { label: 'اعضا و کدهای دعوت', href: '/teacher/org/members', icon: KeyRound, desc: 'مدیریت اعضا و کدهای ورود' },
   { label: 'هزینه و مصرف هوش مصنوعی', href: '/teacher/org/costs', icon: Wallet, desc: 'ردیابی هزینه به تفکیک معلم و گروه' },
-  { label: 'ایجاد کلاس جدید', href: '/teacher/create-class', icon: PlusCircle, desc: 'ساخت محتوای آموزشی با هوش مصنوعی' },
-  { label: 'تنظیمات سازمان', href: '/teacher/org/settings', icon: Settings, desc: 'ویرایش مشخصات سازمان' },
+  { label: 'تنظیمات سازمان', href: '/teacher/org/settings', icon: Settings, desc: 'مشاهده مشخصات سازمان' },
 ];
 
 /** Quick-action tiles shown to plain org teachers. */

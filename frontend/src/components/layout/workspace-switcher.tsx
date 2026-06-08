@@ -13,10 +13,13 @@ import {
 import { useWorkspace } from '@/hooks/use-workspace';
 
 export function WorkspaceSwitcher() {
-  const { workspaces, activeWorkspace, switchWorkspace, isLoading } = useWorkspace();
+  const { workspaces, activeWorkspace, switchWorkspace, isLoading, isManager } = useWorkspace();
 
-  // Don't render if user has no org memberships
+  // Don't render if user has no org memberships.
   if (!isLoading && workspaces.length === 0) return null;
+  // Org managers are management-only — no personal/freelance space, so there's
+  // nothing to switch between. Hide the switcher entirely for them.
+  if (isManager) return null;
 
   return (
     <DropdownMenu dir="rtl">

@@ -335,23 +335,11 @@ export const OrganizationService = {
   },
 
   // ============================================================================
-  // Org settings (manager-editable org profile subset)
+  // Org settings (READ-ONLY for the manager; only the platform admin edits)
   // ============================================================================
 
   getOrgSettings: async (orgId: number): Promise<Organization> => {
     return requestJson<Organization>(`/organizations/${orgId}/settings/`);
-  },
-
-  updateOrgSettings: async (orgId: number, data: Partial<{
-    name: string;
-    phone: string;
-    address: string;
-    description: string;
-  }>): Promise<Organization> => {
-    return requestJson<Organization>(`/organizations/${orgId}/settings/`, {
-      method: 'PATCH',
-      body: JSON.stringify(data),
-    });
   },
 
   // ============================================================================

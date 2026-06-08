@@ -2,17 +2,13 @@
 
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
-import { Building2, Save } from 'lucide-react';
+import { Building2, Lock } from 'lucide-react';
 import { useWorkspace } from '@/hooks/use-workspace';
 import { OrganizationService } from '@/services/organization-service';
 import { OrgManagerGuard } from '@/components/organization/org-manager-guard';
-import { formatPersianNumber } from '@/lib/persian-digits';
+import { formatPersianNumber, toPersianDigits } from '@/lib/persian-digits';
 import { formatPersianDate } from '@/lib/date-utils';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import type { Organization } from '@/types';
@@ -31,68 +27,35 @@ const SUBSCRIPTION_LABEL: Record<Organization['subscriptionStatus'], string> = {
   suspended: 'معلق',
 };
 
+/** A single read-only label/value row. */
+function Field({ label, value, mono }: { label: string; value: React.ReactNode; mono?: boolean }) {
+  return (
+    <div className="space-y-1">
+      <dt className="text-sm text-muted-foreground">{label}</dt>
+      <dd className={`text-sm font-medium ${mono ? 'font-mono' : ''}`} dir={mono ? 'ltr' : undefined}>
+        {value}
+      </dd>
+    </div>
+  );
+}
+
 function PageInner() {
   const { activeWorkspace } = useWorkspace();
   const orgId = activeWorkspace?.id;
 
   const [org, setOrg] = useState<Organization | null>(null);
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-
-  // Controlled form fields, initialized from the loaded organization.
-  const [name, setName] = useState('');
-  const [phone, setPhone] = useState('');
-  const [address, setAddress] = useState('');
-  const [description, setDescription] = useState('');
-
-  async function load() {
-    if (!orgId) return;
-    setLoading(true);
-    try {
-      const data = await OrganizationService.getOrgSettings(orgId);
-      setOrg(data);
-      setName(data.name ?? '');
-      setPhone(data.phone ?? '');
-      setAddress(data.address ?? '');
-      setDescription(data.description ?? '');
-    } catch {
-      toast.error('بارگذاری اطلاعات سازمان ناموفق بود.');
-    } finally {
-      setLoading(false);
-    }
-  }
 
   useEffect(() => {
-    if (orgId) load();
-    // eslint-disable-next-line
-  }, [orgId]);
-
-  async function handleSave() {
     if (!orgId) return;
-    if (!name.trim()) {
-      toast.error('نام سازمان نمی‌تواند خالی باشد.');
-      return;
-    }
-    setSaving(true);
-    try {
-      const updated = await OrganizationService.updateOrgSettings(orgId, {
-        name: name.trim(),
-        phone: phone.trim(),
-        address: address.trim(),
-        description: description.trim(),
-      });
-      setOrg(updated);
-      setName(updated.name ?? '');
-      setPhone(updated.phone ?? '');
-      setAddress(updated.address ?? '');
-      setDescription(updated.description ?? '');
-      toast.success('تغییرات ذخیره شد.');
-    } catch {
-      toast.error('ذخیره تغییرات ناموفق بود.');
-    } finally {
-      setSaving(false);
-    }
-  }
+    let cancelled = false;
+    setLoading(true);
+    OrganizationService.getOrgSettings(orgId)
+      .then((data) => { if (!cancelled) setOrg(data); })
+      .catch(() => { if (!cancelled) toast.error('بارگذاری اطلاعات سازمان ناموفق بود.'); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [orgId]);
 
   if (!orgId) return null;
 
@@ -101,18 +64,23 @@ function PageInner() {
       <header className="space-y-1">
         <div className="flex items-center gap-2">
           <Building2 className="h-6 w-6 text-primary" />
-          <h1 className="text-2xl font-bold tracking-tight">تنظیمات سازمان</h1>
+          <h1 className="text-2xl font-bold tracking-tight">مشخصات سازمان</h1>
         </div>
         <p className="text-sm text-muted-foreground">
-          اطلاعات پایه سازمان خود را مدیریت کنید.
+          اطلاعات سازمان شما. تغییر این تنظیمات فقط توسط مدیریت پلتفرم انجام می‌شود.
         </p>
       </header>
 
+      {/* Read-only notice */}
+      <div className="flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-900/40 dark:bg-amber-950/30 dark:text-amber-300">
+        <Lock className="h-4 w-4 shrink-0" />
+        <span>این صفحه فقط‌خواندنی است. برای تغییر نام، ظرفیت یا وضعیت اشتراک با پشتیبانی پلتفرم در تماس باشید.</span>
+      </div>
+
       {loading ? (
         <div className="space-y-4">
-          <Skeleton className="h-28 rounded-2xl" />
-          <Skeleton className="h-28 rounded-2xl" />
-          <Skeleton className="h-28 rounded-2xl" />
+          <Skeleton className="h-40 rounded-2xl" />
+          <Skeleton className="h-40 rounded-2xl" />
         </div>
       ) : !org ? (
         <Card className="rounded-2xl border-border/50 shadow-sm">
@@ -122,103 +90,40 @@ function PageInner() {
         </Card>
       ) : (
         <>
-          {/* Editable organization info */}
+          {/* Organization profile (read-only) */}
           <Card className="rounded-2xl border-border/50 shadow-sm">
             <CardHeader>
               <CardTitle className="text-lg">اطلاعات سازمان</CardTitle>
             </CardHeader>
-            <CardContent className="space-y-5">
-              <div className="space-y-2">
-                <Label htmlFor="org-name">
-                  نام سازمان <span className="text-destructive">*</span>
-                </Label>
-                <Input
-                  id="org-name"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  placeholder="نام سازمان را وارد کنید"
-                  disabled={saving}
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="org-phone">تلفن</Label>
-                <Input
-                  id="org-phone"
-                  value={phone}
-                  onChange={(e) => setPhone(e.target.value)}
-                  placeholder="شماره تماس سازمان"
-                  disabled={saving}
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="org-address">آدرس</Label>
-                <Input
-                  id="org-address"
-                  value={address}
-                  onChange={(e) => setAddress(e.target.value)}
-                  placeholder="آدرس سازمان"
-                  disabled={saving}
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="org-description">توضیحات</Label>
-                <Textarea
-                  id="org-description"
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                  placeholder="توضیحاتی درباره سازمان"
-                  rows={4}
-                  disabled={saving}
-                />
-              </div>
-
-              <div className="flex justify-end">
-                <Button onClick={handleSave} disabled={saving} className="gap-2">
-                  <Save className="h-4 w-4" />
-                  {saving ? 'در حال ذخیره…' : 'ذخیره تغییرات'}
-                </Button>
-              </div>
+            <CardContent>
+              <dl className="grid grid-cols-1 gap-5 sm:grid-cols-2">
+                <Field label="نام سازمان" value={org.name || '—'} />
+                <Field label="تلفن" value={org.phone ? toPersianDigits(org.phone) : '—'} mono />
+                <div className="sm:col-span-2">
+                  <Field label="آدرس" value={org.address || '—'} />
+                </div>
+                <div className="sm:col-span-2">
+                  <Field label="توضیحات" value={org.description || '—'} />
+                </div>
+              </dl>
             </CardContent>
           </Card>
 
-          {/* Read-only subscription info (managed by platform) */}
+          {/* Subscription info (platform-managed) */}
           <Card className="rounded-2xl border-border/50 shadow-sm">
             <CardHeader>
               <CardTitle className="text-lg">اطلاعات اشتراک (مدیریت پلتفرم)</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
               <dl className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <div className="space-y-1">
-                  <dt className="text-sm text-muted-foreground">شناسه یکتا (Slug)</dt>
-                  <dd className="font-mono text-sm" dir="ltr">
-                    {org.slug || '—'}
-                  </dd>
-                </div>
-
-                <div className="space-y-1">
-                  <dt className="text-sm text-muted-foreground">ظرفیت دانش‌آموز</dt>
-                  <dd className="text-sm font-medium">
-                    {formatPersianNumber(org.studentCapacity)} نفر
-                  </dd>
-                </div>
-
-                <div className="space-y-1">
-                  <dt className="text-sm text-muted-foreground">دانش‌آموزان فعلی</dt>
-                  <dd className="text-sm font-medium">
-                    {formatPersianNumber(org.currentStudentCount)} نفر
-                  </dd>
-                </div>
-
+                <Field label="شناسه یکتا (Slug)" value={org.slug || '—'} mono />
+                <Field label="ظرفیت دانش‌آموز" value={`${formatPersianNumber(org.studentCapacity)} نفر`} />
+                <Field label="دانش‌آموزان فعلی" value={`${formatPersianNumber(org.currentStudentCount)} نفر`} />
                 <div className="space-y-1">
                   <dt className="text-sm text-muted-foreground">وضعیت اشتراک</dt>
                   <dd>
                     <Badge
-                      variant={
-                        org.subscriptionStatus === 'active' ? 'default' : 'secondary'
-                      }
+                      variant={org.subscriptionStatus === 'active' ? 'default' : 'secondary'}
                       className={
                         org.subscriptionStatus === 'active'
                           ? 'border-transparent bg-emerald-100 text-emerald-700 hover:bg-emerald-100 dark:bg-emerald-900/40 dark:text-emerald-300'
@@ -231,18 +136,8 @@ function PageInner() {
                     </Badge>
                   </dd>
                 </div>
-
-                <div className="space-y-1">
-                  <dt className="text-sm text-muted-foreground">تاریخ ایجاد</dt>
-                  <dd className="text-sm font-medium">
-                    {formatPersianDate(org.createdAt)}
-                  </dd>
-                </div>
+                <Field label="تاریخ ایجاد" value={formatPersianDate(org.createdAt)} />
               </dl>
-
-              <p className="text-xs text-muted-foreground">
-                ظرفیت و وضعیت اشتراک توسط مدیریت پلتفرم تنظیم می‌شود.
-              </p>
             </CardContent>
           </Card>
         </>

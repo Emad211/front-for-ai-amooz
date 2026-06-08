@@ -136,9 +136,10 @@ export const ORG_TEACHER_NAV_MENU: NavSection[] = [
 ];
 
 /**
- * Org **manager** menu (orgRole = admin / deputy): full management console —
- * study groups, teachers, members & codes, AI cost tracking, org settings.
- * Managers can also build content (they are platform-role TEACHER).
+ * Org **manager** menu (orgRole = admin / deputy): a pure **management** console.
+ * The manager is NOT a teacher — they manage study groups, teachers, members &
+ * codes, and AI cost; they do NOT create classes/content and cannot edit the
+ * org settings (settings are read-only here; only the platform admin edits).
  */
 export const ORG_ADMIN_NAV_MENU: NavSection[] = [
   {
@@ -153,17 +154,8 @@ export const ORG_ADMIN_NAV_MENU: NavSection[] = [
     ]
   },
   {
-    title: 'محتوای آموزشی',
+    title: 'پشتیبانی',
     items: [
-      { label: 'ایجاد کلاس جدید', href: '/teacher/create-class', icon: PlusCircle },
-      { label: 'کلاس‌های سازمان', href: '/teacher/my-classes', icon: FolderOpen },
-      { label: 'آزمون‌های سازمان', href: '/teacher/my-exams', icon: FileQuestion },
-    ]
-  },
-  {
-    title: 'ارتباطات و پشتیبانی',
-    items: [
-      { label: 'ارسال پیام', href: '/teacher/messages', icon: MessageSquare },
       { label: 'تیکت‌های پشتیبانی', href: '/teacher/tickets', icon: Ticket },
     ]
   },
