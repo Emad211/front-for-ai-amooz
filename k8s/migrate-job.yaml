@@ -1,0 +1,47 @@
+# Run database migrations + static collection ONCE per release, instead of on
+# every backend/worker pod start.
+#
+# Why: with >1 replica, every pod running `migrate` on start races on the schema
+# and slows rollouts; `collectstatic` on every start is wasteful. Run this Job as
+# a deploy step, then set RUN_MIGRATIONS=false and RUN_COLLECTSTATIC=false on the
+# backend Deployment and the Celery worker Deployment so their pods skip it.
+#
+# Usage (per release — bump the image tag to match the new build):
+#   kubectl -n ai-products-ai-amooz delete job ai-amooz-migrate --ignore-not-found
+#   kubectl -n ai-products-ai-amooz apply -f k8s/migrate-job.yaml
+#   kubectl -n ai-products-ai-amooz wait --for=condition=complete job/ai-amooz-migrate --timeout=300s
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: ai-amooz-migrate
+  labels:
+    app: ai-amooz-migrate
+spec:
+  backoffLimit: 3
+  ttlSecondsAfterFinished: 600
+  template:
+    metadata:
+      labels:
+        app: ai-amooz-migrate
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: migrate
+          image: registry.hamdocker.ir/ai-products/ai-amooz-backend:latest
+          imagePullPolicy: Always
+          # Override the gunicorn CMD: just migrate + collectstatic, then exit.
+          # RUN_MIGRATIONS/RUN_COLLECTSTATIC are irrelevant here because we call
+          # the management commands directly.
+          command: ["sh", "-c"]
+          args:
+            - "python manage.py migrate --noinput && python manage.py collectstatic --noinput"
+          envFrom:
+            - secretRef:
+                name: ai-amooz-backend-secrets
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "250m"
+            limits:
+              memory: "1Gi"
+              cpu: "1000m"

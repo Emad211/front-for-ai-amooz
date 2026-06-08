@@ -127,50 +127,26 @@ def _get_client_ip(request) -> str:
 
 
 class LLMTrackingMiddleware:
-    """Automatically set thread-local user context for LLM token tracking.
+    """Stash the request so LLM token tracking can attribute usage to the user.
 
-    Must be placed AFTER ``AuthenticationMiddleware`` so ``request.user``
-    is populated.  On every request the current user is stored in
-    thread-local storage so that ``token_tracker.track_llm_usage()`` can
-    associate LLM calls with the requesting user without requiring
-    explicit user propagation through every service layer.
+    The user is resolved LAZILY (see ``token_tracker.get_current_user``): we only
+    stash the request here and pay the ``User`` lookup if/when an LLM call
+    actually reads it. The previous implementation eagerly validated the JWT and
+    loaded the User from the DB on EVERY request — a redundant SELECT on the vast
+    majority of requests (dashboards, lists) that never touch the LLM.
+
+    Must be placed AFTER ``AuthenticationMiddleware``. Thread-safe under gthread:
+    the context is set per request and cleared in ``finally`` on the same thread.
     """
 
     def __init__(self, get_response):
         self.get_response = get_response
 
-    @staticmethod
-    def _resolve_user_from_request(request):
-        user = getattr(request, 'user', None)
-        if user is not None and getattr(user, 'is_authenticated', False):
-            return user
-
-        auth_header = (request.META.get('HTTP_AUTHORIZATION') or '').strip()
-        if not auth_header.lower().startswith('bearer '):
-            return None
-
-        token = auth_header[7:].strip()
-        if not token:
-            return None
-
-        try:
-            from rest_framework_simplejwt.authentication import JWTAuthentication
-
-            jwt_auth = JWTAuthentication()
-            validated_token = jwt_auth.get_validated_token(token)
-            return jwt_auth.get_user(validated_token)
-        except Exception:
-            return None
-
     def __call__(self, request):
-        from apps.commons.token_tracker import set_current_user
+        from apps.commons.token_tracker import set_current_request, clear_request_context
 
-        resolved_user = self._resolve_user_from_request(request)
-        if resolved_user is not None and getattr(resolved_user, 'pk', None) is not None:
-            set_current_user(resolved_user)
-        else:
-            set_current_user(None)
+        set_current_request(request)
         try:
             return self.get_response(request)
         finally:
-            set_current_user(None)
+            clear_request_context()

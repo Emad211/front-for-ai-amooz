@@ -3,6 +3,7 @@ import os
 from urllib.parse import urlparse
 from dotenv import load_dotenv
 from datetime import timedelta
+from django.core.exceptions import ImproperlyConfigured
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -12,7 +13,10 @@ load_dotenv(dotenv_path=BASE_DIR / '.env')
 
 SECRET_KEY = os.getenv('DJANGO_SECRET_KEY', 'django-insecure-change-me-in-production')
 
-DEBUG = os.getenv('DEBUG', 'True') == 'True'
+# DEBUG defaults to False (fail-closed): if the env var is missing or
+# misconfigured in production we must NOT silently disable security hardening,
+# CORS restrictions, or expose tracebacks. Local dev sets DEBUG=True in .env.
+DEBUG = os.getenv('DEBUG', 'False') == 'True'
 
 def _split_env_list(name: str, default: str = '') -> list[str]:
     raw = os.getenv(name, default)
@@ -335,7 +339,16 @@ SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 USE_X_FORWARDED_HOST = True
 
 # ---------------------------------------------------------------------------
-# Production security — enabled automatically when DEBUG=False.
+# Baseline security headers — applied UNCONDITIONALLY (cheap, safe in dev too).
+# These must not depend on DEBUG being set correctly in production.
+# ---------------------------------------------------------------------------
+SECURE_CONTENT_TYPE_NOSNIFF = True
+X_FRAME_OPTIONS = 'DENY'
+
+# ---------------------------------------------------------------------------
+# Production-only hardening — HTTPS/cookie security that would break plain-HTTP
+# local dev. Gated on `not DEBUG`, but DEBUG now fails closed (defaults False),
+# so this engages unless a developer explicitly opts into DEBUG=True.
 # ---------------------------------------------------------------------------
 if not DEBUG:
     # HTTPS enforcement — default OFF because K8s ingress/reverse proxy handles SSL.
@@ -349,16 +362,20 @@ if not DEBUG:
     SECURE_HSTS_INCLUDE_SUBDOMAINS = True
     SECURE_HSTS_PRELOAD = True
 
-    # Prevent content-type sniffing & clickjacking.
-    SECURE_CONTENT_TYPE_NOSNIFF = True
-    X_FRAME_OPTIONS = 'DENY'
-
     # Ensure SECRET_KEY is not the default insecure value.
     if 'insecure' in SECRET_KEY:
-        raise ValueError(
+        raise ImproperlyConfigured(
             'DJANGO_SECRET_KEY must be set to a secure random value '
             'when DEBUG=False. Generate one with: '
             'python -c "from django.core.management.utils import get_random_secret_key; print(get_random_secret_key())"'
+        )
+
+    # ALLOWED_HOSTS must be an explicit allow-list in production — never empty
+    # (Django would reject every request) and never '*' (Host-header attacks).
+    if not ALLOWED_HOSTS or '*' in ALLOWED_HOSTS:
+        raise ImproperlyConfigured(
+            'ALLOWED_HOSTS must be set to an explicit comma-separated host list '
+            "when DEBUG=False (got %r). Wildcard '*' is not allowed." % (ALLOWED_HOSTS,)
         )
 
 # CSRF trusted origins for admin/UI if needed.

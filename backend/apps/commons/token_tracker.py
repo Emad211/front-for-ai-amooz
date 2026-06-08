@@ -27,18 +27,77 @@ from apps.commons.exchange_rate import convert_usd_to_toman
 
 logger = logging.getLogger(__name__)
 
-# Thread-local storage for user context
+# Thread-local storage for user context. Safe under gthread/threaded workers:
+# every value is set and cleared within the lifetime of one request on its own
+# thread (see LLMTrackingMiddleware / llm_tracking_context).
 _local = threading.local()
+
+# Sentinel so a lazily-resolved-but-None user is cached and not re-resolved.
+_UNSET = object()
 
 
 def set_current_user(user) -> None:
-    """Set the current user for token tracking (call from view/middleware)."""
+    """Set an EXPLICIT current user (e.g. from a Celery task). Takes precedence
+    over any request-derived user."""
     _local.user = user
 
 
+def set_current_request(request) -> None:
+    """Stash the current request so the user can be resolved LAZILY — only if/when
+    an LLM call actually needs it. Avoids a redundant ``User`` SELECT on the vast
+    majority of requests that never hit the LLM. Call from request middleware."""
+    _local.request = request
+    _local.user_cache = _UNSET
+
+
+def clear_request_context() -> None:
+    """Drop the per-request user/request context. Call in middleware ``finally``."""
+    _local.request = None
+    _local.user_cache = _UNSET
+    _local.user = None
+
+
+def _resolve_user_from_request(request):
+    """Best-effort resolve the authenticated user from a request (DRF user first,
+    then a JWT bearer token). Returns None if unauthenticated/invalid."""
+    user = getattr(request, 'user', None)
+    if user is not None and getattr(user, 'is_authenticated', False):
+        return user
+
+    auth_header = (request.META.get('HTTP_AUTHORIZATION') or '').strip()
+    if not auth_header.lower().startswith('bearer '):
+        return None
+    token = auth_header[7:].strip()
+    if not token:
+        return None
+    try:
+        from rest_framework_simplejwt.authentication import JWTAuthentication
+        jwt_auth = JWTAuthentication()
+        validated_token = jwt_auth.get_validated_token(token)
+        return jwt_auth.get_user(validated_token)
+    except Exception:
+        return None
+
+
 def get_current_user():
-    """Get the current user set by the view layer."""
-    return getattr(_local, 'user', None)
+    """Get the current user for token tracking.
+
+    Precedence: an explicit user (set_current_user, e.g. Celery) wins; otherwise
+    the user is resolved LAZILY from the stashed request the first time it is
+    needed, then cached for the rest of the request.
+    """
+    explicit = getattr(_local, 'user', None)
+    if explicit is not None:
+        return explicit
+
+    request = getattr(_local, 'request', None)
+    if request is None:
+        return None
+    cache = getattr(_local, 'user_cache', _UNSET)
+    if cache is _UNSET:
+        cache = _resolve_user_from_request(request)
+        _local.user_cache = cache
+    return cache
 
 
 def set_current_session_id(session_id: int | None) -> None:

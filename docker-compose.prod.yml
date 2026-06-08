@@ -84,7 +84,9 @@ services:
       dockerfile: Dockerfile
     container_name: ai_amooz_celery_worker
     restart: always
-    command: celery -A core worker --loglevel=info --concurrency=4
+    # -Q default,pipeline is REQUIRED: tasks route to these queues, not the
+    # implicit "celery" queue. Without it the AI pipeline/SMS/cleanup never run.
+    command: celery -A core worker -Q default,pipeline --loglevel=info --concurrency=4
     env_file:
       - ./backend/.env
     environment:

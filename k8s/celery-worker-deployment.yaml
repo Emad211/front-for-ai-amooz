@@ -25,6 +25,12 @@ spec:
             - "-A"
             - "core"
             - "worker"
+            # Consume BOTH queues the app routes to. Without -Q, Celery only
+            # listens on the default "celery" queue and every task sent to
+            # "default"/"pipeline" (the whole AI pipeline + SMS + cleanup)
+            # silently never runs.
+            - "-Q"
+            - "default,pipeline"
             - "--loglevel=info"
             - "--concurrency=2"
             - "--max-tasks-per-child=50"
