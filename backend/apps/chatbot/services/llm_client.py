@@ -39,15 +39,34 @@ def _get_env(name: str) -> str:
     return (os.getenv(name) or "").strip()
 
 
-# Per-request client timeout (seconds). Long pipeline/transcription calls need a
-# generous timeout; callers may override per call. (Previously a 45s literal was
-# hardcoded in the create() call AND the caller-supplied timeout was silently
-# dropped into **kwargs — both fixed.)
-def _default_llm_timeout() -> float:
+# Interactive, student-facing chat features run on a gunicorn request thread.
+# They MUST be bounded tightly so a slow/stuck model can't hold a worker for
+# minutes under load. Long pipeline/transcription work runs in Celery and keeps
+# the generous default.
+_INTERACTIVE_CHAT_FEATURES = {
+    LLMUsageLog.Feature.CHAT_COURSE,
+    LLMUsageLog.Feature.CHAT_EXAM_PREP,
+    LLMUsageLog.Feature.CHAT_INTENT,
+    LLMUsageLog.Feature.CHAT_WIDGET,
+    LLMUsageLog.Feature.CHAT_VISION,
+    LLMUsageLog.Feature.CHAT_SYSTEM_PROMPT,
+    "notes_ai",
+    "image_plan",
+}
+
+
+# Per-request client timeout (seconds). Feature-aware: interactive chat is
+# bounded by CHAT_LLM_TIMEOUT_SECONDS (default 60s); everything else by
+# LLM_TIMEOUT_SECONDS (default 600s). Callers may still override per call.
+def _default_llm_timeout(feature: Optional[str] = None) -> float:
+    if feature is not None and feature in _INTERACTIVE_CHAT_FEATURES:
+        env_name, default = "CHAT_LLM_TIMEOUT_SECONDS", "60"
+    else:
+        env_name, default = "LLM_TIMEOUT_SECONDS", "600"
     try:
-        return float(os.getenv("LLM_TIMEOUT_SECONDS", "600"))
+        return float(os.getenv(env_name, default))
     except (TypeError, ValueError):
-        return 600.0
+        return float(default)
 
 
 # ====================================================================
@@ -190,7 +209,7 @@ def _call_gapgpt_with_messages(
     create_kwargs: Dict[str, Any] = {
         "model": clean_model,
         "messages": _normalize_messages(messages),
-        "timeout": timeout if timeout is not None else _default_llm_timeout(),
+        "timeout": timeout if timeout is not None else _default_llm_timeout(feature),
     }
     if response_format is not None:
         create_kwargs["response_format"] = response_format
