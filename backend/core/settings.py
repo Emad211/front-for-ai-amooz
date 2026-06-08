@@ -158,7 +158,11 @@ AUTH_PASSWORD_VALIDATORS = [
 
 LANGUAGE_CODE = 'en-us'
 
-TIME_ZONE = 'UTC'
+# Persian platform: store everything as UTC (USE_TZ) but interpret day
+# boundaries in Tehran time. This makes TruncDate-based daily charts (cost,
+# analytics, signups) bucket by the Iranian calendar day instead of UTC, which
+# was skewing every daily series by ~3.5h. Override with TZ env if needed.
+TIME_ZONE = os.getenv('TIME_ZONE', 'Asia/Tehran')
 
 USE_I18N = True
 

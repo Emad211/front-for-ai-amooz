@@ -2853,9 +2853,14 @@ class StudentNotificationListView(APIView):
 
         out: list[dict] = []
 
+        # Cap each source so this feed stays bounded as platform-wide
+        # notifications grow (it is hit by every logged-in student). The response
+        # is still a JSON array; only the volume is limited.
+        _FEED_LIMIT = 50
+
         admin_qs = AdminNotification.objects.filter(
             audience__in=[AdminNotification.Audience.ALL, AdminNotification.Audience.STUDENTS],
-        ).order_by('-created_at')
+        ).order_by('-created_at')[:_FEED_LIMIT]
 
         for item in admin_qs:
             item_id = f'admin-{item.id}'
@@ -2878,7 +2883,7 @@ class StudentNotificationListView(APIView):
             teacher_msgs = (
                 TeacherNotification.objects.filter(recipients__phone=phone)
                 .distinct()
-                .order_by('-created_at')
+                .order_by('-created_at')[:_FEED_LIMIT]
             )
             for msg in teacher_msgs:
                 item_id = f'teacher-{msg.id}'
@@ -2923,8 +2928,9 @@ class StudentNotificationListView(APIView):
                     }
                 )
 
-        # Sort by latest first
+        # Sort by latest first and cap the assembled feed.
         out.sort(key=lambda x: x['createdAt'], reverse=True)
+        out = out[:_FEED_LIMIT]
 
         return Response(StudentNotificationSerializer(out, many=True).data)
 
