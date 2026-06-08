@@ -119,12 +119,23 @@ git push origin main
 
 ### ۳.۷. Gunicorn
 
-| متغیر | مقدار | توضیح |
+| متغیر | مقدار (پیش‌فرض ایمیج) | توضیح |
 |--------|-------|-------|
 | `GUNICORN_WORKERS` | `3` | ≈ 2×CPU + 1 |
 | `GUNICORN_WORKER_CLASS` | `gthread` | |
-| `GUNICORN_THREADS` | `4` | **جدید — اضافه کنید!** 3 worker × 4 thread = **12 concurrent** |
-| `GUNICORN_TIMEOUT` | `300` | ۵ دقیقه (برای pipeline) |
+| `GUNICORN_THREADS` | `8` | اکنون توسط CMD به gunicorn پاس داده می‌شود. 3 worker × 8 thread = **24 concurrent** |
+| `GUNICORN_TIMEOUT` | `120` | درخواست‌های وب کوتاه؛ کار سنگین در Celery است |
+| `GUNICORN_MAX_REQUESTS` | `1000` | ری‌استارت worker برای جلوگیری از نشت حافظه |
+| `RUN_MIGRATIONS` / `RUN_COLLECTSTATIC` | `false` (در Deployment) | migrate را یک‌بار با `k8s/migrate-job.yaml` اجرا کنید، نه در هر pod |
+
+> ⚠️ **بودجهٔ اتصال دیتابیس (مهم برای مقیاس):** با `gthread` و `CONN_MAX_AGE=600`،
+> هر pod می‌تواند تا `workers × threads` اتصال پایدار به Postgres باز کند
+> (پیش‌فرض = 3×8 = **24 اتصال در هر pod وب**) به‌علاوهٔ Celery
+> (`concurrency × pods`). مجموع باید زیر `max_connections` پستگرس (پیش‌فرض ۱۰۰) بماند:
+> `(web_pods × workers × threads) + (celery_pods × concurrency) + سرریز < max_connections`.
+> برای چند replica یا اتصال زیاد: یا `max_connections` پستگرس را بالا ببرید،
+> یا **PgBouncer** (transaction pooling) جلوی دیتابیس بگذارید، یا `GUNICORN_THREADS`
+> را کم کنید. همهٔ این‌ها env-tunable هستند.
 
 ### ۳.۸. Pipeline
 
@@ -148,11 +159,12 @@ git push origin main
 ### ۴.۲. دستور اجرایی (Command Override)
 
 ```
-celery -A core worker --loglevel=info --concurrency=2 --max-tasks-per-child=50
+celery -A core worker -Q default,pipeline --loglevel=info --concurrency=2 --max-tasks-per-child=50
 ```
 
 > **توضیح پارامترها:**
 > - `-A core` → ماژول Celery در `core/celery.py`
+> - `-Q default,pipeline` → **الزامی!** بدون این، worker فقط صف پیش‌فرض `celery` را مصرف می‌کند و کل pipeline + SMS + cleanup هرگز اجرا نمی‌شوند
 > - `--concurrency=2` → ۲ worker process همزمان (با ۲GB RAM کافی)
 > - `--max-tasks-per-child=50` → بعد از ۵۰ task، child ریستارت (جلوگیری از memory leak)
 > - `--loglevel=info` → سطح لاگ
