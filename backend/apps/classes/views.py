@@ -138,6 +138,15 @@ from .services.student_exam_chat_history import (
 
 from apps.commons.token_tracker import set_current_user
 
+# Large per-session text columns that LIST endpoints never serialize. Defer them
+# so list queries don't transfer megabytes of unused markdown/JSON per row.
+_HEAVY_SESSION_FIELDS = (
+    'transcript_markdown',
+    'structure_json',
+    'exam_prep_json',
+    'recap_markdown',
+)
+
 
 def _ingest_for_session(session, data):
     """Step-1 ingestion dispatch: branch on ``source_type``.
@@ -899,10 +908,13 @@ class ClassCreationSessionListView(APIView):
         responses={200: ClassCreationSessionListSerializer(many=True)},
     )
     def get(self, request):
+        # Defer the large text columns the list serializer never reads — otherwise
+        # every row drags transcript/structure/exam/recap markdown (tens–hundreds
+        # of KB each) out of Postgres into the worker only to be discarded.
         qs = ClassCreationSession.objects.filter(
             teacher=request.user,
             pipeline_type=ClassCreationSession.PipelineType.CLASS,
-        )
+        ).defer(*_HEAVY_SESSION_FIELDS)
 
         org_param = request.query_params.get('organization')
         if org_param == 'personal':
@@ -1627,9 +1639,19 @@ class TeacherAnalyticsActivitiesView(APIView):
         responses={200: TeacherAnalyticsActivitySerializer(many=True)},
     )
     def get(self, request):
-        # Combine recent sessions and recent invites for a better activity feed
-        sessions = ClassCreationSession.objects.filter(teacher=request.user).order_by('-created_at')[:5]
-        invites = ClassInvitation.objects.filter(session__teacher=request.user).select_related('session').order_by('-created_at')[:5]
+        # Combine recent sessions and recent invites for a better activity feed.
+        # Defer the heavy text columns — only id/title/type/dates are read here.
+        sessions = (
+            ClassCreationSession.objects.filter(teacher=request.user)
+            .defer(*_HEAVY_SESSION_FIELDS)
+            .order_by('-created_at')[:5]
+        )
+        invites = (
+            ClassInvitation.objects.filter(session__teacher=request.user)
+            .select_related('session')
+            .defer(*(f'session__{f}' for f in _HEAVY_SESSION_FIELDS))
+            .order_by('-created_at')[:5]
+        )
         
         items = []
         for s in sessions:
@@ -1685,6 +1707,7 @@ class StudentCourseListView(APIView):
             )
             .select_related('teacher')
             .prefetch_related('sections__units', 'invites')
+            .defer(*_HEAVY_SESSION_FIELDS)
             .annotate(
                 _invites_count=Count('invites', distinct=True),
             )
@@ -3650,6 +3673,8 @@ class StudentExamPrepListView(APIView):
             )
             .select_related('teacher')
             .prefetch_related('invites')
+            # exam_prep_json is read below for the question count; defer the rest.
+            .defer('transcript_markdown', 'structure_json', 'recap_markdown')
             .distinct()
             .order_by('-published_at', '-updated_at')
         )

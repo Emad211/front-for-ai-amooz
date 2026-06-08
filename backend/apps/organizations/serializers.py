@@ -276,7 +276,10 @@ class StudyGroupSerializer(serializers.ModelSerializer):
 
     @staticmethod
     def get_teachers(obj):  # noqa: N802
-        links = obj.teacher_links.select_related('teacher').all()
+        # Use the prefetched 'teacher_links__teacher' cache (set on the list
+        # queryset) — calling .select_related() here would bypass it and issue a
+        # fresh query per group (N+1). list() materializes the cached objects.
+        links = list(obj.teacher_links.all())
         return StudyGroupTeacherBriefSerializer(links, many=True).data
 
 

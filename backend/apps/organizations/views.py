@@ -726,10 +726,15 @@ class OrgDashboardView(APIView):
 # ═══════════════════════════════════════════════════════════════════════════
 
 def _annotated_study_groups(org_pk):
-    """Study-group queryset with student/teacher/class counts annotated."""
+    """Study-group queryset with student/teacher/class counts annotated.
+
+    Prefetches teacher links so the serializer's ``get_teachers`` reads from the
+    prefetch cache instead of issuing one query per group (N+1) on list views.
+    """
     return (
         StudyGroup.objects
         .filter(organization_id=org_pk)
+        .prefetch_related('teacher_links__teacher')
         .annotate(
             _student_count=Count(
                 'student_memberships',
