@@ -139,8 +139,14 @@ class MeUpdateSerializer(serializers.Serializer):
 
     def validate_email(self, value: str) -> str:
         # Allow setting/updating email (including first-time set). Normalize to lowercase.
-        email = (value or '').strip()
-        return email.lower()
+        email = (value or '').strip().lower()
+        if email:
+            qs = User.objects.filter(email__iexact=email)
+            if self.instance:
+                qs = qs.exclude(pk=self.instance.pk)
+            if qs.exists():
+                raise serializers.ValidationError('این ایمیل قبلاً توسط حساب دیگری ثبت شده است.')
+        return email
 
     def validate_phone(self, value: str) -> str | None:
         user = self.instance
@@ -154,6 +160,12 @@ class MeUpdateSerializer(serializers.Serializer):
             if normalized != current:
                 raise serializers.ValidationError('شماره موبایل قابل تغییر نیست.')
             return current
+
+        # Non-students may change their phone, but not to one already in use.
+        if normalized:
+            qs = User.objects.filter(phone=normalized).exclude(pk=user.pk)
+            if qs.exists():
+                raise serializers.ValidationError('این شماره موبایل قبلاً توسط حساب دیگری ثبت شده است.')
 
         return normalized
 

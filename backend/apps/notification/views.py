@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -253,9 +255,15 @@ class MarkNotificationReadView(APIView):
         responses={200: OpenApiResponse(description="Success")},
     )
     def post(self, request, notification_id):
+        # Guard the id format so a client can't spam arbitrary strings and create
+        # unbounded read-receipt rows. Real ids are "<source>-<pk>"
+        # (admin-/teacher-/announcement-/system-…).
+        nid = str(notification_id)
+        if len(nid) > 64 or not re.match(r'^[a-z_]+-\d+$', nid):
+            return Response({'detail': 'شناسه اعلان نامعتبر است.'}, status=status.HTTP_400_BAD_REQUEST)
         NotificationReadReceipt.objects.get_or_create(
             user=request.user,
-            notification_id=notification_id
+            notification_id=nid,
         )
         return Response({'status': 'ok'})
 

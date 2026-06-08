@@ -1029,12 +1029,23 @@ class OrgCostsView(APIView):
             return Response({'detail': 'دسترسی ندارید.'}, status=status.HTTP_403_FORBIDDEN)
 
         from apps.commons.models import LLMUsageLog
+        from django.core.cache import cache
 
         try:
             days = int(request.query_params.get('days', 30))
         except (TypeError, ValueError):
             days = 30
         days = max(1, min(days, 365))
+
+        # These aggregations scan a growing log table; a manager reloading the
+        # dashboard shouldn't re-run them every time. 60s staleness is fine for a
+        # cost view. Keyed by org+window; cost rows are append-only so a short TTL
+        # converges quickly.
+        cache_key = f'org_costs:{org_pk}:{days}'
+        cached = cache.get(cache_key)
+        if cached is not None:
+            return Response(cached)
+
         since = timezone.now() - timedelta(days=days)
 
         qs = LLMUsageLog.objects.filter(organization_id=org_pk, created_at__gte=since)
@@ -1104,7 +1115,7 @@ class OrgCostsView(APIView):
             for r in daily
         ]
 
-        return Response({
+        payload = {
             'days': days,
             'summary': {
                 'totalRequests': summary['total_requests'] or 0,
@@ -1115,7 +1126,9 @@ class OrgCostsView(APIView):
             'byTeacher': teachers,
             'byStudyGroup': groups,
             'daily': daily_out,
-        })
+        }
+        cache.set(cache_key, payload, 60)
+        return Response(payload)
 
 
 # ═══════════════════════════════════════════════════════════════════════════
