@@ -820,6 +820,31 @@ def send_teacher_message_sms_task(self, notification_id: int) -> dict:
         raise self.retry(exc=exc, countdown=backoff)
 
 
+@shared_task(bind=True, max_retries=5, acks_late=True)
+def send_org_manager_invite_sms_task(self, code_id: int) -> dict:
+    """SMS an org-manager invitation code to the manager's phone.
+
+    Exponential back-off: 30 s → 60 s → 120 s → 240 s → 480 s.
+    """
+    from .services.mediana_sms import send_org_manager_invite_sms
+
+    logger.info(
+        '[SMS] send_org_manager_invite_sms_task STARTED code=%s attempt=%s/%s',
+        code_id, self.request.retries + 1, self.max_retries + 1,
+    )
+    try:
+        send_org_manager_invite_sms(code_id)
+        logger.info('[SMS] send_org_manager_invite_sms_task SUCCESS code=%s', code_id)
+        return {'status': 'success', 'code_id': code_id}
+    except Exception as exc:
+        logger.error('Org manager invite SMS failed for code %s (attempt %s/%s): %s',
+                     code_id, self.request.retries + 1, self.max_retries + 1, str(exc)[:200])
+        if self.request.retries >= self.max_retries:
+            return {'status': 'failed', 'error': str(exc)[:500]}
+        backoff = 30 * (2 ** self.request.retries)
+        raise self.retry(exc=exc, countdown=backoff)
+
+
 @shared_task(bind=True, max_retries=0)
 def cleanup_stale_sessions(self) -> dict:
     """Mark sessions stuck in *ING statuses for >2 hours as FAILED.

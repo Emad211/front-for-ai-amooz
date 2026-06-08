@@ -199,6 +199,13 @@ class InvitationCode(models.Model):
         verbose_name=_('برچسب'),
         help_text=_('نام توصیفی مثلا "دهم-ریاضی" یا "معلمان فیزیک"'),
     )
+    phone = models.CharField(
+        max_length=15,
+        blank=True,
+        db_index=True,
+        verbose_name=_('موبایل دعوت‌شونده'),
+        help_text=_('اگر تنظیم شود، فقط همین شماره می‌تواند کد را فعال کند (مثلاً مدیر سازمان).'),
+    )
     max_uses = models.PositiveIntegerField(
         default=30,
         verbose_name=_('ظرفیت استفاده'),

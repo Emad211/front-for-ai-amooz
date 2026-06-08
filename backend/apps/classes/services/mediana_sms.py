@@ -177,6 +177,48 @@ def send_teacher_message_sms(notification_id: int) -> None:
             logger.warning('Mediana teacher-message SMS errorMessage: %s', meta.get('errorMessage'))
 
 
+def send_org_manager_invite_sms(code_id: int) -> None:
+    """SMS an organization-manager invitation code to the manager's phone."""
+    from apps.organizations.models import InvitationCode
+
+    api_key = _get_env('MEDIANA_API_KEY')
+    if not api_key:
+        logger.info('MEDIANA_API_KEY not set; skipping org manager invite SMS code=%s', code_id)
+        return
+
+    code = (
+        InvitationCode.objects.filter(id=code_id)
+        .select_related('organization')
+        .first()
+    )
+    if code is None:
+        logger.info('Org manager invite SMS skipped: code not found id=%s', code_id)
+        return
+
+    phone = (code.phone or '').strip()
+    if not phone:
+        logger.info('Org manager invite SMS skipped: no phone bound code=%s', code_id)
+        return
+
+    org_name = code.organization.name
+    text = (
+        'AI_AMOOZ\n'
+        f'شما به عنوان مدیر سازمان «{org_name}» دعوت شدید.\n'
+        f'کد فعال‌سازی: {code.code}'
+    )
+    result = send_peer_to_peer_sms(
+        api_key=api_key,
+        requests=[{
+            'RefId': f'orgmgr-{code.id}',
+            'TextMessage': text,
+            'Recipients': [phone],
+        }],
+    )
+    meta = result.get('meta') if isinstance(result, dict) else None
+    if isinstance(meta, dict) and meta.get('errorMessage'):
+        logger.warning('Mediana org-manager invite SMS errorMessage: %s', meta.get('errorMessage'))
+
+
 def send_invite_sms_for_ids(session_id: int, invite_ids: list[int]) -> None:
     """Send SMS to specific invitations (e.g. newly added to a published session)."""
     from apps.classes.models import ClassInvitation

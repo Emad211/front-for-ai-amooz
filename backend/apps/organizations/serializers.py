@@ -62,13 +62,26 @@ class OrganizationSerializer(serializers.ModelSerializer):
 # ═══════════════════════════════════════════════════════════════════════════════
 
 class OrganizationCreateSerializer(serializers.ModelSerializer):
-    """Input serializer for creating an organization (snake_case input)."""
+    """Input serializer for creating an organization (snake_case input).
+
+    ``manager_phone`` / ``manager_name`` are write-only: when a phone is given
+    the org's auto-generated admin activation code is bound to it and SMS-ed to
+    the manager so they can claim the org-admin account.
+    """
+
+    manager_phone = serializers.CharField(
+        max_length=15, required=False, allow_blank=True, write_only=True,
+    )
+    manager_name = serializers.CharField(
+        max_length=150, required=False, allow_blank=True, write_only=True,
+    )
 
     class Meta:
         model = Organization
         fields = [
             'name', 'slug', 'student_capacity', 'subscription_status',
             'description', 'phone', 'address',
+            'manager_phone', 'manager_name',
         ]
 
     def validate_slug(self, value: str) -> str:
@@ -184,6 +197,7 @@ class RedeemInvitationSerializer(serializers.Serializer):
 
     # Optional: for new user registration during redemption
     username = serializers.CharField(max_length=150, required=False)
+    phone = serializers.CharField(max_length=15, required=False, allow_blank=True)
     first_name = serializers.CharField(max_length=150, required=False, allow_blank=True)
     last_name = serializers.CharField(max_length=150, required=False, allow_blank=True)
     password = serializers.CharField(min_length=8, write_only=True, required=False)

@@ -44,6 +44,25 @@ User = get_user_model()
 logger = logging.getLogger(__name__)
 
 
+def _normalize_phone(raw: str) -> str:
+    """Normalize an Iranian mobile number to the canonical 09XXXXXXXXX form."""
+    digits = ''.join(ch for ch in str(raw or '') if ch.isdigit())
+    if digits.startswith('98') and len(digits) == 12:
+        digits = '0' + digits[2:]
+    if len(digits) == 10 and digits.startswith('9'):
+        digits = '0' + digits
+    return digits
+
+
+def _enqueue_org_manager_sms(code_id: int) -> None:
+    """Best-effort enqueue of the org-manager invite SMS (never raises)."""
+    try:
+        from apps.classes.tasks import send_org_manager_invite_sms_task
+        send_org_manager_invite_sms_task.delay(code_id)
+    except Exception:  # pragma: no cover - broker may be down in dev
+        logger.exception('Failed to enqueue org manager invite SMS code=%s', code_id)
+
+
 # ---------------------------------------------------------------------------
 # Permission helpers
 # ---------------------------------------------------------------------------
@@ -95,24 +114,40 @@ class OrganizationListCreateView(APIView):
     def post(self, request):
         ser = OrganizationCreateSerializer(data=request.data)
         ser.is_valid(raise_exception=True)
+        validated = dict(ser.validated_data)
+        manager_phone = _normalize_phone(validated.pop('manager_phone', '') or '')
+        manager_name = (validated.pop('manager_name', '') or '').strip()
         admin_code_value = None
         try:
             with transaction.atomic():
-                org_data = dict(ser.validated_data)
-                if not org_data.get('owner'):
+                org_data = validated
+                # When onboarding a manager by phone, leave the org ownerless so
+                # the manager becomes owner on redemption. Otherwise the creating
+                # platform admin owns it.
+                if not org_data.get('owner') and not manager_phone:
                     org_data['owner'] = request.user
                 org = Organization.objects.create(**org_data)
 
-                # Auto-generate an admin activation code for this org
+                # Auto-generate an admin activation code for this org, bound to
+                # the manager's phone when provided (only they can redeem it).
                 try:
+                    label = 'کد فعالسازی مدیر'
+                    if manager_name:
+                        label = f'کد فعالسازی مدیر - {manager_name}'[:128]
                     admin_code = InvitationCode.objects.create(
                         organization=org,
                         target_role=InvitationCode.TargetRole.ADMIN,
-                        label='کد فعالسازی مدیر',
+                        label=label,
+                        phone=manager_phone,
                         max_uses=1,
                         created_by=request.user,
                     )
                     admin_code_value = admin_code.code
+                    if manager_phone:
+                        code_id = admin_code.id
+                        transaction.on_commit(
+                            lambda cid=code_id: _enqueue_org_manager_sms(cid)
+                        )
                 except DatabaseError:
                     logger.exception(
                         'Organization created but InvitationCode table/insert failed. '
@@ -133,6 +168,7 @@ class OrganizationListCreateView(APIView):
 
         data = OrganizationSerializer(org).data
         data['adminActivationCode'] = admin_code_value
+        data['managerPhone'] = manager_phone
         return Response(data, status=status.HTTP_201_CREATED)
 
 
@@ -409,17 +445,38 @@ class RedeemInvitationView(APIView):
 
         if user is None:
             # Must create a new account
-            username = data.get('username')
+            phone = _normalize_phone(data.get('phone', '') or '')
             password = data.get('password')
+
+            # If the code is bound to a specific phone, enforce it (the SMS'd
+            # manager code can only be redeemed by the invited number).
+            if invite.phone:
+                if not phone:
+                    return Response(
+                        {'detail': 'برای فعال‌سازی، شماره موبایل را وارد کنید.'},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+                if invite.phone != phone:
+                    return Response(
+                        {'detail': 'این کد برای شماره موبایل دیگری صادر شده است.'},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+
+            username = (data.get('username') or phone or '').strip()
             if not username or not password:
                 return Response(
-                    {'detail': 'برای ثبت‌نام لطفاً نام کاربری و رمز عبور وارد کنید.'},
+                    {'detail': 'برای ثبت‌نام لطفاً شماره موبایل/نام کاربری و رمز عبور وارد کنید.'},
                     status=status.HTTP_400_BAD_REQUEST,
                 )
 
             if User.objects.filter(username=username).exists():
                 return Response(
-                    {'detail': 'این نام کاربری قبلاً استفاده شده است.'},
+                    {'detail': 'این حساب قبلاً ثبت شده است. لطفاً وارد شوید.'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            if phone and User.objects.filter(phone=phone).exists():
+                return Response(
+                    {'detail': 'این شماره قبلاً ثبت شده است. لطفاً وارد شوید.'},
                     status=status.HTTP_400_BAD_REQUEST,
                 )
 
@@ -432,22 +489,28 @@ class RedeemInvitationView(APIView):
                     status=status.HTTP_400_BAD_REQUEST,
                 )
 
-            # Map invitation target_role to platform User.Role
+            # Map invitation target_role to platform User.Role.
+            # SECURITY: an org admin/deputy is NOT a platform admin — they manage
+            # their organization via org_role, so they map to the TEACHER
+            # platform role (never ADMIN).
             role_map = {
-                InvitationCode.TargetRole.ADMIN: 'ADMIN',
+                InvitationCode.TargetRole.ADMIN: 'TEACHER',
                 InvitationCode.TargetRole.DEPUTY: 'TEACHER',
                 InvitationCode.TargetRole.TEACHER: 'TEACHER',
                 InvitationCode.TargetRole.STUDENT: 'STUDENT',
             }
             platform_role = role_map.get(invite.target_role, 'STUDENT')
 
-            user = User.objects.create_user(
+            create_kwargs = dict(
                 username=username,
                 password=password,
                 first_name=data.get('first_name', ''),
                 last_name=data.get('last_name', ''),
                 role=platform_role,
             )
+            if phone:
+                create_kwargs['phone'] = phone
+            user = User.objects.create_user(**create_kwargs)
 
         # Check if already a member
         if OrganizationMembership.objects.filter(
