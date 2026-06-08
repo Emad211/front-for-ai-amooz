@@ -11,6 +11,7 @@ import type {
   Student,
   Notification,
   MessageRecipient,
+  MyAiUsage,
 } from '@/types';
 
 export type TeacherBroadcastResult = {
@@ -182,6 +183,11 @@ export const TeacherService = {
 
   getRecentActivities: async (): Promise<AdminRecentActivity[]> => {
     return requestJson<AdminRecentActivity[]>('/classes/teacher/analytics/activities/', { method: 'GET' });
+  },
+
+  /** The teacher's OWN personal/freelancer AI usage & cost (org work excluded). */
+  getMyAiUsage: async (days: number = 30): Promise<MyAiUsage> => {
+    return requestJson<MyAiUsage>(`/classes/teacher/my-ai-usage/?days=${days}`, { method: 'GET' });
   },
 
   exportAnalyticsCSV: async (days: number = 7) => {

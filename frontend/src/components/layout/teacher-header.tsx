@@ -78,6 +78,7 @@ export function TeacherHeader() {
     students: 'مدیریت دانش‌آموزان',
     messages: 'پیام‌رسانی',
     settings: 'تنظیمات پنل',
+    usage: 'مصرف و هزینه من',
   };
   const orgTitleMap: Record<string, string> = {
     teacher: 'داشبورد سازمان',

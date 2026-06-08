@@ -1,5 +1,7 @@
 from django.urls import path
 
+from apps.commons.views import MyLLMUsageView
+
 from .views import (
     ClassPrerequisiteListView,
     ClassCreationSessionPublishView,
@@ -103,6 +105,9 @@ urlpatterns = [
 
     # Teacher Students
     path('teacher/students/', TeacherStudentsListView.as_view(), name='teacher_students_list'),
+
+    # Teacher's own personal/freelancer AI usage & cost
+    path('teacher/my-ai-usage/', MyLLMUsageView.as_view(), name='teacher_my_ai_usage'),
 
     # Student endpoints
     path('student/courses/', StudentCourseListView.as_view(), name='student_courses_list'),

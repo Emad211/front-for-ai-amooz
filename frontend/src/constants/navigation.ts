@@ -94,6 +94,7 @@ export const TEACHER_NAV_MENU: NavSection[] = [
     title: 'گزارشات',
     items: [
       { label: 'آمار و تحلیل', href: '/teacher/analytics', icon: BarChart3 },
+      { label: 'مصرف و هزینه من', href: '/teacher/usage', icon: Wallet },
     ]
   },
 ];

@@ -239,3 +239,39 @@ def test_admin_breakdown_group_by_organization():
     # personal rows bucket under the null org with the Persian label
     assert by_org[None]['organization_name'] == '— شخصی —'
     assert by_org[None]['total_cost_toman'] == 300
+
+
+# ---------------------------------------------------------------------------
+# self-service: a teacher's OWN personal/freelancer usage
+# ---------------------------------------------------------------------------
+
+_MY_USAGE_URL = '/api/classes/teacher/my-ai-usage/'
+
+
+def test_my_usage_shows_only_personal_usage():
+    org = _org()
+    me = _user('freelancer')
+    other = _user('someone_else')
+    # my personal usage (org null) — counts
+    _log(user=me, organization=None, study_group=None, cost_toman=500, tokens=100)
+    _log(user=me, organization=None, study_group=None, cost_toman=300, tokens=80)
+    # my org-attributed usage — billed to org, excluded from my personal view
+    _log(user=me, organization=org, study_group=None, cost_toman=9999, tokens=999)
+    # another user's personal usage — excluded
+    _log(user=other, organization=None, study_group=None, cost_toman=7777, tokens=700)
+
+    client = APIClient()
+    client.force_authenticate(user=me)
+    res = client.get(_MY_USAGE_URL, {'days': 30})
+
+    assert res.status_code == 200
+    assert res.data['summary']['totalCostToman'] == 800
+    assert res.data['summary']['totalRequests'] == 2
+    assert res.data['summary']['totalTokens'] == 180
+    assert isinstance(res.data['byFeature'], list)
+    assert isinstance(res.data['daily'], list)
+
+
+def test_my_usage_requires_auth():
+    res = APIClient().get(_MY_USAGE_URL)
+    assert res.status_code in (401, 403)

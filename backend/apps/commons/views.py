@@ -1498,3 +1498,91 @@ class AdminUserDetailView(APIView):
 
         user.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Self-service: a teacher's OWN AI usage & cost (freelancer/personal only)
+# ═══════════════════════════════════════════════════════════════════════════
+
+class MyLLMUsageView(APIView):
+    """The current user's PERSONAL AI usage & cost (freelancer dashboard).
+
+    Scoped to ``user=request.user`` AND ``organization IS NULL`` — i.e. only
+    the work they did in their personal/freelancer workspace. Org-attributed
+    usage is billed to the organization and is intentionally excluded here
+    (managers see that on the org cost dashboard, not the individual teacher).
+
+    Query: ``days`` (default 30, max 365). Toman values are the historically
+    accurate snapshots recorded at call time.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        try:
+            days = int(request.query_params.get('days', 30))
+        except (TypeError, ValueError):
+            days = 30
+        days = max(1, min(days, 365))
+        since = timezone.now() - timedelta(days=days)
+
+        qs = LLMUsageLog.objects.filter(
+            user=request.user,
+            organization__isnull=True,
+            created_at__gte=since,
+        )
+
+        summary = qs.aggregate(
+            total_requests=Count('id'),
+            total_tokens=Sum('total_tokens'),
+            total_cost_toman=Sum('estimated_cost_toman'),
+            total_cost_usd=Sum('estimated_cost_usd'),
+        )
+
+        feature_labels = dict(LLMUsageLog.Feature.choices)
+        by_feature = (
+            qs.values('feature')
+            .annotate(
+                cost_toman=Sum('estimated_cost_toman'),
+                requests=Count('id'),
+                tokens=Sum('total_tokens'),
+            )
+            .order_by('-cost_toman')
+        )
+        features = [
+            {
+                'feature': r['feature'],
+                'featureLabel': feature_labels.get(r['feature'], r['feature']),
+                'costToman': float(r['cost_toman'] or 0),
+                'requests': r['requests'],
+                'tokens': r['tokens'] or 0,
+            }
+            for r in by_feature
+        ]
+
+        daily = (
+            qs.annotate(day=TruncDate('created_at'))
+            .values('day')
+            .annotate(cost_toman=Sum('estimated_cost_toman'), requests=Count('id'))
+            .order_by('day')
+        )
+        daily_out = [
+            {
+                'date': r['day'].isoformat() if r['day'] else None,
+                'costToman': float(r['cost_toman'] or 0),
+                'requests': r['requests'],
+            }
+            for r in daily
+        ]
+
+        return Response({
+            'days': days,
+            'summary': {
+                'totalRequests': summary['total_requests'] or 0,
+                'totalTokens': summary['total_tokens'] or 0,
+                'totalCostToman': float(summary['total_cost_toman'] or 0),
+                'totalCostUsd': float(summary['total_cost_usd'] or 0),
+            },
+            'byFeature': features,
+            'daily': daily_out,
+        })

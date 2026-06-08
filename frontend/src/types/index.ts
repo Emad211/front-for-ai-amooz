@@ -536,3 +536,20 @@ export interface OrgCosts {
   byStudyGroup: OrgCostByStudyGroup[];
   daily: OrgCostDaily[];
 }
+
+// ── A teacher's OWN personal/freelancer AI usage ────────────────────────────
+
+export interface MyAiUsageByFeature {
+  feature: string;
+  featureLabel: string;
+  costToman: number;
+  requests: number;
+  tokens: number;
+}
+
+export interface MyAiUsage {
+  days: number;
+  summary: OrgCostSummary;
+  byFeature: MyAiUsageByFeature[];
+  daily: OrgCostDaily[];
+}
