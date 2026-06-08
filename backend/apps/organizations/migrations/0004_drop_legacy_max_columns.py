@@ -46,9 +46,13 @@ BEGIN
               'created_at', 'updated_at'
           )
     LOOP
-        RAISE NOTICE 'Dropping legacy column: %%', col.column_name;
+        -- NOTE: no RAISE here. Django's RunSQL executes with params=None, so
+        -- psycopg does not collapse %%→%; a RAISE format string would reach
+        -- Postgres with a literal % and an extra argument ("too many
+        -- parameters for RAISE"), failing on any DB that actually has legacy
+        -- columns. The drop below is idempotent with 0005.
         EXECUTE format(
-            'ALTER TABLE organizations_organization DROP COLUMN %I',
+            'ALTER TABLE organizations_organization DROP COLUMN IF EXISTS %I CASCADE',
             col.column_name
         );
     END LOOP;
