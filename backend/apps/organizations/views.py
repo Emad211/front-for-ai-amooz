@@ -442,6 +442,30 @@ class RedeemInvitationView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
+        # Re-validate the code UNDER the row lock. The serializer's validity
+        # pre-check ran BEFORE we held the lock, so without this two concurrent
+        # redemptions of the same code could both pass and overrun max_uses.
+        if not invite.is_valid:
+            return Response(
+                {'detail': 'این کد دیگر معتبر نیست (ظرفیت استفاده پر شده یا منقضی شده است).'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # For student codes, enforce the org's paid student capacity BEFORE
+        # creating any account. Lock the organization row so concurrent
+        # redemptions (even via different codes) serialize on the seat count
+        # and cannot overrun it. Uses the same is_at_capacity definition the
+        # serializer pre-checks, so behavior is identical — only now race-safe.
+        if invite.target_role == InvitationCode.TargetRole.STUDENT:
+            org_locked = (
+                Organization.objects.select_for_update().get(pk=invite.organization_id)
+            )
+            if org_locked.is_at_capacity:
+                return Response(
+                    {'detail': 'ظرفیت دانش‌آموزان این سازمان تکمیل شده است.'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
         # Determine the user
         user = request.user if request.user.is_authenticated else None
 
