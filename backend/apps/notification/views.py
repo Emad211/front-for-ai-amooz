@@ -294,17 +294,22 @@ class MarkAllNotificationsReadView(APIView):
         elif user.role == User.Role.TEACHER:
             admin_qs = admin_qs | AdminNotification.objects.filter(audience=AdminNotification.Audience.TEACHERS)
         
-        ids_to_mark.extend([f'admin-{item.id}' for item in admin_qs])
+        # values_list -> fetch only the id column instead of materializing full
+        # model instances (esp. ClassAnnouncement, which carries large text bodies)
+        # just to read .id. Same "mark ALL" semantics — no cap, no behavior change.
+        ids_to_mark.extend([f'admin-{i}' for i in admin_qs.values_list('id', flat=True)])
 
         # If student, also handle ClassAnnouncements + teacher messages addressed to them.
         if user.role == User.Role.STUDENT:
             from apps.classes.models import ClassAnnouncement
             phone = (getattr(user, 'phone', None) or '').strip()
             if phone:
-                announcements = ClassAnnouncement.objects.filter(
-                    session__invites__phone=phone
-                ).distinct()
-                ids_to_mark.extend([f'announcement-{a.id}' for a in announcements])
+                announcement_ids = (
+                    ClassAnnouncement.objects.filter(session__invites__phone=phone)
+                    .values_list('id', flat=True)
+                    .distinct()
+                )
+                ids_to_mark.extend([f'announcement-{aid}' for aid in announcement_ids])
 
                 teacher_notif_ids = (
                     TeacherNotification.objects.filter(recipients__phone=phone)
