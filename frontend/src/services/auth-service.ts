@@ -34,6 +34,8 @@ export type AuthMeResponse = {
   avatar?: string | null;
   role: string;
   is_profile_completed: boolean;
+  is_staff?: boolean;
+  is_superuser?: boolean;
 };
 
 export type LoginPayload = {
@@ -347,18 +349,29 @@ export async function inviteLogin(payload: InviteLoginPayload): Promise<Register
   });
 }
 
-export async function fetchMe(): Promise<AuthMeResponse> {
-  return baseRequest("/accounts/me/", { method: "GET" });
+export async function fetchMe(accessToken?: string): Promise<AuthMeResponse> {
+  // Optionally fetch /me with an explicit access token — used right after login,
+  // before the token has been persisted to storage.
+  const options: RequestInit = { method: "GET" };
+  if (accessToken) {
+    options.headers = { Authorization: `Bearer ${accessToken}` };
+  }
+  return baseRequest("/accounts/me/", options);
 }
 
-export async function logout(): Promise<void> {
-  const tokens = getStoredTokens();
-  if (!tokens) return;
+export async function logout(refresh?: string, access?: string): Promise<void> {
+  const stored = getStoredTokens();
+  const refreshToken = refresh ?? stored?.refresh;
+  if (!refreshToken) return;
 
-  await baseRequest("/auth/logout/", {
+  const options: RequestInit = {
     method: "POST",
-    body: JSON.stringify({ refresh: tokens.refresh }),
-  });
+    body: JSON.stringify({ refresh: refreshToken }),
+  };
+  if (access) {
+    options.headers = { Authorization: `Bearer ${access}` };
+  }
+  await baseRequest("/auth/logout/", options);
 
   clearAuthStorage();
 }

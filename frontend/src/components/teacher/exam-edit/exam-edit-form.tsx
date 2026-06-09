@@ -49,7 +49,10 @@ export function ExamEditForm({ examDetail, onSave, isSaving }: ExamEditFormProps
       description: formData.description,
       level: formData.level,
       duration: formData.duration,
-      exam_prep_json: examData,
+      // On READ, exam_prep_json is the raw JSON string; on WRITE the backend
+      // update serializer is a JSONField that accepts the parsed object. We send
+      // the edited object (runtime unchanged); cast past the read-shaped type.
+      exam_prep_json: examData as unknown as string,
     });
   };
 

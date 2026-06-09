@@ -5,7 +5,7 @@ import {
   MOCK_NOTIFICATIONS,
   MOCK_CALENDAR_EVENTS,
 } from '@/constants/mock';
-import type { Course, CourseContent, Ticket, UserProfile } from '@/types';
+import type { Course, CourseContent, Ticket, UserProfile, Notification } from '@/types';
 import { clearAuthStorage, getStoredTokens, persistTokens, persistUser, refreshAccessToken } from '@/services/auth-service';
 
 const RAW_API_URL = (process.env.NEXT_PUBLIC_API_URL ?? '').replace(/\/$/, '');

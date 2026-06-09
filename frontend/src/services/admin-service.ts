@@ -357,7 +357,10 @@ export const AdminService = {
     return requestJson<Ticket[]>('/admin/tickets/');
   },
 
-  replyToTicket: async (ticketPk: number, content: string) => {
+  replyToTicket: async (
+    ticketPk: number,
+    content: string,
+  ): Promise<{ id?: string; createdAt?: string; content?: string }> => {
     return requestJson(`/admin/tickets/${ticketPk}/reply/`, {
       method: 'POST',
       body: JSON.stringify({ content }),

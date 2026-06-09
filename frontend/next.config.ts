@@ -15,10 +15,14 @@ const nextConfig: NextConfig = {
   skipTrailingSlashRedirect: true,
 
   typescript: {
-    ignoreBuildErrors: true,
+    // Enforce type-safety at build time (the codebase is now type-clean).
+    // Emergency escape hatch only: IGNORE_BUILD_ERRORS=true.
+    ignoreBuildErrors: process.env.IGNORE_BUILD_ERRORS === "true",
   },
 
   eslint: {
+    // ESLint flat-config is not wired up yet, so keep it out of the build gate
+    // for now (tracked separately). Type-checking above is the real gate.
     ignoreDuringBuilds: true,
   },
 
