@@ -84,8 +84,9 @@ def test_redeeming_admin_code_does_not_grant_platform_admin():
     assert 'access' in r2.data  # JWT issued
 
     user = User.objects.get(username='09120000000')
-    # Platform role is TEACHER — NOT ADMIN — and no staff/superuser powers.
-    assert user.role == 'TEACHER'
+    # Platform role is MANAGER (a distinct org-manager role) — NOT platform ADMIN,
+    # and NOT TEACHER (a manager manages, does not teach) — with no staff/superuser.
+    assert user.role == 'MANAGER'
     assert not user.is_staff
     assert not user.is_superuser
     assert user.phone == '09120000000'
@@ -95,6 +96,29 @@ def test_redeeming_admin_code_does_not_grant_platform_admin():
 
     org = Organization.objects.get(slug='x')
     assert org.owner_id == user.id
+
+
+def test_manager_is_not_a_teacher_and_cannot_teach():
+    """A redeemed org manager is role=MANAGER (a distinct role) and is rejected
+    from teacher-only endpoints — they manage the org, they do not teach."""
+    res = _create_org(_admin_client(), slug='z', name='Z', manager_phone='09120000000')
+    code_val = res.data['adminActivationCode']
+
+    anon = APIClient()
+    redeem = anon.post('/api/organizations/redeem-code/', {
+        'code': code_val, 'phone': '09120000000', 'password': STRONG,
+    }, format='json')
+    assert redeem.status_code == 201
+    access = redeem.data['access']
+
+    user = User.objects.get(username='09120000000')
+    assert user.role == User.Role.MANAGER
+    assert user.role != User.Role.TEACHER
+
+    # Teacher-only endpoint (IsTeacherUser) must reject the manager.
+    mgr = APIClient()
+    mgr.credentials(HTTP_AUTHORIZATION=f'Bearer {access}')
+    assert mgr.get('/api/classes/teacher/students/').status_code == 403
 
 
 def test_bound_code_rejects_a_different_phone():

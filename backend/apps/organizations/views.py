@@ -530,12 +530,13 @@ class RedeemInvitationView(APIView):
                 )
 
             # Map invitation target_role to platform User.Role.
-            # SECURITY: an org admin/deputy is NOT a platform admin — they manage
-            # their organization via org_role, so they map to the TEACHER
-            # platform role (never ADMIN).
+            # An org admin/deputy is a MANAGER — a distinct platform role that
+            # manages the organization but does NOT teach (and is NOT a platform
+            # ADMIN: no access to /admin or the platform staff powers). Org
+            # teachers map to TEACHER, students to STUDENT.
             role_map = {
-                InvitationCode.TargetRole.ADMIN: 'TEACHER',
-                InvitationCode.TargetRole.DEPUTY: 'TEACHER',
+                InvitationCode.TargetRole.ADMIN: 'MANAGER',
+                InvitationCode.TargetRole.DEPUTY: 'MANAGER',
                 InvitationCode.TargetRole.TEACHER: 'TEACHER',
                 InvitationCode.TargetRole.STUDENT: 'STUDENT',
             }

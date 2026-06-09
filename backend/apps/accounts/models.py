@@ -5,6 +5,7 @@ from django.utils.translation import gettext_lazy as _
 class User(AbstractUser):
     class Role(models.TextChoices):
         ADMIN = 'ADMIN', _('Admin')
+        MANAGER = 'MANAGER', _('Manager')  # organization manager — manages an org, does NOT teach
         TEACHER = 'TEACHER', _('Teacher')
         STUDENT = 'STUDENT', _('Student')
 
