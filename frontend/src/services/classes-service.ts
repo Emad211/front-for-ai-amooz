@@ -1,6 +1,6 @@
 export type Step1TranscribeResponse = {
   id: number;
-  status: 'transcribing' | 'transcribed' | 'failed' | 'structuring' | 'structured' | 'prereq_extracting' | 'prereq_extracted' | 'prereq_teaching' | 'prereq_taught' | 'recapping' | 'recapped';
+  status: 'transcribing' | 'transcribed' | 'failed' | 'cancelled' | 'structuring' | 'structured' | 'prereq_extracting' | 'prereq_extracted' | 'prereq_teaching' | 'prereq_taught' | 'recapping' | 'recapped';
   title: string;
   description: string;
   source_mime_type: string;
@@ -163,6 +163,25 @@ export async function publishClassCreationSession(sessionId: number): Promise<Cl
   }
 
   const url = `${API_URL}/classes/creation-sessions/${sessionId}/publish/`;
+  return requestJson<ClassCreationSessionDetail>(url, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${getAccessToken()}`,
+    },
+  });
+}
+
+/**
+ * Cancel a running class-creation pipeline. The backend revokes the Celery
+ * task and moves the session to the terminal `cancelled` status. Returns the
+ * updated session detail (status === 'cancelled').
+ */
+export async function cancelClassCreationSession(sessionId: number): Promise<ClassCreationSessionDetail> {
+  if (!RAW_API_URL) {
+    throw new Error('NEXT_PUBLIC_API_URL تنظیم نشده است.');
+  }
+
+  const url = `${API_URL}/classes/creation-sessions/${sessionId}/cancel/`;
   return requestJson<ClassCreationSessionDetail>(url, {
     method: 'POST',
     headers: {
@@ -647,7 +666,8 @@ export type ExamPrepStatus =
   | 'exam_transcribed'
   | 'exam_structuring'
   | 'exam_structured'
-  | 'failed';
+  | 'failed'
+  | 'cancelled';
 
 export interface ExamPrepStep1Response {
   id: number;
@@ -803,6 +823,26 @@ export async function publishExamPrepSession(sessionId: number): Promise<ExamPre
   }
 
   const url = `${API_URL}/classes/exam-prep-sessions/${sessionId}/publish/`;
+  const payload = await requestJson(url, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${getAccessToken()}`,
+    },
+  });
+
+  return payload as ExamPrepSessionDetail;
+}
+
+/**
+ * Cancel a running exam-prep pipeline. The backend revokes the Celery task and
+ * moves the session to the terminal `cancelled` status.
+ */
+export async function cancelExamPrepSession(sessionId: number): Promise<ExamPrepSessionDetail> {
+  if (!RAW_API_URL) {
+    throw new Error('NEXT_PUBLIC_API_URL تنظیم نشده است.');
+  }
+
+  const url = `${API_URL}/classes/exam-prep-sessions/${sessionId}/cancel/`;
   const payload = await requestJson(url, {
     method: 'POST',
     headers: {

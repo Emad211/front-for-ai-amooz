@@ -17,12 +17,14 @@ import {
   getClassCreationSessionDetail,
   type ClassCreationSessionDetail,
   publishClassCreationSession,
+  cancelClassCreationSession,
   transcribeClassCreationStep1,
   updateClassCreationSession,
   // Exam Prep imports
   transcribeExamPrepStep1,
   fetchExamPrepSession,
   publishExamPrepSession,
+  cancelExamPrepSession,
   type ExamPrepSessionDetail,
   type ExamPrepStatus,
   type UploadProgress,
@@ -62,6 +64,9 @@ function getClassPipelineMessage(status?: string | null) {
   if (status === 'failed') {
     return { message: 'پردازش با خطا متوقف شد.', isDone: false, isFailed: true } as const;
   }
+  if (status === 'cancelled') {
+    return { message: 'پردازش لغو شد.', isDone: false, isFailed: false } as const;
+  }
   switch (status) {
     case 'transcribing':
       return { message: 'در حال انجام مرحله ۱ از ۵…', isDone: false, isFailed: false } as const;
@@ -94,6 +99,9 @@ function getExamPrepPipelineMessage(status?: string | null) {
   }
   if (status === 'failed') {
     return { message: 'پردازش با خطا متوقف شد.', isDone: false, isFailed: true } as const;
+  }
+  if (status === 'cancelled') {
+    return { message: 'پردازش لغو شد.', isDone: false, isFailed: false } as const;
   }
   switch (status) {
     case 'exam_transcribing':
@@ -204,6 +212,11 @@ export function CreateClassPage() {
           return;
         }
 
+        if (detail.status === 'cancelled') {
+          stopPolling();
+          return;
+        }
+
         // Schedule next tick (setTimeout prevents pileup from slow responses)
         pollTimer.current = window.setTimeout(() => void tick(), 2000);
       } catch {
@@ -232,7 +245,7 @@ export function CreateClassPage() {
       setLevel(String((detail as any).level || '').trim());
       setDuration(String((detail as any).duration || '').trim());
 
-      if (detail.status !== 'failed' && detail.status !== 'recapped') {
+      if (detail.status !== 'failed' && detail.status !== 'recapped' && detail.status !== 'cancelled') {
         startPolling(sessionId);
       }
     } catch {
@@ -269,6 +282,11 @@ export function CreateClassPage() {
           return;
         }
 
+        if (detail.status === 'cancelled') {
+          stopPolling();
+          return;
+        }
+
         pollTimer.current = window.setTimeout(() => void tick(), 2000);
       } catch {
         pollFailures.current += 1;
@@ -294,7 +312,7 @@ export function CreateClassPage() {
       setTitle(detail.title);
       setDescription(detail.description);
 
-      if (detail.status !== 'failed' && detail.status !== 'exam_structured') {
+      if (detail.status !== 'failed' && detail.status !== 'exam_structured' && detail.status !== 'cancelled') {
         startExamPrepPolling(sessionId);
       }
     } catch {
@@ -465,6 +483,46 @@ export function CreateClassPage() {
         setUploadProgress(null);
       } finally {
         setIsExamPrepPipelineStarting(false);
+      }
+    }
+  };
+
+  const cancelPipeline = async () => {
+    // Cancel the currently-running pipeline. The backend revokes the Celery
+    // task and returns the session with status === 'cancelled'; we stop
+    // polling, reflect the terminal state, and clear the resume key so the
+    // page doesn't auto-resume a cancelled run on next mount.
+    if (pipelineType === 'class') {
+      if (!sessionIdForActions) return;
+      try {
+        const detail = await cancelClassCreationSession(sessionIdForActions);
+        stopPolling();
+        setOptimisticStatus(null);
+        setSessionDetail(detail);
+        setPipelineError(null);
+        window.localStorage.removeItem(ACTIVE_SESSION_STORAGE_KEY);
+        window.localStorage.removeItem(CREATE_CLASS_LAST_STATUS_STORAGE_KEY);
+        toast.success('پردازش لغو شد');
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : 'لغو پردازش ناموفق بود';
+        toast.error(msg);
+        throw e; // let the dialog surface the failure (stays open on reject)
+      }
+    } else {
+      if (!examPrepSessionIdForActions) return;
+      try {
+        const detail = await cancelExamPrepSession(examPrepSessionIdForActions);
+        stopPolling();
+        setExamPrepOptimisticStatus(null);
+        setExamPrepSessionDetail(detail);
+        setExamPrepPipelineError(null);
+        window.localStorage.removeItem(ACTIVE_EXAM_PREP_SESSION_STORAGE_KEY);
+        window.localStorage.removeItem(CREATE_EXAM_PREP_LAST_STATUS_STORAGE_KEY);
+        toast.success('پردازش لغو شد');
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : 'لغو پردازش ناموفق بود';
+        toast.error(msg);
+        throw e;
       }
     }
   };
@@ -672,6 +730,7 @@ export function CreateClassPage() {
             isUploading={currentIsPipelineStarting}
             errorMessage={currentPipelineError}
             sessionId={currentSessionId}
+            onCancel={cancelPipeline}
           />
         </div>
       </FileUploadSection>

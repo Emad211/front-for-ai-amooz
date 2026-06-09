@@ -118,25 +118,26 @@ class TestRunFullPipelineFlag:
         return client
 
     def test_step1_run_full_pipeline_sets_async_status(self, settings, monkeypatch):
-        """We don't assert final status here because background execution depends on Celery.
-
-        We only assert the endpoint accepts the flag and returns 202.
+        """The run_full_pipeline flag dispatches the pipeline and the endpoint
+        returns 202. The pipeline is dispatched via ``apply_async`` with a
+        pre-generated ``task_id`` that is persisted on the session as
+        ``celery_task_id`` — this is what a later cancel revokes.
         """
         settings.CLASS_PIPELINE_ASYNC = True
 
         teacher = User.objects.create_user(username='t_r_3', password='pass', role=User.Role.TEACHER)
         client = self._auth_client(teacher)
 
-        called = {'ok': False}
+        captured = {'task_id': None}
 
-        class _FakeDelayResult:
+        class _FakeAsyncResult:
             pass
 
-        def _fake_delay(*args, **kwargs):
-            called['ok'] = True
-            return _FakeDelayResult()
+        def _fake_apply_async(*args, **kwargs):
+            captured['task_id'] = kwargs.get('task_id')
+            return _FakeAsyncResult()
 
-        monkeypatch.setattr('apps.classes.views.process_class_full_pipeline.delay', _fake_delay)
+        monkeypatch.setattr('apps.classes.views.process_class_full_pipeline.apply_async', _fake_apply_async)
         # Make on_commit fire immediately so the task mock is invoked.
         monkeypatch.setattr(
             'django.db.transaction.on_commit',
@@ -150,4 +151,9 @@ class TestRunFullPipelineFlag:
             format='multipart',
         )
         assert res.status_code == 202
-        assert called['ok'] is True
+        # Dispatched with an explicit task_id...
+        assert captured['task_id']
+        # ...and that exact id was persisted on the session for later revoke.
+        from apps.classes.models import ClassCreationSession
+        session = ClassCreationSession.objects.get(id=res.data['id'])
+        assert session.celery_task_id == captured['task_id']
