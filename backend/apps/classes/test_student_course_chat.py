@@ -8,7 +8,10 @@ from apps.classes.models import ClassCreationSession, ClassInvitation, StudentCo
 
 
 @pytest.mark.django_db
-def test_student_course_chat_requires_student_role(monkeypatch):
+def test_student_course_chat_denies_uninvited_teacher(monkeypatch):
+    """IsStudentUser now admits teachers as learners, but the chat view is
+    invite-scoped: a teacher who only OWNS the class (never invited as a student)
+    is denied — the denial comes from the view's scoping, not the permission."""
     teacher = baker.make(User, role=User.Role.TEACHER)
     student = baker.make(User, role=User.Role.STUDENT, phone='09920000000')
 
@@ -19,7 +22,7 @@ def test_student_course_chat_requires_student_role(monkeypatch):
     client.force_authenticate(user=teacher)
 
     resp = client.post(f'/api/classes/student/courses/{session.id}/chat/', {'message': 'hi'}, format='json')
-    assert resp.status_code in (401, 403)
+    assert resp.status_code in (400, 403, 404)
 
 
 @pytest.mark.django_db

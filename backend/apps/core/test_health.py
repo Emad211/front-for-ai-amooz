@@ -11,8 +11,12 @@ class TestHealthCheck:
         response = client.get(url)
         
         assert response.status_code == status.HTTP_200_OK
-        assert response.data['status'] == 'healthy'
-        assert response.data['database'] == 'connected'
+        # /api/health/ is answered by HealthCheckMiddleware (before ALLOWED_HOSTS
+        # validation, for k8s probes), which returns a plain JSON HttpResponse —
+        # no DRF `.data`. Parse the JSON body instead.
+        body = response.json()
+        assert body['status'] == 'healthy'
+        assert body['database'] == 'connected'
 
     def test_health_check_no_auth_required(self):
         """Verify health check is public."""

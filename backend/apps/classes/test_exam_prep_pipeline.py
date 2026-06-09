@@ -171,15 +171,19 @@ class TestExamPrepStep1Transcription:
         )
         session_id_1 = res1.data['id']
 
-        # Second request with same client_request_id
-        upload2 = SimpleUploadedFile('exam2.ogg', b'fake-audio-2', content_type='audio/ogg')
+        # Second request: SAME client_request_id AND the same file. The dedup now
+        # keys on (client_request_id + file identity): a genuine retry of the same
+        # upload is idempotent (returns the existing session), whereas a DIFFERENT
+        # file under a reused key is intentionally processed as a fresh session
+        # (so a new upload never gets another file's stale transcript).
+        upload2 = SimpleUploadedFile('exam1.ogg', b'fake-audio', content_type='audio/ogg')
         res2 = client.post(
             '/api/classes/exam-prep-sessions/step-1/',
-            {'title': 'Test2', 'file': upload2, 'client_request_id': client_request_id},
+            {'title': 'Test', 'file': upload2, 'client_request_id': client_request_id},
             format='multipart',
         )
 
-        # Should return same session
+        # Same key + same file -> idempotent hit, same session.
         assert res2.data['id'] == session_id_1
 
 
@@ -494,21 +498,16 @@ class TestExamPrepServiceUnit:
         """Service should return (dict, provider, model) tuple."""
         from apps.classes.services.exam_prep_structure import extract_exam_prep_structure
 
-        def _fake_generate_content(model, contents):
-            class FakeResponse:
-                text = '{"exam_prep": {"title": "Test", "questions": []}}'
-            return FakeResponse()
+        # extract_exam_prep_structure was rewritten to call the unified
+        # generate_text() seam (GapGPT/OpenAI client) and tag provider from
+        # preferred_provider(); the old Gemini `_get_clients` plumbing is gone.
+        # Mock the new seam.
+        def _fake_generate_text(**_kwargs):
+            return type('R', (), {'text': '{"exam_prep": {"title": "Test", "questions": []}}'})()
 
-        class FakeClient:
-            class models:
-                @staticmethod
-                def generate_content(model, contents):
-                    return _fake_generate_content(model, contents)
-
-        monkeypatch.setenv('GEMINI_API_KEY', 'fake-key')
         monkeypatch.setattr(
-            'apps.classes.services.exam_prep_structure._get_clients',
-            lambda: (FakeClient(), None),
+            'apps.classes.services.exam_prep_structure.generate_text',
+            _fake_generate_text,
         )
 
         result, provider, model = extract_exam_prep_structure(
@@ -516,8 +515,9 @@ class TestExamPrepServiceUnit:
         )
 
         assert 'exam_prep' in result
-        assert provider == 'gemini'
-        assert 'gemini' in model.lower() or 'models/' in model
+        # provider/model are env-driven (avalai|gemini|auto) — assert the tuple
+        # shape rather than a hardcoded provider that no longer applies.
+        assert isinstance(provider, str) and provider
 
 
 # ==========================================================================
@@ -732,15 +732,19 @@ class TestStudentExamPrepList:
         res = client.get('/api/classes/student/exam-preps/')
         assert res.status_code == 401
 
-    def test_list_requires_student_role(self, student_with_invite):
-        """List should reject non-student users."""
+    def test_list_admits_teacher_as_self_scoped_learner(self, student_with_invite):
+        """IsStudentUser admits teachers as learners; the list is invite-scoped,
+        so an uninvited teacher gets an EMPTY 200 (not 403) — no leak."""
         teacher = User.objects.create_user(username='teacher_list', password='pass', role=User.Role.TEACHER)
         token = str(RefreshToken.for_user(teacher).access_token)
 
         client = APIClient()
         client.credentials(HTTP_AUTHORIZATION=f'Bearer {token}')
         res = client.get('/api/classes/student/exam-preps/')
-        assert res.status_code == 403
+        assert res.status_code == 200
+        payload = res.json()
+        items = payload['results'] if isinstance(payload, dict) and 'results' in payload else payload
+        assert items == []
 
     def test_student_sees_invited_exam_preps(self, student_with_invite):
         """Student should see exam preps they've been invited to."""
@@ -834,8 +838,9 @@ class TestStudentExamPrepDetail:
         res = client.get(f'/api/classes/student/exam-preps/{session.id}/')
         assert res.status_code == 401
 
-    def test_detail_requires_student_role(self, student_with_invite):
-        """Detail should reject non-student users."""
+    def test_detail_denies_uninvited_teacher(self, student_with_invite):
+        """IsStudentUser admits teachers, but the detail view is invite-scoped:
+        a teacher not invited to this exam-prep is denied (not served a 200)."""
         _, session = student_with_invite
         teacher = User.objects.create_user(username='teacher_det2', password='pass', role=User.Role.TEACHER)
         token = str(RefreshToken.for_user(teacher).access_token)
@@ -843,7 +848,7 @@ class TestStudentExamPrepDetail:
         client = APIClient()
         client.credentials(HTTP_AUTHORIZATION=f'Bearer {token}')
         res = client.get(f'/api/classes/student/exam-preps/{session.id}/')
-        assert res.status_code == 403
+        assert res.status_code in (400, 403, 404)
 
     def test_student_can_get_exam_prep_detail(self, student_with_invite):
         """Student should be able to get exam prep details with questions."""

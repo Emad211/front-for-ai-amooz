@@ -75,12 +75,32 @@ class TestStudentEndpointPermissions:
             resp = client.get(url)
             assert resp.status_code in (401, 403), f'{url} allowed anonymous access'
 
-    def test_teacher_rejected(self):
+    def test_teacher_admitted_as_self_scoped_learner(self):
+        """IsStudentUser deliberately admits teachers as learners (see its
+        docstring). These feeds are self-scoped to the caller's own identity/
+        phone, so a teacher is not rejected and sees only their OWN data — never
+        another student's. (Was 'test_teacher_rejected', which predates the
+        intentional teacher-as-learner broadening.)"""
         teacher = baker.make(User, role=User.Role.TEACHER)
         client = _auth_client(teacher)
         for url in self.STUDENT_URLS:
             resp = client.get(url)
-            assert resp.status_code == 403, f'{url} allowed teacher access'
+            assert resp.status_code in (200, 400), (
+                f'{url} rejected teacher-as-learner with {resp.status_code}'
+            )
+
+    def test_invite_scoped_lists_empty_for_uninvited_teacher(self):
+        """A teacher not invited to any course/exam-prep sees an EMPTY feed —
+        proving the self-scoping that makes admitting teachers safe (no leak of
+        another student's data)."""
+        teacher = baker.make(User, role=User.Role.TEACHER, phone='09124444444')
+        client = _auth_client(teacher)
+        for url in ('/api/classes/student/courses/', '/api/classes/student/exam-preps/'):
+            resp = client.get(url)
+            assert resp.status_code == 200, f'{url} -> {resp.status_code}'
+            payload = resp.json()
+            items = payload['results'] if isinstance(payload, dict) and 'results' in payload else payload
+            assert items == [], f'{url} leaked data to an uninvited teacher: {items!r}'
 
     def test_student_allowed(self):
         student = baker.make(User, role=User.Role.STUDENT, phone='09121111111')

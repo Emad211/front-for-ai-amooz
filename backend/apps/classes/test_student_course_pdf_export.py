@@ -7,7 +7,10 @@ from apps.classes.models import ClassCreationSession, ClassInvitation, ClassSect
 
 
 @pytest.mark.django_db
-def test_student_course_pdf_export_requires_student_role(monkeypatch):
+def test_student_course_pdf_export_denies_uninvited_teacher(monkeypatch):
+    """IsStudentUser admits teachers as learners, but PDF export is invite-scoped:
+    a teacher who only OWNS the class (never invited as a student) is denied by the
+    view's scoping rather than the permission layer."""
     teacher = baker.make(User, role=User.Role.TEACHER)
     student = baker.make(User, role=User.Role.STUDENT, phone='09920000000')
 
@@ -18,7 +21,7 @@ def test_student_course_pdf_export_requires_student_role(monkeypatch):
     client.force_authenticate(user=teacher)
 
     resp = client.get(f'/api/classes/student/courses/{session.id}/export-pdf/')
-    assert resp.status_code in (401, 403)
+    assert resp.status_code in (400, 403, 404)
 
 
 @pytest.mark.django_db
