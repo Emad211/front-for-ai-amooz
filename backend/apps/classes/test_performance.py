@@ -5,6 +5,8 @@ multiple objects — critical for 100 concurrent users.
 """
 from __future__ import annotations
 
+import json
+
 import pytest
 from django.db import connection
 from django.test.utils import CaptureQueriesContext
@@ -123,7 +125,9 @@ class TestStudentCourseListQueryCount:
 
 @pytest.mark.django_db
 class TestExamPrepSessionListQueryCount:
-    """ExamPrepSessionListView should annotate invites_count."""
+    """ExamPrepSessionListView should annotate invites_count AND defer the heavy
+    transcript/structure/recap columns (lightweight list — see
+    ExamPrepSessionListSerializer)."""
 
     def test_exam_prep_list_bounded_queries(self):
         teacher = baker.make(User, role=User.Role.TEACHER)
@@ -133,6 +137,7 @@ class TestExamPrepSessionListQueryCount:
                 ClassCreationSession,
                 teacher=teacher,
                 pipeline_type='exam_prep',
+                transcript_markdown='X' * 2000,
             )
             baker.make(ClassInvitation, session=session, _quantity=3)
 
@@ -145,6 +150,84 @@ class TestExamPrepSessionListQueryCount:
         assert len(ctx.captured_queries) <= 8, (
             f'Expected <=8 queries, got {len(ctx.captured_queries)}'
         )
+        # The heavy transcript column must be DEFERRED — never SELECTed for the
+        # list. If someone reverts to the detail serializer/queryset, the column
+        # reappears in the SQL and this fails.
+        sql_blob = ' '.join(q['sql'] for q in ctx.captured_queries)
+        assert 'transcript_markdown' not in sql_blob, (
+            'transcript_markdown was SELECTed for the exam-prep list — '
+            'the .defer() of heavy columns regressed.'
+        )
+
+
+@pytest.mark.django_db
+class TestExamPrepListPayloadIsLightweight:
+    """The exam-prep list must ship a `question_count` integer, NOT the full
+    transcript_markdown / exam_prep_json / parsed exam_prep_data. This is the
+    contract guard for the ExamPrepSessionListSerializer slimming."""
+
+    @staticmethod
+    def _exam_json(n_questions: int) -> str:
+        return json.dumps({
+            'exam_prep': {
+                'title': 'آزمون نهایی',
+                'questions': [{'question_id': f'q{i}'} for i in range(n_questions)],
+            }
+        })
+
+    def test_heavy_fields_dropped_and_question_count_correct(self):
+        teacher = baker.make(User, role=User.Role.TEACHER)
+        session = baker.make(
+            ClassCreationSession,
+            teacher=teacher,
+            pipeline_type='exam_prep',
+            transcript_markdown='X' * 5000,           # heavy — must NOT ship
+            exam_prep_json=self._exam_json(7),         # heavy — must NOT ship
+        )
+        baker.make(ClassInvitation, session=session, _quantity=3)
+
+        resp = _auth_client(teacher).get('/api/classes/exam-prep-sessions/')
+        assert resp.status_code == 200
+        body = resp.json()
+        assert len(body) == 1
+        item = body[0]
+
+        # Heavy payloads gone.
+        assert 'transcript_markdown' not in item
+        assert 'exam_prep_json' not in item
+        assert 'exam_prep_data' not in item
+
+        # Lightweight count surfaced instead, and correct.
+        assert item['question_count'] == 7
+        assert item['invites_count'] == 3
+        # Light metadata the card still needs.
+        assert item['title'] == session.title
+        assert item['status'] == session.status
+        assert 'created_at' in item
+
+    def test_question_count_zero_for_empty_exam_json(self):
+        teacher = baker.make(User, role=User.Role.TEACHER)
+        baker.make(
+            ClassCreationSession,
+            teacher=teacher,
+            pipeline_type='exam_prep',
+            exam_prep_json='',
+        )
+        resp = _auth_client(teacher).get('/api/classes/exam-prep-sessions/')
+        assert resp.status_code == 200
+        assert resp.json()[0]['question_count'] == 0
+
+    def test_question_count_survives_malformed_exam_json(self):
+        teacher = baker.make(User, role=User.Role.TEACHER)
+        baker.make(
+            ClassCreationSession,
+            teacher=teacher,
+            pipeline_type='exam_prep',
+            exam_prep_json='{ this is not valid json',
+        )
+        resp = _auth_client(teacher).get('/api/classes/exam-prep-sessions/')
+        assert resp.status_code == 200
+        assert resp.json()[0]['question_count'] == 0
 
 
 @pytest.mark.django_db

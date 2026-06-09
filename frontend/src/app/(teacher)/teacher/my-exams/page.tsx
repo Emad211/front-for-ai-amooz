@@ -29,7 +29,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { useTeacherExamPreps } from '@/hooks/use-teacher-exam-preps';
-import { ExamPrepSessionDetail, deleteExamPrepSession } from '@/services/classes-service';
+import { ExamPrepSessionListItem, deleteExamPrepSession } from '@/services/classes-service';
 import { formatDistanceToNow } from 'date-fns';
 import { faIR } from 'date-fns/locale';
 import { toast } from 'sonner';
@@ -120,7 +120,7 @@ const statusConfig: Record<string, { label: string; color: string }> = {
   failed: { label: 'خطا', color: 'bg-destructive/10 text-destructive border-destructive/20' },
 };
 
-function ExamPrepCard({ examPrep, onDeleted }: { examPrep: ExamPrepSessionDetail; onDeleted: () => void }) {
+function ExamPrepCard({ examPrep, onDeleted }: { examPrep: ExamPrepSessionListItem; onDeleted: () => void }) {
   const router = useRouter();
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -133,7 +133,7 @@ function ExamPrepCard({ examPrep, onDeleted }: { examPrep: ExamPrepSessionDetail
   };
 
   const currentStatus = getStatus();
-  const questionCount = examPrep.exam_prep_data?.exam_prep?.questions?.length ?? 0;
+  const questionCount = examPrep.question_count ?? 0;
 
   const handleDelete = async () => {
     try {

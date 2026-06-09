@@ -1,11 +1,11 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { listExamPrepSessions, type ExamPrepSessionDetail } from '@/services/classes-service';
+import { listExamPrepSessions, type ExamPrepSessionListItem } from '@/services/classes-service';
 import { useWorkspace } from '@/hooks/use-workspace';
 
 export interface UseTeacherExamPrepsReturn {
-  examPreps: ExamPrepSessionDetail[];
+  examPreps: ExamPrepSessionListItem[];
   isLoading: boolean;
   error: string | null;
   reload: () => void;
@@ -25,7 +25,7 @@ export interface UseTeacherExamPrepsReturn {
 
 export function useTeacherExamPreps(): UseTeacherExamPrepsReturn {
   const { activeWorkspace } = useWorkspace();
-  const [examPreps, setExamPreps] = useState<ExamPrepSessionDetail[]>([]);
+  const [examPreps, setExamPreps] = useState<ExamPrepSessionListItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');

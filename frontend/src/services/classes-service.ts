@@ -681,6 +681,31 @@ export interface ExamPrepSessionDetail {
   source_type?: 'media' | 'pdf';
 }
 
+/**
+ * Lightweight exam-prep list item returned by `listExamPrepSessions`.
+ * The list endpoint deliberately omits the heavy `transcript_markdown` and
+ * `exam_prep_json` payloads (which the list never renders) and ships a
+ * `question_count` integer instead — see backend `ExamPrepSessionListSerializer`.
+ */
+export interface ExamPrepSessionListItem {
+  id: number;
+  status: ExamPrepStatus;
+  pipeline_type: 'exam_prep';
+  title: string;
+  description: string;
+  level: string;
+  duration: string;
+  source_type?: 'media' | 'pdf';
+  source_page_count?: number | null;
+  question_count: number;
+  invites_count?: number;
+  is_published: boolean;
+  published_at: string | null;
+  error_detail: string;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface ExamPrepData {
   exam_prep: {
     title: string;
@@ -789,9 +814,10 @@ export async function publishExamPrepSession(sessionId: number): Promise<ExamPre
 }
 
 /**
- * List all exam prep sessions for the teacher.
+ * List all exam prep sessions for the teacher (lightweight: no transcript/exam
+ * body, just a `question_count` — see backend `ExamPrepSessionListSerializer`).
  */
-export async function listExamPrepSessions(organizationId?: number | null): Promise<ExamPrepSessionDetail[]> {
+export async function listExamPrepSessions(organizationId?: number | null): Promise<ExamPrepSessionListItem[]> {
   if (!RAW_API_URL) {
     throw new Error('NEXT_PUBLIC_API_URL تنظیم نشده است.');
   }
@@ -805,7 +831,7 @@ export async function listExamPrepSessions(organizationId?: number | null): Prom
     },
   });
 
-  return payload as ExamPrepSessionDetail[];
+  return payload as ExamPrepSessionListItem[];
 }
 
 /**

@@ -79,6 +79,7 @@ from .serializers import (
     ExamPrepStep2StructureResponseSerializer,
     ExamPrepSessionUpdateSerializer,
     ExamPrepSessionDetailSerializer,
+    ExamPrepSessionListSerializer,
     # Student Exam Prep serializers
     StudentExamPrepListSerializer,
     StudentExamPrepDetailSerializer,
@@ -147,6 +148,11 @@ _HEAVY_SESSION_FIELDS = (
     'exam_prep_json',
     'recap_markdown',
 )
+
+# Heavy columns the exam-prep *list* never needs read from the DB. The list
+# card shows a question count, which is derived from ``exam_prep_json``, so that
+# one stays loaded; the rest are pure waste for a list and are deferred.
+_EXAM_PREP_LIST_DEFER = tuple(f for f in _HEAVY_SESSION_FIELDS if f != 'exam_prep_json')
 
 
 def _ingest_for_session(session, data):
@@ -3322,7 +3328,7 @@ class ExamPrepSessionListView(APIView):
                 description='Filter by organization ID, or "personal" for exams without an organization.',
             ),
         ],
-        responses={200: ExamPrepSessionDetailSerializer(many=True)},
+        responses={200: ExamPrepSessionListSerializer(many=True)},
     )
     def get(self, request):
         sessions = ClassCreationSession.objects.filter(
@@ -3336,11 +3342,13 @@ class ExamPrepSessionListView(APIView):
         elif org_param and org_param.isdigit():
             sessions = sessions.filter(organization_id=int(org_param))
 
-        sessions = sessions.annotate(
+        # Lightweight list: defer the heavy columns the list never renders and
+        # serialize a question count instead of the full transcript + exam body.
+        sessions = sessions.defer(*_EXAM_PREP_LIST_DEFER).annotate(
             _invites_count=Count('invites', distinct=True),
         ).order_by('-created_at')
 
-        return Response(ExamPrepSessionDetailSerializer(sessions, many=True).data)
+        return Response(ExamPrepSessionListSerializer(sessions, many=True).data)
 
 
 class ExamPrepSessionPublishView(APIView):

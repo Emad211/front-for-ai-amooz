@@ -568,6 +568,62 @@ class ExamPrepSessionDetailSerializer(serializers.ModelSerializer):
         ]
 
 
+class ExamPrepSessionListSerializer(serializers.ModelSerializer):
+    """Lightweight serializer for the teacher's exam-prep *list*.
+
+    The list view renders every exam-prep a teacher owns at once, so it must NOT
+    ship the heavy per-row payloads the detail serializer does: the full
+    ``transcript_markdown`` (the entire source transcript / extracted PDF) and
+    the whole ``exam_prep_json`` (the structured exam — every question, option,
+    answer and explanation, also re-emitted parsed as ``exam_prep_data``). The
+    list card only needs a question COUNT and the invite count, so we expose
+    ``question_count`` and drop both heavy fields. Pair this with ``.defer()`` on
+    the queryset so the unused heavy columns are never even read from Postgres.
+    """
+    question_count = serializers.SerializerMethodField()
+    invites_count = serializers.SerializerMethodField()
+
+    def get_question_count(self, obj: ClassCreationSession) -> int:
+        """Count questions without shipping the exam body to the client."""
+        raw = obj.exam_prep_json or ''
+        if not raw.strip():
+            return 0
+        try:
+            data = json.loads(raw)
+        except (json.JSONDecodeError, TypeError):
+            return 0
+        if not isinstance(data, dict):
+            return 0
+        questions = (data.get('exam_prep') or {}).get('questions')
+        return len(questions) if isinstance(questions, list) else 0
+
+    def get_invites_count(self, obj: ClassCreationSession) -> int:
+        if hasattr(obj, '_invites_count'):
+            return obj._invites_count
+        return obj.invites.count()
+
+    class Meta:
+        model = ClassCreationSession
+        fields = [
+            'id',
+            'status',
+            'pipeline_type',
+            'title',
+            'description',
+            'level',
+            'duration',
+            'source_type',
+            'source_page_count',
+            'question_count',
+            'invites_count',
+            'is_published',
+            'published_at',
+            'error_detail',
+            'created_at',
+            'updated_at',
+        ]
+
+
 class ExamPrepSessionUpdateSerializer(serializers.Serializer):
     title = serializers.CharField(max_length=255, required=False)
     description = serializers.CharField(required=False, allow_blank=True)
