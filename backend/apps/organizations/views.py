@@ -22,6 +22,7 @@ from apps.core.permissions import IsPlatformAdmin as IsAdminUser
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from apps.classes.models import ClassCreationSession
+from apps.commons.pagination import CappedPageNumberPagination
 
 from .models import (
     InvitationCode,
@@ -271,6 +272,16 @@ class OrgMemberListView(APIView):
                 Q(user__last_name__icontains=search) |
                 Q(internal_id__icontains=search)
             )
+
+        # Opt-in pagination: a bare array by default (backward-compatible with the
+        # current FE), but a bounded {count,next,previous,results} envelope — with a
+        # hard page_size cap — the moment a client passes ?page / ?page_size, so a
+        # large org's roster can never be serialized unbounded in one request.
+        if 'page' in request.query_params or 'page_size' in request.query_params:
+            paginator = CappedPageNumberPagination()
+            page = paginator.paginate_queryset(qs, request, view=self)
+            data = MembershipSerializer(page, many=True).data
+            return paginator.get_paginated_response(data)
 
         return Response(MembershipSerializer(qs, many=True).data)
 
