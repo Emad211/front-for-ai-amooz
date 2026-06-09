@@ -7,24 +7,42 @@ from apps.classes.models import ClassCreationSession, ClassInvitation, ClassSect
 
 
 @pytest.mark.django_db
-def test_student_courses_list_requires_student_role():
-    teacher = baker.make(User, role=User.Role.TEACHER)
+def test_student_courses_list_requires_authentication():
+    """Anonymous callers are rejected; the endpoint is auth-gated."""
+    client = APIClient()
+    resp = client.get('/api/classes/student/courses/')
+    assert resp.status_code in (401, 403)
+
+
+@pytest.mark.django_db
+def test_student_courses_list_allows_teacher_as_learner_scoped_to_own_invites():
+    """IsStudentUser deliberately admits teachers as learners (see its docstring).
+
+    A teacher is NOT forbidden, but the feed is scoped to their OWN phone's
+    invites — so a teacher who only owns a class (and was never invited to it as
+    a student) sees an empty list, never other students' enrollments.
+    """
+    teacher = baker.make(User, role=User.Role.TEACHER, phone='09931111111')
     student = baker.make(User, role=User.Role.STUDENT, phone='09920000000')
 
     session = baker.make(
         ClassCreationSession,
         teacher=teacher,
         is_published=True,
+        pipeline_type=ClassCreationSession.PipelineType.CLASS,
         title='T',
         description='D',
     )
+    # Invite is for the STUDENT, not the teacher.
     baker.make(ClassInvitation, session=session, phone=student.phone, invite_code='INV-ABC')
 
     client = APIClient()
     client.force_authenticate(user=teacher)
 
     resp = client.get('/api/classes/student/courses/')
-    assert resp.status_code in (401, 403)
+    assert resp.status_code == 200
+    # Teacher owns the class but was not invited as a learner -> empty feed.
+    assert resp.json() == []
 
 
 @pytest.mark.django_db
