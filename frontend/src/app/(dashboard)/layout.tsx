@@ -21,7 +21,9 @@ export default function DashboardLayout({
     if (typeof window === 'undefined') return;
 
     const redirectByRole = (role: string) => {
-      if (role === 'teacher') {
+      // Managers and teachers both live under /teacher (managers get the org
+      // management console in org mode; they are not students).
+      if (role === 'teacher' || role === 'manager') {
         router.replace('/teacher');
         return true;
       }

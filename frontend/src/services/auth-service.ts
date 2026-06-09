@@ -319,6 +319,30 @@ export function getStoredUser(): AuthMeResponse | null {
   }
 }
 
+/**
+ * The landing route for a user given their PLATFORM role. The platform role
+ * alone decides the home area:
+ *  - admin   → /admin        (platform admin panel)
+ *  - manager → /teacher      (org-manager console — rendered in org mode; the
+ *              manager is NOT a teacher, they get the management-only dashboard)
+ *  - teacher → /teacher      (personal/org teaching workspace)
+ *  - student → /home
+ * Org managers used to be sent to /admin/organizations/<id>, a platform-admin
+ * route they cannot access — that bounce is why org login appeared broken.
+ */
+export function landingPathForRole(role: string | undefined | null): string {
+  switch ((role ?? "").toLowerCase()) {
+    case "admin":
+      return "/admin";
+    case "manager":
+      return "/teacher";
+    case "teacher":
+      return "/teacher";
+    default:
+      return "/home";
+  }
+}
+
 export function clearAuthStorage() {
   if (!isClient()) return;
 
