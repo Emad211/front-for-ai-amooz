@@ -98,7 +98,7 @@ from .services.sync_structure import sync_structure_from_session
 from .services.quizzes import generate_answer_hint, generate_final_exam_pool, generate_section_quiz_questions, grade_open_text_answer
 from .services.pdf_export import generate_course_pdf
 from .services.exam_prep_structure import extract_exam_prep_structure
-from .services.invite_codes import get_or_create_invite_code_for_phone
+from .services.invite_codes import get_or_create_invite_codes_for_phones
 
 from .tasks import (
     process_class_step1_transcription,
@@ -1085,14 +1085,15 @@ class ClassInvitationListCreateView(APIView):
                 session=session, phone__in=phones,
             ).values_list('phone', flat=True)
         )
-        new_invites = []
-        new_phones = []
-        for phone in phones:
-            if phone in existing_phones:
-                continue
-            code = get_or_create_invite_code_for_phone(phone)
-            new_invites.append(ClassInvitation(session=session, phone=phone, invite_code=code))
-            new_phones.append(phone)
+        # Resolve invite codes for all new phones in a constant number of queries
+        # (was an O(new_phones) per-phone get_or_create loop). Serializer already
+        # normalized + de-duped `phones`, so dict keys line up.
+        new_phones = [phone for phone in phones if phone not in existing_phones]
+        codes_by_phone = get_or_create_invite_codes_for_phones(new_phones)
+        new_invites = [
+            ClassInvitation(session=session, phone=phone, invite_code=codes_by_phone.get(phone, ''))
+            for phone in new_phones
+        ]
         if new_invites:
             ClassInvitation.objects.bulk_create(new_invites, ignore_conflicts=True)
 
@@ -1409,18 +1410,9 @@ class TeacherStudentsListView(APIView):
                 if p:
                     users_by_phone[p] = u
 
-        invite_codes_by_phone: dict[str, str] = {}
-        if phones:
-            for obj in StudentInviteCode.objects.filter(phone__in=phones).only('phone', 'code'):
-                invite_codes_by_phone[obj.phone] = obj.code
-
-        for phone in phones:
-            normalized = (phone or '').strip()
-            if not normalized:
-                continue
-            if normalized in invite_codes_by_phone:
-                continue
-            invite_codes_by_phone[normalized] = get_or_create_invite_code_for_phone(normalized)
+        # Codes for every roster phone in a constant number of queries (the
+        # legacy per-phone get_or_create loop was an O(students) N+1).
+        invite_codes_by_phone = get_or_create_invite_codes_for_phones(phones)
 
         # --- Real aggregates (batched) ---
         # Per-user progress/score/activity across all of the teacher's sessions.
@@ -3446,14 +3438,15 @@ class ExamPrepInvitationListCreateView(APIView):
                 session=session, phone__in=phones,
             ).values_list('phone', flat=True)
         )
-        new_invites = []
-        new_phones = []
-        for phone in phones:
-            if phone in existing_phones:
-                continue
-            code = get_or_create_invite_code_for_phone(phone)
-            new_invites.append(ClassInvitation(session=session, phone=phone, invite_code=code))
-            new_phones.append(phone)
+        # Resolve invite codes for all new phones in a constant number of queries
+        # (was an O(new_phones) per-phone get_or_create loop). Serializer already
+        # normalized + de-duped `phones`, so dict keys line up.
+        new_phones = [phone for phone in phones if phone not in existing_phones]
+        codes_by_phone = get_or_create_invite_codes_for_phones(new_phones)
+        new_invites = [
+            ClassInvitation(session=session, phone=phone, invite_code=codes_by_phone.get(phone, ''))
+            for phone in new_phones
+        ]
         if new_invites:
             ClassInvitation.objects.bulk_create(new_invites, ignore_conflicts=True)
 

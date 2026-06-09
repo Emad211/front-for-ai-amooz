@@ -232,15 +232,23 @@ class TestExamPrepListPayloadIsLightweight:
 
 @pytest.mark.django_db
 class TestInviteBulkCreatePerformance:
-    """Bulk invitation create should use O(1) check + O(1) insert, not O(N)."""
+    """Bulk invitation create must use O(1) checks + batched code resolution +
+    O(1) insert, never O(N) — even when the phones have no invite code yet."""
 
-    def test_bulk_invite_query_count(self):
+    def _post_invites(self, teacher, session, phones):
+        client = _auth_client(teacher)
+        with CaptureQueriesContext(connection) as ctx:
+            resp = client.post(
+                f'/api/classes/creation-sessions/{session.id}/invites/',
+                data={'phones': phones},
+                format='json',
+            )
+        assert resp.status_code == 200
+        return ctx
+
+    def test_bulk_invite_query_count_with_existing_codes(self):
         teacher = baker.make(User, role=User.Role.TEACHER)
-        session = baker.make(
-            ClassCreationSession,
-            teacher=teacher,
-            pipeline_type='class',
-        )
+        session = baker.make(ClassCreationSession, teacher=teacher, pipeline_type='class')
 
         phones = [f'0912{str(i).zfill(7)}' for i in range(10)]
         for phone in phones:
@@ -248,18 +256,43 @@ class TestInviteBulkCreatePerformance:
                 phone=phone, defaults={'code': f'C-{phone[-4:]}'},
             )
 
-        client = _auth_client(teacher)
+        ctx = self._post_invites(teacher, session, phones)
+        # Codes all pre-exist -> batch resolver returns after a single bulk fetch.
+        assert len(ctx.captured_queries) <= 15, (
+            f'Expected <=15 queries for 10 phones, got {len(ctx.captured_queries)}'
+        )
 
-        with CaptureQueriesContext(connection) as ctx:
-            resp = client.post(
-                f'/api/classes/creation-sessions/{session.id}/invites/',
-                data={'phones': phones},
-                format='json',
-            )
+    def test_bulk_invite_fresh_phones_is_constant(self):
+        """15 brand-new phones (no StudentInviteCode) must not trigger the old
+        per-phone get_or_create N+1 (~3 queries/phone)."""
+        teacher = baker.make(User, role=User.Role.TEACHER)
+        session = baker.make(ClassCreationSession, teacher=teacher, pipeline_type='class')
 
-        assert resp.status_code == 200
-        assert len(ctx.captured_queries) <= 30, (
-            f'Expected <=30 queries for 10 phones, got {len(ctx.captured_queries)}'
+        phones = [f'0913{str(i).zfill(7)}' for i in range(15)]
+        ctx = self._post_invites(teacher, session, phones)
+
+        assert StudentInviteCode.objects.filter(phone__in=phones).count() == 15
+        assert len(ctx.captured_queries) <= 16, (
+            f'Expected ~constant queries for 15 fresh phones, got '
+            f'{len(ctx.captured_queries)} (per-phone N+1 regression)'
+        )
+
+    def test_bulk_invite_does_not_scale_with_phone_count(self):
+        """Query count for 5 fresh phones must equal that for 25 (truly O(1))."""
+        teacher = baker.make(User, role=User.Role.TEACHER)
+        s5 = baker.make(ClassCreationSession, teacher=teacher, pipeline_type='class')
+        s25 = baker.make(ClassCreationSession, teacher=teacher, pipeline_type='class')
+
+        ctx5 = self._post_invites(
+            teacher, s5, [f'0914{str(i).zfill(7)}' for i in range(5)]
+        )
+        ctx25 = self._post_invites(
+            teacher, s25, [f'0915{str(i).zfill(7)}' for i in range(25)]
+        )
+
+        assert len(ctx25.captured_queries) == len(ctx5.captured_queries), (
+            f'Bulk invite scaled with phone count: 5→{len(ctx5.captured_queries)}, '
+            f'25→{len(ctx25.captured_queries)} (N+1 regression)'
         )
 
 

@@ -1,9 +1,15 @@
 import uuid
+from typing import Iterable
 
 from django.db import IntegrityError, transaction
 
 from apps.classes.models import StudentInviteCode
 from apps.classes.models import ClassInvitation
+
+
+def _generate_invite_code() -> str:
+    """A globally-unique, manually-typeable invite code (<= 64 chars)."""
+    return f"INV-{uuid.uuid4().hex[:10].upper()}"
 
 
 def get_or_create_invite_code_for_phone(phone: str) -> str:
@@ -50,7 +56,7 @@ def get_or_create_invite_code_for_phone(phone: str) -> str:
     tries = 0
     while True:
         tries += 1
-        code = f"INV-{uuid.uuid4().hex[:10].upper()}"
+        code = _generate_invite_code()
 
         try:
             with transaction.atomic():
@@ -64,3 +70,74 @@ def get_or_create_invite_code_for_phone(phone: str) -> str:
             # Retry a couple times; in worst case, raise.
             if tries >= 10:
                 raise
+
+
+def get_or_create_invite_codes_for_phones(phones: Iterable[str]) -> dict[str, str]:
+    """Batched form of :func:`get_or_create_invite_code_for_phone`.
+
+    Returns ``{normalized_phone: code}`` for every non-empty input phone, creating
+    any missing ``StudentInviteCode`` rows in a CONSTANT number of queries instead
+    of the O(N) the per-phone helper costs when called in a loop. Same contract:
+    stable per phone, globally-unique codes, and backward-compatible reuse of a
+    phone's earliest legacy ``ClassInvitation.invite_code`` when no
+    ``StudentInviteCode`` exists yet.
+
+    Use this anywhere a set of phones needs codes at once (bulk invite, teacher
+    roster). Falls back to the per-phone helper only for the rare phone whose
+    legacy code collides with an existing code.
+    """
+    # Normalize + de-dupe, preserving first-seen order.
+    normalized: list[str] = []
+    seen: set[str] = set()
+    for p in phones:
+        n = (p or '').strip()
+        if n and n not in seen:
+            seen.add(n)
+            normalized.append(n)
+
+    result: dict[str, str] = {}
+    if not normalized:
+        return result
+
+    # 1) Existing codes — one query.
+    for obj in StudentInviteCode.objects.filter(phone__in=normalized).only('phone', 'code'):
+        result[obj.phone] = obj.code
+    missing = [p for p in normalized if p not in result]
+    if not missing:
+        return result
+
+    # 2) Earliest legacy invite_code per still-missing phone — one query.
+    legacy_by_phone: dict[str, str] = {}
+    for row in (
+        ClassInvitation.objects.filter(phone__in=missing)
+        .exclude(invite_code='')
+        .order_by('phone', 'created_at', 'id')
+        .values('phone', 'invite_code')
+    ):
+        p = row['phone']
+        if p not in legacy_by_phone:
+            code = (row['invite_code'] or '').strip()
+            if code:
+                legacy_by_phone[p] = code
+
+    # 3) Insert all missing rows in one shot: reuse the legacy code when present,
+    #    else generate a unique one. ignore_conflicts drops any row whose phone
+    #    was concurrently inserted or whose legacy code collides with an existing
+    #    code; we reconcile both below.
+    to_create = [
+        StudentInviteCode(phone=p, code=legacy_by_phone.get(p) or _generate_invite_code())
+        for p in missing
+    ]
+    StudentInviteCode.objects.bulk_create(to_create, ignore_conflicts=True)
+
+    # 4) Re-read to learn the actually-stored code for every missing phone — one query.
+    for obj in StudentInviteCode.objects.filter(phone__in=missing).only('phone', 'code'):
+        result[obj.phone] = obj.code
+
+    # 5) Slow path ONLY for phones still without a row (their legacy code collided
+    #    with an existing code, so the bulk insert skipped them). Very rare.
+    for p in missing:
+        if p not in result:
+            result[p] = get_or_create_invite_code_for_phone(p)
+
+    return result
