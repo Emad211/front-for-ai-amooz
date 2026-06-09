@@ -1,7 +1,7 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { UserService, type AdminUser, type UserUpdatePayload } from '@/services/user-service';
+import { useCallback, useEffect, useState } from 'react';
+import { UserService, type AdminUser, type UserUpdatePayload, type UserStats } from '@/services/user-service';
 import { formatPersianDateTime } from '@/lib/date-utils';
 import { PageTransition } from '@/components/ui/page-transition';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -81,13 +81,22 @@ const STATUS_BADGE = {
 
 // ─── Page Component ──────────────────────────────────────────────────────
 
+const PAGE_SIZE = 20;
+
 export default function AdminUsersPage() {
   const [users, setUsers] = useState<AdminUser[]>([]);
+  const [count, setCount] = useState(0);
+  const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Filters
+  // Aggregate stats — one query, independent of the paginated list, so the
+  // dashboard cards never require fetching the whole user table.
+  const [stats, setStats] = useState<UserStats | null>(null);
+
+  // Filters (applied SERVER-SIDE; the free-text search is debounced).
   const [search, setSearch] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [roleFilter, setRoleFilter] = useState('ALL');
   const [statusFilter, setStatusFilter] = useState('ALL');
 
@@ -100,63 +109,60 @@ export default function AdminUsersPage() {
   const [deleteTarget, setDeleteTarget] = useState<AdminUser | null>(null);
   const [deleting, setDeleting] = useState(false);
 
-  // ─── Data Fetching ──────────────────────────────────────────────────────
+  const totalPages = Math.max(1, Math.ceil(count / PAGE_SIZE));
 
-  const fetchUsers = useCallback(async () => {
-    setLoading(true);
-    setError(null);
+  // ─── Data Fetching (server-side pagination + filters) ───────────────────
+
+  const fetchUsers = useCallback(
+    async (targetPage: number) => {
+      setLoading(true);
+      setError(null);
+      try {
+        const isActiveParam =
+          statusFilter === 'ALL' ? undefined : statusFilter === 'ACTIVE' ? 'true' : 'false';
+        const data = await UserService.getUsersPage({
+          page: targetPage,
+          pageSize: PAGE_SIZE,
+          search: debouncedSearch || undefined,
+          role: roleFilter === 'ALL' ? undefined : roleFilter,
+          is_active: isActiveParam,
+        });
+        setUsers(data.results);
+        setCount(data.count);
+        setPage(targetPage);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'خطا در دریافت کاربران');
+      } finally {
+        setLoading(false);
+      }
+    },
+    [debouncedSearch, roleFilter, statusFilter]
+  );
+
+  const fetchStats = useCallback(async () => {
     try {
-      const data = await UserService.getUsers();
-      setUsers(data);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'خطا در دریافت کاربران');
-    } finally {
-      setLoading(false);
+      setStats(await UserService.getUserStats());
+    } catch {
+      // Stats cards are non-critical; leave them blank on failure.
     }
   }, []);
 
+  // Debounce the free-text search so we don't fire a request per keystroke.
   useEffect(() => {
-    fetchUsers();
+    const t = setTimeout(() => setDebouncedSearch(search.trim()), 350);
+    return () => clearTimeout(t);
+  }, [search]);
+
+  // (Re)load page 1 whenever a filter changes — fetchUsers' identity changes
+  // with debouncedSearch/roleFilter/statusFilter — and once on first mount.
+  useEffect(() => {
+    fetchUsers(1);
   }, [fetchUsers]);
 
-  // ─── Filtered Users ────────────────────────────────────────────────────
-
-  const filteredUsers = useMemo(() => {
-    let result = users;
-
-    if (search.trim()) {
-      const q = search.trim().toLowerCase();
-      result = result.filter(
-        (u) =>
-          u.username.toLowerCase().includes(q) ||
-          u.fullName.toLowerCase().includes(q) ||
-          (u.email ?? '').toLowerCase().includes(q) ||
-          (u.phone ?? '').includes(q)
-      );
-    }
-
-    if (roleFilter !== 'ALL') {
-      result = result.filter((u) => u.role === roleFilter);
-    }
-
-    if (statusFilter !== 'ALL') {
-      const wantActive = statusFilter === 'ACTIVE';
-      result = result.filter((u) => u.isActive === wantActive);
-    }
-
-    return result;
-  }, [users, search, roleFilter, statusFilter]);
-
-  // ─── Stats ──────────────────────────────────────────────────────────────
-
-  const stats = useMemo(() => {
-    const total = users.length;
-    const admins = users.filter((u) => u.role === 'ADMIN').length;
-    const teachers = users.filter((u) => u.role === 'TEACHER').length;
-    const students = users.filter((u) => u.role === 'STUDENT').length;
-    const active = users.filter((u) => u.isActive).length;
-    return { total, admins, teachers, students, active };
-  }, [users]);
+  // Load aggregate stats once on mount.
+  useEffect(() => {
+    fetchStats();
+  }, [fetchStats]);
 
   // ─── Edit Handlers ─────────────────────────────────────────────────────
 
@@ -177,10 +183,12 @@ export default function AdminUsersPage() {
     if (!editUser) return;
     setSaving(true);
     try {
-      const updated = await UserService.updateUser(editUser.id, editForm);
-      setUsers((prev) => prev.map((u) => (u.id === updated.id ? updated : u)));
+      await UserService.updateUser(editUser.id, editForm);
       toast.success('اطلاعات کاربر با موفقیت ویرایش شد.');
       setEditUser(null);
+      // Role / active changes can shift filtering and the counts -> refetch both.
+      await fetchUsers(page);
+      fetchStats();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'خطا در ویرایش کاربر');
     } finally {
@@ -195,9 +203,12 @@ export default function AdminUsersPage() {
     setDeleting(true);
     try {
       await UserService.deleteUser(deleteTarget.id);
-      setUsers((prev) => prev.filter((u) => u.id !== deleteTarget.id));
       toast.success(`کاربر «${deleteTarget.fullName}» حذف شد.`);
       setDeleteTarget(null);
+      // Step back a page if we just removed the only row on a non-first page.
+      const target = users.length === 1 && page > 1 ? page - 1 : page;
+      await fetchUsers(target);
+      fetchStats();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'خطا در حذف کاربر');
     } finally {
@@ -212,7 +223,7 @@ export default function AdminUsersPage() {
       <PageTransition>
         <div className="flex flex-col items-center justify-center py-20 gap-4">
           <p className="text-destructive text-lg">{error}</p>
-          <Button onClick={fetchUsers} variant="outline">
+          <Button onClick={() => fetchUsers(1)} variant="outline">
             تلاش مجدد
           </Button>
         </div>
@@ -234,7 +245,15 @@ export default function AdminUsersPage() {
               مشاهده، ویرایش و حذف کاربران پلتفرم
             </p>
           </div>
-          <Button variant="outline" size="sm" onClick={fetchUsers} disabled={loading}>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              fetchUsers(page);
+              fetchStats();
+            }}
+            disabled={loading}
+          >
             <RefreshCw className={`h-4 w-4 ml-2 ${loading ? 'animate-spin' : ''}`} />
             به‌روزرسانی
           </Button>
@@ -243,11 +262,11 @@ export default function AdminUsersPage() {
         {/* ── Stats Cards ──────────────────────────────────────────── */}
         <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
           {[
-            { label: 'کل کاربران', value: stats.total, icon: Users },
-            { label: 'ادمین‌ها', value: stats.admins, icon: ShieldCheck },
-            { label: 'معلمان', value: stats.teachers, icon: BookOpen },
-            { label: 'دانش‌آموزان', value: stats.students, icon: GraduationCap },
-            { label: 'فعال', value: stats.active, icon: UserCircle },
+            { label: 'کل کاربران', value: stats?.total ?? 0, icon: Users },
+            { label: 'ادمین‌ها', value: stats?.admins ?? 0, icon: ShieldCheck },
+            { label: 'معلمان', value: stats?.teachers ?? 0, icon: BookOpen },
+            { label: 'دانش‌آموزان', value: stats?.students ?? 0, icon: GraduationCap },
+            { label: 'فعال', value: stats?.active ?? 0, icon: UserCircle },
           ].map((s) => (
             <Card key={s.label} className="border-border/50">
               <CardContent className="p-4 flex items-center gap-3">
@@ -255,7 +274,7 @@ export default function AdminUsersPage() {
                   <s.icon className="h-5 w-5 text-primary" />
                 </div>
                 <div>
-                  <p className="text-2xl font-bold">{loading ? '…' : s.value}</p>
+                  <p className="text-2xl font-bold">{stats === null ? '…' : s.value}</p>
                   <p className="text-xs text-muted-foreground">{s.label}</p>
                 </div>
               </CardContent>
@@ -305,7 +324,7 @@ export default function AdminUsersPage() {
         <Card className="border-border/50">
           <CardHeader className="pb-3">
             <CardTitle className="text-base font-semibold">
-              {loading ? 'در حال بارگذاری…' : `${filteredUsers.length} کاربر`}
+              {loading ? 'در حال بارگذاری…' : `${count} کاربر`}
             </CardTitle>
           </CardHeader>
           <CardContent className="p-0">
@@ -315,7 +334,7 @@ export default function AdminUsersPage() {
                   <div key={i} className="h-14 bg-muted/50 rounded-lg animate-pulse" />
                 ))}
               </div>
-            ) : filteredUsers.length === 0 ? (
+            ) : users.length === 0 ? (
               <div className="p-10 text-center text-muted-foreground">
                 کاربری یافت نشد.
               </div>
@@ -334,7 +353,7 @@ export default function AdminUsersPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {filteredUsers.map((user) => {
+                    {users.map((user) => {
                       const roleMeta = ROLE_MAP[user.role] ?? ROLE_MAP.STUDENT;
                       const statusMeta = user.isActive
                         ? STATUS_BADGE.active
@@ -426,6 +445,33 @@ export default function AdminUsersPage() {
               </div>
             )}
           </CardContent>
+
+          {/* ── Pagination ───────────────────────────────────────────── */}
+          {!loading && totalPages > 1 && (
+            <div className="flex items-center justify-between gap-2 border-t border-border/50 px-4 py-3 text-sm">
+              <span className="text-muted-foreground">
+                صفحه {page} از {totalPages}
+              </span>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={page <= 1 || loading}
+                  onClick={() => fetchUsers(page - 1)}
+                >
+                  قبلی
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={page >= totalPages || loading}
+                  onClick={() => fetchUsers(page + 1)}
+                >
+                  بعدی
+                </Button>
+              </div>
+            </div>
+          )}
         </Card>
 
         {/* ── Edit Dialog ──────────────────────────────────────────── */}

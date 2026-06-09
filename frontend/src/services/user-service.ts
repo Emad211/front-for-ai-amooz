@@ -30,6 +30,23 @@ export type UserUpdatePayload = {
   phone?: string;
 };
 
+/** Aggregate user counts for the admin dashboard cards (one query). */
+export type UserStats = {
+  total: number;
+  admins: number;
+  teachers: number;
+  students: number;
+  active: number;
+};
+
+/** Standard DRF paginated envelope for the admin user list. */
+export type PaginatedUsers = {
+  count: number;
+  next: string | null;
+  previous: string | null;
+  results: AdminUser[];
+};
+
 const RAW_API_URL = (process.env.NEXT_PUBLIC_API_URL ?? '').replace(/\/$/, '');
 const API_URL = RAW_API_URL.endsWith('/api') ? RAW_API_URL : `${RAW_API_URL}/api`;
 
@@ -101,6 +118,32 @@ export const UserService = {
     if (params?.is_active) searchParams.set('is_active', params.is_active);
     const qs = searchParams.toString();
     return requestJson<AdminUser[]>(`/admin/users/${qs ? `?${qs}` : ''}`);
+  },
+
+  /**
+   * Paginated user list (server-side). Passing ?page makes the backend return
+   * the {count, next, previous, results} envelope instead of the legacy bare
+   * array, so the whole user table is never fetched at once.
+   */
+  getUsersPage: async (params: {
+    page?: number;
+    pageSize?: number;
+    search?: string;
+    role?: string;
+    is_active?: string;
+  }): Promise<PaginatedUsers> => {
+    const sp = new URLSearchParams();
+    sp.set('page', String(params.page ?? 1));
+    if (params.pageSize) sp.set('page_size', String(params.pageSize));
+    if (params.search) sp.set('search', params.search);
+    if (params.role) sp.set('role', params.role);
+    if (params.is_active) sp.set('is_active', params.is_active);
+    return requestJson<PaginatedUsers>(`/admin/users/?${sp.toString()}`);
+  },
+
+  /** Aggregate user counts for the dashboard cards (one query, not the table). */
+  getUserStats: async (): Promise<UserStats> => {
+    return requestJson<UserStats>(`/admin/users/stats/`);
   },
 
   /** Get a single user by ID. */
