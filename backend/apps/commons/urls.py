@@ -44,6 +44,7 @@ from .views import (
     AdminNotificationSettingsView,
     # User management
     AdminUserListView,
+    AdminUserStatsView,
     AdminUserDetailView,
 )
 
@@ -97,5 +98,6 @@ urlpatterns = [
 
     # --- User management ---
     path('users/', AdminUserListView.as_view(), name='admin-user-list'),
+    path('users/stats/', AdminUserStatsView.as_view(), name='admin-user-stats'),
     path('users/<int:user_pk>/', AdminUserDetailView.as_view(), name='admin-user-detail'),
 ]

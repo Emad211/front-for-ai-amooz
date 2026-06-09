@@ -22,6 +22,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.core.permissions import IsPlatformAdmin as IsAdminUser
+from apps.commons.pagination import CappedPageNumberPagination
 
 from apps.commons.models import (
     AdminSetting,
@@ -1433,8 +1434,41 @@ class AdminUserListView(APIView):
         if is_active is not None:
             qs = qs.filter(is_active=is_active.lower() in ('true', '1'))
 
+        # Opt-in pagination: when the client passes ?page or ?page_size, return the
+        # standard {count, next, previous, results} envelope (bounded by
+        # max_page_size). Otherwise keep the legacy bare-array contract so the
+        # current admin UI keeps working — it is being migrated to paginate, after
+        # which this can default on. Either way the query is filterable server-side
+        # (search/role/is_active), so an admin can narrow a large table.
+        if 'page' in request.query_params or 'page_size' in request.query_params:
+            paginator = CappedPageNumberPagination()
+            page = paginator.paginate_queryset(qs, request, view=self)
+            data = UserListSerializer(page, many=True).data
+            return paginator.get_paginated_response(data)
+
         data = UserListSerializer(qs, many=True).data
         return Response(data)
+
+
+class AdminUserStatsView(APIView):
+    """Aggregate user counts for the admin dashboard cards.
+
+    Computed in ONE grouped query, independent of the (now paginatable) user
+    list — so the stat cards no longer require fetching the entire user table
+    into the browser.
+    """
+
+    permission_classes = [IsAdminUser]
+
+    def get(self, request):
+        agg = User.objects.aggregate(
+            total=Count('id'),
+            admins=Count('id', filter=Q(role=User.Role.ADMIN)),
+            teachers=Count('id', filter=Q(role=User.Role.TEACHER)),
+            students=Count('id', filter=Q(role=User.Role.STUDENT)),
+            active=Count('id', filter=Q(is_active=True)),
+        )
+        return Response(agg)
 
 
 class AdminUserDetailView(APIView):
