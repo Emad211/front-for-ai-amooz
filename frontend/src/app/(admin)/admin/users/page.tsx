@@ -46,7 +46,12 @@ import {
   BookOpen,
   UserCircle,
   RefreshCw,
+  Building2,
+  X,
+  Plus,
 } from 'lucide-react';
+import { OrganizationService } from '@/services/organization-service';
+import type { Organization } from '@/types';
 
 // ─── Constants ───────────────────────────────────────────────────────────
 
@@ -55,6 +60,11 @@ const ROLE_MAP: Record<string, { label: string; icon: typeof Users; className: s
     label: 'ادمین',
     icon: ShieldCheck,
     className: 'bg-red-500/15 text-red-700 dark:text-red-400 border-red-500/20',
+  },
+  MANAGER: {
+    label: 'مدیر سازمان',
+    icon: Building2,
+    className: 'bg-indigo-500/15 text-indigo-700 dark:text-indigo-400 border-indigo-500/20',
   },
   TEACHER: {
     label: 'معلم',
@@ -104,6 +114,11 @@ export default function AdminUsersPage() {
   const [editUser, setEditUser] = useState<AdminUser | null>(null);
   const [editForm, setEditForm] = useState<UserUpdatePayload>({});
   const [saving, setSaving] = useState(false);
+
+  // Org-manager assignment (inside the edit dialog)
+  const [orgs, setOrgs] = useState<Organization[]>([]);
+  const [orgToAssign, setOrgToAssign] = useState('');
+  const [managerBusy, setManagerBusy] = useState(false);
 
   // Delete dialog
   const [deleteTarget, setDeleteTarget] = useState<AdminUser | null>(null);
@@ -168,6 +183,7 @@ export default function AdminUsersPage() {
 
   const openEdit = (user: AdminUser) => {
     setEditUser(user);
+    setOrgToAssign('');
     setEditForm({
       role: user.role,
       is_active: user.isActive,
@@ -177,6 +193,49 @@ export default function AdminUsersPage() {
       email: user.email,
       phone: user.phone ?? '',
     });
+    // Lazy-load the org list once, for the manager-assignment picker.
+    if (orgs.length === 0) {
+      OrganizationService.getOrganizations()
+        .then(setOrgs)
+        .catch(() => { /* picker just stays empty */ });
+    }
+  };
+
+  // ─── Org-manager assignment ────────────────────────────────────────────
+
+  const handleAssignManager = async () => {
+    if (!editUser || !orgToAssign) return;
+    setManagerBusy(true);
+    try {
+      const updated = await UserService.assignOrgManager(editUser.id, Number(orgToAssign));
+      setEditUser(updated);
+      setEditForm((f) => ({ ...f, role: updated.role }));
+      setOrgToAssign('');
+      toast.success('کاربر به‌عنوان مدیر سازمان تعیین شد.');
+      fetchUsers(page);
+      fetchStats();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'خطا در تعیین مدیر سازمان');
+    } finally {
+      setManagerBusy(false);
+    }
+  };
+
+  const handleRevokeManager = async (orgId: number) => {
+    if (!editUser) return;
+    setManagerBusy(true);
+    try {
+      const updated = await UserService.revokeOrgManager(editUser.id, orgId);
+      setEditUser(updated);
+      setEditForm((f) => ({ ...f, role: updated.role }));
+      toast.success('مدیریت سازمان لغو شد.');
+      fetchUsers(page);
+      fetchStats();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'خطا در لغو مدیریت');
+    } finally {
+      setManagerBusy(false);
+    }
   };
 
   const handleSave = async () => {
@@ -260,10 +319,11 @@ export default function AdminUsersPage() {
         </div>
 
         {/* ── Stats Cards ──────────────────────────────────────────── */}
-        <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
           {[
             { label: 'کل کاربران', value: stats?.total ?? 0, icon: Users },
             { label: 'ادمین‌ها', value: stats?.admins ?? 0, icon: ShieldCheck },
+            { label: 'مدیران سازمان', value: stats?.managers ?? 0, icon: Building2 },
             { label: 'معلمان', value: stats?.teachers ?? 0, icon: BookOpen },
             { label: 'دانش‌آموزان', value: stats?.students ?? 0, icon: GraduationCap },
             { label: 'فعال', value: stats?.active ?? 0, icon: UserCircle },
@@ -302,6 +362,7 @@ export default function AdminUsersPage() {
                 <SelectContent>
                   <SelectItem value="ALL">همه نقش‌ها</SelectItem>
                   <SelectItem value="ADMIN">ادمین</SelectItem>
+                  <SelectItem value="MANAGER">مدیر سازمان</SelectItem>
                   <SelectItem value="TEACHER">معلم</SelectItem>
                   <SelectItem value="STUDENT">دانش‌آموز</SelectItem>
                 </SelectContent>
@@ -538,10 +599,73 @@ export default function AdminUsersPage() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="ADMIN">ادمین</SelectItem>
+                    <SelectItem value="MANAGER">مدیر سازمان</SelectItem>
                     <SelectItem value="TEACHER">معلم</SelectItem>
                     <SelectItem value="STUDENT">دانش‌آموز</SelectItem>
                   </SelectContent>
                 </Select>
+                <p className="text-[11px] text-muted-foreground mt-1">
+                  «مدیر سازمان» باید به یک سازمان متصل باشد — از بخش زیر تعیین کنید.
+                </p>
+              </div>
+
+              <Separator />
+
+              {/* ── Org-manager assignment ── */}
+              <div className="space-y-2">
+                <Label className="flex items-center gap-1.5">
+                  <Building2 className="h-4 w-4" />
+                  مدیریت سازمان
+                </Label>
+                {editUser && editUser.managedOrganizations.length > 0 ? (
+                  <div className="flex flex-wrap gap-2">
+                    {editUser.managedOrganizations.map((o) => (
+                      <Badge
+                        key={o.id}
+                        variant="outline"
+                        className="gap-1 bg-indigo-500/10 text-indigo-700 dark:text-indigo-400 border-indigo-500/20"
+                      >
+                        {o.name}
+                        <button
+                          type="button"
+                          onClick={() => handleRevokeManager(o.id)}
+                          disabled={managerBusy}
+                          title="لغو مدیریت"
+                          className="hover:text-destructive disabled:opacity-50"
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      </Badge>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-xs text-muted-foreground">این کاربر مدیر هیچ سازمانی نیست.</p>
+                )}
+                <div className="flex gap-2">
+                  <Select value={orgToAssign} onValueChange={setOrgToAssign}>
+                    <SelectTrigger className="flex-1">
+                      <SelectValue placeholder="انتخاب سازمان…" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {orgs
+                        .filter((o) => !editUser?.managedOrganizations.some((m) => m.id === o.id))
+                        .map((o) => (
+                          <SelectItem key={o.id} value={String(o.id)}>
+                            {o.name}
+                          </SelectItem>
+                        ))}
+                    </SelectContent>
+                  </Select>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleAssignManager}
+                    disabled={!orgToAssign || managerBusy}
+                  >
+                    <Plus className="h-4 w-4 ml-1" />
+                    تعیین مدیر
+                  </Button>
+                </div>
               </div>
 
               <Separator />
