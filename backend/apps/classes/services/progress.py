@@ -170,6 +170,57 @@ def course_progress_percent(*, session: ClassCreationSession, student) -> int:
     return max(0, min(100, int(round(passed_parts / total_parts * 100))))
 
 
+def course_progress_percent_bulk(*, sessions, student) -> dict[int, int]:
+    """Batched :func:`course_progress_percent` for many sessions / one student.
+
+    Identical mastery rule (each chapter quiz passed + the final exam passed
+    count equally) but computed with a CONSTANT number of grouped queries (3)
+    instead of ~3 *per session*. This is what the student course-list endpoint
+    must use — calling the single-session version in a loop is an O(courses)
+    N+1 that multiplies under concurrent load.
+
+    Returns ``{session_id: percent}`` for every session id in ``sessions``.
+    """
+    session_ids = [s.id for s in sessions]
+    result: dict[int, int] = {sid: 0 for sid in session_ids}
+    if not session_ids:
+        return result
+
+    # Chapters per session (1 query).
+    section_counts = {
+        r['session_id']: r['c']
+        for r in (
+            ClassSection.objects.filter(session_id__in=session_ids)
+            .values('session_id')
+            .annotate(c=Count('id'))
+        )
+    }
+    # Chapter quizzes this student has passed, per session (1 query).
+    passed_quiz_counts = {
+        r['session_id']: r['c']
+        for r in (
+            ClassSectionQuiz.objects
+            .filter(session_id__in=session_ids, student=student, last_passed=True)
+            .values('session_id')
+            .annotate(c=Count('id'))
+        )
+    }
+    # Sessions whose final exam this student has passed (1 query).
+    passed_final_ids = set(
+        ClassFinalExam.objects
+        .filter(session_id__in=session_ids, student=student, last_passed=True)
+        .values_list('session_id', flat=True)
+    )
+
+    for sid in session_ids:
+        total_sections = section_counts.get(sid, 0)
+        total_parts = total_sections + 1  # +1 for the final exam, mirrors single
+        passed_sections = passed_quiz_counts.get(sid, 0) if total_sections > 0 else 0
+        passed_parts = passed_sections + (1 if sid in passed_final_ids else 0)
+        result[sid] = max(0, min(100, int(round(passed_parts / total_parts * 100))))
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Teacher roster aggregates (batched — avoids N+1 across many students)
 # ---------------------------------------------------------------------------

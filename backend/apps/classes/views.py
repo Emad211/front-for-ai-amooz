@@ -1716,8 +1716,16 @@ class StudentCourseListView(APIView):
             .order_by('-published_at', '-updated_at')
         )
 
+        # Materialize once, then compute progress for ALL sessions in a constant
+        # number of queries. Calling the per-session helper in the loop below was
+        # an O(courses) N+1 (~3 queries each) that multiplied under concurrency.
+        from .services.progress import course_progress_percent_bulk
+
+        sessions = list(qs)
+        progress_by_session = course_progress_percent_bulk(sessions=sessions, student=user)
+
         out: list[dict] = []
-        for session in qs:
+        for session in sessions:
             teacher = session.teacher
             instructor = ''
             if teacher is not None:
@@ -1737,7 +1745,7 @@ class StudentCourseListView(APIView):
                     'description': session.description or '',
                     'tags': [],
                     'instructor': instructor,
-                    'progress': _compute_student_course_progress(session=session, student=user),
+                    'progress': progress_by_session.get(session.id, 0),
                     'studentsCount': session._invites_count,
                     'lessonsCount': lessons_count,
                     'status': 'active',

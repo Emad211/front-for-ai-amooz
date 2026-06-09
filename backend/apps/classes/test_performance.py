@@ -61,12 +61,16 @@ class TestTeacherSessionListQueryCount:
 
 @pytest.mark.django_db
 class TestStudentCourseListQueryCount:
-    """StudentCourseListView should use prefetches, not N+1."""
+    """StudentCourseListView must be CONSTANT-query, not N+1.
 
-    def test_student_course_list_bounded_queries(self):
-        student = baker.make(User, role=User.Role.STUDENT, phone='09120000001')
+    Progress used to be computed per session (~3 queries each); with the bulk
+    helper it is 3 grouped queries total regardless of course count. The bound
+    here is tight enough that the old per-session pattern (12 courses → ~36
+    progress queries alone) would fail it.
+    """
 
-        for i in range(5):
+    def _seed(self, student, n):
+        for i in range(n):
             session = baker.make(
                 ClassCreationSession,
                 pipeline_type='class',
@@ -75,11 +79,15 @@ class TestStudentCourseListQueryCount:
             )
             ClassInvitation.objects.create(
                 session=session,
-                phone='09120000001',
+                phone=student.phone,
                 invite_code=f'CODE-{i}',
             )
             section = baker.make(ClassSection, session=session, order=i)
             baker.make(ClassUnit, session=session, section=section, _quantity=3)
+
+    def test_student_course_list_constant_queries(self):
+        student = baker.make(User, role=User.Role.STUDENT, phone='09120000001')
+        self._seed(student, 12)
 
         client = _auth_client(student)
 
@@ -87,8 +95,28 @@ class TestStudentCourseListQueryCount:
             resp = client.get('/api/classes/student/courses/')
 
         assert resp.status_code == 200
-        assert len(ctx.captured_queries) <= 25, (
-            f'Expected <=25 queries for 5 courses, got {len(ctx.captured_queries)}'
+        # ~base (auth + sessions + 2 prefetch + invites prefetch) + 3 progress.
+        assert len(ctx.captured_queries) <= 14, (
+            f'Expected <=14 queries for 12 courses (constant), got '
+            f'{len(ctx.captured_queries)}:\n'
+            + '\n'.join(q['sql'][:120] for q in ctx.captured_queries)
+        )
+
+    def test_progress_does_not_scale_with_course_count(self):
+        """Query count for 4 courses must equal that for 16 (truly constant)."""
+        s4 = baker.make(User, role=User.Role.STUDENT, phone='09120000004')
+        self._seed(s4, 4)
+        with CaptureQueriesContext(connection) as ctx4:
+            assert _auth_client(s4).get('/api/classes/student/courses/').status_code == 200
+
+        s16 = baker.make(User, role=User.Role.STUDENT, phone='09120000016')
+        self._seed(s16, 16)
+        with CaptureQueriesContext(connection) as ctx16:
+            assert _auth_client(s16).get('/api/classes/student/courses/').status_code == 200
+
+        assert len(ctx16.captured_queries) == len(ctx4.captured_queries), (
+            f'Query count scaled with course count: 4→{len(ctx4.captured_queries)}, '
+            f'16→{len(ctx16.captured_queries)} (N+1 regression)'
         )
 
 
