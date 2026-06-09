@@ -15,6 +15,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 
 from apps.accounts.models import User
 from apps.classes.models import (
+    ClassAnnouncement,
     ClassCreationSession,
     ClassInvitation,
     ClassSection,
@@ -202,4 +203,45 @@ class TestActivitiesViewQueryCount:
         assert resp.status_code == 200
         assert len(ctx.captured_queries) <= 8, (
             f'Expected <=8 queries, got {len(ctx.captured_queries)}'
+        )
+
+
+@pytest.mark.django_db
+class TestStudentNotificationFeedQueryCount:
+    """StudentNotificationListView must BOUND the announcements source (not load
+    every invited session's announcements then cap), and avoid a per-announcement
+    N+1 on `announcement.session` (select_related)."""
+
+    def test_feed_bounded_and_no_per_announcement_n_plus_one(self):
+        student = baker.make(User, role=User.Role.STUDENT, phone='09120000050')
+
+        # 12 sessions x 6 announcements = 72 announcements for this student.
+        for i in range(12):
+            session = baker.make(
+                ClassCreationSession,
+                pipeline_type='class',
+                is_published=True,
+            )
+            ClassInvitation.objects.create(
+                session=session, phone=student.phone, invite_code=f'NC-{i}',
+            )
+            baker.make(ClassAnnouncement, session=session, _quantity=6)
+
+        client = _auth_client(student)
+
+        with CaptureQueriesContext(connection) as ctx:
+            resp = client.get('/api/classes/student/notifications/')
+
+        assert resp.status_code == 200
+        # 72 announcements created, no admin/teacher notifs -> feed is exactly the
+        # _FEED_LIMIT cap of 50 (also proves the bounded query actually returns the
+        # announcements rather than silently empty).
+        assert len(resp.json()) == 50
+        # Constant query count: auth + read receipts + admin + teacher + ONE
+        # bounded announcements query. Without select_related('session') the loop
+        # would issue ~50 per-announcement queries (N+1) and blow past this.
+        assert len(ctx.captured_queries) <= 9, (
+            f'Expected <=9 queries (no per-announcement N+1), got '
+            f'{len(ctx.captured_queries)}:\n'
+            + '\n'.join(q['sql'][:110] for q in ctx.captured_queries)
         )

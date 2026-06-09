@@ -2845,17 +2845,6 @@ class StudentNotificationListView(APIView):
     def get(self, request):
         user = request.user
         phone = (getattr(user, 'phone', None) or '').strip()
-        sessions = []
-        if phone:
-            # Get all published sessions (Classes and Exam Preps) that this student is invited to.
-            sessions = (
-                ClassCreationSession.objects.filter(
-                    is_published=True,
-                    invites__phone=phone,
-                )
-                .prefetch_related('announcements')
-                .distinct()
-            )
 
         from apps.notification.models import NotificationReadReceipt
         read_ids = set(
@@ -2910,8 +2899,24 @@ class StudentNotificationListView(APIView):
                     }
                 )
 
-        for session in sessions:
-            for announcement in session.announcements.all():
+        # Class/exam-prep announcements for sessions this student is invited to.
+        # Query announcements DIRECTLY — ordered and bounded to _FEED_LIMIT, with
+        # the session joined (select_related) — instead of loading EVERY invited
+        # session and ALL of its announcements into memory only to discard most
+        # after the final cap. This endpoint is polled by every logged-in student,
+        # so the source must be bounded, not just the assembled feed.
+        if phone:
+            announcements = (
+                ClassAnnouncement.objects.filter(
+                    session__is_published=True,
+                    session__invites__phone=phone,
+                )
+                .select_related('session')
+                .distinct()
+                .order_by('-created_at')[:_FEED_LIMIT]
+            )
+            for announcement in announcements:
+                session = announcement.session
                 # Map priority to notification type
                 ntype = 'info'
                 if announcement.priority == ClassAnnouncement.Priority.HIGH:
@@ -2920,7 +2925,6 @@ class StudentNotificationListView(APIView):
                     ntype = 'info'
 
                 # Define link based on session type
-                link = None
                 if session.pipeline_type == ClassCreationSession.PipelineType.CLASS:
                     link = f'/dashboard/courses/{session.id}'
                 else:
