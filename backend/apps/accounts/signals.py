@@ -17,6 +17,9 @@ def create_user_profile(sender, instance, created, **kwargs):
             TeacherProfile.objects.create(user=instance)
         elif instance.role == User.Role.ADMIN:
             AdminProfile.objects.get_or_create(user=instance)
+        # MANAGER intentionally has NO profile model — an org manager manages an
+        # organization; they are not a learner/teacher/admin identity. Do not add
+        # a branch here.
 
 @receiver(post_save, sender=User)
 def save_user_profile(sender, instance, **kwargs):

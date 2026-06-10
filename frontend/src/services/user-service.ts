@@ -3,6 +3,9 @@
  * Endpoints: GET/PATCH/DELETE /api/admin/users/
  */
 
+/** An org this user MANAGES (org_role=admin membership) → org-manager status. */
+export type ManagedOrg = { id: number; name: string };
+
 export type AdminUser = {
   id: number;
   username: string;
@@ -18,6 +21,19 @@ export type AdminUser = {
   dateJoined: string;
   lastLogin: string | null;
   avatar: string | null;
+  /** Orgs this user manages (non-empty → they are an org manager). */
+  managedOrganizations: ManagedOrg[];
+};
+
+/** Aggregate user counts for the admin dashboard cards (one query). */
+export type UserStats = {
+  total: number;
+  admins: number;
+  managers: number;
+  teachers: number;
+  students: number;
+  active: number;
+  inactive: number;
 };
 
 export type UserUpdatePayload = {
@@ -119,6 +135,30 @@ export const UserService = {
   /** Delete a user. */
   deleteUser: async (userId: number): Promise<void> => {
     await requestJson<void>(`/admin/users/${userId}/`, {
+      method: 'DELETE',
+    });
+  },
+
+  /** Aggregate user counts for the dashboard cards (one query, not the table). */
+  getUserStats: async (): Promise<UserStats> => {
+    return requestJson<UserStats>(`/admin/users/stats/`);
+  },
+
+  /**
+   * Designate a user as the MANAGER of an organization: platform role → MANAGER
+   * plus an org_role=admin membership. Returns the updated user (with
+   * managedOrganizations populated).
+   */
+  assignOrgManager: async (userId: number, organizationId: number): Promise<AdminUser> => {
+    return requestJson<AdminUser>(`/admin/users/${userId}/org-manager/`, {
+      method: 'POST',
+      body: JSON.stringify({ organization_id: organizationId }),
+    });
+  },
+
+  /** Revoke a user's manager status for one organization. */
+  revokeOrgManager: async (userId: number, organizationId: number): Promise<AdminUser> => {
+    return requestJson<AdminUser>(`/admin/users/${userId}/org-manager/${organizationId}/`, {
       method: 'DELETE',
     });
   },

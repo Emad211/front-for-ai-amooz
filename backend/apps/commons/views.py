@@ -10,7 +10,8 @@ from datetime import datetime, time as dtime, timedelta
 
 from django.conf import settings as django_settings
 from django.contrib.auth import get_user_model
-from django.db.models import Avg, Count, F, Q, Sum
+from django.db import transaction
+from django.db.models import Avg, Count, F, Prefetch, Q, Sum
 from django.db.models.functions import TruncDate
 from django.http import HttpResponse
 from django.utils import timezone
@@ -741,7 +742,7 @@ class AnalyticsRecentActivityView(APIView):
         # Recent user registrations
         recent_users = User.objects.order_by('-date_joined')[:5]
         for u in recent_users:
-            role_fa = {'STUDENT': 'دانش‌آموز', 'TEACHER': 'معلم', 'ADMIN': 'مدیر'}.get(u.role, u.role)
+            role_fa = {'STUDENT': 'دانش‌آموز', 'TEACHER': 'معلم', 'ADMIN': 'مدیر', 'MANAGER': 'مدیر سازمان'}.get(u.role, u.role)
             result.append({
                 'id': f'user-{u.pk}',
                 'type': 'registration',
@@ -1360,6 +1361,7 @@ class UserListSerializer(serializers.ModelSerializer):
     isActive = serializers.BooleanField(source='is_active', read_only=True)
     isStaff = serializers.BooleanField(source='is_staff', read_only=True)
     isSuperuser = serializers.BooleanField(source='is_superuser', read_only=True)
+    managedOrganizations = serializers.SerializerMethodField()
 
     class Meta:
         model = User
@@ -1367,11 +1369,36 @@ class UserListSerializer(serializers.ModelSerializer):
             'id', 'username', 'email', 'first_name', 'last_name',
             'fullName', 'role', 'phone', 'isActive', 'isStaff',
             'isSuperuser', 'dateJoined', 'lastLogin', 'avatar',
+            'managedOrganizations',
         ]
 
     @staticmethod
     def get_fullName(obj) -> str:  # noqa: N802
         return obj.get_full_name() or obj.username
+
+    @staticmethod
+    def get_managedOrganizations(obj):  # noqa: N802
+        """Orgs this user MANAGES (org_role=admin membership) → org-manager status.
+
+        Reads the ``_admin_memberships`` prefetch (list view) to avoid an N+1;
+        falls back to a single query for the detail view.
+        """
+        memberships = getattr(obj, '_admin_memberships', None)
+        if memberships is None:
+            from apps.organizations.models import OrganizationMembership
+            memberships = list(
+                OrganizationMembership.objects
+                .filter(
+                    user=obj,
+                    org_role=OrganizationMembership.OrgRole.ADMIN,
+                    status=OrganizationMembership.MemberStatus.ACTIVE,
+                )
+                .select_related('organization')
+            )
+        return [
+            {'id': m.organization_id, 'name': m.organization.name}
+            for m in memberships
+        ]
 
 
 class UserUpdateSerializer(serializers.Serializer):
@@ -1394,7 +1421,26 @@ class AdminUserListView(APIView):
     permission_classes = [IsAdminUser]
 
     def get(self, request):
-        qs = User.objects.all().order_by('-date_joined')
+        from apps.organizations.models import OrganizationMembership
+
+        # Prefetch each user's org-admin memberships (→ org-manager status) once,
+        # so UserListSerializer.get_managedOrganizations reads from cache instead
+        # of issuing one query per row (N+1) across the whole user table.
+        admin_memberships = (
+            OrganizationMembership.objects
+            .filter(
+                org_role=OrganizationMembership.OrgRole.ADMIN,
+                status=OrganizationMembership.MemberStatus.ACTIVE,
+            )
+            .select_related('organization')
+        )
+        qs = (
+            User.objects.all()
+            .prefetch_related(
+                Prefetch('org_memberships', queryset=admin_memberships, to_attr='_admin_memberships')
+            )
+            .order_by('-date_joined')
+        )
 
         # Search
         search = request.query_params.get('search', '').strip()
@@ -1419,6 +1465,24 @@ class AdminUserListView(APIView):
 
         data = UserListSerializer(qs, many=True).data
         return Response(data)
+
+
+class AdminUserStatsView(APIView):
+    """Platform admin: aggregate user counts by role + active status (one query)."""
+
+    permission_classes = [IsAdminUser]
+
+    def get(self, request):
+        agg = User.objects.aggregate(
+            total=Count('id'),
+            admins=Count('id', filter=Q(role=User.Role.ADMIN)),
+            managers=Count('id', filter=Q(role=User.Role.MANAGER)),
+            teachers=Count('id', filter=Q(role=User.Role.TEACHER)),
+            students=Count('id', filter=Q(role=User.Role.STUDENT)),
+            active=Count('id', filter=Q(is_active=True)),
+            inactive=Count('id', filter=Q(is_active=False)),
+        )
+        return Response(agg)
 
 
 class AdminUserDetailView(APIView):
@@ -1482,3 +1546,85 @@ class AdminUserDetailView(APIView):
 
         user.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class AdminUserOrgManagerView(APIView):
+    """Platform admin: designate / revoke a user as an ORGANIZATION MANAGER.
+
+    An org manager is the distinct platform role MANAGER (NOT a teacher, NOT a
+    platform admin) plus an ``org_role=admin`` membership in a specific
+    organization — the same identity the SMS onboarding / invite-code flow
+    produces. This lets an admin grant that status to an EXISTING user straight
+    from the user panel, instead of only via the org-create + invite-code path.
+
+    POST   /api/admin/users/<id>/org-manager/        {organization_id}  → assign
+    DELETE /api/admin/users/<id>/org-manager/<org>/                     → revoke
+    """
+
+    permission_classes = [IsAdminUser]
+
+    def post(self, request, user_pk):
+        from apps.organizations.models import Organization, OrganizationMembership
+
+        try:
+            user = User.objects.get(pk=user_pk)
+        except User.DoesNotExist:
+            return Response({'detail': 'کاربر یافت نشد.'}, status=status.HTTP_404_NOT_FOUND)
+
+        org_id = request.data.get('organization_id')
+        try:
+            org = Organization.objects.get(pk=int(org_id))
+        except (Organization.DoesNotExist, TypeError, ValueError):
+            return Response({'detail': 'سازمان یافت نشد.'}, status=status.HTTP_404_NOT_FOUND)
+
+        with transaction.atomic():
+            # An org manager IS the MANAGER role. Promote a student/teacher to
+            # MANAGER; never DEMOTE a platform ADMIN (they already outrank this).
+            if user.role != User.Role.ADMIN and user.role != User.Role.MANAGER:
+                user.role = User.Role.MANAGER
+                user.save(update_fields=['role'])
+
+            OrganizationMembership.objects.update_or_create(
+                user=user,
+                organization=org,
+                defaults={
+                    'org_role': OrganizationMembership.OrgRole.ADMIN,
+                    'status': OrganizationMembership.MemberStatus.ACTIVE,
+                },
+            )
+
+            # Adopt as owner only if the org has none yet (don't override).
+            if org.owner_id is None:
+                org.owner = user
+                org.save(update_fields=['owner'])
+
+        return Response(UserListSerializer(user).data)
+
+    def delete(self, request, user_pk, org_pk):
+        from apps.organizations.models import Organization, OrganizationMembership
+
+        try:
+            user = User.objects.get(pk=user_pk)
+        except User.DoesNotExist:
+            return Response({'detail': 'کاربر یافت نشد.'}, status=status.HTTP_404_NOT_FOUND)
+
+        OrganizationMembership.objects.filter(
+            user=user,
+            organization_id=org_pk,
+            org_role=OrganizationMembership.OrgRole.ADMIN,
+        ).delete()
+        # If this user was the org's owner, clear it — they no longer manage it.
+        Organization.objects.filter(pk=org_pk, owner=user).update(owner=None)
+
+        # If they no longer manage ANY org and are still a MANAGER, drop them back
+        # to STUDENT (a manager with no org is a dangling role).
+        still_manages = OrganizationMembership.objects.filter(
+            user=user,
+            org_role__in=[OrganizationMembership.OrgRole.ADMIN, OrganizationMembership.OrgRole.DEPUTY],
+            status=OrganizationMembership.MemberStatus.ACTIVE,
+        ).exists()
+        if not still_manages and user.role == User.Role.MANAGER:
+            user.role = User.Role.STUDENT
+            user.save(update_fields=['role'])
+
+        return Response(UserListSerializer(user).data)

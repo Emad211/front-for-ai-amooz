@@ -50,7 +50,7 @@ import {
 import type { OrgRole } from '@/types';
 
 const ROLE_OPTIONS = [
-  { value: 'admin', label: 'مدیر' },
+  { value: 'admin', label: 'مدیر سازمان' },
   { value: 'deputy', label: 'معاون' },
   { value: 'teacher', label: 'معلم' },
   { value: 'student', label: 'دانش‌آموز' },

@@ -151,7 +151,7 @@ export interface UserProfile {
   email: string;
   phone: string;
   avatar: string;
-  role: 'student' | 'admin' | 'teacher';
+  role: 'student' | 'admin' | 'teacher' | 'manager';
   grade?: string;
   major?: string;
   bio?: string;
