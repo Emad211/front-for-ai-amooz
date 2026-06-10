@@ -31,8 +31,27 @@ from datetime import timedelta
 
 from celery import shared_task
 from celery.exceptions import Retry as CeleryRetry
+from billiard.exceptions import SoftTimeLimitExceeded
 
 logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Time budget for the heavy pipeline tasks.
+#
+# The global settings limits (hard 2 h / soft 100 min) are sized for ordinary
+# tasks. Chunked transcription deliberately ACCEPTS media up to
+# TRANSCRIPTION_MAX_DURATION_SECONDS (default 4 h of *content*), and the
+# full-pipeline tasks additionally run steps 2-5 inline — so the four
+# media-ingesting tasks get their own, larger envelope. Keep these >= the
+# worst case implied by the duration cap, or long lectures get SIGKILLed
+# mid-run.
+# ---------------------------------------------------------------------------
+PIPELINE_TASK_SOFT_TIME_LIMIT = int(os.getenv('PIPELINE_TASK_SOFT_TIME_LIMIT', str(int(3.5 * 3600))))
+PIPELINE_TASK_TIME_LIMIT = int(os.getenv('PIPELINE_TASK_TIME_LIMIT', str(4 * 3600)))
+
+_PIPELINE_TIMEOUT_FA = (
+    'پردازش از سقف زمانی مجاز فراتر رفت. لطفاً فایل را به جلسات کوتاه‌تر تقسیم کنید و دوباره تلاش کنید.'
+)
 
 
 # ---------------------------------------------------------------------------
@@ -269,6 +288,17 @@ def _run_pipeline_step(
                 return False
             return True
 
+        except SoftTimeLimitExceeded:
+            # The task's wall-time budget is gone. The signal fires ONCE —
+            # retrying the step inline would run blind into the hard-limit
+            # SIGKILL. Settle the session and stop immediately.
+            logger.error(
+                'Pipeline step %s hit the soft time limit for session %s — failing fast.',
+                step_label, session_id,
+            )
+            _safe_mark_failed(session, _PIPELINE_TIMEOUT_FA)
+            return False
+
         except (CeleryRetry, Exception) as exc:
             is_last = attempt >= max_attempts
             exc_msg = str(exc)[:300]
@@ -371,7 +401,10 @@ def _ingest_source_to_markdown(session, tmp_path: str, progress_cb=None):
 # CLASS pipeline tasks (steps 1-5 + full pipeline)
 # ---------------------------------------------------------------------------
 
-@shared_task(bind=True, max_retries=3, default_retry_delay=60, acks_late=True)
+@shared_task(
+    bind=True, max_retries=3, default_retry_delay=60, acks_late=True,
+    soft_time_limit=PIPELINE_TASK_SOFT_TIME_LIMIT, time_limit=PIPELINE_TASK_TIME_LIMIT,
+)
 @_attribute_llm_usage_to_teacher
 def process_class_step1_transcription(self, session_id: int) -> dict:
     """Transcribe uploaded media (or extract a PDF) for a class creation session."""
@@ -419,6 +452,12 @@ def process_class_step1_transcription(self, session_id: int) -> dict:
         logger.info('STEP1 task: session=%s transcription aborted (cancelled).', session_id)
         _safe_mark_cancelled(session)
         return {'status': 'cancelled', 'session_id': session_id}
+    except SoftTimeLimitExceeded:
+        # Wall-time budget exhausted. The signal fires once — retrying would
+        # run blind into the hard-limit SIGKILL. Fail fast with a clear error.
+        logger.error('STEP1 task: session=%s hit the soft time limit — failing fast.', session_id)
+        _safe_mark_failed(session, _PIPELINE_TIMEOUT_FA)
+        return {'status': 'failed', 'error': 'soft time limit exceeded'}
     except Exception as exc:
         if tmp_path and os.path.exists(tmp_path):
             os.unlink(tmp_path)
@@ -592,7 +631,10 @@ def process_class_step5_recap(self, session_id: int) -> dict:
         raise self.retry(exc=exc)
 
 
-@shared_task(bind=True, max_retries=0, acks_late=True)
+@shared_task(
+    bind=True, max_retries=0, acks_late=True,
+    soft_time_limit=PIPELINE_TASK_SOFT_TIME_LIMIT, time_limit=PIPELINE_TASK_TIME_LIMIT,
+)
 @_attribute_llm_usage_to_teacher
 def process_class_full_pipeline(self, session_id: int) -> dict:
     """Run class creation steps 1-5 sequentially (one-click pipeline).
@@ -689,7 +731,10 @@ def process_class_full_pipeline(self, session_id: int) -> dict:
 # EXAM PREP pipeline tasks (steps 1-2 + full pipeline)
 # ---------------------------------------------------------------------------
 
-@shared_task(bind=True, max_retries=3, default_retry_delay=60, acks_late=True)
+@shared_task(
+    bind=True, max_retries=3, default_retry_delay=60, acks_late=True,
+    soft_time_limit=PIPELINE_TASK_SOFT_TIME_LIMIT, time_limit=PIPELINE_TASK_TIME_LIMIT,
+)
 @_attribute_llm_usage_to_teacher
 def process_exam_prep_step1_transcription(self, session_id: int) -> dict:
     """Transcribe uploaded media (or extract a PDF) for exam prep pipeline."""
@@ -736,6 +781,12 @@ def process_exam_prep_step1_transcription(self, session_id: int) -> dict:
         logger.info('STEP1 task: session=%s transcription aborted (cancelled).', session_id)
         _safe_mark_cancelled(session)
         return {'status': 'cancelled', 'session_id': session_id}
+    except SoftTimeLimitExceeded:
+        # Wall-time budget exhausted — fail fast instead of retrying into the
+        # hard-limit SIGKILL (the signal only fires once).
+        logger.error('STEP1 task: session=%s hit the soft time limit — failing fast.', session_id)
+        _safe_mark_failed(session, _PIPELINE_TIMEOUT_FA)
+        return {'status': 'failed', 'error': 'soft time limit exceeded'}
     except Exception as exc:
         if tmp_path and os.path.exists(tmp_path):
             os.unlink(tmp_path)
@@ -787,7 +838,10 @@ def process_exam_prep_step2_structure(self, session_id: int) -> dict:
         raise self.retry(exc=exc)
 
 
-@shared_task(bind=True, max_retries=0, acks_late=True)
+@shared_task(
+    bind=True, max_retries=0, acks_late=True,
+    soft_time_limit=PIPELINE_TASK_SOFT_TIME_LIMIT, time_limit=PIPELINE_TASK_TIME_LIMIT,
+)
 @_attribute_llm_usage_to_teacher
 def process_exam_prep_full_pipeline(self, session_id: int) -> dict:
     """Run exam prep steps 1-2 sequentially with inline retry logic."""

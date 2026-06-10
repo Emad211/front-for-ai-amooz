@@ -113,6 +113,11 @@ def extract_audio_mp3_chunks_from_path(
     pattern = os.path.join(workdir, "audio-%04d.mp3")
     args = [
         "-nostdin",
+        # Quiet stderr: _run_ffmpeg keeps both pipes UNDRAINED until the process
+        # exits, so a multi-minute transcode emitting progress stats every ~0.5 s
+        # fills the 64 KiB pipe buffer and deadlocks ffmpeg until the timeout
+        # kill. Errors still come through at -loglevel error.
+        "-hide_banner", "-nostats", "-loglevel", "error",
         "-i", in_path,
         "-vn",                 # drop any video stream
         "-ac", "1",            # mono
@@ -143,6 +148,9 @@ def extract_audio_mp3_from_path(in_path: str) -> tuple[bytes, str]:
         out_path = os.path.join(tmp, "audio.mp3")
         args = [
             "-nostdin",
+            # Quiet stderr — see extract_audio_mp3_chunks_from_path: undrained
+            # pipes + chatty progress stats can deadlock long transcodes.
+            "-hide_banner", "-nostats", "-loglevel", "error",
             "-i", in_path,
             "-vn",                 # drop any video stream
             "-ac", "1",            # mono

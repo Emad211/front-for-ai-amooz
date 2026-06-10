@@ -6,7 +6,16 @@ import os
 import tempfile
 from typing import Callable, Optional, Tuple
 
-from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception
+
+try:
+    # billiard ships with celery; raised inside the task when the Celery soft
+    # time limit fires. It MUST escape immediately (never be retried) so the
+    # task can settle before the hard-limit SIGKILL.
+    from billiard.exceptions import SoftTimeLimitExceeded
+except Exception:  # pragma: no cover - celery/billiard always present in prod
+    class SoftTimeLimitExceeded(BaseException):  # type: ignore[no-redef]
+        pass
 
 from apps.commons.llm_prompts import PROMPTS
 from apps.commons.llm_provider import preferred_provider
@@ -171,7 +180,12 @@ def _run_transcription(*, model: str, provider: str, messages: list[dict]) -> st
     @retry(
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, min=2, max=10),
-        retry=retry_if_exception_type(Exception),
+        # Retry transient LLM/network errors, but NEVER the Celery soft-time-
+        # limit signal (it fires once; swallowing it means running blind into
+        # the hard SIGKILL) and never a cooperative cancellation.
+        retry=retry_if_exception(
+            lambda e: not isinstance(e, (SoftTimeLimitExceeded, TranscriptionAborted))
+        ),
         reraise=True,
     )
     def _do_call() -> str:
@@ -301,6 +315,28 @@ def transcribe_media_file(
     _notify_progress(progress_cb, 0, 1)
 
     audio_bytes, audio_format = extract_audio_mp3_from_path(path)
+
+    # Last-resort guard for unprobeable durations (e.g. browser MediaRecorder
+    # webm/opus files often carry no duration header and can be small on disk
+    # while holding HOURS of speech): if the extracted mp3 is clearly long,
+    # never send it as one giant request — switch to chunked mode.
+    max_single_mb = max(1, _env_int("TRANSCRIPTION_SINGLE_MAX_AUDIO_MB", 12))
+    if len(audio_bytes) > max_single_mb * 1024 * 1024:
+        logger.warning(
+            "TRANSCRIBE: extracted audio is %.1f MB (> %d MB single-shot limit) — switching to chunked mode.",
+            len(audio_bytes) / (1024 * 1024), max_single_mb,
+        )
+        del audio_bytes
+        return _transcribe_media_file_chunked(
+            path=path,
+            is_audio=is_audio,
+            duration=duration,
+            chunk_seconds=chunk_seconds,
+            model=model,
+            provider=provider,
+            progress_cb=progress_cb,
+        )
+
     audio_b64 = base64.b64encode(audio_bytes).decode()
     del audio_bytes  # free the raw audio before frame extraction
 
@@ -402,8 +438,28 @@ def _transcribe_media_file_chunked(
                 "TRANSCRIBE(chunked) part %d/%d: frames=%d audio_b64_chars=%d",
                 idx + 1, total, len(frames_b64), len(audio_b64),
             )
-            part_text = _run_transcription(model=model, provider=provider, messages=messages)
-            parts.append((part_text or "").strip())
+            try:
+                part_text = _run_transcription(model=model, provider=provider, messages=messages)
+            except Exception as exc:
+                # A genuinely silent/music-only chunk (class break, paused
+                # recording) makes the model return nothing, which the LLM
+                # client raises as "Empty response". That is a VALID outcome
+                # for one chunk — record it as empty instead of failing the
+                # whole multi-hour transcription.
+                if "empty response" in str(exc).lower():
+                    logger.warning(
+                        "TRANSCRIBE(chunked) part %d/%d returned no text (silent chunk?) — continuing.",
+                        idx + 1, total,
+                    )
+                    part_text = ""
+                else:
+                    raise
+            part_text = (part_text or "").strip()
+            # The chunked prompt instructs the model to answer a literal
+            # no-speech marker for silent chunks — normalise it away.
+            if part_text == "[بدون گفتار]":
+                part_text = ""
+            parts.append(part_text)
 
             stitched_so_far = "\n\n".join(p for p in parts if p)
             if stitched_so_far:
@@ -412,7 +468,9 @@ def _transcribe_media_file_chunked(
 
     transcript = "\n\n".join(p for p in parts if p).strip()
     if not transcript:
-        raise RuntimeError("chunked transcription produced an empty transcript")
+        raise RuntimeError(
+            'هیچ گفتار قابل رونویسی در فایل پیدا نشد. لطفاً فایل را بررسی کنید و دوباره تلاش کنید.'
+        )
     logger.info(
         "TRANSCRIBE(chunked) done: chunks=%d transcript_chars=%d", total, len(transcript),
     )
