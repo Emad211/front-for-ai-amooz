@@ -165,7 +165,8 @@ export function PipelineTracker({
 }: PipelineTrackerProps) {
   const steps = pipelineType === 'class' ? CLASS_STEPS : EXAM_PREP_STEPS;
   const stepStates = resolveStepStates(steps, status);
-  const isPipelineActive = isUploading || (status !== null && status !== 'failed' && !steps.some(s => s.doneStatus === status));
+  const isCancelled = status === 'cancelled';
+  const isPipelineActive = isUploading || (status !== null && status !== 'failed' && status !== 'cancelled' && !steps.some(s => s.doneStatus === status));
   const isPipelineDone = status !== null && steps.some(s => s.doneStatus === status) && steps[steps.length - 1].doneStatus === status;
   const elapsed = useElapsed(isPipelineActive);
 
@@ -208,7 +209,7 @@ export function PipelineTracker({
       )}
 
       {/* ── Pipeline Steps ── */}
-      {(status || isPipelineDone) && (
+      {(status || isPipelineDone) && !isCancelled && (
         <div className="rounded-xl border bg-card p-4 space-y-3 animate-in fade-in slide-in-from-top-2 duration-300">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
@@ -243,6 +244,18 @@ export function PipelineTracker({
               <p className="text-sm font-medium text-destructive">خطا در پردازش</p>
               <p className="text-xs text-destructive/80">{errorMessage}</p>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Cancelled banner (amber — distinct from failed/red and done/green) ── */}
+      {isCancelled && (
+        <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-4 animate-in fade-in slide-in-from-top-2 duration-300">
+          <div className="flex items-center gap-2">
+            <span className="text-amber-600 text-lg">🚫</span>
+            <p className="text-sm font-medium text-amber-700 dark:text-amber-400">
+              پردازش توسط شما لغو شد.
+            </p>
           </div>
         </div>
       )}

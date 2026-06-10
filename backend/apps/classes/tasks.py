@@ -191,6 +191,40 @@ def _safe_mark_failed(session, error_detail: str) -> None:
         )
 
 
+def _safe_mark_cancelled(session) -> None:
+    """Best-effort transition of a session to the terminal CANCELLED state.
+
+    Idempotent: if the session was already cancelled (or deleted) this does
+    nothing. Used by the cooperative-cancellation checkpoints so a revoked /
+    re-queued pipeline settles on a consistent terminal status.
+    """
+    try:
+        session.refresh_from_db()
+        if session.status != session.Status.CANCELLED:
+            session.status = session.Status.CANCELLED
+            session.save(update_fields=['status', 'updated_at'])
+    except Exception:
+        logger.info(
+            'Could not mark session %s as CANCELLED (likely deleted).',
+            session.id,
+        )
+
+
+def _pipeline_cancelled(session) -> bool:
+    """Cooperative-cancellation checkpoint (call right after ``_safe_refresh``).
+
+    Returns ``True`` if the teacher requested cancellation — either the
+    ``cancel_requested`` flag is set or the row is already in the terminal
+    CANCELLED state — and settles the row on CANCELLED. The full-pipeline
+    tasks call this at every step boundary so an in-flight pipeline stops
+    promptly even if ``app.control.revoke`` could not kill the worker.
+    """
+    if getattr(session, 'cancel_requested', False) or session.status == session.Status.CANCELLED:
+        _safe_mark_cancelled(session)
+        return True
+    return False
+
+
 def _safe_save(session, update_fields: list[str]) -> bool:
     """Save session with ``update_fields``, returning ``False`` on error.
 
@@ -523,6 +557,8 @@ def process_class_full_pipeline(self, session_id: int) -> dict:
     session = ClassCreationSession.objects.filter(id=session_id).first()
     if session is None:
         return {'status': 'skipped', 'reason': 'session not found'}
+    if _pipeline_cancelled(session):
+        return {'status': 'cancelled', 'stopped_at': 'start'}
 
     # Step 1
     if session.status == ClassCreationSession.Status.TRANSCRIBING:
@@ -531,6 +567,8 @@ def process_class_full_pipeline(self, session_id: int) -> dict:
 
     if not _safe_refresh(session):
         return {'status': 'aborted', 'reason': 'session deleted'}
+    if _pipeline_cancelled(session):
+        return {'status': 'cancelled', 'stopped_at': 'step1'}
     if session.status == ClassCreationSession.Status.FAILED:
         return {'status': 'failed', 'stopped_at': 'step1'}
 
@@ -544,6 +582,8 @@ def process_class_full_pipeline(self, session_id: int) -> dict:
 
     if not _safe_refresh(session):
         return {'status': 'aborted', 'reason': 'session deleted'}
+    if _pipeline_cancelled(session):
+        return {'status': 'cancelled', 'stopped_at': 'step2'}
     if session.status == ClassCreationSession.Status.FAILED:
         return {'status': 'failed', 'stopped_at': 'step2'}
 
@@ -557,6 +597,8 @@ def process_class_full_pipeline(self, session_id: int) -> dict:
 
     if not _safe_refresh(session):
         return {'status': 'aborted', 'reason': 'session deleted'}
+    if _pipeline_cancelled(session):
+        return {'status': 'cancelled', 'stopped_at': 'step3'}
     if session.status == ClassCreationSession.Status.FAILED:
         return {'status': 'failed', 'stopped_at': 'step3'}
 
@@ -570,6 +612,8 @@ def process_class_full_pipeline(self, session_id: int) -> dict:
 
     if not _safe_refresh(session):
         return {'status': 'aborted', 'reason': 'session deleted'}
+    if _pipeline_cancelled(session):
+        return {'status': 'cancelled', 'stopped_at': 'step4'}
     if session.status == ClassCreationSession.Status.FAILED:
         return {'status': 'failed', 'stopped_at': 'step4'}
 
@@ -583,6 +627,8 @@ def process_class_full_pipeline(self, session_id: int) -> dict:
 
     if not _safe_refresh(session):
         return {'status': 'aborted', 'reason': 'session deleted'}
+    if _pipeline_cancelled(session):
+        return {'status': 'cancelled', 'stopped_at': 'step5'}
     if session.status == ClassCreationSession.Status.FAILED:
         return {'status': 'failed', 'stopped_at': 'step5'}
 
@@ -692,6 +738,8 @@ def process_exam_prep_full_pipeline(self, session_id: int) -> dict:
     session = ClassCreationSession.objects.filter(id=session_id).first()
     if session is None:
         return {'status': 'skipped', 'reason': 'session not found'}
+    if _pipeline_cancelled(session):
+        return {'status': 'cancelled', 'stopped_at': 'start'}
 
     # Step 1
     if session.status == ClassCreationSession.Status.EXAM_TRANSCRIBING:
@@ -700,6 +748,8 @@ def process_exam_prep_full_pipeline(self, session_id: int) -> dict:
 
     if not _safe_refresh(session):
         return {'status': 'aborted', 'reason': 'session deleted'}
+    if _pipeline_cancelled(session):
+        return {'status': 'cancelled', 'stopped_at': 'step1'}
     if session.status == ClassCreationSession.Status.FAILED:
         return {'status': 'failed', 'stopped_at': 'step1'}
 
@@ -713,6 +763,8 @@ def process_exam_prep_full_pipeline(self, session_id: int) -> dict:
 
     if not _safe_refresh(session):
         return {'status': 'aborted', 'reason': 'session deleted'}
+    if _pipeline_cancelled(session):
+        return {'status': 'cancelled', 'stopped_at': 'step2'}
     if session.status == ClassCreationSession.Status.FAILED:
         return {'status': 'failed', 'stopped_at': 'step2'}
 

@@ -17,17 +17,31 @@ import {
   getClassCreationSessionDetail,
   type ClassCreationSessionDetail,
   publishClassCreationSession,
+  cancelClassCreationSession,
   transcribeClassCreationStep1,
   updateClassCreationSession,
   // Exam Prep imports
   transcribeExamPrepStep1,
   fetchExamPrepSession,
   publishExamPrepSession,
+  cancelExamPrepSession,
   type ExamPrepSessionDetail,
   type ExamPrepStatus,
   type UploadProgress,
 } from '@/services/classes-service';
 import { PipelineTracker } from './pipeline-tracker';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
+import { Ban, Loader2 } from 'lucide-react';
 import { useWorkspace } from '@/hooks/use-workspace';
 
 type PipelineType = 'class' | 'exam_prep';
@@ -62,6 +76,9 @@ function getClassPipelineMessage(status?: string | null) {
   if (status === 'failed') {
     return { message: 'پردازش با خطا متوقف شد.', isDone: false, isFailed: true } as const;
   }
+  if (status === 'cancelled') {
+    return { message: 'پردازش توسط شما لغو شد.', isDone: false, isFailed: false } as const;
+  }
   switch (status) {
     case 'transcribing':
       return { message: 'در حال انجام مرحله ۱ از ۵…', isDone: false, isFailed: false } as const;
@@ -94,6 +111,9 @@ function getExamPrepPipelineMessage(status?: string | null) {
   }
   if (status === 'failed') {
     return { message: 'پردازش با خطا متوقف شد.', isDone: false, isFailed: true } as const;
+  }
+  if (status === 'cancelled') {
+    return { message: 'پردازش توسط شما لغو شد.', isDone: false, isFailed: false } as const;
   }
   switch (status) {
     case 'exam_transcribing':
@@ -132,6 +152,10 @@ export function CreateClassPage() {
   const [examPrepOptimisticStatus, setExamPrepOptimisticStatus] = useState<string | null>(null);
   const [examPrepPipelineError, setExamPrepPipelineError] = useState<string | null>(null);
   const [isExamPrepPipelineStarting, setIsExamPrepPipelineStarting] = useState(false);
+
+  // Shared across both pipelines: an in-flight cancel request (locks the dialog).
+  const [isCancelling, setIsCancelling] = useState(false);
+  const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
 
   // Upload progress state (shared between class & exam prep)
   const [uploadProgress, setUploadProgress] = useState<UploadProgress | null>(null);
@@ -199,6 +223,11 @@ export function CreateClassPage() {
           return;
         }
 
+        if (detail.status === 'cancelled') {
+          stopPolling();
+          return;
+        }
+
         if (detail.status === 'recapped') {
           stopPolling();
           return;
@@ -232,7 +261,7 @@ export function CreateClassPage() {
       setLevel(String((detail as any).level || '').trim());
       setDuration(String((detail as any).duration || '').trim());
 
-      if (detail.status !== 'failed' && detail.status !== 'recapped') {
+      if (detail.status !== 'failed' && detail.status !== 'cancelled' && detail.status !== 'recapped') {
         startPolling(sessionId);
       }
     } catch {
@@ -261,6 +290,11 @@ export function CreateClassPage() {
         if (detail.status === 'failed') {
           stopPolling();
           setExamPrepPipelineError(detail.error_detail || 'پردازش با خطا متوقف شد');
+          return;
+        }
+
+        if (detail.status === 'cancelled') {
+          stopPolling();
           return;
         }
 
@@ -294,7 +328,7 @@ export function CreateClassPage() {
       setTitle(detail.title);
       setDescription(detail.description);
 
-      if (detail.status !== 'failed' && detail.status !== 'exam_structured') {
+      if (detail.status !== 'failed' && detail.status !== 'cancelled' && detail.status !== 'exam_structured') {
         startExamPrepPolling(sessionId);
       }
     } catch {
@@ -384,6 +418,9 @@ export function CreateClassPage() {
   const currentCanStartPipeline = pipelineType === 'class' ? canStartClassPipeline : canStartExamPrepPipeline;
   const currentIsPipelineStarting = pipelineType === 'class' ? isPipelineStarting : isExamPrepPipelineStarting;
   const currentStatus = pipelineType === 'class' ? status : examPrepStatus;
+  const currentIsPipelineCancelled = currentStatus === 'cancelled';
+  // A running pipeline with a known session id is the only thing we can revoke.
+  const canCancelPipeline = currentIsPipelineRunning && Boolean(currentSessionId);
 
   const startFullPipeline = async () => {
     if (!lessonFile) return;
@@ -466,6 +503,46 @@ export function CreateClassPage() {
       } finally {
         setIsExamPrepPipelineStarting(false);
       }
+    }
+  };
+
+  const cancelPipeline = async () => {
+    // Guard: nothing running, or no session id to revoke.
+    if (!canCancelPipeline) return;
+    setIsCancelling(true);
+    try {
+      if (pipelineType === 'class') {
+        const detail = await cancelClassCreationSession(sessionIdForActions as number);
+        stopPolling();
+        setSessionDetail(detail);
+        setOptimisticStatus(detail.status);
+        setPipelineError(null);
+        persistLastStatus({ sessionId: detail.id, status: detail.status });
+        // Terminal state: don't auto-resume this session on the next visit.
+        window.localStorage.removeItem(ACTIVE_SESSION_STORAGE_KEY);
+        toast.success('پردازش کلاس لغو شد.');
+      } else {
+        const detail = await cancelExamPrepSession(examPrepSessionIdForActions as number);
+        stopPolling();
+        setExamPrepSessionDetail(detail);
+        setExamPrepOptimisticStatus(detail.status);
+        setExamPrepPipelineError(null);
+        try {
+          window.localStorage.setItem(
+            CREATE_EXAM_PREP_LAST_STATUS_STORAGE_KEY,
+            JSON.stringify({ sessionId: detail.id, status: detail.status }),
+          );
+        } catch { /* ignore */ }
+        window.localStorage.removeItem(ACTIVE_EXAM_PREP_SESSION_STORAGE_KEY);
+        toast.success('پردازش آمادگی آزمون لغو شد.');
+      }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'خطا در لغو پردازش';
+      toast.error(msg);
+      // Re-throw so the confirm dialog stays open and the user can retry.
+      throw e;
+    } finally {
+      setIsCancelling(false);
     }
   };
 
@@ -646,16 +723,83 @@ export function CreateClassPage() {
             <div className="text-xs text-muted-foreground">
               {lessonFile ? `فایل انتخاب‌شده: ${lessonFile.name}` : 'یک فایل صوتی یا ویدیویی انتخاب کنید.'}
             </div>
-            <Button
-              type="button"
-              className="rounded-xl h-10 px-5"
-              disabled={!currentCanStartPipeline}
-              onClick={startFullPipeline}
-            >
-              {currentIsPipelineStarting || currentIsPipelineRunning
-                ? 'در حال پردازش…'
-                : 'شروع پردازش'}
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                className="rounded-xl h-10 px-5"
+                disabled={!currentCanStartPipeline}
+                onClick={startFullPipeline}
+              >
+                {currentIsPipelineStarting || currentIsPipelineRunning
+                  ? 'در حال پردازش…'
+                  : 'شروع پردازش'}
+              </Button>
+
+              {/* ── Cancel pipeline (sits right beside the start button) ── */}
+              {canCancelPipeline && (
+                <AlertDialog
+                  open={cancelDialogOpen}
+                  onOpenChange={(open) => {
+                    // Lock the dialog open while a cancel request is in flight.
+                    if (!isCancelling) setCancelDialogOpen(open);
+                  }}
+                >
+                  <AlertDialogTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="rounded-xl h-10 px-4 border-destructive/40 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                      title="لغو پردازش پایپ‌لاین"
+                    >
+                      <Ban className="h-4 w-4" />
+                      <span className="ms-1.5">لغو پردازش</span>
+                    </Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent
+                    dir="rtl"
+                    onEscapeKeyDown={(e) => {
+                      if (isCancelling) e.preventDefault();
+                    }}
+                  >
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>لغو پردازش پایپ‌لاین؟</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        با لغو، پردازش جاری بلافاصله متوقف می‌شود و این جلسه دیگر قابل ادامه نیست.
+                        برای تولید دوباره باید فایل را آپلود کرده و پردازش را از ابتدا شروع کنید.
+                        این عمل قابل بازگشت نیست.
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel disabled={isCancelling}>انصراف</AlertDialogCancel>
+                      <AlertDialogAction
+                        disabled={isCancelling}
+                        onClick={async (e) => {
+                          // Block Radix auto-close so the dialog stays locked
+                          // during the request; we close it ourselves on success.
+                          e.preventDefault();
+                          try {
+                            await cancelPipeline();
+                            setCancelDialogOpen(false);
+                          } catch {
+                            // toast already shown; keep the dialog open to retry.
+                          }
+                        }}
+                        className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                      >
+                        {isCancelling ? (
+                          <>
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                            <span className="ms-1.5">در حال لغو…</span>
+                          </>
+                        ) : (
+                          'بله، لغو کن'
+                        )}
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+              )}
+            </div>
           </div>
 
           {!title.trim() && (

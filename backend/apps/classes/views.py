@@ -112,6 +112,25 @@ from .tasks import (
     send_new_invites_sms_task,
 )
 
+
+def _dispatch_pipeline_task(session, task) -> None:
+    """Dispatch a pipeline task with a pre-generated, persisted Celery id.
+
+    Generating the task id ourselves (instead of reading ``AsyncResult.id``
+    after ``.delay()``) lets us persist ``celery_task_id`` BEFORE the worker
+    can pick the task up — eliminating the race where a cancel arrives before
+    the id is stored. A later cancel revokes exactly this id, and the
+    cooperative ``cancel_requested`` flag is the safety net if revoke can't
+    kill an in-flight step.
+    """
+    task_id = uuid.uuid4().hex
+    session.celery_task_id = task_id
+    session.save(update_fields=['celery_task_id', 'updated_at'])
+    transaction.on_commit(
+        lambda: task.apply_async(args=[session.id], task_id=task_id)
+    )
+
+
 from apps.chatbot.services.student_course_chat import (
     handle_student_audio_upload,
     handle_student_image_upload,
@@ -578,12 +597,12 @@ class Step1TranscribeView(APIView):
         )
 
         if run_full_pipeline:
-            transaction.on_commit(lambda: process_class_full_pipeline.delay(session.id))
+            _dispatch_pipeline_task(session, process_class_full_pipeline)
             return Response(Step1TranscribeResponseSerializer(session).data, status=status.HTTP_202_ACCEPTED)
 
         if getattr(settings, 'CLASS_PIPELINE_ASYNC', False):
             # Dispatch to Celery so the teacher can navigate away without breaking the pipeline.
-            transaction.on_commit(lambda: process_class_step1_transcription.delay(session.id))
+            _dispatch_pipeline_task(session, process_class_step1_transcription)
             return Response(Step1TranscribeResponseSerializer(session).data, status=status.HTTP_202_ACCEPTED)
 
         try:
@@ -986,6 +1005,70 @@ class ClassCreationSessionDetailView(APIView):
             return Response({'detail': 'جلسه پیدا نشد.'}, status=status.HTTP_404_NOT_FOUND)
         session.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+def _cancel_session_pipeline(session) -> None:
+    """Stop a running pipeline for ``session`` as precisely as possible.
+
+    Two complementary mechanisms run together:
+
+    1. **Cooperative flag** — set ``cancel_requested`` and move the row to the
+       terminal ``CANCELLED`` status *first*, in one ``update_fields`` save.
+       The full-pipeline tasks check this at every step boundary, so even a
+       step that survives revoke (or a task re-queued by ``acks_late``) stops
+       at the next checkpoint instead of running to completion.
+    2. **Hard revoke** — ``app.control.revoke(..., terminate=True)`` sends
+       SIGTERM to the worker child currently executing the task, killing an
+       in-flight step (e.g. a long LLM call) immediately.
+
+    Revoke is best-effort: a broker hiccup must never block the DB transition,
+    because the cooperative flag already guarantees the pipeline will stop.
+    Idempotent — calling it on an already-cancelled session is a harmless no-op.
+    """
+    session.cancel_requested = True
+    session.status = ClassCreationSession.Status.CANCELLED
+    session.save(update_fields=['cancel_requested', 'status', 'updated_at'])
+
+    task_id = (session.celery_task_id or '').strip()
+    if task_id:
+        try:
+            from core.celery import app as celery_app
+            celery_app.control.revoke(task_id, terminate=True, signal='SIGTERM')
+        except Exception:
+            logger.warning(
+                'Failed to revoke Celery task %s for session %s (cooperative '
+                'cancel flag still set).', task_id, session.id, exc_info=True,
+            )
+
+
+class ClassCreationSessionCancelView(APIView):
+    """Cancel a running class-creation pipeline (teacher, owner-only)."""
+    permission_classes = [IsAuthenticated, IsTeacherUser]
+
+    @extend_schema(
+        tags=['Classes'],
+        summary='Cancel a running class creation pipeline (teacher)',
+        operation_id='classes_creation_sessions_cancel',
+        request=None,
+        responses={200: ClassCreationSessionDetailSerializer, 404: OpenApiTypes.OBJECT, 409: OpenApiTypes.OBJECT},
+    )
+    def post(self, request, session_id: int):
+        session = ClassCreationSession.objects.filter(
+            id=session_id,
+            teacher=request.user,
+            pipeline_type=ClassCreationSession.PipelineType.CLASS,
+        ).first()
+        if session is None:
+            return Response({'detail': 'جلسه پیدا نشد.'}, status=status.HTTP_404_NOT_FOUND)
+
+        if not session.is_active_pipeline:
+            return Response(
+                {'detail': f'این جلسه در وضعیت «{session.get_status_display()}» است و قابل لغو نیست.'},
+                status=status.HTTP_409_CONFLICT,
+            )
+
+        _cancel_session_pipeline(session)
+        return Response(ClassCreationSessionDetailSerializer(session).data, status=status.HTTP_200_OK)
 
 
 class ClassCreationSessionPublishView(GenericAPIView):
@@ -3125,11 +3208,11 @@ class ExamPrepStep1TranscribeView(APIView):
             )
 
         if run_full_pipeline:
-            transaction.on_commit(lambda: process_exam_prep_full_pipeline.delay(session.id))
+            _dispatch_pipeline_task(session, process_exam_prep_full_pipeline)
             return Response(ExamPrepStep1TranscribeResponseSerializer(session).data, status=status.HTTP_202_ACCEPTED)
 
         # Dispatch step 1 to Celery
-        transaction.on_commit(lambda: process_exam_prep_step1_transcription.delay(session.id))
+        _dispatch_pipeline_task(session, process_exam_prep_step1_transcription)
         return Response(ExamPrepStep1TranscribeResponseSerializer(session).data, status=status.HTTP_202_ACCEPTED)
 
 
@@ -3260,6 +3343,36 @@ class ExamPrepSessionDetailView(APIView):
 
         session.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class ExamPrepSessionCancelView(APIView):
+    """Cancel a running exam-prep pipeline (teacher, owner-only)."""
+    permission_classes = [IsAuthenticated, IsTeacherUser]
+
+    @extend_schema(
+        tags=['Exam Prep'],
+        summary='Cancel a running exam prep pipeline (teacher)',
+        operation_id='exam_prep_sessions_cancel',
+        request=None,
+        responses={200: ExamPrepSessionDetailSerializer, 404: OpenApiTypes.OBJECT, 409: OpenApiTypes.OBJECT},
+    )
+    def post(self, request, session_id: int):
+        session = ClassCreationSession.objects.filter(
+            id=session_id,
+            teacher=request.user,
+            pipeline_type=ClassCreationSession.PipelineType.EXAM_PREP,
+        ).first()
+        if session is None:
+            return Response({'detail': 'جلسه آمادگی آزمون یافت نشد.'}, status=status.HTTP_404_NOT_FOUND)
+
+        if not session.is_active_pipeline:
+            return Response(
+                {'detail': f'این جلسه در وضعیت «{session.get_status_display()}» است و قابل لغو نیست.'},
+                status=status.HTTP_409_CONFLICT,
+            )
+
+        _cancel_session_pipeline(session)
+        return Response(ExamPrepSessionDetailSerializer(session).data, status=status.HTTP_200_OK)
 
 
 class ExamPrepSessionListView(APIView):

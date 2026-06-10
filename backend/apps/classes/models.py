@@ -28,6 +28,8 @@ class ClassCreationSession(models.Model):
         EXAM_STRUCTURED = 'exam_structured', 'Exam Prep: Ready'
         # Shared
         FAILED = 'failed', 'Failed'
+        # Terminal state when the teacher cancels a running pipeline.
+        CANCELLED = 'cancelled', 'Cancelled'
 
     teacher = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -99,11 +101,36 @@ class ClassCreationSession(models.Model):
 
     error_detail = models.TextField(blank=True)
 
+    # --- Pipeline cancellation support -------------------------------------
+    # The id of the Celery task currently driving this session's pipeline
+    # (full-pipeline coordinator or a single step). Persisted at dispatch so a
+    # cancel request can ``app.control.revoke`` the exact running task.
+    celery_task_id = models.CharField(max_length=255, blank=True, default='')
+    # Cooperative-cancellation flag. The full-pipeline tasks check this at every
+    # step boundary and abort gracefully if set — a safety net in case revoke
+    # cannot kill an in-flight step (or the task is re-queued by ``acks_late``).
+    cancel_requested = models.BooleanField(default=False)
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     def __str__(self) -> str:
         return f"{self.id} ({self.status})"
+
+    # --- Status groupings ---------------------------------------------------
+    # Terminal states: the pipeline is no longer running, so cancellation is a
+    # no-op (or invalid). Everything else is an "active"/in-progress state.
+    TERMINAL_STATUSES = frozenset({
+        Status.RECAPPED,
+        Status.EXAM_STRUCTURED,
+        Status.FAILED,
+        Status.CANCELLED,
+    })
+
+    @property
+    def is_active_pipeline(self) -> bool:
+        """True while the pipeline is still running (i.e. cancellable)."""
+        return self.status not in self.TERMINAL_STATUSES
 
     class Meta:
         constraints = [
