@@ -106,9 +106,10 @@ def test_class_step1_does_not_slurp_media_bytes_into_ram(monkeypatch):
 
     captured = {}
 
-    def _fake_transcribe_media_file(*, path, mime_type):
+    def _fake_transcribe_media_file(*, path, mime_type, progress_cb=None):
         captured["path"] = path
         captured["mime_type"] = mime_type
+        captured["has_progress_cb"] = progress_cb is not None
         return "TRANSCRIPT", "avalai", "models/x"
     monkeypatch.setattr(
         "apps.classes.services.transcription.transcribe_media_file",

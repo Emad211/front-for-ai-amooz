@@ -300,7 +300,43 @@ def _run_pipeline_step(
 # Step-1 ingestion dispatch (media transcription OR PDF extraction)
 # ---------------------------------------------------------------------------
 
-def _ingest_source_to_markdown(session, tmp_path: str):
+def _make_step1_heartbeat(session_id: int):
+    """Progress hook for long (chunked) transcriptions.
+
+    Called by ``transcribe_media_file`` after every audio chunk. Does two jobs:
+
+    * **Stale-session protection** — bumps ``updated_at`` so a legitimately
+      running multi-hour transcription is never force-FAILED by
+      ``cleanup_stale_sessions`` (which reaps sessions idle in an *ING status
+      for >2 h).
+    * **Mid-step cancellation** — returns ``False`` (→ the service raises
+      ``TranscriptionAborted``) when the teacher set ``cancel_requested`` or
+      deleted the session, so a 2-hour lecture stops within one chunk instead
+      of only at the next step boundary.
+    """
+    from django.utils import timezone
+    from .models import ClassCreationSession
+
+    def _heartbeat(done: int, total: int):
+        updated = (
+            ClassCreationSession.objects
+            .filter(id=session_id)
+            .update(updated_at=timezone.now())
+        )
+        if not updated:
+            logger.info('STEP1 heartbeat: session %s deleted — aborting transcription.', session_id)
+            return False
+        if ClassCreationSession.objects.filter(id=session_id, cancel_requested=True).exists():
+            logger.info('STEP1 heartbeat: session %s cancel requested — aborting transcription.', session_id)
+            return False
+        if total > 1:
+            logger.info('STEP1 progress: session=%s chunk %d/%d transcribed', session_id, done, total)
+        return True
+
+    return _heartbeat
+
+
+def _ingest_source_to_markdown(session, tmp_path: str, progress_cb=None):
     """Branch step-1 ingestion on ``source_type``, operating on an on-disk file.
 
     Takes the temp FILE PATH already streamed to disk by
@@ -308,6 +344,9 @@ def _ingest_source_to_markdown(session, tmp_path: str):
     video is never re-materialized in worker RAM (the cause of the pipeline
     OOM-kill during frame extraction). PDFs are small, so the PDF branch still
     reads bytes; media streams from the file through ffmpeg.
+
+    ``progress_cb`` is forwarded to the (possibly chunked) media transcription
+    for heartbeat + mid-step cancellation; the PDF engine has its own paging.
 
     Returns ``(markdown, provider, model, page_count)``.
     """
@@ -323,6 +362,7 @@ def _ingest_source_to_markdown(session, tmp_path: str):
         )
     markdown, provider, model_name = transcribe_media_file(
         path=tmp_path, mime_type=mime or 'application/octet-stream',
+        progress_cb=progress_cb,
     )
     return markdown, provider, model_name, 0
 
@@ -336,6 +376,7 @@ def _ingest_source_to_markdown(session, tmp_path: str):
 def process_class_step1_transcription(self, session_id: int) -> dict:
     """Transcribe uploaded media (or extract a PDF) for a class creation session."""
     from .models import ClassCreationSession
+    from .services.transcription import TranscriptionAborted
 
     session = ClassCreationSession.objects.filter(id=session_id).first()
     if session is None:
@@ -353,7 +394,9 @@ def process_class_step1_transcription(self, session_id: int) -> dict:
 
         # Pass the on-disk temp path (NOT the full bytes) so media is streamed
         # through ffmpeg and never resident in RAM — prevents the worker OOM.
-        transcript, provider, model_name, page_count = _ingest_source_to_markdown(session, tmp_path)
+        transcript, provider, model_name, page_count = _ingest_source_to_markdown(
+            session, tmp_path, progress_cb=_make_step1_heartbeat(session.id),
+        )
         logger.info(
             "STEP1 task done: session=%s transcript_chars=%d pages=%s provider=%s",
             session.id, len(transcript or ""), page_count, provider,
@@ -370,6 +413,12 @@ def process_class_step1_transcription(self, session_id: int) -> dict:
         _cleanup_source_file(session)
 
         return {'status': 'success', 'session_id': session_id}
+    except TranscriptionAborted:
+        # Teacher cancelled (or deleted the session) mid-transcription. This is
+        # a terminal outcome, NOT a transient failure — never retry it.
+        logger.info('STEP1 task: session=%s transcription aborted (cancelled).', session_id)
+        _safe_mark_cancelled(session)
+        return {'status': 'cancelled', 'session_id': session_id}
     except Exception as exc:
         if tmp_path and os.path.exists(tmp_path):
             os.unlink(tmp_path)
@@ -645,6 +694,7 @@ def process_class_full_pipeline(self, session_id: int) -> dict:
 def process_exam_prep_step1_transcription(self, session_id: int) -> dict:
     """Transcribe uploaded media (or extract a PDF) for exam prep pipeline."""
     from .models import ClassCreationSession
+    from .services.transcription import TranscriptionAborted
 
     session = ClassCreationSession.objects.filter(id=session_id).first()
     if session is None:
@@ -662,7 +712,9 @@ def process_exam_prep_step1_transcription(self, session_id: int) -> dict:
 
         # Pass the on-disk temp path (NOT the full bytes) so media is streamed
         # through ffmpeg and never resident in RAM — prevents the worker OOM.
-        transcript, provider, model_name, page_count = _ingest_source_to_markdown(session, tmp_path)
+        transcript, provider, model_name, page_count = _ingest_source_to_markdown(
+            session, tmp_path, progress_cb=_make_step1_heartbeat(session.id),
+        )
         logger.info(
             "STEP1 task done: session=%s transcript_chars=%d pages=%s provider=%s",
             session.id, len(transcript or ""), page_count, provider,
@@ -678,6 +730,12 @@ def process_exam_prep_step1_transcription(self, session_id: int) -> dict:
         _cleanup_source_file(session)
 
         return {'status': 'success', 'session_id': session_id}
+    except TranscriptionAborted:
+        # Teacher cancelled (or deleted the session) mid-transcription — a
+        # terminal outcome, NOT a transient failure; never retry it.
+        logger.info('STEP1 task: session=%s transcription aborted (cancelled).', session_id)
+        _safe_mark_cancelled(session)
+        return {'status': 'cancelled', 'session_id': session_id}
     except Exception as exc:
         if tmp_path and os.path.exists(tmp_path):
             os.unlink(tmp_path)

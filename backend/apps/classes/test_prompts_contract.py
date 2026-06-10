@@ -52,7 +52,7 @@ LIVE_KEYS = {
     "chat_image_description": ["default"],
     "final_exam_pool": ["default"],
     "section_quiz": ["default"],
-    "transcribe_media": ["default"],
+    "transcribe_media": ["default", "chunked"],
     "memory_summary": ["default"],
     "exam_prep_chat": ["default"],
     "exam_prep_handwriting_vision": ["default"],
@@ -108,6 +108,10 @@ PLACEHOLDERS = {
     ("final_exam_pool", "default"): ["{pool_size}", "{combined_content}"],
     ("section_quiz", "default"): ["{count}", "{section_content}", "{{blank}}"],
     ("memory_summary", "default"): ["{old_summary}", "{new_turns}"],
+    # Chunked transcription continuation block (services/transcription.py).
+    ("transcribe_media", "chunked"): [
+        "{part_number}", "{total_parts}", "{previous_transcript_tail}",
+    ],
     ("exam_prep_chat", "default"): [
         "{question_context}", "{student_selected}", "{is_checked}", "{is_correct}",
         "{image_description}", "{history}", "{user_message}",

@@ -8,9 +8,17 @@ The gateway has NO video content type — only ``text``, ``image_url`` and
 
 This preserves both speech AND on-screen visual content (slides/whiteboard),
 which is why ``media_compressor`` deliberately never reduced video to audio-only.
-Frame budget is governed by the existing env knobs:
-``FRAME_EXTRACTION_FPS`` (default 0.25 = 1 frame / 4s), ``FRAME_HARD_CAP`` (16),
-``FRAME_MAX_FRAMES_FOR_MODEL`` (40), ``MAX_TOTAL_FRAME_BYTES_MB`` (3).
+Frame budget is governed by the env knobs:
+``FRAME_EXTRACTION_FPS`` (default 0.25 = 1 frame / 4s, fallback pass only),
+``FRAME_HARD_CAP`` (16), ``FRAME_MAX_FRAMES_FOR_MODEL`` (40),
+``MAX_TOTAL_FRAME_BYTES_MB`` (3 — a PER-REQUEST budget now that long media is
+transcribed chunk-by-chunk), and ``FRAME_MAX_WIDTH`` (960 — JPEG width cap;
+larger keeps slide/board text legible to the vision model).
+
+Long media support: ``extract_audio_mp3_chunks_from_path`` splits the audio
+track into sequential mp3 segments in ONE ffmpeg pass, and
+``extract_frames_jpeg_from_path`` accepts an optional time window so each
+transcription request carries the frames of ITS OWN audio segment.
 """
 from __future__ import annotations
 
@@ -76,6 +84,55 @@ def _write_bytes_to_temp(media_bytes: bytes, input_mime: str) -> str:
         fh.close()
 
 
+def probe_media_duration(in_path: str) -> float:
+    """Best-effort media duration in seconds via ffprobe; ``0.0`` if unknown.
+
+    Used by the transcription orchestrator to decide single-shot vs chunked
+    processing and to enforce the duration cap. Never raises.
+    """
+    try:
+        return max(0.0, float(_get_duration(in_path)))
+    except Exception:
+        return 0.0
+
+
+def extract_audio_mp3_chunks_from_path(
+    in_path: str,
+    *,
+    chunk_seconds: int,
+    workdir: str,
+) -> list[str]:
+    """Split the audio track into sequential small mono mp3 segments.
+
+    ONE ffmpeg pass (`-f segment`) re-encodes the audio to 16 kHz mono mp3 and
+    cuts it every ``chunk_seconds`` — no per-chunk seeks, no video decode, and
+    the source is never loaded into Python RAM. Segment files are written into
+    ``workdir`` (caller owns its lifetime) and the sorted paths are returned so
+    the caller can stream one chunk at a time instead of holding them all.
+    """
+    pattern = os.path.join(workdir, "audio-%04d.mp3")
+    args = [
+        "-nostdin",
+        "-i", in_path,
+        "-vn",                 # drop any video stream
+        "-ac", "1",            # mono
+        "-ar", "16000",        # 16 kHz is plenty for speech
+        "-c:a", "libmp3lame",
+        "-b:a", f"{_AUDIO_BITRATE_K}k",
+        "-f", "segment",
+        "-segment_time", str(int(chunk_seconds)),
+        "-reset_timestamps", "1",
+        pattern,
+    ]
+    ok, err = _run_ffmpeg(args, timeout=1800, label="ExtractAudioChunks")
+    if not ok:
+        raise RuntimeError(f"audio chunk extraction failed: {err[:300]}")
+    paths = sorted(glob(os.path.join(workdir, "audio-*.mp3")))
+    if not paths:
+        raise RuntimeError("audio chunk extraction produced no segments")
+    return paths
+
+
 def extract_audio_mp3_from_path(in_path: str) -> tuple[bytes, str]:
     """Re-encode the audio track of the media file at ``in_path`` to a small mono mp3.
 
@@ -102,8 +159,19 @@ def extract_audio_mp3_from_path(in_path: str) -> tuple[bytes, str]:
             return fh.read(), "mp3"
 
 
-def extract_frames_jpeg_from_path(in_path: str) -> list[bytes]:
-    """Sample up to ``FRAME_HARD_CAP`` frames from the video at ``in_path`` as JPEGs.
+def _frame_scale_filter() -> str:
+    width = max(320, _env_int("FRAME_MAX_WIDTH", 960))
+    return f"scale='min({width},iw)':-2"
+
+
+def extract_frames_jpeg_from_path(
+    in_path: str,
+    *,
+    start_ts: float | None = None,
+    end_ts: float | None = None,
+    max_frames: int | None = None,
+) -> list[bytes]:
+    """Sample evenly-spaced frames from the video at ``in_path`` as JPEGs.
 
     ffmpeg reads the file directly (the video is NEVER loaded into RAM). To bound
     BOTH ffmpeg's decode working set AND CPU, when the duration is known we use
@@ -112,10 +180,20 @@ def extract_frames_jpeg_from_path(in_path: str) -> list[bytes]:
     entire stream (the old post-decode ``fps`` filter forced a full-stream decode
     and dumped thousands of JPEGs to /tmp). Falls back to a single ``-frames:v``-
     capped ``fps`` pass when the duration can't be probed. Output stays within
-    ``MAX_TOTAL_FRAME_BYTES_MB``.
+    ``MAX_TOTAL_FRAME_BYTES_MB`` (a per-call budget).
+
+    Window mode (chunked transcription): pass ``start_ts``/``end_ts`` to sample
+    only inside that time window, and ``max_frames`` to override the default
+    frame cap — each audio chunk's request then carries the frames of its OWN
+    segment, so long lectures get dense visual coverage overall while every
+    individual request stays small.
     """
-    cap = min(max(1, _env_int("FRAME_HARD_CAP", 16)), max(1, _env_int("FRAME_MAX_FRAMES_FOR_MODEL", 40)))
+    env_cap = min(max(1, _env_int("FRAME_HARD_CAP", 16)), max(1, _env_int("FRAME_MAX_FRAMES_FOR_MODEL", 40)))
+    cap = min(max(1, max_frames), env_cap) if max_frames is not None else env_cap
     max_total_bytes = _env_int("MAX_TOTAL_FRAME_BYTES_MB", 3) * 1024 * 1024
+    scale = _frame_scale_filter()
+
+    windowed = start_ts is not None or end_ts is not None
 
     duration = 0.0
     try:
@@ -123,14 +201,26 @@ def extract_frames_jpeg_from_path(in_path: str) -> list[bytes]:
     except Exception:
         duration = 0.0
 
+    # Resolve the sampling window [w_start, w_end).
+    if windowed:
+        w_start = max(0.0, float(start_ts or 0.0))
+        w_end = float(end_ts) if end_ts is not None else duration
+        if w_end <= 0.0 and duration:
+            w_end = duration
+        span = w_end - w_start
+        if span <= 1.0:
+            return []
+    else:
+        w_start, span = 0.0, (duration if duration and duration > 1.0 else 0.0)
+
     frames: list[bytes] = []
     total = 0
 
     with tempfile.TemporaryDirectory() as tmp:
-        if duration and duration > 1.0:
+        if span > 1.0:
             # Duration-aware: ~cap evenly-spaced single-frame grabs via INPUT seek.
             for i in range(cap):
-                ts = duration * (i + 0.5) / cap
+                ts = w_start + span * (i + 0.5) / cap
                 out_path = os.path.join(tmp, f"frame-{i:04d}.jpg")
                 args = [
                     "-nostdin",
@@ -138,8 +228,8 @@ def extract_frames_jpeg_from_path(in_path: str) -> list[bytes]:
                     "-i", in_path,
                     "-frames:v", "1",
                     "-an", "-sn", "-dn",     # skip audio/subtitle/data decode
-                    "-vf", "scale='min(640,iw)':-2",
-                    "-q:v", "5",
+                    "-vf", scale,
+                    "-q:v", "4",
                     out_path,
                 ]
                 ok, _err = _run_ffmpeg(args, timeout=120, label=f"Frame{i:02d}")
@@ -151,6 +241,10 @@ def extract_frames_jpeg_from_path(in_path: str) -> list[bytes]:
                 with open(out_path, "rb") as fh:
                     frames.append(fh.read())
                 total += size
+        elif windowed:
+            # A window was requested but neither end_ts nor the probe gave a
+            # usable span — frame positions are unknowable; skip gracefully.
+            return []
         else:
             # Fallback (unknown duration): single pass at FRAME_EXTRACTION_FPS,
             # hard-capped output so a misdetected fps can never dump thousands.
@@ -160,9 +254,9 @@ def extract_frames_jpeg_from_path(in_path: str) -> list[bytes]:
                 "-nostdin",
                 "-an", "-sn", "-dn",
                 "-i", in_path,
-                "-vf", f"fps={fps},scale='min(640,iw)':-2",
+                "-vf", f"fps={fps},{scale}",
                 "-frames:v", str(cap),
-                "-q:v", "5",
+                "-q:v", "4",
                 pattern,
             ]
             ok, err = _run_ffmpeg(args, timeout=900, label="ExtractFrames")

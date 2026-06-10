@@ -96,11 +96,17 @@ git push origin main
 | `IMAGE_MODEL` | `models/gemini-2.0-flash` |
 | `EMBEDDING_MODEL_NAME` | `models/gemini-embedding-001` |
 | `GENAI_HTTP_TIMEOUT` | `1000` |
-| `TRANSCRIBE_CHUNK_SECONDS` | `20` |
+| `TRANSCRIPTION_CHUNK_SECONDS` | `600` (طول هر قطعه صوت برای رونویسی قطعه‌به‌قطعه ویدیوهای طولانی) |
+| `TRANSCRIPTION_FRAMES_PER_CHUNK` | `8` (تعداد فریم ضمیمه هر قطعه) |
+| `TRANSCRIPTION_MAX_DURATION_SECONDS` | `14400` (سقف مدت فایل = ۴ ساعت؛ `0` یعنی بدون سقف) |
+| `TRANSCRIPTION_FORCE_CHUNK_MB` | `80` (اگر مدت فایل قابل‌خواندن نبود ولی حجم بیشتر از این بود، باز هم قطعه‌قطعه شود) |
 | `FRAME_MAX_FRAMES_FOR_MODEL` | `40` |
 | `FRAME_HARD_CAP` | `16` |
-| `MAX_TOTAL_FRAME_BYTES_MB` | `3` |
+| `FRAME_MAX_WIDTH` | `960` (عرض JPEG فریم‌ها — خوانایی متن اسلاید/تخته) |
+| `MAX_TOTAL_FRAME_BYTES_MB` | `3` (بودجه فریم در **هر درخواست**) |
 | `FRAME_EXTRACTION_FPS` | `0.25` |
+
+> ⚠️ متغیر قدیمی `TRANSCRIBE_CHUNK_SECONDS` مرده بود (هیچ کدی آن را نمی‌خواند) و حذف شد — اگر در env پروداکشن هنوز هست، بی‌اثر است؛ می‌توانید پاکش کنید.
 
 ### ۳.۵. SMS
 

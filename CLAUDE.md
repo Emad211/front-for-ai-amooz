@@ -21,6 +21,8 @@ front-for-ai-amooz/
 ├── pytest.ini                  # Root pytest config (pythonpath=backend, testpaths=backend)
 ├── k8s/ , nginx/               # Deployment manifests + reverse proxy
 ├── tests/ , test_api_live.ps1  # Cross-service / live API smoke tests
+├── AvalAI-Developer-Documentation.md  # Avalai LLM gateway API docs (read before touching LLM calls)
+├── Hamravesh-Docs-Summary.md   # Hosting platform (Hamravesh/Darkube) docs digest
 └── MEDIANA DOCUMENT.json       # Mediana SMS provider API reference
 ```
 
@@ -28,7 +30,7 @@ front-for-ai-amooz/
 
 ## Tech stack
 
-**Frontend:** Next.js 15.5 (App Router, `output: standalone`), React 19, TypeScript (strict), Tailwind CSS 3 (HSL CSS-variable tokens), shadcn/ui + Radix primitives, lucide icons, react-hook-form + zod, framer-motion, recharts, sonner, next-themes, KaTeX, Vazirmatn font. (Genkit deps are present but `src/ai/` is currently empty — all real AI work lives in the backend.)
+**Frontend:** Next.js 15.5 (App Router, `output: standalone`), React 19, TypeScript (strict), Tailwind CSS 3 (HSL CSS-variable tokens), shadcn/ui + Radix primitives, lucide icons, react-hook-form + zod, framer-motion, recharts, sonner, next-themes, KaTeX, Vazirmatn font. (Genkit deps and the `genkit:*` npm scripts are leftovers — `src/ai/` no longer exists, so those scripts are dead; all real AI work lives in the backend.)
 
 **Backend:** Django 5 + Django REST Framework, SimpleJWT auth, drf-spectacular (OpenAPI), Celery 5 + Redis (broker/result + cache), PostgreSQL (psycopg2), django-storages + boto3 for S3-compatible storage (MinIO locally), WhiteNoise, Gunicorn. LLM via `google-genai` (Gemini) and the `openai` client pointed at Avalai. PDF: pdfplumber / pypdf / pypdfium2 (ingest) and WeasyPrint (export). Media: ffmpeg.
 
@@ -97,7 +99,7 @@ Project package: `backend/core/` — `settings.py`, `urls.py`, `celery.py`, `mid
 
 Django apps under `backend/apps/` (all routed in `core/urls.py`):
 
-- **accounts** — custom user model (`AUTH_USER_MODEL = 'accounts.User'`); `/api/accounts/`
+- **accounts** — custom user model (`AUTH_USER_MODEL = 'accounts.User'`) with platform roles `ADMIN` / `TEACHER` / `STUDENT` / `MANAGER` (org manager — granted on redeeming an org admin/deputy invite, or assigned from the admin panel); `/api/accounts/`
 - **authentication** — JWT login by identifier, OpenAPI serializers; `/api/auth/`
 - **classes** — **the core domain**: courses/chapters, the AI processing pipeline, student chat, quizzes, exam prep, PDF export; `/api/classes/`
 - **organizations** — multi-tenant orgs; `/api/organizations/`
@@ -117,6 +119,8 @@ Long-running LLM work runs as Celery tasks on the dedicated **`pipeline`** queue
 
 `process_class_full_pipeline` chains them; an analogous `process_exam_prep_*` set handles exam prep. SMS notifications and `cleanup_stale_sessions` (a Celery-beat job) run on the **`default`** queue.
 
+Both pipelines are **cancellable**: owner-only `POST …/<id>/cancel/` endpoints (class + exam-prep) set `cancel_requested` and hard-revoke the persisted `celery_task_id`; the full-pipeline tasks also check cooperative cancellation checkpoints between steps, ending the session in the terminal `CANCELLED` status. Preserve those checkpoints when reordering steps.
+
 Pure logic lives in `apps/classes/services/` (keep it out of views/tasks): `pdf_extraction.py`, `structure.py`, `transcription.py`, `prerequisites.py`, `recap.py`, `quizzes.py`, `pdf_export.py` (WeasyPrint), `media_compressor.py` (ffmpeg), `mediana_sms.py`. `views.py` is very large — search before editing.
 
 **LLM → JSON handling (new convention):** the canonical robust extractor is `apps/commons/json_utils.py` (`extract_json_object`); `apps/classes/services/json_utils.py` just re-exports it. For any NEW pipeline JSON, prefer `apps/commons/structured_llm.py` — `generate_structured(schema=PydanticModel, ...)` (JSON-mode + Pydantic validation + one repair round-trip, **raises** instead of returning `{}`) or `validate_keep_dict(text, schema)` when you must preserve the model's exact dict (e.g. `structure.py`). Pydantic schemas live in `apps/classes/services/schemas.py`. Don't reintroduce raw `extract_json_object` + silent-`{}`.
@@ -128,6 +132,8 @@ Pure logic lives in `apps/classes/services/` (keep it out of views/tasks): `pdf_
 
 **Avalai API reference: [`AvalAI-Developer-Documentation.md`](AvalAI-Developer-Documentation.md)** (repo root) — the gateway's full developer docs (endpoints, models, multimodal shapes, limits/errors). Consult it before touching any LLM call. Key rule: multimodal MUST use the **standard** OpenAI shapes — `content:[{type:'image_url',image_url:{url:'data:…'}}]` for images, `{type:'input_audio',input_audio:{data,format}}` for audio (or the dedicated `POST /v1/audio/transcriptions`). The legacy `attachments/input_media/data_base64` shape is **silently ignored** by the gateway (that historical bug caused hallucinated/empty transcripts; large payloads over a flaky link also surfaced as `SSL: UNEXPECTED_EOF_WHILE_READING`). **Fixed:** `transcription.py` now extracts audio (mp3 → `input_audio`) + sampled frames (jpeg → `image_url`, governed by the `FRAME_*` env knobs) via `transcription_media.py` and sends the standard shape. Build any new multimodal call the same way.
 
+**Long media is transcribed chunk-by-chunk** (`transcription.py`): media longer than ~1.5× `TRANSCRIPTION_CHUNK_SECONDS` (default 600 s) is split into sequential mono-mp3 segments (one ffmpeg `-f segment` pass); each segment is ONE small LLM request carrying the frames of its own time window (`TRANSCRIPTION_FRAMES_PER_CHUNK`) and the tail of the transcript so far (prompt `transcribe_media.chunked`). This is what makes 500 MB / multi-hour lectures survive the gateway (the old single request hit body limits and silent output-token truncation). A `progress_cb` heartbeat between chunks bumps `updated_at` (so `cleanup_stale_sessions` never reaps a live run) and aborts on `cancel_requested` (`TranscriptionAborted` → CANCELLED, never retried). Duration cap: `TRANSCRIPTION_MAX_DURATION_SECONDS` (default 4 h). Don't collapse this back into a single request, and keep `transcribe_media_bytes` (chat audio path) single-shot.
+
 ### Storage
 S3-compatible via django-storages. Active only when `AWS_STORAGE_BUCKET_NAME` is set (MinIO locally, object storage in prod). When no public custom domain is configured, media is served through a Django proxy (`/media/<path>`); otherwise from the bucket.
 
@@ -137,7 +143,7 @@ SimpleJWT (short-lived access + refresh). DRF with serializers for validation, p
 ## Frontend architecture
 
 App Router with route groups under `frontend/src/app/`:
-`(marketing)` landing · `(auth)` login/signup/join-code · `(dashboard)` student area (home, classes, learn, exam, exam-prep, calendar, profile, notifications, tickets) · `(teacher)` · `(admin)`.
+`(marketing)` landing · `(auth)` login/signup/join-code · `(dashboard)` student area (home, classes, learn, exam, exam-prep, calendar, profile, notifications, tickets) · `(teacher)` · `(admin)` — plus top-level `start/` (teacher-vs-student role picker) and `join/` (organization invite-code redemption).
 
 - **`src/services/*.ts`** — the API layer; every backend call goes through a service (`auth-service`, `classes-service`, `admin-service`, etc.). Don't `fetch` ad hoc from components.
 - **`src/components/ui/`** — shadcn primitives. Aliases (`components.json`): `@/components`, `@/lib`, `@/lib/utils`, `@/components/ui`, `@/hooks`. Path alias `@/* → src/*`.
@@ -166,14 +172,15 @@ Prod runs on **Hamravesh** — its managed-Kubernetes PaaS is branded **Darkube*
 
 ## Gotchas
 
-- **Frontend dev port is 9002**, not 3000 (the README's "3000" is the production `npm start` port).
-- **Local dev requires `frontend/.env.local` with `NEXT_PUBLIC_API_URL=http://localhost:8000`.** Five services (`teacher`/`admin`/`classes`/`dashboard`/`organization`) build absolute URLs from this var and **throw `NEXT_PUBLIC_API_URL تنظیم نشده است`** if it's unset (only `auth`/`user` fall back to the relative `/api` proxy). Don't set it to the frontend's own origin (`:9002`) — `next.config.ts` uses the same var as its rewrite target, so that makes the `/api` proxy loop into itself and 500.
+- **Frontend dev port is 9002**, not 3000 (the README's "3000" is the production `npm start` port). The README is stale in general (old env-var examples, old ports) — when it disagrees with this file, trust this file.
+- **Local dev requires `frontend/.env.local` with `NEXT_PUBLIC_API_URL=http://localhost:8000`.** Five services (`teacher`/`admin`/`classes`/`dashboard`/`organization`) build absolute URLs from this var and **throw `NEXT_PUBLIC_API_URL تنظیم نشده است`** if it's unset (only `auth`/`user` fall back to the relative `/api` proxy). Don't set it to the frontend's own origin (`:9002`) — `next.config.ts` uses the same var as its rewrite target, so that makes the `/api` proxy loop into itself and 500. Use the bare backend origin: services tolerate a trailing `/api` (they normalize), but the rewrite target does not.
+- **Don't "simplify" the `/api` rewrite or remove `skipTrailingSlashRedirect` in `next.config.ts`.** Django URLs end in `/` and `APPEND_SLASH` cannot redirect a POST body (it 500s). Next's default trailing-slash 308 and the `:path*` rewrite token both strip the trailing slash, so the config deliberately uses `skipTrailingSlashRedirect: true` + a `:path(.*)` capture so `/api/foo/` reaches Django verbatim. Reverting either breaks every proxied POST/PUT/PATCH/DELETE.
 - `next.config.ts` sets `typescript.ignoreBuildErrors: true` and `eslint.ignoreDuringBuilds: true`, so **`next build` will not catch type/lint errors** — always run `npm run typecheck` and `npm run lint` yourself.
 - The Django project package is **`core`**, not `config` — `WSGI_APPLICATION = 'core.wsgi.application'`, so use `core.wsgi` / `celery -A core`. There are two backend Dockerfiles, both now correctly targeting `core.wsgi`: the **root `Dockerfile`** (production — copies `backend/`, runs `migrate` + `collectstatic` + env-tunable gunicorn) and the simpler **`backend/Dockerfile`**. (Historically `backend/Dockerfile` pointed at the nonexistent `config.wsgi:application` — that bug is now fixed; flag any reappearance.)
 - Celery long-task limits are large (hard 2h / soft 100min) and `prefetch=1` — the pipeline is meant for slow LLM/media work; don't put quick tasks on the `pipeline` queue.
 - `.env` files are git-ignored; only `*.env.example` are committed. Never commit real keys (Gemini, Avalai, Mediana, AWS/MinIO).
 - **Mediana** = the SMS provider (`apps/classes/services/mediana_sms.py`, `MEDIANA_API_KEY`); `MEDIANA DOCUMENT.json` is its API reference.
-- Production host is **Hamravesh/Darkube** (`aiamoooz.darkube.ir` / `.app`) — see the **Production deployment** section above and `backend/DEPLOY_CHECKLIST.md`, `docker-compose.prod.yml`, `k8s/`.
+- Production host is **Hamravesh/Darkube** (`aiamoooz.darkube.ir` / `.app`) — see the **Production deployment** section above and `backend/DEPLOY_CHECKLIST.md`, `docker-compose.prod.yml`, `k8s/`, `Hamravesh-Docs-Summary.md`.
 
 ## Reducing token usage
 
