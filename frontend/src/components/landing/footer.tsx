@@ -17,7 +17,7 @@ export function LandingFooter() {
     <footer className="relative overflow-hidden">
       {/* Background */}
       <div className="absolute inset-0 bg-gradient-to-b from-background via-muted/80 to-muted" />
-      <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_bottom,rgba(var(--primary-rgb),0.05),transparent_70%)]" />
+      <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_bottom,hsl(var(--primary)/0.06),transparent_70%)]" />
       
       <div className="container mx-auto px-4 py-16 md:py-20 relative z-10">
         {/* Mobile Footer */}
@@ -73,7 +73,7 @@ export function LandingFooter() {
           <div className="grid grid-cols-2 gap-3 text-center mb-8">
             {[
               { href: '#features', label: 'ویژگی‌ها' },
-              { href: '#how-it-works', label: 'نحوه کار' },
+              { href: '#why-us', label: 'نحوه کار' },
               { href: '#faq', label: 'سوالات متداول' },
               { href: '/admin-login', label: 'پنل مدیریت', highlight: true },
             ].map((link) => (
@@ -164,7 +164,7 @@ export function LandingFooter() {
               <ul className="space-y-3">
                 {[
                   { href: '#features', label: 'ویژگی‌ها' },
-                  { href: '#how-it-works', label: 'نحوه کار' },
+                  { href: '#why-us', label: 'نحوه کار' },
                   { href: '#faq', label: 'سوالات متداول' },
                   { href: '/admin-login', label: 'پنل مدیریت', highlight: true },
                 ].map((link) => (

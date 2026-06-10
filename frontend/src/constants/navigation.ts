@@ -22,7 +22,7 @@ import { NavSection, NavItem } from '@/types';
 
 export const LANDING_NAV_LINKS = [
   { href: "#features", label: "ویژگی‌ها" },
-  { href: "#how-it-works", label: "نحوه کار" },
+  { href: "#why-us", label: "نحوه کار" },
   { href: "#faq", label: "سوالات متداول" },
 ];
 
