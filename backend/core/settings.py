@@ -449,6 +449,12 @@ CELERY_TASK_DEFAULT_QUEUE = 'default'
 CELERY_TASK_TIME_LIMIT = _get_env_int('CELERY_TASK_TIME_LIMIT', 2 * 60 * 60)       # 2 h
 CELERY_TASK_SOFT_TIME_LIMIT = _get_env_int('CELERY_TASK_SOFT_TIME_LIMIT', 100 * 60)  # 100 min
 CELERY_WORKER_PREFETCH_MULTIPLIER = 1   # important for long-running tasks
+# Recycle a worker child once its resident memory exceeds this (KiB) AFTER the
+# current task finishes — a graceful safety net against RAM creep in the
+# media/ffmpeg pipeline, so the child restarts itself instead of the kernel
+# OOM-killing the whole pod cgroup. Default ~1.43 GiB; set 0 to disable. The
+# primary OOM fix is the path-based (never-load-the-video-into-RAM) ingest.
+CELERY_WORKER_MAX_MEMORY_PER_CHILD = _get_env_int('CELERY_WORKER_MAX_MEMORY_PER_CHILD', 1_500_000)
 CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = True
 
 # Route heavy pipeline tasks to a dedicated queue so SMS / fast tasks

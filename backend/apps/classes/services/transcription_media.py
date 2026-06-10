@@ -19,7 +19,7 @@ import os
 import tempfile
 from glob import glob
 
-from .media_compressor import _get_file_size, _run_ffmpeg
+from .media_compressor import _get_duration, _get_file_size, _run_ffmpeg
 
 logger = logging.getLogger(__name__)
 
@@ -61,19 +61,31 @@ def _ext_for(mime: str) -> str:
     return _EXT_MAP.get((mime or "").lower(), ".bin")
 
 
-def extract_audio_mp3(media_bytes: bytes, input_mime: str) -> tuple[bytes, str]:
-    """Re-encode the audio track of ``media_bytes`` to a small mono mp3.
+def _write_bytes_to_temp(media_bytes: bytes, input_mime: str) -> str:
+    """Write ``media_bytes`` to a NamedTemporaryFile and return its path.
 
+    The caller is responsible for unlinking the returned path. Used only by the
+    bytes-based wrappers below so in-memory callers can reuse the path-based
+    extractors without duplicating ffmpeg logic.
+    """
+    fh = tempfile.NamedTemporaryFile(delete=False, suffix=_ext_for(input_mime))
+    try:
+        fh.write(media_bytes)
+        return fh.name
+    finally:
+        fh.close()
+
+
+def extract_audio_mp3_from_path(in_path: str) -> tuple[bytes, str]:
+    """Re-encode the audio track of the media file at ``in_path`` to a small mono mp3.
+
+    ffmpeg reads the file directly — the media is NEVER loaded into Python RAM.
     Works for both video (audio track) and audio inputs. Returns ``(bytes, "mp3")``.
-    Normalising to mp3 also fixes oversized raw audio that previously got rejected.
     """
     with tempfile.TemporaryDirectory() as tmp:
-        in_path = os.path.join(tmp, "input" + _ext_for(input_mime))
         out_path = os.path.join(tmp, "audio.mp3")
-        with open(in_path, "wb") as fh:
-            fh.write(media_bytes)
-
         args = [
+            "-nostdin",
             "-i", in_path,
             "-vn",                 # drop any video stream
             "-ac", "1",            # mono
@@ -90,56 +102,110 @@ def extract_audio_mp3(media_bytes: bytes, input_mime: str) -> tuple[bytes, str]:
             return fh.read(), "mp3"
 
 
-def extract_frames_jpeg(video_bytes: bytes, input_mime: str) -> list[bytes]:
-    """Sample frames from a video as JPEGs, bounded by the FRAME_* env budget.
+def extract_frames_jpeg_from_path(in_path: str) -> list[bytes]:
+    """Sample up to ``FRAME_HARD_CAP`` frames from the video at ``in_path`` as JPEGs.
 
-    Returns a list of JPEG byte blobs (possibly empty if extraction yields none).
-    Selection: sample at ``FRAME_EXTRACTION_FPS``, then evenly downselect to
-    ``FRAME_HARD_CAP`` frames, then trim from the end until the total is within
+    ffmpeg reads the file directly (the video is NEVER loaded into RAM). To bound
+    BOTH ffmpeg's decode working set AND CPU, when the duration is known we use
+    **input-side ``-ss`` seeking**: one cheap ffmpeg invocation per evenly-spaced
+    timestamp decodes only ~1 frame near a keyframe — instead of decoding the
+    entire stream (the old post-decode ``fps`` filter forced a full-stream decode
+    and dumped thousands of JPEGs to /tmp). Falls back to a single ``-frames:v``-
+    capped ``fps`` pass when the duration can't be probed. Output stays within
     ``MAX_TOTAL_FRAME_BYTES_MB``.
     """
-    fps = _env_float("FRAME_EXTRACTION_FPS", 0.25)
-    hard_cap = max(1, _env_int("FRAME_HARD_CAP", 16))
-    max_for_model = max(1, _env_int("FRAME_MAX_FRAMES_FOR_MODEL", 40))
-    cap = min(hard_cap, max_for_model)
+    cap = min(max(1, _env_int("FRAME_HARD_CAP", 16)), max(1, _env_int("FRAME_MAX_FRAMES_FOR_MODEL", 40)))
     max_total_bytes = _env_int("MAX_TOTAL_FRAME_BYTES_MB", 3) * 1024 * 1024
 
+    duration = 0.0
+    try:
+        duration = _get_duration(in_path)
+    except Exception:
+        duration = 0.0
+
+    frames: list[bytes] = []
+    total = 0
+
     with tempfile.TemporaryDirectory() as tmp:
-        in_path = os.path.join(tmp, "input" + _ext_for(input_mime))
-        with open(in_path, "wb") as fh:
-            fh.write(video_bytes)
+        if duration and duration > 1.0:
+            # Duration-aware: ~cap evenly-spaced single-frame grabs via INPUT seek.
+            for i in range(cap):
+                ts = duration * (i + 0.5) / cap
+                out_path = os.path.join(tmp, f"frame-{i:04d}.jpg")
+                args = [
+                    "-nostdin",
+                    "-ss", f"{ts:.3f}",      # input-side seek (before -i): no full decode
+                    "-i", in_path,
+                    "-frames:v", "1",
+                    "-an", "-sn", "-dn",     # skip audio/subtitle/data decode
+                    "-vf", "scale='min(640,iw)':-2",
+                    "-q:v", "5",
+                    out_path,
+                ]
+                ok, _err = _run_ffmpeg(args, timeout=120, label=f"Frame{i:02d}")
+                if not ok or not os.path.exists(out_path):
+                    continue
+                size = _get_file_size(out_path)
+                if frames and total + size > max_total_bytes:
+                    break
+                with open(out_path, "rb") as fh:
+                    frames.append(fh.read())
+                total += size
+        else:
+            # Fallback (unknown duration): single pass at FRAME_EXTRACTION_FPS,
+            # hard-capped output so a misdetected fps can never dump thousands.
+            fps = _env_float("FRAME_EXTRACTION_FPS", 0.25)
+            pattern = os.path.join(tmp, "frame-%04d.jpg")
+            args = [
+                "-nostdin",
+                "-an", "-sn", "-dn",
+                "-i", in_path,
+                "-vf", f"fps={fps},scale='min(640,iw)':-2",
+                "-frames:v", str(cap),
+                "-q:v", "5",
+                pattern,
+            ]
+            ok, err = _run_ffmpeg(args, timeout=900, label="ExtractFrames")
+            if not ok:
+                logger.warning("frame extraction failed (continuing audio-only): %s", err[:300])
+                return []
+            for p in sorted(glob(os.path.join(tmp, "frame-*.jpg")))[:cap]:
+                size = _get_file_size(p)
+                if frames and total + size > max_total_bytes:
+                    break
+                with open(p, "rb") as fh:
+                    frames.append(fh.read())
+                total += size
 
-        pattern = os.path.join(tmp, "frame-%04d.jpg")
-        args = [
-            "-i", in_path,
-            # sample fps, downscale to <=640px wide (keep aspect, even dims), mid JPEG quality
-            "-vf", f"fps={fps},scale='min(640,iw)':-2",
-            "-q:v", "5",
-            pattern,
-        ]
-        ok, err = _run_ffmpeg(args, timeout=900, label="ExtractFrames")
-        if not ok:
-            logger.warning("frame extraction failed (continuing audio-only): %s", err[:300])
-            return []
+    logger.info("Extracted %d frame(s) (~%d bytes) for transcription.", len(frames), total)
+    return frames
 
-        paths = sorted(glob(os.path.join(tmp, "frame-*.jpg")))
-        if not paths:
-            return []
 
-        # Evenly downselect to the cap.
-        if len(paths) > cap:
-            step = len(paths) / cap
-            paths = [paths[int(i * step)] for i in range(cap)]
+def extract_audio_mp3(media_bytes: bytes, input_mime: str) -> tuple[bytes, str]:
+    """Bytes-based wrapper around :func:`extract_audio_mp3_from_path`.
 
-        frames: list[bytes] = []
-        total = 0
-        for p in paths:
-            size = _get_file_size(p)
-            if frames and total + size > max_total_bytes:
-                break  # stay within the byte budget
-            with open(p, "rb") as fh:
-                frames.append(fh.read())
-            total += size
+    Kept for callers that already hold the media in memory (small audio chat
+    uploads, the synchronous request path, tests). Writes the bytes to a temp
+    file once and delegates. The memory-heavy Celery pipeline uses the
+    ``*_from_path`` API directly so a large video is never resident in RAM.
+    """
+    path = _write_bytes_to_temp(media_bytes, input_mime)
+    try:
+        return extract_audio_mp3_from_path(path)
+    finally:
+        try:
+            os.unlink(path)
+        except OSError:
+            pass
 
-        logger.info("Extracted %d frame(s) (~%d bytes) for transcription.", len(frames), total)
-        return frames
+
+def extract_frames_jpeg(video_bytes: bytes, input_mime: str) -> list[bytes]:
+    """Bytes-based wrapper around :func:`extract_frames_jpeg_from_path`."""
+    path = _write_bytes_to_temp(video_bytes, input_mime)
+    try:
+        return extract_frames_jpeg_from_path(path)
+    finally:
+        try:
+            os.unlink(path)
+        except OSError:
+            pass

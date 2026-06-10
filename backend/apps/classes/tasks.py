@@ -266,24 +266,29 @@ def _run_pipeline_step(
 # Step-1 ingestion dispatch (media transcription OR PDF extraction)
 # ---------------------------------------------------------------------------
 
-def _ingest_source_to_markdown(session, data):
-    """Branch step-1 ingestion on ``source_type``.
+def _ingest_source_to_markdown(session, tmp_path: str):
+    """Branch step-1 ingestion on ``source_type``, operating on an on-disk file.
 
-    Returns ``(markdown, provider, model, page_count)``. PDF sources go through
-    the hybrid PDF engine; media through transcription.
+    Takes the temp FILE PATH already streamed to disk by
+    ``_read_session_file_to_disk`` — NOT the full bytes — so a large lecture
+    video is never re-materialized in worker RAM (the cause of the pipeline
+    OOM-kill during frame extraction). PDFs are small, so the PDF branch still
+    reads bytes; media streams from the file through ffmpeg.
+
+    Returns ``(markdown, provider, model, page_count)``.
     """
     from .models import ClassCreationSession
-    from .services.transcription import transcribe_media_bytes
+    from .services.transcription import transcribe_media_file
     from .services.pdf_extraction import extract_pdf_to_markdown
 
     mime = session.source_mime_type or ''
     if session.source_type == ClassCreationSession.SourceType.PDF:
         return extract_pdf_to_markdown(
-            data=data, mime_type=mime or 'application/pdf',
+            data=_read_file_bytes(tmp_path), mime_type=mime or 'application/pdf',
             asset_prefix=f'class_creation/extracted/{session.id}',
         )
-    markdown, provider, model_name = transcribe_media_bytes(
-        data=data, mime_type=mime or 'application/octet-stream',
+    markdown, provider, model_name = transcribe_media_file(
+        path=tmp_path, mime_type=mime or 'application/octet-stream',
     )
     return markdown, provider, model_name, 0
 
@@ -307,13 +312,14 @@ def process_class_step1_transcription(self, session_id: int) -> dict:
     tmp_path: str | None = None
     try:
         tmp_path = _read_session_file_to_disk(session)
-        data = _read_file_bytes(tmp_path)
         logger.info(
-            "STEP1 task: session=%s source_type=%s file=%r bytes=%d",
-            session.id, session.source_type, session.source_file.name if session.source_file else None, len(data),
+            "STEP1 task: session=%s source_type=%s file=%r",
+            session.id, session.source_type, session.source_file.name if session.source_file else None,
         )
 
-        transcript, provider, model_name, page_count = _ingest_source_to_markdown(session, data)
+        # Pass the on-disk temp path (NOT the full bytes) so media is streamed
+        # through ffmpeg and never resident in RAM — prevents the worker OOM.
+        transcript, provider, model_name, page_count = _ingest_source_to_markdown(session, tmp_path)
         logger.info(
             "STEP1 task done: session=%s transcript_chars=%d pages=%s provider=%s",
             session.id, len(transcript or ""), page_count, provider,
@@ -603,13 +609,14 @@ def process_exam_prep_step1_transcription(self, session_id: int) -> dict:
     tmp_path: str | None = None
     try:
         tmp_path = _read_session_file_to_disk(session)
-        data = _read_file_bytes(tmp_path)
         logger.info(
-            "STEP1 task: session=%s source_type=%s file=%r bytes=%d",
-            session.id, session.source_type, session.source_file.name if session.source_file else None, len(data),
+            "STEP1 task: session=%s source_type=%s file=%r",
+            session.id, session.source_type, session.source_file.name if session.source_file else None,
         )
 
-        transcript, provider, model_name, page_count = _ingest_source_to_markdown(session, data)
+        # Pass the on-disk temp path (NOT the full bytes) so media is streamed
+        # through ffmpeg and never resident in RAM — prevents the worker OOM.
+        transcript, provider, model_name, page_count = _ingest_source_to_markdown(session, tmp_path)
         logger.info(
             "STEP1 task done: session=%s transcript_chars=%d pages=%s provider=%s",
             session.id, len(transcript or ""), page_count, provider,
