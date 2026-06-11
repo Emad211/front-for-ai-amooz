@@ -8,7 +8,7 @@ import {
   MessagesSquare,
   LayoutGrid,
   BarChart3,
-  Sparkles,
+  HelpCircle,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -62,8 +62,8 @@ export const WhyUsSection = () => {
           transition={{ duration: 0.6 }}
           className="mx-auto mb-14 max-w-3xl text-center"
         >
-          <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/10 px-4 py-1.5 text-sm font-medium text-primary">
-            <Sparkles className="h-4 w-4" />
+          <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-primary/40 bg-primary/10 px-4 py-1.5 text-sm font-medium text-primary">
+            <HelpCircle className="h-4 w-4" />
             چرا ما
           </div>
           <h2 className="text-3xl font-black text-foreground md:text-5xl">
@@ -83,8 +83,9 @@ export const WhyUsSection = () => {
                 index % 3 !== 0 ? 'lg:border-r lg:border-border/40' : ''
               }`}
             >
-              <div className="mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-2xl border border-primary/20 bg-primary/10 text-primary">
-                <reason.icon className="h-7 w-7" />
+              {/* Bare mint icon — the Figma design uses no box around why-us icons */}
+              <div className="mx-auto mb-5 flex h-10 w-10 items-center justify-center text-primary">
+                <reason.icon className="h-10 w-10" strokeWidth={1.75} />
               </div>
               <h3 className="mb-2 text-xl font-bold text-foreground">{reason.title}</h3>
               <p className="text-sm leading-7 text-muted-foreground">{reason.description}</p>

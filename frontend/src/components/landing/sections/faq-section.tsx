@@ -78,7 +78,7 @@ export const FAQSection = () => {
               <AccordionItem
                 key={faq.id}
                 value={faq.id}
-                className="group overflow-hidden rounded-2xl border border-border/60 bg-card/60 px-5 backdrop-blur-sm transition-all duration-300 hover:border-primary/30 data-[state=open]:border-primary/40 md:px-6"
+                className="group overflow-hidden rounded-2xl border border-border/60 bg-card/60 px-5 backdrop-blur-sm transition-all duration-300 hover:border-primary/30 data-[state=open]:border-primary/40 dark:bg-transparent dark:bg-gradient-to-br dark:from-card/80 dark:to-card/50 md:px-6"
               >
                 <AccordionTrigger className="py-5 text-right text-base font-bold transition-colors hover:no-underline group-hover:text-primary md:text-lg">
                   <div className="flex w-full items-center gap-3">

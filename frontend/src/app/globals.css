@@ -41,7 +41,7 @@
   }
 
   .dark {
-    --background: 224 71% 4%; /* #050A19 */
+    --background: 223 70% 4%; /* #030711 — Figma dark redesign page bg */
     --foreground: 210 40% 98%;
 
     --card: 224 33% 12%; /* #141B2D */

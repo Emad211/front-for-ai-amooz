@@ -9,10 +9,12 @@ import { Button } from '@/components/ui/button';
 export const FinalCTASection = () => {
   return (
     <section className="relative overflow-hidden py-20 md:py-32">
-      {/* Emerald glow */}
+      {/* Emerald glow + the Figma diamond light-beam behind the headline */}
       <div className="pointer-events-none absolute inset-0 -z-10">
         <div className="absolute bottom-0 left-1/2 h-[28rem] w-[44rem] -translate-x-1/2 rounded-full bg-primary/15 blur-[130px]" />
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_bottom,hsl(var(--primary)/0.12),transparent_60%)]" />
+        <div className="absolute left-1/2 top-1/2 hidden h-72 w-72 -translate-x-1/2 -translate-y-1/2 rotate-45 rounded-3xl bg-foreground/10 blur-[80px] dark:block md:h-96 md:w-96" />
+        <div className="absolute left-1/2 top-1/2 hidden h-[34rem] w-[34rem] -translate-x-1/2 -translate-y-1/2 rotate-45 rounded-[4rem] bg-primary/10 blur-[110px] dark:block" />
       </div>
 
       <div className="container mx-auto px-4">
@@ -23,7 +25,7 @@ export const FinalCTASection = () => {
           transition={{ duration: 0.7 }}
           className="mx-auto max-w-2xl text-center"
         >
-          <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/10 px-4 py-1.5 text-sm font-medium text-primary">
+          <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/10 px-4 py-1.5 text-sm font-medium text-primary dark:border-white/10 dark:bg-[#070B15] dark:text-foreground">
             <Rocket className="h-4 w-4" />
             همین حالا شروع کن
           </div>
@@ -40,7 +42,7 @@ export const FinalCTASection = () => {
             <Button
               asChild
               size="lg"
-              className="group h-14 px-10 text-lg shadow-lg shadow-primary/25"
+              className="group h-14 w-full rounded-[10px] px-10 text-lg shadow-[0_25px_50px_-12px_hsl(var(--primary)/0.3)] dark:bg-gradient-to-l dark:from-primary dark:to-primary/90 dark:text-white sm:w-auto md:h-16"
             >
               <Link href="/start">
                 شروع سفر

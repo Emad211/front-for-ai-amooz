@@ -9,23 +9,30 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 const TESTIMONIALS = [
   {
     content:
-      'با AI-Amooz تونستم مفاهیم پیچیده ریاضی رو به سادگی یاد بگیرم. دستیار هوشمندش همیشه برای رفع اشکال کنارم بود و باعث شد با اعتماد به نفس بیشتری برای کنکور آماده بشم.',
+      'شب‌های امتحان همیشه یک سوال بی‌جواب داشتم و کسی نبود که ازش بپرسم. الان ساعت ۱۱ شب هم که روی یک مسئله گیر می‌کنم، دستیار هوشمند با چند روش مختلف برام حلش می‌کنه. ترازم تو چهار ماه از ۵۴۰۰ رسید به ۶۲۰۰ و روزی که کارنامه اومد، رتبه ۱۲۳ منطقه شدم.',
     name: 'آرش راد',
-    role: 'دانش‌آموز پایه دوازدهم • رتبه ۱۲۳ کنکور',
+    role: 'رتبه ۱۲۳ کنکور ریاضی • دانش‌آموز سال گذشته',
     image: '',
   },
   {
     content:
-      'مسیر یادگیری شخصی‌سازی‌شده دقیقاً نقاط ضعفم رو هدف گرفت. تو سه ماه پیشرفتی داشتم که قبلاً تو یک سال هم به دست نیاورده بودم.',
-    name: 'سارا محمدی',
-    role: 'دانش‌آموز پایه یازدهم • رشته تجربی',
+      'من همیشه از ریاضی فراری بودم؛ کلاس جلو می‌رفت و من جا می‌موندم. مسیر یادگیری شخصی دقیقاً از همون نقطه‌ای شروع کرد که من رها کرده بودم، نه جلوتر و نه عقب‌تر. بعد از یک ترم، برای اولین بار تو زندگیم نمره‌ی ریاضی‌م بالای ۱۸ شد.',
+    name: 'ستایش کریمی',
+    role: 'دانش‌آموز پایه یازدهم • رشته ریاضی',
     image: '',
   },
   {
     content:
-      'به‌عنوان معلم، ساخت آزمون و تصحیح خودکار کلی از وقتم رو آزاد کرد و حالا می‌تونم روی خودِ تدریس تمرکز کنم. تحلیل پیشرفت کلاس فوق‌العاده‌ست.',
-    name: 'مهندس کریمی',
-    role: 'دبیر ریاضی • ۱۲ سال سابقه تدریس',
+      'هر هفته شش ساعت فقط صرف طراحی سوال و تصحیح برگه می‌کردم. الان آزمون رو هوش مصنوعی از روی جزوه‌ی خودم می‌سازه، تصحیح و بازخوردش هم خودکاره. اون شش ساعت رو حالا می‌ذارم برای رفع اشکال تک‌تک بچه‌ها؛ و نمودار پیشرفت کلاس همیشه جلوی چشممه.',
+    name: 'مریم موسوی',
+    role: 'دبیر زیست‌شناسی • ۱۴ سال سابقه تدریس',
+    image: '',
+  },
+  {
+    content:
+      'برای کلاس جبرانی و رفع اشکال خصوصی هزینه‌ی زیادی می‌دادیم و باز هم نتیجه نمی‌گرفتیم. سه ماهه که پسرم با AI-Amooz درس می‌خونه؛ خودش برنامه‌شو دنبال می‌کنه، آزمون می‌ده و من هر هفته گزارش پیشرفتش رو می‌بینم. معدلش از ۱۴ رسید به ۱۷/۵.',
+    name: 'حمید عظیمی',
+    role: 'پدر دانش‌آموز پایه دهم',
     image: '',
   },
 ];
@@ -33,7 +40,8 @@ const TESTIMONIALS = [
 export const TestimonialSection = ({ testimonialImage }: { testimonialImage?: { imageUrl?: string } }) => {
   const [index, setIndex] = useState(0);
   const active = TESTIMONIALS[index];
-  const avatarSrc = index === 0 && testimonialImage?.imageUrl ? testimonialImage.imageUrl : active.image;
+  const avatarSrc =
+    (index === 0 && testimonialImage?.imageUrl ? testimonialImage.imageUrl : active.image) || undefined;
 
   const go = (dir: number) =>
     setIndex((i) => (i + dir + TESTIMONIALS.length) % TESTIMONIALS.length);
@@ -58,10 +66,18 @@ export const TestimonialSection = ({ testimonialImage }: { testimonialImage?: { 
           </div>
         </motion.div>
 
-        <div className="mx-auto max-w-4xl text-center">
-          <Quote className="mx-auto mb-6 h-10 w-10 text-primary/40" />
+        <div className="relative mx-auto max-w-4xl text-center">
+          {/* Decorative quote glyphs flanking the quote (per Figma) */}
+          <Quote
+            aria-hidden
+            className="pointer-events-none absolute -top-4 right-0 h-9 w-9 rotate-180 fill-current text-primary/30 md:-right-10"
+          />
+          <Quote
+            aria-hidden
+            className="pointer-events-none absolute bottom-24 left-0 h-14 w-14 fill-current text-primary/30 md:-left-10"
+          />
 
-          <div className="min-h-[10rem] md:min-h-[8rem]">
+          <div className="min-h-[18rem] sm:min-h-[14rem] md:min-h-[12rem]">
             <AnimatePresence mode="wait">
               <motion.p
                 key={index}
