@@ -1,6 +1,8 @@
+import logging
 import secrets
 
 from django.contrib.auth import get_user_model
+from django.contrib.auth.models import update_last_login
 
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.response import Response
@@ -24,6 +26,20 @@ from .openapi import (
 )
 
 User = get_user_model()
+
+logger = logging.getLogger(__name__)
+
+
+def _safe_update_last_login(user) -> None:
+    """Record a login timestamp WITHOUT ever failing the auth flow.
+
+    last_login is bookkeeping for the admin panel; a transient write failure
+    (e.g. DB lock) must never turn a successful login/registration into a 500.
+    """
+    try:
+        update_last_login(None, user)
+    except Exception:
+        logger.warning('Could not update last_login for user %s', getattr(user, 'pk', None), exc_info=True)
 
 
 class RegisterView(APIView):
@@ -68,6 +84,11 @@ class RegisterView(APIView):
         serializer = RegisterSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         user = serializer.save()
+
+        # Registration logs the user straight in; record it as a login so the
+        # admin "last login" reflects it (these custom paths bypass the
+        # SimpleJWT serializer that honours UPDATE_LAST_LOGIN).
+        _safe_update_last_login(user)
 
         refresh = RefreshToken.for_user(user)
 
@@ -226,6 +247,10 @@ class InviteCodeLoginView(APIView):
                 user.phone = phone
                 user.save(update_fields=['phone'])
             StudentProfile.objects.get_or_create(user=user)
+
+        # Invite-code login is the PRIMARY way students sign in; record it so
+        # the admin "last login" column works for students too.
+        _safe_update_last_login(user)
 
         refresh = RefreshToken.for_user(user)
         return Response(

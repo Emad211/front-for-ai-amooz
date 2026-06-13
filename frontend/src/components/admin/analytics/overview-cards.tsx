@@ -1,6 +1,9 @@
 'use client';
 
-import { Users, BookOpen, GraduationCap, TrendingUp } from 'lucide-react';
+import {
+  Users, BookOpen, GraduationCap, TrendingUp, CheckCircle2, Activity,
+  ClipboardCheck, MessageSquare, Ticket, DollarSign, Building2,
+} from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 
 const ICON_MAP = {
@@ -8,6 +11,13 @@ const ICON_MAP = {
   book: BookOpen,
   graduation: GraduationCap,
   trending: TrendingUp,
+  check: CheckCircle2,
+  activity: Activity,
+  clipboard: ClipboardCheck,
+  message: MessageSquare,
+  ticket: Ticket,
+  dollar: DollarSign,
+  building: Building2,
 };
 
 interface OverviewCardsProps {
@@ -18,7 +28,7 @@ export function OverviewCards({ stats }: OverviewCardsProps) {
   return (
     <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
       {stats.map((stat, index) => {
-        const Icon = ICON_MAP[stat.icon as keyof typeof ICON_MAP];
+        const Icon = ICON_MAP[stat.icon as keyof typeof ICON_MAP] ?? TrendingUp;
         return (
           <Card key={index} className="bg-card border-border/60 hover:border-primary/30 transition-all duration-300">
             <CardContent className="p-4 sm:p-6">

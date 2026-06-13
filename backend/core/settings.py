@@ -296,6 +296,11 @@ SIMPLE_JWT = {
     'AUTH_HEADER_TYPES': ('Bearer',),
     'ROTATE_REFRESH_TOKENS': True,
     'BLACKLIST_AFTER_ROTATION': True,
+    # Update User.last_login on every token *obtain* (login). Without this the
+    # admin "last login" column is always empty because JWT auth never touches
+    # last_login the way Django's session login does. (Token *refresh* does NOT
+    # update it — refresh is not a fresh login.)
+    'UPDATE_LAST_LOGIN': True,
 }
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'

@@ -235,8 +235,11 @@ export interface AdminAnalyticsStat {
 export interface AdminRecentActivity {
   id: number;
   type: string;
+  category?: string;
   user: string;
+  userRole?: string;
   action: string;
+  target?: string;
   time: string;
   icon: string;
   color: string;
@@ -246,6 +249,9 @@ export interface AdminRecentActivity {
 export interface AdminChartData {
   name: string;
   students: number;
+  classes?: number;
+  quizzes?: number;
+  chats?: number;
 }
 
 export interface AdminDistributionData {

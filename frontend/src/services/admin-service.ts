@@ -14,6 +14,32 @@ import {
   formatPersianNumber,
   formatPersianDelta,
 } from '@/lib/persian-digits';
+import { formatPersianMonthDay } from '@/lib/date-utils';
+
+export interface AdminAnalyticsPayload {
+  users: {
+    total: number; students: number; teachers: number; managers: number; admins: number;
+    new_today: number; new_7d: number; new_30d: number; prev_30d: number;
+    logged_in_7d: number; logged_in_30d: number;
+  };
+  classes: {
+    total: number; published: number; processing: number; failed: number; cancelled: number;
+    created_today: number; created_7d: number; created_30d: number;
+    class_pipeline: number; exam_pipeline: number;
+  };
+  engagement: {
+    chat_total: number; chat_today: number; chat_7d: number; chat_30d: number;
+    quiz_total: number; quiz_7d: number; quiz_pass_rate: number;
+    final_exam_attempts: number; exam_prep_attempts: number; active_learners_7d: number;
+  };
+  llm: {
+    cost_today: number; cost_month: number; cost_total: number;
+    requests_total: number; requests_failed: number; tokens_total: number;
+  };
+  support: { tickets_open: number; tickets_total: number };
+  orgs: { total: number };
+  generated_at: string;
+}
 
 const RAW_API_URL = (process.env.NEXT_PUBLIC_API_URL ?? '').replace(/\/$/, '');
 const API_URL = RAW_API_URL.endsWith('/api') ? RAW_API_URL : `${RAW_API_URL}/api`;
@@ -96,12 +122,22 @@ async function requestJson<T>(path: string, options: RequestInit = {}): Promise<
 
 // Persian number helpers now live in `@/lib/persian-digits` (shared app-wide).
 
-// Map activity type to icon / colour
+// Map activity type to icon / colour. The `icon` strings MUST exist in the
+// ICON_MAP of recent-activity.tsx (which has a fallback for any miss).
 const ACTIVITY_STYLE: Record<string, { icon: string; color: string; bg: string }> = {
+  login: { icon: 'log-in', color: 'text-sky-500', bg: 'bg-sky-500/10' },
   registration: { icon: 'user-plus', color: 'text-blue-500', bg: 'bg-blue-500/10' },
-  class: { icon: 'book', color: 'text-emerald-500', bg: 'bg-emerald-500/10' },
-  broadcast: { icon: 'megaphone', color: 'text-amber-500', bg: 'bg-amber-500/10' },
+  class_created: { icon: 'book', color: 'text-emerald-500', bg: 'bg-emerald-500/10' },
+  class_published: { icon: 'check', color: 'text-emerald-500', bg: 'bg-emerald-500/10' },
+  exam_prep_created: { icon: 'file-text', color: 'text-teal-500', bg: 'bg-teal-500/10' },
   quiz: { icon: 'clipboard-check', color: 'text-purple-500', bg: 'bg-purple-500/10' },
+  final_exam: { icon: 'award', color: 'text-amber-500', bg: 'bg-amber-500/10' },
+  exam_prep_attempt: { icon: 'graduation', color: 'text-indigo-500', bg: 'bg-indigo-500/10' },
+  ticket: { icon: 'life-buoy', color: 'text-rose-500', bg: 'bg-rose-500/10' },
+  ticket_reply: { icon: 'message', color: 'text-rose-400', bg: 'bg-rose-500/10' },
+  broadcast: { icon: 'megaphone', color: 'text-amber-500', bg: 'bg-amber-500/10' },
+  // legacy fallback key
+  class: { icon: 'book', color: 'text-emerald-500', bg: 'bg-emerald-500/10' },
 };
 
 function relativeTime(isoDate: string): string {
@@ -245,63 +281,88 @@ export const AdminService = {
   // ============================================================================
 
   getAnalyticsStats: async (): Promise<AdminAnalyticsStat[]> => {
-    const raw = await requestJson<{
-      total_students: number;
-      total_teachers: number;
-      active_classes: number;
-      total_classes: number;
-      recent_messages: number;
-      recent_quiz_attempts: number;
-      new_students_30d: number;
-      student_change: number;
-      llm_cost_this_month: number;
-    }>('/admin/analytics/stats/');
+    const raw = await requestJson<AdminAnalyticsPayload>('/admin/analytics/stats/');
+    const u = raw.users;
+    const c = raw.classes;
+    const e = raw.engagement;
+    const passRate = Math.round(e.quiz_pass_rate ?? 0);
 
     return [
       {
-        title: 'کل دانش‌آموزان',
-        value: formatPersianNumber(raw.total_students),
-        change: formatPersianDelta(
-          raw.total_students > 0
-            ? Math.round((raw.student_change / Math.max(raw.total_students - raw.student_change, 1)) * 100)
-            : 0,
-        ),
-        trend: raw.student_change >= 0 ? 'up' : 'down',
+        title: 'کل کاربران',
+        value: formatPersianNumber(u.total),
+        change: `${formatPersianDelta(u.new_7d)} این هفته`,
+        trend: u.new_7d >= u.prev_30d / 4 ? 'up' : 'down',
         icon: 'users',
       },
       {
-        title: 'کلاس‌های فعال',
-        value: formatPersianNumber(raw.active_classes),
-        change: `${toPersianDigits(raw.total_classes)} کل`,
-        trend: 'up',
-        icon: 'book',
-      },
-      {
-        title: 'معلمان',
-        value: formatPersianNumber(raw.total_teachers),
-        change: '',
+        title: 'دانش‌آموزان',
+        value: formatPersianNumber(u.students),
+        change: `${formatPersianNumber(e.active_learners_7d)} فعال`,
         trend: 'up',
         icon: 'graduation',
       },
       {
-        title: 'پیام‌های ماه',
-        value: formatPersianNumber(raw.recent_messages),
-        change: `${formatPersianNumber(raw.recent_quiz_attempts)} آزمون`,
+        title: 'معلمان',
+        value: formatPersianNumber(u.teachers),
+        change: u.managers > 0 ? `${toPersianDigits(u.managers)} مدیر سازمان` : '',
         trend: 'up',
-        icon: 'trending',
+        icon: 'book',
+      },
+      {
+        title: 'کلاس‌های منتشرشده',
+        value: formatPersianNumber(c.published),
+        change: `${toPersianDigits(c.total)} کل`,
+        trend: 'up',
+        icon: 'check',
+      },
+      {
+        title: 'در حال پردازش',
+        value: formatPersianNumber(c.processing),
+        change: c.failed > 0 ? `${toPersianDigits(c.failed)} ناموفق` : 'بدون خطا',
+        trend: c.failed > 0 ? 'down' : 'up',
+        icon: 'activity',
+      },
+      {
+        title: 'آزمونک‌های هفته',
+        value: formatPersianNumber(e.quiz_7d),
+        change: `${toPersianDigits(passRate)}٪ قبولی`,
+        trend: passRate >= 50 ? 'up' : 'down',
+        icon: 'clipboard',
+      },
+      {
+        title: 'گفتگوها با هوش مصنوعی',
+        value: formatPersianNumber(e.chat_total),
+        change: `${formatPersianNumber(e.chat_7d)} این هفته`,
+        trend: 'up',
+        icon: 'message',
+      },
+      {
+        title: 'تیکت‌های باز',
+        value: formatPersianNumber(raw.support.tickets_open),
+        change: `${toPersianDigits(raw.support.tickets_total)} کل`,
+        trend: raw.support.tickets_open > 0 ? 'down' : 'up',
+        icon: 'ticket',
       },
     ];
   },
 
+  // Raw grouped payload, exposed for any richer dashboard panel.
+  getAnalyticsOverview: async (): Promise<AdminAnalyticsPayload> => {
+    return requestJson<AdminAnalyticsPayload>('/admin/analytics/stats/');
+  },
+
   getChartData: async (days = 14): Promise<AdminChartData[]> => {
-    const raw = await requestJson<Array<{ date: string; count: number }>>(
-      `/admin/analytics/chart/?days=${days}`,
-    );
-    const dayNames = ['یکشنبه', 'دوشنبه', 'سه‌شنبه', 'چهارشنبه', 'پنج‌شنبه', 'جمعه', 'شنبه'];
-    return raw.map((item) => {
-      const d = new Date(item.date);
-      return { name: dayNames[d.getDay()] ?? item.date, students: item.count };
-    });
+    const raw = await requestJson<
+      Array<{ date: string; registrations: number; classes: number; quizzes: number; chats: number; count: number }>
+    >(`/admin/analytics/chart/?days=${days}`);
+    return raw.map((item) => ({
+      name: formatPersianMonthDay(item.date),
+      students: item.registrations ?? item.count ?? 0,
+      classes: item.classes ?? 0,
+      quizzes: item.quizzes ?? 0,
+      chats: item.chats ?? 0,
+    }));
   },
 
   getDistributionData: async (): Promise<AdminDistributionData[]> => {
@@ -325,18 +386,26 @@ export const AdminService = {
     return raw.by_level.map((item) => ({ name: item.level, value: item.count }));
   },
 
-  getRecentActivities: async (): Promise<AdminRecentActivity[]> => {
+  getRecentActivities: async (limit = 25, type?: string): Promise<AdminRecentActivity[]> => {
+    const params = new URLSearchParams({ limit: String(limit) });
+    if (type) params.set('type', type);
     const raw = await requestJson<
-      Array<{ id: string; type: string; user: string; action: string; time: string }>
-    >('/admin/analytics/recent-activity/');
+      Array<{
+        id: string; type: string; category?: string; user: string;
+        user_role?: string; action: string; target?: string; time: string;
+      }>
+    >(`/admin/analytics/recent-activity/?${params.toString()}`);
 
     return raw.map((item, idx) => {
       const style = ACTIVITY_STYLE[item.type] ?? ACTIVITY_STYLE.registration;
       return {
         id: idx + 1,
         type: item.type,
+        category: item.category,
         user: item.user,
+        userRole: item.user_role,
         action: item.action,
+        target: item.target,
         time: relativeTime(item.time),
         icon: style.icon,
         color: style.color,

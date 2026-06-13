@@ -7,6 +7,7 @@ import os
 import shutil
 import time
 from datetime import datetime, time as dtime, timedelta
+from zoneinfo import ZoneInfo
 
 from django.conf import settings as django_settings
 from django.contrib.auth import get_user_model
@@ -604,104 +605,231 @@ class ExchangeRateView(APIView):
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# Analytics
+# Analytics (Tehran-aware, derived entirely from existing models)
 # ═══════════════════════════════════════════════════════════════════════════
 
+TEHRAN_TZ = ZoneInfo('Asia/Tehran')
+
+_ROLE_FA = {'STUDENT': 'دانش‌آموز', 'TEACHER': 'معلم', 'ADMIN': 'مدیر', 'MANAGER': 'مدیر سازمان'}
+
+
+def _tehran_now():
+    return timezone.now().astimezone(TEHRAN_TZ)
+
+
+def _tehran_day_start(days_ago: int = 0):
+    """Midnight (Tehran) ``days_ago`` days back, as a tz-aware datetime.
+
+    The server stores UTC; bucketing by UTC put a 1am-Tehran event on the
+    previous calendar day. All "today / last N days" windows use this so the
+    numbers match what an admin in Tehran expects.
+    """
+    start = _tehran_now().replace(hour=0, minute=0, second=0, microsecond=0)
+    return start - timedelta(days=days_ago)
+
+
+def _display_name(user) -> str:
+    if user is None:
+        return 'کاربر حذف‌شده'
+    full = user.get_full_name()
+    return full or user.username or (user.phone or '') or f'#{user.pk}'
+
+
 class AnalyticsStatsView(APIView):
-    """Overview stats cards for the admin analytics page."""
+    """Comprehensive, Tehran-local platform metrics for the analytics page.
+
+    Grouped into users / classes / engagement / llm / support / orgs. A few
+    flat back-compat keys are kept for any older caller.
+    """
 
     permission_classes = [IsAdminUser]
 
     def get(self, request):
-        now = timezone.now()
-        thirty_days_ago = now - timedelta(days=30)
-
-        total_students = User.objects.filter(role='STUDENT').count()
-        total_teachers = User.objects.filter(role='TEACHER').count()
-
         from apps.classes.models import (
             ClassCreationSession,
             ClassSectionQuizAttempt,
+            ClassFinalExamAttempt,
+            StudentExamPrepAttempt,
             StudentCourseChatMessage,
         )
+        from apps.organizations.models import Organization
 
-        active_classes = ClassCreationSession.objects.filter(
-            is_published=True,
-        ).count()
+        Status = ClassCreationSession.Status
+        today = _tehran_day_start(0)
+        d7 = _tehran_day_start(7)
+        d30 = _tehran_day_start(30)
+        d60 = _tehran_day_start(60)
 
-        total_classes = ClassCreationSession.objects.count()
+        # --- Users ---
+        by_role = {
+            r['role']: r['c']
+            for r in User.objects.values('role').annotate(c=Count('id'))
+        }
+        students = by_role.get('STUDENT', 0)
+        teachers = by_role.get('TEACHER', 0)
+        managers = by_role.get('MANAGER', 0)
+        admins = by_role.get('ADMIN', 0)
+        total_users = sum(by_role.values())
+        new_today = User.objects.filter(date_joined__gte=today).count()
+        new_7d = User.objects.filter(date_joined__gte=d7).count()
+        new_30d = User.objects.filter(date_joined__gte=d30).count()
+        prev_30d = User.objects.filter(date_joined__gte=d60, date_joined__lt=d30).count()
+        logged_in_7d = User.objects.filter(last_login__gte=d7).count()
+        logged_in_30d = User.objects.filter(last_login__gte=d30).count()
 
-        # Chat engagement (messages in last 30 days)
-        recent_messages = StudentCourseChatMessage.objects.filter(
-            created_at__gte=thirty_days_ago,
-        ).count()
+        # --- Classes / pipelines ---
+        by_status = {
+            r['status']: r['c']
+            for r in ClassCreationSession.objects.values('status').annotate(c=Count('id'))
+        }
+        total_classes = sum(by_status.values())
+        published = ClassCreationSession.objects.filter(is_published=True).count()
+        failed = by_status.get(Status.FAILED, 0)
+        cancelled = by_status.get(Status.CANCELLED, 0)
+        done_statuses = {Status.RECAPPED, Status.EXAM_STRUCTURED, Status.FAILED, Status.CANCELLED}
+        processing = sum(c for s, c in by_status.items() if s not in done_statuses)
+        classes_today = ClassCreationSession.objects.filter(created_at__gte=today).count()
+        classes_7d = ClassCreationSession.objects.filter(created_at__gte=d7).count()
+        classes_30d = ClassCreationSession.objects.filter(created_at__gte=d30).count()
+        class_pipeline = ClassCreationSession.objects.filter(pipeline_type='class').count()
+        exam_pipeline = ClassCreationSession.objects.filter(pipeline_type='exam_prep').count()
 
-        # Quiz attempts in last 30 days
-        recent_quiz_attempts = ClassSectionQuizAttempt.objects.filter(
-            created_at__gte=thirty_days_ago,
-        ).count()
+        # --- Engagement / learning ---
+        chat_msgs = StudentCourseChatMessage.objects.filter(role='user')
+        chat_total = chat_msgs.count()
+        chat_today = chat_msgs.filter(created_at__gte=today).count()
+        chat_7d = chat_msgs.filter(created_at__gte=d7).count()
+        chat_30d = chat_msgs.filter(created_at__gte=d30).count()
+        quiz_total = ClassSectionQuizAttempt.objects.count()
+        quiz_7d = ClassSectionQuizAttempt.objects.filter(created_at__gte=d7).count()
+        quiz_passed = ClassSectionQuizAttempt.objects.filter(passed=True).count()
+        quiz_pass_rate = round(quiz_passed / quiz_total * 100, 1) if quiz_total else 0.0
+        final_exam_attempts = ClassFinalExamAttempt.objects.count()
+        exam_prep_attempts = StudentExamPrepAttempt.objects.filter(finalized=True).count()
+        learners_quiz = set(
+            ClassSectionQuizAttempt.objects
+            .filter(created_at__gte=d7)
+            .values_list('quiz__student_id', flat=True)
+        )
+        learners_chat = set(
+            chat_msgs.filter(created_at__gte=d7).values_list('thread__student_id', flat=True)
+        )
+        active_learners_7d = len(learners_quiz | learners_chat)
 
-        # Students who registered in the last 30 days
-        new_students_30d = User.objects.filter(
-            role='STUDENT',
-            date_joined__gte=thirty_days_ago,
-        ).count()
+        # --- LLM cost / usage ---
+        month_start = _tehran_now().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        llm_today = LLMUsageLog.objects.filter(created_at__gte=today).aggregate(c=Sum('estimated_cost_usd'))['c'] or 0
+        llm_month = LLMUsageLog.objects.filter(created_at__gte=month_start).aggregate(c=Sum('estimated_cost_usd'))['c'] or 0
+        llm_agg = LLMUsageLog.objects.aggregate(
+            cost=Sum('estimated_cost_usd'), reqs=Count('id'), tokens=Sum('total_tokens'),
+        )
+        llm_failed = LLMUsageLog.objects.filter(success=False).count()
 
-        # Previous 30 days for trend
-        sixty_days_ago = now - timedelta(days=60)
-        prev_students = User.objects.filter(
-            role='STUDENT',
-            date_joined__gte=sixty_days_ago,
-            date_joined__lt=thirty_days_ago,
-        ).count()
-
-        student_change = new_students_30d - prev_students
-
-        # LLM cost this month
-        month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-        llm_cost = LLMUsageLog.objects.filter(
-            created_at__gte=month_start,
-        ).aggregate(cost=Sum('estimated_cost_usd'))['cost'] or 0
+        # --- Support / orgs ---
+        ticket_rows = {
+            r['status']: r['c']
+            for r in Ticket.objects.values('status').annotate(c=Count('id'))
+        }
+        tickets_total = sum(ticket_rows.values())
+        tickets_open = ticket_rows.get('open', 0) + ticket_rows.get('pending', 0)
+        orgs_total = Organization.objects.count()
 
         return Response({
-            'total_students': total_students,
-            'total_teachers': total_teachers,
-            'active_classes': active_classes,
+            'users': {
+                'total': total_users, 'students': students, 'teachers': teachers,
+                'managers': managers, 'admins': admins,
+                'new_today': new_today, 'new_7d': new_7d, 'new_30d': new_30d,
+                'prev_30d': prev_30d,
+                'logged_in_7d': logged_in_7d, 'logged_in_30d': logged_in_30d,
+            },
+            'classes': {
+                'total': total_classes, 'published': published, 'processing': processing,
+                'failed': failed, 'cancelled': cancelled,
+                'created_today': classes_today, 'created_7d': classes_7d, 'created_30d': classes_30d,
+                'class_pipeline': class_pipeline, 'exam_pipeline': exam_pipeline,
+            },
+            'engagement': {
+                'chat_total': chat_total, 'chat_today': chat_today,
+                'chat_7d': chat_7d, 'chat_30d': chat_30d,
+                'quiz_total': quiz_total, 'quiz_7d': quiz_7d, 'quiz_pass_rate': quiz_pass_rate,
+                'final_exam_attempts': final_exam_attempts,
+                'exam_prep_attempts': exam_prep_attempts,
+                'active_learners_7d': active_learners_7d,
+            },
+            'llm': {
+                'cost_today': round(float(llm_today), 4),
+                'cost_month': round(float(llm_month), 4),
+                'cost_total': round(float(llm_agg['cost'] or 0), 4),
+                'requests_total': llm_agg['reqs'] or 0,
+                'requests_failed': llm_failed,
+                'tokens_total': int(llm_agg['tokens'] or 0),
+            },
+            'support': {'tickets_open': tickets_open, 'tickets_total': tickets_total},
+            'orgs': {'total': orgs_total},
+            # --- Back-compat flat keys ---
+            'total_students': students,
+            'total_teachers': teachers,
+            'active_classes': published,
             'total_classes': total_classes,
-            'recent_messages': recent_messages,
-            'recent_quiz_attempts': recent_quiz_attempts,
-            'new_students_30d': new_students_30d,
-            'student_change': student_change,
-            'llm_cost_this_month': round(float(llm_cost), 4),
+            'recent_messages': chat_30d,
+            'recent_quiz_attempts': quiz_7d,
+            'new_students_30d': new_30d,
+            'student_change': new_30d - prev_30d,
+            'llm_cost_this_month': round(float(llm_month), 4),
+            'generated_at': timezone.now().isoformat(),
         })
 
 
 class AnalyticsChartView(APIView):
-    """Daily user registration time-series (last N days)."""
+    """Daily multi-metric time-series (last N days), bucketed in Tehran time.
+
+    Returns one row per Tehran day with registrations, classes created, quiz
+    attempts and chat messages — zero-filled so the chart has no gaps.
+    """
 
     permission_classes = [IsAdminUser]
 
     def get(self, request):
+        from apps.classes.models import ClassCreationSession, ClassSectionQuizAttempt, StudentCourseChatMessage
+
         try:
             days = int(request.query_params.get('days', 14))
         except (TypeError, ValueError):
             days = 14
         days = max(1, min(days, 90))
-        since = timezone.now() - timedelta(days=days)
+        since = _tehran_day_start(days - 1)
 
-        qs = (
-            User.objects
-            .filter(date_joined__gte=since)
-            .annotate(date=TruncDate('date_joined'))
-            .values('date')
-            .annotate(count=Count('id'))
-            .order_by('date')
-        )
-        return Response(list(qs))
+        def _daily(qs, field):
+            rows = (
+                qs.filter(**{f'{field}__gte': since})
+                .annotate(d=TruncDate(field, tzinfo=TEHRAN_TZ))
+                .values('d').annotate(c=Count('id'))
+            )
+            return {r['d'].isoformat(): r['c'] for r in rows if r['d'] is not None}
+
+        regs = _daily(User.objects.all(), 'date_joined')
+        classes = _daily(ClassCreationSession.objects.all(), 'created_at')
+        quizzes = _daily(ClassSectionQuizAttempt.objects.all(), 'created_at')
+        chats = _daily(StudentCourseChatMessage.objects.filter(role='user'), 'created_at')
+
+        today_t = _tehran_now().date()
+        out = []
+        for i in range(days):
+            day = (today_t - timedelta(days=days - 1 - i)).isoformat()
+            out.append({
+                'date': day,
+                'registrations': regs.get(day, 0),
+                'classes': classes.get(day, 0),
+                'quizzes': quizzes.get(day, 0),
+                'chats': chats.get(day, 0),
+                # Back-compat: the old chart read `count` as registrations.
+                'count': regs.get(day, 0),
+            })
+        return Response(out)
 
 
 class AnalyticsDistributionView(APIView):
-    """Class distribution by pipeline type and level."""
+    """Class distribution by pipeline type, level, and processing status."""
 
     permission_classes = [IsAdminUser]
 
@@ -714,7 +842,6 @@ class AnalyticsDistributionView(APIView):
             .annotate(count=Count('id'))
             .order_by('-count')
         )
-
         by_level = list(
             ClassCreationSession.objects
             .exclude(level='')
@@ -722,61 +849,129 @@ class AnalyticsDistributionView(APIView):
             .annotate(count=Count('id'))
             .order_by('-count')[:10]
         )
-
+        by_status = list(
+            ClassCreationSession.objects
+            .values('status')
+            .annotate(count=Count('id'))
+            .order_by('-count')
+        )
         return Response({
             'by_pipeline_type': by_type,
             'by_level': by_level,
+            'by_status': by_status,
         })
 
 
 class AnalyticsRecentActivityView(APIView):
-    """Recent platform activities."""
+    """A unified, chronological feed of what users actually do on the platform.
+
+    Merged from existing models (no separate audit store): logins,
+    registrations, class/exam-prep creation, quiz & exam attempts, support
+    tickets and admin broadcasts. Query params: ``?limit=`` (default 25, max
+    100) and ``?type=`` (comma-separated filter on the event types below).
+    """
 
     permission_classes = [IsAdminUser]
 
+    # type -> category (for frontend grouping/icons)
+    TYPES = {
+        'login': 'auth', 'registration': 'auth',
+        'class_created': 'content', 'class_published': 'content', 'exam_prep_created': 'content',
+        'quiz': 'learning', 'final_exam': 'learning', 'exam_prep_attempt': 'learning',
+        'ticket': 'support', 'ticket_reply': 'support', 'broadcast': 'system',
+    }
+
     def get(self, request):
-        from apps.classes.models import ClassCreationSession
-
-        result: list[dict] = []
-
-        # Recent user registrations
-        recent_users = User.objects.order_by('-date_joined')[:5]
-        for u in recent_users:
-            role_fa = {'STUDENT': 'دانش‌آموز', 'TEACHER': 'معلم', 'ADMIN': 'مدیر', 'MANAGER': 'مدیر سازمان'}.get(u.role, u.role)
-            result.append({
-                'id': f'user-{u.pk}',
-                'type': 'registration',
-                'user': u.get_full_name() or u.username,
-                'action': f'به عنوان {role_fa} ثبت‌نام کرد',
-                'time': u.date_joined.isoformat(),
-            })
-
-        # Recent class creations
-        recent_classes = ClassCreationSession.objects.select_related('teacher').order_by('-created_at')[:5]
-        for c in recent_classes:
-            result.append({
-                'id': f'class-{c.pk}',
-                'type': 'class',
-                'user': c.teacher.get_full_name() or c.teacher.username,
-                'action': f'کلاس «{c.title}» را ایجاد کرد',
-                'time': c.created_at.isoformat(),
-            })
-
-        # Recent notifications
+        from apps.classes.models import (
+            ClassCreationSession,
+            ClassSectionQuizAttempt,
+            ClassFinalExamAttempt,
+            StudentExamPrepAttempt,
+        )
         from apps.notification.models import AdminNotification
-        recent_notifs = AdminNotification.objects.order_by('-created_at')[:3]
-        for n in recent_notifs:
-            result.append({
-                'id': f'notif-{n.pk}',
-                'type': 'broadcast',
-                'user': 'مدیر',
-                'action': f'پیام «{n.title}» ارسال شد',
-                'time': n.created_at.isoformat(),
+
+        try:
+            limit = int(request.query_params.get('limit', 25))
+        except (TypeError, ValueError):
+            limit = 25
+        limit = max(1, min(limit, 100))
+        wanted = {t.strip() for t in (request.query_params.get('type') or '').split(',') if t.strip()}
+        # Pull a few more than `limit` from each source so the merge is accurate.
+        per = min(max(limit, 20), 60)
+
+        items: list[dict] = []
+
+        def add(type_, user, action, when, *, target='', user_role=''):
+            if when is None or (wanted and type_ not in wanted):
+                return
+            items.append({
+                'type': type_,
+                'category': self.TYPES.get(type_, 'system'),
+                'user': user,
+                'user_role': user_role,
+                'action': action,
+                'target': target,
+                'time': when.isoformat(),
             })
 
-        # Sort by time descending
-        result.sort(key=lambda x: x['time'], reverse=True)
-        return Response(result[:15])
+        # Logins (last_login now updated on every token obtain)
+        for u in User.objects.filter(last_login__isnull=False).order_by('-last_login')[:per]:
+            add('login', _display_name(u), 'وارد سیستم شد', u.last_login, user_role=u.role)
+
+        # Registrations
+        for u in User.objects.order_by('-date_joined')[:per]:
+            role_fa = _ROLE_FA.get(u.role, u.role)
+            add('registration', _display_name(u), f'به عنوان {role_fa} ثبت‌نام کرد', u.date_joined, user_role=u.role)
+
+        # Class / exam-prep creations
+        for c in ClassCreationSession.objects.select_related('teacher').order_by('-created_at')[:per]:
+            is_exam = c.pipeline_type == 'exam_prep'
+            verb = 'آمادگی آزمون' if is_exam else 'کلاس'
+            add(
+                'exam_prep_created' if is_exam else 'class_created',
+                _display_name(c.teacher),
+                f'{verb} «{c.title or "بدون عنوان"}» را ساخت',
+                c.created_at, target=c.title or '', user_role='TEACHER',
+            )
+
+        # Section-quiz attempts
+        for a in ClassSectionQuizAttempt.objects.select_related('quiz', 'quiz__student').order_by('-created_at')[:per]:
+            stu = a.quiz.student if a.quiz else None
+            verdict = 'قبول' if a.passed else 'مردود'
+            add('quiz', _display_name(stu), f'در آزمونک نمره {a.score_0_100} گرفت ({verdict})',
+                a.created_at, user_role='STUDENT')
+
+        # Final-exam attempts
+        for a in ClassFinalExamAttempt.objects.select_related('exam', 'exam__student').order_by('-created_at')[:per]:
+            stu = a.exam.student if a.exam else None
+            verdict = 'قبول' if a.passed else 'مردود'
+            add('final_exam', _display_name(stu), f'در آزمون نهایی نمره {a.score_0_100} گرفت ({verdict})',
+                a.created_at, user_role='STUDENT')
+
+        # Exam-prep attempts (finalized)
+        for a in (StudentExamPrepAttempt.objects.select_related('student')
+                  .filter(finalized=True).order_by('-updated_at')[:per]):
+            score = a.score_0_100 if a.score_0_100 is not None else 0
+            add('exam_prep_attempt', _display_name(a.student),
+                f'آزمون آمادگی را تمام کرد (نمره {score})', a.updated_at, user_role='STUDENT')
+
+        # Support tickets + replies
+        for t in Ticket.objects.select_related('user').order_by('-created_at')[:per]:
+            add('ticket', _display_name(t.user), f'تیکت «{t.subject}» را ثبت کرد',
+                t.created_at, target=t.subject, user_role=getattr(t.user, 'role', ''))
+        for m in (TicketMessage.objects.select_related('user', 'ticket')
+                  .order_by('-created_at')[:per]):
+            add('ticket_reply', _display_name(m.user), f'به تیکت «{m.ticket.subject}» پاسخ داد',
+                m.created_at, target=m.ticket.subject, user_role=getattr(m.user, 'role', ''))
+
+        # Admin broadcasts
+        for n in AdminNotification.objects.order_by('-created_at')[:per]:
+            add('broadcast', 'مدیر', f'پیام «{n.title}» را ارسال کرد', n.created_at, target=n.title, user_role='ADMIN')
+
+        items.sort(key=lambda x: x['time'], reverse=True)
+        for idx, it in enumerate(items[:limit]):
+            it['id'] = f'{it["type"]}-{idx}-{it["time"]}'
+        return Response(items[:limit])
 
 
 # ═══════════════════════════════════════════════════════════════════════════
