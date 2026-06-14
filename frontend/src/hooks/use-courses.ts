@@ -37,8 +37,17 @@ export function useCourses(service: CoursesService = DashboardService) {
   }, [reload]);
 
   const filteredCourses = useMemo(() => {
+    // "Newest first": prefer a real creation timestamp, then fall back to a
+    // NUMERIC id. The old code did `String(b.id).localeCompare(String(a.id))`
+    // which compares ids as text — so id "12" sorted *after* "8" (because
+    // '1' < '8'), pushing the newest, not-yet-started course to the end.
+    const createdTime = (c: Course): number => {
+      const raw = c.createdAt ?? (c as unknown as { created_at?: string }).created_at;
+      const t = raw ? Date.parse(raw) : NaN;
+      return Number.isNaN(t) ? NaN : t;
+    };
     return courses
-      .filter(course => 
+      .filter(course =>
         course.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
         (course.instructor?.toLowerCase().includes(searchTerm.toLowerCase()) ?? false)
       )
@@ -46,7 +55,16 @@ export function useCourses(service: CoursesService = DashboardService) {
         if (sortBy === 'progress') {
           return (b.progress || 0) - (a.progress || 0);
         }
-        // Default to recent (assuming higher ID or some other logic if no date)
+        const ta = createdTime(a);
+        const tb = createdTime(b);
+        if (!Number.isNaN(ta) && !Number.isNaN(tb) && ta !== tb) {
+          return tb - ta; // newest createdAt first
+        }
+        const na = Number(a.id);
+        const nb = Number(b.id);
+        if (Number.isFinite(na) && Number.isFinite(nb) && na !== nb) {
+          return nb - na; // higher (newer) numeric id first
+        }
         return String(b.id).localeCompare(String(a.id));
       });
   }, [courses, searchTerm, sortBy]);
