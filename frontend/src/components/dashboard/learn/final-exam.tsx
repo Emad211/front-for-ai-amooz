@@ -5,6 +5,27 @@ import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { MarkdownWithMath } from '@/components/content/markdown-with-math';
 import { DashboardService } from '@/services/dashboard-service';
+import { CheckCircle2, XCircle, RotateCcw, AlertCircle } from 'lucide-react';
+
+type QStatus = 'correct' | 'partial' | 'wrong' | null;
+
+// Map a per-question grading result to a status. The backend deliberately does
+// NOT return the correct answer (anti-leak), so we color by correctness/score
+// only: objective → label 'correct'/'incorrect'; open-ended → score band.
+function questionStatus(r: any): QStatus {
+  if (!r) return null;
+  if (r.label === 'correct') return 'correct';
+  if (r.label === 'incorrect') return 'wrong';
+  const s = Number(r.score_0_100);
+  if (!Number.isFinite(s)) return null;
+  return s >= 70 ? 'correct' : s > 0 ? 'partial' : 'wrong';
+}
+
+const STATUS_CARD: Record<'correct' | 'partial' | 'wrong', string> = {
+  correct: 'border-green-500/50 bg-green-500/[0.06]',
+  partial: 'border-amber-500/50 bg-amber-500/[0.06]',
+  wrong: 'border-rose-500/50 bg-rose-500/[0.06]',
+};
 
 type FinalExamQuestion = {
   id: string;
@@ -41,6 +62,18 @@ export function FinalExam({ courseId, onProgressUpdate }: { courseId: string; on
   const [answers, setAnswers] = React.useState<Record<string, string>>({});
   const [isSubmitting, setIsSubmitting] = React.useState(false);
   const [submitResult, setSubmitResult] = React.useState<SubmitPayload | null>(null);
+  const resultRef = React.useRef<HTMLDivElement | null>(null);
+
+  // Per-question grading keyed by id, so each question card can render its own
+  // inline feedback (instead of a separate block the user had to scroll to find).
+  const resultById = React.useMemo(() => {
+    const m: Record<string, any> = {};
+    (submitResult?.per_question ?? []).forEach((pq: any) => {
+      m[String(pq.id)] = pq;
+    });
+    return m;
+  }, [submitResult]);
+  const reviewing = !!submitResult;
 
   const load = React.useCallback(async () => {
     setIsLoading(true);
@@ -64,6 +97,15 @@ export function FinalExam({ courseId, onProgressUpdate }: { courseId: string; on
   React.useEffect(() => {
     load();
   }, [load]);
+
+  // Bring the result summary into view once it renders — the submit button
+  // sits at the bottom of a long form, so the score/feedback that appears here
+  // went unnoticed (the user thought the click did nothing).
+  React.useEffect(() => {
+    if (submitResult) {
+      resultRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  }, [submitResult]);
 
   const onSubmit = async () => {
     if (!exam) return;
@@ -142,11 +184,37 @@ export function FinalExam({ courseId, onProgressUpdate }: { courseId: string; on
         {exam.questions.map((q, idx) => {
           const value = answers[q.id] ?? '';
           const qType = q.type || (Array.isArray(q.options) && q.options.length > 0 ? 'multiple_choice' : 'short_answer');
+          const r = resultById[q.id];
+          const status = reviewing ? questionStatus(r) : null;
           return (
-            <div key={q.id} className="border border-border rounded-xl p-4 bg-background/20">
+            <div
+              key={q.id}
+              className={`border rounded-xl p-4 transition-colors ${
+                status ? STATUS_CARD[status] : 'border-border bg-background/20'
+              }`}
+            >
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-2">
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
                   <span className="text-sm font-bold text-foreground">سوال {idx + 1}</span>
+                  {reviewing && status && (
+                    <span
+                      className={`inline-flex items-center gap-1 text-xs font-bold px-2 py-0.5 rounded-md ${
+                        status === 'correct'
+                          ? 'bg-green-500/15 text-green-500'
+                          : status === 'partial'
+                          ? 'bg-amber-500/15 text-amber-500'
+                          : 'bg-rose-500/15 text-rose-500'
+                      }`}
+                    >
+                      {status === 'correct' ? (
+                        <><CheckCircle2 className="h-3.5 w-3.5" /> درست</>
+                      ) : status === 'wrong' ? (
+                        <><XCircle className="h-3.5 w-3.5" /> نادرست</>
+                      ) : (
+                        <>نمره {r?.score_0_100} از ۱۰۰</>
+                      )}
+                    </span>
+                  )}
                   {qType === 'true_false' && (
                     <span className="text-xs font-semibold px-2 py-0.5 rounded-md bg-blue-500/15 text-blue-400">صحیح / غلط</span>
                   )}
@@ -175,47 +243,76 @@ export function FinalExam({ courseId, onProgressUpdate }: { courseId: string; on
                   {[
                     { val: 'صحیح', label: 'صحیح ✓' },
                     { val: 'غلط', label: 'غلط ✗' },
-                  ].map((tf) => (
-                    <label
-                      key={tf.val}
-                      className={`flex items-center justify-center gap-2 p-3 rounded-lg border cursor-pointer text-sm font-semibold ${
-                        value === tf.val
-                          ? 'border-primary bg-primary/10 text-primary'
-                          : 'border-border bg-background hover:bg-secondary/50'
-                      }`}
-                    >
-                      <input
-                        type="radio"
-                        name={`q_${q.id}`}
-                        value={tf.val}
-                        checked={value === tf.val}
-                        onChange={() => setAnswers((prev) => ({ ...prev, [q.id]: tf.val }))}
-                        className="sr-only"
-                      />
-                      {tf.label}
-                    </label>
-                  ))}
+                  ].map((tf) => {
+                    const selected = value === tf.val;
+                    const cls = reviewing
+                      ? selected
+                        ? status === 'correct'
+                          ? 'border-green-500 bg-green-500/10 text-green-600'
+                          : 'border-rose-500 bg-rose-500/10 text-rose-600'
+                        : 'border-border bg-background opacity-50'
+                      : selected
+                      ? 'border-primary bg-primary/10 text-primary'
+                      : 'border-border bg-background hover:bg-secondary/50';
+                    return (
+                      <label
+                        key={tf.val}
+                        className={`flex items-center justify-center gap-2 p-3 rounded-lg border text-sm font-semibold ${
+                          reviewing ? 'cursor-default' : 'cursor-pointer'
+                        } ${cls}`}
+                      >
+                        <input
+                          type="radio"
+                          name={`q_${q.id}`}
+                          value={tf.val}
+                          checked={selected}
+                          disabled={reviewing}
+                          onChange={() => setAnswers((prev) => ({ ...prev, [q.id]: tf.val }))}
+                          className="sr-only"
+                        />
+                        {tf.label}
+                      </label>
+                    );
+                  })}
                 </div>
               )}
 
               {/* Multiple choice */}
               {(qType === 'multiple_choice' || (!q.type && Array.isArray(q.options) && q.options.length > 0)) && qType !== 'true_false' && (
                 <div className="mt-3 space-y-2">
-                  {(q.options ?? []).map((opt) => (
-                    <label key={opt} className="flex items-start gap-2 cursor-pointer">
-                      <input
-                        type="radio"
-                        name={`q_${q.id}`}
-                        value={opt}
-                        checked={value === opt}
-                        onChange={() => setAnswers((prev) => ({ ...prev, [q.id]: opt }))}
-                        className="mt-1"
-                      />
-                      <span className="break-words text-xs sm:text-sm text-foreground">
-                        <MarkdownWithMath markdown={opt} />
-                      </span>
-                    </label>
-                  ))}
+                  {(q.options ?? []).map((opt) => {
+                    const selected = value === opt;
+                    const cls = reviewing
+                      ? selected
+                        ? status === 'correct'
+                          ? 'border-green-500 bg-green-500/10'
+                          : 'border-rose-500 bg-rose-500/10'
+                        : 'border-border opacity-50'
+                      : selected
+                      ? 'border-primary bg-primary/5'
+                      : 'border-border hover:bg-secondary/40';
+                    return (
+                      <label
+                        key={opt}
+                        className={`flex items-start gap-2 p-2.5 rounded-lg border ${
+                          reviewing ? 'cursor-default' : 'cursor-pointer'
+                        } ${cls}`}
+                      >
+                        <input
+                          type="radio"
+                          name={`q_${q.id}`}
+                          value={opt}
+                          checked={selected}
+                          disabled={reviewing}
+                          onChange={() => setAnswers((prev) => ({ ...prev, [q.id]: opt }))}
+                          className="mt-1 shrink-0"
+                        />
+                        <span className="break-words text-xs sm:text-sm text-foreground">
+                          <MarkdownWithMath markdown={opt} />
+                        </span>
+                      </label>
+                    );
+                  })}
                 </div>
               )}
 
@@ -224,54 +321,80 @@ export function FinalExam({ courseId, onProgressUpdate }: { courseId: string; on
                 <textarea
                   value={value}
                   onChange={(e) => setAnswers((prev) => ({ ...prev, [q.id]: e.target.value }))}
-                  className="mt-3 w-full min-h-24 rounded-lg border border-border bg-background p-3 text-sm text-foreground"
+                  disabled={reviewing}
+                  className="mt-3 w-full min-h-24 rounded-lg border border-border bg-background p-3 text-sm text-foreground disabled:opacity-70"
                   placeholder={qType === 'fill_blank' ? 'پاسخ خود را برای جای خالی بنویسید...' : 'پاسخ خود را بنویسید...'}
                   dir="rtl"
                 />
+              )}
+
+              {/* Inline per-question feedback (after submission) */}
+              {reviewing && r?.feedback && (
+                <div
+                  className={`mt-3 rounded-lg border p-3 text-sm leading-relaxed ${
+                    status === 'correct'
+                      ? 'border-green-500/30 bg-green-500/[0.06] text-foreground'
+                      : status === 'partial'
+                      ? 'border-amber-500/30 bg-amber-500/[0.06] text-foreground'
+                      : 'border-rose-500/30 bg-rose-500/[0.06] text-foreground'
+                  }`}
+                >
+                  <span className="font-bold">بازخورد: </span>
+                  <MarkdownWithMath markdown={r.feedback} />
+                </div>
               )}
             </div>
           );
         })}
       </div>
 
-      <div className="flex items-center gap-2">
-        <Button onClick={onSubmit} disabled={isSubmitting} className="rounded-xl">
-          {isSubmitting ? 'در حال ارسال...' : 'ثبت پاسخ‌ها و دریافت نمره'}
-        </Button>
-        <Button variant="outline" onClick={load} disabled={isSubmitting} className="rounded-xl">
-          بازخوانی آزمون
-        </Button>
-      </div>
-
+      {/* Result summary — scrolled into view on submit so the score/feedback
+          is never missed (it used to render silently below the fold). */}
       {submitResult && (
-        <div className="border border-border rounded-xl p-4 bg-card">
-          <div className="flex items-center justify-between flex-wrap gap-3">
-            <div className="text-sm">
-              <span className="text-muted-foreground">نمره: </span>
-              <span className="font-bold text-foreground">{submitResult.score_0_100}</span>
-            </div>
-            <div className={submitResult.passed ? 'text-sm text-green-500 font-bold' : 'text-sm text-destructive font-bold'}>
-              {submitResult.passed ? 'قبول شدی' : 'نیاز به مرور بیشتر'}
-            </div>
-          </div>
-
-          <div className="mt-4 space-y-3">
-            {submitResult.per_question.map((pq: any) => (
-              <div key={pq.id} className="text-sm text-muted-foreground border-t border-border/50 pt-3">
-                <div className="font-bold text-foreground">
-                  <MarkdownWithMath markdown={pq.question} />
-                </div>
-                {pq.feedback && (
-                  <div className="mt-1">
-                    <span className="font-semibold">بازخورد: </span>
-                    <MarkdownWithMath markdown={pq.feedback} />
-                  </div>
-                )}
+        <div
+          ref={resultRef}
+          className={`rounded-xl border p-4 ${
+            submitResult.passed
+              ? 'border-green-500/50 bg-green-500/[0.06]'
+              : 'border-amber-500/50 bg-amber-500/[0.06]'
+          }`}
+        >
+          <div className="flex items-center gap-3">
+            {submitResult.passed ? (
+              <CheckCircle2 className="h-7 w-7 text-green-500 shrink-0" />
+            ) : (
+              <AlertCircle className="h-7 w-7 text-amber-500 shrink-0" />
+            )}
+            <div className="flex-1 min-w-0">
+              <div className="text-base font-bold text-foreground">
+                {submitResult.passed ? 'آفرین! قبول شدی 🎉' : 'نیاز به مرور بیشتر'}
               </div>
-            ))}
+              <div className="text-xs text-muted-foreground mt-0.5">
+                نمره شما <span className="font-bold text-foreground">{submitResult.score_0_100}</span> از ۱۰۰
+                {' · '}حد نصاب {submitResult.passing_score}
+                {' · '}پاسخ صحیح:{' '}
+                {submitResult.per_question.filter((p: any) => questionStatus(p) === 'correct').length} از{' '}
+                {exam.questions.length}
+              </div>
+            </div>
           </div>
+          <p className="text-xs text-muted-foreground mt-3">
+            بازخورد هر سؤال در کادر همان سؤال (بالا) با رنگ مشخص شده است.
+          </p>
         </div>
       )}
+
+      <div className="flex items-center gap-2 flex-wrap">
+        {!reviewing && (
+          <Button onClick={onSubmit} disabled={isSubmitting} className="rounded-xl">
+            {isSubmitting ? 'در حال ارسال...' : 'ثبت پاسخ‌ها و دریافت نمره'}
+          </Button>
+        )}
+        <Button variant="outline" onClick={load} disabled={isSubmitting} className="rounded-xl gap-2">
+          <RotateCcw className="h-4 w-4" />
+          {reviewing ? 'تلاش دوباره' : 'پاک کردن پاسخ‌ها'}
+        </Button>
+      </div>
     </div>
   );
 }
