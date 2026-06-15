@@ -11,9 +11,12 @@ ARG BACKEND_URL
 ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
 ENV BACKEND_URL=$BACKEND_URL
 
-# 3) نصب وابستگی‌ها
+# 3) نصب وابستگی‌ها (retry برای شبکه/پروکسی ناپایدار)
 COPY package*.json ./
-RUN npm install
+RUN npm config set fetch-retries 10 \
+ && npm config set fetch-retry-maxtimeout 180000 \
+ && npm config set fetch-timeout 600000 \
+ && npm install --no-audit --no-fund
 
 # 4) کپی سورس
 COPY . .

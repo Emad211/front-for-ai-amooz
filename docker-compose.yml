@@ -144,6 +144,28 @@ services:
       retries: 3
       start_period: 30s
 
+  front:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        # Baked into the client bundle at build time. The browser (on the host)
+        # reaches the host-published backend at localhost:8000; backend CORS is
+        # open under DEBUG, so every service calls it directly from the browser
+        # (the Next /api rewrite stays unused while this var is set).
+        NEXT_PUBLIC_API_URL: http://localhost:8000
+        BACKEND_URL: http://localhost:8000
+    container_name: ai_amooz_front
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: production
+      NEXT_PUBLIC_API_URL: http://localhost:8000
+      BACKEND_URL: http://localhost:8000
+    depends_on:
+      - backend
+
 volumes:
   ai_amooz_postgres_data:
   ai_amooz_redis_data:
