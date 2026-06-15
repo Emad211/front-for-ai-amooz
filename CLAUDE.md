@@ -2,6 +2,16 @@
 
 Guidance for AI agents (Claude Code / Cowork) working in this repository. Read this before editing code.
 
+## ⛳ First step for EVERY task (standing order — do this before anything else)
+
+Before starting **any** task in this repo — reading, editing, debugging, planning, answering a question — **FIRST read all three knowledge sources, in this order, every single time:**
+
+1. **Memory** — the auto-memory index `MEMORY.md` (loaded each session) **and** open the linked memory files relevant to the task. Memory records the current `main` state, past decisions, gotchas, and operational facts that are **not** derivable from the code.
+2. **This file (`CLAUDE.md`)** — project conventions, architecture, and the **Gotchas** list.
+3. **The knowledge graph — `graphify-out/GRAPH_REPORT.md`** — the architecture map (communities, god nodes, dependency cycles, knowledge gaps). When you need to locate code or trace a relationship, query `graphify-out/graph.json` with `/graphify query "<question>"`. **The graph is NOT auto-loaded — you must open it yourself.** If `graphify-out/` is missing or stale, rebuild it with `/graphify backend/apps frontend/src` (code-only AST extraction — ~free, 0 host tokens, no Whisper).
+
+Only **after** all three have been read do you begin the actual work. This is a hard rule, not a suggestion. (Built/maintained so every task is grounded in the real architecture + prior decisions instead of starting cold.)
+
 ## Project
 
 **AI-Amooz** (`پلتفرم آموزشی هوشمند`) — an AI-powered educational platform. Teachers upload class material (audio/video lectures and PDFs); an LLM pipeline transcribes, structures, and enriches it into chapters, prerequisites, recaps, quizzes, and exam prep; students learn through a personalized, RTL Persian UI with a course-aware chatbot.
