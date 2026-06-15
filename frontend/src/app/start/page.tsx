@@ -3,7 +3,7 @@
 import { ReactNode } from 'react';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
-import { GraduationCap, UserRound } from 'lucide-react';
+import { GraduationCap, UserRound, Building2 } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { motion } from 'framer-motion';
 
@@ -15,17 +15,24 @@ export default function StartPage() {
           <p className="text-sm font-semibold text-primary">شروع رایگان</p>
           <h1 className="text-3xl md:text-4xl font-black text-foreground">مسیر خود را انتخاب کنید</h1>
           <p className="text-muted-foreground max-w-2xl mx-auto text-sm md:text-base">
-            مشخص کنید به عنوان معلم می‌خواهید کلاس‌های خود را بسازید یا به عنوان دانش‌آموز با کد دعوت وارد می‌شوید.
+            به عنوان معلم یا سازمان درخواست همکاری ثبت کنید، یا به عنوان دانش‌آموز با کد دعوت وارد شوید.
           </p>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           <OptionCard
             title="معلم هستم"
-            description="کلاس بسازید، دانش‌آموزان را مدیریت کنید و پیشرفت آن‌ها را ببینید."
+            description="درخواست همکاری ثبت کنید؛ پس از تأیید، پنل معلم برایتان فعال می‌شود."
             icon={<GraduationCap className="h-6 w-6" />}
             href="/teacher-signup"
             accent="bg-primary/10 text-primary border-primary/30"
+          />
+          <OptionCard
+            title="سازمان هستیم"
+            description="مدرسه یا مؤسسه خود را معرفی کنید تا برای راه‌اندازی با شما تماس بگیریم."
+            icon={<Building2 className="h-6 w-6" />}
+            href="/organization-signup"
+            accent="bg-blue-500/10 text-blue-600 border-blue-200"
           />
           <OptionCard
             title="دانش‌آموز هستم"

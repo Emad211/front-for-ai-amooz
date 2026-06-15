@@ -21,6 +21,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from apps.classes.models import ClassCreationSession
 
 from .models import InvitationCode, Organization, OrganizationMembership
+from .services import provision_organization
 from .serializers import (
     InvitationCodeCreateSerializer,
     InvitationCodeSerializer,
@@ -86,29 +87,12 @@ class OrganizationListCreateView(APIView):
     def post(self, request):
         ser = OrganizationCreateSerializer(data=request.data)
         ser.is_valid(raise_exception=True)
-        admin_code_value = None
+        org_data = dict(ser.validated_data)
+        owner = org_data.pop('owner', None) or request.user
         try:
-            with transaction.atomic():
-                org_data = dict(ser.validated_data)
-                if not org_data.get('owner'):
-                    org_data['owner'] = request.user
-                org = Organization.objects.create(**org_data)
-
-                # Auto-generate an admin activation code for this org
-                try:
-                    admin_code = InvitationCode.objects.create(
-                        organization=org,
-                        target_role=InvitationCode.TargetRole.ADMIN,
-                        label='کد فعالسازی مدیر',
-                        max_uses=1,
-                        created_by=request.user,
-                    )
-                    admin_code_value = admin_code.code
-                except DatabaseError:
-                    logger.exception(
-                        'Organization created but InvitationCode table/insert failed. '
-                        'Run organizations migrations to repair schema drift.'
-                    )
+            org, admin_code_value = provision_organization(
+                data=org_data, created_by=request.user, owner=owner,
+            )
         except IntegrityError as exc:
             logger.error('Organization create IntegrityError: %s', exc, exc_info=True)
             return Response(

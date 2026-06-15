@@ -17,6 +17,7 @@ import {
   FileQuestion,
   LayoutDashboard,
   KeyRound,
+  ClipboardList,
 } from 'lucide-react';
 import { NavSection, NavItem } from '@/types';
 
@@ -43,6 +44,7 @@ export const ADMIN_NAV_MENU: NavSection[] = [
     title: 'مدیریت کاربران',
     items: [
       { label: 'کاربران', href: '/admin/users', icon: Users },
+      { label: 'درخواست‌های دسترسی', href: '/admin/waitlist', icon: ClipboardList },
     ]
   },
   {

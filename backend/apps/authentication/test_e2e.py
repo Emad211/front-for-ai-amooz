@@ -80,25 +80,20 @@ class TestCompleteAuthenticationFlows:
         assert post_logout_refresh.status_code in [401, 400]
 
     def test_complete_teacher_registration_to_password_change_flow(self):
-        """Test teacher registration and password change flow"""
+        """Teacher (created via waitlist/ORM, not public register) → password change."""
         client = APIClient()
-        
-        # Step 1: Register as teacher
-        register_data = {
-            'username': 'e2e_teacher',
-            'email': 'teacher@e2e.com',
-            'password': 'OriginalPass123!@#',
-            'role': 'TEACHER'
-        }
-        
-        register_response = client.post('/api/auth/register/', register_data, format='json')
-        assert register_response.status_code == 201
-        assert register_response.data['user']['role'] == 'TEACHER'
-        
-        # Verify teacher profile created
-        user = User.objects.get(username='e2e_teacher')
-        assert TeacherProfile.objects.filter(user=user).exists()
-        
+
+        # Step 1: Teachers no longer self-register publicly; create the account
+        # directly (mirrors the waitlist token-completion outcome).
+        user = User.objects.create_user(
+            username='e2e_teacher',
+            email='teacher@e2e.com',
+            password='OriginalPass123!@#',
+            role=User.Role.TEACHER,
+        )
+        TeacherProfile.objects.get_or_create(user=user)
+        assert user.role == User.Role.TEACHER
+
         # Step 2: Login with original password (to get fresh tokens)
         login_response = client.post('/api/token/', {
             'username': 'e2e_teacher',
@@ -337,14 +332,16 @@ class TestCompleteAuthenticationFlows:
         assert response2.data['detail'] == 'Validation error.'
         assert 'email' in response2.data['errors']
 
-        # Test duplicate email in different role is allowed
+        # Public register no longer accepts TEACHER (waitlist-gated), so the
+        # "same email, different role" path is unreachable via this endpoint.
         response4 = client.post('/api/auth/register/', {
             'username': 'newteacher',
             'email': 'existing@test.com',
             'password': 'StrongPass123!@#',
             'role': 'TEACHER',
         }, format='json')
-        assert response4.status_code == 201
+        assert response4.status_code == 400
+        assert 'role' in response4.data['errors']
         
         # Test case sensitivity (username)
         response3 = client.post('/api/auth/register/', {

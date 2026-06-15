@@ -25,7 +25,9 @@ class TestRegisterSerializer:
         assert serializer.is_valid()
         assert serializer.validated_data['role'] == 'STUDENT'
 
-    def test_valid_teacher_registration_data(self):
+    def test_teacher_role_rejected_in_public_register(self):
+        # Teachers no longer self-register: TEACHER must go through the waitlist
+        # approval → registration-token flow (apps.waitlist).
         data = {
             'username': 'test_teacher',
             'email': 'teacher@test.com',
@@ -33,8 +35,8 @@ class TestRegisterSerializer:
             'role': 'TEACHER'
         }
         serializer = RegisterSerializer(data=data)
-        assert serializer.is_valid()
-        assert serializer.validated_data['role'] == 'TEACHER'
+        assert not serializer.is_valid()
+        assert 'role' in serializer.errors
 
     def test_invalid_admin_role_registration(self):
         data = {
@@ -117,14 +119,14 @@ class TestRegisterSerializer:
         assert user.role == User.Role.STUDENT
 
     def test_create_user_with_specified_role(self):
-        data = {
-            'username': 'teacher_user',
-            'password': 'StrongPass123!@#',
-            'role': 'TEACHER'
-        }
-        serializer = RegisterSerializer(data=data)
-        assert serializer.is_valid()
-        user = serializer.save()
+        # The public serializer no longer accepts TEACHER, but the User model
+        # still supports it (used by the waitlist token-completion + org redeem
+        # paths).
+        user = User.objects.create_user(
+            username='teacher_user',
+            password='StrongPass123!@#',
+            role=User.Role.TEACHER,
+        )
         assert user.role == User.Role.TEACHER
 
     def test_username_max_length_validation(self):

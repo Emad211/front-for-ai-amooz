@@ -62,6 +62,7 @@ INSTALLED_APPS = [
     'apps.chatbot',
     'apps.material',
     'apps.organizations',
+    'apps.waitlist',
 ]
 
 AUTH_USER_MODEL = 'accounts.User'
@@ -255,6 +256,8 @@ REST_FRAMEWORK = {
     'DEFAULT_THROTTLE_RATES': {
         'anon': os.getenv('THROTTLE_RATE_ANON', '60/minute'),
         'user': os.getenv('THROTTLE_RATE_USER', '300/minute'),
+        # Public waitlist intake — abuse-prone, so rate-limit per IP.
+        'waitlist': os.getenv('THROTTLE_RATE_WAITLIST', '10/hour'),
     },
     # Global pagination — all list endpoints return at most PAGE_SIZE items.
     'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',

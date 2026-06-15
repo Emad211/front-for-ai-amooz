@@ -77,6 +77,7 @@ urlpatterns = [
     path('api/notifications/', include('apps.notification.urls')),
     path('api/admin/', include('apps.commons.urls')),
     path('api/organizations/', include('apps.organizations.urls')),
+    path('api/waitlist/', include('apps.waitlist.urls')),
 ]
 
 from django.conf import settings

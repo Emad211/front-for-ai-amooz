@@ -45,13 +45,21 @@ class RegisterSerializer(serializers.Serializer):
         help_text="User role: 'STUDENT' or 'TEACHER'. Defaults to 'STUDENT'. Case-insensitive."
     )
 
-    _VALID_ROLES = {User.Role.STUDENT, User.Role.TEACHER}
+    # Public self-registration is STUDENT-only. TEACHER accounts are created via
+    # the waitlist approval → registration-token flow (apps.waitlist); direct
+    # teacher self-registration is intentionally closed.
+    _VALID_ROLES = {User.Role.STUDENT}
 
     def validate_role(self, value: str) -> str:
-        """Accept role in any case (e.g. 'teacher' -> 'TEACHER')."""
+        """Accept role in any case; only STUDENT may self-register."""
         if not value:
             return User.Role.STUDENT
         upper = value.upper()
+        if upper == User.Role.TEACHER:
+            raise serializers.ValidationError(
+                'ثبت‌نام مستقیم معلم امکان‌پذیر نیست. ابتدا درخواست دهید؛ پس از تأیید، '
+                'لینک ثبت‌نام برایتان ارسال می‌شود.'
+            )
         if upper not in self._VALID_ROLES:
             raise serializers.ValidationError(
                 f"Invalid role '{value}'. Must be one of: {', '.join(sorted(self._VALID_ROLES))}"

@@ -101,9 +101,75 @@ export const teacherSignupSchema = z
     }
   });
 
+// ── Waitlist (access request) schemas ───────────────────────────────────────
+
+const optionalEmailSchema = z
+  .string()
+  .trim()
+  .optional()
+  .refine((v) => !v || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v), {
+    message: "لطفاً یک ایمیل معتبر وارد کنید",
+  });
+
+const optionalIntStringSchema = z
+  .string()
+  .trim()
+  .optional()
+  .refine((v) => !v || /^\d+$/.test(v), { message: "یک عدد معتبر وارد کنید" });
+
+const optionalUrlSchema = z
+  .string()
+  .trim()
+  .optional()
+  .refine((v) => !v || /^https?:\/\/.+/.test(v), {
+    message: "آدرس باید با http یا https شروع شود",
+  });
+
+export const teacherAccessRequestSchema = z.object({
+  fullName: z.string().trim().min(3, { message: "نام و نام خانوادگی را کامل وارد کنید" }),
+  phone: iranMobileSchema,
+  email: optionalEmailSchema,
+  expertise: z.string().trim().max(255).optional(),
+  note: z.string().trim().max(1000).optional(),
+});
+
+export const orgAccessRequestSchema = z.object({
+  fullName: z.string().trim().min(3, { message: "نام رابط را کامل وارد کنید" }),
+  orgName: z.string().trim().min(2, { message: "نام سازمان الزامی است" }),
+  phone: iranMobileSchema,
+  email: optionalEmailSchema,
+  city: z.string().trim().max(120).optional(),
+  expectedStudents: optionalIntStringSchema,
+  website: optionalUrlSchema,
+  note: z.string().trim().max(1000).optional(),
+});
+
+export const completeRegistrationSchema = z
+  .object({
+    username: z
+      .string()
+      .trim()
+      .min(3, { message: "نام کاربری باید حداقل ۳ کاراکتر باشد" })
+      .max(150, { message: "نام کاربری بیش از حد طولانی است" }),
+    password: passwordSchema,
+    confirmPassword: z.string().min(1, { message: "تکرار رمز عبور الزامی است" }),
+  })
+  .superRefine((data, ctx) => {
+    if (data.confirmPassword.length > 0 && data.password !== data.confirmPassword) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "رمز عبور و تکرار آن یکسان نیست",
+        path: ["confirmPassword"],
+      });
+    }
+  });
+
 /**
  * Types
  */
 export type LoginFormValues = z.infer<typeof loginSchema>;
 export type JoinCodeFormValues = z.infer<typeof joinCodeSchema>;
 export type TeacherSignupFormValues = z.infer<typeof teacherSignupSchema>;
+export type TeacherAccessRequestFormValues = z.infer<typeof teacherAccessRequestSchema>;
+export type OrgAccessRequestFormValues = z.infer<typeof orgAccessRequestSchema>;
+export type CompleteRegistrationFormValues = z.infer<typeof completeRegistrationSchema>;
