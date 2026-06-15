@@ -30,6 +30,7 @@ from .views import (
     StudentCourseChatMediaView,
     StudentCourseChatHistoryView,
     StudentChapterQuizView,
+    StudentChapterQuizRegenerateView,
     StudentFinalExamView,
     InviteCodeVerifyView,
     StudentNotificationListView,
@@ -117,6 +118,7 @@ urlpatterns = [
     path('student/courses/<int:session_id>/chat-media/', StudentCourseChatMediaView.as_view(), name='student_course_chat_media'),
     path('student/courses/<int:session_id>/chat-history/', StudentCourseChatHistoryView.as_view(), name='student_course_chat_history'),
     path('student/courses/<int:session_id>/chapters/<str:chapter_id>/quiz/', StudentChapterQuizView.as_view(), name='student_chapter_quiz'),
+    path('student/courses/<int:session_id>/chapters/<str:chapter_id>/quiz/regenerate/', StudentChapterQuizRegenerateView.as_view(), name='student_chapter_quiz_regenerate'),
     path('student/courses/<int:session_id>/final-exam/', StudentFinalExamView.as_view(), name='student_final_exam'),
 
     path('invites/verify/', InviteCodeVerifyView.as_view(), name='invite_code_verify'),

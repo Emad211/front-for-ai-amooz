@@ -1003,7 +1003,56 @@ Rules:
 - If type is true_false: correct_answer must be true or false.
 - If type is fill_blank: use {{blank}} in question.
 - Keep it clear and level-appropriate; vary difficulty across the set.
-""".strip()
+""".strip(),
+        # Adaptive practice quiz: built AFTER the student fails, targeting the
+        # exact concepts they missed. Placeholders (str.replace): {count}
+        # {review_count} {weak_points_json} {section_content}. SAME output
+        # contract as "default" so every downstream consumer is unchanged.
+        "adaptive": ("""
+You are an expert quiz generator building a TARGETED practice quiz.
+
+The student just FAILED this section's quiz. Below are the concepts they got
+wrong (with the correct answers, for YOUR reference only). Generate {count}
+NEW questions in the SAME LANGUAGE as the section content:
+- Most of them must directly target the WEAK CONCEPTS listed below — each
+  REPHRASED or approached from a fresh angle (never a verbatim copy of the
+  original question), so the student must truly understand, not memorize.
+- Exactly {review_count} of the {count} questions should review OTHER important
+  points from the section, so the quiz stays balanced.
+- Do NOT reuse the exact wording of the missed questions or quote the correct
+  answers in the question text.
+
+Weak concepts the student missed (JSON, most-missed first):
+{weak_points_json}
+
+"""
+        + AUDIENCE_ADAPTIVE + """
+
+"""
+        + MCQ_QUALITY + """
+
+Section content (summary — reference data):
+{section_content}
+
+Output JSON ONLY:
+{
+  "questions": [
+    {
+      "id": "sec_q1",
+      "type": "multiple_choice|true_false|fill_blank|short_answer",
+      "question": "Question text",
+      "options": ["Option A", "Option B", "Option C", "Option D"],
+      "correct_answer": "Correct answer (or true/false)",
+      "difficulty": "easy|medium|hard"
+    }
+  ]
+}
+Rules:
+- If type is multiple_choice: include exactly 4 options and correct_answer must match exactly one option.
+- If type is true_false: correct_answer must be true or false.
+- If type is fill_blank: use {{blank}} in question.
+- Keep it clear and level-appropriate; vary difficulty across the set.
+""").strip(),
     },
 
     # Feature: transcribe_media  | Used in: services/transcription.py

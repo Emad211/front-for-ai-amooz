@@ -884,6 +884,88 @@ def process_exam_prep_full_pipeline(self, session_id: int) -> dict:
     return {'status': 'success', 'session_id': session_id}
 
 
+@shared_task(bind=True, max_retries=2, default_retry_delay=120, acks_late=True)
+def pregenerate_student_assessments(self, session_id: int, student_id: int) -> dict:
+    """Pre-build every chapter quiz + the final exam for a student in the
+    background, so the FIRST time they open a quiz it is already there instead
+    of waiting on on-demand generation.
+
+    Idempotent and best-effort: anything already generated is skipped, and one
+    section/exam failing never aborts the rest (on-demand generation remains the
+    fallback for anything this misses).
+    """
+    from django.contrib.auth import get_user_model
+    from .models import ClassCreationSession, ClassSectionQuiz, ClassFinalExam
+    from .services.quizzes import generate_section_quiz_questions, generate_final_exam_pool
+
+    User = get_user_model()
+    session = (
+        ClassCreationSession.objects
+        .filter(id=session_id, is_published=True)
+        .prefetch_related('sections__units')
+        .first()
+    )
+    student = User.objects.filter(id=student_id).first()
+    if session is None or student is None:
+        return {'status': 'skipped', 'reason': 'session or student missing'}
+
+    quizzes_created = 0
+    for section in session.sections.order_by('order'):
+        existing = ClassSectionQuiz.objects.filter(session=session, section=section, student=student).first()
+        if existing is not None and isinstance(existing.questions, dict) and existing.questions.get('questions'):
+            continue
+        units = list(section.units.order_by('order'))
+        combined = "\n\n".join(
+            [
+                (u.content_markdown or u.source_markdown or '').strip()
+                for u in units
+                if (u.content_markdown or u.source_markdown or '').strip()
+            ]
+        ).strip()[:8000]
+        if not combined:
+            continue
+        try:
+            quiz_obj, _provider, _model = generate_section_quiz_questions(section_content=combined, count=5)
+            ClassSectionQuiz.objects.update_or_create(
+                session=session, section=section, student=student,
+                defaults={'questions': quiz_obj},
+            )
+            quizzes_created += 1
+        except Exception:
+            logger.exception('pregenerate: section quiz failed session=%s section=%s', session_id, section.id)
+
+    final_exam_created = False
+    existing_exam = ClassFinalExam.objects.filter(session=session, student=student).first()
+    if existing_exam is None or not (isinstance(existing_exam.exam, dict) and existing_exam.exam.get('questions')):
+        parts: list[str] = []
+        for section in session.sections.order_by('order'):
+            parts.append(str(section.title or '').strip())
+            for unit in section.units.order_by('order'):
+                txt = (unit.content_markdown or unit.source_markdown or '').strip()
+                if txt:
+                    parts.append(txt)
+        combined = "\n\n".join([p for p in parts if p]).strip()[:12000]
+        if combined:
+            try:
+                exam_obj, _provider, _model = generate_final_exam_pool(combined_content=combined, pool_size=12)
+                ClassFinalExam.objects.update_or_create(
+                    session=session, student=student, defaults={'exam': exam_obj},
+                )
+                final_exam_created = True
+            except Exception:
+                logger.exception('pregenerate: final exam failed session=%s', session_id)
+
+    logger.info(
+        'pregenerate done session=%s student=%s quizzes=%d final_exam=%s',
+        session_id, student_id, quizzes_created, final_exam_created,
+    )
+    return {
+        'status': 'success',
+        'quizzes_created': quizzes_created,
+        'final_exam_created': final_exam_created,
+    }
+
+
 # ---------------------------------------------------------------------------
 # Lightweight tasks (SMS, notifications, etc.)
 # ---------------------------------------------------------------------------

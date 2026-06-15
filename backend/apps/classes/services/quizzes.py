@@ -129,6 +129,59 @@ def generate_section_quiz_questions(
         raise RuntimeError(f"Quiz generation failed: {exc}") from exc
 
 
+def generate_adaptive_section_quiz(
+    *,
+    section_content: str,
+    weak_points: list[dict[str, Any]],
+    count: int = 5,
+    review_count: int = 1,
+) -> tuple[dict[str, Any], str, str]:
+    """Generate a NEW section quiz that targets the student's weak points.
+
+    ``weak_points`` is the output of
+    :func:`apps.classes.services.adaptive_quiz.compute_weak_points`. The return
+    value and JSON shape are IDENTICAL to
+    :func:`generate_section_quiz_questions` (``{"questions": [...]}``), so the
+    view/storage that consume it need no special handling.
+    """
+    import json as _json
+
+    model = _select_model("QUIZ_MODEL")
+    provider = preferred_provider()
+
+    # Compact each weak point to what the model needs (bound token usage).
+    compact = [
+        {
+            "question": str(w.get("question") or "")[:400],
+            "correct_answer": str(w.get("correct_answer") or "")[:200],
+            "difficulty": w.get("difficulty") or "",
+        }
+        for w in (weak_points or [])
+    ][:8]
+    # Keep at least one targeted question; review never exceeds count-1.
+    review_count = max(0, min(int(review_count), max(0, int(count) - 1)))
+
+    prompt = _render_prompt(
+        PROMPTS["section_quiz"]["adaptive"],
+        count=count,
+        review_count=review_count,
+        weak_points_json=_json.dumps(compact, ensure_ascii=False),
+        section_content=section_content,
+    )
+
+    try:
+        text = _call_llm(
+            model=model,
+            prompt=prompt,
+            feature=LLMUsageLog.Feature.QUIZ_GENERATION,
+        )
+        obj = _parse_json_result(text, root_key="questions")
+        return obj, provider, model
+    except Exception as exc:
+        logger.exception("Adaptive quiz generation failed")
+        raise RuntimeError(f"Adaptive quiz generation failed: {exc}") from exc
+
+
 # ---------------------------------------------------------------------
 # Open Text Grading
 # ---------------------------------------------------------------------

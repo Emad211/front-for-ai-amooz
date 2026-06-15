@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { MarkdownWithMath } from '@/components/content/markdown-with-math';
 import { DashboardService } from '@/services/dashboard-service';
-import { CheckCircle2, XCircle, RotateCcw, AlertCircle } from 'lucide-react';
+import { CheckCircle2, XCircle, RotateCcw, AlertCircle, Sparkles } from 'lucide-react';
 
 type QStatus = 'correct' | 'partial' | 'wrong' | null;
 
@@ -25,6 +25,13 @@ const STATUS_CARD: Record<'correct' | 'partial' | 'wrong', string> = {
   partial: 'border-amber-500/50 bg-amber-500/[0.06]',
   wrong: 'border-rose-500/50 bg-rose-500/[0.06]',
 };
+
+// Display form of a question's correct answer (true/false → صحیح/غلط).
+function correctAnswerText(value: unknown): string {
+  if (value === true || String(value).toLowerCase() === 'true') return 'صحیح';
+  if (value === false || String(value).toLowerCase() === 'false') return 'غلط';
+  return String(value ?? '').trim();
+}
 
 type QuizQuestion = {
   id: string;
@@ -68,6 +75,7 @@ export function ChapterQuiz({
   const [quiz, setQuiz] = React.useState<QuizPayload | null>(null);
   const [answers, setAnswers] = React.useState<Record<string, string>>({});
   const [isSubmitting, setIsSubmitting] = React.useState(false);
+  const [isRegenerating, setIsRegenerating] = React.useState(false);
   const [submitResult, setSubmitResult] = React.useState<SubmitPayload | null>(null);
   const resultRef = React.useRef<HTMLDivElement | null>(null);
 
@@ -110,6 +118,27 @@ export function ChapterQuiz({
       resultRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
   }, [submitResult]);
+
+  // The learning loop: after a fail, build a NEW quiz focused on the concepts
+  // the student missed and load it fresh (leaving review mode).
+  const onRegenerate = async () => {
+    setIsRegenerating(true);
+    setError(null);
+    try {
+      const q = await DashboardService.regenerateChapterQuiz(courseId, chapterId);
+      setQuiz(q);
+      const init: Record<string, string> = {};
+      (q?.questions ?? []).forEach((qq: QuizQuestion) => {
+        init[qq.id] = '';
+      });
+      setAnswers(init);
+      setSubmitResult(null);
+    } catch (e: any) {
+      setError(e?.message || 'ساخت آزمون جدید با خطا مواجه شد. کمی بعد دوباره تلاش کنید.');
+    } finally {
+      setIsRegenerating(false);
+    }
+  };
 
   const onSubmit = async () => {
     if (!quiz) return;
@@ -237,11 +266,12 @@ export function ChapterQuiz({
                     { val: 'غلط', label: 'غلط ✗' },
                   ].map((tf) => {
                     const selected = value === tf.val;
+                    const isCorrectTF = reviewing && correctAnswerText(r?.correct_answer) === tf.val;
                     const cls = reviewing
-                      ? selected
-                        ? status === 'correct'
-                          ? 'border-green-500 bg-green-500/10 text-green-600'
-                          : 'border-rose-500 bg-rose-500/10 text-rose-600'
+                      ? isCorrectTF
+                        ? 'border-green-500 bg-green-500/10 text-green-600'
+                        : selected
+                        ? 'border-rose-500 bg-rose-500/10 text-rose-600'
                         : 'border-border bg-background opacity-50'
                       : selected
                       ? 'border-primary bg-primary/10 text-primary'
@@ -274,11 +304,14 @@ export function ChapterQuiz({
                 <div className="mt-3 space-y-2">
                   {(q.options ?? []).map((opt) => {
                     const selected = value === opt;
+                    const isCorrectOpt =
+                      reviewing && r?.correct_answer != null &&
+                      String(opt).trim() === String(r.correct_answer).trim();
                     const cls = reviewing
-                      ? selected
-                        ? status === 'correct'
-                          ? 'border-green-500 bg-green-500/10'
-                          : 'border-rose-500 bg-rose-500/10'
+                      ? isCorrectOpt
+                        ? 'border-green-500 bg-green-500/10'   // the correct option (revealed)
+                        : selected
+                        ? 'border-rose-500 bg-rose-500/10'     // your wrong choice
                         : 'border-border opacity-50'
                       : selected
                       ? 'border-primary bg-primary/5'
@@ -320,8 +353,8 @@ export function ChapterQuiz({
                 />
               )}
 
-              {/* Inline per-question feedback (after submission) */}
-              {reviewing && r?.feedback && (
+              {/* Inline feedback + revealed correct answer (after submission) */}
+              {reviewing && r && (r.feedback || (status !== 'correct' && correctAnswerText(r.correct_answer))) && (
                 <div
                   className={`mt-3 rounded-lg border p-3 text-sm leading-relaxed ${
                     status === 'correct'
@@ -331,8 +364,18 @@ export function ChapterQuiz({
                       : 'border-rose-500/30 bg-rose-500/[0.06] text-foreground'
                   }`}
                 >
-                  <span className="font-bold">بازخورد: </span>
-                  <MarkdownWithMath markdown={r.feedback} />
+                  {r.feedback && (
+                    <div>
+                      <span className="font-bold">بازخورد: </span>
+                      <MarkdownWithMath markdown={r.feedback} />
+                    </div>
+                  )}
+                  {status !== 'correct' && correctAnswerText(r.correct_answer) && (
+                    <div className={r.feedback ? 'mt-2' : ''}>
+                      <span className="font-bold text-green-600 dark:text-green-500">پاسخ صحیح: </span>
+                      <MarkdownWithMath markdown={correctAnswerText(r.correct_answer)} />
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -370,8 +413,19 @@ export function ChapterQuiz({
             </div>
           </div>
           <p className="text-xs text-muted-foreground mt-3">
-            بازخورد هر سؤال در کادر همان سؤال (بالا) با رنگ مشخص شده است.
+            بازخورد و پاسخ صحیح هر سؤال در کادر همان سؤال (بالا) مشخص شده است.
           </p>
+          {!submitResult.passed && (
+            <div className="mt-4 flex flex-col sm:flex-row sm:items-center gap-2">
+              <Button onClick={onRegenerate} disabled={isRegenerating} className="rounded-xl gap-2">
+                <Sparkles className="h-4 w-4" />
+                {isRegenerating ? 'در حال ساخت آزمون جدید…' : 'آزمون جدید روی نقاط ضعف من'}
+              </Button>
+              <span className="text-xs text-muted-foreground">
+                یک آزمون تازه از مباحثی که اشتباه زدی ساخته می‌شود.
+              </span>
+            </div>
+          )}
         </div>
       )}
 
@@ -381,7 +435,7 @@ export function ChapterQuiz({
             {isSubmitting ? 'در حال ارسال...' : 'ثبت پاسخ‌ها و دریافت نمره'}
           </Button>
         )}
-        <Button variant="outline" onClick={load} disabled={isSubmitting} className="rounded-xl gap-2">
+        <Button variant="outline" onClick={load} disabled={isSubmitting || isRegenerating} className="rounded-xl gap-2">
           <RotateCcw className="h-4 w-4" />
           {reviewing ? 'تلاش دوباره' : 'پاک کردن پاسخ‌ها'}
         </Button>

@@ -51,7 +51,7 @@ LIVE_KEYS = {
     "json_repair": ["default"],
     "chat_image_description": ["default"],
     "final_exam_pool": ["default"],
-    "section_quiz": ["default"],
+    "section_quiz": ["default", "adaptive"],
     "transcribe_media": ["default", "chunked"],
     "memory_summary": ["default"],
     "exam_prep_chat": ["default"],
@@ -107,6 +107,9 @@ PLACEHOLDERS = {
     ("chat_image_description", "default"): ["{unit_content}", "{user_message}"],
     ("final_exam_pool", "default"): ["{pool_size}", "{combined_content}"],
     ("section_quiz", "default"): ["{count}", "{section_content}", "{{blank}}"],
+    ("section_quiz", "adaptive"): [
+        "{count}", "{review_count}", "{weak_points_json}", "{section_content}", "{{blank}}",
+    ],
     ("memory_summary", "default"): ["{old_summary}", "{new_turns}"],
     # Chunked transcription continuation block (services/transcription.py).
     ("transcribe_media", "chunked"): [
@@ -149,6 +152,7 @@ OUTPUT_KEYS = {
     ("exam_prep_hint", "default"): ["hint", "encouragement"],
     ("final_exam_pool", "default"): ["exam_title", "questions", "correct_answer", "points"],
     ("section_quiz", "default"): ["questions", "correct_answer", "difficulty"],
+    ("section_quiz", "adaptive"): ["questions", "correct_answer", "difficulty"],
     ("exam_prep_chat", "default"): ["content", "suggestions"],
     ("exam_prep_handwriting_vision", "default"): [
         "description_markdown", "extracted_text_markdown", "clean_steps_markdown",
@@ -241,6 +245,7 @@ def test_mcq_quality_block_in_quiz_generators():
     anchor = MCQ_QUALITY.splitlines()[0]
     for key, sub in [
         ("section_quiz", "default"),
+        ("section_quiz", "adaptive"),
         ("final_exam_pool", "default"),
         ("fetch_quizzes", "multiple_choice"),
         ("practice_tests", "mixed_questions"),

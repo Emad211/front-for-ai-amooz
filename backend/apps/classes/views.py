@@ -93,7 +93,8 @@ from .services.structure import structure_transcript_markdown
 from .services.prerequisites import extract_prerequisites, generate_prerequisite_teaching
 from .services.recap import generate_recap_from_structure, recap_json_to_markdown
 from .services.sync_structure import sync_structure_from_session
-from .services.quizzes import generate_answer_hint, generate_final_exam_pool, generate_section_quiz_questions, grade_open_text_answer
+from .services.quizzes import generate_answer_hint, generate_final_exam_pool, generate_section_quiz_questions, generate_adaptive_section_quiz, grade_open_text_answer
+from .services.adaptive_quiz import compute_weak_points
 from .services.pdf_export import generate_course_pdf
 from .services.exam_prep_structure import extract_exam_prep_structure
 from .services.invite_codes import get_or_create_invite_code_for_phone
@@ -1843,6 +1844,24 @@ class StudentCourseContentView(APIView):
         touch_enrollment(session=session, student=user)
         done_units = completed_unit_ids(session=session, student=user)
 
+        # First entry into the class → pre-build every chapter quiz + the final
+        # exam in the background so the student never waits on first quiz access.
+        # Dispatched once: only when no quiz exists yet, de-duped by a short-lived
+        # cache flag. The task is idempotent and on-demand generation is the
+        # fallback, so a missing worker (or this never firing) is harmless.
+        try:
+            from django.core.cache import cache
+            from . import tasks as _classes_tasks
+
+            pregen_flag = f'pregen_assess_{session.id}_{user.id}'
+            already_has_quiz = ClassSectionQuiz.objects.filter(session=session, student=user).exists()
+            if not already_has_quiz and cache.add(pregen_flag, '1', 600):
+                transaction.on_commit(
+                    lambda: _classes_tasks.pregenerate_student_assessments.delay(session.id, user.id)
+                )
+        except Exception:
+            logger.warning('pre-generation dispatch failed (non-fatal)', exc_info=True)
+
         chapters: list[dict] = []
         first_lesson_marked = False
         for section in session.sections.order_by('order'):
@@ -2512,7 +2531,10 @@ class StudentChapterQuizView(APIView):
                     'score_0_100': score,
                     'label': label,
                     'feedback': feedback,
-                    # NOTE: correct_answer intentionally excluded to prevent answer leakage
+                    # Correct answer IS revealed after submission: the student
+                    # learns from every question and (on a fail) gets a brand-new
+                    # adaptive quiz next, so the old answers can't be reused.
+                    'correct_answer': correct,
                 }
             )
 
@@ -2554,6 +2576,136 @@ class StudentChapterQuizView(APIView):
             'course_progress': _compute_student_course_progress(session=session, student=user),
         }
         return Response(StudentChapterQuizSubmitResponseSerializer(payload).data, status=status.HTTP_200_OK)
+
+
+class StudentChapterQuizRegenerateView(APIView):
+    """Build a NEW chapter quiz that targets the concepts the student missed.
+
+    This is the back half of the learning loop: after the student fails, they
+    see the correct answers (the submit response now reveals them) and then call
+    this to get a fresh, harder-to-game quiz focused on their weak points.
+
+    Only allowed when the latest state is a FAIL (``last_passed is False``).
+    That single rule rate-limits the loop on its own: regenerating resets
+    ``last_passed`` to NULL, so the student must take (and fail) the new quiz
+    before they can regenerate again. Pass → blocked (no need). One LLM call.
+    """
+
+    permission_classes = [IsAuthenticated, IsStudentUser]
+
+    @extend_schema(
+        tags=['Classes'],
+        summary='Regenerate a chapter quiz focused on the student weak points (after a fail)',
+        operation_id='student_chapter_quiz_regenerate',
+        responses={200: StudentChapterQuizResponseSerializer},
+    )
+    def post(self, request, session_id: int, chapter_id: str):
+        user = request.user
+        phone = (getattr(user, 'phone', None) or '').strip()
+        if not phone:
+            return Response({'detail': 'شماره موبایل برای حساب کاربری ثبت نشده است.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        session = (
+            ClassCreationSession.objects.filter(id=session_id, is_published=True, invites__phone=phone)
+            .prefetch_related('sections__units')
+            .first()
+        )
+        if session is None:
+            return Response({'detail': 'کلاس پیدا نشد.'}, status=status.HTTP_404_NOT_FOUND)
+
+        chapter_key = (chapter_id or '').strip()
+        section = session.sections.filter(external_id=chapter_key).first()
+        if section is None:
+            try:
+                section_id_int = int(chapter_key)
+            except Exception:
+                section_id_int = None
+            if section_id_int:
+                section = session.sections.filter(id=section_id_int).first()
+        if section is None:
+            return Response({'detail': 'فصل پیدا نشد.'}, status=status.HTTP_404_NOT_FOUND)
+
+        quiz = ClassSectionQuiz.objects.filter(session=session, section=section, student=user).first()
+        if quiz is None or not isinstance(quiz.questions, dict) or not quiz.questions.get('questions'):
+            return Response({'detail': 'ابتدا در آزمون این فصل شرکت کنید.'}, status=status.HTTP_400_BAD_REQUEST)
+        if quiz.last_passed is not False:
+            return Response(
+                {'detail': 'آزمون جدید فقط پس از مردود شدن در آزمون فعلی ساخته می‌شود.'},
+                status=status.HTTP_409_CONFLICT,
+            )
+
+        weak_points = compute_weak_points(quiz)
+
+        units = list(section.units.order_by('order'))
+        combined = "\n\n".join(
+            [
+                (u.content_markdown or u.source_markdown or '').strip()
+                for u in units
+                if (u.content_markdown or u.source_markdown or '').strip()
+            ]
+        ).strip()[:8000]
+
+        try:
+            if weak_points:
+                quiz_obj, _provider, _model = generate_adaptive_section_quiz(
+                    section_content=combined, weak_points=weak_points, count=5, review_count=1,
+                )
+            else:
+                # Failed but no per-question weak signal (e.g. all open-ended,
+                # mid scores) → still give a fresh quiz.
+                quiz_obj, _provider, _model = generate_section_quiz_questions(section_content=combined, count=5)
+        except Exception as exc:
+            logger.exception('Adaptive quiz regeneration failed: session=%s section=%s', session.id, section.id)
+            return Response(
+                {'detail': 'ساخت آزمون جدید با خطا مواجه شد. کمی بعد دوباره تلاش کنید.'},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+
+        latest_attempt = quiz.attempts.order_by('-created_at').first()
+        new_questions = dict(quiz_obj) if isinstance(quiz_obj, dict) else {'questions': []}
+        new_questions['adaptive'] = bool(weak_points)
+        new_questions['based_on_attempt_id'] = latest_attempt.id if latest_attempt else None
+        quiz.questions = new_questions
+        quiz.last_score_0_100 = None
+        quiz.last_passed = None
+        quiz.save(update_fields=['questions', 'last_score_0_100', 'last_passed', 'updated_at'])
+
+        raw_questions = quiz.questions.get('questions') if isinstance(quiz.questions, dict) else []
+        if not isinstance(raw_questions, list):
+            raw_questions = []
+        sanitized: list[dict] = []
+        for q in raw_questions:
+            if not isinstance(q, dict):
+                continue
+            qid = str(q.get('id') or '').strip()
+            qtype = str(q.get('type') or '').strip()
+            qtext = str(q.get('question') or '').strip()
+            if not qid or not qtype or not qtext:
+                continue
+            options = q.get('options')
+            if not isinstance(options, list):
+                options = []
+            sanitized.append(
+                {
+                    'id': qid,
+                    'type': qtype,
+                    'question': qtext,
+                    'options': [str(o) for o in options if str(o).strip()],
+                    'difficulty': str(q.get('difficulty') or '').strip(),
+                }
+            )
+
+        payload = {
+            'quiz_id': quiz.id,
+            'session_id': session.id,
+            'chapter_id': section.external_id or str(section.id),
+            'chapter_title': section.title,
+            'passing_score': 70,
+            'questions': sanitized,
+            'last_score_0_100': None,
+            'last_passed': None,
+        }
+        return Response(StudentChapterQuizResponseSerializer(payload).data)
 
 
 class StudentFinalExamView(APIView):
@@ -2779,7 +2931,10 @@ class StudentFinalExamView(APIView):
                     'max_points': pts,
                     'label': label,
                     'feedback': feedback,
-                    # NOTE: correct_answer intentionally excluded to prevent answer leakage
+                    # Revealed after submission (see chapter-quiz rationale): the
+                    # student always sees the right answer + explanation to learn.
+                    'correct_answer': correct,
+                    'explanation': expl,
                 }
             )
 

@@ -27,6 +27,13 @@ const STATUS_CARD: Record<'correct' | 'partial' | 'wrong', string> = {
   wrong: 'border-rose-500/50 bg-rose-500/[0.06]',
 };
 
+// Display form of a question's correct answer (true/false → صحیح/غلط).
+function correctAnswerText(value: unknown): string {
+  if (value === true || String(value).toLowerCase() === 'true') return 'صحیح';
+  if (value === false || String(value).toLowerCase() === 'false') return 'غلط';
+  return String(value ?? '').trim();
+}
+
 type FinalExamQuestion = {
   id: string;
   type: string;
@@ -245,11 +252,12 @@ export function FinalExam({ courseId, onProgressUpdate }: { courseId: string; on
                     { val: 'غلط', label: 'غلط ✗' },
                   ].map((tf) => {
                     const selected = value === tf.val;
+                    const isCorrectTF = reviewing && correctAnswerText(r?.correct_answer) === tf.val;
                     const cls = reviewing
-                      ? selected
-                        ? status === 'correct'
-                          ? 'border-green-500 bg-green-500/10 text-green-600'
-                          : 'border-rose-500 bg-rose-500/10 text-rose-600'
+                      ? isCorrectTF
+                        ? 'border-green-500 bg-green-500/10 text-green-600'
+                        : selected
+                        ? 'border-rose-500 bg-rose-500/10 text-rose-600'
                         : 'border-border bg-background opacity-50'
                       : selected
                       ? 'border-primary bg-primary/10 text-primary'
@@ -282,11 +290,14 @@ export function FinalExam({ courseId, onProgressUpdate }: { courseId: string; on
                 <div className="mt-3 space-y-2">
                   {(q.options ?? []).map((opt) => {
                     const selected = value === opt;
+                    const isCorrectOpt =
+                      reviewing && r?.correct_answer != null &&
+                      String(opt).trim() === String(r.correct_answer).trim();
                     const cls = reviewing
-                      ? selected
-                        ? status === 'correct'
-                          ? 'border-green-500 bg-green-500/10'
-                          : 'border-rose-500 bg-rose-500/10'
+                      ? isCorrectOpt
+                        ? 'border-green-500 bg-green-500/10'   // the correct option (revealed)
+                        : selected
+                        ? 'border-rose-500 bg-rose-500/10'     // your wrong choice
                         : 'border-border opacity-50'
                       : selected
                       ? 'border-primary bg-primary/5'
@@ -328,8 +339,8 @@ export function FinalExam({ courseId, onProgressUpdate }: { courseId: string; on
                 />
               )}
 
-              {/* Inline per-question feedback (after submission) */}
-              {reviewing && r?.feedback && (
+              {/* Inline feedback + revealed correct answer/explanation (after submission) */}
+              {reviewing && r && (r.feedback || (status !== 'correct' && correctAnswerText(r.correct_answer)) || r.explanation) && (
                 <div
                   className={`mt-3 rounded-lg border p-3 text-sm leading-relaxed ${
                     status === 'correct'
@@ -339,8 +350,24 @@ export function FinalExam({ courseId, onProgressUpdate }: { courseId: string; on
                       : 'border-rose-500/30 bg-rose-500/[0.06] text-foreground'
                   }`}
                 >
-                  <span className="font-bold">بازخورد: </span>
-                  <MarkdownWithMath markdown={r.feedback} />
+                  {r.feedback && (
+                    <div>
+                      <span className="font-bold">بازخورد: </span>
+                      <MarkdownWithMath markdown={r.feedback} />
+                    </div>
+                  )}
+                  {status !== 'correct' && correctAnswerText(r.correct_answer) && (
+                    <div className={r.feedback ? 'mt-2' : ''}>
+                      <span className="font-bold text-green-600 dark:text-green-500">پاسخ صحیح: </span>
+                      <MarkdownWithMath markdown={correctAnswerText(r.correct_answer)} />
+                    </div>
+                  )}
+                  {r.explanation && (
+                    <div className="mt-2 text-muted-foreground">
+                      <span className="font-bold">توضیح: </span>
+                      <MarkdownWithMath markdown={String(r.explanation)} />
+                    </div>
+                  )}
                 </div>
               )}
             </div>

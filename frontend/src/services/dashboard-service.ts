@@ -751,6 +751,26 @@ export const DashboardService = {
     });
   },
 
+  // Build a NEW quiz targeting the student's weak points (only after a fail).
+  // Returns the new quiz in the same shape as getChapterQuiz.
+  regenerateChapterQuiz: async (courseId: string, chapterId: string) => {
+    if (!RAW_API_URL) {
+      throw new Error('NEXT_PUBLIC_API_URL تنظیم نشده است.');
+    }
+    const cid = String(courseId ?? '').trim();
+    const ch = String(chapterId ?? '').trim();
+    if (!cid || !ch) {
+      throw new Error('شناسه کلاس/فصل مشخص نیست.');
+    }
+    const url = `${API_URL}/classes/student/courses/${encodeURIComponent(cid)}/chapters/${encodeURIComponent(ch)}/quiz/regenerate/`;
+    return requestJson<any>(url, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${getAccessToken()}`,
+      },
+    });
+  },
+
   submitChapterQuiz: async (courseId: string, chapterId: string, answers: Record<string, string>) => {
     if (!RAW_API_URL) {
       throw new Error('NEXT_PUBLIC_API_URL تنظیم نشده است.');
