@@ -4,6 +4,7 @@ import React from 'react';
 import { BarChart, Signal, Clock, PlayCircle } from 'lucide-react';
 import type { CourseContent } from '@/types';
 import { MarkdownWithMath } from '@/components/content/markdown-with-math';
+import { MathText } from '@/components/content/math-text';
 import { ChapterQuiz } from './chapter-quiz';
 import { FinalExam } from './final-exam';
 import { Button } from '@/components/ui/button';
@@ -58,7 +59,7 @@ export const LessonContent = ({
     <div className="bg-card border border-border rounded-2xl p-4 shadow-lg relative overflow-hidden flex-shrink-0">
       <div className="flex flex-col gap-4">
         <div>
-          <h1 className="text-base sm:text-lg font-bold text-foreground mb-1">{content.title}</h1>
+          <h1 className="text-base sm:text-lg font-bold text-foreground mb-1"><MathText text={content.title} /></h1>
           <p className="text-sm text-muted-foreground leading-relaxed line-clamp-1">
             {content.description}
           </p>
@@ -90,7 +91,7 @@ export const LessonContent = ({
         <div className="h-8 w-8 rounded-lg bg-primary/10 flex items-center justify-center text-primary">
           <PlayCircle className="h-5 w-5" />
         </div>
-        <h2 className="text-lg font-bold text-foreground">{lesson?.title}</h2>
+        <h2 className="text-lg font-bold text-foreground"><MathText text={lesson?.title} /></h2>
       </div>
       <div className="max-w-none text-muted-foreground leading-relaxed space-y-6">
         {lesson?.type === 'quiz' && lesson?.chapterId && courseId ? (

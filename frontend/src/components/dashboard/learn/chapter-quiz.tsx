@@ -4,6 +4,7 @@ import React from 'react';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { MarkdownWithMath } from '@/components/content/markdown-with-math';
+import { MathText } from '@/components/content/math-text';
 import { DashboardService } from '@/services/dashboard-service';
 import { CheckCircle2, XCircle, RotateCcw, AlertCircle, Sparkles } from 'lucide-react';
 
@@ -197,7 +198,7 @@ export function ChapterQuiz({
     <div className="space-y-6">
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div>
-          <h3 className="text-base font-bold text-foreground">آزمون فصل: {chapterTitle}</h3>
+          <h3 className="text-base font-bold text-foreground">آزمون فصل: <MathText text={chapterTitle} /></h3>
           <div className="text-xs text-muted-foreground mt-1">حد نصاب قبولی: {quiz.passing_score} از ۱۰۰</div>
         </div>
         {typeof quiz.last_score_0_100 === 'number' && (

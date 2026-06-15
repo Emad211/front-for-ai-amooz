@@ -2,6 +2,7 @@
 
 import React from 'react';
 import { MarkdownWithMath } from '@/components/content/markdown-with-math';
+import { MathText } from '@/components/content/math-text';
 
 interface NoteItem {
   title?: string;
@@ -30,7 +31,7 @@ export function InteractiveNotes({ items }: InteractiveNotesProps) {
 
         return (
           <div key={idx} className="rounded-xl border border-border bg-card p-3">
-            {title && <div className="text-xs font-bold text-foreground mb-2">{title}</div>}
+            {title && <MathText as="div" text={title} className="text-xs font-bold text-foreground mb-2" />}
             {content && <MarkdownWithMath markdown={content} className="text-xs text-muted-foreground" />}
           </div>
         );

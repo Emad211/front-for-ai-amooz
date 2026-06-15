@@ -2,6 +2,7 @@
 
 import React, { useState, useCallback } from 'react';
 import { MarkdownWithMath } from '@/components/content/markdown-with-math';
+import { MathText } from '@/components/content/math-text';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { ChevronDown, ChevronUp } from 'lucide-react';
@@ -53,7 +54,7 @@ export function InteractiveScenario({ scenarios }: InteractiveScenarioProps) {
         return (
           <div key={idx} className="rounded-xl border border-border bg-card p-2 sm:p-3">
             {/* Title */}
-            <div className="text-sm font-bold text-foreground mb-2">{title}</div>
+            <MathText as="div" text={title} className="text-sm font-bold text-foreground mb-2" />
 
             {/* Context */}
             {context && (

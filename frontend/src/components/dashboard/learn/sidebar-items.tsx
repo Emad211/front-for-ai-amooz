@@ -2,6 +2,7 @@
 
 import React from 'react';
 import { cn } from '@/lib/utils';
+import { MathText } from '@/components/content/math-text';
 
 interface SidebarItemProps {
   icon: React.ReactElement;
@@ -29,7 +30,7 @@ export const SidebarItem = ({ icon, title, disabled = false, active = false, onC
         {React.cloneElement(icon as React.ReactElement<{ className?: string }>, {
           className: cn('h-5 w-5', disabled ? 'text-muted-foreground/40' : 'text-muted-foreground'),
         })}
-        <span className="text-sm font-medium">{title}</span>
+        <MathText text={title} className="text-sm font-medium" />
       </div>
     </div>
   </div>
@@ -53,6 +54,6 @@ export const SubmenuItem = ({ icon, title, active = false, special = false, onCl
     onClick={onClick}
   >
     {React.cloneElement(icon as React.ReactElement<{ className?: string }>, { className: cn('h-4 w-4', active ? 'text-primary' : 'text-current') })}
-    <span className={cn('text-sm', active && 'font-bold')}>{title}</span>
+    <MathText text={title} className={cn('text-sm', active && 'font-bold')} />
   </div>
 );

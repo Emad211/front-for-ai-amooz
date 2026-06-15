@@ -13,6 +13,7 @@ import '../learn.css';
 import { CourseSidebar } from '@/components/dashboard/learn/course-sidebar';
 import { LessonContent } from '@/components/dashboard/learn/lesson-content';
 import { ChatAssistant } from '@/components/dashboard/learn/learn-chat-assistant';
+import { MathText } from '@/components/content/math-text';
 import { Sheet, SheetContent, SheetTrigger, SheetTitle, SheetDescription } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import Link from 'next/link';
@@ -336,8 +337,8 @@ export default function LearnPage() {
                         </Button>
                     </Link>
                     <div className="flex flex-col">
-                        <span className="text-[10px] text-muted-foreground">{content.title}</span>
-                        <span className="text-xs font-bold truncate max-w-[160px] sm:max-w-[240px]">{currentLesson?.title}</span>
+                        <MathText text={content.title} className="text-[10px] text-muted-foreground" />
+                        <MathText text={currentLesson?.title} className="text-xs font-bold truncate max-w-[160px] sm:max-w-[240px]" />
                     </div>
                 </div>
                 
