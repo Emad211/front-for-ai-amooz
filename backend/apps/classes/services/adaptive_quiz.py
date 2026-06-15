@@ -42,7 +42,11 @@ def _questions_by_id(quiz_questions: Any) -> dict[str, dict]:
 
 
 def _is_wrong(pq: dict) -> bool:
-    """Was this graded per-question result a miss?"""
+    """Was this graded per-question result a miss?
+
+    Handles BOTH grading shapes: section quizzes report ``score_0_100``; the
+    final exam reports ``score_points`` out of ``max_points``.
+    """
     label = str(pq.get("label") or "").strip().lower()
     if label == "correct":
         return False
@@ -51,29 +55,24 @@ def _is_wrong(pq: dict) -> bool:
     score = pq.get("score_0_100")
     if isinstance(score, (int, float)):
         return score < WEAK_POINT_SCORE_THRESHOLD
+    got, mx = pq.get("score_points"), pq.get("max_points")
+    if isinstance(got, (int, float)) and isinstance(mx, (int, float)) and mx > 0:
+        return got < mx
     # No label and no score → can't tell; treat as not-wrong to avoid noise.
     return False
 
 
-def compute_weak_points(quiz, *, max_attempts: int = 3) -> list[dict]:
-    """Aggregate the student's recent wrong answers on ``quiz`` into weak points.
+def compute_weak_points_from(questions_obj, attempts) -> list[dict]:
+    """Core weak-point aggregation, decoupled from the model.
 
-    Looks at the most recent ``max_attempts`` attempts, finds every question the
-    student missed, and joins it back to the stored question (for the correct
-    answer + difficulty). Returns one entry per distinct missed question,
-    sorted by how often it was missed (most-missed first):
-
-        [{id, question, correct_answer, difficulty, student_answer, times_wrong}]
-
-    Empty list if there are no attempts or nothing was missed. ``student_answer``
-    is the most recent wrong answer (attempts are scanned newest-first).
+    ``questions_obj`` is the stored ``{"questions": [...]}`` dict (works for both
+    ``ClassSectionQuiz.questions`` and ``ClassFinalExam.exam``); ``attempts`` is
+    an iterable of attempt rows (each with a ``.result`` dict) already ordered
+    newest-first. Returns one entry per distinct missed question, most-missed
+    first: ``[{id, question, correct_answer, difficulty, student_answer,
+    times_wrong}]``.
     """
-    q_by_id = _questions_by_id(getattr(quiz, "questions", None))
-
-    try:
-        attempts = list(quiz.attempts.order_by("-created_at")[:max_attempts])
-    except Exception:
-        attempts = []
+    q_by_id = _questions_by_id(questions_obj)
 
     agg: dict[str, dict] = {}
     for att in attempts:
@@ -101,3 +100,12 @@ def compute_weak_points(quiz, *, max_attempts: int = 3) -> list[dict]:
             agg[qid]["times_wrong"] += 1
 
     return sorted(agg.values(), key=lambda e: e["times_wrong"], reverse=True)
+
+
+def compute_weak_points(quiz, *, max_attempts: int = 3) -> list[dict]:
+    """Weak points for a ``ClassSectionQuiz`` (``.questions`` + ``.attempts``)."""
+    try:
+        attempts = list(quiz.attempts.order_by("-created_at")[:max_attempts])
+    except Exception:
+        attempts = []
+    return compute_weak_points_from(getattr(quiz, "questions", None), attempts)

@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { MarkdownWithMath } from '@/components/content/markdown-with-math';
 import { DashboardService } from '@/services/dashboard-service';
-import { CheckCircle2, XCircle, RotateCcw, AlertCircle } from 'lucide-react';
+import { CheckCircle2, XCircle, RotateCcw, AlertCircle, Sparkles } from 'lucide-react';
 
 type QStatus = 'correct' | 'partial' | 'wrong' | null;
 
@@ -68,6 +68,7 @@ export function FinalExam({ courseId, onProgressUpdate }: { courseId: string; on
   const [exam, setExam] = React.useState<FinalExamPayload | null>(null);
   const [answers, setAnswers] = React.useState<Record<string, string>>({});
   const [isSubmitting, setIsSubmitting] = React.useState(false);
+  const [isRegenerating, setIsRegenerating] = React.useState(false);
   const [submitResult, setSubmitResult] = React.useState<SubmitPayload | null>(null);
   const resultRef = React.useRef<HTMLDivElement | null>(null);
 
@@ -113,6 +114,27 @@ export function FinalExam({ courseId, onProgressUpdate }: { courseId: string; on
       resultRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
   }, [submitResult]);
+
+  // The learning loop: after a fail, build a NEW final exam focused on the
+  // concepts the student missed and load it fresh (leaving review mode).
+  const onRegenerate = async () => {
+    setIsRegenerating(true);
+    setError(null);
+    try {
+      const q = await DashboardService.regenerateFinalExam(courseId);
+      setExam(q);
+      const init: Record<string, string> = {};
+      (q?.questions ?? []).forEach((qq: FinalExamQuestion) => {
+        init[qq.id] = '';
+      });
+      setAnswers(init);
+      setSubmitResult(null);
+    } catch (e: any) {
+      setError(e?.message || 'ساخت آزمون جدید با خطا مواجه شد. کمی بعد دوباره تلاش کنید.');
+    } finally {
+      setIsRegenerating(false);
+    }
+  };
 
   const onSubmit = async () => {
     if (!exam) return;
@@ -406,8 +428,19 @@ export function FinalExam({ courseId, onProgressUpdate }: { courseId: string; on
             </div>
           </div>
           <p className="text-xs text-muted-foreground mt-3">
-            بازخورد هر سؤال در کادر همان سؤال (بالا) با رنگ مشخص شده است.
+            بازخورد و پاسخ صحیح هر سؤال در کادر همان سؤال (بالا) مشخص شده است.
           </p>
+          {!submitResult.passed && (
+            <div className="mt-4 flex flex-col sm:flex-row sm:items-center gap-2">
+              <Button onClick={onRegenerate} disabled={isRegenerating} className="rounded-xl gap-2">
+                <Sparkles className="h-4 w-4" />
+                {isRegenerating ? 'در حال ساخت آزمون جدید…' : 'آزمون نهایی جدید روی نقاط ضعف من'}
+              </Button>
+              <span className="text-xs text-muted-foreground">
+                یک آزمون نهاییِ تازه از مباحثی که اشتباه زدی ساخته می‌شود.
+              </span>
+            </div>
+          )}
         </div>
       )}
 
@@ -417,7 +450,7 @@ export function FinalExam({ courseId, onProgressUpdate }: { courseId: string; on
             {isSubmitting ? 'در حال ارسال...' : 'ثبت پاسخ‌ها و دریافت نمره'}
           </Button>
         )}
-        <Button variant="outline" onClick={load} disabled={isSubmitting} className="rounded-xl gap-2">
+        <Button variant="outline" onClick={load} disabled={isSubmitting || isRegenerating} className="rounded-xl gap-2">
           <RotateCcw className="h-4 w-4" />
           {reviewing ? 'تلاش دوباره' : 'پاک کردن پاسخ‌ها'}
         </Button>

@@ -965,7 +965,56 @@ Output JSON ONLY in this exact structure:
 }
 
 No extra text, ONLY JSON.
-""".strip()
+""".strip(),
+        # Adaptive final exam: built AFTER the student fails, focused on the
+        # concepts they missed. Placeholders (str.replace): {pool_size}
+        # {review_count} {weak_points_json} {combined_content}. SAME output
+        # contract as "default".
+        "adaptive": ("""
+You are an expert exam designer building a TARGETED final exam.
+
+The student just FAILED the final exam. Below are the concepts they got wrong
+(with the correct answers, for YOUR reference only). Create {pool_size} NEW
+questions in the SAME LANGUAGE as the course content:
+- Most must directly target the WEAK CONCEPTS below — each REPHRASED or from a
+  fresh angle (never a verbatim copy), so the student must truly understand.
+- About {review_count} should review OTHER major topics so the exam stays
+  balanced and still covers the course.
+- Do NOT reuse the exact wording of the missed questions or quote their answers.
+
+Weak concepts the student missed (JSON, most-missed first):
+{weak_points_json}
+
+"""
+        + AUDIENCE_ADAPTIVE + """
+
+"""
+        + MCQ_QUALITY + """
+
+Course content (summarized — reference data):
+{combined_content}
+
+Output JSON ONLY in this exact structure:
+{
+  "exam_title": "Final exam title in lesson language",
+  "time_limit": 45,
+  "passing_score": 70,
+  "questions": [
+    {
+      "id": "final_q1",
+      "type": "multiple_choice",
+      "question": "Question text",
+      "options": ["Option 1", "Option 2", "Option 3", "Option 4"],
+      "correct_answer": "Correct option text",
+      "explanation": "Explanation",
+      "points": 5,
+      "chapter": "Chapter name"
+    }
+  ]
+}
+
+No extra text, ONLY JSON.
+""").strip(),
     },
 
     # Feature: section_quiz  | Used in: services/quizzes.py (generate_section_quiz_questions)

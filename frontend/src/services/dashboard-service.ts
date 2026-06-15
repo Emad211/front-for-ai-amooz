@@ -808,6 +808,24 @@ export const DashboardService = {
     });
   },
 
+  // Build a NEW final exam targeting the student's weak points (only after a fail).
+  regenerateFinalExam: async (courseId: string) => {
+    if (!RAW_API_URL) {
+      throw new Error('NEXT_PUBLIC_API_URL تنظیم نشده است.');
+    }
+    const cid = String(courseId ?? '').trim();
+    if (!cid) {
+      throw new Error('شناسه کلاس مشخص نیست.');
+    }
+    const url = `${API_URL}/classes/student/courses/${encodeURIComponent(cid)}/final-exam/regenerate/`;
+    return requestJson<any>(url, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${getAccessToken()}`,
+      },
+    });
+  },
+
   submitFinalExam: async (courseId: string, answers: Record<string, string>) => {
     if (!RAW_API_URL) {
       throw new Error('NEXT_PUBLIC_API_URL تنظیم نشده است.');

@@ -251,6 +251,52 @@ def generate_final_exam_pool(
         raise RuntimeError(f"Final exam pool generation failed: {exc}") from exc
 
 
+def generate_adaptive_final_exam(
+    *,
+    combined_content: str,
+    weak_points: list[dict[str, Any]],
+    pool_size: int = 12,
+    review_count: int = 2,
+) -> tuple[dict[str, Any], str, str]:
+    """Generate a NEW final exam pool targeting the student's weak points.
+
+    Same return + JSON shape as :func:`generate_final_exam_pool`.
+    """
+    import json as _json
+
+    model = _select_model("FINAL_EXAM_MODEL", "QUIZ_MODEL")
+    provider = preferred_provider()
+
+    compact = [
+        {
+            "question": str(w.get("question") or "")[:400],
+            "correct_answer": str(w.get("correct_answer") or "")[:200],
+        }
+        for w in (weak_points or [])
+    ][:12]
+    review_count = max(0, min(int(review_count), max(0, int(pool_size) - 1)))
+
+    prompt = _render_prompt(
+        PROMPTS["final_exam_pool"]["adaptive"],
+        pool_size=pool_size,
+        review_count=review_count,
+        weak_points_json=_json.dumps(compact, ensure_ascii=False),
+        combined_content=combined_content,
+    )
+
+    try:
+        text = _call_llm(
+            model=model,
+            prompt=prompt,
+            feature=LLMUsageLog.Feature.FINAL_EXAM_GENERATION,
+        )
+        obj = _parse_json_result(text, root_key="questions")
+        return obj, provider, model
+    except Exception as exc:
+        logger.exception("Adaptive final exam generation failed")
+        raise RuntimeError(f"Adaptive final exam generation failed: {exc}") from exc
+
+
 # ---------------------------------------------------------------------
 # Hint Generation
 # ---------------------------------------------------------------------

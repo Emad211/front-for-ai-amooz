@@ -50,7 +50,7 @@ LIVE_KEYS = {
     "exam_prep_hint": ["default"],
     "json_repair": ["default"],
     "chat_image_description": ["default"],
-    "final_exam_pool": ["default"],
+    "final_exam_pool": ["default", "adaptive"],
     "section_quiz": ["default", "adaptive"],
     "transcribe_media": ["default", "chunked"],
     "memory_summary": ["default"],
@@ -106,6 +106,9 @@ PLACEHOLDERS = {
     ("json_repair", "default"): ["{feature}", "{schema_hint}", "{raw_text}"],
     ("chat_image_description", "default"): ["{unit_content}", "{user_message}"],
     ("final_exam_pool", "default"): ["{pool_size}", "{combined_content}"],
+    ("final_exam_pool", "adaptive"): [
+        "{pool_size}", "{review_count}", "{weak_points_json}", "{combined_content}",
+    ],
     ("section_quiz", "default"): ["{count}", "{section_content}", "{{blank}}"],
     ("section_quiz", "adaptive"): [
         "{count}", "{review_count}", "{weak_points_json}", "{section_content}", "{{blank}}",
@@ -151,6 +154,7 @@ OUTPUT_KEYS = {
     ("text_grading", "default"): ["score_0_100", "label", "feedback", "missing_points"],
     ("exam_prep_hint", "default"): ["hint", "encouragement"],
     ("final_exam_pool", "default"): ["exam_title", "questions", "correct_answer", "points"],
+    ("final_exam_pool", "adaptive"): ["exam_title", "questions", "correct_answer", "points"],
     ("section_quiz", "default"): ["questions", "correct_answer", "difficulty"],
     ("section_quiz", "adaptive"): ["questions", "correct_answer", "difficulty"],
     ("exam_prep_chat", "default"): ["content", "suggestions"],
@@ -247,6 +251,7 @@ def test_mcq_quality_block_in_quiz_generators():
         ("section_quiz", "default"),
         ("section_quiz", "adaptive"),
         ("final_exam_pool", "default"),
+        ("final_exam_pool", "adaptive"),
         ("fetch_quizzes", "multiple_choice"),
         ("practice_tests", "mixed_questions"),
     ]:

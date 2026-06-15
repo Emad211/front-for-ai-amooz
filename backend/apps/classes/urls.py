@@ -32,6 +32,7 @@ from .views import (
     StudentChapterQuizView,
     StudentChapterQuizRegenerateView,
     StudentFinalExamView,
+    StudentFinalExamRegenerateView,
     InviteCodeVerifyView,
     StudentNotificationListView,
     # Exam Prep Pipeline views
@@ -120,6 +121,7 @@ urlpatterns = [
     path('student/courses/<int:session_id>/chapters/<str:chapter_id>/quiz/', StudentChapterQuizView.as_view(), name='student_chapter_quiz'),
     path('student/courses/<int:session_id>/chapters/<str:chapter_id>/quiz/regenerate/', StudentChapterQuizRegenerateView.as_view(), name='student_chapter_quiz_regenerate'),
     path('student/courses/<int:session_id>/final-exam/', StudentFinalExamView.as_view(), name='student_final_exam'),
+    path('student/courses/<int:session_id>/final-exam/regenerate/', StudentFinalExamRegenerateView.as_view(), name='student_final_exam_regenerate'),
 
     path('invites/verify/', InviteCodeVerifyView.as_view(), name='invite_code_verify'),
     path('student/notifications/', StudentNotificationListView.as_view(), name='student_notifications_list'),

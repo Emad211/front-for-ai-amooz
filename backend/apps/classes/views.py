@@ -93,8 +93,8 @@ from .services.structure import structure_transcript_markdown
 from .services.prerequisites import extract_prerequisites, generate_prerequisite_teaching
 from .services.recap import generate_recap_from_structure, recap_json_to_markdown
 from .services.sync_structure import sync_structure_from_session
-from .services.quizzes import generate_answer_hint, generate_final_exam_pool, generate_section_quiz_questions, generate_adaptive_section_quiz, grade_open_text_answer
-from .services.adaptive_quiz import compute_weak_points
+from .services.quizzes import generate_answer_hint, generate_final_exam_pool, generate_section_quiz_questions, generate_adaptive_section_quiz, generate_adaptive_final_exam, grade_open_text_answer
+from .services.adaptive_quiz import compute_weak_points, compute_weak_points_from
 from .services.pdf_export import generate_course_pdf
 from .services.exam_prep_structure import extract_exam_prep_structure
 from .services.invite_codes import get_or_create_invite_code_for_phone
@@ -2974,6 +2974,132 @@ class StudentFinalExamView(APIView):
             'course_progress': _compute_student_course_progress(session=session, student=user),
         }
         return Response(StudentFinalExamSubmitResponseSerializer(payload).data, status=status.HTTP_200_OK)
+
+
+class StudentFinalExamRegenerateView(APIView):
+    """Build a NEW final exam focused on the concepts the student missed.
+
+    Mirrors ``StudentChapterQuizRegenerateView`` for the course-wide final exam:
+    only allowed after a fail (``exam.last_passed is False``); resetting
+    ``last_passed`` to NULL rate-limits the loop (must retake before regenerating).
+    """
+
+    permission_classes = [IsAuthenticated, IsStudentUser]
+
+    @extend_schema(
+        tags=['Classes'],
+        summary='Regenerate the final exam focused on the student weak points (after a fail)',
+        operation_id='student_final_exam_regenerate',
+        responses={200: StudentFinalExamResponseSerializer},
+    )
+    def post(self, request, session_id: int):
+        user = request.user
+        phone = (getattr(user, 'phone', None) or '').strip()
+        if not phone:
+            return Response({'detail': 'شماره موبایل برای حساب کاربری ثبت نشده است.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        session = (
+            ClassCreationSession.objects.filter(id=session_id, is_published=True, invites__phone=phone)
+            .prefetch_related('sections__units')
+            .first()
+        )
+        if session is None:
+            return Response({'detail': 'کلاس پیدا نشد.'}, status=status.HTTP_404_NOT_FOUND)
+
+        exam = ClassFinalExam.objects.filter(session=session, student=user).first()
+        if exam is None or not isinstance(exam.exam, dict) or not exam.exam.get('questions'):
+            return Response({'detail': 'ابتدا در آزمون نهایی شرکت کنید.'}, status=status.HTTP_400_BAD_REQUEST)
+        if exam.last_passed is not False:
+            return Response(
+                {'detail': 'آزمون جدید فقط پس از مردود شدن در آزمون نهایی ساخته می‌شود.'},
+                status=status.HTTP_409_CONFLICT,
+            )
+
+        attempts = list(exam.attempts.order_by('-created_at')[:3])
+        weak_points = compute_weak_points_from(exam.exam, attempts)
+
+        combined_parts: list[str] = []
+        for section in session.sections.order_by('order'):
+            combined_parts.append(str(section.title or '').strip())
+            for unit in section.units.order_by('order'):
+                txt = (unit.content_markdown or unit.source_markdown or '').strip()
+                if txt:
+                    combined_parts.append(txt)
+        combined = "\n\n".join([p for p in combined_parts if p]).strip()[:12000]
+
+        try:
+            if weak_points:
+                exam_obj, _provider, _model = generate_adaptive_final_exam(
+                    combined_content=combined, weak_points=weak_points, pool_size=12, review_count=2,
+                )
+            else:
+                exam_obj, _provider, _model = generate_final_exam_pool(combined_content=combined, pool_size=12)
+        except Exception:
+            logger.exception('Adaptive final exam regeneration failed: session=%s', session.id)
+            return Response(
+                {'detail': 'ساخت آزمون جدید با خطا مواجه شد. کمی بعد دوباره تلاش کنید.'},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+
+        latest_attempt = exam.attempts.order_by('-created_at').first()
+        new_exam = dict(exam_obj) if isinstance(exam_obj, dict) else {'questions': []}
+        new_exam['adaptive'] = bool(weak_points)
+        new_exam['based_on_attempt_id'] = latest_attempt.id if latest_attempt else None
+        exam.exam = new_exam
+        exam.last_score_0_100 = None
+        exam.last_passed = None
+        exam.save(update_fields=['exam', 'last_score_0_100', 'last_passed', 'updated_at'])
+
+        raw_questions = exam.exam.get('questions') if isinstance(exam.exam, dict) else []
+        if not isinstance(raw_questions, list):
+            raw_questions = []
+        sanitized: list[dict] = []
+        for q in raw_questions:
+            if not isinstance(q, dict):
+                continue
+            qid = str(q.get('id') or '').strip()
+            qtype = str(q.get('type') or '').strip()
+            qtext = str(q.get('question') or '').strip()
+            if not qid or not qtype or not qtext:
+                continue
+            options = q.get('options')
+            if not isinstance(options, list):
+                options = []
+            try:
+                pts = int(q.get('points')) if q.get('points') is not None else 5
+            except Exception:
+                pts = 5
+            sanitized.append(
+                {
+                    'id': qid,
+                    'type': qtype,
+                    'question': qtext,
+                    'options': [str(o) for o in options if str(o).strip()],
+                    'points': max(1, min(100, pts)),
+                    'chapter': str(q.get('chapter') or '').strip(),
+                }
+            )
+
+        try:
+            time_limit = int(exam.exam.get('time_limit') or 45)
+        except Exception:
+            time_limit = 45
+        try:
+            passing_score = max(0, min(100, int(exam.exam.get('passing_score') or 70)))
+        except Exception:
+            passing_score = 70
+
+        payload = {
+            'exam_id': exam.id,
+            'session_id': session.id,
+            'exam_title': str(exam.exam.get('exam_title') or 'آزمون نهایی'),
+            'time_limit': time_limit,
+            'passing_score': passing_score,
+            'questions': sanitized,
+            'last_score_0_100': None,
+            'last_passed': None,
+        }
+        return Response(StudentFinalExamResponseSerializer(payload).data)
 
 
 class InviteCodeVerifyView(APIView):
