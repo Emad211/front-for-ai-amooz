@@ -40,7 +40,7 @@ def _no_sms(monkeypatch):
     calls = []
     monkeypatch.setattr(
         'apps.waitlist.views.notify_access_request_approved',
-        lambda ar: calls.append(ar.pk) or True,
+        lambda ar, frontend_base='': calls.append(ar.pk) or True,
     )
     return calls
 
@@ -189,3 +189,21 @@ def test_approve_missing_returns_404(monkeypatch):
     client = APIClient()
     client.force_authenticate(user=_admin())
     assert client.post('/api/waitlist/admin/requests/999999/approve/').status_code == 404
+
+
+@pytest.mark.django_db
+def test_approve_passes_request_origin_to_notify(monkeypatch):
+    captured = {}
+    monkeypatch.setattr(
+        'apps.waitlist.views.notify_access_request_approved',
+        lambda ar, frontend_base='': captured.update(base=frontend_base) or True,
+    )
+    ar = _teacher_request()
+    client = APIClient()
+    client.force_authenticate(user=_admin())
+    client.post(
+        f'/api/waitlist/admin/requests/{ar.pk}/approve/',
+        HTTP_ORIGIN='https://app.example.com',
+    )
+    # The view forwards the admin's browser Origin so the SMS link is correct.
+    assert captured['base'] == 'https://app.example.com'

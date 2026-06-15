@@ -14,6 +14,7 @@ import logging
 import os
 import secrets
 from datetime import timedelta
+from urllib.parse import urlsplit
 
 from django.contrib.auth import get_user_model
 from django.db import transaction
@@ -152,30 +153,58 @@ def reject_access_request(access_request: AccessRequest, reviewer, reason: str =
 
 # ── Notification (SMS, best-effort) ─────────────────────────────────────────
 
-def _registration_link(token: str) -> str:
-    base = (os.getenv('FRONTEND_BASE_URL') or '').strip().rstrip('/')
+def _resolve_frontend_base(explicit: str = '') -> str:
+    """Pick the frontend origin for building registration links.
+
+    Priority: an explicit value (the approving admin's request ``Origin`` —
+    captured in the view, so links work with zero config) → ``FRONTEND_BASE_URL``
+    env. Normalized to ``scheme://host`` (no path/trailing slash); a bare host is
+    assumed https.
+    """
+    for candidate in (explicit, os.getenv('FRONTEND_BASE_URL') or ''):
+        c = (candidate or '').strip()
+        if not c:
+            continue
+        parts = urlsplit(c if '//' in c else f'https://{c}')
+        if parts.scheme and parts.netloc:
+            return f'{parts.scheme}://{parts.netloc}'
+    return ''
+
+
+def _registration_link(token: str, frontend_base: str = '') -> str:
+    base = _resolve_frontend_base(frontend_base)
     return f'{base}/register/complete?token={token}' if base else ''
 
 
-def build_approval_sms_text(access_request: AccessRequest) -> str:
+def build_approval_sms_text(access_request: AccessRequest, frontend_base: str = '') -> str:
     ar = access_request
     if ar.kind == AccessRequest.Kind.ORGANIZATION:
+        base = _resolve_frontend_base(frontend_base)
+        tail = (
+            f'ثبت‌نام مدیر سازمان:\n{base}/org-login'
+            if base
+            else 'با این کد در صفحه «ورود سازمانی» ثبت‌نام کنید.'
+        )
         return (
             'AI_AMOOZ\n'
             f'درخواست سازمان «{ar.org_name}» تأیید شد.\n'
             f'کد فعال‌سازی مدیر: {ar.registration_token}\n'
-            'با این کد در صفحه «ورود سازمانی» ثبت‌نام کنید.'
+            f'{tail}'
         )
-    tail = _registration_link(ar.registration_token) or f'کد ثبت‌نام: {ar.registration_token}'
+    tail = _registration_link(ar.registration_token, frontend_base) or f'کد ثبت‌نام: {ar.registration_token}'
     return (
         'AI_AMOOZ\n'
         'درخواست شما برای عضویت به عنوان معلم تأیید شد.\n'
-        f'برای تکمیل ثبت‌نام:\n{tail}'
+        f'برای تکمیل ثبت‌نام روی لینک بزنید:\n{tail}'
     )
 
 
-def notify_access_request_approved(access_request: AccessRequest) -> bool:
-    """Best-effort approval SMS. Never raises. Returns True if a send was attempted."""
+def notify_access_request_approved(access_request: AccessRequest, frontend_base: str = '') -> bool:
+    """Best-effort approval SMS. Never raises. Returns True if a send was attempted.
+
+    ``frontend_base`` (the approving admin's request Origin) lets the SMS carry a
+    clickable registration link without any env configuration.
+    """
     ar = access_request
     api_key = (os.getenv('MEDIANA_API_KEY') or '').strip()
     if not api_key:
@@ -190,7 +219,7 @@ def notify_access_request_approved(access_request: AccessRequest) -> bool:
             api_key=api_key,
             requests=[{
                 'RefId': f'waitlist-approve-{ar.pk}',
-                'TextMessage': build_approval_sms_text(ar),
+                'TextMessage': build_approval_sms_text(ar, frontend_base),
                 'Recipients': [phone],
             }],
         )

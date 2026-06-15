@@ -168,7 +168,10 @@ class AccessRequestApproveView(APIView):
                 status=status.HTTP_409_CONFLICT,
             )
         ar = approve_access_request(ar, request.user)
-        notify_access_request_approved(ar)  # best-effort, never raises
+        # The admin's browser Origin lets the SMS carry a clickable registration
+        # link with zero config (falls back to FRONTEND_BASE_URL env).
+        frontend_base = request.headers.get('Origin') or request.headers.get('Referer') or ''
+        notify_access_request_approved(ar, frontend_base=frontend_base)  # best-effort, never raises
         return Response(AccessRequestAdminSerializer(ar).data, status=status.HTTP_200_OK)
 
 
