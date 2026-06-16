@@ -24,6 +24,7 @@ from apps.authentication.openapi import (
 from apps.authentication.serializers import TokenObtainPairByIdentifierSerializer
 
 from apps.core.views import HealthCheckView
+from apps.core.throttling import SafeScopedRateThrottle
 
 
 @extend_schema_view(
@@ -40,6 +41,8 @@ from apps.core.views import HealthCheckView
 )
 class TokenObtainPairViewDocs(TokenObtainPairView):
     serializer_class = TokenObtainPairByIdentifierSerializer
+    throttle_classes = [SafeScopedRateThrottle]
+    throttle_scope = 'login'
 
 
 @extend_schema_view(

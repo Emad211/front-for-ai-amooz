@@ -258,6 +258,13 @@ REST_FRAMEWORK = {
         'user': os.getenv('THROTTLE_RATE_USER', '300/minute'),
         # Public waitlist intake — abuse-prone, so rate-limit per IP.
         'waitlist': os.getenv('THROTTLE_RATE_WAITLIST', '10/hour'),
+        # Dedicated per-IP brute-force limits on credential / account-creation
+        # endpoints (login, student invite-login, public register, org redeem).
+        # Tighter than the shared 'anon' bucket; tune via env per deployment.
+        'login': os.getenv('THROTTLE_RATE_LOGIN', '10/min'),
+        'invite_login': os.getenv('THROTTLE_RATE_INVITE_LOGIN', '10/min'),
+        'register': os.getenv('THROTTLE_RATE_REGISTER', '10/hour'),
+        'redeem': os.getenv('THROTTLE_RATE_REDEEM', '15/hour'),
     },
     # Global pagination — all list endpoints return at most PAGE_SIZE items.
     'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',

@@ -13,6 +13,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.token_blacklist.models import OutstandingToken, BlacklistedToken
 from drf_spectacular.utils import extend_schema, OpenApiResponse, OpenApiExample
 
+from apps.core.throttling import SafeScopedRateThrottle
 from apps.accounts.serializers import MeSerializer
 from apps.accounts.models import StudentProfile
 from apps.classes.models import ClassInvitation
@@ -46,6 +47,8 @@ def _safe_update_last_login(user) -> None:
 class RegisterView(APIView):
     authentication_classes = []
     permission_classes = []
+    throttle_classes = [SafeScopedRateThrottle]
+    throttle_scope = 'register'
 
     @extend_schema(
         summary="Register a new user",
@@ -201,6 +204,8 @@ class PasswordChangeView(APIView):
 class InviteCodeLoginView(APIView):
     authentication_classes = []
     permission_classes = [AllowAny]
+    throttle_classes = [SafeScopedRateThrottle]
+    throttle_scope = 'invite_login'
 
     @extend_schema(
         summary='Login via invite code (student)',
