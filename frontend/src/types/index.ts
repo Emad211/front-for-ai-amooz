@@ -456,3 +456,34 @@ export interface RedeemCodeResult {
   access?: string;
   refresh?: string;
 }
+
+// ── Study groups (گروه آموزشی) ──
+export type StudyGroupStatus = 'active' | 'archived';
+
+export interface StudyGroupTeacherBrief {
+  id: number;
+  name: string;
+}
+
+export interface StudyGroupStudentBrief {
+  id: number;
+  name: string;
+  phone: string;
+  status: string;
+}
+
+export interface StudyGroup {
+  id: number;
+  name: string;
+  gradeLabel: string;
+  subject: string;
+  description: string;
+  status: StudyGroupStatus;
+  statusDisplay: string;
+  studentCount: number;
+  teacherCount: number;
+  teachers: StudyGroupTeacherBrief[];
+  createdAt: string;
+  /** Present in detail / my-study-groups responses (the roster). */
+  students?: StudyGroupStudentBrief[];
+}

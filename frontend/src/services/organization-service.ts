@@ -7,6 +7,8 @@ import type {
   ValidateCodeResult,
   RedeemCodeResult,
   OrgRole,
+  StudyGroup,
+  StudyGroupStatus,
 } from '@/types';
 
 const RAW_API_URL = (process.env.NEXT_PUBLIC_API_URL ?? '').replace(/\/$/, '');
@@ -265,5 +267,72 @@ export const OrganizationService = {
 
   getMyWorkspaces: async (): Promise<Workspace[]> => {
     return requestJson<Workspace[]>('/organizations/my-workspaces/');
+  },
+
+  // ============================================================================
+  // Study groups (گروه آموزشی)
+  // ============================================================================
+
+  getStudyGroups: async (orgId: number): Promise<StudyGroup[]> => {
+    return requestJson<StudyGroup[]>(`/organizations/${orgId}/study-groups/`);
+  },
+
+  getStudyGroup: async (orgId: number, groupId: number): Promise<StudyGroup> => {
+    return requestJson<StudyGroup>(`/organizations/${orgId}/study-groups/${groupId}/`);
+  },
+
+  createStudyGroup: async (orgId: number, data: {
+    name: string;
+    grade_label?: string;
+    subject?: string;
+    description?: string;
+  }): Promise<StudyGroup> => {
+    return requestJson<StudyGroup>(`/organizations/${orgId}/study-groups/`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  updateStudyGroup: async (orgId: number, groupId: number, data: Partial<{
+    name: string;
+    grade_label: string;
+    subject: string;
+    description: string;
+    status: StudyGroupStatus;
+  }>): Promise<StudyGroup> => {
+    return requestJson<StudyGroup>(`/organizations/${orgId}/study-groups/${groupId}/`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+  },
+
+  deleteStudyGroup: async (orgId: number, groupId: number): Promise<void> => {
+    await requestJson(`/organizations/${orgId}/study-groups/${groupId}/`, { method: 'DELETE' });
+  },
+
+  assignStudyGroupTeacher: async (orgId: number, groupId: number, teacherId: number): Promise<StudyGroup> => {
+    return requestJson<StudyGroup>(`/organizations/${orgId}/study-groups/${groupId}/teachers/`, {
+      method: 'POST',
+      body: JSON.stringify({ teacher_id: teacherId }),
+    });
+  },
+
+  removeStudyGroupTeacher: async (orgId: number, groupId: number, userId: number): Promise<void> => {
+    await requestJson(`/organizations/${orgId}/study-groups/${groupId}/teachers/${userId}/`, { method: 'DELETE' });
+  },
+
+  addStudyGroupStudent: async (orgId: number, groupId: number, studentId: number): Promise<StudyGroup> => {
+    return requestJson<StudyGroup>(`/organizations/${orgId}/study-groups/${groupId}/students/`, {
+      method: 'POST',
+      body: JSON.stringify({ student_id: studentId }),
+    });
+  },
+
+  removeStudyGroupStudent: async (orgId: number, groupId: number, userId: number): Promise<void> => {
+    await requestJson(`/organizations/${orgId}/study-groups/${groupId}/students/${userId}/`, { method: 'DELETE' });
+  },
+
+  getMyStudyGroups: async (orgId: number): Promise<StudyGroup[]> => {
+    return requestJson<StudyGroup[]>(`/organizations/${orgId}/my-study-groups/`);
   },
 };

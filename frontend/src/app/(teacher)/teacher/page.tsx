@@ -4,11 +4,14 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useWorkspace } from '@/hooks/use-workspace';
 import { OrgDashboardPage } from '@/components/teacher/org-dashboard';
+import { OrgTeacherDashboard } from '@/components/teacher/org-teacher-dashboard';
+
+type TeacherView = 'pending' | 'manager' | 'org-teacher';
 
 export default function TeacherPage() {
   const { isOrgMode, activeWorkspace, isLoading } = useWorkspace();
   const router = useRouter();
-  const [ready, setReady] = useState(false);
+  const [view, setView] = useState<TeacherView>('pending');
 
   useEffect(() => {
     if (isLoading) return;
@@ -21,18 +24,13 @@ export default function TeacherPage() {
       return;
     }
 
-    // In org mode, only org admins/deputies (managers) get the management
-    // dashboard — its API is IsOrgAdmin-only and 403s for an org teacher. Send
-    // org teachers to their org-scoped classes instead.
+    // In org mode: org admins/deputies (managers) get the management dashboard;
+    // org teachers get their group-centric dashboard (their study groups).
     const orgRole = activeWorkspace?.orgRole;
-    if (orgRole === 'admin' || orgRole === 'deputy') {
-      setReady(true);
-    } else {
-      router.replace('/teacher/my-classes');
-    }
+    setView(orgRole === 'admin' || orgRole === 'deputy' ? 'manager' : 'org-teacher');
   }, [isOrgMode, activeWorkspace, isLoading, router]);
 
-  if (!ready) return null;
-
-  return <OrgDashboardPage />;
+  if (view === 'manager') return <OrgDashboardPage />;
+  if (view === 'org-teacher') return <OrgTeacherDashboard />;
+  return null;
 }

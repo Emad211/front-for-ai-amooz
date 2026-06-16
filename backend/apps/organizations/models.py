@@ -247,3 +247,177 @@ class InvitationCode(models.Model):
     @property
     def remaining_uses(self) -> int:
         return max(0, self.max_uses - self.use_count)
+
+
+# ---------------------------------------------------------------------------
+# StudyGroup (گروه آموزشی) — a cohort / class-section inside an organization
+# ---------------------------------------------------------------------------
+
+class StudyGroup(models.Model):
+    """A cohort / class-section within an organization (e.g. «دهم ریاضی»).
+
+    Teachers are assigned to a group via :class:`StudyGroupTeacher` and students
+    belong to it via :class:`StudyGroupMembership`. A group is purely a roster
+    grouping inside one org — the unit a manager organizes teachers + students by.
+    """
+
+    class Status(models.TextChoices):
+        ACTIVE = 'active', _('فعال')
+        ARCHIVED = 'archived', _('بایگانی شده')
+
+    organization = models.ForeignKey(
+        Organization,
+        on_delete=models.CASCADE,
+        related_name='study_groups',
+        verbose_name=_('سازمان'),
+    )
+    name = models.CharField(
+        max_length=128,
+        verbose_name=_('نام گروه'),
+        help_text=_('مثلاً «دهم ریاضی»'),
+    )
+    grade_label = models.CharField(
+        max_length=64,
+        blank=True,
+        verbose_name=_('پایه'),
+        help_text=_('مثلاً «دهم»'),
+    )
+    subject = models.CharField(
+        max_length=128,
+        blank=True,
+        verbose_name=_('درس/رشته'),
+        help_text=_('مثلاً «ریاضی»'),
+    )
+    description = models.TextField(blank=True, verbose_name=_('توضیحات'))
+    status = models.CharField(
+        max_length=16,
+        choices=Status.choices,
+        default=Status.ACTIVE,
+        db_index=True,
+    )
+
+    teachers = models.ManyToManyField(
+        settings.AUTH_USER_MODEL,
+        through='StudyGroupTeacher',
+        through_fields=('study_group', 'teacher'),
+        related_name='study_groups_taught',
+        blank=True,
+    )
+
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='created_study_groups',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['organization', 'name'],
+                name='uniq_studygroup_org_name',
+            ),
+        ]
+        verbose_name = _('گروه آموزشی')
+        verbose_name_plural = _('گروه‌های آموزشی')
+
+    def __str__(self) -> str:
+        return f'{self.name} ({self.organization.name})'
+
+    @property
+    def student_count(self) -> int:
+        return self.student_memberships.filter(
+            status=StudyGroupMembership.Status.ACTIVE,
+        ).count()
+
+    @property
+    def teacher_count(self) -> int:
+        return self.teacher_links.count()
+
+
+class StudyGroupTeacher(models.Model):
+    """Assigns an organization teacher to a study group (M2M through model)."""
+
+    study_group = models.ForeignKey(
+        StudyGroup,
+        on_delete=models.CASCADE,
+        related_name='teacher_links',
+    )
+    teacher = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='study_group_teacher_links',
+    )
+    assigned_at = models.DateTimeField(auto_now_add=True)
+    assigned_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='+',
+    )
+
+    class Meta:
+        ordering = ['-assigned_at']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['study_group', 'teacher'],
+                name='uniq_studygroup_teacher',
+            ),
+        ]
+        verbose_name = _('تخصیص معلم به گروه')
+        verbose_name_plural = _('تخصیص معلمان به گروه‌ها')
+
+    def __str__(self) -> str:
+        return f'{self.teacher} → {self.study_group.name}'
+
+
+class StudyGroupMembership(models.Model):
+    """A student's membership in a study group (cohort)."""
+
+    class Status(models.TextChoices):
+        ACTIVE = 'active', _('فعال')
+        INACTIVE = 'inactive', _('غیرفعال')
+
+    study_group = models.ForeignKey(
+        StudyGroup,
+        on_delete=models.CASCADE,
+        related_name='student_memberships',
+    )
+    student = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='study_group_memberships',
+    )
+    status = models.CharField(
+        max_length=16,
+        choices=Status.choices,
+        default=Status.ACTIVE,
+        db_index=True,
+    )
+    joined_at = models.DateTimeField(auto_now_add=True)
+    added_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='+',
+    )
+
+    class Meta:
+        ordering = ['-joined_at']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['study_group', 'student'],
+                name='uniq_studygroup_student',
+            ),
+        ]
+        verbose_name = _('عضویت در گروه آموزشی')
+        verbose_name_plural = _('عضویت‌های گروه آموزشی')
+
+    def __str__(self) -> str:
+        return f'{self.student} ∈ {self.study_group.name}'

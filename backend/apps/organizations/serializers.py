@@ -10,7 +10,12 @@ from django.contrib.auth import get_user_model
 from django.utils import timezone
 from rest_framework import serializers
 
-from .models import InvitationCode, Organization, OrganizationMembership
+from .models import (
+    InvitationCode,
+    Organization,
+    OrganizationMembership,
+    StudyGroup,
+)
 
 User = get_user_model()
 
@@ -203,3 +208,83 @@ class RedeemInvitationSerializer(serializers.Serializer):
                 raise serializers.ValidationError('ظرفیت دانش‌آموز سازمان تکمیل شده است.')
 
         return value
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# StudyGroup (گروه آموزشی) — READ
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class StudyGroupSerializer(serializers.ModelSerializer):
+    """Read-only study group (camelCase). List shape: counts + teacher briefs.
+
+    ``studentCount``/``teacherCount`` read annotated values when present (list
+    view annotates them to avoid N+1) and fall back to the model properties.
+    ``teachers`` reads the ``teacher_links__teacher`` prefetch cache.
+    """
+
+    gradeLabel = serializers.CharField(source='grade_label', read_only=True)
+    statusDisplay = serializers.CharField(source='get_status_display', read_only=True)
+    studentCount = serializers.SerializerMethodField()
+    teacherCount = serializers.SerializerMethodField()
+    teachers = serializers.SerializerMethodField()
+    createdAt = serializers.DateTimeField(source='created_at', read_only=True)
+
+    class Meta:
+        model = StudyGroup
+        fields = [
+            'id', 'name', 'gradeLabel', 'subject', 'description',
+            'status', 'statusDisplay', 'studentCount', 'teacherCount',
+            'teachers', 'createdAt',
+        ]
+
+    @staticmethod
+    def get_studentCount(obj) -> int:  # noqa: N802
+        val = getattr(obj, '_student_count', None)
+        return val if val is not None else obj.student_count
+
+    @staticmethod
+    def get_teacherCount(obj) -> int:  # noqa: N802
+        val = getattr(obj, '_teacher_count', None)
+        return val if val is not None else obj.teacher_count
+
+    @staticmethod
+    def get_teachers(obj):
+        return [
+            {'id': link.teacher_id, 'name': link.teacher.get_full_name() or link.teacher.username}
+            for link in obj.teacher_links.all()
+        ]
+
+
+class StudyGroupDetailSerializer(StudyGroupSerializer):
+    """Detail shape: adds the student roster (reads the prefetch cache)."""
+
+    students = serializers.SerializerMethodField()
+
+    class Meta(StudyGroupSerializer.Meta):
+        fields = StudyGroupSerializer.Meta.fields + ['students']
+
+    @staticmethod
+    def get_students(obj):
+        return [
+            {
+                'id': m.student_id,
+                'name': m.student.get_full_name() or m.student.username,
+                'phone': getattr(m.student, 'phone', '') or '',
+                'status': m.status,
+            }
+            for m in obj.student_memberships.all()
+        ]
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# StudyGroup — WRITE (create / update)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class StudyGroupWriteSerializer(serializers.Serializer):
+    """Input for create/update — snake_case (use partial=True for updates)."""
+
+    name = serializers.CharField(max_length=128)
+    grade_label = serializers.CharField(max_length=64, required=False, allow_blank=True, default='')
+    subject = serializers.CharField(max_length=128, required=False, allow_blank=True, default='')
+    description = serializers.CharField(required=False, allow_blank=True, default='')
+    status = serializers.ChoiceField(choices=StudyGroup.Status.choices, required=False)

@@ -39,9 +39,11 @@ import {
   Power,
   PowerOff,
   UserCog,
+  GraduationCap,
   AlertTriangle,
 } from 'lucide-react';
 import type { OrgRole } from '@/types';
+import { StudyGroupsManager } from '@/components/organization/study-groups-manager';
 
 const ROLE_OPTIONS = [
   { value: 'admin', label: 'مدیر سازمان' },
@@ -186,6 +188,10 @@ export function OrgManagementPanel({
           <TabsTrigger value="codes" className="gap-1.5 rounded-lg">
             <KeyRound className="w-4 h-4" />
             کدهای دعوت
+          </TabsTrigger>
+          <TabsTrigger value="groups" className="gap-1.5 rounded-lg">
+            <GraduationCap className="w-4 h-4" />
+            گروه‌های آموزشی
           </TabsTrigger>
         </TabsList>
 
@@ -468,6 +474,11 @@ export function OrgManagementPanel({
               })}
             </div>
           )}
+        </TabsContent>
+
+        {/* ═════ Study Groups Tab ═════ */}
+        <TabsContent value="groups">
+          <StudyGroupsManager orgId={orgId} />
         </TabsContent>
       </Tabs>
 

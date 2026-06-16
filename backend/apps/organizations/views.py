@@ -22,7 +22,14 @@ from rest_framework_simplejwt.tokens import RefreshToken
 
 from apps.classes.models import ClassCreationSession
 
-from .models import InvitationCode, Organization, OrganizationMembership
+from .models import (
+    InvitationCode,
+    Organization,
+    OrganizationMembership,
+    StudyGroup,
+    StudyGroupMembership,
+    StudyGroupTeacher,
+)
 from .services import provision_organization
 from .serializers import (
     InvitationCodeCreateSerializer,
@@ -32,6 +39,9 @@ from .serializers import (
     OrganizationCreateSerializer,
     OrganizationSerializer,
     RedeemInvitationSerializer,
+    StudyGroupDetailSerializer,
+    StudyGroupSerializer,
+    StudyGroupWriteSerializer,
 )
 
 User = get_user_model()
@@ -649,3 +659,221 @@ class OrgDashboardView(APIView):
                 'activeInviteCodes': active_codes,
             },
         })
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Study Groups (گروه آموزشی) — manager CRUD + teacher/student assignment
+# ═══════════════════════════════════════════════════════════════════════════
+
+def _get_org_group(org_pk: int, group_pk: int):
+    """Fetch a study group scoped to its organization (or None)."""
+    return StudyGroup.objects.filter(organization_id=org_pk, pk=group_pk).first()
+
+
+def _annotated_groups(org_pk: int):
+    """Study groups for an org with member/teacher counts annotated (no N+1)."""
+    return (
+        StudyGroup.objects
+        .filter(organization_id=org_pk)
+        .annotate(
+            _student_count=Count(
+                'student_memberships',
+                filter=Q(student_memberships__status=StudyGroupMembership.Status.ACTIVE),
+                distinct=True,
+            ),
+            _teacher_count=Count('teacher_links', distinct=True),
+        )
+    )
+
+
+class StudyGroupListCreateView(APIView):
+    """GET: list the org's study groups. POST: create one. (org admin/deputy)"""
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, org_pk):
+        if not (request.user.is_staff or IsOrgAdmin.check(request.user, org_pk)):
+            return Response({'detail': 'دسترسی ندارید.'}, status=status.HTTP_403_FORBIDDEN)
+        groups = _annotated_groups(org_pk).prefetch_related('teacher_links__teacher')
+        return Response(StudyGroupSerializer(groups, many=True).data)
+
+    def post(self, request, org_pk):
+        if not (request.user.is_staff or IsOrgAdmin.check(request.user, org_pk)):
+            return Response({'detail': 'دسترسی ندارید.'}, status=status.HTTP_403_FORBIDDEN)
+        try:
+            org = Organization.objects.get(pk=org_pk)
+        except Organization.DoesNotExist:
+            return Response({'detail': 'سازمان یافت نشد.'}, status=status.HTTP_404_NOT_FOUND)
+
+        ser = StudyGroupWriteSerializer(data=request.data)
+        ser.is_valid(raise_exception=True)
+        data = ser.validated_data
+
+        if StudyGroup.objects.filter(organization=org, name=data['name']).exists():
+            return Response(
+                {'detail': 'گروهی با این نام در سازمان وجود دارد.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        group = StudyGroup.objects.create(
+            organization=org,
+            name=data['name'],
+            grade_label=data.get('grade_label', ''),
+            subject=data.get('subject', ''),
+            description=data.get('description', ''),
+            status=data.get('status', StudyGroup.Status.ACTIVE),
+            created_by=request.user,
+        )
+        return Response(StudyGroupDetailSerializer(group).data, status=status.HTTP_201_CREATED)
+
+
+class StudyGroupDetailView(APIView):
+    """GET / PATCH / DELETE a single study group. (org admin/deputy)"""
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, org_pk, group_pk):
+        if not (request.user.is_staff or IsOrgAdmin.check(request.user, org_pk)):
+            return Response({'detail': 'دسترسی ندارید.'}, status=status.HTTP_403_FORBIDDEN)
+        group = _get_org_group(org_pk, group_pk)
+        if not group:
+            return Response({'detail': 'گروه یافت نشد.'}, status=status.HTTP_404_NOT_FOUND)
+        return Response(StudyGroupDetailSerializer(group).data)
+
+    def patch(self, request, org_pk, group_pk):
+        if not (request.user.is_staff or IsOrgAdmin.check(request.user, org_pk)):
+            return Response({'detail': 'دسترسی ندارید.'}, status=status.HTTP_403_FORBIDDEN)
+        group = _get_org_group(org_pk, group_pk)
+        if not group:
+            return Response({'detail': 'گروه یافت نشد.'}, status=status.HTTP_404_NOT_FOUND)
+
+        ser = StudyGroupWriteSerializer(data=request.data, partial=True)
+        ser.is_valid(raise_exception=True)
+        data = ser.validated_data
+
+        new_name = data.get('name')
+        if (
+            new_name and new_name != group.name
+            and StudyGroup.objects.filter(organization_id=org_pk, name=new_name).exists()
+        ):
+            return Response(
+                {'detail': 'گروهی با این نام در سازمان وجود دارد.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        for field, value in data.items():
+            setattr(group, field, value)
+        group.save()
+        return Response(StudyGroupDetailSerializer(group).data)
+
+    def delete(self, request, org_pk, group_pk):
+        if not (request.user.is_staff or IsOrgAdmin.check(request.user, org_pk)):
+            return Response({'detail': 'دسترسی ندارید.'}, status=status.HTTP_403_FORBIDDEN)
+        group = _get_org_group(org_pk, group_pk)
+        if not group:
+            return Response({'detail': 'گروه یافت نشد.'}, status=status.HTTP_404_NOT_FOUND)
+        group.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class StudyGroupTeacherView(APIView):
+    """POST: assign an org teacher to the group. DELETE: remove one. (org admin)"""
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, org_pk, group_pk):
+        if not (request.user.is_staff or IsOrgAdmin.check(request.user, org_pk)):
+            return Response({'detail': 'دسترسی ندارید.'}, status=status.HTTP_403_FORBIDDEN)
+        group = _get_org_group(org_pk, group_pk)
+        if not group:
+            return Response({'detail': 'گروه یافت نشد.'}, status=status.HTTP_404_NOT_FOUND)
+
+        teacher_id = request.data.get('teacher_id')
+        if not OrganizationMembership.objects.filter(
+            user_id=teacher_id, organization_id=org_pk,
+            org_role=OrganizationMembership.OrgRole.TEACHER,
+            status=OrganizationMembership.MemberStatus.ACTIVE,
+        ).exists():
+            return Response(
+                {'detail': 'این کاربر معلمِ فعالِ این سازمان نیست.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        StudyGroupTeacher.objects.get_or_create(
+            study_group=group, teacher_id=teacher_id,
+            defaults={'assigned_by': request.user},
+        )
+        return Response(StudyGroupDetailSerializer(group).data, status=status.HTTP_201_CREATED)
+
+    def delete(self, request, org_pk, group_pk, user_id):
+        if not (request.user.is_staff or IsOrgAdmin.check(request.user, org_pk)):
+            return Response({'detail': 'دسترسی ندارید.'}, status=status.HTTP_403_FORBIDDEN)
+        group = _get_org_group(org_pk, group_pk)
+        if not group:
+            return Response({'detail': 'گروه یافت نشد.'}, status=status.HTTP_404_NOT_FOUND)
+        StudyGroupTeacher.objects.filter(study_group=group, teacher_id=user_id).delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class StudyGroupStudentView(APIView):
+    """POST: add an org student to the group. DELETE: remove one. (org admin)"""
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, org_pk, group_pk):
+        if not (request.user.is_staff or IsOrgAdmin.check(request.user, org_pk)):
+            return Response({'detail': 'دسترسی ندارید.'}, status=status.HTTP_403_FORBIDDEN)
+        group = _get_org_group(org_pk, group_pk)
+        if not group:
+            return Response({'detail': 'گروه یافت نشد.'}, status=status.HTTP_404_NOT_FOUND)
+
+        student_id = request.data.get('student_id')
+        if not OrganizationMembership.objects.filter(
+            user_id=student_id, organization_id=org_pk,
+            org_role=OrganizationMembership.OrgRole.STUDENT,
+            status=OrganizationMembership.MemberStatus.ACTIVE,
+        ).exists():
+            return Response(
+                {'detail': 'این کاربر دانش‌آموزِ فعالِ این سازمان نیست.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        StudyGroupMembership.objects.get_or_create(
+            study_group=group, student_id=student_id,
+            defaults={'added_by': request.user},
+        )
+        return Response(StudyGroupDetailSerializer(group).data, status=status.HTTP_201_CREATED)
+
+    def delete(self, request, org_pk, group_pk, user_id):
+        if not (request.user.is_staff or IsOrgAdmin.check(request.user, org_pk)):
+            return Response({'detail': 'دسترسی ندارید.'}, status=status.HTTP_403_FORBIDDEN)
+        group = _get_org_group(org_pk, group_pk)
+        if not group:
+            return Response({'detail': 'گروه یافت نشد.'}, status=status.HTTP_404_NOT_FOUND)
+        StudyGroupMembership.objects.filter(study_group=group, student_id=user_id).delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class MyStudyGroupsView(APIView):
+    """GET: study groups the current teacher is assigned to in this org.
+
+    Powers the org-teacher (group-centric) dashboard. Any active org member may
+    call it; a teacher with no assigned groups simply gets an empty list.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, org_pk):
+        if not OrganizationMembership.objects.filter(
+            user=request.user, organization_id=org_pk,
+            status=OrganizationMembership.MemberStatus.ACTIVE,
+        ).exists():
+            return Response({'detail': 'دسترسی ندارید.'}, status=status.HTTP_403_FORBIDDEN)
+
+        groups = (
+            _annotated_groups(org_pk)
+            .filter(teacher_links__teacher=request.user)
+            .prefetch_related('teacher_links__teacher', 'student_memberships__student')
+            .distinct()
+        )
+        return Response(StudyGroupDetailSerializer(groups, many=True).data)
