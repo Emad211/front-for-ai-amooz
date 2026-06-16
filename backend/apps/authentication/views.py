@@ -19,7 +19,11 @@ from apps.accounts.models import StudentProfile
 from apps.classes.models import ClassInvitation
 from apps.classes.models import StudentInviteCode
 
-from .serializers import RegisterSerializer, LogoutSerializer, PasswordChangeSerializer, InviteCodeLoginSerializer
+from .serializers import (
+    RegisterSerializer, LogoutSerializer, PasswordChangeSerializer, InviteCodeLoginSerializer,
+    PasswordResetRequestSerializer, PasswordResetConfirmSerializer,
+)
+from .otp_service import find_user_by_identifier, issue_reset_otp, verify_reset_otp
 from .openapi import (
     RegisterResponseSerializer,
     ErrorDetailSerializer,
@@ -194,6 +198,82 @@ class PasswordChangeView(APIView):
         return Response(
             {
                 'detail': 'Password updated successfully.',
+                'access': str(refresh.access_token),
+                'refresh': str(refresh),
+            },
+            status=status.HTTP_200_OK,
+        )
+
+
+class PasswordResetRequestView(APIView):
+    """POST: request a password-reset OTP by SMS. Always returns a generic 200
+    (no account enumeration). Only password-using accounts can reset."""
+
+    authentication_classes = []
+    permission_classes = [AllowAny]
+    throttle_classes = [SafeScopedRateThrottle]
+    throttle_scope = 'password_reset'
+
+    @extend_schema(
+        summary='Request a password-reset OTP (SMS)',
+        request=PasswordResetRequestSerializer,
+        responses={200: OpenApiResponse(description='Generic acknowledgement')},
+        tags=['Authentication'],
+    )
+    def post(self, request):
+        serializer = PasswordResetRequestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        user = find_user_by_identifier(serializer.validated_data['identifier'])
+        if user is not None and user.has_usable_password():
+            issue_reset_otp(user)  # best-effort SMS
+        return Response(
+            {'detail': 'اگر حسابی با این مشخصات وجود داشته باشد، کد بازیابی پیامک شد.'},
+            status=status.HTTP_200_OK,
+        )
+
+
+class PasswordResetConfirmView(APIView):
+    """POST: confirm the OTP and set a new password. Revokes existing sessions
+    and returns a fresh token pair (auto-login)."""
+
+    authentication_classes = []
+    permission_classes = [AllowAny]
+    throttle_classes = [SafeScopedRateThrottle]
+    throttle_scope = 'password_reset'
+
+    @extend_schema(
+        summary='Confirm password reset with OTP + new password',
+        request=PasswordResetConfirmSerializer,
+        responses={
+            200: OpenApiResponse(description='Password changed + fresh tokens'),
+            400: OpenApiResponse(description='Invalid/expired code'),
+        },
+        tags=['Authentication'],
+    )
+    def post(self, request):
+        serializer = PasswordResetConfirmSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+
+        user = find_user_by_identifier(data['identifier'])
+        if user is None or not user.has_usable_password() or not verify_reset_otp(user, data['code']):
+            return Response(
+                {'detail': 'کد بازیابی نامعتبر یا منقضی شده است.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        user.set_password(data['new_password'])
+        user.save()
+
+        # Revoke all existing sessions (same as a password change) so any leaked
+        # token can't outlive the reset, then issue a fresh pair (auto-login).
+        for outstanding in OutstandingToken.objects.filter(user=user):
+            BlacklistedToken.objects.get_or_create(token=outstanding)
+
+        refresh = RefreshToken.for_user(user)
+        return Response(
+            {
+                'detail': 'رمز عبور با موفقیت تغییر کرد.',
                 'access': str(refresh.access_token),
                 'refresh': str(refresh),
             },

@@ -164,10 +164,32 @@ export const completeRegistrationSchema = z
     }
   });
 
+export const passwordResetRequestSchema = z.object({
+  identifier: z.string().trim().min(1, { message: "نام کاربری یا ایمیل را وارد کنید" }),
+});
+
+export const passwordResetConfirmSchema = z
+  .object({
+    code: z.string().trim().regex(/^\d{5,6}$/, { message: "کد تأیید را درست وارد کنید" }),
+    password: passwordSchema,
+    confirmPassword: z.string().min(1, { message: "تکرار رمز عبور الزامی است" }),
+  })
+  .superRefine((data, ctx) => {
+    if (data.confirmPassword.length > 0 && data.password !== data.confirmPassword) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "رمز عبور و تکرار آن یکسان نیست",
+        path: ["confirmPassword"],
+      });
+    }
+  });
+
 /**
  * Types
  */
 export type LoginFormValues = z.infer<typeof loginSchema>;
+export type PasswordResetRequestFormValues = z.infer<typeof passwordResetRequestSchema>;
+export type PasswordResetConfirmFormValues = z.infer<typeof passwordResetConfirmSchema>;
 export type JoinCodeFormValues = z.infer<typeof joinCodeSchema>;
 export type TeacherSignupFormValues = z.infer<typeof teacherSignupSchema>;
 export type TeacherAccessRequestFormValues = z.infer<typeof teacherAccessRequestSchema>;

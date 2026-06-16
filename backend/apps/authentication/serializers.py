@@ -143,6 +143,24 @@ class PasswordChangeSerializer(serializers.Serializer):
         return value
 
 
+class PasswordResetRequestSerializer(serializers.Serializer):
+    """Request a reset OTP by login identifier (username, or email)."""
+
+    identifier = serializers.CharField(max_length=255)
+
+
+class PasswordResetConfirmSerializer(serializers.Serializer):
+    """Confirm a reset: identifier + the SMS code + the new password."""
+
+    identifier = serializers.CharField(max_length=255)
+    code = serializers.CharField(max_length=10)
+    new_password = serializers.CharField(min_length=8, write_only=True)
+
+    def validate_new_password(self, value):
+        validate_password(value)
+        return value
+
+
 class InviteCodeLoginSerializer(serializers.Serializer):
     code = serializers.CharField(max_length=64)
     phone = serializers.CharField(max_length=32)

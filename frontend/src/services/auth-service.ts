@@ -347,6 +347,28 @@ export async function inviteLogin(payload: InviteLoginPayload): Promise<Register
   });
 }
 
+export async function requestPasswordReset(identifier: string): Promise<{ detail: string }> {
+  return baseRequest("/auth/password-reset/request/", {
+    method: "POST",
+    body: JSON.stringify({ identifier }),
+  });
+}
+
+export type PasswordResetConfirmPayload = {
+  identifier: string;
+  code: string;
+  new_password: string;
+};
+
+export async function confirmPasswordReset(
+  payload: PasswordResetConfirmPayload
+): Promise<{ detail: string; access?: string; refresh?: string }> {
+  return baseRequest("/auth/password-reset/confirm/", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
 export async function fetchMe(): Promise<AuthMeResponse> {
   return baseRequest("/accounts/me/", { method: "GET" });
 }

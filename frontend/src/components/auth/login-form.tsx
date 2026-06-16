@@ -151,7 +151,7 @@ export function LoginForm({ onSwitchToJoin }: LoginFormProps) {
         <div className="space-y-2">
           <div className="flex items-center justify-between">
             <Label htmlFor="password">رمز عبور</Label>
-            <Link href="#" className="text-xs text-primary hover:underline">
+            <Link href="/forgot-password" className="text-xs text-primary hover:underline">
               فراموشی رمز عبور
             </Link>
           </div>

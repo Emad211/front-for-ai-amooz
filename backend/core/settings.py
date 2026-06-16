@@ -265,6 +265,9 @@ REST_FRAMEWORK = {
         'invite_login': os.getenv('THROTTLE_RATE_INVITE_LOGIN', '10/min'),
         'register': os.getenv('THROTTLE_RATE_REGISTER', '10/hour'),
         'redeem': os.getenv('THROTTLE_RATE_REDEEM', '15/hour'),
+        # Password-reset OTP request + confirm (per IP) — prevents SMS bombing
+        # (a per-user resend cooldown also applies in the OTP service).
+        'password_reset': os.getenv('THROTTLE_RATE_PASSWORD_RESET', '15/hour'),
     },
     # Global pagination — all list endpoints return at most PAGE_SIZE items.
     'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
