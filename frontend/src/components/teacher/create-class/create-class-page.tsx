@@ -43,6 +43,8 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Ban, Loader2 } from 'lucide-react';
 import { useWorkspace } from '@/hooks/use-workspace';
+import { OrganizationService } from '@/services/organization-service';
+import type { StudyGroup } from '@/types';
 
 type PipelineType = 'class' | 'exam_prep';
 
@@ -132,6 +134,8 @@ function getExamPrepPipelineMessage(status?: string | null) {
 export function CreateClassPage() {
   const router = useRouter();
   const { activeWorkspace } = useWorkspace();
+  const [studyGroups, setStudyGroups] = useState<StudyGroup[]>([]);
+  const [selectedStudyGroupId, setSelectedStudyGroupId] = useState<string>('none');
   const [pipelineType, setPipelineType] = useState<PipelineType>('class');
   const [expandedSections, setExpandedSections] = useState<string[]>(['info', 'files', 'exercises', 'students']);
   const [title, setTitle] = useState('');
@@ -344,6 +348,21 @@ export function CreateClassPage() {
   }, [lessonFile]);
 
   useEffect(() => {
+    // In org mode, offer the teacher's study groups so a new class/exam can be
+    // attached to one. Personal mode → no groups.
+    if (!activeWorkspace) {
+      setStudyGroups([]);
+      setSelectedStudyGroupId('none');
+      return;
+    }
+    let cancelled = false;
+    OrganizationService.getMyStudyGroups(activeWorkspace.id)
+      .then((data) => { if (!cancelled) setStudyGroups(data); })
+      .catch(() => { if (!cancelled) setStudyGroups([]); });
+    return () => { cancelled = true; };
+  }, [activeWorkspace]);
+
+  useEffect(() => {
     // Resume active session if user navigated away.
     const stored = window.localStorage.getItem(ACTIVE_SESSION_STORAGE_KEY);
     const sessionId = stored ? Number(stored) : NaN;
@@ -449,6 +468,7 @@ export function CreateClassPage() {
             clientRequestId: clientRequestId ?? undefined,
             runFullPipeline: true,
             organizationId: activeWorkspace?.id ?? undefined,
+            studyGroupId: selectedStudyGroupId !== 'none' ? Number(selectedStudyGroupId) : undefined,
           },
           { onProgress: (p) => setUploadProgress(p) },
         );
@@ -485,6 +505,7 @@ export function CreateClassPage() {
             clientRequestId: clientRequestId ?? undefined,
             runFullPipeline: true,
             organizationId: activeWorkspace?.id ?? undefined,
+            studyGroupId: selectedStudyGroupId !== 'none' ? Number(selectedStudyGroupId) : undefined,
           },
           { onProgress: (p) => setUploadProgress(p) },
         );
@@ -681,6 +702,31 @@ export function CreateClassPage() {
           </p>
         </div>
       </Card>
+
+      {/* Study group picker — only in org mode, when the teacher has groups */}
+      {activeWorkspace && studyGroups.length > 0 && (
+        <Card className="p-4 sm:p-5 rounded-3xl border-border/40">
+          <div className="space-y-3" dir="rtl">
+            <Label className="text-sm font-semibold">گروه آموزشی (اختیاری)</Label>
+            <Select value={selectedStudyGroupId} onValueChange={setSelectedStudyGroupId}>
+              <SelectTrigger>
+                <SelectValue placeholder="بدون گروه" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">بدون گروه</SelectItem>
+                {studyGroups.map((g) => (
+                  <SelectItem key={g.id} value={String(g.id)}>
+                    {g.name}{g.gradeLabel ? ` · ${g.gradeLabel}` : ''}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              این مورد به گروه انتخاب‌شده در سازمان «{activeWorkspace.name}» نسبت داده می‌شود.
+            </p>
+          </div>
+        </Card>
+      )}
 
       <ClassInfoForm
         isExpanded={expandedSections.includes('info')}

@@ -162,3 +162,29 @@ class TestMyStudyGroups:
     def test_non_member_forbidden(self, org):
         stranger = baker.make(User, role=User.Role.TEACHER)
         assert _auth(stranger).get(MINE.format(org.id)).status_code == 403
+
+
+@pytest.mark.django_db
+class TestStudyGroupClassLink:
+    def test_class_count_counts_only_class_sessions(self, org, manager):
+        from apps.classes.models import ClassCreationSession
+
+        g = baker.make(StudyGroup, organization=org, name='g1')
+        baker.make(
+            ClassCreationSession, teacher=manager, organization=org, study_group=g,
+            pipeline_type=ClassCreationSession.PipelineType.CLASS,
+        )
+        baker.make(
+            ClassCreationSession, teacher=manager, organization=org, study_group=g,
+            pipeline_type=ClassCreationSession.PipelineType.CLASS,
+        )
+        # An exam-prep session in the same group must NOT be counted as a class.
+        baker.make(
+            ClassCreationSession, teacher=manager, organization=org, study_group=g,
+            pipeline_type=ClassCreationSession.PipelineType.EXAM_PREP,
+        )
+
+        res = _auth(manager).get(LIST.format(org.id))
+        assert res.status_code == 200
+        row = next(r for r in res.data if r['id'] == g.id)
+        assert row['classCount'] == 2

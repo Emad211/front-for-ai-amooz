@@ -482,6 +482,7 @@ export interface StudyGroup {
   statusDisplay: string;
   studentCount: number;
   teacherCount: number;
+  classCount: number;
   teachers: StudyGroupTeacherBrief[];
   createdAt: string;
   /** Present in detail / my-study-groups responses (the roster). */

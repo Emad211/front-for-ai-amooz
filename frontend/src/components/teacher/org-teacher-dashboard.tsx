@@ -86,10 +86,11 @@ export function OrgTeacherDashboard() {
                     {formatPersianNumber(g.studentCount)} دانش‌آموز
                   </Badge>
                 </CardTitle>
-                {(g.gradeLabel || g.subject) && (
+                {(g.gradeLabel || g.subject || g.classCount > 0) && (
                   <div className="flex flex-wrap gap-1.5 pt-1">
                     {g.gradeLabel && <Badge variant="outline" className="text-[10px]">{g.gradeLabel}</Badge>}
                     {g.subject && <Badge variant="outline" className="text-[10px]">{g.subject}</Badge>}
+                    {g.classCount > 0 && <Badge variant="outline" className="text-[10px]">{formatPersianNumber(g.classCount)} کلاس</Badge>}
                   </div>
                 )}
               </CardHeader>

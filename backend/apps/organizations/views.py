@@ -682,6 +682,11 @@ def _annotated_groups(org_pk: int):
                 distinct=True,
             ),
             _teacher_count=Count('teacher_links', distinct=True),
+            _class_count=Count(
+                'study_group_sessions',
+                filter=Q(study_group_sessions__pipeline_type='class'),
+                distinct=True,
+            ),
         )
     )
 

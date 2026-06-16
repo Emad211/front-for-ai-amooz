@@ -243,7 +243,7 @@ export function StudyGroupsManager({ orgId }: { orgId: number }) {
                     {g.subject && <Badge variant="outline" className="text-[10px]">{g.subject}</Badge>}
                   </div>
                   <p className="text-xs text-muted-foreground mt-1">
-                    {formatPersianNumber(g.teacherCount)} معلم · {formatPersianNumber(g.studentCount)} دانش‌آموز
+                    {formatPersianNumber(g.teacherCount)} معلم · {formatPersianNumber(g.studentCount)} دانش‌آموز · {formatPersianNumber(g.classCount)} کلاس
                   </p>
                 </div>
                 <div className="flex items-center gap-2 self-end sm:self-auto">

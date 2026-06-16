@@ -586,6 +586,7 @@ export async function transcribeClassCreationStep1(
     clientRequestId?: string;
     runFullPipeline?: boolean;
     organizationId?: number;
+    studyGroupId?: number;
   },
   options?: { onProgress?: (p: UploadProgress) => void },
 ): Promise<Step1TranscribeResponse> {
@@ -605,6 +606,9 @@ export async function transcribeClassCreationStep1(
   }
   if (params.organizationId) {
     formData.append('organization', String(params.organizationId));
+  }
+  if (params.studyGroupId) {
+    formData.append('study_group', String(params.studyGroupId));
   }
 
   const url = `${API_URL}/classes/creation-sessions/step-1/`;
@@ -734,6 +738,7 @@ export async function transcribeExamPrepStep1(
     clientRequestId?: string;
     runFullPipeline?: boolean;
     organizationId?: number;
+    studyGroupId?: number;
   },
   options?: { onProgress?: (p: UploadProgress) => void },
 ): Promise<ExamPrepStep1Response> {
@@ -753,6 +758,9 @@ export async function transcribeExamPrepStep1(
   }
   if (params.organizationId) {
     formData.append('organization', String(params.organizationId));
+  }
+  if (params.studyGroupId) {
+    formData.append('study_group', String(params.studyGroupId));
   }
 
   const url = `${API_URL}/classes/exam-prep-sessions/step-1/`;

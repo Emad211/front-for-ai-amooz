@@ -552,6 +552,25 @@ class Step1TranscribeView(APIView):
                         )
                     organization = Organization.objects.filter(id=org_id_int).first()
 
+                # Resolve optional study group (must belong to the chosen org).
+                study_group = None
+                sg_id = request.data.get('study_group')
+                if sg_id:
+                    if organization is None:
+                        return Response(
+                            {'detail': 'برای انتخاب گروه آموزشی ابتدا سازمان را مشخص کنید.'},
+                            status=status.HTTP_400_BAD_REQUEST,
+                        )
+                    from apps.organizations.models import StudyGroup
+                    study_group = StudyGroup.objects.filter(
+                        id=sg_id, organization_id=organization.id,
+                    ).first()
+                    if study_group is None:
+                        return Response(
+                            {'detail': 'گروه آموزشی نامعتبر است یا متعلق به این سازمان نیست.'},
+                            status=status.HTTP_400_BAD_REQUEST,
+                        )
+
                 session = ClassCreationSession.objects.create(
                     teacher=request.user,
                     title=title,
@@ -566,6 +585,7 @@ class Step1TranscribeView(APIView):
                     status=ClassCreationSession.Status.TRANSCRIBING,
                     client_request_id=client_request_id,
                     organization=organization,
+                    study_group=study_group,
                 )
         except IntegrityError:
             # Double-submit race: another request already created the session.
@@ -3449,6 +3469,25 @@ class ExamPrepStep1TranscribeView(APIView):
                         )
                     organization = Organization.objects.filter(id=org_id_int).first()
 
+                # Resolve optional study group (must belong to the chosen org).
+                study_group = None
+                sg_id = request.data.get('study_group')
+                if sg_id:
+                    if organization is None:
+                        return Response(
+                            {'detail': 'برای انتخاب گروه آموزشی ابتدا سازمان را مشخص کنید.'},
+                            status=status.HTTP_400_BAD_REQUEST,
+                        )
+                    from apps.organizations.models import StudyGroup
+                    study_group = StudyGroup.objects.filter(
+                        id=sg_id, organization_id=organization.id,
+                    ).first()
+                    if study_group is None:
+                        return Response(
+                            {'detail': 'گروه آموزشی نامعتبر است یا متعلق به این سازمان نیست.'},
+                            status=status.HTTP_400_BAD_REQUEST,
+                        )
+
                 session = ClassCreationSession.objects.create(
                     teacher=request.user,
                     title=title,
@@ -3464,6 +3503,7 @@ class ExamPrepStep1TranscribeView(APIView):
                     status=ClassCreationSession.Status.EXAM_TRANSCRIBING,
                     client_request_id=client_request_id,
                     organization=organization,
+                    study_group=study_group,
                 )
         except IntegrityError:
             if client_request_id is not None:

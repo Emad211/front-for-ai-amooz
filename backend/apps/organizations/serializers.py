@@ -226,6 +226,7 @@ class StudyGroupSerializer(serializers.ModelSerializer):
     statusDisplay = serializers.CharField(source='get_status_display', read_only=True)
     studentCount = serializers.SerializerMethodField()
     teacherCount = serializers.SerializerMethodField()
+    classCount = serializers.SerializerMethodField()
     teachers = serializers.SerializerMethodField()
     createdAt = serializers.DateTimeField(source='created_at', read_only=True)
 
@@ -234,7 +235,7 @@ class StudyGroupSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'name', 'gradeLabel', 'subject', 'description',
             'status', 'statusDisplay', 'studentCount', 'teacherCount',
-            'teachers', 'createdAt',
+            'classCount', 'teachers', 'createdAt',
         ]
 
     @staticmethod
@@ -246,6 +247,12 @@ class StudyGroupSerializer(serializers.ModelSerializer):
     def get_teacherCount(obj) -> int:  # noqa: N802
         val = getattr(obj, '_teacher_count', None)
         return val if val is not None else obj.teacher_count
+
+    @staticmethod
+    def get_classCount(obj) -> int:  # noqa: N802
+        val = getattr(obj, '_class_count', None)
+        # 'class' is ClassCreationSession.PipelineType.CLASS (avoid a cross-app import).
+        return val if val is not None else obj.study_group_sessions.filter(pipeline_type='class').count()
 
     @staticmethod
     def get_teachers(obj):
