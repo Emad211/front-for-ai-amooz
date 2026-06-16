@@ -34,6 +34,9 @@ export type AuthMeResponse = {
   avatar?: string | null;
   role: string;
   is_profile_completed: boolean;
+  // TEACHER only: may use a personal (freelancer) workspace. False = org-only.
+  // May be absent on stale cached profiles from before this field shipped.
+  is_freelancer?: boolean;
 };
 
 export type LoginPayload = {

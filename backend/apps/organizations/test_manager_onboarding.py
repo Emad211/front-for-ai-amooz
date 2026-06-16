@@ -56,6 +56,8 @@ class TestManagerRedeem:
         assert user.role != User.Role.TEACHER
         assert not user.is_staff
         assert not user.is_superuser
+        # A manager never gets a personal/freelancer workspace.
+        assert user.is_freelancer is False
         # The org-level membership is still admin (org_role unchanged).
         m = OrganizationMembership.objects.get(user=user, organization=org)
         assert m.org_role == OrganizationMembership.OrgRole.ADMIN
@@ -78,7 +80,10 @@ class TestManagerRedeem:
             'code': code.code, 'username': '09120000003', 'password': STRONG,
         }, format='json')
         assert res.status_code == 201, res.data
-        assert User.objects.get(username='09120000003').role == User.Role.TEACHER
+        user = User.objects.get(username='09120000003')
+        assert user.role == User.Role.TEACHER
+        # A brand-new account that joins via an org code is org-only.
+        assert user.is_freelancer is False
 
     def test_student_code_stays_student(self):
         org = _active_org()
@@ -109,3 +114,24 @@ class TestManagerRedeem:
         mgr.credentials(HTTP_AUTHORIZATION=f'Bearer {access}')
         # Teacher-only endpoint (IsTeacherUser) must reject the manager.
         assert mgr.get('/api/classes/teacher/students/').status_code == 403
+
+    def test_existing_freelancer_joining_org_stays_freelancer(self):
+        """A freelancer (is_freelancer=True) who redeems an org TEACHER code keeps
+        their personal space — they become 'both', not org-only. Only brand-new
+        accounts created by the code are org-only."""
+        org = _active_org()
+        code = _code(org, InvitationCode.TargetRole.TEACHER)
+
+        teacher = baker.make(User, role=User.Role.TEACHER, is_freelancer=True)
+        client = APIClient()
+        client.force_authenticate(user=teacher)
+        res = client.post(REDEEM, {'code': code.code}, format='json')
+        assert res.status_code == 201, res.data
+
+        teacher.refresh_from_db()
+        assert teacher.is_freelancer is True  # unchanged — still a freelancer
+        assert teacher.role == User.Role.TEACHER
+        assert OrganizationMembership.objects.filter(
+            user=teacher, organization=org,
+            org_role=OrganizationMembership.OrgRole.TEACHER,
+        ).exists()

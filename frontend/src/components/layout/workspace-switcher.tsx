@@ -13,10 +13,12 @@ import {
 import { useWorkspace } from '@/hooks/use-workspace';
 
 export function WorkspaceSwitcher() {
-  const { workspaces, activeWorkspace, switchWorkspace, isLoading } = useWorkspace();
+  const { workspaces, activeWorkspace, switchWorkspace, isLoading, personalAllowed } = useWorkspace();
 
-  // Don't render if user has no org memberships
-  if (!isLoading && workspaces.length === 0) return null;
+  // Total selectable spaces = personal (if allowed) + each org. With one or none
+  // there's nothing to switch between, so hide the switcher entirely.
+  const totalSpaces = (personalAllowed ? 1 : 0) + workspaces.length;
+  if (!isLoading && totalSpaces <= 1) return null;
 
   return (
     <DropdownMenu dir="rtl">
@@ -48,14 +50,16 @@ export function WorkspaceSwitcher() {
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-56 max-w-[calc(100vw-2rem)]">
-        <DropdownMenuItem
-          onClick={() => switchWorkspace(null)}
-          className={cn('gap-2 cursor-pointer', !activeWorkspace && 'bg-muted')}
-        >
-          <User className="w-4 h-4" />
-          فضای شخصی
-        </DropdownMenuItem>
-        {workspaces.length > 0 && <DropdownMenuSeparator />}
+        {personalAllowed && (
+          <DropdownMenuItem
+            onClick={() => switchWorkspace(null)}
+            className={cn('gap-2 cursor-pointer', !activeWorkspace && 'bg-muted')}
+          >
+            <User className="w-4 h-4" />
+            فضای شخصی
+          </DropdownMenuItem>
+        )}
+        {personalAllowed && workspaces.length > 0 && <DropdownMenuSeparator />}
         {workspaces.map((ws) => (
           <DropdownMenuItem
             key={ws.id}

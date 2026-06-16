@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { OrganizationService } from '@/services/organization-service';
+import { WORKSPACE_STORAGE_KEY } from '@/hooks/use-workspace';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -30,6 +31,7 @@ export default function JoinOrgPage() {
 
   // Success data
   const [successOrg, setSuccessOrg] = useState<{ name: string; slug: string } | null>(null);
+  const [successRedirect, setSuccessRedirect] = useState('/home');
 
   const handleValidate = async () => {
     if (!code.trim()) {
@@ -71,6 +73,19 @@ export default function JoinOrgPage() {
       if (result.access) {
         localStorage.setItem('ai_amooz_access', result.access);
         localStorage.removeItem('ai_amooz_refresh');
+      }
+
+      // Land each role on the right dashboard. An org admin/deputy is a MANAGER:
+      // pre-select their org workspace so /teacher opens in org mode. Org teachers
+      // → /teacher; students → /home.
+      const orgRole = result.membership?.orgRole;
+      if (orgRole === 'admin' || orgRole === 'deputy') {
+        try { localStorage.setItem(WORKSPACE_STORAGE_KEY, result.organization.slug); } catch { /* ignore */ }
+        setSuccessRedirect('/teacher');
+      } else if (orgRole === 'teacher') {
+        setSuccessRedirect('/teacher');
+      } else {
+        setSuccessRedirect('/home');
       }
 
       setSuccessOrg(result.organization);
@@ -255,7 +270,7 @@ export default function JoinOrgPage() {
                 </p>
                 <Button
                   className="w-full rounded-xl"
-                  onClick={() => router.push('/home')}
+                  onClick={() => router.push(successRedirect)}
                 >
                   ورود به داشبورد
                 </Button>

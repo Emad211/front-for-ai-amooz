@@ -18,6 +18,10 @@ class User(AbstractUser):
     )
     phone = models.CharField(max_length=15, blank=True, null=True)
     is_profile_completed = models.BooleanField(default=False)
+    # TEACHER only: may use a personal (freelancer) workspace in addition to any
+    # organizations. False = org-only (no personal space). Ignored for non-teacher
+    # roles — a MANAGER never gets a personal space regardless of this flag.
+    is_freelancer = models.BooleanField(default=True)
     avatar = models.ImageField(upload_to='avatars/', blank=True, null=True)
 
     def __str__(self):

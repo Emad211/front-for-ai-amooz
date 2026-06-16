@@ -156,3 +156,35 @@ class TestUserStatsAndList:
         assert res.status_code == 200
         row = next(u for u in res.data if u['id'] == student.id)
         assert row['managedOrganizations'] == []
+
+
+@pytest.mark.django_db
+class TestFreelancerToggle:
+    DETAIL = '/api/admin/users/{}/'
+
+    def test_list_exposes_is_freelancer(self):
+        admin = _admin()
+        baker.make(User, role=User.Role.TEACHER, is_freelancer=False)
+        res = _auth(admin).get(LIST)
+        assert res.status_code == 200
+        assert all('isFreelancer' in row for row in res.data)
+
+    def test_admin_can_toggle_is_freelancer(self):
+        admin = _admin()
+        teacher = baker.make(User, role=User.Role.TEACHER, is_freelancer=True)
+
+        res = _auth(admin).patch(
+            self.DETAIL.format(teacher.id), {'is_freelancer': False}, format='json',
+        )
+        assert res.status_code == 200, res.data
+        assert res.data['isFreelancer'] is False
+        teacher.refresh_from_db()
+        assert teacher.is_freelancer is False
+
+        # And back on again.
+        res = _auth(admin).patch(
+            self.DETAIL.format(teacher.id), {'is_freelancer': True}, format='json',
+        )
+        assert res.status_code == 200
+        teacher.refresh_from_db()
+        assert teacher.is_freelancer is True

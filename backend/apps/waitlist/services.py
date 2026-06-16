@@ -119,6 +119,7 @@ def complete_teacher_registration(*, token, username, password, first_name='', l
         email=ar.email or '',
         first_name=first,
         last_name=last,
+        is_freelancer=True,  # waitlist teachers are freelancers (own personal space)
     )
     if ar.phone:
         user.phone = ar.phone

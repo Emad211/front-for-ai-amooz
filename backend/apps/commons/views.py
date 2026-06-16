@@ -1556,6 +1556,7 @@ class UserListSerializer(serializers.ModelSerializer):
     isActive = serializers.BooleanField(source='is_active', read_only=True)
     isStaff = serializers.BooleanField(source='is_staff', read_only=True)
     isSuperuser = serializers.BooleanField(source='is_superuser', read_only=True)
+    isFreelancer = serializers.BooleanField(source='is_freelancer', read_only=True)
     managedOrganizations = serializers.SerializerMethodField()
 
     class Meta:
@@ -1563,7 +1564,7 @@ class UserListSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'username', 'email', 'first_name', 'last_name',
             'fullName', 'role', 'phone', 'isActive', 'isStaff',
-            'isSuperuser', 'dateJoined', 'lastLogin', 'avatar',
+            'isSuperuser', 'isFreelancer', 'dateJoined', 'lastLogin', 'avatar',
             'managedOrganizations',
         ]
 
@@ -1604,6 +1605,8 @@ class UserUpdateSerializer(serializers.Serializer):
     )
     is_active = serializers.BooleanField(required=False)
     is_staff = serializers.BooleanField(required=False)
+    # TEACHER only: whether the user may use a personal (freelancer) workspace.
+    is_freelancer = serializers.BooleanField(required=False)
     first_name = serializers.CharField(max_length=150, required=False, allow_blank=True)
     last_name = serializers.CharField(max_length=150, required=False, allow_blank=True)
     email = serializers.EmailField(required=False, allow_blank=True)

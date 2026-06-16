@@ -19,7 +19,7 @@ import {
   KeyRound,
   ClipboardList,
 } from 'lucide-react';
-import { NavSection, NavItem } from '@/types';
+import { NavSection, NavItem, OrgRole } from '@/types';
 
 export const LANDING_NAV_LINKS = [
   { href: "#features", label: "ویژگی‌ها" },
@@ -96,7 +96,7 @@ export const TEACHER_NAV_MENU: NavSection[] = [
   },
 ];
 
-/** Navigation menu for teachers/admins when in org workspace mode. */
+/** Navigation menu for org admins/deputies (managers) when in org workspace mode. */
 export const ORG_TEACHER_NAV_MENU: NavSection[] = [
   {
     title: 'سازمان',
@@ -127,3 +127,20 @@ export const ORG_TEACHER_NAV_MENU: NavSection[] = [
     ]
   },
 ];
+
+/**
+ * Org teacher (org_role=teacher) nav: the org menu WITHOUT the management
+ * "سازمان" dashboard section (that view is IsOrgAdmin-only). That section is the
+ * first entry of ORG_TEACHER_NAV_MENU, so drop it.
+ */
+export const ORG_TEACHER_TEACHING_NAV_MENU: NavSection[] = ORG_TEACHER_NAV_MENU.slice(1);
+
+/** Pick the teacher sidebar/header nav for the current workspace + org role. */
+export function getTeacherNavMenu(
+  isOrgMode: boolean,
+  orgRole?: OrgRole | null,
+): NavSection[] {
+  if (!isOrgMode) return TEACHER_NAV_MENU;
+  if (orgRole === 'admin' || orgRole === 'deputy') return ORG_TEACHER_NAV_MENU;
+  return ORG_TEACHER_TEACHING_NAV_MENU;
+}

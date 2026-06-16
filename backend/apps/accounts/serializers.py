@@ -25,6 +25,7 @@ class MeSerializer(serializers.Serializer):
     is_staff = serializers.BooleanField(read_only=True, help_text="Indicates if the user can access admin resources.")
     is_superuser = serializers.BooleanField(read_only=True, help_text="Indicates if the user is a Django superuser.")
     is_profile_completed = serializers.BooleanField(read_only=True, help_text="Indicates if the user has completed their profile.")
+    is_freelancer = serializers.BooleanField(read_only=True, help_text="TEACHER only: may use a personal (freelancer) workspace. False = org-only.")
 
     join_date = serializers.DateTimeField(source='date_joined', read_only=True)
     bio = serializers.SerializerMethodField()

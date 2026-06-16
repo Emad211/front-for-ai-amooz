@@ -18,6 +18,8 @@ export type AdminUser = {
   isActive: boolean;
   isStaff: boolean;
   isSuperuser: boolean;
+  /** TEACHER only: may use a personal (freelancer) workspace. False = org-only. */
+  isFreelancer: boolean;
   dateJoined: string;
   lastLogin: string | null;
   avatar: string | null;
@@ -40,6 +42,7 @@ export type UserUpdatePayload = {
   role?: string;
   is_active?: boolean;
   is_staff?: boolean;
+  is_freelancer?: boolean;
   first_name?: string;
   last_name?: string;
   email?: string;

@@ -193,6 +193,7 @@ export default function AdminUsersPage() {
       role: user.role,
       is_active: user.isActive,
       is_staff: user.isStaff,
+      is_freelancer: user.isFreelancer,
       first_name: user.first_name,
       last_name: user.last_name,
       email: user.email,
@@ -661,6 +662,28 @@ export default function AdminUsersPage() {
                   {editForm.is_staff ? 'بله' : 'خیر'}
                 </Button>
               </div>
+
+              {/* TEACHER only: may they keep a personal (freelancer) workspace
+                  alongside any organizations? Off = org-only (no personal space). */}
+              {editForm.role === 'TEACHER' && (
+                <div className="flex items-center justify-between">
+                  <div>
+                    <Label>فضای شخصی (فریلنسری)</Label>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      اگر خاموش باشد، معلم فقط در فضای سازمان کار می‌کند.
+                    </p>
+                  </div>
+                  <Button
+                    variant={editForm.is_freelancer ? 'default' : 'outline'}
+                    size="sm"
+                    onClick={() =>
+                      setEditForm((f) => ({ ...f, is_freelancer: !f.is_freelancer }))
+                    }
+                  >
+                    {editForm.is_freelancer ? 'دارد' : 'فقط سازمانی'}
+                  </Button>
+                </div>
+              )}
             </div>
 
             <DialogFooter className="gap-2 sm:gap-0">

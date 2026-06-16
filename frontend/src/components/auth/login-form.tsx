@@ -14,6 +14,7 @@ import { Loader2 } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { fetchMe, login as loginRequest, persistUser, persistTokens } from '@/services/auth-service';
 import { OrganizationService } from '@/services/organization-service';
+import { WORKSPACE_STORAGE_KEY } from '@/hooks/use-workspace';
 
 const GoogleIcon = (props: React.SVGProps<SVGSVGElement>) => (
     <svg role="img" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" {...props}>
@@ -54,41 +55,44 @@ export function LoginForm({ onSwitchToJoin }: LoginFormProps) {
 
       toast.success('ورود با موفقیت انجام شد');
 
-      // Check if user has org admin/deputy membership for smart redirect
-      let orgRedirect: string | null = null;
-      try {
-        const workspaces = await OrganizationService.getMyWorkspaces();
-        const adminWorkspace = workspaces.find(
-          (w) => w.orgRole === 'admin' || w.orgRole === 'deputy'
-        );
-        if (adminWorkspace) {
-          orgRedirect = `/admin/organizations/${adminWorkspace.id}`;
+      const normalizedRole = me.role?.toLowerCase() ?? 'student';
+
+      // An org MANAGER manages an org but is NOT a platform admin (the /admin
+      // route group bounces non-admins). Pre-select their org workspace so
+      // /teacher opens in ORG mode (the management dashboard) rather than the
+      // personal teacher area (which would 403 — a manager is not a teacher).
+      if (normalizedRole === 'manager') {
+        try {
+          const workspaces = await OrganizationService.getMyWorkspaces();
+          const orgWorkspace =
+            workspaces.find((w) => w.orgRole === 'admin' || w.orgRole === 'deputy') ??
+            workspaces[0];
+          if (orgWorkspace) {
+            localStorage.setItem(WORKSPACE_STORAGE_KEY, orgWorkspace.slug);
+          }
+        } catch {
+          // If the workspace fetch fails, fall through to the role-based redirect.
         }
-      } catch {
-        // If workspace fetch fails, fall through to role-based redirect
       }
 
       const roleRedirectMap: Record<string, string> = {
         teacher: '/teacher',
         admin: '/admin',
-        manager: '/teacher', // org manager — lands on the org/teacher area (orgRedirect usually wins first)
+        manager: '/teacher', // org console (org mode pre-selected above)
         student: '/home',
       };
 
-      const normalizedRole = me.role?.toLowerCase() ?? 'student';
-      const defaultRedirect = orgRedirect ?? (roleRedirectMap[normalizedRole] ?? '/home');
+      const defaultRedirect = roleRedirectMap[normalizedRole] ?? '/home';
       const next = searchParams.get('next');
 
       const isSafePath = (path: string) =>
         path.startsWith('/') && !path.startsWith('//') && !path.includes('://');
 
       const isAllowedByRole = (path: string) => {
-        // Org admins (any platform role) can access org dashboard
-        if (orgRedirect && path.startsWith('/admin/organizations/')) return true;
-        if (normalizedRole === 'teacher') return path.startsWith('/teacher');
         if (normalizedRole === 'admin') return path.startsWith('/admin');
-        if (normalizedRole === 'manager')
-          return path.startsWith('/teacher') || path.startsWith('/admin/organizations/');
+        // Teachers AND managers both live under /teacher.
+        if (normalizedRole === 'teacher' || normalizedRole === 'manager')
+          return path.startsWith('/teacher');
         // student
         return !path.startsWith('/teacher') && !path.startsWith('/admin');
       };

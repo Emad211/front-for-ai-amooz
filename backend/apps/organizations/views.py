@@ -447,12 +447,23 @@ class RedeemInvitationView(APIView):
             }
             platform_role = role_map.get(invite.target_role, 'STUDENT')
 
+            # A brand-new account that joins through an org code is ORG-ONLY: it
+            # gets no personal/freelancer workspace. (Only a student code leaves
+            # the flag at its default — where it is irrelevant anyway.) An EXISTING
+            # user redeeming a code is untouched here, so a freelancer who joins an
+            # org keeps their personal space and becomes "both".
+            org_only = invite.target_role in (
+                InvitationCode.TargetRole.ADMIN,
+                InvitationCode.TargetRole.DEPUTY,
+                InvitationCode.TargetRole.TEACHER,
+            )
             user = User.objects.create_user(
                 username=username,
                 password=password,
                 first_name=data.get('first_name', ''),
                 last_name=data.get('last_name', ''),
                 role=platform_role,
+                is_freelancer=not org_only,
             )
 
         # Check if already a member

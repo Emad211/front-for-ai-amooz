@@ -39,6 +39,7 @@ class TestAccountsUnit:
             'is_staff',
             'is_superuser',
             'is_profile_completed',
+            'is_freelancer',
             'join_date',
             'bio',
             'location',
@@ -54,6 +55,7 @@ class TestAccountsUnit:
         assert data['avatar'] is None
         assert data['role'] == User.Role.TEACHER
         assert data['is_profile_completed'] is False
+        assert data['is_freelancer'] is True  # default; a teacher keeps a personal space
         assert data['join_date']
         assert data['bio'] in ('', None)
         assert data['grade'] is None

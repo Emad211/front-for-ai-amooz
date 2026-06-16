@@ -51,6 +51,8 @@ def test_complete_creates_teacher_and_returns_jwt():
     # full_name was split into first/last.
     assert user.first_name == 'علی' and user.last_name == 'احمدی'
     assert TeacherProfile.objects.filter(user=user, verification_status=True).exists()
+    # A waitlist teacher is a freelancer — they own a personal workspace.
+    assert user.is_freelancer is True
 
     ar.refresh_from_db()
     assert ar.token_consumed_at is not None
