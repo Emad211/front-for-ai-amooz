@@ -68,7 +68,10 @@ if (!RAW_API) {
   console.warn("NEXT_PUBLIC_API_URL is not set");
 }
 
-const API_URL = RAW_API.endsWith("/api") ? RAW_API : `${RAW_API}/api`;
+// Auth requests go through the SAME-ORIGIN Next.js /api proxy (see next.config.ts)
+// so the HttpOnly refresh cookie is first-party (SameSite=Lax) and cross-site/CORS
+// is avoided. (Data services still call the backend directly with a Bearer token.)
+const API_URL = "/api";
 
 const STORAGE_KEYS = {
   access: "ai_amooz_access",
@@ -249,7 +252,8 @@ async function baseRequest<T>(path: string, options: RequestInit = {}, retry = t
   let res: Response;
 
   try {
-    res = await fetch(url, { ...options, headers });
+    // credentials:include so the HttpOnly refresh cookie flows on auth calls.
+    res = await fetch(url, { ...options, headers, credentials: "include" });
   } catch {
     throw new Error("ارتباط با سرور برقرار نشد");
   }
@@ -281,18 +285,21 @@ async function baseRequest<T>(path: string, options: RequestInit = {}, retry = t
 export function getStoredTokens(): TokenResponse | null {
   if (!isClient()) return null;
 
+  // The refresh token now lives in an HttpOnly cookie, not localStorage — so
+  // the access token alone determines whether we have a usable session here.
   const access = localStorage.getItem(STORAGE_KEYS.access);
-  const refresh = localStorage.getItem(STORAGE_KEYS.refresh);
+  if (!access) return null;
 
-  if (!access || !refresh) return null;
-
+  const refresh = localStorage.getItem(STORAGE_KEYS.refresh) || "";
   return { access, refresh };
 }
 
 export function persistTokens(tokens: TokenResponse) {
   if (!isClient()) return;
   localStorage.setItem(STORAGE_KEYS.access, tokens.access);
-  localStorage.setItem(STORAGE_KEYS.refresh, tokens.refresh);
+  // Never persist the refresh token in JS-readable storage — it is delivered as
+  // an HttpOnly cookie by the backend. Remove any legacy value.
+  localStorage.removeItem(STORAGE_KEYS.refresh);
 }
 
 export function persistUser(user: AuthMeResponse) {
@@ -374,29 +381,28 @@ export async function fetchMe(): Promise<AuthMeResponse> {
 }
 
 export async function logout(): Promise<void> {
-  const tokens = getStoredTokens();
-  if (!tokens) return;
-
-  await baseRequest("/auth/logout/", {
-    method: "POST",
-    body: JSON.stringify({ refresh: tokens.refresh }),
-  });
-
+  // The backend reads the refresh from the HttpOnly cookie, blacklists it, and
+  // clears the cookie. Only call it when we have a local session.
+  const access = isClient() ? localStorage.getItem(STORAGE_KEYS.access) : null;
+  if (access) {
+    try {
+      await baseRequest("/auth/logout/", { method: "POST", body: JSON.stringify({}) });
+    } catch {
+      // Clear locally regardless of the network result.
+    }
+  }
   clearAuthStorage();
 }
 
 export async function refreshAccessToken(): Promise<string> {
-  const tokens = getStoredTokens();
-
-  if (!tokens?.refresh) {
-    clearAuthStorage();
-    throw new Error("جلسه منقضی شده");
-  }
-
+  // The refresh token travels in the HttpOnly cookie (sent via credentials:include
+  // on this same-origin /api request); the backend rotates it and re-sets the
+  // cookie. We never see or store the refresh token in JS.
   const res = await fetch(`${API_URL}/token/refresh/`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ refresh: tokens.refresh }),
+    credentials: "include",
+    body: JSON.stringify({}),
   });
 
   const payload = await parseJson(res);
@@ -406,17 +412,10 @@ export async function refreshAccessToken(): Promise<string> {
     throw new Error("جلسه منقضی شده");
   }
 
-  // With ROTATE_REFRESH_TOKENS + BLACKLIST_AFTER_ROTATION on the backend, each
-  // refresh returns a NEW refresh token and blacklists the one we just sent.
-  // We MUST persist the rotated token — keeping the old one would get it
-  // blacklisted on the next refresh and force a premature re-login.
-  const rotatedRefresh =
-    typeof payload.refresh === "string" && payload.refresh ? payload.refresh : tokens.refresh;
-
-  persistTokens({
-    access: payload.access,
-    refresh: rotatedRefresh,
-  });
+  // Persist only the new access token — the rotated refresh stays in the cookie.
+  if (isClient()) {
+    localStorage.setItem(STORAGE_KEYS.access, payload.access);
+  }
 
   return payload.access;
 }

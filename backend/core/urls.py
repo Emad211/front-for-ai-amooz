@@ -23,6 +23,11 @@ from apps.authentication.openapi import (
 
 from apps.authentication.serializers import TokenObtainPairByIdentifierSerializer
 
+from rest_framework.response import Response
+from rest_framework import status
+from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
+
+from apps.authentication.cookies import set_refresh_cookie, get_refresh_from_request
 from apps.core.views import HealthCheckView
 from apps.core.throttling import SafeScopedRateThrottle
 
@@ -44,6 +49,12 @@ class TokenObtainPairViewDocs(TokenObtainPairView):
     throttle_classes = [SafeScopedRateThrottle]
     throttle_scope = 'login'
 
+    def finalize_response(self, request, response, *args, **kwargs):
+        response = super().finalize_response(request, response, *args, **kwargs)
+        if response.status_code == 200 and isinstance(getattr(response, 'data', None), dict):
+            set_refresh_cookie(response, response.data.get('refresh'))
+        return response
+
 
 @extend_schema_view(
     post=extend_schema(
@@ -58,7 +69,26 @@ class TokenObtainPairViewDocs(TokenObtainPairView):
     )
 )
 class TokenRefreshViewDocs(TokenRefreshView):
-    pass
+    """Accept the refresh token from the HttpOnly cookie (falling back to the
+    request body for backward compatibility) and re-set the rotated cookie."""
+
+    def post(self, request, *args, **kwargs):
+        data = request.data
+        if not data.get('refresh'):
+            cookie_refresh = get_refresh_from_request(request)
+            if cookie_refresh:
+                data = {**request.data, 'refresh': cookie_refresh}
+
+        serializer = self.get_serializer(data=data)
+        try:
+            serializer.is_valid(raise_exception=True)
+        except TokenError as exc:
+            raise InvalidToken(exc.args[0])
+
+        response = Response(serializer.validated_data, status=status.HTTP_200_OK)
+        # Rotation returns a new refresh token → keep the cookie in sync.
+        set_refresh_cookie(response, serializer.validated_data.get('refresh'))
+        return response
 
 urlpatterns = [
     path('admin/', admin.site.urls),

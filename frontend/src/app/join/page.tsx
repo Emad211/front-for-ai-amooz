@@ -66,10 +66,11 @@ export default function JoinOrgPage() {
       }
       const result = await OrganizationService.redeemCode(payload);
 
-      // If new account was created, store tokens
-      if (result.access && result.refresh) {
+      // If a new account was created, store the access token. The refresh token
+      // is delivered as an HttpOnly cookie (set by the same-origin redeem call).
+      if (result.access) {
         localStorage.setItem('ai_amooz_access', result.access);
-        localStorage.setItem('ai_amooz_refresh', result.refresh);
+        localStorage.removeItem('ai_amooz_refresh');
       }
 
       setSuccessOrg(result.organization);

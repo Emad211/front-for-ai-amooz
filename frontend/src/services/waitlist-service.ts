@@ -1,7 +1,9 @@
 import { ApiRequestError, getStoredTokens, type RegisterResponse } from "./auth-service";
 
 const RAW_API = (process.env.NEXT_PUBLIC_API_URL ?? "").replace(/\/$/, "");
-const API_URL = RAW_API.endsWith("/api") ? RAW_API : `${RAW_API}/api`;
+// Same-origin Next /api proxy so the teacher-completion refresh cookie is
+// first-party (and admin calls avoid cross-origin CORS).
+const API_URL = "/api";
 
 export type AccessRequestKind = "teacher" | "organization";
 export type AccessRequestStatus = "pending" | "contacted" | "approved" | "rejected";
@@ -102,7 +104,7 @@ async function request<T>(
 
   let res: Response;
   try {
-    res = await fetch(`${API_URL}${path}`, { ...options, headers });
+    res = await fetch(`${API_URL}${path}`, { ...options, headers, credentials: "include" });
   } catch {
     throw new Error("ارتباط با سرور برقرار نشد.");
   }

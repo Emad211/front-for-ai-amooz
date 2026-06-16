@@ -320,6 +320,19 @@ SIMPLE_JWT = {
     'UPDATE_LAST_LOGIN': True,
 }
 
+# ── Refresh-token HttpOnly cookie ───────────────────────────────────────────
+# Keeps the long-lived refresh token out of JS-readable storage (XSS can't steal
+# the persistent session). Auth calls go through the same-origin Next /api proxy
+# so SameSite=Lax host-only cookies work without cross-site/CORS complications.
+# Master switch (env) lets ops disable it without a redeploy if needed.
+AUTH_REFRESH_COOKIE = os.getenv('AUTH_REFRESH_COOKIE', 'True') == 'True'
+AUTH_REFRESH_COOKIE_NAME = os.getenv('AUTH_REFRESH_COOKIE_NAME', 'refresh_token')
+AUTH_REFRESH_COOKIE_SAMESITE = os.getenv('AUTH_REFRESH_COOKIE_SAMESITE', 'Lax')
+AUTH_REFRESH_COOKIE_PATH = os.getenv('AUTH_REFRESH_COOKIE_PATH', '/api/')
+AUTH_REFRESH_COOKIE_SECURE = os.getenv(
+    'AUTH_REFRESH_COOKIE_SECURE', 'False' if DEBUG else 'True'
+) == 'True'
+
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 # CORS: allow-all by default only in DEBUG, override via env in production.

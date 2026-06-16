@@ -24,6 +24,7 @@ from .serializers import (
     PasswordResetRequestSerializer, PasswordResetConfirmSerializer,
 )
 from .otp_service import find_user_by_identifier, issue_reset_otp, verify_reset_otp
+from .cookies import set_refresh_cookie, clear_refresh_cookie, get_refresh_from_request
 from .openapi import (
     RegisterResponseSerializer,
     ErrorDetailSerializer,
@@ -100,7 +101,7 @@ class RegisterView(APIView):
 
         refresh = RefreshToken.for_user(user)
 
-        return Response(
+        response = Response(
             {
                 'user': MeSerializer(user).data,
                 'tokens': {
@@ -110,6 +111,8 @@ class RegisterView(APIView):
             },
             status=status.HTTP_201_CREATED,
         )
+        set_refresh_cookie(response, str(refresh))
+        return response
 
 
 class LogoutView(APIView):
@@ -128,22 +131,27 @@ class LogoutView(APIView):
         tags=['Authentication']
     )
     def post(self, request):
-        serializer = LogoutSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
+        # Refresh token comes from the HttpOnly cookie (or the body for backward
+        # compatibility). Logout is idempotent: always clear the cookie + 205.
+        from rest_framework_simplejwt.exceptions import TokenError
+
+        refresh_value = request.data.get('refresh') or get_refresh_from_request(request)
+        response = Response(status=status.HTTP_205_RESET_CONTENT)
+        clear_refresh_cookie(response)
+
+        if not refresh_value:
+            return response  # nothing to blacklist; session cookie cleared
 
         try:
-            refresh_token = RefreshToken(serializer.validated_data['refresh'])
+            refresh_token = RefreshToken(refresh_value)
             token_user_id = refresh_token.get('user_id')
             if token_user_id is None or str(token_user_id) != str(request.user.id):
                 raise PermissionDenied('Refresh token does not belong to the current user.')
-            
             refresh_token.blacklist()
-            return Response(status=status.HTTP_205_RESET_CONTENT)
-        except Exception as e:
-            from rest_framework_simplejwt.exceptions import TokenError
-            if isinstance(e, TokenError):
-                return Response({'detail': 'Invalid refresh token.'}, status=status.HTTP_400_BAD_REQUEST)
-            raise
+        except TokenError:
+            # Already-invalid/expired token — the cookie is cleared; treat as logged out.
+            pass
+        return response
 
 
 class PasswordChangeView(APIView):
@@ -195,7 +203,7 @@ class PasswordChangeView(APIView):
             BlacklistedToken.objects.get_or_create(token=outstanding)
 
         refresh = RefreshToken.for_user(user)
-        return Response(
+        response = Response(
             {
                 'detail': 'Password updated successfully.',
                 'access': str(refresh.access_token),
@@ -203,6 +211,8 @@ class PasswordChangeView(APIView):
             },
             status=status.HTTP_200_OK,
         )
+        set_refresh_cookie(response, str(refresh))
+        return response
 
 
 class PasswordResetRequestView(APIView):
@@ -271,7 +281,7 @@ class PasswordResetConfirmView(APIView):
             BlacklistedToken.objects.get_or_create(token=outstanding)
 
         refresh = RefreshToken.for_user(user)
-        return Response(
+        response = Response(
             {
                 'detail': 'رمز عبور با موفقیت تغییر کرد.',
                 'access': str(refresh.access_token),
@@ -279,6 +289,8 @@ class PasswordResetConfirmView(APIView):
             },
             status=status.HTTP_200_OK,
         )
+        set_refresh_cookie(response, str(refresh))
+        return response
 
 
 class InviteCodeLoginView(APIView):
@@ -356,7 +368,7 @@ class InviteCodeLoginView(APIView):
         _safe_update_last_login(user)
 
         refresh = RefreshToken.for_user(user)
-        return Response(
+        response = Response(
             {
                 'user': MeSerializer(user).data,
                 'tokens': {
@@ -366,3 +378,5 @@ class InviteCodeLoginView(APIView):
             },
             status=status.HTTP_200_OK,
         )
+        set_refresh_cookie(response, str(refresh))
+        return response

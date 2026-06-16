@@ -7,7 +7,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { useTheme } from 'next-themes';
 import { useState, useEffect } from 'react';
 import { usePathname } from 'next/navigation';
-import { getStoredUser, getStoredTokens, logout as logoutApi, clearAuthStorage } from '@/services/auth-service';
+import { getStoredUser, logout as logoutApi, clearAuthStorage } from '@/services/auth-service';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -160,10 +160,9 @@ export function UserProfile({
         <DropdownMenuItem className="justify-start rounded-xl h-11 cursor-pointer focus:bg-destructive/5 text-destructive"
           onClick={async () => {
             try {
-              const tokens = getStoredTokens();
-              if (tokens?.refresh) {
-                await logoutApi(tokens.refresh, tokens.access).catch(() => {});
-              }
+              // logout() reads the refresh from the HttpOnly cookie, blacklists
+              // it, and clears the cookie server-side.
+              await logoutApi().catch(() => {});
             } finally {
               clearAuthStorage();
               window.location.href = '/login';

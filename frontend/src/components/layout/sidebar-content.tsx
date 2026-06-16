@@ -13,7 +13,7 @@ import { Separator } from '@/components/ui/separator';
 import { ADMIN_NAV_MENU, TEACHER_NAV_MENU } from '@/constants/navigation';
 import { Logo } from '@/components/ui/logo';
 import { WorkspaceSwitcher } from '@/components/layout/workspace-switcher';
-import { clearAuthStorage, getStoredTokens, logout as logoutApi } from '@/services/auth-service';
+import { clearAuthStorage, logout as logoutApi } from '@/services/auth-service';
 
 interface SidebarContentProps {
   onItemClick?: () => void;
@@ -106,10 +106,9 @@ export function SidebarContent({ onItemClick, navMenu = ADMIN_NAV_MENU, panelLab
           onClick={async () => {
             if (onItemClick) onItemClick();
             try {
-              const tokens = getStoredTokens();
-              if (tokens?.refresh) {
-                await logoutApi(tokens.refresh, tokens.access).catch(() => {});
-              }
+              // logout() reads the refresh from the HttpOnly cookie, blacklists
+              // it, and clears the cookie server-side.
+              await logoutApi().catch(() => {});
             } finally {
               clearAuthStorage();
               window.location.href = '/login';

@@ -35,7 +35,7 @@ export function TeacherHeader() {
     if (!tokens?.access) return;
 
     // Best-effort refresh from backend; keep UI responsive with stored user.
-    fetchMe(tokens.access)
+    fetchMe()
       .then((fresh) => {
         persistUser(fresh);
         setMe(fresh);

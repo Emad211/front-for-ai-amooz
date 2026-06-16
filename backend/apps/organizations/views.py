@@ -17,6 +17,7 @@ from rest_framework.views import APIView
 
 from apps.core.permissions import IsPlatformAdmin as IsAdminUser
 from apps.core.throttling import SafeScopedRateThrottle
+from apps.authentication.cookies import set_refresh_cookie
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from apps.classes.models import ClassCreationSession
@@ -489,7 +490,7 @@ class RedeemInvitationView(APIView):
 
         role_display = dict(InvitationCode.TargetRole.choices).get(invite.target_role, '')
 
-        return Response({
+        response = Response({
             'success': True,
             'organization': {
                 'id': invite.organization.id,
@@ -502,6 +503,8 @@ class RedeemInvitationView(APIView):
             },
             **token_data,
         }, status=status.HTTP_201_CREATED)
+        set_refresh_cookie(response, token_data.get('refresh'))
+        return response
 
 
 # ═══════════════════════════════════════════════════════════════════════════

@@ -301,9 +301,11 @@ class TestAuthenticationEdgeCases:
         for invalid_token in invalid_refresh_tokens:
             data = {'refresh': invalid_token} if invalid_token is not None else {}
             response = client.post('/api/auth/logout/', data, format='json')
-            
-            # Should handle invalid tokens gracefully
-            assert response.status_code in [400, 401]
+
+            # Should handle invalid tokens gracefully. Logout is now idempotent and
+            # cookie-based: an invalid/empty body token is ignored and the session
+            # cookie is cleared (205), or a malformed body token is rejected (400).
+            assert response.status_code in [205, 400, 401]
 
     def test_password_change_edge_cases(self):
         user = User.objects.create_user(username='pwd_change_test', password='OldPass123!')

@@ -19,6 +19,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from drf_spectacular.utils import OpenApiResponse, extend_schema
 
 from apps.accounts.serializers import MeSerializer
+from apps.authentication.cookies import set_refresh_cookie
 from apps.core.permissions import IsPlatformAdmin
 
 from .models import AccessRequest
@@ -119,13 +120,15 @@ class TeacherRegistrationCompleteView(APIView):
             logger.warning('Could not update last_login for user %s', getattr(user, 'pk', None))
 
         refresh = RefreshToken.for_user(user)
-        return Response(
+        response = Response(
             {
                 'user': MeSerializer(user).data,
                 'tokens': {'access': str(refresh.access_token), 'refresh': str(refresh)},
             },
             status=status.HTTP_201_CREATED,
         )
+        set_refresh_cookie(response, str(refresh))
+        return response
 
 
 class AccessRequestListView(ListAPIView):

@@ -140,8 +140,8 @@ export default function OrgLoginPage() {
       if (result.access && result.refresh) {
         persistTokens({ access: result.access, refresh: result.refresh });
 
-        // Fetch full user profile and persist
-        const me = await fetchMe(result.access);
+        // Fetch full user profile and persist (token already persisted above).
+        const me = await fetchMe();
         persistUser(me);
       }
 

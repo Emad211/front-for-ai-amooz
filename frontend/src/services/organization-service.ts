@@ -238,10 +238,25 @@ export const OrganizationService = {
     first_name?: string;
     last_name?: string;
   }): Promise<RedeemCodeResult> => {
-    return requestJson<RedeemCodeResult>('/organizations/redeem-code/', {
-      method: 'POST',
-      body: JSON.stringify(data),
-    });
+    // Go through the same-origin /api proxy with credentials so the refresh-token
+    // cookie the backend sets is first-party. (The rest of this service calls the
+    // backend directly with a Bearer token and is intentionally unaffected.)
+    let response: Response;
+    try {
+      response = await fetch('/api/organizations/redeem-code/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify(data),
+      });
+    } catch {
+      throw new Error('ارتباط با سرور برقرار نشد.');
+    }
+    const payload = await parseJson(response);
+    if (!response.ok) {
+      throw new Error(extractErrorMessage(payload, 'درخواست ناموفق بود.'));
+    }
+    return payload as RedeemCodeResult;
   },
 
   // ============================================================================

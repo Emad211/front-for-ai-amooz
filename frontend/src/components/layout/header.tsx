@@ -19,7 +19,7 @@ import {
 import { useTheme } from 'next-themes';
 import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/utils';
-import { getStoredUser, getStoredTokens, logout as logoutApi, clearAuthStorage, type AuthMeResponse } from '@/services/auth-service';
+import { getStoredUser, logout as logoutApi, clearAuthStorage, type AuthMeResponse } from '@/services/auth-service';
 import { useEffect, useState } from 'react';
 
 type NavLinkProps = {
@@ -121,10 +121,9 @@ const UserProfile = () => {
         <DropdownMenuItem className="cursor-pointer text-destructive focus:text-destructive"
           onClick={async () => {
             try {
-              const tokens = getStoredTokens();
-              if (tokens?.refresh) {
-                await logoutApi(tokens.refresh, tokens.access).catch(() => {});
-              }
+              // logout() reads the refresh from the HttpOnly cookie, blacklists
+              // it, and clears the cookie server-side.
+              await logoutApi().catch(() => {});
             } finally {
               clearAuthStorage();
               window.location.href = '/login';
