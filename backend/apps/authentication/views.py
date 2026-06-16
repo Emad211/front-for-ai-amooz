@@ -10,6 +10,7 @@ from rest_framework import status
 from rest_framework.views import APIView
 from rest_framework.exceptions import PermissionDenied
 from rest_framework_simplejwt.tokens import RefreshToken
+from rest_framework_simplejwt.token_blacklist.models import OutstandingToken, BlacklistedToken
 from drf_spectacular.utils import extend_schema, OpenApiResponse, OpenApiExample
 
 from apps.accounts.serializers import MeSerializer
@@ -177,7 +178,24 @@ class PasswordChangeView(APIView):
 
         user.set_password(serializer.validated_data['new_password'])
         user.save()
-        return Response({'detail': 'Password updated successfully.'}, status=status.HTTP_200_OK)
+
+        # Terminate all existing sessions: blacklist every outstanding refresh
+        # token for this user so a stolen/old token cannot survive the password
+        # change (SimpleJWT is stateless — without this, a changed password does
+        # NOT evict an attacker holding a refresh token for up to its lifetime).
+        # Then issue the requester a fresh pair so their own session continues.
+        for outstanding in OutstandingToken.objects.filter(user=user):
+            BlacklistedToken.objects.get_or_create(token=outstanding)
+
+        refresh = RefreshToken.for_user(user)
+        return Response(
+            {
+                'detail': 'Password updated successfully.',
+                'access': str(refresh.access_token),
+                'refresh': str(refresh),
+            },
+            status=status.HTTP_200_OK,
+        )
 
 
 class InviteCodeLoginView(APIView):

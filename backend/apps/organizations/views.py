@@ -379,6 +379,28 @@ class RedeemInvitationView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
+        # Re-validate UNDER THE LOCK. The serializer's is_valid / capacity checks
+        # ran on an UNLOCKED read (ser.is_valid above) before this row was locked,
+        # so they are stale: two concurrent redemptions of a max_uses=1 code could
+        # both pass them and both create a membership. Now that the row is locked,
+        # re-read the authoritative state — a second concurrent request blocks on
+        # select_for_update() until the first commits, then observes the
+        # incremented use_count here and is rejected. (Prevents e.g. a single-use
+        # org-admin code minting two MANAGER accounts.)
+        if not invite.is_valid:
+            return Response(
+                {'detail': 'این کد دیگر معتبر نیست یا به سقف استفاده رسیده است.'},
+                status=status.HTTP_409_CONFLICT,
+            )
+        if (
+            invite.target_role == InvitationCode.TargetRole.STUDENT
+            and invite.organization.is_at_capacity
+        ):
+            return Response(
+                {'detail': 'ظرفیت دانش‌آموزان سازمان تکمیل است.'},
+                status=status.HTTP_409_CONFLICT,
+            )
+
         # Determine the user
         user = request.user if request.user.is_authenticated else None
 
