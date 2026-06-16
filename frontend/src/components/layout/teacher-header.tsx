@@ -81,6 +81,7 @@ export function TeacherHeader() {
   };
   const orgTitleMap: Record<string, string> = {
     teacher: 'داشبورد سازمان',
+    org: 'مدیریت سازمان',
     analytics: 'آمار و تحلیل',
     'create-class': 'ایجاد کلاس جدید',
     'my-classes': 'کلاس‌های سازمان',

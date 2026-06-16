@@ -18,6 +18,7 @@ import {
   LayoutDashboard,
   KeyRound,
   ClipboardList,
+  UserCog,
 } from 'lucide-react';
 import { NavSection, NavItem, OrgRole } from '@/types';
 
@@ -102,6 +103,7 @@ export const ORG_TEACHER_NAV_MENU: NavSection[] = [
     title: 'سازمان',
     items: [
       { label: 'داشبورد سازمان', href: '/teacher', icon: LayoutDashboard },
+      { label: 'مدیریت سازمان', href: '/teacher/org', icon: UserCog },
     ]
   },
   {
