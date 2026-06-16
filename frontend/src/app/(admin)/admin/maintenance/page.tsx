@@ -6,6 +6,7 @@ import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ErrorState } from '@/components/shared/error-state';
 import { useAdminOps } from '@/hooks/use-admin-ops';
+import { formatPersianDateTime } from '@/lib/date-utils';
 
 export default function MaintenancePage() {
   const { health, maintenance, isLoading, error, reload } = useAdminOps();
@@ -71,7 +72,7 @@ export default function MaintenancePage() {
               <div key={task.id} className="p-4 rounded-xl border flex flex-col md:flex-row md:items-center md:justify-between gap-3 bg-muted/50">
                 <div>
                   <p className="text-base font-bold text-foreground">{task.title}</p>
-                  <p className="text-sm text-muted-foreground">{task.window}</p>
+                  <p className="text-sm text-muted-foreground">{formatPersianDateTime(task.window)}</p>
                 </div>
                 <div className="flex items-center gap-2">
                   <Badge variant="outline" className="rounded-full">{task.owner}</Badge>
