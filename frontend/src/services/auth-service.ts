@@ -384,9 +384,16 @@ export async function refreshAccessToken(): Promise<string> {
     throw new Error("جلسه منقضی شده");
   }
 
+  // With ROTATE_REFRESH_TOKENS + BLACKLIST_AFTER_ROTATION on the backend, each
+  // refresh returns a NEW refresh token and blacklists the one we just sent.
+  // We MUST persist the rotated token — keeping the old one would get it
+  // blacklisted on the next refresh and force a premature re-login.
+  const rotatedRefresh =
+    typeof payload.refresh === "string" && payload.refresh ? payload.refresh : tokens.refresh;
+
   persistTokens({
     access: payload.access,
-    refresh: tokens.refresh,
+    refresh: rotatedRefresh,
   });
 
   return payload.access;

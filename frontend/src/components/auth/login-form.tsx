@@ -49,7 +49,7 @@ export function LoginForm({ onSwitchToJoin }: LoginFormProps) {
       const tokens = await loginRequest(data);
       persistTokens(tokens);
 
-      const me = await fetchMe(tokens.access);
+      const me = await fetchMe();
       persistUser(me);
 
       toast.success('ورود با موفقیت انجام شد');
@@ -71,6 +71,7 @@ export function LoginForm({ onSwitchToJoin }: LoginFormProps) {
       const roleRedirectMap: Record<string, string> = {
         teacher: '/teacher',
         admin: '/admin',
+        manager: '/teacher', // org manager — lands on the org/teacher area (orgRedirect usually wins first)
         student: '/home',
       };
 
@@ -86,6 +87,8 @@ export function LoginForm({ onSwitchToJoin }: LoginFormProps) {
         if (orgRedirect && path.startsWith('/admin/organizations/')) return true;
         if (normalizedRole === 'teacher') return path.startsWith('/teacher');
         if (normalizedRole === 'admin') return path.startsWith('/admin');
+        if (normalizedRole === 'manager')
+          return path.startsWith('/teacher') || path.startsWith('/admin/organizations/');
         // student
         return !path.startsWith('/teacher') && !path.startsWith('/admin');
       };

@@ -294,8 +294,12 @@ SPECTACULAR_SETTINGS = {
 }
 
 SIMPLE_JWT = {
-    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=60),
-    'REFRESH_TOKEN_LIFETIME': timedelta(days=1),
+    # Access token is the short-lived working credential (silently refreshed on
+    # 401). Refresh token is the real "session" window — how long a user can be
+    # away and still come back without re-logging-in. Rotation (below) gives an
+    # active user a rolling window. Both env-tunable.
+    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=_get_env_int('ACCESS_TOKEN_LIFETIME_MINUTES', 60)),
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=_get_env_int('REFRESH_TOKEN_LIFETIME_DAYS', 3)),
     'AUTH_HEADER_TYPES': ('Bearer',),
     'ROTATE_REFRESH_TOKENS': True,
     'BLACKLIST_AFTER_ROTATION': True,
