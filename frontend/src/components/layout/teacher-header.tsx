@@ -82,6 +82,8 @@ export function TeacherHeader() {
   const orgTitleMap: Record<string, string> = {
     teacher: 'داشبورد سازمان',
     org: 'مدیریت سازمان',
+    classes: 'کلاس‌های سازمان',
+    costs: 'هزینه‌های هوش مصنوعی',
     analytics: 'آمار و تحلیل',
     'create-class': 'ایجاد کلاس جدید',
     'my-classes': 'کلاس‌های سازمان',

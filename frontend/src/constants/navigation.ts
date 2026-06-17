@@ -137,12 +137,42 @@ export const ORG_TEACHER_NAV_MENU: NavSection[] = [
  */
 export const ORG_TEACHER_TEACHING_NAV_MENU: NavSection[] = ORG_TEACHER_NAV_MENU.slice(1);
 
+/**
+ * Org MANAGER nav: management + oversight ONLY. A manager does NOT create content
+ * (no "create class"/"create exam" — that is a teacher action). They manage
+ * members/groups/codes, oversee all the org's classes, and watch AI costs.
+ */
+export const ORG_MANAGER_NAV_MENU: NavSection[] = [
+  {
+    title: 'مدیریت سازمان',
+    items: [
+      { label: 'داشبورد', href: '/teacher', icon: LayoutDashboard },
+      { label: 'اعضا و گروه‌ها', href: '/teacher/org', icon: UserCog },
+    ],
+  },
+  {
+    title: 'نظارت',
+    items: [
+      { label: 'کلاس‌ها', href: '/teacher/org/classes', icon: FolderOpen },
+      { label: 'هزینه‌ها', href: '/teacher/org/costs', icon: Coins },
+    ],
+  },
+  {
+    title: 'پشتیبانی',
+    items: [
+      { label: 'تیکت‌های پشتیبانی', href: '/teacher/tickets', icon: Ticket },
+    ],
+  },
+];
+
 /** Pick the teacher sidebar/header nav for the current workspace + org role. */
 export function getTeacherNavMenu(
   isOrgMode: boolean,
   orgRole?: OrgRole | null,
 ): NavSection[] {
   if (!isOrgMode) return TEACHER_NAV_MENU;
-  if (orgRole === 'admin' || orgRole === 'deputy') return ORG_TEACHER_NAV_MENU;
+  // Managers (org admin/deputy) get a management/oversight-only menu — NO content
+  // creation. Org teachers get the teaching menu (they DO create content).
+  if (orgRole === 'admin' || orgRole === 'deputy') return ORG_MANAGER_NAV_MENU;
   return ORG_TEACHER_TEACHING_NAV_MENU;
 }

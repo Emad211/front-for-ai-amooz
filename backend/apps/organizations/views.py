@@ -8,7 +8,7 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import DatabaseError, IntegrityError, transaction
-from django.db.models import Count, F, Q
+from django.db.models import Count, F, Q, Sum
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
@@ -882,3 +882,128 @@ class MyStudyGroupsView(APIView):
             .distinct()
         )
         return Response(StudyGroupDetailSerializer(groups, many=True).data)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Manager oversight: all org classes + AI-cost breakdown (IsOrgAdmin)
+# ═══════════════════════════════════════════════════════════════════════════
+
+class OrgClassesView(APIView):
+    """GET: every class/exam session in the org (oversight — ALL teachers).
+
+    A manager doesn't create content; this is read-only oversight of what the
+    org's teachers have built.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, org_pk):
+        if not (request.user.is_staff or IsOrgAdmin.check(request.user, org_pk)):
+            return Response({'detail': 'دسترسی ندارید.'}, status=status.HTTP_403_FORBIDDEN)
+
+        sessions = (
+            ClassCreationSession.objects
+            .filter(organization_id=org_pk)
+            .select_related('teacher', 'study_group')
+            .annotate(_invites=Count('invites', distinct=True))
+            .order_by('-created_at')
+        )
+        data = [
+            {
+                'id': s.id,
+                'title': s.title,
+                'teacherName': (s.teacher.get_full_name() or s.teacher.username) if s.teacher else '',
+                'pipelineType': s.pipeline_type,
+                'status': s.status,
+                'isPublished': s.is_published,
+                'studentCount': s._invites,
+                'studyGroupName': s.study_group.name if s.study_group else None,
+                'createdAt': s.created_at,
+            }
+            for s in sessions
+        ]
+        return Response(data)
+
+
+class OrgCostsView(APIView):
+    """GET: org AI-cost breakdown — total + by teacher / class / group / feature.
+
+    Costs attribute via ``LLMUsageLog.session_id`` → the org's class sessions
+    (each carries its teacher + study group), so every breakdown is exact. No
+    extra schema is needed.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, org_pk):
+        if not (request.user.is_staff or IsOrgAdmin.check(request.user, org_pk)):
+            return Response({'detail': 'دسترسی ندارید.'}, status=status.HTTP_403_FORBIDDEN)
+
+        from apps.commons.models import LLMUsageLog
+
+        sessions = (
+            ClassCreationSession.objects
+            .filter(organization_id=org_pk)
+            .select_related('teacher', 'study_group')
+        )
+        session_map = {s.id: s for s in sessions}
+        session_ids = list(session_map.keys())
+
+        logs = LLMUsageLog.objects.filter(session_id__in=session_ids)
+
+        def _f(value) -> float:
+            return float(value or 0)
+
+        totals = logs.aggregate(
+            toman=Sum('estimated_cost_toman'),
+            tokens=Sum('total_tokens'),
+            calls=Count('id'),
+        )
+
+        by_class = []
+        teacher_acc: dict = {}
+        group_acc: dict = {}
+        for row in logs.values('session_id').annotate(
+            toman=Sum('estimated_cost_toman'),
+            tokens=Sum('total_tokens'),
+            calls=Count('id'),
+        ):
+            s = session_map.get(row['session_id'])
+            if not s:
+                continue
+            toman, tokens, calls = _f(row['toman']), int(row['tokens'] or 0), row['calls']
+            by_class.append({
+                'sessionId': s.id,
+                'title': s.title,
+                'teacherName': (s.teacher.get_full_name() or s.teacher.username) if s.teacher else '',
+                'studyGroupName': s.study_group.name if s.study_group else None,
+                'toman': toman, 'tokens': tokens, 'calls': calls,
+            })
+            tname = (s.teacher.get_full_name() or s.teacher.username) if s.teacher else 'نامشخص'
+            t = teacher_acc.setdefault(s.teacher_id, {'teacherName': tname, 'toman': 0.0, 'tokens': 0, 'calls': 0})
+            t['toman'] += toman; t['tokens'] += tokens; t['calls'] += calls
+            gname = s.study_group.name if s.study_group else 'بدون گروه'
+            g = group_acc.setdefault(s.study_group_id, {'studyGroupName': gname, 'toman': 0.0, 'tokens': 0, 'calls': 0})
+            g['toman'] += toman; g['tokens'] += tokens; g['calls'] += calls
+
+        by_feature = [
+            {'feature': r['feature'], 'toman': _f(r['toman']), 'tokens': int(r['tokens'] or 0), 'calls': r['calls']}
+            for r in logs.values('feature').annotate(
+                toman=Sum('estimated_cost_toman'), tokens=Sum('total_tokens'), calls=Count('id'),
+            )
+        ]
+
+        by_class.sort(key=lambda x: x['toman'], reverse=True)
+        by_feature.sort(key=lambda x: x['toman'], reverse=True)
+
+        return Response({
+            'total': {
+                'toman': _f(totals['toman']),
+                'tokens': int(totals['tokens'] or 0),
+                'calls': totals['calls'],
+            },
+            'byTeacher': sorted(teacher_acc.values(), key=lambda x: x['toman'], reverse=True),
+            'byClass': by_class,
+            'byGroup': sorted(group_acc.values(), key=lambda x: x['toman'], reverse=True),
+            'byFeature': by_feature,
+        })

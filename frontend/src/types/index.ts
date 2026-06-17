@@ -488,3 +488,30 @@ export interface StudyGroup {
   /** Present in detail / my-study-groups responses (the roster). */
   students?: StudyGroupStudentBrief[];
 }
+
+// ── Manager oversight: all org classes + AI cost breakdown ──
+export interface OrgClassRow {
+  id: number;
+  title: string;
+  teacherName: string;
+  pipelineType: string;
+  status: string;
+  isPublished: boolean;
+  studentCount: number;
+  studyGroupName: string | null;
+  createdAt: string;
+}
+
+export interface OrgCostEntry {
+  toman: number;
+  tokens: number;
+  calls: number;
+}
+
+export interface OrgCosts {
+  total: OrgCostEntry;
+  byTeacher: (OrgCostEntry & { teacherName: string })[];
+  byClass: (OrgCostEntry & { sessionId: number; title: string; teacherName: string; studyGroupName: string | null })[];
+  byGroup: (OrgCostEntry & { studyGroupName: string })[];
+  byFeature: (OrgCostEntry & { feature: string })[];
+}

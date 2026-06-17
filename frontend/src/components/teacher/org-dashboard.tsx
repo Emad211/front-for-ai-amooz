@@ -108,13 +108,13 @@ export function OrgDashboardPage() {
         </CardHeader>
         <CardContent className="flex flex-wrap gap-2 sm:gap-3">
           <Button variant="outline" size="sm" asChild>
-            <Link href="/teacher/my-classes">کلاس‌های سازمان</Link>
+            <Link href="/teacher/org">اعضا و گروه‌ها</Link>
           </Button>
           <Button variant="outline" size="sm" asChild>
-            <Link href="/teacher/create-class">ایجاد کلاس جدید</Link>
+            <Link href="/teacher/org/classes">کلاس‌های سازمان</Link>
           </Button>
           <Button variant="outline" size="sm" asChild>
-            <Link href="/teacher/students">مدیریت دانش‌آموزان</Link>
+            <Link href="/teacher/org/costs">هزینه‌های هوش مصنوعی</Link>
           </Button>
         </CardContent>
       </Card>

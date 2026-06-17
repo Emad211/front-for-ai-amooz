@@ -9,6 +9,8 @@ import type {
   OrgRole,
   StudyGroup,
   StudyGroupStatus,
+  OrgClassRow,
+  OrgCosts,
 } from '@/types';
 
 const RAW_API_URL = (process.env.NEXT_PUBLIC_API_URL ?? '').replace(/\/$/, '');
@@ -334,5 +336,17 @@ export const OrganizationService = {
 
   getMyStudyGroups: async (orgId: number): Promise<StudyGroup[]> => {
     return requestJson<StudyGroup[]>(`/organizations/${orgId}/my-study-groups/`);
+  },
+
+  // ============================================================================
+  // Manager oversight — all org classes + AI cost breakdown
+  // ============================================================================
+
+  getOrgClasses: async (orgId: number): Promise<OrgClassRow[]> => {
+    return requestJson<OrgClassRow[]>(`/organizations/${orgId}/classes/`);
+  },
+
+  getOrgCosts: async (orgId: number): Promise<OrgCosts> => {
+    return requestJson<OrgCosts>(`/organizations/${orgId}/costs/`);
   },
 };

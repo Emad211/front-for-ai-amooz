@@ -188,3 +188,60 @@ class TestStudyGroupClassLink:
         assert res.status_code == 200
         row = next(r for r in res.data if r['id'] == g.id)
         assert row['classCount'] == 2
+
+
+CLASSES = '/api/organizations/{}/classes/'
+COSTS = '/api/organizations/{}/costs/'
+
+
+@pytest.mark.django_db
+class TestOrgOversightAndCosts:
+    def test_classes_oversight_lists_all_teachers_classes(self, org, manager):
+        from apps.classes.models import ClassCreationSession
+        t1 = _member(org, OrgRole.TEACHER)
+        t2 = _member(org, OrgRole.TEACHER)
+        baker.make(ClassCreationSession, teacher=t1, organization=org, title='C1',
+                   pipeline_type=ClassCreationSession.PipelineType.CLASS)
+        baker.make(ClassCreationSession, teacher=t2, organization=org, title='C2',
+                   pipeline_type=ClassCreationSession.PipelineType.CLASS)
+        res = _auth(manager).get(CLASSES.format(org.id))
+        assert res.status_code == 200
+        assert {'C1', 'C2'} <= {c['title'] for c in res.data}
+
+    def test_classes_oversight_forbidden_for_teacher(self, org):
+        teacher = _member(org, OrgRole.TEACHER)
+        assert _auth(teacher).get(CLASSES.format(org.id)).status_code == 403
+
+    def test_costs_breakdown_is_exact_and_org_scoped(self, org, manager):
+        from apps.classes.models import ClassCreationSession
+        from apps.commons.models import LLMUsageLog
+        t1 = _member(org, OrgRole.TEACHER)
+        g = baker.make(StudyGroup, organization=org, name='G1')
+        s1 = baker.make(ClassCreationSession, teacher=t1, organization=org, study_group=g,
+                        pipeline_type=ClassCreationSession.PipelineType.CLASS)
+        s2 = baker.make(ClassCreationSession, teacher=t1, organization=org,
+                        pipeline_type=ClassCreationSession.PipelineType.CLASS)
+        baker.make(LLMUsageLog, session_id=s1.id, user=t1, feature='transcription',
+                   estimated_cost_toman=1000, total_tokens=100)
+        baker.make(LLMUsageLog, session_id=s1.id, user=t1, feature='structure',
+                   estimated_cost_toman=500, total_tokens=50)
+        baker.make(LLMUsageLog, session_id=s2.id, user=t1, feature='transcription',
+                   estimated_cost_toman=250, total_tokens=25)
+        # Usage on a NON-org session must be excluded from the org's totals.
+        other = baker.make(ClassCreationSession, teacher=t1, organization=None)
+        baker.make(LLMUsageLog, session_id=other.id, user=t1, feature='transcription',
+                   estimated_cost_toman=9999, total_tokens=999)
+
+        res = _auth(manager).get(COSTS.format(org.id))
+        assert res.status_code == 200
+        assert res.data['total']['toman'] == 1750.0   # 1000+500+250 (NOT 9999)
+        assert res.data['total']['tokens'] == 175
+        assert len(res.data['byClass']) == 2
+        groups = {row['studyGroupName']: row['toman'] for row in res.data['byGroup']}
+        assert groups.get('G1') == 1500.0 and groups.get('بدون گروه') == 250.0
+        feats = {row['feature']: row['toman'] for row in res.data['byFeature']}
+        assert feats['transcription'] == 1250.0 and feats['structure'] == 500.0
+
+    def test_costs_forbidden_for_teacher(self, org):
+        teacher = _member(org, OrgRole.TEACHER)
+        assert _auth(teacher).get(COSTS.format(org.id)).status_code == 403
