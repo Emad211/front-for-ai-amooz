@@ -10,6 +10,8 @@ from django.db import migrations, models
 
 
 def add_study_group_if_missing(apps, schema_editor):
+    # `apps` reflects the state AFTER the preceding state-only operation, so the
+    # ClassCreationSession model here already has the study_group field.
     Model = apps.get_model('classes', 'ClassCreationSession')
     table = Model._meta.db_table
     conn = schema_editor.connection
@@ -39,8 +41,8 @@ class Migration(migrations.Migration):
                     field=models.ForeignKey(blank=True, help_text='گروه آموزشی (cohort) که این کلاس/آزمون متعلق به آن است.', null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='study_group_sessions', to='organizations.studygroup', verbose_name='گروه آموزشی'),
                 ),
             ],
-            database_operations=[
-                migrations.RunPython(add_study_group_if_missing, noop_reverse),
-            ],
+            database_operations=[],
         ),
+        # State now has the field → add the physical column only if it's missing.
+        migrations.RunPython(add_study_group_if_missing, noop_reverse),
     ]

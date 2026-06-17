@@ -12,6 +12,9 @@ from django.db import migrations, models
 
 
 def create_studygroup_tables_if_missing(apps, schema_editor):
+    # `apps` here reflects the state AFTER the preceding state-only operation, so
+    # the (historical) models are available — and create_model emits the 0009
+    # schema, which stays correct even if the models change in a later migration.
     existing = set(schema_editor.connection.introspection.table_names())
     for model_name in ('StudyGroup', 'StudyGroupTeacher', 'StudyGroupMembership'):
         model = apps.get_model('organizations', model_name)
@@ -101,8 +104,9 @@ class Migration(migrations.Migration):
                     constraint=models.UniqueConstraint(fields=('organization', 'name'), name='uniq_studygroup_org_name'),
                 ),
             ],
-            database_operations=[
-                migrations.RunPython(create_studygroup_tables_if_missing, noop_reverse),
-            ],
+            database_operations=[],
         ),
+        # State now has the models → this RunPython can resolve them historically
+        # and create the physical tables only where they don't already exist.
+        migrations.RunPython(create_studygroup_tables_if_missing, noop_reverse),
     ]
