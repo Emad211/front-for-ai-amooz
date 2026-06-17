@@ -436,6 +436,10 @@ export interface OrgDashboard {
 
 export interface ValidateCodeResult {
   valid: boolean;
+  // True when an org invite code with this value EXISTS (even if expired/inactive).
+  // Lets the unified code page tell "not an org code → try as a class code" apart
+  // from "org code, but unusable → show the error".
+  exists?: boolean;
   detail?: string;
   organization?: {
     id: number;

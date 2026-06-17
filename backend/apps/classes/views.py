@@ -1124,6 +1124,14 @@ class ClassCreationSessionPublishView(GenericAPIView):
             if updated:
                 session.is_published = True
                 session.published_at = now
+                # Org class → its roster is the linked study group. Enroll the
+                # group's active students now (idempotent) so they see the class
+                # on publish; manual invites are blocked for org classes.
+                try:
+                    from .services.org_roster import sync_org_class_roster
+                    sync_org_class_roster(session)
+                except Exception:
+                    logger.warning('org roster sync on publish failed session=%s', session.id, exc_info=True)
                 def _dispatch_publish_sms():
                     logger.info('[SMS] Dispatching send_publish_sms_task for session=%s', session.id)
                     send_publish_sms_task.delay(session.id)
@@ -1159,6 +1167,14 @@ class ClassInvitationListCreateView(APIView):
         session = ClassCreationSession.objects.filter(id=session_id, teacher=request.user).first()
         if session is None:
             return Response({'detail': 'جلسه پیدا نشد.'}, status=status.HTTP_404_NOT_FOUND)
+
+        # Org classes get their roster from the linked study group (manager-owned);
+        # a teacher may not hand-invite arbitrary students into them.
+        if session.organization_id is not None:
+            return Response(
+                {'detail': 'دانش‌آموزانِ کلاس‌های سازمانی از طریق «گروه آموزشی» توسط مدیر سازمان تعیین می‌شوند.'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
 
         serializer = ClassInvitationCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -1212,6 +1228,12 @@ class ClassInvitationDetailView(APIView):
         session = ClassCreationSession.objects.filter(id=session_id, teacher=request.user).first()
         if session is None:
             return Response({'detail': 'جلسه پیدا نشد.'}, status=status.HTTP_404_NOT_FOUND)
+        # Org class rosters are managed by the org (via study groups), not the teacher.
+        if session.organization_id is not None:
+            return Response(
+                {'detail': 'دانش‌آموزانِ کلاس‌های سازمانی از طریق «گروه آموزشی» توسط مدیر سازمان تعیین می‌شوند.'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
         invite = ClassInvitation.objects.filter(id=invite_id, session=session).first()
         if invite is None:
             return Response({'detail': 'دعوت نامه پیدا نشد.'}, status=status.HTTP_404_NOT_FOUND)

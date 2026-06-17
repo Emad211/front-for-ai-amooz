@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import secrets
 
 from django.contrib.auth import get_user_model
 from django.contrib.auth.password_validation import validate_password
@@ -20,6 +21,7 @@ from apps.core.throttling import SafeScopedRateThrottle
 from apps.authentication.cookies import set_refresh_cookie
 from rest_framework_simplejwt.tokens import RefreshToken
 
+from apps.accounts.models import StudentProfile
 from apps.classes.models import ClassCreationSession
 
 from .models import (
@@ -374,7 +376,7 @@ class RedeemInvitationView(APIView):
 
     @transaction.atomic
     def post(self, request):
-        ser = RedeemInvitationSerializer(data=request.data)
+        ser = RedeemInvitationSerializer(data=request.data, context={'request': request})
         ser.is_valid(raise_exception=True)
         data = ser.validated_data
 
@@ -406,101 +408,145 @@ class RedeemInvitationView(APIView):
                 {'detail': 'این کد دیگر معتبر نیست یا به سقف استفاده رسیده است.'},
                 status=status.HTTP_409_CONFLICT,
             )
-        if (
-            invite.target_role == InvitationCode.TargetRole.STUDENT
-            and invite.organization.is_at_capacity
-        ):
+
+        org = invite.organization
+        is_student_code = invite.target_role == InvitationCode.TargetRole.STUDENT
+        phone = (data.get('phone') or '').strip()
+
+        # Is the redeeming party ALREADY a member? (cheap lookup, no creation) — a
+        # returning student re-entering the org code to log in does not consume a
+        # new seat, so it must bypass the capacity guard below.
+        if request.user.is_authenticated:
+            is_returning = OrganizationMembership.objects.filter(
+                user=request.user, organization=org,
+            ).exists()
+        elif is_student_code and phone:
+            is_returning = OrganizationMembership.objects.filter(
+                user__phone=phone, user__role=User.Role.STUDENT, organization=org,
+            ).exists()
+        else:
+            is_returning = False
+
+        # Capacity guard for a NEW student seat — re-checked under the lock (409),
+        # mirroring the serializer's pre-lock 400. Runs BEFORE any account is
+        # created so an over-capacity redemption never mints a stray user.
+        if is_student_code and not is_returning and org.is_at_capacity:
             return Response(
                 {'detail': 'ظرفیت دانش‌آموزان سازمان تکمیل است.'},
                 status=status.HTTP_409_CONFLICT,
             )
 
-        # Determine the user
+        # ── Resolve / create the user ──
         user = request.user if request.user.is_authenticated else None
-
         if user is None:
-            # Must create a new account
-            username = data.get('username')
-            password = data.get('password')
-            if not username or not password:
-                return Response(
-                    {'detail': 'برای ثبت‌نام لطفاً نام کاربری و رمز عبور وارد کنید.'},
-                    status=status.HTTP_400_BAD_REQUEST,
+            if is_student_code and phone:
+                # Phone-based PASSWORDLESS student onboarding (the same identity
+                # model as class-invite students — see InviteCodeLoginView): find
+                # the STUDENT account for this phone, or create one. A phone may
+                # belong to several accounts (different roles); org-student
+                # identity is STUDENT-only.
+                user = User.objects.filter(phone=phone, role=User.Role.STUDENT).first()
+                if user is None:
+                    base_username = f'student_{phone}'
+                    username = base_username
+                    if User.objects.filter(username=username).exists():
+                        username = f'{base_username}_{secrets.token_hex(3)}'
+                    user = User(
+                        username=username,
+                        role=User.Role.STUDENT,
+                        phone=phone,
+                        first_name=data.get('first_name', ''),
+                        last_name=data.get('last_name', ''),
+                    )
+                    user.set_unusable_password()
+                    user.save()
+                    StudentProfile.objects.get_or_create(user=user)
+            else:
+                # Account-based onboarding (admin/deputy/teacher; or a student
+                # code redeemed with explicit credentials — back-compat).
+                username = data.get('username')
+                password = data.get('password')
+                if not username or not password:
+                    detail = (
+                        'برای پیوستن دانش‌آموز، شماره موبایل لازم است.'
+                        if is_student_code
+                        else 'برای ثبت‌نام لطفاً نام کاربری و رمز عبور وارد کنید.'
+                    )
+                    return Response({'detail': detail}, status=status.HTTP_400_BAD_REQUEST)
+
+                if User.objects.filter(username=username).exists():
+                    return Response(
+                        {'detail': 'این نام کاربری قبلاً استفاده شده است.'},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+
+                try:
+                    validate_password(password)
+                except DjangoValidationError as e:
+                    messages = e.messages if hasattr(e, 'messages') else [str(e)]
+                    return Response(
+                        {'detail': ' '.join(messages)},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+
+                # Map invitation target_role to platform User.Role.
+                # An org admin/deputy is a MANAGER — a distinct platform role that
+                # manages the organization but does NOT teach (and is NOT a platform
+                # ADMIN: no /admin access, no staff powers). Org teachers map to
+                # TEACHER, students to STUDENT. (The org-level org_role membership is
+                # still created below with the original admin/deputy value.)
+                role_map = {
+                    InvitationCode.TargetRole.ADMIN: 'MANAGER',
+                    InvitationCode.TargetRole.DEPUTY: 'MANAGER',
+                    InvitationCode.TargetRole.TEACHER: 'TEACHER',
+                    InvitationCode.TargetRole.STUDENT: 'STUDENT',
+                }
+                platform_role = role_map.get(invite.target_role, 'STUDENT')
+
+                # A brand-new account that joins through an org admin/deputy/teacher
+                # code is ORG-ONLY: no personal/freelancer workspace. An EXISTING
+                # user redeeming is untouched, so a freelancer who joins an org
+                # keeps their personal space and becomes "both".
+                org_only = invite.target_role in (
+                    InvitationCode.TargetRole.ADMIN,
+                    InvitationCode.TargetRole.DEPUTY,
+                    InvitationCode.TargetRole.TEACHER,
+                )
+                user = User.objects.create_user(
+                    username=username,
+                    password=password,
+                    first_name=data.get('first_name', ''),
+                    last_name=data.get('last_name', ''),
+                    role=platform_role,
+                    is_freelancer=not org_only,
                 )
 
-            if User.objects.filter(username=username).exists():
-                return Response(
-                    {'detail': 'این نام کاربری قبلاً استفاده شده است.'},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
+        # ── Membership: create, or treat as an idempotent student login ──
+        membership = OrganizationMembership.objects.filter(
+            user=user, organization=org,
+        ).first()
+        created = membership is None
 
-            try:
-                validate_password(password)
-            except DjangoValidationError as e:
-                messages = e.messages if hasattr(e, 'messages') else [str(e)]
-                return Response(
-                    {'detail': ' '.join(messages)},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
-
-            # Map invitation target_role to platform User.Role.
-            # An org admin/deputy is a MANAGER — a distinct platform role that
-            # manages the organization but does NOT teach (and is NOT a platform
-            # ADMIN: no /admin access, no staff powers). Org teachers map to
-            # TEACHER, students to STUDENT. (The org-level org_role membership is
-            # still created below with the original admin/deputy value.)
-            role_map = {
-                InvitationCode.TargetRole.ADMIN: 'MANAGER',
-                InvitationCode.TargetRole.DEPUTY: 'MANAGER',
-                InvitationCode.TargetRole.TEACHER: 'TEACHER',
-                InvitationCode.TargetRole.STUDENT: 'STUDENT',
-            }
-            platform_role = role_map.get(invite.target_role, 'STUDENT')
-
-            # A brand-new account that joins through an org code is ORG-ONLY: it
-            # gets no personal/freelancer workspace. (Only a student code leaves
-            # the flag at its default — where it is irrelevant anyway.) An EXISTING
-            # user redeeming a code is untouched here, so a freelancer who joins an
-            # org keeps their personal space and becomes "both".
-            org_only = invite.target_role in (
-                InvitationCode.TargetRole.ADMIN,
-                InvitationCode.TargetRole.DEPUTY,
-                InvitationCode.TargetRole.TEACHER,
+        if created:
+            OrganizationMembership.objects.create(
+                user=user, organization=org, org_role=invite.target_role,
             )
-            user = User.objects.create_user(
-                username=username,
-                password=password,
-                first_name=data.get('first_name', ''),
-                last_name=data.get('last_name', ''),
-                role=platform_role,
-                is_freelancer=not org_only,
-            )
-
-        # Check if already a member
-        if OrganizationMembership.objects.filter(
-            user=user, organization=invite.organization,
-        ).exists():
+            # If admin invite and org has no owner, set this user as owner
+            if invite.target_role == InvitationCode.TargetRole.ADMIN and not org.owner:
+                org.owner = user
+                org.save(update_fields=['owner'])
+            # Atomic increment to prevent race conditions
+            InvitationCode.objects.filter(pk=invite.pk).update(use_count=F('use_count') + 1)
+        elif not (is_student_code and request.user.is_anonymous):
+            # An account user (or authenticated student) re-redeeming is an error.
+            # An anonymous phone-student who is already a member falls through to a
+            # fresh token below — i.e. the org code doubles as their login.
             return Response(
                 {'detail': 'شما قبلاً عضو این سازمان هستید.'},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        # Create membership
-        OrganizationMembership.objects.create(
-            user=user,
-            organization=invite.organization,
-            org_role=invite.target_role,
-        )
-
-        # If admin invite and org has no owner, set this user as owner
-        if invite.target_role == InvitationCode.TargetRole.ADMIN and not invite.organization.owner:
-            invite.organization.owner = user
-            invite.organization.save(update_fields=['owner'])
-
-        # Atomic increment to prevent race conditions
-        InvitationCode.objects.filter(pk=invite.pk).update(use_count=F('use_count') + 1)
-
-        # Generate JWT tokens for the new user (anonymous registration)
+        # Generate JWT tokens for anonymous onboarding OR a returning-student login.
         token_data = {}
         if not request.user.is_authenticated:
             refresh = RefreshToken.for_user(user)
@@ -514,16 +560,16 @@ class RedeemInvitationView(APIView):
         response = Response({
             'success': True,
             'organization': {
-                'id': invite.organization.id,
-                'name': invite.organization.name,
-                'slug': invite.organization.slug,
+                'id': org.id,
+                'name': org.name,
+                'slug': org.slug,
             },
             'membership': {
                 'orgRole': invite.target_role,
                 'orgRoleDisplay': role_display,
             },
             **token_data,
-        }, status=status.HTTP_201_CREATED)
+        }, status=status.HTTP_201_CREATED if created else status.HTTP_200_OK)
         set_refresh_cookie(response, token_data.get('refresh'))
         return response
 
@@ -550,13 +596,17 @@ class ValidateInvitationView(APIView):
                 code__iexact=code_value,
             )
         except InvitationCode.DoesNotExist:
-            return Response({'valid': False, 'detail': 'کد نامعتبر است.'})
+            # ``exists: False`` lets the unified code page fall through and try the
+            # code as a class-invite code instead of showing an org error.
+            return Response({'valid': False, 'exists': False, 'detail': 'کد نامعتبر است.'})
 
         if not invite.is_valid:
-            return Response({'valid': False, 'detail': 'این کد منقضی یا غیرفعال شده است.'})
+            # The code IS an org code, just unusable — don't treat it as a class code.
+            return Response({'valid': False, 'exists': True, 'detail': 'این کد منقضی یا غیرفعال شده است.'})
 
         return Response({
             'valid': True,
+            'exists': True,
             'organization': {
                 'id': invite.organization.id,
                 'name': invite.organization.name,
@@ -668,6 +718,19 @@ class OrgDashboardView(APIView):
 def _get_org_group(org_pk: int, group_pk: int):
     """Fetch a study group scoped to its organization (or None)."""
     return StudyGroup.objects.filter(organization_id=org_pk, pk=group_pk).first()
+
+
+def _sync_group_classes(group_id: int) -> None:
+    """Best-effort: re-sync the rosters of all classes linked to a study group.
+
+    Lazily imports the classes service to avoid a hard import cycle, and never lets
+    a roster hiccup break the membership change that triggered it.
+    """
+    try:
+        from apps.classes.services.org_roster import sync_group_classes
+        sync_group_classes(group_id)
+    except Exception:
+        logger.warning('group class roster sync failed group=%s', group_id, exc_info=True)
 
 
 def _annotated_groups(org_pk: int):
@@ -847,6 +910,8 @@ class StudyGroupStudentView(APIView):
             study_group=group, student_id=student_id,
             defaults={'added_by': request.user},
         )
+        # Reflect the new roster in every class linked to this group.
+        _sync_group_classes(group.id)
         return Response(StudyGroupDetailSerializer(group).data, status=status.HTTP_201_CREATED)
 
     def delete(self, request, org_pk, group_pk, user_id):
@@ -856,6 +921,8 @@ class StudyGroupStudentView(APIView):
         if not group:
             return Response({'detail': 'گروه یافت نشد.'}, status=status.HTTP_404_NOT_FOUND)
         StudyGroupMembership.objects.filter(study_group=group, student_id=user_id).delete()
+        # Drop the removed student from every class linked to this group.
+        _sync_group_classes(group.id)
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 

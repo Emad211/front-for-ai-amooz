@@ -237,19 +237,26 @@ export const OrganizationService = {
 
   redeemCode: async (data: {
     code: string;
+    phone?: string;
     username?: string;
     password?: string;
     first_name?: string;
     last_name?: string;
   }): Promise<RedeemCodeResult> => {
     // Go through the same-origin /api proxy with credentials so the refresh-token
-    // cookie the backend sets is first-party. (The rest of this service calls the
-    // backend directly with a Bearer token and is intentionally unaffected.)
+    // cookie the backend sets is first-party. If the caller is ALREADY logged in
+    // (e.g. a teacher joining another org via code), forward the Bearer token so
+    // the backend redeems as that user instead of trying to create a new account.
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (typeof window !== 'undefined') {
+      const access = window.localStorage.getItem('ai_amooz_access');
+      if (access) headers['Authorization'] = `Bearer ${access}`;
+    }
     let response: Response;
     try {
       response = await fetch('/api/organizations/redeem-code/', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         credentials: 'include',
         body: JSON.stringify(data),
       });

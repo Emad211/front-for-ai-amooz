@@ -36,7 +36,7 @@ export default function StartPage() {
           />
           <OptionCard
             title="دانش‌آموز هستم"
-            description="با دریافت کد دعوت از معلم خود وارد کلاس شوید و درس‌ها را دنبال کنید."
+            description="با کد دعوتِ معلم یا کد سازمانِ مدرسه‌تان وارد شوید و درس‌ها را دنبال کنید."
             icon={<UserRound className="h-6 w-6" />}
             href="/join-code"
             accent="bg-emerald-500/10 text-emerald-700 border-emerald-200"

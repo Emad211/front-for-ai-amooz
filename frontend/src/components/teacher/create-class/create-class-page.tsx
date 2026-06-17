@@ -880,13 +880,28 @@ export function CreateClassPage() {
         />
       )}
 
-      {/* Student invite section for both pipelines */}
-      <StudentInviteSection
-        isExpanded={expandedSections.includes('students')}
-        onToggle={() => toggleSection('students')}
-        sessionId={currentSessionId}
-        pipelineType={pipelineType}
-      />
+      {/* Student roster:
+          - org class → managed by the org via the study group (no manual invites)
+          - personal class → the teacher invites students by phone */}
+      {activeWorkspace ? (
+        <Card className="p-4 sm:p-5 rounded-3xl border-border/40" dir="rtl">
+          <div className="space-y-1.5">
+            <Label className="text-sm font-semibold">دانش‌آموزان کلاس</Label>
+            <p className="text-xs text-muted-foreground leading-6">
+              دانش‌آموزانِ کلاس‌های سازمانی از «گروه آموزشیِ» انتخاب‌شده تعیین می‌شوند و مدیریتِ آن‌ها با مدیر سازمان است؛
+              پس از انتشار، اعضای گروه به‌صورت خودکار به کلاس اضافه می‌شوند.
+              {selectedStudyGroupId === 'none' && ' برای داشتن دانش‌آموز، در بالا یک گروه آموزشی انتخاب کنید.'}
+            </p>
+          </div>
+        </Card>
+      ) : (
+        <StudentInviteSection
+          isExpanded={expandedSections.includes('students')}
+          onToggle={() => toggleSection('students')}
+          sessionId={currentSessionId}
+          pipelineType={pipelineType}
+        />
+      )}
 
       {/* Only show level/duration for class pipeline */}
       {pipelineType === 'class' && (

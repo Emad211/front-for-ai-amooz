@@ -176,11 +176,22 @@ class InvitationCodeCreateSerializer(serializers.Serializer):
 # ═══════════════════════════════════════════════════════════════════════════════
 
 class RedeemInvitationSerializer(serializers.Serializer):
-    """Input for redeeming an invite code.  Accepts snake_case."""
+    """Input for redeeming an invite code.  Accepts snake_case.
+
+    Two onboarding shapes share this endpoint:
+    - **Student codes** are phone-based & passwordless (``phone`` + optional
+      name) — the same identity model as class-invite students. (The legacy
+      ``username``+``password`` shape is still accepted for back-compat.)
+    - **admin/deputy/teacher codes** create a real account (``username`` +
+      ``password``), since managers/teachers log in with credentials.
+    """
 
     code = serializers.CharField(max_length=64)
 
-    # Optional: for new user registration during redemption
+    # Phone-based passwordless student onboarding (preferred for student codes).
+    phone = serializers.CharField(max_length=32, required=False, allow_blank=True)
+
+    # Optional: for account-based registration during redemption
     username = serializers.CharField(max_length=150, required=False)
     first_name = serializers.CharField(max_length=150, required=False, allow_blank=True)
     last_name = serializers.CharField(max_length=150, required=False, allow_blank=True)
@@ -202,12 +213,34 @@ class RedeemInvitationSerializer(serializers.Serializer):
                 raise serializers.ValidationError('این کد منقضی شده است.')
             raise serializers.ValidationError('این کد غیرفعال است.')
 
-        # Check student capacity
-        if invite.target_role == InvitationCode.TargetRole.STUDENT:
-            if invite.organization.is_at_capacity:
-                raise serializers.ValidationError('ظرفیت دانش‌آموز سازمان تکمیل شده است.')
+        # Check student capacity — but never block someone who is ALREADY a
+        # member (a returning student re-entering the org code to log in is not a
+        # new seat). New seats are still rejected here (400) and re-checked under
+        # the row lock in the view (409).
+        if (
+            invite.target_role == InvitationCode.TargetRole.STUDENT
+            and invite.organization.is_at_capacity
+            and not self._is_returning_member(invite.organization)
+        ):
+            raise serializers.ValidationError('ظرفیت دانش‌آموز سازمان تکمیل شده است.')
 
         return value
+
+    def _is_returning_member(self, organization) -> bool:
+        """True if the redeeming party already belongs to this org."""
+        request = self.context.get('request') if hasattr(self, 'context') else None
+        if request is not None and request.user.is_authenticated:
+            return OrganizationMembership.objects.filter(
+                user=request.user, organization=organization,
+            ).exists()
+        phone = (self.initial_data.get('phone') or '').strip()
+        if phone:
+            return OrganizationMembership.objects.filter(
+                user__phone=phone,
+                user__role=User.Role.STUDENT,
+                organization=organization,
+            ).exists()
+        return False
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

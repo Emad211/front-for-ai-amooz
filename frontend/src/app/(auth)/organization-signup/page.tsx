@@ -265,8 +265,8 @@ export default function OrganizationSignupPage() {
 
             <p className="mt-6 text-sm text-center text-muted-foreground">
               کد فعال‌سازی سازمان دارید؟{" "}
-              <Link href="/org-login" className="font-semibold text-primary hover:underline">
-                ورود سازمانی
+              <Link href="/join-code" className="font-semibold text-primary hover:underline">
+                فعال‌سازی با کد
               </Link>
             </p>
           </>

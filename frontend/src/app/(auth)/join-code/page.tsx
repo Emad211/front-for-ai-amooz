@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import Image from 'next/image';
-import { JoinCodeForm } from '@/components/auth/join-code-form';
+import { UnifiedCodeForm } from '@/components/auth/unified-code-form';
 
 export default function JoinCodePage() {
   return (
@@ -24,10 +24,7 @@ export default function JoinCodePage() {
       </div>
 
       <div className="w-full max-w-md flex-1 flex flex-col justify-center">
-        <JoinCodeForm />
-        <p className="mt-6 text-sm text-center text-muted-foreground">
-          حساب کاربری دارید؟ <Link href="/login" className="font-semibold text-primary hover:underline">ورود</Link>
-        </p>
+        <UnifiedCodeForm />
       </div>
     </div>
   );
