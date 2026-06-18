@@ -5,7 +5,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { CheckCircle2, Loader2 } from "lucide-react";
+import { CheckCircle2, GraduationCap, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -114,6 +114,11 @@ export default function TeacherSignupPage() {
         ) : (
           <>
             <div className="mb-6 text-center space-y-2">
+              <div className="flex justify-center mb-2">
+                <div className="p-3 rounded-2xl bg-primary/10">
+                  <GraduationCap className="h-7 w-7 text-primary" />
+                </div>
+              </div>
               <h1 className="text-3xl font-black text-foreground">درخواست همکاری معلم</h1>
               <p className="text-sm text-muted-foreground leading-7">
                 اطلاعات خود را ثبت کنید تا کارشناسان ما برای فعال‌سازی پنل معلم با شما تماس بگیرند.

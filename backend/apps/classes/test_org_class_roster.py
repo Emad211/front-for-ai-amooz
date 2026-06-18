@@ -156,3 +156,48 @@ class TestOrgClassRoster:
 
         assert res.status_code == 403, res.content
         assert ClassInvitation.objects.filter(id=invite.id).exists()
+
+    # ── Exam-prep parity (same model + access path) ──
+    def _org_exam(self, teacher, org, group):
+        return ClassCreationSession.objects.create(
+            teacher=teacher, title='e', description='',
+            source_file=SimpleUploadedFile('a.ogg', b'x', content_type='audio/ogg'),
+            source_mime_type='audio/ogg', source_original_name='a.ogg',
+            status=ClassCreationSession.Status.EXAM_STRUCTURED,
+            pipeline_type=ClassCreationSession.PipelineType.EXAM_PREP,
+            organization=org, study_group=group,
+        )
+
+    def test_exam_prep_publish_enrolls_group_students(self):
+        org, manager, teacher, s1, s2, group = self._setup()
+        session = self._org_exam(teacher, org, group)
+
+        res = _client(teacher).post(f'/api/classes/exam-prep-sessions/{session.id}/publish/')
+
+        assert res.status_code == 200, res.content
+        assert _phones(session) == {'09120000001'}
+
+    def test_teacher_cannot_manual_invite_org_exam_prep(self):
+        org, manager, teacher, s1, s2, group = self._setup()
+        session = self._org_exam(teacher, org, group)
+
+        res = _client(teacher).post(
+            f'/api/classes/exam-prep-sessions/{session.id}/invites/',
+            {'phones': ['09129999999']}, format='json',
+        )
+
+        assert res.status_code == 403, res.content
+        assert not ClassInvitation.objects.filter(session=session, phone='09129999999').exists()
+
+    def test_add_student_to_group_syncs_exam_prep(self):
+        org, manager, teacher, s1, s2, group = self._setup()
+        session = self._org_exam(teacher, org, group)
+        _client(teacher).post(f'/api/classes/exam-prep-sessions/{session.id}/publish/')
+
+        res = _client(manager).post(
+            f'/api/organizations/{org.id}/study-groups/{group.id}/students/',
+            {'student_id': s2.id}, format='json',
+        )
+
+        assert res.status_code == 201, res.content
+        assert _phones(session) == {'09120000001', '09120000002'}

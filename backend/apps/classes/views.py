@@ -3790,6 +3790,13 @@ class ExamPrepSessionPublishView(APIView):
         if updated:
             session.is_published = True
             session.published_at = now
+            # Org exam-prep → enroll the linked study group's students (same roster
+            # model as classes; manual invites are blocked for org sessions).
+            try:
+                from .services.org_roster import sync_org_class_roster
+                sync_org_class_roster(session)
+            except Exception:
+                logger.warning('org roster sync on exam-prep publish failed session=%s', session.id, exc_info=True)
             def _dispatch_exam_publish_sms():
                 logger.info('[SMS] Dispatching send_publish_sms_task for exam-prep session=%s', session.id)
                 send_publish_sms_task.delay(session.id)
@@ -3839,6 +3846,14 @@ class ExamPrepInvitationListCreateView(APIView):
         ).first()
         if session is None:
             return Response({'detail': 'جلسه آمادگی آزمون یافت نشد.'}, status=status.HTTP_404_NOT_FOUND)
+
+        # Org sessions get their roster from the linked study group (manager-owned);
+        # a teacher may not hand-invite arbitrary students into them.
+        if session.organization_id is not None:
+            return Response(
+                {'detail': 'دانش‌آموزانِ آزمون‌های سازمانی از طریق «گروه آموزشی» توسط مدیر سازمان تعیین می‌شوند.'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
 
         serializer = ClassInvitationCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -3897,6 +3912,11 @@ class ExamPrepInvitationDetailView(APIView):
         ).first()
         if session is None:
             return Response({'detail': 'جلسه آمادگی آزمون یافت نشد.'}, status=status.HTTP_404_NOT_FOUND)
+        if session.organization_id is not None:
+            return Response(
+                {'detail': 'دانش‌آموزانِ آزمون‌های سازمانی از طریق «گروه آموزشی» توسط مدیر سازمان تعیین می‌شوند.'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
         invite = ClassInvitation.objects.filter(id=invite_id, session=session).first()
         if invite is None:
             return Response({'detail': 'دعوت نامه پیدا نشد.'}, status=status.HTTP_404_NOT_FOUND)

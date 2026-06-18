@@ -18,9 +18,6 @@ import {
   BookOpen,
   ShieldCheck,
   UserCog,
-  Lock,
-  Eye,
-  EyeOff,
   Info,
 } from 'lucide-react';
 import { OrganizationService } from '@/services/organization-service';
@@ -30,6 +27,7 @@ import {
   persistUser,
   fetchMe,
 } from '@/services/auth-service';
+import { PasswordInput } from '@/components/auth/password-input';
 import { WORKSPACE_STORAGE_KEY } from '@/hooks/use-workspace';
 import type { ValidateCodeResult } from '@/types';
 
@@ -87,7 +85,6 @@ export function UnifiedCodeForm() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
 
   // ── Routing after a successful org redeem ──
   const routeAfterOrg = (orgRole: string, slug: string) => {
@@ -400,28 +397,21 @@ export function UnifiedCodeForm() {
           </div>
           <div className="space-y-1.5">
             <Label className="text-xs">رمز عبور *</Label>
-            <div className="relative">
-              <Lock className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-              <Input
-                type={showPassword ? 'text' : 'password'}
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                dir="ltr"
-                className="pr-10 pl-10 rounded-xl text-left"
-                disabled={busy}
-              />
-              <button type="button" onClick={() => setShowPassword((s) => !s)} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
-                {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-              </button>
-            </div>
+            <PasswordInput
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              withIcon
+              autoComplete="new-password"
+              className="rounded-xl text-left"
+              disabled={busy}
+            />
           </div>
           <div className="space-y-1.5">
             <Label className="text-xs">تکرار رمز عبور *</Label>
-            <Input
-              type={showPassword ? 'text' : 'password'}
+            <PasswordInput
               value={confirmPassword}
               onChange={(e) => setConfirmPassword(e.target.value)}
-              dir="ltr"
+              autoComplete="new-password"
               className="rounded-xl text-left"
               disabled={busy}
               onKeyDown={(e) => e.key === 'Enter' && handleOrgAccount()}

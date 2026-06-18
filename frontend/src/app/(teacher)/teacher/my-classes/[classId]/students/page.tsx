@@ -1,7 +1,7 @@
 'use client';
 
 import { use } from 'react';
-import { Loader2 } from 'lucide-react';
+import { Info, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useTeacherClassDetail } from '@/hooks/use-teacher-class-detail';
 import { useTeacherClassActions } from '@/hooks/use-teacher-class-actions';
@@ -46,13 +46,36 @@ export default function TeacherClassStudentsPage({ params }: PageProps) {
     );
   }
 
+  const isOrgClass = detail.organizationId != null;
+
   return (
     <div className="space-y-6">
-      <ClassStudentsHeader title={detail.title} studentsCount={students.length} />
+      <ClassStudentsHeader
+        title={detail.title}
+        studentsCount={students.length}
+        canManageRoster={!isOrgClass}
+      />
+
+      {isOrgClass && (
+        <div
+          dir="rtl"
+          className="rounded-2xl border border-border/60 bg-muted/40 p-4 text-sm text-muted-foreground flex items-start gap-2"
+        >
+          <Info className="h-4 w-4 mt-0.5 shrink-0 text-primary" />
+          <span>
+            این کلاس به سازمان متصل است؛ فهرست دانش‌آموزان از «گروه آموزشی» توسط مدیر سازمان
+            تعیین و مدیریت می‌شود و قابل تغییر از این‌جا نیست.
+          </span>
+        </div>
+      )}
 
       <ClassStudentsStats students={students} />
 
-      <ClassStudentsTable students={students} onRemove={handleRemoveStudent} />
+      <ClassStudentsTable
+        students={students}
+        onRemove={handleRemoveStudent}
+        allowRemove={!isOrgClass}
+      />
     </div>
   );
 }

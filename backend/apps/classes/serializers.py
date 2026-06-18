@@ -527,6 +527,7 @@ class ExamPrepSessionDetailSerializer(serializers.ModelSerializer):
     """Detail serializer for Exam Prep sessions."""
     exam_prep_data = serializers.SerializerMethodField()
     invites_count = serializers.SerializerMethodField()
+    organization_id = serializers.IntegerField(read_only=True, allow_null=True)
 
     @extend_schema_field(serializers.DictField())
     def get_exam_prep_data(self, obj: ClassCreationSession):
@@ -560,6 +561,7 @@ class ExamPrepSessionDetailSerializer(serializers.ModelSerializer):
             'exam_prep_json',
             'exam_prep_data',
             'invites_count',
+            'organization_id',
             'is_published',
             'published_at',
             'error_detail',

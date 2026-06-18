@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Shield, Eye, EyeOff, Mail, Lock, Chrome, Loader2 } from 'lucide-react';
+import { Shield, Mail, Loader2 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
@@ -9,13 +9,12 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
-import { Separator } from '@/components/ui/separator';
 import { toast } from 'sonner';
 import { login, fetchMe, persistTokens, persistUser } from '@/services/auth-service';
+import { PasswordInput } from '@/components/auth/password-input';
 
 export default function AdminLoginPage() {
   const router = useRouter();
-  const [showPassword, setShowPassword] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -30,8 +29,8 @@ export default function AdminLoginPage() {
       const tokens = await login({ username: email, password, role: 'ADMIN' });
       persistTokens(tokens);
 
-      // Step 2: Fetch user info
-      const user = await fetchMe(tokens.access);
+      // Step 2: Fetch user info (token already persisted above)
+      const user = await fetchMe();
 
       // Step 3: Check role
       const hasAdminAccess =
@@ -54,11 +53,6 @@ export default function AdminLoginPage() {
     } finally {
       setIsLoading(false);
     }
-  };
-
-  const handleGoogleLogin = () => {
-    // Handle Google login
-    console.log('Google admin login');
   };
 
   return (
@@ -113,25 +107,6 @@ export default function AdminLoginPage() {
         </CardHeader>
 
         <CardContent className="space-y-6">
-          {/* Google Login */}
-          <Button
-            onClick={handleGoogleLogin}
-            variant="outline"
-            className="w-full h-12 text-base border-border/50 hover:bg-card/50 hover:border-primary/30 transition-all"
-          >
-            <Chrome className="w-5 h-5 ml-3" />
-            ورود با حساب گوگل
-          </Button>
-
-          <div className="relative">
-            <div className="absolute inset-0 flex items-center">
-              <Separator className="bg-border/50" />
-            </div>
-            <div className="relative flex justify-center text-xs uppercase">
-              <span className="bg-card px-4 text-muted-foreground">یا</span>
-            </div>
-          </div>
-
           {/* Login Form */}
           <form onSubmit={handleSubmit} className="space-y-4">
             {/* Email Field */}
@@ -158,25 +133,16 @@ export default function AdminLoginPage() {
               <Label htmlFor="password" className="text-sm font-medium text-foreground">
                 رمز عبور
               </Label>
-              <div className="relative">
-                <Lock className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                <Input
-                  id="password"
-                  type={showPassword ? "text" : "password"}
-                  placeholder="••••••••"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="pr-10 pl-10 h-12 bg-background/50 border-border/50 focus:border-primary focus:bg-background/80 transition-all"
-                  required
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
-                >
-                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                </button>
-              </div>
+              <PasswordInput
+                id="password"
+                placeholder="••••••••"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                withIcon
+                autoComplete="current-password"
+                className="h-12 bg-background/50 border-border/50 focus:border-primary focus:bg-background/80 transition-all"
+                required
+              />
             </div>
 
             {/* Login Button */}
@@ -198,8 +164,8 @@ export default function AdminLoginPage() {
 
           {/* Footer Links */}
           <div className="text-center space-y-2 pt-4 border-t border-border/30">
-            <Link 
-              href="#" 
+            <Link
+              href="/forgot-password"
               className="text-sm text-muted-foreground hover:text-primary transition-colors block"
             >
               رمز عبور را فراموش کرده‌اید؟

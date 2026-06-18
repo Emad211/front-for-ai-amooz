@@ -886,10 +886,12 @@ export function CreateClassPage() {
       {activeWorkspace ? (
         <Card className="p-4 sm:p-5 rounded-3xl border-border/40" dir="rtl">
           <div className="space-y-1.5">
-            <Label className="text-sm font-semibold">دانش‌آموزان کلاس</Label>
+            <Label className="text-sm font-semibold">
+              دانش‌آموزان {pipelineType === 'class' ? 'کلاس' : 'آزمون'}
+            </Label>
             <p className="text-xs text-muted-foreground leading-6">
-              دانش‌آموزانِ کلاس‌های سازمانی از «گروه آموزشیِ» انتخاب‌شده تعیین می‌شوند و مدیریتِ آن‌ها با مدیر سازمان است؛
-              پس از انتشار، اعضای گروه به‌صورت خودکار به کلاس اضافه می‌شوند.
+              دانش‌آموزانِ {pipelineType === 'class' ? 'کلاس‌های' : 'آزمون‌های'} سازمانی از «گروه آموزشیِ» انتخاب‌شده
+              تعیین می‌شوند و مدیریتِ آن‌ها با مدیر سازمان است؛ پس از انتشار، اعضای گروه به‌صورت خودکار اضافه می‌شوند.
               {selectedStudyGroupId === 'none' && ' برای داشتن دانش‌آموز، در بالا یک گروه آموزشی انتخاب کنید.'}
             </p>
           </div>

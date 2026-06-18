@@ -34,6 +34,10 @@ export type AuthMeResponse = {
   avatar?: string | null;
   role: string;
   is_profile_completed: boolean;
+  // Platform-admin flags (sent by MeSerializer). Optional: may be absent on
+  // stale cached profiles. Used by the admin login + admin route guard.
+  is_staff?: boolean;
+  is_superuser?: boolean;
   // TEACHER only: may use a personal (freelancer) workspace. False = org-only.
   // May be absent on stale cached profiles from before this field shipped.
   is_freelancer?: boolean;

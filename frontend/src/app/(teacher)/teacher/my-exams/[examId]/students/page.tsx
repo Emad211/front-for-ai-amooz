@@ -1,7 +1,7 @@
 'use client';
 
 import { use, useCallback, useEffect, useState } from 'react';
-import { Loader2 } from 'lucide-react';
+import { Info, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { ClassStudentsHeader, ClassStudentsStats, ClassStudentsTable } from '@/components/teacher/class-students';
 import { deleteExamPrepInvite, fetchExamPrepSession, listExamPrepInvites, type ClassInvite } from '@/services/classes-service';
@@ -15,6 +15,7 @@ export default function TeacherExamStudentsPage({ params }: PageProps) {
   const { examId } = use(params);
   const [title, setTitle] = useState('');
   const [students, setStudents] = useState<ClassStudent[]>([]);
+  const [isOrgExam, setIsOrgExam] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -34,6 +35,7 @@ export default function TeacherExamStudentsPage({ params }: PageProps) {
         listExamPrepInvites(sessionId),
       ]);
       setTitle(detail.title || '');
+      setIsOrgExam(detail.organization_id != null);
       setStudents(mapInvitesToStudents(invites));
     } catch (err) {
       console.error(err);
@@ -79,11 +81,32 @@ export default function TeacherExamStudentsPage({ params }: PageProps) {
 
   return (
     <div className="space-y-6">
-      <ClassStudentsHeader title={title} studentsCount={students.length} />
+      <ClassStudentsHeader
+        title={title}
+        studentsCount={students.length}
+        canManageRoster={!isOrgExam}
+      />
+
+      {isOrgExam && (
+        <div
+          dir="rtl"
+          className="rounded-2xl border border-border/60 bg-muted/40 p-4 text-sm text-muted-foreground flex items-start gap-2"
+        >
+          <Info className="h-4 w-4 mt-0.5 shrink-0 text-primary" />
+          <span>
+            این آزمون به سازمان متصل است؛ فهرست دانش‌آموزان از «گروه آموزشی» توسط مدیر سازمان
+            تعیین و مدیریت می‌شود و قابل تغییر از این‌جا نیست.
+          </span>
+        </div>
+      )}
 
       <ClassStudentsStats students={students} />
 
-      <ClassStudentsTable students={students} onRemove={handleRemoveStudent} />
+      <ClassStudentsTable
+        students={students}
+        onRemove={handleRemoveStudent}
+        allowRemove={!isOrgExam}
+      />
     </div>
   );
 }

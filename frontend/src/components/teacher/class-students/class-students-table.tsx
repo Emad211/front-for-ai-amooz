@@ -37,6 +37,8 @@ interface ClassStudentsTableProps {
   onRemove?: (studentId: string) => void;
   onViewProfile?: (studentId: string) => void;
   onSendMessage?: (studentId: string) => void;
+  /** Org classes manage their roster via study groups → hide "remove". */
+  allowRemove?: boolean;
 }
 
 const statusConfig: Record<string, { label: string; color: string }> = {
@@ -45,11 +47,12 @@ const statusConfig: Record<string, { label: string; color: string }> = {
   completed: { label: 'تکمیل شده', color: 'bg-primary/10 text-primary' },
 };
 
-export function ClassStudentsTable({ 
-  students, 
+export function ClassStudentsTable({
+  students,
   onRemove,
   onViewProfile,
   onSendMessage,
+  allowRemove = true,
 }: ClassStudentsTableProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
@@ -126,14 +129,18 @@ export function ClassStudentsTable({
                         <MessageSquare className="h-4 w-4 ml-2" />
                         ارسال پیام
                       </DropdownMenuItem>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem 
-                        className="text-destructive"
-                        onClick={() => onRemove?.(student.id)}
-                      >
-                        <Trash2 className="h-4 w-4 ml-2" />
-                        حذف از کلاس
-                      </DropdownMenuItem>
+                      {allowRemove && (
+                        <>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem
+                            className="text-destructive"
+                            onClick={() => onRemove?.(student.id)}
+                          >
+                            <Trash2 className="h-4 w-4 ml-2" />
+                            حذف از کلاس
+                          </DropdownMenuItem>
+                        </>
+                      )}
                     </DropdownMenuContent>
                   </DropdownMenu>
                 </div>
@@ -227,14 +234,18 @@ export function ClassStudentsTable({
                             <Mail className="h-4 w-4 ml-2" />
                             ارسال ایمیل
                           </DropdownMenuItem>
-                          <DropdownMenuSeparator />
-                          <DropdownMenuItem 
-                            className="text-destructive"
-                            onClick={() => onRemove?.(student.id)}
-                          >
-                            <Trash2 className="h-4 w-4 ml-2" />
-                            حذف از کلاس
-                          </DropdownMenuItem>
+                          {allowRemove && (
+                            <>
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem
+                                className="text-destructive"
+                                onClick={() => onRemove?.(student.id)}
+                              >
+                                <Trash2 className="h-4 w-4 ml-2" />
+                                حذف از کلاس
+                              </DropdownMenuItem>
+                            </>
+                          )}
                         </DropdownMenuContent>
                       </DropdownMenu>
                     </TableCell>

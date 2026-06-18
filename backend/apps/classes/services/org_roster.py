@@ -80,15 +80,12 @@ def sync_org_class_roster(session: ClassCreationSession) -> dict:
 
 
 def sync_group_classes(study_group_id: int) -> None:
-    """Re-sync every CLASS session linked to a study group.
+    """Re-sync every session (class AND exam-prep) linked to a study group.
 
     Called when a group's student roster changes (add/remove) so all of that
-    group's classes immediately reflect the new roster.
+    group's classes and exam-prep sessions immediately reflect the new roster.
     """
-    sessions = ClassCreationSession.objects.filter(
-        study_group_id=study_group_id,
-        pipeline_type=ClassCreationSession.PipelineType.CLASS,
-    )
+    sessions = ClassCreationSession.objects.filter(study_group_id=study_group_id)
     for session in sessions:
         try:
             sync_org_class_roster(session)

@@ -12,6 +12,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { PasswordInput } from "@/components/auth/password-input";
 
 import {
   passwordResetRequestSchema,
@@ -167,10 +168,8 @@ export default function ForgotPasswordPage() {
             </div>
             <div className="space-y-2">
               <Label htmlFor="password">رمز عبور جدید</Label>
-              <Input
+              <PasswordInput
                 id="password"
-                type="password"
-                dir="ltr"
                 autoComplete="new-password"
                 disabled={confirmForm.formState.isSubmitting}
                 className={inputErrorClass(!!confirmForm.formState.errors.password)}
@@ -182,10 +181,8 @@ export default function ForgotPasswordPage() {
             </div>
             <div className="space-y-2">
               <Label htmlFor="confirmPassword">تکرار رمز عبور جدید</Label>
-              <Input
+              <PasswordInput
                 id="confirmPassword"
-                type="password"
-                dir="ltr"
                 autoComplete="new-password"
                 disabled={confirmForm.formState.isSubmitting}
                 className={inputErrorClass(!!confirmForm.formState.errors.confirmPassword)}

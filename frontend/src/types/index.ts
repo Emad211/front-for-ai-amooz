@@ -341,6 +341,9 @@ export interface ClassChapter {
 }
 
 export interface ClassDetail extends Course {
+  // Set when the class belongs to an organization → its roster is managed by the
+  // org via study groups (the teacher can't hand-add/remove students).
+  organizationId?: number | null;
   chapters?: ClassChapter[];
   enrolledStudents?: ClassStudent[];
   announcements?: { id: string; title: string; content: string; createdAt: string }[];

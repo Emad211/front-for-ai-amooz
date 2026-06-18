@@ -699,6 +699,7 @@ export interface ExamPrepSessionDetail {
   exam_prep_json: string;
   exam_prep_data: ExamPrepData | null;
   invites_count?: number;
+  organization_id?: number | null;
   is_published: boolean;
   published_at: string | null;
   error_detail: string;

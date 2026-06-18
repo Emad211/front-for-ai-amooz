@@ -9,13 +9,16 @@ interface ClassStudentsHeaderProps {
   studentsCount: number;
   onAddStudent?: () => void;
   onExport?: () => void;
+  /** Org classes manage their roster via study groups → hide the add button. */
+  canManageRoster?: boolean;
 }
 
-export function ClassStudentsHeader({ 
-  title, 
+export function ClassStudentsHeader({
+  title,
   studentsCount,
   onAddStudent,
   onExport,
+  canManageRoster = true,
 }: ClassStudentsHeaderProps) {
   const router = useRouter();
 
@@ -36,10 +39,12 @@ export function ClassStudentsHeader({
           <Download className="h-4 w-4 sm:ml-2" />
           <span className="hidden sm:inline">خروجی اکسل</span>
         </Button>
-        <Button size="sm" onClick={onAddStudent} className="h-10 sm:h-9 flex-1 sm:flex-none">
-          <UserPlus className="h-4 w-4 sm:ml-2" />
-          <span className="hidden sm:inline">افزودن دانش‌آموز</span>
-        </Button>
+        {canManageRoster && (
+          <Button size="sm" onClick={onAddStudent} className="h-10 sm:h-9 flex-1 sm:flex-none">
+            <UserPlus className="h-4 w-4 sm:ml-2" />
+            <span className="hidden sm:inline">افزودن دانش‌آموز</span>
+          </Button>
+        )}
       </div>
     </div>
   );

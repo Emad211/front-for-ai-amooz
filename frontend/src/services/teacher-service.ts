@@ -365,6 +365,7 @@ export const TeacherService = {
       transcriptMarkdown: session.transcript_markdown,
       structureJson: session.structure_json,
       pipelineErrorDetail: session.error_detail,
+      organizationId: session.organization_id ?? null,
       objectives,
       studentsCount: Number(session.invites_count ?? 0) || 0,
       lessonsCount: chapters.reduce((acc, ch) => acc + ch.lessons.length, 0),
