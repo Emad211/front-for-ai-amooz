@@ -5,7 +5,6 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { AdminHeader } from "@/components/layout/admin-header";
 import { AdminSidebar } from "@/components/layout/admin-sidebar";
-import { WorkspaceProvider } from "@/hooks/use-workspace";
 import { getStoredUser } from '@/services/auth-service';
 
 export default function AdminLayout({
@@ -34,8 +33,7 @@ export default function AdminLayout({
   if (!allowed) return null;
 
   return (
-    <WorkspaceProvider>
-      <div className="flex min-h-screen w-full bg-background" dir="rtl">
+    <div className="flex min-h-screen w-full bg-background" dir="rtl">
       {/* سایدبار - فقط در دسکتاپ */}
       <div className="hidden lg:block">
         <AdminSidebar />
@@ -51,6 +49,5 @@ export default function AdminLayout({
         </main>
       </div>
     </div>
-    </WorkspaceProvider>
   );
 }

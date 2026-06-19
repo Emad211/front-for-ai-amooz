@@ -6,6 +6,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import { cn } from '@/lib/utils';
 import { getStoredUser } from '@/services/auth-service';
 import { DashboardService } from '@/services/dashboard-service';
+import { landingFor } from '@/lib/auth-routing';
 import { Children, useEffect } from 'react';
 
 export default function DashboardLayout({
@@ -21,16 +22,11 @@ export default function DashboardLayout({
     if (typeof window === 'undefined') return;
 
     const redirectByRole = (role: string) => {
-      // Managers live in the org console under /teacher too (org mode).
-      if (role === 'teacher' || role === 'manager') {
-        router.replace('/teacher');
-        return true;
-      }
-      if (role === 'admin') {
-        router.replace('/admin');
-        return true;
-      }
-      return false;
+      const r = (role || '').toLowerCase();
+      if (!r || r === 'student') return false;
+      // Manager → /org, teacher → /teacher, admin → /admin (single source of truth).
+      router.replace(landingFor(r));
+      return true;
     };
 
     const storedRole = String(window.localStorage.getItem('userRole') || '').toLowerCase();

@@ -3,6 +3,7 @@
 import { useEffect } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { getStoredTokens, getStoredUser } from '@/services/auth-service';
+import { landingFor } from '@/lib/auth-routing';
 
 /**
  * Bounce an already-authenticated user away from login/signup pages to their
@@ -14,13 +15,6 @@ import { getStoredTokens, getStoredUser } from '@/services/auth-service';
  */
 const ALLOW_WHEN_AUTHED = ['/join-code', '/join', '/org-login', '/register'];
 
-function dashboardFor(role: string | undefined): string {
-  const r = (role || '').toLowerCase();
-  if (r === 'admin') return '/admin';
-  if (r === 'teacher' || r === 'manager') return '/teacher';
-  return '/home';
-}
-
 export function AuthAutoRedirect() {
   const router = useRouter();
   const pathname = usePathname();
@@ -31,7 +25,7 @@ export function AuthAutoRedirect() {
     if (!tokens?.access) return;
     // The dashboard layouts re-assert role routing, so a stale cached role
     // self-corrects; default to the student home.
-    router.replace(dashboardFor(getStoredUser()?.role));
+    router.replace(landingFor(getStoredUser()?.role));
   }, [pathname, router]);
 
   return null;

@@ -56,7 +56,7 @@ const ROLE_OPTIONS = [
  * Members + invitation-code management for a single organization.
  *
  * Shared by the platform-admin org detail page and the org manager's own
- * console (/teacher/org). All calls are org-scoped and the backend enforces
+ * console (/org/members). All calls are org-scoped and the backend enforces
  * IsOrgAdmin, so this is safe to surface to managers (org_role admin/deputy).
  * ``onMembersChanged`` lets a parent refresh dependent data (e.g. dashboard
  * stats) when membership changes.

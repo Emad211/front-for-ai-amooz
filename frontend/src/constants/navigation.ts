@@ -97,15 +97,13 @@ export const TEACHER_NAV_MENU: NavSection[] = [
   },
 ];
 
-/** Navigation menu for org admins/deputies (managers) when in org workspace mode. */
-export const ORG_TEACHER_NAV_MENU: NavSection[] = [
-  {
-    title: 'سازمان',
-    items: [
-      { label: 'داشبورد سازمان', href: '/teacher', icon: LayoutDashboard },
-      { label: 'مدیریت سازمان', href: '/teacher/org', icon: UserCog },
-    ]
-  },
+/**
+ * Org-TEACHER (org_role=teacher) nav: TEACHING only — create/manage classes &
+ * exams, comms, reports. Org MANAGEMENT lives in the separate /org panel (see
+ * ORG_NAV_MENU), so there is no management section here. Used for the org
+ * workspace inside the teacher chrome.
+ */
+export const ORG_TEACHER_TEACHING_NAV_MENU: NavSection[] = [
   {
     title: 'مدیریت کلاس‌ها',
     items: [
@@ -113,66 +111,59 @@ export const ORG_TEACHER_NAV_MENU: NavSection[] = [
       { label: 'کلاس‌های سازمان', href: '/teacher/my-classes', icon: FolderOpen },
       { label: 'آزمون‌های سازمان', href: '/teacher/my-exams', icon: FileQuestion },
       { label: 'دانش‌آموزان', href: '/teacher/students', icon: Users },
-    ]
+    ],
   },
   {
     title: 'ارتباطات و پشتیبانی',
     items: [
       { label: 'ارسال پیام', href: '/teacher/messages', icon: MessageSquare },
       { label: 'تیکت‌های پشتیبانی', href: '/teacher/tickets', icon: Ticket },
-    ]
+    ],
   },
   {
     title: 'گزارشات',
     items: [
       { label: 'آمار و تحلیل', href: '/teacher/analytics', icon: BarChart3 },
-    ]
+    ],
   },
 ];
 
 /**
- * Org teacher (org_role=teacher) nav: the org menu WITHOUT the management
- * "سازمان" dashboard section (that view is IsOrgAdmin-only). That section is the
- * first entry of ORG_TEACHER_NAV_MENU, so drop it.
+ * Org MANAGER nav for the DEDICATED `/org` panel: management + oversight ONLY.
+ * A manager does NOT create content (no "create class/exam" — that is a teacher
+ * action). They manage members/groups/codes, oversee all the org's classes, and
+ * watch AI costs. Managers live under their own `/org` route group — NOT /teacher.
  */
-export const ORG_TEACHER_TEACHING_NAV_MENU: NavSection[] = ORG_TEACHER_NAV_MENU.slice(1);
-
-/**
- * Org MANAGER nav: management + oversight ONLY. A manager does NOT create content
- * (no "create class"/"create exam" — that is a teacher action). They manage
- * members/groups/codes, oversee all the org's classes, and watch AI costs.
- */
-export const ORG_MANAGER_NAV_MENU: NavSection[] = [
+export const ORG_NAV_MENU: NavSection[] = [
   {
     title: 'مدیریت سازمان',
     items: [
-      { label: 'داشبورد', href: '/teacher', icon: LayoutDashboard },
-      { label: 'اعضا و گروه‌ها', href: '/teacher/org', icon: UserCog },
+      { label: 'داشبورد', href: '/org', icon: LayoutDashboard },
+      { label: 'اعضا و گروه‌ها', href: '/org/members', icon: UserCog },
     ],
   },
   {
     title: 'نظارت',
     items: [
-      { label: 'کلاس‌ها', href: '/teacher/org/classes', icon: FolderOpen },
-      { label: 'هزینه‌ها', href: '/teacher/org/costs', icon: Coins },
+      { label: 'کلاس‌ها', href: '/org/classes', icon: FolderOpen },
+      { label: 'هزینه‌ها', href: '/org/costs', icon: Coins },
     ],
   },
   {
     title: 'پشتیبانی',
     items: [
-      { label: 'تیکت‌های پشتیبانی', href: '/teacher/tickets', icon: Ticket },
+      { label: 'تیکت‌های پشتیبانی', href: '/org/tickets', icon: Ticket },
     ],
   },
 ];
 
-/** Pick the teacher sidebar/header nav for the current workspace + org role. */
+/** Pick the TEACHER sidebar/header nav for the current workspace. Managers are
+ * NOT served here anymore — they use ORG_NAV_MENU in the `/org` panel. */
 export function getTeacherNavMenu(
   isOrgMode: boolean,
-  orgRole?: OrgRole | null,
+  _orgRole?: OrgRole | null,
 ): NavSection[] {
   if (!isOrgMode) return TEACHER_NAV_MENU;
-  // Managers (org admin/deputy) get a management/oversight-only menu — NO content
-  // creation. Org teachers get the teaching menu (they DO create content).
-  if (orgRole === 'admin' || orgRole === 'deputy') return ORG_MANAGER_NAV_MENU;
+  // Org workspace (org teacher) → teaching menu (no management section).
   return ORG_TEACHER_TEACHING_NAV_MENU;
 }

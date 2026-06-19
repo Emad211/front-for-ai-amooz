@@ -21,9 +21,12 @@ interface SidebarContentProps {
   panelLabel?: string;
   logoHref?: string;
   settingsHref?: string;
+  // The workspace (personal↔org) switcher is teacher/manager-only chrome. It is
+  // OPT-IN so the shared shell never leaks it into the platform-admin panel.
+  showWorkspaceSwitcher?: boolean;
 }
 
-export function SidebarContent({ onItemClick, navMenu = ADMIN_NAV_MENU, panelLabel = 'پنل مدیریت', logoHref = '/admin', settingsHref }: SidebarContentProps) {
+export function SidebarContent({ onItemClick, navMenu = ADMIN_NAV_MENU, panelLabel = 'پنل مدیریت', logoHref = '/admin', settingsHref, showWorkspaceSwitcher = false }: SidebarContentProps) {
   const pathname = usePathname();
   const resolvedSettingsHref = settingsHref ?? `${logoHref}/settings`;
 
@@ -41,12 +44,15 @@ export function SidebarContent({ onItemClick, navMenu = ADMIN_NAV_MENU, panelLab
 
       <Separator className="bg-border/50" />
 
-      {/* Workspace Switcher */}
-      <div className="px-4 py-2">
-        <WorkspaceSwitcher />
-      </div>
-
-      <Separator className="bg-border/50" />
+      {/* Workspace Switcher — teacher/manager panels only (never in /admin) */}
+      {showWorkspaceSwitcher && (
+        <>
+          <div className="px-4 py-2">
+            <WorkspaceSwitcher />
+          </div>
+          <Separator className="bg-border/50" />
+        </>
+      )}
 
       {/* منوها */}
       <nav className="flex-1 p-4 space-y-6 overflow-y-auto">

@@ -90,11 +90,10 @@ export function UnifiedCodeForm() {
   const routeAfterOrg = (orgRole: string, slug: string) => {
     setStep('redirecting');
     if (orgRole === 'admin' || orgRole === 'deputy') {
-      // A manager is NOT a platform admin — pre-select their org workspace so
-      // /teacher opens in org (management) mode. (Do NOT send them to
-      // /admin/organizations/... — the admin route group bounces non-admins.)
+      // A manager is NOT a teacher — pre-select their org workspace and open the
+      // dedicated /org management panel.
       try { localStorage.setItem(WORKSPACE_STORAGE_KEY, slug); } catch { /* ignore */ }
-      router.push('/teacher');
+      router.push('/org');
     } else if (orgRole === 'teacher') {
       router.push('/teacher');
     } else {

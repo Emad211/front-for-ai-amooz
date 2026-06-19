@@ -6,11 +6,11 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Building2 } from 'lucide-react';
 
 /**
- * Org manager console: manage members + invitation codes for the active org.
- * Only org admins/deputies (managers) reach this from the nav; the backend
- * enforces IsOrgAdmin, and we guard the active workspace's org role here too.
+ * Org manager console: manage members + invitation codes + study groups for the
+ * active org. The backend enforces IsOrgAdmin; we guard the active workspace's
+ * org role here too.
  */
-export default function OrgManagePage() {
+export default function OrgMembersPage() {
   const { activeWorkspace, isOrgMode, isLoading } = useWorkspace();
 
   if (isLoading) {

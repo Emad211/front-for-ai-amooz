@@ -36,8 +36,9 @@ export function UserProfile({
   const [stored, setStored] = useState<ReturnType<typeof getStoredUser> | null>(null);
   const pathname = usePathname();
   const isTeacher = pathname.startsWith('/teacher');
+  const isOrgPanel = pathname.startsWith('/org');
   const isStudent = pathname.startsWith('/home') || pathname.startsWith('/classes') || pathname.startsWith('/exam') || pathname.startsWith('/tickets') || pathname.startsWith('/profile');
-  const isDashboard = isStudent || isTeacher;
+  const isDashboard = isStudent || isTeacher || isOrgPanel;
 
   useEffect(() => {
     setMounted(true);
@@ -75,9 +76,9 @@ export function UserProfile({
     return url;
   })();
 
-  const profileHref = isTeacher ? '/teacher/settings' : '/profile';
-  const ticketsHref = isTeacher ? '/teacher/tickets' : '/tickets';
-  const notificationsHref = isTeacher ? '/teacher/notifications' : '/notifications';
+  const profileHref = isOrgPanel ? '/org/settings' : isTeacher ? '/teacher/settings' : '/profile';
+  const ticketsHref = isOrgPanel ? '/org/tickets' : isTeacher ? '/teacher/tickets' : '/tickets';
+  const notificationsHref = isOrgPanel ? '/org/notifications' : isTeacher ? '/teacher/notifications' : '/notifications';
 
   return (
     <DropdownMenu>
@@ -110,7 +111,7 @@ export function UserProfile({
                   <User className="h-4 w-4 text-muted-foreground" />
                 </div>
                 <span className="flex-1 text-start font-bold text-sm">
-                  {isTeacher ? 'تنظیمات حساب' : 'پروفایل کاربری'}
+                  {(isTeacher || isOrgPanel) ? 'تنظیمات حساب' : 'پروفایل کاربری'}
                 </span>
               </Link>
             </DropdownMenuItem>

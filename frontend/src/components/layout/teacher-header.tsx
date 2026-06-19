@@ -8,7 +8,7 @@ import { Logo } from '@/components/ui/logo';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetTrigger, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet';
 import { SidebarContent } from './sidebar-content';
-import { getTeacherNavMenu } from '@/constants/navigation';
+import { getTeacherNavMenu, ORG_NAV_MENU } from '@/constants/navigation';
 import { NotificationPopover } from '@/components/dashboard/notification-popover';
 import { ThemeToggle } from '@/components/ui/theme-toggle';
 import { fetchMe, getStoredTokens, getStoredUser, persistUser } from '@/services/auth-service';
@@ -18,8 +18,14 @@ export function TeacherHeader() {
   const pathname = usePathname();
   const [isOpen, setIsOpen] = useState(false);
   const { isOrgMode, activeWorkspace } = useWorkspace();
-  const currentNavMenu = getTeacherNavMenu(isOrgMode, activeWorkspace?.orgRole);
-  const currentPanelLabel = isOrgMode ? (activeWorkspace?.name ?? 'سازمان') : 'پنل معلم';
+  // The org-MANAGER panel lives under /org and reuses this chrome with the org nav.
+  const isOrgPanel = pathname?.startsWith('/org') ?? false;
+  const currentNavMenu = isOrgPanel
+    ? ORG_NAV_MENU
+    : getTeacherNavMenu(isOrgMode, activeWorkspace?.orgRole);
+  const currentPanelLabel = (isOrgPanel || isOrgMode) ? (activeWorkspace?.name ?? 'سازمان') : 'پنل معلم';
+  const panelLogoHref = isOrgPanel ? '/org' : '/teacher';
+  const panelSettingsHref = isOrgPanel ? '/org/settings' : '/teacher/settings';
 
   // Avoid SSR/CSR hydration mismatch by not reading localStorage during the initial render.
   const [me, setMe] = useState<ReturnType<typeof getStoredUser>>(null);
@@ -92,8 +98,16 @@ export function TeacherHeader() {
     messages: 'پیام‌رسانی',
     settings: 'تنظیمات پنل',
   };
-  const titleMap = isOrgMode ? orgTitleMap : personalTitleMap;
-  const pageTitle = titleMap[lastSegment] ?? titleMap.teacher;
+  const orgPanelTitleMap: Record<string, string> = {
+    org: 'داشبورد سازمان',
+    members: 'اعضا و گروه‌ها',
+    classes: 'کلاس‌های سازمان',
+    costs: 'هزینه‌های هوش مصنوعی',
+    tickets: 'تیکت‌های پشتیبانی',
+    settings: 'تنظیمات',
+  };
+  const titleMap = isOrgPanel ? orgPanelTitleMap : isOrgMode ? orgTitleMap : personalTitleMap;
+  const pageTitle = titleMap[lastSegment] ?? (isOrgPanel ? 'داشبورد سازمان' : titleMap.teacher);
 
   return (
     <header className="flex items-center justify-between gap-4 bg-card/50 backdrop-blur-md p-4 rounded-3xl border border-border/50 shadow-sm">
@@ -108,15 +122,16 @@ export function TeacherHeader() {
             <SheetContent side="right" className="p-0 w-72 border-l-border">
               <div className="sr-only">
                 <SheetHeader>
-                  <SheetTitle>منوی معلم</SheetTitle>
-                  <SheetDescription>دسترسی به بخش‌های مختلف پنل معلم</SheetDescription>
+                  <SheetTitle>{isOrgPanel ? 'منوی سازمان' : 'منوی معلم'}</SheetTitle>
+                  <SheetDescription>دسترسی به بخش‌های مختلف پنل</SheetDescription>
                 </SheetHeader>
               </div>
               <SidebarContent
                 navMenu={currentNavMenu}
                 panelLabel={currentPanelLabel}
-                logoHref="/teacher"
-                settingsHref="/teacher/settings"
+                logoHref={panelLogoHref}
+                settingsHref={panelSettingsHref}
+                showWorkspaceSwitcher
                 onItemClick={() => setIsOpen(false)}
               />
             </SheetContent>
@@ -124,7 +139,7 @@ export function TeacherHeader() {
         </div>
 
         <div className="hidden sm:block lg:hidden">
-          <Logo href="/teacher" imageSize="sm" showText={false} />
+          <Logo href={panelLogoHref} imageSize="sm" showText={false} />
         </div>
         
         <div className="flex flex-col">

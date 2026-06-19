@@ -15,6 +15,7 @@ import { fetchMe, login as loginRequest, persistUser, persistTokens } from '@/se
 import { OrganizationService } from '@/services/organization-service';
 import { WORKSPACE_STORAGE_KEY } from '@/hooks/use-workspace';
 import { PasswordInput } from '@/components/auth/password-input';
+import { landingFor } from '@/lib/auth-routing';
 
 interface LoginFormProps {
   onSwitchToJoin?: () => void;
@@ -51,10 +52,8 @@ export function LoginForm({ onSwitchToJoin }: LoginFormProps) {
 
       const normalizedRole = me.role?.toLowerCase() ?? 'student';
 
-      // An org MANAGER manages an org but is NOT a platform admin (the /admin
-      // route group bounces non-admins). Pre-select their org workspace so
-      // /teacher opens in ORG mode (the management dashboard) rather than the
-      // personal teacher area (which would 403 — a manager is not a teacher).
+      // An org MANAGER manages an org but is NOT a teacher/platform-admin. Pre-select
+      // their org workspace so the dedicated /org panel opens on the right org.
       if (normalizedRole === 'manager') {
         try {
           const workspaces = await OrganizationService.getMyWorkspaces();
@@ -69,14 +68,7 @@ export function LoginForm({ onSwitchToJoin }: LoginFormProps) {
         }
       }
 
-      const roleRedirectMap: Record<string, string> = {
-        teacher: '/teacher',
-        admin: '/admin',
-        manager: '/teacher', // org console (org mode pre-selected above)
-        student: '/home',
-      };
-
-      const defaultRedirect = roleRedirectMap[normalizedRole] ?? '/home';
+      const defaultRedirect = landingFor(normalizedRole);
       const next = searchParams.get('next');
 
       const isSafePath = (path: string) =>
@@ -84,11 +76,10 @@ export function LoginForm({ onSwitchToJoin }: LoginFormProps) {
 
       const isAllowedByRole = (path: string) => {
         if (normalizedRole === 'admin') return path.startsWith('/admin');
-        // Teachers AND managers both live under /teacher.
-        if (normalizedRole === 'teacher' || normalizedRole === 'manager')
-          return path.startsWith('/teacher');
+        if (normalizedRole === 'manager') return path.startsWith('/org');
+        if (normalizedRole === 'teacher') return path.startsWith('/teacher');
         // student
-        return !path.startsWith('/teacher') && !path.startsWith('/admin');
+        return !path.startsWith('/teacher') && !path.startsWith('/admin') && !path.startsWith('/org');
       };
 
       const safeNext =
