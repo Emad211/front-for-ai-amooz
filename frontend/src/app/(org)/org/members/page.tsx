@@ -29,7 +29,7 @@ export default function OrgMembersPage() {
   if (!isOrgManager || !activeWorkspace) {
     return (
       <p className="text-muted-foreground text-center py-12">
-        برای مدیریت اعضا و کدهای دعوت، از سوییچر بالا سازمانی که مدیرش هستید را انتخاب کنید.
+        برای مدیریت اعضا و کدهای دعوت، سازمان آموزشیِ تحت مدیریت خود را از سوییچر بالا انتخاب کنید.
       </p>
     );
   }
@@ -49,7 +49,7 @@ export default function OrgMembersPage() {
           </div>
         )}
         <div>
-          <h1 className="text-2xl font-black text-foreground">مدیریت سازمان</h1>
+          <h1 className="text-2xl font-black text-foreground">مدیریت سازمان آموزشی</h1>
           <p className="text-sm text-muted-foreground">{activeWorkspace.name} — اعضا و کدهای دعوت</p>
         </div>
       </div>

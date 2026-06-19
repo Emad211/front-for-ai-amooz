@@ -27,7 +27,7 @@ export function OrgDashboardPage() {
         const data = await OrganizationService.getDashboard(activeWorkspace!.id);
         if (!cancelled) setDashboard(data);
       } catch {
-        if (!cancelled) setError('خطا در دریافت اطلاعات داشبورد سازمان');
+        if (!cancelled) setError('خطا در دریافت اطلاعات داشبورد سازمان آموزشی');
       } finally {
         if (!cancelled) setIsLoading(false);
       }
@@ -79,7 +79,7 @@ export function OrgDashboardPage() {
           )}
           <div>
             <h1 className="text-2xl font-black text-foreground">{organization.name}</h1>
-            <p className="text-sm text-muted-foreground">داشبورد مدیریت سازمان</p>
+            <p className="text-sm text-muted-foreground">داشبورد مدیریت سازمان آموزشی</p>
           </div>
         </div>
       </div>
@@ -111,7 +111,7 @@ export function OrgDashboardPage() {
             <Link href="/org/members">اعضا و گروه‌ها</Link>
           </Button>
           <Button variant="outline" size="sm" asChild>
-            <Link href="/org/classes">کلاس‌های سازمان</Link>
+            <Link href="/org/classes">کلاس‌های سازمان آموزشی</Link>
           </Button>
           <Button variant="outline" size="sm" asChild>
             <Link href="/org/costs">هزینه‌های هوش مصنوعی</Link>

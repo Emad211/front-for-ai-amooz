@@ -61,7 +61,7 @@ const ROLE_MAP: Record<string, { label: string; icon: typeof Users; className: s
     className: 'bg-red-500/15 text-red-700 dark:text-red-400 border-red-500/20',
   },
   MANAGER: {
-    label: 'مدیر سازمان',
+    label: 'مدیر سازمان آموزشی',
     icon: Building2,
     className: 'bg-indigo-500/15 text-indigo-700 dark:text-indigo-400 border-indigo-500/20',
   },
@@ -233,9 +233,9 @@ export default function AdminUsersPage() {
       const updated = await UserService.assignOrgManager(editUser.id, Number(selectedOrg));
       applyManagerUpdate(updated);
       setSelectedOrg('');
-      toast.success('کاربر به‌عنوان مدیر سازمان تعیین شد.');
+      toast.success('کاربر به‌عنوان مدیر سازمان آموزشی تعیین شد.');
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'خطا در تعیین مدیر سازمان');
+      toast.error(err instanceof Error ? err.message : 'خطا در تعیین مدیر سازمان آموزشی');
     } finally {
       setManagerBusy(false);
     }
@@ -247,7 +247,7 @@ export default function AdminUsersPage() {
     try {
       const updated = await UserService.revokeOrgManager(editUser.id, orgId);
       applyManagerUpdate(updated);
-      toast.success('دسترسی مدیریت سازمان لغو شد.');
+      toast.success('دسترسی مدیریت سازمان آموزشی لغو شد.');
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'خطا در لغو دسترسی');
     } finally {
@@ -312,7 +312,7 @@ export default function AdminUsersPage() {
           {[
             { label: 'کل کاربران', value: stats.total, icon: Users },
             { label: 'ادمین‌ها', value: stats.admins, icon: ShieldCheck },
-            { label: 'مدیران سازمان', value: stats.managers, icon: Building2 },
+            { label: 'مدیران سازمان آموزشی', value: stats.managers, icon: Building2 },
             { label: 'معلمان', value: stats.teachers, icon: BookOpen },
             { label: 'دانش‌آموزان', value: stats.students, icon: GraduationCap },
             { label: 'فعال', value: stats.active, icon: UserCircle },
@@ -351,7 +351,7 @@ export default function AdminUsersPage() {
                 <SelectContent>
                   <SelectItem value="ALL">همه نقش‌ها</SelectItem>
                   <SelectItem value="ADMIN">ادمین</SelectItem>
-                  <SelectItem value="MANAGER">مدیر سازمان</SelectItem>
+                  <SelectItem value="MANAGER">مدیر سازمان آموزشی</SelectItem>
                   <SelectItem value="TEACHER">معلم</SelectItem>
                   <SelectItem value="STUDENT">دانش‌آموز</SelectItem>
                 </SelectContent>
@@ -561,7 +561,7 @@ export default function AdminUsersPage() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="ADMIN">ادمین</SelectItem>
-                    <SelectItem value="MANAGER">مدیر سازمان</SelectItem>
+                    <SelectItem value="MANAGER">مدیر سازمان آموزشی</SelectItem>
                     <SelectItem value="TEACHER">معلم</SelectItem>
                     <SelectItem value="STUDENT">دانش‌آموز</SelectItem>
                   </SelectContent>
@@ -573,7 +573,7 @@ export default function AdminUsersPage() {
               <div>
                 <Label className="flex items-center gap-1.5">
                   <Building2 className="h-4 w-4 text-indigo-500" />
-                  سازمان‌های تحت مدیریت
+                  سازمان‌های آموزشی تحت مدیریت
                 </Label>
                 <div className="mt-2 space-y-2">
                   {editUser?.managedOrganizations?.length ? (
@@ -590,7 +590,7 @@ export default function AdminUsersPage() {
                             onClick={() => handleRevokeManager(o.id)}
                             disabled={managerBusy}
                             className="rounded-full p-0.5 hover:bg-indigo-500/20 disabled:opacity-50"
-                            title="لغو مدیریت این سازمان"
+                            title="لغو مدیریت این سازمان آموزشی"
                           >
                             <X className="h-3 w-3" />
                           </button>
@@ -599,14 +599,14 @@ export default function AdminUsersPage() {
                     </div>
                   ) : (
                     <p className="text-xs text-muted-foreground">
-                      این کاربر مدیر هیچ سازمانی نیست.
+                      این کاربر مدیرِ هیچ سازمان آموزشی‌ای نیست.
                     </p>
                   )}
 
                   <div className="flex gap-2">
                     <Select value={selectedOrg} onValueChange={setSelectedOrg}>
                       <SelectTrigger className="flex-1">
-                        <SelectValue placeholder="انتخاب سازمان…" />
+                        <SelectValue placeholder="انتخاب سازمان آموزشی…" />
                       </SelectTrigger>
                       <SelectContent>
                         {orgs
@@ -670,7 +670,7 @@ export default function AdminUsersPage() {
                   <div>
                     <Label>فضای شخصی (فریلنسری)</Label>
                     <p className="text-xs text-muted-foreground mt-0.5">
-                      اگر خاموش باشد، معلم فقط در فضای سازمان کار می‌کند.
+                      اگر خاموش باشد، معلم فقط در فضای سازمان آموزشی کار می‌کند.
                     </p>
                   </div>
                   <Button
@@ -680,7 +680,7 @@ export default function AdminUsersPage() {
                       setEditForm((f) => ({ ...f, is_freelancer: !f.is_freelancer }))
                     }
                   >
-                    {editForm.is_freelancer ? 'دارد' : 'فقط سازمانی'}
+                    {editForm.is_freelancer ? 'دارد' : 'ندارد'}
                   </Button>
                 </div>
               )}

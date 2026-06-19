@@ -33,7 +33,7 @@ export default function OrganizationDetailPage({
       <PageTransition>
         <div className="flex items-center justify-center h-[60vh] px-4">
           <div className="w-full max-w-2xl">
-            <ErrorState title="خطا" description="شناسه سازمان نامعتبر است." onRetry={() => router.push('/admin/organizations')} />
+            <ErrorState title="خطا" description="شناسه سازمان آموزشی نامعتبر است." onRetry={() => router.push('/admin/organizations')} />
           </div>
         </div>
       </PageTransition>
@@ -70,7 +70,7 @@ export default function OrganizationDetailPage({
       <PageTransition>
         <div className="flex items-center justify-center h-[60vh] px-4">
           <div className="w-full max-w-2xl">
-            <ErrorState title="خطا" description={dashError || 'سازمان یافت نشد'} onRetry={reloadDash} />
+            <ErrorState title="خطا" description={dashError || 'سازمان آموزشی یافت نشد'} onRetry={reloadDash} />
           </div>
         </div>
       </PageTransition>
@@ -101,7 +101,7 @@ export default function OrganizationDetailPage({
             className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors mb-4"
           >
             <ChevronRight className="w-4 h-4" />
-            بازگشت به لیست سازمان‌ها
+            بازگشت به لیست سازمان‌های آموزشی
           </button>
           <div className="flex items-center gap-4">
             {org.logo ? (

@@ -305,7 +305,7 @@ export const AdminService = {
       {
         title: 'معلمان',
         value: formatPersianNumber(u.teachers),
-        change: u.managers > 0 ? `${toPersianDigits(u.managers)} مدیر سازمان` : '',
+        change: u.managers > 0 ? `${toPersianDigits(u.managers)} مدیر سازمان آموزشی` : '',
         trend: 'up',
         icon: 'book',
       },

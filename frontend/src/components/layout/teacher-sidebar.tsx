@@ -12,7 +12,7 @@ export function TeacherSidebar() {
   const isOrgPanel = pathname?.startsWith('/org') ?? false;
   const { isOrgMode, activeWorkspace } = useWorkspace();
   const navMenu = isOrgPanel ? ORG_NAV_MENU : getTeacherNavMenu(isOrgMode, activeWorkspace?.orgRole);
-  const panelLabel = (isOrgPanel || isOrgMode) ? (activeWorkspace?.name ?? 'سازمان') : 'پنل معلم';
+  const panelLabel = (isOrgPanel || isOrgMode) ? (activeWorkspace?.name ?? 'سازمان آموزشی') : 'پنل معلم';
   const logoHref = isOrgPanel ? '/org' : '/teacher';
   const settingsHref = isOrgPanel ? '/org/settings' : '/teacher/settings';
 

@@ -94,7 +94,7 @@ export default function TeacherExamStudentsPage({ params }: PageProps) {
         >
           <Info className="h-4 w-4 mt-0.5 shrink-0 text-primary" />
           <span>
-            این آزمون به سازمان متصل است؛ فهرست دانش‌آموزان از «گروه آموزشی» توسط مدیر سازمان
+            این آزمون به سازمان آموزشی متصل است؛ فهرست دانش‌آموزان از «گروه آموزشی» توسط مدیر سازمان آموزشی
             تعیین و مدیریت می‌شود و قابل تغییر از این‌جا نیست.
           </span>
         </div>

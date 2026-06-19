@@ -65,7 +65,7 @@ class AccessRequestCreateSerializer(serializers.ModelSerializer):
         # Organization requests must name the organization.
         if kind == AccessRequest.Kind.ORGANIZATION:
             if not (attrs.get('org_name') or '').strip():
-                raise serializers.ValidationError({'org_name': ['نام سازمان الزامی است.']})
+                raise serializers.ValidationError({'org_name': ['نام سازمان آموزشی الزامی است.']})
 
         # Dedup: one open (pending/contacted) request per phone+kind. After a
         # decision (approved/rejected) they may apply again.

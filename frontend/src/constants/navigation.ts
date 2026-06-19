@@ -36,9 +36,9 @@ export const DASHBOARD_NAV_LINKS: NavItem[] = [
 
 export const ADMIN_NAV_MENU: NavSection[] = [
   {
-    title: 'مدیریت سازمان‌ها',
+    title: 'مدیریت سازمان‌های آموزشی',
     items: [
-      { label: 'سازمان‌ها', href: '/admin/organizations', icon: Building2 },
+      { label: 'سازمان‌های آموزشی', href: '/admin/organizations', icon: Building2 },
     ]
   },
   {
@@ -108,8 +108,8 @@ export const ORG_TEACHER_TEACHING_NAV_MENU: NavSection[] = [
     title: 'مدیریت کلاس‌ها',
     items: [
       { label: 'ایجاد کلاس جدید', href: '/teacher/create-class', icon: PlusCircle },
-      { label: 'کلاس‌های سازمان', href: '/teacher/my-classes', icon: FolderOpen },
-      { label: 'آزمون‌های سازمان', href: '/teacher/my-exams', icon: FileQuestion },
+      { label: 'کلاس‌های سازمان آموزشی', href: '/teacher/my-classes', icon: FolderOpen },
+      { label: 'آزمون‌های سازمان آموزشی', href: '/teacher/my-exams', icon: FileQuestion },
       { label: 'دانش‌آموزان', href: '/teacher/students', icon: Users },
     ],
   },
@@ -136,7 +136,7 @@ export const ORG_TEACHER_TEACHING_NAV_MENU: NavSection[] = [
  */
 export const ORG_NAV_MENU: NavSection[] = [
   {
-    title: 'مدیریت سازمان',
+    title: 'مدیریت سازمان آموزشی',
     items: [
       { label: 'داشبورد', href: '/org', icon: LayoutDashboard },
       { label: 'اعضا و گروه‌ها', href: '/org/members', icon: UserCog },

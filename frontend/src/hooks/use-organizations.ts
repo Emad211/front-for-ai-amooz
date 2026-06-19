@@ -23,7 +23,7 @@ export function useOrganizations() {
       if (mountedRef.current) setOrganizations(data);
     } catch (err) {
       console.error(err);
-      if (mountedRef.current) setError('خطا در دریافت لیست سازمان‌ها');
+      if (mountedRef.current) setError('خطا در دریافت لیست سازمان‌های آموزشی');
     } finally {
       if (mountedRef.current) setIsLoading(false);
     }

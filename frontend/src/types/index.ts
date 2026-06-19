@@ -360,7 +360,7 @@ export interface ClassDetail extends Course {
 }
 
 // ============================================================================
-// Organization Types - تایپ‌های سازمان
+// Organization Types - تایپ‌های سازمان آموزشی
 // ============================================================================
 
 export type SubscriptionStatus = 'active' | 'expired' | 'suspended';

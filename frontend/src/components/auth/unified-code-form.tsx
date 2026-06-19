@@ -48,7 +48,7 @@ import type { ValidateCodeResult } from '@/types';
 type Step = 'code' | 'org-student' | 'org-account' | 'class' | 'redirecting';
 
 const ROLE_INFO: Record<string, { label: string; icon: typeof ShieldCheck; color: string }> = {
-  admin: { label: 'مدیر سازمان', icon: ShieldCheck, color: 'text-red-500' },
+  admin: { label: 'مدیر سازمان آموزشی', icon: ShieldCheck, color: 'text-red-500' },
   deputy: { label: 'معاون', icon: UserCog, color: 'text-orange-500' },
   teacher: { label: 'معلم', icon: BookOpen, color: 'text-blue-500' },
   student: { label: 'دانش‌آموز', icon: GraduationCap, color: 'text-emerald-500' },
@@ -296,7 +296,7 @@ export function UnifiedCodeForm() {
         </div>
         <h1 className="text-2xl font-black text-foreground">ورود با کد دعوت</h1>
         <p className="text-sm text-muted-foreground mt-1">
-          {step === 'code' && 'کد سازمان یا کد کلاسِ معلم خود را وارد کنید'}
+          {step === 'code' && 'کد سازمان آموزشی یا کد کلاسِ معلم خود را وارد کنید'}
           {step === 'org-student' && 'برای ورود، شماره موبایل خود را وارد کنید'}
           {step === 'org-account' && 'اطلاعات حساب خود را تکمیل کنید'}
           {step === 'class' && 'برای ورود به کلاس، شماره موبایل خود را وارد کنید'}
@@ -331,7 +331,7 @@ export function UnifiedCodeForm() {
           <div className="rounded-lg bg-muted/40 p-4 flex gap-2">
             <Info className="h-5 w-5 text-primary shrink-0 mt-0.5" />
             <p className="text-xs text-muted-foreground leading-6">
-              کد سازمان را مدیر مدرسه/مؤسسه به شما می‌دهد و کد کلاس را معلم. هر دو را در همین‌جا وارد کنید — خودش تشخیص می‌دهد.
+              کد سازمان آموزشی را مدیر مدرسه/مؤسسه به شما می‌دهد و کد کلاس را معلم. هر دو را در همین‌جا وارد کنید — خودش تشخیص می‌دهد.
             </p>
           </div>
         </div>
@@ -368,7 +368,7 @@ export function UnifiedCodeForm() {
             />
           </div>
           <Button className="w-full h-12 rounded-xl text-base" onClick={handleOrgStudent} disabled={busy || !phone.trim()}>
-            {busy ? <><Loader2 className="ms-2 h-4 w-4 animate-spin" />در حال ورود...</> : 'ورود به سازمان'}
+            {busy ? <><Loader2 className="ms-2 h-4 w-4 animate-spin" />در حال ورود...</> : 'ورود به سازمان آموزشی'}
           </Button>
         </div>
       )}

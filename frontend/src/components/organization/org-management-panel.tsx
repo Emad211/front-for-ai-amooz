@@ -46,7 +46,7 @@ import type { OrgRole } from '@/types';
 import { StudyGroupsManager } from '@/components/organization/study-groups-manager';
 
 const ROLE_OPTIONS = [
-  { value: 'admin', label: 'مدیر سازمان' },
+  { value: 'admin', label: 'مدیر سازمان آموزشی' },
   { value: 'deputy', label: 'معاون' },
   { value: 'teacher', label: 'معلم' },
   { value: 'student', label: 'دانش‌آموز' },
@@ -146,7 +146,7 @@ export function OrgManagementPanel({
     try {
       setIsSubmitting(true);
       await OrganizationService.removeMember(orgId, deleteMemberTarget.id);
-      toast.success('عضو از سازمان حذف شد.');
+      toast.success('عضو از سازمان آموزشی حذف شد.');
       setDeleteMemberTarget(null);
       reloadMembers();
       onMembersChanged?.();
@@ -320,7 +320,7 @@ export function OrgManagementPanel({
                 <DialogHeader>
                   <DialogTitle>ایجاد کد دعوت</DialogTitle>
                   <DialogDescription>
-                    این کد را می‌توانید بین اعضا پخش کنید تا عضو سازمان شوند.
+                    این کد را می‌توانید بین اعضا پخش کنید تا عضو سازمان آموزشی شوند.
                   </DialogDescription>
                 </DialogHeader>
                 <div className="space-y-4 mt-2">
@@ -491,7 +491,7 @@ export function OrgManagementPanel({
               حذف عضو
             </DialogTitle>
             <DialogDescription>
-              آیا از حذف <strong>{deleteMemberTarget?.name}</strong> از سازمان اطمینان دارید؟
+              آیا از حذف <strong>{deleteMemberTarget?.name}</strong> از سازمان آموزشی اطمینان دارید؟
             </DialogDescription>
           </DialogHeader>
           <DialogFooter className="flex gap-2 sm:gap-2">

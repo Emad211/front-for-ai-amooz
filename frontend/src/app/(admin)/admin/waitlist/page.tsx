@@ -54,7 +54,7 @@ const STATUS_TABS: { key: StatusFilter; label: string }[] = [
 const KIND_TABS: { key: KindFilter; label: string }[] = [
   { key: 'all', label: 'همه' },
   { key: 'teacher', label: 'معلم' },
-  { key: 'organization', label: 'سازمان' },
+  { key: 'organization', label: 'سازمان آموزشی' },
 ];
 
 function formatDate(value: string | null): string {
@@ -172,7 +172,7 @@ export default function AdminWaitlistPage() {
         <div>
           <h1 className="text-2xl font-black text-foreground">درخواست‌های دسترسی</h1>
           <p className="text-sm text-muted-foreground">
-            درخواست‌های همکاری معلم‌ها و سازمان‌ها را بررسی، تأیید یا رد کنید.
+            درخواست‌های همکاری معلم‌ها و سازمان‌های آموزشی را بررسی، تأیید یا رد کنید.
           </p>
         </div>
       </div>
@@ -319,7 +319,7 @@ export default function AdminWaitlistPage() {
                   {item.status === 'approved' && item.registration_token && (
                     <div className="rounded-lg border border-green-500/30 bg-green-500/5 p-3 space-y-2">
                       <p className="text-xs font-bold text-green-700">
-                        {isOrg ? 'کد فعال‌سازی مدیر سازمان' : 'توکن ثبت‌نام معلم'} — برای ارسال به متقاضی:
+                        {isOrg ? 'کد فعال‌سازی مدیر سازمان آموزشی' : 'توکن ثبت‌نام معلم'} — برای ارسال به متقاضی:
                       </p>
                       <div className="flex items-center gap-2">
                         <code className="flex-1 text-xs bg-background/60 rounded px-2 py-1.5 break-all" dir="ltr">

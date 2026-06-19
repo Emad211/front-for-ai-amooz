@@ -112,7 +112,7 @@ class OrganizationListCreateView(APIView):
             return Response(
                 {
                     'detail': (
-                        'خطای پایگاه داده هنگام ساخت سازمان. '
+                        'خطای پایگاه داده هنگام ساخت سازمان آموزشی. '
                         'لطفاً migration جدید organizations را اجرا کنید: '
                         'python manage.py migrate organizations'
                     )
@@ -134,14 +134,14 @@ class OrganizationDetailView(APIView):
         try:
             org = Organization.objects.select_related('owner').get(pk=org_pk)
         except Organization.DoesNotExist:
-            return Response({'detail': 'سازمان یافت نشد.'}, status=status.HTTP_404_NOT_FOUND)
+            return Response({'detail': 'سازمان آموزشی یافت نشد.'}, status=status.HTTP_404_NOT_FOUND)
         return Response(OrganizationSerializer(org).data)
 
     def patch(self, request, org_pk):
         try:
             org = Organization.objects.get(pk=org_pk)
         except Organization.DoesNotExist:
-            return Response({'detail': 'سازمان یافت نشد.'}, status=status.HTTP_404_NOT_FOUND)
+            return Response({'detail': 'سازمان آموزشی یافت نشد.'}, status=status.HTTP_404_NOT_FOUND)
 
         # Validate slug uniqueness if being changed
         new_slug = request.data.get('slug')
@@ -179,7 +179,7 @@ class OrganizationDetailView(APIView):
         try:
             org = Organization.objects.get(pk=org_pk)
         except Organization.DoesNotExist:
-            return Response({'detail': 'سازمان یافت نشد.'}, status=status.HTTP_404_NOT_FOUND)
+            return Response({'detail': 'سازمان آموزشی یافت نشد.'}, status=status.HTTP_404_NOT_FOUND)
         org.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
 
@@ -287,7 +287,7 @@ class OrgInviteCodeListCreateView(APIView):
         try:
             org = Organization.objects.get(pk=org_pk)
         except Organization.DoesNotExist:
-            return Response({'detail': 'سازمان یافت نشد.'}, status=status.HTTP_404_NOT_FOUND)
+            return Response({'detail': 'سازمان آموزشی یافت نشد.'}, status=status.HTTP_404_NOT_FOUND)
 
         ser = InvitationCodeCreateSerializer(data=request.data)
         ser.is_valid(raise_exception=True)
@@ -432,7 +432,7 @@ class RedeemInvitationView(APIView):
         # created so an over-capacity redemption never mints a stray user.
         if is_student_code and not is_returning and org.is_at_capacity:
             return Response(
-                {'detail': 'ظرفیت دانش‌آموزان سازمان تکمیل است.'},
+                {'detail': 'ظرفیت دانش‌آموزان سازمان آموزشی تکمیل است.'},
                 status=status.HTTP_409_CONFLICT,
             )
 
@@ -542,7 +542,7 @@ class RedeemInvitationView(APIView):
             # An anonymous phone-student who is already a member falls through to a
             # fresh token below — i.e. the org code doubles as their login.
             return Response(
-                {'detail': 'شما قبلاً عضو این سازمان هستید.'},
+                {'detail': 'شما قبلاً عضو این سازمان آموزشی هستید.'},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
@@ -672,7 +672,7 @@ class OrgDashboardView(APIView):
         try:
             org = Organization.objects.get(pk=org_pk)
         except Organization.DoesNotExist:
-            return Response({'detail': 'سازمان یافت نشد.'}, status=status.HTTP_404_NOT_FOUND)
+            return Response({'detail': 'سازمان آموزشی یافت نشد.'}, status=status.HTTP_404_NOT_FOUND)
 
         memberships = org.memberships.all()
         students = memberships.filter(
@@ -771,7 +771,7 @@ class StudyGroupListCreateView(APIView):
         try:
             org = Organization.objects.get(pk=org_pk)
         except Organization.DoesNotExist:
-            return Response({'detail': 'سازمان یافت نشد.'}, status=status.HTTP_404_NOT_FOUND)
+            return Response({'detail': 'سازمان آموزشی یافت نشد.'}, status=status.HTTP_404_NOT_FOUND)
 
         ser = StudyGroupWriteSerializer(data=request.data)
         ser.is_valid(raise_exception=True)
@@ -779,7 +779,7 @@ class StudyGroupListCreateView(APIView):
 
         if StudyGroup.objects.filter(organization=org, name=data['name']).exists():
             return Response(
-                {'detail': 'گروهی با این نام در سازمان وجود دارد.'},
+                {'detail': 'گروهی با این نام در سازمان آموزشی وجود دارد.'},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
@@ -825,7 +825,7 @@ class StudyGroupDetailView(APIView):
             and StudyGroup.objects.filter(organization_id=org_pk, name=new_name).exists()
         ):
             return Response(
-                {'detail': 'گروهی با این نام در سازمان وجود دارد.'},
+                {'detail': 'گروهی با این نام در سازمان آموزشی وجود دارد.'},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
@@ -863,7 +863,7 @@ class StudyGroupTeacherView(APIView):
             status=OrganizationMembership.MemberStatus.ACTIVE,
         ).exists():
             return Response(
-                {'detail': 'این کاربر معلمِ فعالِ این سازمان نیست.'},
+                {'detail': 'این کاربر معلمِ فعالِ این سازمان آموزشی نیست.'},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
@@ -902,7 +902,7 @@ class StudyGroupStudentView(APIView):
             status=OrganizationMembership.MemberStatus.ACTIVE,
         ).exists():
             return Response(
-                {'detail': 'این کاربر دانش‌آموزِ فعالِ این سازمان نیست.'},
+                {'detail': 'این کاربر دانش‌آموزِ فعالِ این سازمان آموزشی نیست.'},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 

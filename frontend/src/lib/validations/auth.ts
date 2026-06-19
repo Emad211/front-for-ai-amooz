@@ -135,7 +135,7 @@ export const teacherAccessRequestSchema = z.object({
 
 export const orgAccessRequestSchema = z.object({
   fullName: z.string().trim().min(3, { message: "نام رابط را کامل وارد کنید" }),
-  orgName: z.string().trim().min(2, { message: "نام سازمان الزامی است" }),
+  orgName: z.string().trim().min(2, { message: "نام سازمان آموزشی الزامی است" }),
   phone: iranMobileSchema,
   email: optionalEmailSchema,
   city: z.string().trim().max(120).optional(),

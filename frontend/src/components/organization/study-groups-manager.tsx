@@ -185,7 +185,7 @@ export function StudyGroupsManager({ orgId }: { orgId: number }) {
           <DialogContent className="sm:max-w-md" dir="rtl">
             <DialogHeader>
               <DialogTitle>ایجاد گروه آموزشی</DialogTitle>
-              <DialogDescription>یک گروه/کلاس‌بندی تازه برای سازمان بسازید (مثلاً «دهم ریاضی»).</DialogDescription>
+              <DialogDescription>یک گروه/کلاس‌بندی تازه برای سازمان آموزشی بسازید (مثلاً «دهم ریاضی»).</DialogDescription>
             </DialogHeader>
             <div className="space-y-4 mt-2">
               <div className="space-y-2">

@@ -222,7 +222,7 @@ class RedeemInvitationSerializer(serializers.Serializer):
             and invite.organization.is_at_capacity
             and not self._is_returning_member(invite.organization)
         ):
-            raise serializers.ValidationError('ظرفیت دانش‌آموز سازمان تکمیل شده است.')
+            raise serializers.ValidationError('ظرفیت دانش‌آموز سازمان آموزشی تکمیل شده است.')
 
         return value
 

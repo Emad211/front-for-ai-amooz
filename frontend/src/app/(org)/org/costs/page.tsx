@@ -91,7 +91,7 @@ export default function OrgCostsPage() {
   if (!isOrgManager || !activeWorkspace) {
     return (
       <p className="text-muted-foreground text-center py-12">
-        برای دیدن هزینه‌ها، سازمانی که مدیرش هستید را از سوییچر انتخاب کنید.
+        برای دیدن هزینه‌ها، سازمان آموزشیِ تحت مدیریت خود را از سوییچر انتخاب کنید.
       </p>
     );
   }

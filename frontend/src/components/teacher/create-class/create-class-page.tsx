@@ -722,7 +722,7 @@ export function CreateClassPage() {
               </SelectContent>
             </Select>
             <p className="text-xs text-muted-foreground">
-              این مورد به گروه انتخاب‌شده در سازمان «{activeWorkspace.name}» نسبت داده می‌شود.
+              این مورد به گروه انتخاب‌شده در سازمان آموزشی «{activeWorkspace.name}» نسبت داده می‌شود.
             </p>
           </div>
         </Card>
@@ -890,8 +890,8 @@ export function CreateClassPage() {
               دانش‌آموزان {pipelineType === 'class' ? 'کلاس' : 'آزمون'}
             </Label>
             <p className="text-xs text-muted-foreground leading-6">
-              دانش‌آموزانِ {pipelineType === 'class' ? 'کلاس‌های' : 'آزمون‌های'} سازمانی از «گروه آموزشیِ» انتخاب‌شده
-              تعیین می‌شوند و مدیریتِ آن‌ها با مدیر سازمان است؛ پس از انتشار، اعضای گروه به‌صورت خودکار اضافه می‌شوند.
+              دانش‌آموزانِ {pipelineType === 'class' ? 'کلاس‌های' : 'آزمون‌های'} سازمان آموزشی از «گروه آموزشیِ» انتخاب‌شده
+              تعیین می‌شوند و مدیریتِ آن‌ها با مدیر سازمان آموزشی است؛ پس از انتشار، اعضای گروه به‌صورت خودکار اضافه می‌شوند.
               {selectedStudyGroupId === 'none' && ' برای داشتن دانش‌آموز، در بالا یک گروه آموزشی انتخاب کنید.'}
             </p>
           </div>

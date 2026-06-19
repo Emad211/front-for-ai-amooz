@@ -84,7 +84,7 @@ export default function OrganizationsPage() {
 
   const handleCreate = async () => {
     if (!formName.trim() || !formSlug.trim()) {
-      toast.error('نام و شناسه سازمان الزامی است.');
+      toast.error('نام و شناسه سازمان آموزشی الزامی است.');
       return;
     }
     try {
@@ -97,7 +97,7 @@ export default function OrganizationsPage() {
         phone: formPhone.trim(),
         address: formAddress.trim(),
       });
-      toast.success(`سازمان «${created.name}» با موفقیت ایجاد شد.`);
+      toast.success(`سازمان آموزشی «${created.name}» با موفقیت ایجاد شد.`);
       if (created.adminActivationCode) {
         setCreatedCode(created.adminActivationCode);
       } else {
@@ -106,7 +106,7 @@ export default function OrganizationsPage() {
       }
       reload();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'خطا در ایجاد سازمان');
+      toast.error(err instanceof Error ? err.message : 'خطا در ایجاد سازمان آموزشی');
     } finally {
       setIsSubmitting(false);
     }
@@ -117,11 +117,11 @@ export default function OrganizationsPage() {
     try {
       setIsSubmitting(true);
       await OrganizationService.deleteOrganization(deleteTarget.id);
-      toast.success(`سازمان «${deleteTarget.name}» حذف شد.`);
+      toast.success(`سازمان آموزشی «${deleteTarget.name}» حذف شد.`);
       setDeleteTarget(null);
       reload();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'خطا در حذف سازمان');
+      toast.error(err instanceof Error ? err.message : 'خطا در حذف سازمان آموزشی');
     } finally {
       setIsSubmitting(false);
     }
@@ -179,7 +179,7 @@ export default function OrganizationsPage() {
       <PageTransition>
         <div className="flex items-center justify-center h-[60vh] px-4">
           <div className="w-full max-w-2xl">
-            <ErrorState title="خطا در دریافت سازمان‌ها" description={error} onRetry={reload} />
+            <ErrorState title="خطا در دریافت سازمان‌های آموزشی" description={error} onRetry={reload} />
           </div>
         </div>
       </PageTransition>
@@ -196,7 +196,7 @@ export default function OrganizationsPage() {
         {/* ── Header ── */}
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
-            <h1 className="text-2xl md:text-3xl font-black text-foreground">مدیریت سازمان‌ها</h1>
+            <h1 className="text-2xl md:text-3xl font-black text-foreground">مدیریت سازمان‌های آموزشی</h1>
             <p className="text-muted-foreground text-sm mt-1">
               ایجاد و مدیریت مدارس، آموزشگاه‌ها و مؤسسات آموزشی
             </p>
@@ -211,16 +211,16 @@ export default function OrganizationsPage() {
             <DialogTrigger asChild>
               <Button className="gap-2 rounded-xl">
                 <Plus className="w-4 h-4" />
-                سازمان جدید
+                سازمان آموزشی جدید
               </Button>
             </DialogTrigger>
             <DialogContent className="sm:max-w-lg" dir="rtl">
               {createdCode ? (
                 <>
                   <DialogHeader>
-                    <DialogTitle>سازمان ایجاد شد!</DialogTitle>
+                    <DialogTitle>سازمان آموزشی ایجاد شد!</DialogTitle>
                     <DialogDescription>
-                      کد فعالسازی مدیر را کپی کرده و به مدیر سازمان ارسال کنید.
+                      کد فعالسازی مدیر را کپی کرده و به مدیر سازمان آموزشی ارسال کنید.
                     </DialogDescription>
                   </DialogHeader>
                   <div className="mt-4 space-y-4">
@@ -236,7 +236,7 @@ export default function OrganizationsPage() {
                       </Button>
                     </div>
                     <p className="text-xs text-muted-foreground text-center">
-                      این کد یکبار مصرف است. مدیر با استفاده از آن وارد سازمان خواهد شد.
+                      این کد یکبار مصرف است. مدیر با استفاده از آن وارد سازمان آموزشی خواهد شد.
                     </p>
                     <DialogFooter>
                       <Button
@@ -254,15 +254,15 @@ export default function OrganizationsPage() {
               ) : (
                 <>
                   <DialogHeader>
-                    <DialogTitle>ایجاد سازمان جدید</DialogTitle>
+                    <DialogTitle>ایجاد سازمان آموزشی جدید</DialogTitle>
                     <DialogDescription>
-                      اطلاعات سازمان را وارد کنید. پس از ایجاد، کد فعالسازی مدیر ساخته خواهد شد.
+                      اطلاعات سازمان آموزشی را وارد کنید. پس از ایجاد، کد فعالسازی مدیر ساخته خواهد شد.
                     </DialogDescription>
                   </DialogHeader>
                   <div className="space-y-4 mt-2">
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <div className="space-y-2">
-                        <Label>نام سازمان *</Label>
+                        <Label>نام سازمان آموزشی *</Label>
                         <Input
                           value={formName}
                           onChange={(e) => setFormName(e.target.value)}
@@ -296,7 +296,7 @@ export default function OrganizationsPage() {
                       <Textarea
                         value={formDescription}
                         onChange={(e) => setFormDescription(e.target.value)}
-                        placeholder="توضیحات مختصر درباره سازمان"
+                        placeholder="توضیحات مختصر درباره سازمان آموزشی"
                         rows={2}
                       />
                     </div>
@@ -326,7 +326,7 @@ export default function OrganizationsPage() {
                         onClick={handleCreate}
                         disabled={isSubmitting || !formName.trim() || !formSlug.trim()}
                       >
-                        {isSubmitting ? 'در حال ایجاد...' : 'ایجاد سازمان'}
+                        {isSubmitting ? 'در حال ایجاد...' : 'ایجاد سازمان آموزشی'}
                       </Button>
                     </DialogFooter>
                   </div>
@@ -345,7 +345,7 @@ export default function OrganizationsPage() {
               </div>
               <div>
                 <p className="text-2xl font-black">{organizations.length}</p>
-                <p className="text-xs text-muted-foreground">کل سازمان‌ها</p>
+                <p className="text-xs text-muted-foreground">کل سازمان‌های آموزشی</p>
               </div>
             </CardContent>
           </Card>
@@ -390,7 +390,7 @@ export default function OrganizationsPage() {
             <div className="relative max-w-sm flex-1 min-w-[200px]">
               <Search className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
               <Input
-                placeholder="جستجوی سازمان..."
+                placeholder="جستجوی سازمان آموزشی..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="pr-9 rounded-xl"
@@ -424,9 +424,9 @@ export default function OrganizationsPage() {
               <div className="w-16 h-16 rounded-2xl bg-muted flex items-center justify-center mb-4">
                 <Building2 className="w-8 h-8 text-muted-foreground" />
               </div>
-              <h3 className="text-lg font-bold">هنوز سازمانی ایجاد نشده</h3>
+              <h3 className="text-lg font-bold">هنوز سازمان آموزشی ایجاد نشده</h3>
               <p className="text-muted-foreground text-sm mt-1 max-w-xs">
-                با کلیک روی دکمه «سازمان جدید» اولین مدرسه یا آموزشگاه را ثبت کنید.
+                با کلیک روی دکمه «سازمان آموزشی جدید» اولین مدرسه یا آموزشگاه را ثبت کنید.
               </p>
             </CardContent>
           </Card>
@@ -547,7 +547,7 @@ export default function OrganizationsPage() {
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2 text-destructive">
                 <AlertTriangle className="w-5 h-5" />
-                حذف سازمان
+                حذف سازمان آموزشی
               </DialogTitle>
               <DialogDescription>
                 آیا از حذف <strong>{deleteTarget?.name}</strong> اطمینان دارید؟ تمام اعضا، کلاس‌ها و
@@ -564,7 +564,7 @@ export default function OrganizationsPage() {
                 onClick={handleDelete}
                 disabled={isSubmitting}
               >
-                {isSubmitting ? 'در حال حذف...' : 'حذف سازمان'}
+                {isSubmitting ? 'در حال حذف...' : 'حذف سازمان آموزشی'}
               </Button>
             </DialogFooter>
           </DialogContent>

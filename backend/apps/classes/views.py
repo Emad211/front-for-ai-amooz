@@ -537,7 +537,7 @@ class Step1TranscribeView(APIView):
                         org_id_int = int(org_id)
                     except (ValueError, TypeError):
                         return Response(
-                            {'detail': 'شناسه سازمان نامعتبر است.'},
+                            {'detail': 'شناسه سازمان آموزشی نامعتبر است.'},
                             status=status.HTTP_400_BAD_REQUEST,
                         )
                     # Verify user is an active member of the organization.
@@ -547,7 +547,7 @@ class Step1TranscribeView(APIView):
                         status=OrganizationMembership.MemberStatus.ACTIVE,
                     ).exists():
                         return Response(
-                            {'detail': 'شما عضو فعال این سازمان نیستید.'},
+                            {'detail': 'شما عضو فعال این سازمان آموزشی نیستید.'},
                             status=status.HTTP_403_FORBIDDEN,
                         )
                     organization = Organization.objects.filter(id=org_id_int).first()
@@ -558,7 +558,7 @@ class Step1TranscribeView(APIView):
                 if sg_id:
                     if organization is None:
                         return Response(
-                            {'detail': 'برای انتخاب گروه آموزشی ابتدا سازمان را مشخص کنید.'},
+                            {'detail': 'برای انتخاب گروه آموزشی ابتدا سازمان آموزشی را مشخص کنید.'},
                             status=status.HTTP_400_BAD_REQUEST,
                         )
                     from apps.organizations.models import StudyGroup
@@ -567,7 +567,7 @@ class Step1TranscribeView(APIView):
                     ).first()
                     if study_group is None:
                         return Response(
-                            {'detail': 'گروه آموزشی نامعتبر است یا متعلق به این سازمان نیست.'},
+                            {'detail': 'گروه آموزشی نامعتبر است یا متعلق به این سازمان آموزشی نیست.'},
                             status=status.HTTP_400_BAD_REQUEST,
                         )
 
@@ -1172,7 +1172,7 @@ class ClassInvitationListCreateView(APIView):
         # a teacher may not hand-invite arbitrary students into them.
         if session.organization_id is not None:
             return Response(
-                {'detail': 'دانش‌آموزانِ کلاس‌های سازمانی از طریق «گروه آموزشی» توسط مدیر سازمان تعیین می‌شوند.'},
+                {'detail': 'دانش‌آموزانِ کلاس‌های سازمان آموزشی از طریق «گروه آموزشی» توسط مدیر سازمان آموزشی تعیین می‌شوند.'},
                 status=status.HTTP_403_FORBIDDEN,
             )
 
@@ -1231,7 +1231,7 @@ class ClassInvitationDetailView(APIView):
         # Org class rosters are managed by the org (via study groups), not the teacher.
         if session.organization_id is not None:
             return Response(
-                {'detail': 'دانش‌آموزانِ کلاس‌های سازمانی از طریق «گروه آموزشی» توسط مدیر سازمان تعیین می‌شوند.'},
+                {'detail': 'دانش‌آموزانِ کلاس‌های سازمان آموزشی از طریق «گروه آموزشی» توسط مدیر سازمان آموزشی تعیین می‌شوند.'},
                 status=status.HTTP_403_FORBIDDEN,
             )
         invite = ClassInvitation.objects.filter(id=invite_id, session=session).first()
@@ -3477,7 +3477,7 @@ class ExamPrepStep1TranscribeView(APIView):
                         org_id_int = int(org_id)
                     except (ValueError, TypeError):
                         return Response(
-                            {'detail': 'شناسه سازمان نامعتبر است.'},
+                            {'detail': 'شناسه سازمان آموزشی نامعتبر است.'},
                             status=status.HTTP_400_BAD_REQUEST,
                         )
                     if not OrganizationMembership.objects.filter(
@@ -3486,7 +3486,7 @@ class ExamPrepStep1TranscribeView(APIView):
                         status=OrganizationMembership.MemberStatus.ACTIVE,
                     ).exists():
                         return Response(
-                            {'detail': 'شما عضو فعال این سازمان نیستید.'},
+                            {'detail': 'شما عضو فعال این سازمان آموزشی نیستید.'},
                             status=status.HTTP_403_FORBIDDEN,
                         )
                     organization = Organization.objects.filter(id=org_id_int).first()
@@ -3497,7 +3497,7 @@ class ExamPrepStep1TranscribeView(APIView):
                 if sg_id:
                     if organization is None:
                         return Response(
-                            {'detail': 'برای انتخاب گروه آموزشی ابتدا سازمان را مشخص کنید.'},
+                            {'detail': 'برای انتخاب گروه آموزشی ابتدا سازمان آموزشی را مشخص کنید.'},
                             status=status.HTTP_400_BAD_REQUEST,
                         )
                     from apps.organizations.models import StudyGroup
@@ -3506,7 +3506,7 @@ class ExamPrepStep1TranscribeView(APIView):
                     ).first()
                     if study_group is None:
                         return Response(
-                            {'detail': 'گروه آموزشی نامعتبر است یا متعلق به این سازمان نیست.'},
+                            {'detail': 'گروه آموزشی نامعتبر است یا متعلق به این سازمان آموزشی نیست.'},
                             status=status.HTTP_400_BAD_REQUEST,
                         )
 
@@ -3851,7 +3851,7 @@ class ExamPrepInvitationListCreateView(APIView):
         # a teacher may not hand-invite arbitrary students into them.
         if session.organization_id is not None:
             return Response(
-                {'detail': 'دانش‌آموزانِ آزمون‌های سازمانی از طریق «گروه آموزشی» توسط مدیر سازمان تعیین می‌شوند.'},
+                {'detail': 'دانش‌آموزانِ آزمون‌های سازمان آموزشی از طریق «گروه آموزشی» توسط مدیر سازمان آموزشی تعیین می‌شوند.'},
                 status=status.HTTP_403_FORBIDDEN,
             )
 
@@ -3914,7 +3914,7 @@ class ExamPrepInvitationDetailView(APIView):
             return Response({'detail': 'جلسه آمادگی آزمون یافت نشد.'}, status=status.HTTP_404_NOT_FOUND)
         if session.organization_id is not None:
             return Response(
-                {'detail': 'دانش‌آموزانِ آزمون‌های سازمانی از طریق «گروه آموزشی» توسط مدیر سازمان تعیین می‌شوند.'},
+                {'detail': 'دانش‌آموزانِ آزمون‌های سازمان آموزشی از طریق «گروه آموزشی» توسط مدیر سازمان آموزشی تعیین می‌شوند.'},
                 status=status.HTTP_403_FORBIDDEN,
             )
         invite = ClassInvitation.objects.filter(id=invite_id, session=session).first()

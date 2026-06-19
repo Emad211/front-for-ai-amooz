@@ -182,13 +182,13 @@ def build_approval_sms_text(access_request: AccessRequest, frontend_base: str = 
     if ar.kind == AccessRequest.Kind.ORGANIZATION:
         base = _resolve_frontend_base(frontend_base)
         tail = (
-            f'ثبت‌نام مدیر سازمان:\n{base}/org-login'
+            f'ثبت‌نام مدیر سازمان آموزشی:\n{base}/org-login'
             if base
-            else 'با این کد در صفحه «ورود سازمانی» ثبت‌نام کنید.'
+            else 'با این کد به‌عنوان مدیر سازمان آموزشی ثبت‌نام کنید.'
         )
         return (
             'AI_AMOOZ\n'
-            f'درخواست سازمان «{ar.org_name}» تأیید شد.\n'
+            f'درخواست سازمان آموزشی «{ar.org_name}» تأیید شد.\n'
             f'کد فعال‌سازی مدیر: {ar.registration_token}\n'
             f'{tail}'
         )

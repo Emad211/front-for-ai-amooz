@@ -610,7 +610,7 @@ class ExchangeRateView(APIView):
 
 TEHRAN_TZ = ZoneInfo('Asia/Tehran')
 
-_ROLE_FA = {'STUDENT': 'دانش‌آموز', 'TEACHER': 'معلم', 'ADMIN': 'مدیر', 'MANAGER': 'مدیر سازمان'}
+_ROLE_FA = {'STUDENT': 'دانش‌آموز', 'TEACHER': 'معلم', 'ADMIN': 'مدیر', 'MANAGER': 'مدیر سازمان آموزشی'}
 
 
 def _tehran_now():
@@ -1773,7 +1773,7 @@ class AdminUserOrgManagerView(APIView):
         try:
             org = Organization.objects.get(pk=int(org_id))
         except (Organization.DoesNotExist, TypeError, ValueError):
-            return Response({'detail': 'سازمان یافت نشد.'}, status=status.HTTP_404_NOT_FOUND)
+            return Response({'detail': 'سازمان آموزشی یافت نشد.'}, status=status.HTTP_404_NOT_FOUND)
 
         with transaction.atomic():
             # An org manager IS the MANAGER role. Promote a student/teacher to

@@ -29,7 +29,7 @@ export default function OrgClassesPage() {
     setError(null);
     OrganizationService.getOrgClasses(activeWorkspace.id)
       .then((d) => { if (!cancelled) setRows(d); })
-      .catch(() => { if (!cancelled) setError('خطا در دریافت کلاس‌های سازمان'); });
+      .catch(() => { if (!cancelled) setError('خطا در دریافت کلاس‌های سازمان آموزشی'); });
     return () => { cancelled = true; };
   }, [isOrgManager, activeWorkspace]);
 
@@ -37,7 +37,7 @@ export default function OrgClassesPage() {
   if (!isOrgManager || !activeWorkspace) {
     return (
       <p className="text-muted-foreground text-center py-12">
-        برای دیدن کلاس‌های سازمان، سازمانی که مدیرش هستید را از سوییچر انتخاب کنید.
+        برای دیدن کلاس‌ها، سازمان آموزشیِ تحت مدیریت خود را از سوییچر انتخاب کنید.
       </p>
     );
   }
@@ -50,7 +50,7 @@ export default function OrgClassesPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-black text-foreground">کلاس‌های سازمان</h1>
+        <h1 className="text-2xl font-black text-foreground">کلاس‌های سازمان آموزشی</h1>
         <p className="text-sm text-muted-foreground mt-1">
           نظارت بر همهٔ کلاس‌ها و آزمون‌های ساخته‌شده در «{activeWorkspace.name}»
         </p>

@@ -69,7 +69,7 @@ export function OrgTeacherDashboard() {
           <CardContent className="py-16 text-center">
             <GraduationCap className="w-10 h-10 text-muted-foreground mx-auto mb-3" />
             <p className="font-medium">هنوز به گروهی اضافه نشده‌اید</p>
-            <p className="text-xs text-muted-foreground mt-1">مدیر سازمان شما را به گروه‌های آموزشی اضافه می‌کند.</p>
+            <p className="text-xs text-muted-foreground mt-1">مدیر سازمان آموزشی شما را به گروه‌های آموزشی اضافه می‌کند.</p>
           </CardContent>
         </Card>
       )}

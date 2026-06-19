@@ -23,7 +23,7 @@ export function TeacherHeader() {
   const currentNavMenu = isOrgPanel
     ? ORG_NAV_MENU
     : getTeacherNavMenu(isOrgMode, activeWorkspace?.orgRole);
-  const currentPanelLabel = (isOrgPanel || isOrgMode) ? (activeWorkspace?.name ?? 'سازمان') : 'پنل معلم';
+  const currentPanelLabel = (isOrgPanel || isOrgMode) ? (activeWorkspace?.name ?? 'سازمان آموزشی') : 'پنل معلم';
   const panelLogoHref = isOrgPanel ? '/org' : '/teacher';
   const panelSettingsHref = isOrgPanel ? '/org/settings' : '/teacher/settings';
 
@@ -86,28 +86,28 @@ export function TeacherHeader() {
     settings: 'تنظیمات پنل',
   };
   const orgTitleMap: Record<string, string> = {
-    teacher: 'داشبورد سازمان',
-    org: 'مدیریت سازمان',
-    classes: 'کلاس‌های سازمان',
+    teacher: 'داشبورد سازمان آموزشی',
+    org: 'مدیریت سازمان آموزشی',
+    classes: 'کلاس‌های سازمان آموزشی',
     costs: 'هزینه‌های هوش مصنوعی',
     analytics: 'آمار و تحلیل',
     'create-class': 'ایجاد کلاس جدید',
-    'my-classes': 'کلاس‌های سازمان',
-    'my-exams': 'آزمون‌های سازمان',
+    'my-classes': 'کلاس‌های سازمان آموزشی',
+    'my-exams': 'آزمون‌های سازمان آموزشی',
     students: 'مدیریت دانش‌آموزان',
     messages: 'پیام‌رسانی',
     settings: 'تنظیمات پنل',
   };
   const orgPanelTitleMap: Record<string, string> = {
-    org: 'داشبورد سازمان',
+    org: 'داشبورد سازمان آموزشی',
     members: 'اعضا و گروه‌ها',
-    classes: 'کلاس‌های سازمان',
+    classes: 'کلاس‌های سازمان آموزشی',
     costs: 'هزینه‌های هوش مصنوعی',
     tickets: 'تیکت‌های پشتیبانی',
     settings: 'تنظیمات',
   };
   const titleMap = isOrgPanel ? orgPanelTitleMap : isOrgMode ? orgTitleMap : personalTitleMap;
-  const pageTitle = titleMap[lastSegment] ?? (isOrgPanel ? 'داشبورد سازمان' : titleMap.teacher);
+  const pageTitle = titleMap[lastSegment] ?? (isOrgPanel ? 'داشبورد سازمان آموزشی' : titleMap.teacher);
 
   return (
     <header className="flex items-center justify-between gap-4 bg-card/50 backdrop-blur-md p-4 rounded-3xl border border-border/50 shadow-sm">
@@ -122,7 +122,7 @@ export function TeacherHeader() {
             <SheetContent side="right" className="p-0 w-72 border-l-border">
               <div className="sr-only">
                 <SheetHeader>
-                  <SheetTitle>{isOrgPanel ? 'منوی سازمان' : 'منوی معلم'}</SheetTitle>
+                  <SheetTitle>{isOrgPanel ? 'منوی سازمان آموزشی' : 'منوی معلم'}</SheetTitle>
                   <SheetDescription>دسترسی به بخش‌های مختلف پنل</SheetDescription>
                 </SheetHeader>
               </div>

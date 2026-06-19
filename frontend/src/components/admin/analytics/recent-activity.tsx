@@ -26,7 +26,7 @@ const ROLE_LABEL: Record<string, string> = {
   STUDENT: 'دانش‌آموز',
   TEACHER: 'معلم',
   ADMIN: 'مدیر',
-  MANAGER: 'مدیر سازمان',
+  MANAGER: 'مدیر سازمان آموزشی',
 };
 
 interface RecentActivityProps {

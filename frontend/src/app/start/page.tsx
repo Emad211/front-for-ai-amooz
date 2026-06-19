@@ -15,7 +15,7 @@ export default function StartPage() {
           <p className="text-sm font-semibold text-primary">شروع رایگان</p>
           <h1 className="text-3xl md:text-4xl font-black text-foreground">مسیر خود را انتخاب کنید</h1>
           <p className="text-muted-foreground max-w-2xl mx-auto text-sm md:text-base">
-            به عنوان معلم یا سازمان درخواست همکاری ثبت کنید، یا به عنوان دانش‌آموز با کد دعوت وارد شوید.
+            به عنوان معلم یا سازمان آموزشی درخواست همکاری ثبت کنید، یا به عنوان دانش‌آموز با کد دعوت وارد شوید.
           </p>
         </div>
 
@@ -28,7 +28,7 @@ export default function StartPage() {
             accent="bg-primary/10 text-primary border-primary/30"
           />
           <OptionCard
-            title="سازمان هستیم"
+            title="سازمان آموزشی هستیم"
             description="مدرسه یا مؤسسه خود را معرفی کنید تا برای راه‌اندازی با شما تماس بگیریم."
             icon={<Building2 className="h-6 w-6" />}
             href="/organization-signup"
@@ -36,7 +36,7 @@ export default function StartPage() {
           />
           <OptionCard
             title="دانش‌آموز هستم"
-            description="با کد دعوتِ معلم یا کد سازمانِ مدرسه‌تان وارد شوید و درس‌ها را دنبال کنید."
+            description="با کد دعوتِ معلم یا کد سازمان آموزشیِ خود وارد شوید و درس‌ها را دنبال کنید."
             icon={<UserRound className="h-6 w-6" />}
             href="/join-code"
             accent="bg-emerald-500/10 text-emerald-700 border-emerald-200"

@@ -117,10 +117,10 @@ export default function OrganizationSignupPage() {
                 <CheckCircle2 className="h-10 w-10 text-green-500" />
               </div>
             </div>
-            <h1 className="text-2xl font-black text-foreground">درخواست سازمان شما ثبت شد</h1>
+            <h1 className="text-2xl font-black text-foreground">درخواست سازمان آموزشی شما ثبت شد</h1>
             <p className="text-sm text-muted-foreground leading-7">
-              کارشناسان ما درخواست سازمان شما را بررسی و برای راه‌اندازی با شما تماس می‌گیرند.
-              پس از تأیید، کد فعال‌سازی مدیر سازمان برایتان پیامک می‌شود.
+              کارشناسان ما درخواست سازمان آموزشی شما را بررسی و برای راه‌اندازی با شما تماس می‌گیرند.
+              پس از تأیید، کد فعال‌سازی مدیر سازمان آموزشی برایتان پیامک می‌شود.
             </p>
             <Button asChild className="w-full h-12 text-base">
               <Link href="/">بازگشت به صفحه اصلی</Link>
@@ -134,7 +134,7 @@ export default function OrganizationSignupPage() {
                   <Building2 className="h-7 w-7 text-primary" />
                 </div>
               </div>
-              <h1 className="text-3xl font-black text-foreground">درخواست همکاری سازمان</h1>
+              <h1 className="text-3xl font-black text-foreground">درخواست همکاری سازمان آموزشی</h1>
               <p className="text-sm text-muted-foreground leading-7">
                 مدرسه یا مؤسسه آموزشی خود را معرفی کنید تا تیم ما برای راه‌اندازی با شما تماس بگیرد.
               </p>
@@ -145,7 +145,7 @@ export default function OrganizationSignupPage() {
               className="space-y-4 bg-card/60 border border-border/80 rounded-2xl p-6 shadow-sm"
             >
               <div className="space-y-2">
-                <Label htmlFor="orgName">نام سازمان / مدرسه</Label>
+                <Label htmlFor="orgName">نام سازمان آموزشی / مدرسه</Label>
                 <Input
                   id="orgName"
                   disabled={isSubmitting}
@@ -258,13 +258,13 @@ export default function OrganizationSignupPage() {
                     در حال ثبت…
                   </>
                 ) : (
-                  "ثبت درخواست سازمان"
+                  "ثبت درخواست سازمان آموزشی"
                 )}
               </Button>
             </form>
 
             <p className="mt-6 text-sm text-center text-muted-foreground">
-              کد فعال‌سازی سازمان دارید؟{" "}
+              کد فعال‌سازی سازمان آموزشی دارید؟{" "}
               <Link href="/join-code" className="font-semibold text-primary hover:underline">
                 فعال‌سازی با کد
               </Link>
