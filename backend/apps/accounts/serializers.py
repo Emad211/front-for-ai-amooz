@@ -7,6 +7,8 @@ import uuid
 from drf_spectacular.utils import extend_schema_field
 from drf_spectacular.types import OpenApiTypes
 
+from apps.commons.phone_utils import is_valid_iran_mobile, normalize_phone
+
 from .models import AdminProfile, StudentProfile, TeacherProfile
 
 
@@ -145,13 +147,17 @@ class MeUpdateSerializer(serializers.Serializer):
 
     def validate_phone(self, value: str) -> str | None:
         user = self.instance
-        normalized = (value or '').strip() or None
+        normalized = normalize_phone(value) or None
+        if normalized and not is_valid_iran_mobile(normalized):
+            raise serializers.ValidationError('شماره موبایل معتبر نیست.')
         if not user:
             return normalized
 
-        # Students must never be able to change their phone number after account creation.
+        # Students must never be able to change their phone number after account
+        # creation. Compare on the canonical form so a no-op resubmission of a
+        # legacy-formatted number isn't mistaken for a change.
         if getattr(user, 'role', None) == User.Role.STUDENT:
-            current = (getattr(user, 'phone', None) or '').strip() or None
+            current = normalize_phone(getattr(user, 'phone', None)) or None
             if normalized != current:
                 raise serializers.ValidationError('شماره موبایل قابل تغییر نیست.')
             return current

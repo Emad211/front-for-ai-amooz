@@ -5,6 +5,8 @@ from rest_framework import serializers
 
 from drf_spectacular.utils import extend_schema_field
 
+from apps.commons.phone_utils import is_valid_iran_mobile, normalize_phone
+
 from .models import ClassAnnouncement, ClassCreationSession, ClassInvitation, ClassPrerequisite
 
 
@@ -249,12 +251,8 @@ class ClassInvitationCreateSerializer(serializers.Serializer):
     def validate_phones(self, value):
         out: list[str] = []
         for raw in value:
-            digits = ''.join(ch for ch in str(raw) if ch.isdigit())
-            if digits.startswith('98') and len(digits) == 12:
-                digits = '0' + digits[2:]
-            if len(digits) == 10 and digits.startswith('9'):
-                digits = '0' + digits
-            if not digits.startswith('09') or len(digits) != 11:
+            digits = normalize_phone(raw)
+            if not is_valid_iran_mobile(digits):
                 raise serializers.ValidationError('Invalid phone number.')
             out.append(digits)
         # De-dupe while preserving order

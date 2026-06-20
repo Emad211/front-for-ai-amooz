@@ -16,6 +16,7 @@ from drf_spectacular.utils import extend_schema, OpenApiResponse, OpenApiExample
 from apps.core.throttling import SafeScopedRateThrottle
 from apps.accounts.serializers import MeSerializer
 from apps.accounts.models import StudentProfile
+from apps.accounts.services import get_or_create_student_by_phone
 from apps.classes.models import ClassInvitation
 from apps.classes.models import StudentInviteCode
 
@@ -335,33 +336,11 @@ class InviteCodeLoginView(APIView):
             # Persist legacy code as the global code if it doesn't exist yet.
             StudentInviteCode.objects.get_or_create(phone=phone, defaults={'code': code})
 
-        # Look for an existing STUDENT account with this phone.
-        # A phone number can belong to multiple User records (different roles),
-        # so we filter by STUDENT specifically — invite-code login is student-only.
-        user = User.objects.filter(phone=phone, role=User.Role.STUDENT).first()
-
-        if user is None:
-            # Check if a non-student account exists with this phone
-            # (they cannot use invite-code login).
-            if User.objects.filter(phone=phone).exists():
-                # There are users with this phone but none is a STUDENT — create one.
-                pass
-
-            base_username = f"student_{phone}"
-            username = base_username
-            # Guarantee uniqueness even if another user already uses this username.
-            if User.objects.filter(username=username).exists():
-                username = f"{base_username}_{secrets.token_hex(3)}"
-
-            user = User(username=username, role=User.Role.STUDENT, phone=phone)
-            user.set_unusable_password()
-            user.save()
-            StudentProfile.objects.get_or_create(user=user)
-        else:
-            if (getattr(user, 'phone', None) or '').strip() != phone:
-                user.phone = phone
-                user.save(update_fields=['phone'])
-            StudentProfile.objects.get_or_create(user=user)
+        # Resolve (or create) the passwordless STUDENT account for this phone.
+        # `phone` is canonical (InviteCodeLoginSerializer.validate_phone), and this
+        # is the SAME helper org-code redemption uses, so both flows converge on a
+        # single STUDENT identity per phone — no duplicates.
+        user, _ = get_or_create_student_by_phone(phone)
 
         # Invite-code login is the PRIMARY way students sign in; record it so
         # the admin "last login" column works for students too.

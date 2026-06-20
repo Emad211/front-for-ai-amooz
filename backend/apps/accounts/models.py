@@ -24,6 +24,20 @@ class User(AbstractUser):
     is_freelancer = models.BooleanField(default=True)
     avatar = models.ImageField(upload_to='avatars/', blank=True, null=True)
 
+    class Meta(AbstractUser.Meta):
+        constraints = [
+            # The phone is the student identity key (invite-code login, org-code
+            # redemption, class-roster matching). Enforce ONE STUDENT per phone at
+            # the DB level — a partial unique index, so a phone may still belong to
+            # a different-role account (e.g. the same person as TEACHER + STUDENT),
+            # and NULL phones (non-students / pre-phone accounts) are unconstrained.
+            models.UniqueConstraint(
+                fields=['phone'],
+                condition=models.Q(role='STUDENT', phone__isnull=False),
+                name='uniq_student_phone',
+            ),
+        ]
+
     def __str__(self):
         return f"{self.username} ({self.role})"
 

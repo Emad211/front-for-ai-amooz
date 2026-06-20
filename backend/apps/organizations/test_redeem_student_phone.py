@@ -111,6 +111,57 @@ class TestStudentPhoneRedeem:
         assert resp.status_code == 400, resp.content  # serializer pre-lock capacity
         assert not User.objects.filter(phone=PHONE).exists()
 
+    def test_noncanonical_phone_stored_canonical(self):
+        # A messy phone form is canonicalized before the user is created, so the
+        # stored value matches every other flow's lookup shape.
+        org = _active_org()
+        code = _student_code(org)
+
+        resp = APIClient().post(
+            REDEEM_URL, {'code': code.code, 'phone': '+98 912 000 0001'}, format='json',
+        )
+
+        assert resp.status_code == 201, resp.content
+        assert User.objects.filter(role=User.Role.STUDENT, phone=PHONE).count() == 1
+        assert not User.objects.filter(phone='+98 912 000 0001').exists()
+
+    def test_invalid_phone_rejected(self):
+        org = _active_org()
+        code = _student_code(org)
+
+        resp = APIClient().post(
+            REDEEM_URL, {'code': code.code, 'phone': '12345'}, format='json',
+        )
+
+        assert resp.status_code == 400, resp.content
+        assert not User.objects.filter(role=User.Role.STUDENT).exists()
+
+    def test_cross_flow_convergence_org_then_class(self):
+        """Redeem org code with a NON-canonical phone, then class-login with the
+        canonical phone → the SAME student user, never a duplicate. This is the
+        core uniqueness guarantee the rebrand of the phone identity buys us."""
+        org = _active_org()
+        code = _student_code(org)
+        c = APIClient()
+
+        # 1) Org redeem with a messy phone form.
+        r1 = c.post(REDEEM_URL, {'code': code.code, 'phone': '+98 912 000 0001'}, format='json')
+        assert r1.status_code == 201, r1.content
+        u1 = User.objects.get(role=User.Role.STUDENT, phone=PHONE)
+
+        # 2) A published class invite exists for the canonical phone.
+        teacher = baker.make('accounts.User')
+        session = baker.make(
+            'classes.ClassCreationSession', teacher=teacher, is_published=True, title='t',
+        )
+        baker.make('classes.ClassInvitation', session=session, phone=PHONE, invite_code='CONV')
+
+        # 3) Class-invite login with the canonical phone resolves to the SAME user.
+        r2 = c.post('/api/auth/invite-login/', {'code': 'CONV', 'phone': PHONE}, format='json')
+        assert r2.status_code == 200, r2.content
+        assert r2.data['user']['id'] == u1.id
+        assert User.objects.filter(role=User.Role.STUDENT, phone=PHONE).count() == 1
+
     def test_phone_ignored_for_admin_code(self):
         # Phone-passwordless is STUDENT-only; an admin code still needs credentials.
         org = _active_org()

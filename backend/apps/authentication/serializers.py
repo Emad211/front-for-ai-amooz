@@ -3,6 +3,8 @@ from django.contrib.auth.password_validation import validate_password
 from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 
+from apps.commons.phone_utils import is_valid_iran_mobile, normalize_phone
+
 User = get_user_model()
 
 
@@ -80,10 +82,27 @@ class RegisterSerializer(serializers.Serializer):
         validate_password(value)
         return value
 
+    def validate_phone(self, value: str) -> str:
+        """Canonicalize an optional phone to the platform-wide 09… shape."""
+        norm = normalize_phone(value)
+        if value and not is_valid_iran_mobile(norm):
+            raise serializers.ValidationError('شماره تماس معتبر نیست.')
+        return norm
+
     def validate(self, attrs):
         email = (attrs.get('email') or '').strip()
         role = attrs.get('role') or User.Role.STUDENT
         password = attrs.get('password', '')
+        phone = attrs.get('phone') or ''  # already canonical (validate_phone)
+
+        # One STUDENT per phone (enforced at DB level by uniq_student_phone).
+        # Guard here so a reused phone is a friendly 400, not an IntegrityError 500.
+        if phone and role == User.Role.STUDENT and User.objects.filter(
+            phone=phone, role=User.Role.STUDENT,
+        ).exists():
+            raise serializers.ValidationError({
+                'phone': ['این شماره تماس قبلاً برای یک دانش‌آموز ثبت شده است.'],
+            })
 
         if email and User.objects.filter(email__iexact=email, role=role).exists():
             raise serializers.ValidationError({
@@ -116,7 +135,7 @@ class RegisterSerializer(serializers.Serializer):
             first_name=validated_data.get('first_name') or '',
             last_name=validated_data.get('last_name') or '',
         )
-        phone = (validated_data.get('phone') or '').strip()
+        phone = validated_data.get('phone') or ''  # canonical (validate_phone)
         if phone:
             user.phone = phone
             user.save(update_fields=['phone'])
@@ -165,14 +184,6 @@ class InviteCodeLoginSerializer(serializers.Serializer):
     code = serializers.CharField(max_length=64)
     phone = serializers.CharField(max_length=32)
 
-    def _normalize_phone(self, raw: str) -> str:
-        digits = ''.join(ch for ch in str(raw or '') if ch.isdigit())
-        if digits.startswith('98') and len(digits) == 12:
-            digits = '0' + digits[2:]
-        if len(digits) == 10 and digits.startswith('9'):
-            digits = '0' + digits
-        return digits
-
     def validate_code(self, value: str) -> str:
         s = (value or '').strip()
         if not s:
@@ -180,8 +191,8 @@ class InviteCodeLoginSerializer(serializers.Serializer):
         return s
 
     def validate_phone(self, value: str) -> str:
-        digits = self._normalize_phone(value)
-        if not digits.startswith('09') or len(digits) != 11:
+        digits = normalize_phone(value)
+        if not is_valid_iran_mobile(digits):
             raise serializers.ValidationError('شماره تماس معتبر نیست.')
         return digits
 

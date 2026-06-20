@@ -36,6 +36,22 @@ def test_invite_login_creates_student_and_returns_tokens():
 
 
 @pytest.mark.django_db
+def test_invite_login_normalizes_persian_digits():
+    """A phone typed with Persian digits resolves to the canonical 09… form."""
+    client = APIClient()
+
+    teacher = baker.make('accounts.User')
+    session = baker.make('classes.ClassCreationSession', teacher=teacher, is_published=True, title='t')
+    baker.make('classes.ClassInvitation', session=session, phone='09120000000', invite_code='FA')
+
+    resp = client.post('/api/auth/invite-login/', {'code': 'FA', 'phone': '۰۹۱۲۰۰۰۰۰۰۰'}, format='json')
+
+    assert resp.status_code == 200, resp.content
+    assert resp.data['user']['phone'] == '09120000000'
+    assert User.objects.filter(role='STUDENT', phone='09120000000').count() == 1
+
+
+@pytest.mark.django_db
 def test_invite_login_rejects_unpublished_session():
     client = APIClient()
 

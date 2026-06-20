@@ -10,6 +10,8 @@ from django.contrib.auth import get_user_model
 from django.utils import timezone
 from rest_framework import serializers
 
+from apps.commons.phone_utils import is_valid_iran_mobile, normalize_phone
+
 from .models import (
     InvitationCode,
     Organization,
@@ -197,6 +199,18 @@ class RedeemInvitationSerializer(serializers.Serializer):
     last_name = serializers.CharField(max_length=150, required=False, allow_blank=True)
     password = serializers.CharField(min_length=8, write_only=True, required=False)
 
+    def validate_phone(self, value: str) -> str:
+        """Canonicalize the student phone so it matches every other flow.
+
+        Blank is allowed (account-based codes don't carry a phone). A non-blank
+        phone MUST be a valid Iranian mobile — this is what was missing and let
+        org-redeemed students diverge from class-login students.
+        """
+        norm = normalize_phone(value)
+        if value and not is_valid_iran_mobile(norm):
+            raise serializers.ValidationError('شماره تماس معتبر نیست.')
+        return norm
+
     def validate_code(self, value: str) -> str:
         value = value.strip().upper()
         try:
@@ -233,7 +247,7 @@ class RedeemInvitationSerializer(serializers.Serializer):
             return OrganizationMembership.objects.filter(
                 user=request.user, organization=organization,
             ).exists()
-        phone = (self.initial_data.get('phone') or '').strip()
+        phone = normalize_phone(self.initial_data.get('phone'))
         if phone:
             return OrganizationMembership.objects.filter(
                 user__phone=phone,

@@ -22,6 +22,7 @@ from apps.authentication.cookies import set_refresh_cookie
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from apps.accounts.models import StudentProfile
+from apps.accounts.services import get_or_create_student_by_phone
 from apps.classes.models import ClassCreationSession
 
 from .models import (
@@ -411,7 +412,9 @@ class RedeemInvitationView(APIView):
 
         org = invite.organization
         is_student_code = invite.target_role == InvitationCode.TargetRole.STUDENT
-        phone = (data.get('phone') or '').strip()
+        # Already canonicalized by RedeemInvitationSerializer.validate_phone — same
+        # 09XXXXXXXXX shape used by class-invite login, so the two flows converge.
+        phone = data.get('phone') or ''
 
         # Is the redeeming party ALREADY a member? (cheap lookup, no creation) — a
         # returning student re-entering the org code to log in does not consume a
@@ -440,27 +443,15 @@ class RedeemInvitationView(APIView):
         user = request.user if request.user.is_authenticated else None
         if user is None:
             if is_student_code and phone:
-                # Phone-based PASSWORDLESS student onboarding (the same identity
-                # model as class-invite students — see InviteCodeLoginView): find
-                # the STUDENT account for this phone, or create one. A phone may
-                # belong to several accounts (different roles); org-student
-                # identity is STUDENT-only.
-                user = User.objects.filter(phone=phone, role=User.Role.STUDENT).first()
-                if user is None:
-                    base_username = f'student_{phone}'
-                    username = base_username
-                    if User.objects.filter(username=username).exists():
-                        username = f'{base_username}_{secrets.token_hex(3)}'
-                    user = User(
-                        username=username,
-                        role=User.Role.STUDENT,
-                        phone=phone,
-                        first_name=data.get('first_name', ''),
-                        last_name=data.get('last_name', ''),
-                    )
-                    user.set_unusable_password()
-                    user.save()
-                    StudentProfile.objects.get_or_create(user=user)
+                # Phone-based PASSWORDLESS student onboarding — the SAME helper
+                # class-invite login uses (apps.accounts.services), so org-redeemed
+                # and class-login students resolve to one STUDENT identity per
+                # phone. `phone` is canonical (RedeemInvitationSerializer).
+                user, _ = get_or_create_student_by_phone(
+                    phone,
+                    first_name=data.get('first_name', ''),
+                    last_name=data.get('last_name', ''),
+                )
             else:
                 # Account-based onboarding (admin/deputy/teacher; or a student
                 # code redeemed with explicit credentials — back-compat).

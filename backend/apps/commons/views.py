@@ -34,6 +34,7 @@ from apps.commons.models import (
     TicketMessage,
 )
 from apps.commons.exchange_rate import get_usdt_toman_rate, usd_to_toman
+from apps.commons.phone_utils import normalize_phone
 
 User = get_user_model()
 
@@ -1457,7 +1458,7 @@ class AdminProfileSettingsView(APIView):
             update_fields.append('email')
 
         if 'phone' in data:
-            u.phone = (data['phone'] or '').strip() or None
+            u.phone = normalize_phone(data['phone']) or None
             update_fields.append('phone')
 
         if update_fields:

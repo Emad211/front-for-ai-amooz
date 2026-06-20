@@ -6,23 +6,15 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.password_validation import validate_password
 from rest_framework import serializers
 
+from apps.commons.phone_utils import normalize_phone
+
 from .models import AccessRequest
 
 User = get_user_model()
 
-
-def normalize_iran_phone(raw: str) -> str:
-    """Normalize an Iranian mobile number to the canonical 09XXXXXXXXX form.
-
-    Mirrors the logic in ``authentication.InviteCodeLoginSerializer`` so the
-    waitlist stores phones in the same shape the rest of the platform uses.
-    """
-    digits = ''.join(ch for ch in str(raw or '') if ch.isdigit())
-    if digits.startswith('98') and len(digits) == 12:
-        digits = '0' + digits[2:]
-    if len(digits) == 10 and digits.startswith('9'):
-        digits = '0' + digits
-    return digits
+# Back-compat alias: the canonical normalizer now lives in apps.commons.phone_utils
+# (single source of truth). Kept under the old name for in-module callers.
+normalize_iran_phone = normalize_phone
 
 
 class AccessRequestCreateSerializer(serializers.ModelSerializer):
