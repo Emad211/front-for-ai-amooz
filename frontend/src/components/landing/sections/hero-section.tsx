@@ -23,7 +23,32 @@ export const HeroSection = ({ heroImage }: HeroSectionProps) => {
   return (
     <section className="relative overflow-hidden pt-32 pb-20 md:pt-40 md:pb-28">
       {/* Ambient glows — mint top-left (devices side), purple bottom-right (per Figma) */}
-      <div className="pointer-events-none absolute inset-0 -z-10">
+      <div className="pointer-events-none absolute inset-0 -z-10 overflow-hidden">
+        {/* Dot-grid texture — DARK only, faded toward the edges. Shows on both
+            mobile and desktop. (Swap to a /public PNG via backgroundImage for the
+            exact scattered texture.) */}
+        <div
+          className="absolute inset-0 hidden dark:block"
+          style={{
+            backgroundImage:
+              'radial-gradient(hsl(var(--foreground) / 0.10) 1px, transparent 1.5px)',
+            backgroundSize: '24px 24px',
+            maskImage:
+              'radial-gradient(ellipse at center, black 25%, transparent 80%)',
+            WebkitMaskImage:
+              'radial-gradient(ellipse at center, black 25%, transparent 80%)',
+            opacity: 0.55,
+          }}
+        />
+        {/* Faint green halo ring — really only reads in DARK; makes the hero pop. */}
+        <div
+          className="absolute left-1/2 top-[42%] hidden h-[34rem] w-[34rem] -translate-x-1/2 -translate-y-1/2 rounded-full border border-primary/20 dark:block md:h-[52rem] md:w-[52rem]"
+          style={{
+            background:
+              'radial-gradient(circle, hsl(var(--primary) / 0.10), transparent 62%)',
+          }}
+        />
+
         <div className="absolute -left-80 -top-80 h-[60rem] w-[60rem] rounded-full bg-primary/20 opacity-40 blur-[150px] animate-pulse-glow" />
         <div className="absolute -bottom-12 -right-12 h-[28rem] w-[28rem] rounded-full bg-purple-500/10 opacity-40 blur-[60px]" />
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,transparent_45%,hsl(var(--background)))]" />
