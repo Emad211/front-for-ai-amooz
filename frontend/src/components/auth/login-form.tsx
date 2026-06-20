@@ -48,6 +48,14 @@ export function LoginForm({ onSwitchToJoin }: LoginFormProps) {
       const me = await fetchMe();
       persistUser(me);
 
+      // A user who hasn't finished onboarding must complete it first (platform
+      // admins/superusers are exempt — they aren't code-onboarded).
+      if (me.is_profile_completed === false && !me.is_staff && !me.is_superuser) {
+        toast.success('ورود انجام شد — لطفاً ثبت‌نام را کامل کنید');
+        router.push('/onboarding');
+        return;
+      }
+
       toast.success('ورود با موفقیت انجام شد');
 
       const normalizedRole = me.role?.toLowerCase() ?? 'student';

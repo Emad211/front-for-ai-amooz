@@ -134,7 +134,9 @@ class TestStudentPhoneRedeem:
         )
 
         assert resp.status_code == 400, resp.content
-        assert not User.objects.filter(role=User.Role.STUDENT).exists()
+        # No account is created for the invalid phone (assert on the value, not a
+        # global student count — other tests' rows must not affect this).
+        assert not User.objects.filter(phone='12345').exists()
 
     def test_cross_flow_convergence_org_then_class(self):
         """Redeem org code with a NON-canonical phone, then class-login with the
@@ -162,8 +164,24 @@ class TestStudentPhoneRedeem:
         assert r2.data['user']['id'] == u1.id
         assert User.objects.filter(role=User.Role.STUDENT, phone=PHONE).count() == 1
 
-    def test_phone_ignored_for_admin_code(self):
-        # Phone-passwordless is STUDENT-only; an admin code still needs credentials.
+    def test_completed_account_blocked_must_use_password(self):
+        # A student who already onboarded can't re-enter via code + phone — the
+        # code is one-time; they now sign in with their username/password.
+        org = _active_org()
+        code = _student_code(org)
+        student = baker.make(
+            'accounts.User', role=User.Role.STUDENT, phone=PHONE,
+            is_profile_completed=True,
+        )
+        student.set_password('Zx9!konkur2026'); student.save()
+
+        resp = APIClient().post(REDEEM_URL, {'code': code.code, 'phone': PHONE}, format='json')
+
+        assert resp.status_code == 400, resp.content
+
+    def test_admin_code_creates_manager_not_student(self):
+        # Redemption is uniform now: an admin code + phone creates a passwordless
+        # MANAGER shell (not a STUDENT). Credentials come later in onboarding.
         org = _active_org()
         code = baker.make(
             'organizations.InvitationCode', organization=org,
@@ -173,5 +191,6 @@ class TestStudentPhoneRedeem:
 
         resp = APIClient().post(REDEEM_URL, {'code': code.code, 'phone': PHONE}, format='json')
 
-        assert resp.status_code == 400, resp.content
-        assert not User.objects.filter(phone=PHONE).exists()
+        assert resp.status_code == 201, resp.content
+        assert User.objects.filter(phone=PHONE, role=User.Role.MANAGER).exists()
+        assert not User.objects.filter(phone=PHONE, role=User.Role.STUDENT).exists()

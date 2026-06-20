@@ -342,6 +342,16 @@ class InviteCodeLoginView(APIView):
         # single STUDENT identity per phone — no duplicates.
         user, _ = get_or_create_student_by_phone(phone)
 
+        # Code + phone is a ONE-TIME entry that bootstraps onboarding. Once the
+        # account has its own username + password, the code must no longer grant
+        # passwordless access (else the chosen password is bypassable by anyone
+        # holding the phone + class code) — they sign in with their credentials.
+        if user.is_profile_completed:
+            return Response(
+                {'detail': 'این حساب قبلاً فعال شده است. لطفاً با نام کاربری و رمز عبور وارد شوید.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
         # Invite-code login is the PRIMARY way students sign in; record it so
         # the admin "last login" column works for students too.
         _safe_update_last_login(user)

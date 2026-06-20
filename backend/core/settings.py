@@ -268,6 +268,9 @@ REST_FRAMEWORK = {
         # Password-reset OTP request + confirm (per IP) — prevents SMS bombing
         # (a per-user resend cooldown also applies in the OTP service).
         'password_reset': os.getenv('THROTTLE_RATE_PASSWORD_RESET', '15/hour'),
+        # Forced post-login onboarding (set username/password/email/profile).
+        # Authenticated + per-user, but capped to blunt scripted abuse.
+        'onboarding': os.getenv('THROTTLE_RATE_ONBOARDING', '20/hour'),
     },
     # Global pagination — all list endpoints return at most PAGE_SIZE items.
     'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',

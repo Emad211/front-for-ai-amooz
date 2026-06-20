@@ -387,6 +387,33 @@ export async function fetchMe(): Promise<AuthMeResponse> {
   return baseRequest("/accounts/me/", { method: "GET" });
 }
 
+export type CompleteOnboardingPayload = {
+  username: string;
+  password: string;
+  email: string;
+  phone: string;
+  first_name: string;
+  last_name?: string;
+  // role-specific (optional)
+  grade?: string;
+  major?: string;
+  expertise?: string;
+};
+
+/**
+ * Forced post-login onboarding: the code-logged-in user sets the credentials
+ * they'll log in with from now on (+ email/phone/profile). Returns the fresh
+ * user (with is_profile_completed=true) — persist it before routing away.
+ */
+export async function completeOnboarding(
+  payload: CompleteOnboardingPayload
+): Promise<AuthMeResponse> {
+  return baseRequest("/accounts/complete-onboarding/", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
 export async function logout(): Promise<void> {
   // The backend reads the refresh from the HttpOnly cookie, blacklists it, and
   // clears the cookie. Only call it when we have a local session.

@@ -26,8 +26,8 @@ import {
   persistTokens,
   persistUser,
   fetchMe,
+  type AuthMeResponse,
 } from '@/services/auth-service';
-import { PasswordInput } from '@/components/auth/password-input';
 import { WORKSPACE_STORAGE_KEY } from '@/hooks/use-workspace';
 import type { ValidateCodeResult } from '@/types';
 
@@ -35,17 +35,16 @@ import type { ValidateCodeResult } from '@/types';
  * Unified "join / sign-in with a code" form.
  *
  * One entry point for BOTH code systems so a student never has to guess which
- * page to use:
- *  - **Org invite code** (e.g. SCHOOL2026): detected via validate-code.
- *      · student   → phone-based, passwordless (same as a class student)
- *      · admin/deputy/teacher → create an account (username + password)
- *  - **Class invite code** (teacher → student): phone + code passwordless login.
+ * page to use. Redemption is now UNIFORM and phone-based for every role: the
+ * code + phone create (or re-enter) a passwordless account shell, then the user
+ * is sent to /onboarding to set the username/password/email they'll log in with
+ * from then on. Only an already-onboarded user skips straight to their dashboard.
  *
- * Detection: we validate the code as an org code first. If no org code exists
- * with that value, we treat it as a class code and ask for the phone.
+ *  - **Org invite code** (e.g. SCHOOL2026): detected via validate-code → phone.
+ *  - **Class invite code** (teacher → student): phone + code.
  */
 
-type Step = 'code' | 'org-student' | 'org-account' | 'class' | 'redirecting';
+type Step = 'code' | 'org-phone' | 'class' | 'redirecting';
 
 const ROLE_INFO: Record<string, { label: string; icon: typeof ShieldCheck; color: string }> = {
   admin: { label: 'مدیر سازمان آموزشی', icon: ShieldCheck, color: 'text-red-500' },
@@ -81,17 +80,10 @@ export function UnifiedCodeForm() {
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
 
-  // Account (manager / teacher)
-  const [username, setUsername] = useState('');
-  const [password, setPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
-
-  // ── Routing after a successful org redeem ──
-  const routeAfterOrg = (orgRole: string, slug: string) => {
-    setStep('redirecting');
+  // ── Where a code-redeemer lands: onboarding first, else their dashboard. ──
+  const goToDashboardForOrg = (orgRole: string, slug: string) => {
     if (orgRole === 'admin' || orgRole === 'deputy') {
-      // A manager is NOT a teacher — pre-select their org workspace and open the
-      // dedicated /org management panel.
+      // A manager is NOT a teacher — pre-select their org workspace + open /org.
       try { localStorage.setItem(WORKSPACE_STORAGE_KEY, slug); } catch { /* ignore */ }
       router.push('/org');
     } else if (orgRole === 'teacher') {
@@ -101,16 +93,22 @@ export function UnifiedCodeForm() {
     }
   };
 
-  // Persist tokens returned by an org redeem, then hydrate the user profile.
-  const persistOrgSession = async (access?: string, refresh?: string) => {
-    if (access) {
-      persistTokens({ access, refresh: refresh ?? '' });
-      try {
-        const me = await fetchMe();
-        persistUser(me);
-      } catch {
-        // Non-fatal: the access token is stored; the dashboard will hydrate.
-      }
+  const finishOrg = (completed: boolean, orgRole: string, slug: string) => {
+    setStep('redirecting');
+    if (!completed) { router.push('/onboarding'); return; }
+    goToDashboardForOrg(orgRole, slug);
+  };
+
+  // Persist tokens returned by an org redeem, then hydrate + return the profile.
+  const persistOrgSession = async (access?: string, refresh?: string): Promise<AuthMeResponse | null> => {
+    if (!access) return null;
+    persistTokens({ access, refresh: refresh ?? '' });
+    try {
+      const me = await fetchMe();
+      persistUser(me);
+      return me;
+    } catch {
+      return null;
     }
   };
 
@@ -127,12 +125,13 @@ export function UnifiedCodeForm() {
 
       if (result.valid) {
         setCodeInfo(result);
-        // Already authenticated → redeem straight away (any role).
+        // Already authenticated → redeem straight away (no phone needed).
         if (result.needsRegistration === false) {
           await redeemOrgAuthenticated(trimmed);
           return;
         }
-        setStep(result.targetRole === 'student' ? 'org-student' : 'org-account');
+        // Every role now goes through the same phone step.
+        setStep('org-phone');
         return;
       }
 
@@ -150,13 +149,15 @@ export function UnifiedCodeForm() {
     }
   };
 
-  // ── Org redeem (already-authenticated user) ──
+  // ── Org redeem (already-authenticated user joining another org) ──
   const redeemOrgAuthenticated = async (codeValue: string) => {
     setBusy(true);
     try {
       const res = await OrganizationService.redeemCode({ code: codeValue });
       toast.success(`به ${res.organization.name} خوش آمدید!`);
-      routeAfterOrg(res.membership.orgRole, res.organization.slug);
+      let me: AuthMeResponse | null = null;
+      try { me = await fetchMe(); persistUser(me); } catch { /* keep cached */ }
+      finishOrg(me?.is_profile_completed ?? true, res.membership.orgRole, res.organization.slug);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'خطا در عضویت');
     } finally {
@@ -164,11 +165,11 @@ export function UnifiedCodeForm() {
     }
   };
 
-  // ── Org student: phone-based, passwordless ──
-  const handleOrgStudent = async () => {
+  // ── Org redeem (anonymous): phone is the identity → passwordless shell. ──
+  const handleOrgPhone = async () => {
     const normalized = normalizeIranPhone(phone);
     if (!isValidIranPhone(normalized)) {
-      toast.error('شماره تماس معتبر نیست.');
+      toast.error('شماره موبایل معتبر نیست.');
       return;
     }
     setBusy(true);
@@ -179,9 +180,9 @@ export function UnifiedCodeForm() {
         first_name: firstName.trim(),
         last_name: lastName.trim(),
       });
-      await persistOrgSession(res.access, res.refresh);
+      const me = await persistOrgSession(res.access, res.refresh);
       toast.success(`به ${res.organization.name} خوش آمدید!`);
-      routeAfterOrg(res.membership.orgRole, res.organization.slug);
+      finishOrg(me?.is_profile_completed ?? false, res.membership.orgRole, res.organization.slug);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'خطا در ورود');
     } finally {
@@ -189,48 +190,11 @@ export function UnifiedCodeForm() {
     }
   };
 
-  // ── Org manager / teacher: account creation ──
-  const handleOrgAccount = async () => {
-    if (!firstName.trim() || !lastName.trim()) {
-      toast.error('نام و نام خانوادگی الزامی است.');
-      return;
-    }
-    if (username.trim().length < 3) {
-      toast.error('نام کاربری باید حداقل ۳ کاراکتر باشد.');
-      return;
-    }
-    if (password.length < 8) {
-      toast.error('رمز عبور باید حداقل ۸ کاراکتر باشد.');
-      return;
-    }
-    if (password !== confirmPassword) {
-      toast.error('رمز عبور و تکرار آن یکسان نیست.');
-      return;
-    }
-    setBusy(true);
-    try {
-      const res = await OrganizationService.redeemCode({
-        code: code.trim(),
-        username: username.trim(),
-        password,
-        first_name: firstName.trim(),
-        last_name: lastName.trim(),
-      });
-      await persistOrgSession(res.access, res.refresh);
-      toast.success(`حساب شما ساخته شد و به ${res.organization.name} پیوستید!`);
-      routeAfterOrg(res.membership.orgRole, res.organization.slug);
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'خطا در ثبت‌نام');
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  // ── Class invite: phone + code, passwordless ──
+  // ── Class invite: phone + code, passwordless shell. ──
   const handleClass = async () => {
     const normalized = normalizeIranPhone(phone);
     if (!isValidIranPhone(normalized)) {
-      toast.error('شماره تماس معتبر نیست.');
+      toast.error('شماره موبایل معتبر نیست.');
       return;
     }
     setBusy(true);
@@ -238,9 +202,8 @@ export function UnifiedCodeForm() {
       const resp = await inviteLogin({ code: code.trim(), phone: normalized });
       persistTokens(resp.tokens);
       persistUser(resp.user);
-      toast.success('ورود انجام شد');
       setStep('redirecting');
-      router.push('/home');
+      router.push(resp.user.is_profile_completed ? '/home' : '/onboarding');
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'کد دعوت یا شماره تماس معتبر نیست.');
     } finally {
@@ -252,14 +215,13 @@ export function UnifiedCodeForm() {
     setStep('code');
     setCodeInfo(null);
     setPhone('');
-    setUsername('');
-    setPassword('');
-    setConfirmPassword('');
+    setFirstName('');
+    setLastName('');
   };
 
   const roleInfo = codeInfo?.targetRole ? ROLE_INFO[codeInfo.targetRole] : null;
 
-  // ── Organization banner (shown on org steps) ──
+  // ── Organization banner (shown on the org phone step) ──
   const orgBanner = codeInfo?.organization && (
     <div className="rounded-xl bg-primary/5 border border-primary/10 p-4">
       <div className="flex items-center gap-3">
@@ -297,10 +259,9 @@ export function UnifiedCodeForm() {
         <h1 className="text-2xl font-black text-foreground">ورود با کد دعوت</h1>
         <p className="text-sm text-muted-foreground mt-1">
           {step === 'code' && 'کد سازمان آموزشی یا کد کلاسِ معلم خود را وارد کنید'}
-          {step === 'org-student' && 'برای ورود، شماره موبایل خود را وارد کنید'}
-          {step === 'org-account' && 'اطلاعات حساب خود را تکمیل کنید'}
+          {step === 'org-phone' && 'شماره موبایل خود را وارد کنید؛ در گام بعد حساب می‌سازید'}
           {step === 'class' && 'برای ورود به کلاس، شماره موبایل خود را وارد کنید'}
-          {step === 'redirecting' && 'در حال انتقال به داشبورد...'}
+          {step === 'redirecting' && 'در حال انتقال...'}
         </p>
       </div>
 
@@ -337,8 +298,8 @@ export function UnifiedCodeForm() {
         </div>
       )}
 
-      {/* ── Step 2a: org student (phone, passwordless) ── */}
-      {step === 'org-student' && (
+      {/* ── Step 2: org redeem (phone, all roles) ── */}
+      {step === 'org-phone' && (
         <div className="space-y-4">
           {orgBanner}
           <button type="button" onClick={resetToCode} className="flex items-center gap-1 text-sm text-muted-foreground hover:text-primary transition-colors">
@@ -364,65 +325,16 @@ export function UnifiedCodeForm() {
               dir="ltr"
               className="rounded-xl text-center text-lg tracking-widest"
               disabled={busy}
-              onKeyDown={(e) => e.key === 'Enter' && handleOrgStudent()}
+              onKeyDown={(e) => e.key === 'Enter' && handleOrgPhone()}
             />
           </div>
-          <Button className="w-full h-12 rounded-xl text-base" onClick={handleOrgStudent} disabled={busy || !phone.trim()}>
-            {busy ? <><Loader2 className="ms-2 h-4 w-4 animate-spin" />در حال ورود...</> : 'ورود به سازمان آموزشی'}
+          <Button className="w-full h-12 rounded-xl text-base" onClick={handleOrgPhone} disabled={busy || !phone.trim()}>
+            {busy ? <><Loader2 className="ms-2 h-4 w-4 animate-spin" />در حال ورود...</> : 'ادامه'}
           </Button>
         </div>
       )}
 
-      {/* ── Step 2b: org manager/teacher (account) ── */}
-      {step === 'org-account' && (
-        <div className="space-y-4">
-          {orgBanner}
-          <button type="button" onClick={resetToCode} className="flex items-center gap-1 text-sm text-muted-foreground hover:text-primary transition-colors">
-            <ArrowRight className="w-4 h-4" /> تغییر کد
-          </button>
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5">
-              <Label className="text-xs">نام *</Label>
-              <Input value={firstName} onChange={(e) => setFirstName(e.target.value)} className="rounded-xl" disabled={busy} />
-            </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs">نام خانوادگی *</Label>
-              <Input value={lastName} onChange={(e) => setLastName(e.target.value)} className="rounded-xl" disabled={busy} />
-            </div>
-          </div>
-          <div className="space-y-1.5">
-            <Label className="text-xs">نام کاربری *</Label>
-            <Input value={username} onChange={(e) => setUsername(e.target.value)} dir="ltr" className="rounded-xl text-left" disabled={busy} />
-          </div>
-          <div className="space-y-1.5">
-            <Label className="text-xs">رمز عبور *</Label>
-            <PasswordInput
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              withIcon
-              autoComplete="new-password"
-              className="rounded-xl text-left"
-              disabled={busy}
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label className="text-xs">تکرار رمز عبور *</Label>
-            <PasswordInput
-              value={confirmPassword}
-              onChange={(e) => setConfirmPassword(e.target.value)}
-              autoComplete="new-password"
-              className="rounded-xl text-left"
-              disabled={busy}
-              onKeyDown={(e) => e.key === 'Enter' && handleOrgAccount()}
-            />
-          </div>
-          <Button className="w-full h-12 rounded-xl text-base" onClick={handleOrgAccount} disabled={busy}>
-            {busy ? <><Loader2 className="ms-2 h-4 w-4 animate-spin" />در حال ثبت‌نام...</> : 'ثبت‌نام و ورود'}
-          </Button>
-        </div>
-      )}
-
-      {/* ── Step 2c: class invite (phone, passwordless) ── */}
+      {/* ── Step 2b: class invite (phone, passwordless) ── */}
       {step === 'class' && (
         <div className="space-y-4">
           <button type="button" onClick={resetToCode} className="flex items-center gap-1 text-sm text-muted-foreground hover:text-primary transition-colors">

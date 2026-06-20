@@ -7,6 +7,7 @@ import { cn } from '@/lib/utils';
 import { getStoredUser } from '@/services/auth-service';
 import { DashboardService } from '@/services/dashboard-service';
 import { landingFor } from '@/lib/auth-routing';
+import { OnboardingGate } from '@/components/auth/onboarding-gate';
 import { Children, useEffect } from 'react';
 
 export default function DashboardLayout({
@@ -63,6 +64,7 @@ export default function DashboardLayout({
       "bg-background text-foreground min-h-screen",
       !isFocusedMode && "pb-20 md:pb-0"
     )}>
+      <OnboardingGate />
       {!isFocusedMode && <DashboardHeader />}
       {Children.toArray(children)}
       {!isFocusedMode && <MobileNav />}

@@ -13,7 +13,7 @@ import { landingFor } from '@/lib/auth-routing';
  * redeem a code (e.g. a teacher joining another org), and the registration-
  * completion link (creates a fresh account from a waitlist token).
  */
-const ALLOW_WHEN_AUTHED = ['/join-code', '/join', '/org-login', '/register'];
+const ALLOW_WHEN_AUTHED = ['/join-code', '/join', '/org-login', '/register', '/onboarding'];
 
 export function AuthAutoRedirect() {
   const router = useRouter();
@@ -23,9 +23,16 @@ export function AuthAutoRedirect() {
     if (ALLOW_WHEN_AUTHED.some((p) => pathname?.startsWith(p))) return;
     const tokens = getStoredTokens();
     if (!tokens?.access) return;
+    const user = getStoredUser();
+    // A user who hasn't finished onboarding must complete it first (platform
+    // admins/superusers are exempt — they aren't code-onboarded).
+    if (user && user.is_profile_completed === false && !user.is_staff && !user.is_superuser) {
+      router.replace('/onboarding');
+      return;
+    }
     // The dashboard layouts re-assert role routing, so a stale cached role
     // self-corrects; default to the student home.
-    router.replace(landingFor(getStoredUser()?.role));
+    router.replace(landingFor(user?.role));
   }, [pathname, router]);
 
   return null;

@@ -1,5 +1,7 @@
 from django.contrib.auth import get_user_model
+from django.contrib.auth.password_validation import validate_password
 from django.core.files.base import ContentFile
+from django.db import IntegrityError, transaction
 from rest_framework import serializers
 import base64
 import uuid
@@ -246,3 +248,83 @@ class MeUpdateSerializer(serializers.Serializer):
                 profile.save()
 
         return instance
+
+
+class OnboardingSerializer(serializers.Serializer):
+    """Forced post-login onboarding: a code-logged-in user (any role) sets the
+    credentials they'll log in with from now on, plus contact + light profile.
+
+    Operates on ``self.instance`` = the authenticated user (a passwordless shell
+    created by the invite/redeem flow). Sets username + password + email + phone,
+    flips ``is_profile_completed``, and delegates role profile fields to
+    :class:`MeUpdateSerializer` (reusing its grade/major normalization).
+    """
+
+    username = serializers.CharField(max_length=150, min_length=3)
+    password = serializers.CharField(min_length=8, write_only=True)
+    email = serializers.EmailField()
+    phone = serializers.CharField(max_length=32)
+    first_name = serializers.CharField(max_length=150)
+    last_name = serializers.CharField(max_length=150, required=False, allow_blank=True)
+    # Light, role-specific profile (optional) — handed to MeUpdateSerializer.
+    grade = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    major = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    expertise = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+
+    def validate_username(self, value: str) -> str:
+        v = (value or '').strip()
+        qs = User.objects.filter(username=v)
+        if self.instance is not None:
+            qs = qs.exclude(pk=self.instance.pk)
+        if qs.exists():
+            raise serializers.ValidationError('این نام کاربری قبلاً استفاده شده است.')
+        return v
+
+    def validate_password(self, value: str) -> str:
+        validate_password(value)
+        return value
+
+    def validate_email(self, value: str) -> str:
+        return (value or '').strip().lower()
+
+    def validate_phone(self, value: str) -> str:
+        norm = normalize_phone(value)
+        if not is_valid_iran_mobile(norm):
+            raise serializers.ValidationError('شماره موبایل معتبر نیست.')
+        user = self.instance
+        # A student's phone is their login identity (set at code login) and is
+        # immutable; they may only re-confirm it. Non-students set it here.
+        if user is not None and getattr(user, 'role', None) == User.Role.STUDENT:
+            current = normalize_phone(getattr(user, 'phone', None))
+            if current and norm != current:
+                raise serializers.ValidationError('شماره موبایل قابل تغییر نیست.')
+            return current or norm
+        return norm
+
+    def save(self, **kwargs):
+        user = self.instance
+        vd = self.validated_data
+        try:
+            with transaction.atomic():
+                user.username = vd['username']
+                user.set_password(vd['password'])
+                user.email = vd['email']
+                user.phone = vd['phone'] or None
+                user.first_name = vd.get('first_name', '') or ''
+                user.last_name = vd.get('last_name', '') or ''
+                user.is_profile_completed = True
+                user.save()
+
+                # Delegate role profile fields (reuses grade/major normalization).
+                profile_fields = {k: vd[k] for k in ('grade', 'major', 'expertise') if k in vd}
+                if profile_fields:
+                    mu = MeUpdateSerializer(instance=user, data=profile_fields, partial=True)
+                    mu.is_valid(raise_exception=True)
+                    mu.save()
+        except IntegrityError:
+            # Lost the username (or student-phone) uniqueness race between the
+            # validate check and the save — surface a clean 400, not a 500.
+            raise serializers.ValidationError(
+                {'username': ['این نام کاربری قبلاً استفاده شده است.']}
+            )
+        return user

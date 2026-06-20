@@ -1,7 +1,9 @@
 """Org-manager (MANAGER platform role) onboarding + permission tests.
 
-A redeemed org admin/deputy is the distinct platform role MANAGER — NOT a
-platform ADMIN and NOT a TEACHER. The org-level membership stays org_role=admin.
+Redemption is now uniform & phone-based for ALL roles: code + phone create a
+PASSWORDLESS shell of the mapped platform role (admin/deputy → MANAGER, teacher →
+TEACHER, student → STUDENT); the user sets real credentials later in onboarding.
+The org-level membership keeps the original org_role (admin/deputy/teacher).
 """
 from __future__ import annotations
 
@@ -16,7 +18,6 @@ from apps.organizations.models import (
     OrganizationMembership,
 )
 
-STRONG = 'Manager-12345-xyz'
 REDEEM = '/api/organizations/redeem-code/'
 
 
@@ -45,20 +46,15 @@ class TestManagerRedeem:
         code = _code(org, InvitationCode.TargetRole.ADMIN)
 
         res = APIClient().post(REDEEM, {
-            'code': code.code, 'username': '09120000000',
-            'password': STRONG, 'first_name': 'م', 'last_name': 'م',
+            'code': code.code, 'phone': '09120000000', 'first_name': 'م', 'last_name': 'م',
         }, format='json')
         assert res.status_code == 201, res.data
 
-        user = User.objects.get(username='09120000000')
-        # Platform role is the distinct MANAGER — NOT ADMIN, NOT TEACHER.
-        assert user.role == User.Role.MANAGER
-        assert user.role != User.Role.TEACHER
-        assert not user.is_staff
-        assert not user.is_superuser
-        # A manager never gets a personal/freelancer workspace.
-        assert user.is_freelancer is False
-        # The org-level membership is still admin (org_role unchanged).
+        user = User.objects.get(phone='09120000000', role=User.Role.MANAGER)
+        assert user.role == User.Role.MANAGER and user.role != User.Role.TEACHER
+        assert not user.is_staff and not user.is_superuser
+        assert user.is_freelancer is False           # org-only, no personal space
+        assert not user.has_usable_password()         # passwordless shell until onboarding
         m = OrganizationMembership.objects.get(user=user, organization=org)
         assert m.org_role == OrganizationMembership.OrgRole.ADMIN
 
@@ -66,59 +62,53 @@ class TestManagerRedeem:
         org = _active_org(name='مدرسه ب')
         code = _code(org, InvitationCode.TargetRole.DEPUTY)
 
-        res = APIClient().post(REDEEM, {
-            'code': code.code, 'username': '09120000002', 'password': STRONG,
-        }, format='json')
+        res = APIClient().post(REDEEM, {'code': code.code, 'phone': '09120000002'}, format='json')
         assert res.status_code == 201, res.data
-        assert User.objects.get(username='09120000002').role == User.Role.MANAGER
+        assert User.objects.get(phone='09120000002', role=User.Role.MANAGER)
 
-    def test_teacher_code_stays_teacher(self):
+    def test_teacher_code_stays_teacher_org_only(self):
         org = _active_org()
         code = _code(org, InvitationCode.TargetRole.TEACHER)
 
-        res = APIClient().post(REDEEM, {
-            'code': code.code, 'username': '09120000003', 'password': STRONG,
-        }, format='json')
+        res = APIClient().post(REDEEM, {'code': code.code, 'phone': '09120000003'}, format='json')
         assert res.status_code == 201, res.data
-        user = User.objects.get(username='09120000003')
-        assert user.role == User.Role.TEACHER
-        # A brand-new account that joins via an org code is org-only.
-        assert user.is_freelancer is False
+        user = User.objects.get(phone='09120000003', role=User.Role.TEACHER)
+        assert user.is_freelancer is False  # brand-new org account is org-only
 
     def test_student_code_stays_student(self):
         org = _active_org()
         code = _code(org, InvitationCode.TargetRole.STUDENT)
 
-        res = APIClient().post(REDEEM, {
-            'code': code.code, 'username': '09120000005', 'password': STRONG,
-        }, format='json')
+        res = APIClient().post(REDEEM, {'code': code.code, 'phone': '09120000005'}, format='json')
         assert res.status_code == 201, res.data
-        assert User.objects.get(username='09120000005').role == User.Role.STUDENT
+        assert User.objects.get(phone='09120000005', role=User.Role.STUDENT)
+
+    def test_redeem_without_phone_is_rejected(self):
+        org = _active_org()
+        code = _code(org, InvitationCode.TargetRole.ADMIN)
+        res = APIClient().post(REDEEM, {'code': code.code}, format='json')
+        assert res.status_code == 400, res.data
 
     def test_manager_is_not_a_teacher_and_cannot_teach(self):
-        """A redeemed org manager is role=MANAGER and is rejected from
-        teacher-only endpoints — they manage the org, they do not teach."""
+        """The redeemed manager (token from redeem) is rejected from teacher-only
+        endpoints — they manage the org, they do not teach."""
         org = _active_org()
         code = _code(org, InvitationCode.TargetRole.ADMIN)
 
-        res = APIClient().post(REDEEM, {
-            'code': code.code, 'username': '09120000004', 'password': STRONG,
-        }, format='json')
+        res = APIClient().post(REDEEM, {'code': code.code, 'phone': '09120000004'}, format='json')
         assert res.status_code == 201, res.data
         access = res.data['access']
 
-        user = User.objects.get(username='09120000004')
+        user = User.objects.get(phone='09120000004', role=User.Role.MANAGER)
         assert user.role == User.Role.MANAGER
 
         mgr = APIClient()
         mgr.credentials(HTTP_AUTHORIZATION=f'Bearer {access}')
-        # Teacher-only endpoint (IsTeacherUser) must reject the manager.
         assert mgr.get('/api/classes/teacher/students/').status_code == 403
 
     def test_existing_freelancer_joining_org_stays_freelancer(self):
-        """A freelancer (is_freelancer=True) who redeems an org TEACHER code keeps
-        their personal space — they become 'both', not org-only. Only brand-new
-        accounts created by the code are org-only."""
+        """An authenticated freelancer (no phone needed) who redeems an org TEACHER
+        code keeps their personal space — only brand-new shells are org-only."""
         org = _active_org()
         code = _code(org, InvitationCode.TargetRole.TEACHER)
 
@@ -129,8 +119,7 @@ class TestManagerRedeem:
         assert res.status_code == 201, res.data
 
         teacher.refresh_from_db()
-        assert teacher.is_freelancer is True  # unchanged — still a freelancer
-        assert teacher.role == User.Role.TEACHER
+        assert teacher.is_freelancer is True  # unchanged
         assert OrganizationMembership.objects.filter(
             user=teacher, organization=org,
             org_role=OrganizationMembership.OrgRole.TEACHER,

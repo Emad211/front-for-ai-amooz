@@ -180,24 +180,20 @@ class InvitationCodeCreateSerializer(serializers.Serializer):
 class RedeemInvitationSerializer(serializers.Serializer):
     """Input for redeeming an invite code.  Accepts snake_case.
 
-    Two onboarding shapes share this endpoint:
-    - **Student codes** are phone-based & passwordless (``phone`` + optional
-      name) — the same identity model as class-invite students. (The legacy
-      ``username``+``password`` shape is still accepted for back-compat.)
-    - **admin/deputy/teacher codes** create a real account (``username`` +
-      ``password``), since managers/teachers log in with credentials.
+    Uniform across ALL roles: redemption is phone-based & passwordless. The code
+    + phone create (or re-enter) a passwordless shell for the mapped role; the
+    user then sets their real username/password/email in the forced onboarding
+    step. (An already-authenticated user redeeming needs no phone.)
     """
 
     code = serializers.CharField(max_length=64)
 
-    # Phone-based passwordless student onboarding (preferred for student codes).
+    # Phone is the account identity for every anonymous redemption.
     phone = serializers.CharField(max_length=32, required=False, allow_blank=True)
 
-    # Optional: for account-based registration during redemption
-    username = serializers.CharField(max_length=150, required=False)
+    # Optional display name captured at the code step (also editable in onboarding).
     first_name = serializers.CharField(max_length=150, required=False, allow_blank=True)
     last_name = serializers.CharField(max_length=150, required=False, allow_blank=True)
-    password = serializers.CharField(min_length=8, write_only=True, required=False)
 
     def validate_phone(self, value: str) -> str:
         """Canonicalize the student phone so it matches every other flow.

@@ -134,6 +134,9 @@ class RegisterSerializer(serializers.Serializer):
             role=role,
             first_name=validated_data.get('first_name') or '',
             last_name=validated_data.get('last_name') or '',
+            # Public self-registration sets its own username + password — that IS
+            # this account's onboarding, so it skips the forced-onboarding gate.
+            is_profile_completed=True,
         )
         phone = validated_data.get('phone') or ''  # canonical (validate_phone)
         if phone:

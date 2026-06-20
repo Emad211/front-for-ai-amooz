@@ -7,6 +7,7 @@ import { TeacherSidebar } from '@/components/layout/teacher-sidebar';
 import { WorkspaceProvider, useWorkspace } from '@/hooks/use-workspace';
 import { getStoredUser } from '@/services/auth-service';
 import { landingFor } from '@/lib/auth-routing';
+import { OnboardingGate } from '@/components/auth/onboarding-gate';
 
 /**
  * Org-MANAGER panel guard. Allowed for a platform MANAGER, or anyone who admins
@@ -39,6 +40,7 @@ function OrgGuard({ children }: { children: React.ReactNode }) {
 export default function OrgLayout({ children }: { children: React.ReactNode }) {
   return (
     <WorkspaceProvider>
+      <OnboardingGate />
       <OrgGuard>
         <div className="flex min-h-screen w-full bg-background" dir="rtl">
           <div className="hidden lg:block">

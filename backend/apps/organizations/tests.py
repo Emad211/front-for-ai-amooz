@@ -309,25 +309,21 @@ class TestRedeemCode:
         assert code.use_count == 1
 
     def test_anonymous_user_registers_and_joins(self, anon_client, org):
+        # Uniform phone-based redemption: a passwordless STUDENT shell is created;
+        # the user sets username/password later in onboarding.
         code = InvitationCode.objects.create(
             organization=org, target_role='student', max_uses=10,
         )
         resp = anon_client.post(
             reverse('organizations:redeem-code'),
-            {
-                'code': code.code,
-                'username': 'newstudent',
-                'password': 'SecurePass123!',
-                'first_name': 'علی',
-                'last_name': 'محمدی',
-            },
+            {'code': code.code, 'phone': '09120000000', 'first_name': 'علی', 'last_name': 'محمدی'},
             format='json',
         )
         assert resp.status_code == status.HTTP_201_CREATED
         assert 'access' in resp.data
         assert 'refresh' in resp.data
-        assert User.objects.filter(username='newstudent').exists()
-        new_user = User.objects.get(username='newstudent')
+        new_user = User.objects.get(phone='09120000000', role=User.Role.STUDENT)
+        assert not new_user.has_usable_password()  # passwordless until onboarding
         assert OrganizationMembership.objects.filter(
             user=new_user, organization=org,
         ).exists()
@@ -378,17 +374,15 @@ class TestRedeemCode:
         )
         resp = anon_client.post(
             reverse('organizations:redeem-code'),
-            {
-                'code': code.code,
-                'username': 'orgadmin',
-                'password': 'AdminPass123!',
-            },
+            {'code': code.code, 'phone': '09120000000'},
             format='json',
         )
         assert resp.status_code == status.HTTP_201_CREATED
         org.refresh_from_db()
         assert org.owner is not None
-        assert org.owner.username == 'orgadmin'
+        # The admin shell (a MANAGER, keyed by phone) becomes the org owner.
+        assert org.owner.phone == '09120000000'
+        assert org.owner.role == User.Role.MANAGER
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -708,36 +702,12 @@ class TestSecurityAuthorization:
         )
         assert resp.status_code == status.HTTP_403_FORBIDDEN
 
-    def test_redeem_code_with_weak_password(self, anon_client, org):
-        """Anonymous registration with a weak password should be rejected."""
-        code = InvitationCode.objects.create(
-            organization=org, target_role='student', max_uses=10,
-        )
-        resp = anon_client.post(
-            reverse('organizations:redeem-code'),
-            {'code': code.code, 'username': 'weakuser', 'password': '123'},
-            format='json',
-        )
-        assert resp.status_code == status.HTTP_400_BAD_REQUEST
+    def test_redeem_code_missing_phone(self, anon_client, org):
+        """Anonymous redemption must carry a phone (the account identity).
 
-    def test_redeem_code_duplicate_username(self, anon_client, org, teacher_user):
-        """If username already exists, reject registration."""
-        code = InvitationCode.objects.create(
-            organization=org, target_role='student', max_uses=10,
-        )
-        resp = anon_client.post(
-            reverse('organizations:redeem-code'),
-            {
-                'code': code.code,
-                'username': teacher_user.username,
-                'password': 'StrongPass123!',
-            },
-            format='json',
-        )
-        assert resp.status_code == status.HTTP_400_BAD_REQUEST
-
-    def test_redeem_code_missing_credentials(self, anon_client, org):
-        """Anonymous user must provide username+password."""
+        Credential checks (weak password, duplicate username) moved to the
+        onboarding step — see apps.accounts.test_onboarding.
+        """
         code = InvitationCode.objects.create(
             organization=org, target_role='student', max_uses=10,
         )

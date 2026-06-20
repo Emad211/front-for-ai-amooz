@@ -20,7 +20,7 @@ from apps.organizations.serializers import RedeemInvitationSerializer
 
 User = get_user_model()
 REDEEM_URL = '/api/organizations/redeem-code/'
-PASSWORD = 'StrongPass123!@#'
+PHONE = '09120000000'
 
 
 def _active_org(**kw):
@@ -51,12 +51,11 @@ def test_redeem_reenforces_max_uses_under_lock(monkeypatch):
     )
 
     resp = APIClient().post(
-        REDEEM_URL, {'code': 'ADMINCODE', 'username': 'newmgr', 'password': PASSWORD},
-        format='json',
+        REDEEM_URL, {'code': 'ADMINCODE', 'phone': PHONE}, format='json',
     )
 
     assert resp.status_code == 409, resp.content
-    assert not User.objects.filter(username='newmgr').exists()
+    assert not User.objects.filter(phone=PHONE, role=User.Role.MANAGER).exists()
     assert OrganizationMembership.objects.filter(organization=org).count() == 0
 
 
@@ -77,12 +76,11 @@ def test_redeem_reenforces_capacity_under_lock(monkeypatch):
     )
 
     resp = APIClient().post(
-        REDEEM_URL, {'code': 'STUCODE', 'username': 'newstu', 'password': PASSWORD},
-        format='json',
+        REDEEM_URL, {'code': 'STUCODE', 'phone': PHONE}, format='json',
     )
 
     assert resp.status_code == 409, resp.content
-    assert not User.objects.filter(username='newstu').exists()
+    assert not User.objects.filter(phone=PHONE, role=User.Role.STUDENT).exists()
 
 
 @pytest.mark.django_db
@@ -96,13 +94,11 @@ def test_redeem_happy_path_still_works():
     )
 
     resp = APIClient().post(
-        REDEEM_URL, {'code': 'GOODCODE', 'username': 'mgr1', 'password': PASSWORD},
-        format='json',
+        REDEEM_URL, {'code': 'GOODCODE', 'phone': PHONE}, format='json',
     )
 
     assert resp.status_code == 201, resp.content
-    u = User.objects.get(username='mgr1')
-    assert u.role == 'MANAGER'
+    u = User.objects.get(phone=PHONE, role='MANAGER')
     assert OrganizationMembership.objects.filter(user=u, organization=org).count() == 1
     code.refresh_from_db()
     assert code.use_count == 1

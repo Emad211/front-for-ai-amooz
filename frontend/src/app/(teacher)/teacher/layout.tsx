@@ -7,6 +7,7 @@ import { TeacherSidebar } from "@/components/layout/teacher-sidebar";
 import { WorkspaceProvider } from "@/hooks/use-workspace";
 import { getStoredUser } from '@/services/auth-service';
 import { landingFor } from '@/lib/auth-routing';
+import { OnboardingGate } from '@/components/auth/onboarding-gate';
 
 export default function TeacherLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
@@ -28,6 +29,7 @@ export default function TeacherLayout({ children }: { children: React.ReactNode 
 
   return (
     <WorkspaceProvider>
+      <OnboardingGate />
       <div className="flex min-h-screen w-full bg-background" dir="rtl">
         <div className="hidden lg:block">
           <TeacherSidebar />

@@ -120,6 +120,9 @@ def complete_teacher_registration(*, token, username, password, first_name='', l
         first_name=first,
         last_name=last,
         is_freelancer=True,  # waitlist teachers are freelancers (own personal space)
+        # The teacher chose their own username + password here — this is their
+        # onboarding, so they skip the forced-onboarding gate.
+        is_profile_completed=True,
     )
     if ar.phone:
         user.phone = ar.phone

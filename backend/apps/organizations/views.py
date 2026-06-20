@@ -3,11 +3,8 @@
 from __future__ import annotations
 
 import logging
-import secrets
 
 from django.contrib.auth import get_user_model
-from django.contrib.auth.password_validation import validate_password
-from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import DatabaseError, IntegrityError, transaction
 from django.db.models import Count, F, Q, Sum
 from django.utils import timezone
@@ -22,7 +19,7 @@ from apps.authentication.cookies import set_refresh_cookie
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from apps.accounts.models import StudentProfile
-from apps.accounts.services import get_or_create_student_by_phone
+from apps.accounts.services import get_or_create_user_by_phone
 from apps.classes.models import ClassCreationSession
 
 from .models import (
@@ -412,20 +409,48 @@ class RedeemInvitationView(APIView):
 
         org = invite.organization
         is_student_code = invite.target_role == InvitationCode.TargetRole.STUDENT
-        # Already canonicalized by RedeemInvitationSerializer.validate_phone — same
-        # 09XXXXXXXXX shape used by class-invite login, so the two flows converge.
+        # Canonical 09XXXXXXXXX (RedeemInvitationSerializer.validate_phone). The
+        # phone is now the identity for EVERY anonymous redemption — student,
+        # teacher, and manager alike become a passwordless shell keyed by phone,
+        # then set their real username/password/email in onboarding.
         phone = data.get('phone') or ''
 
-        # Is the redeeming party ALREADY a member? (cheap lookup, no creation) — a
-        # returning student re-entering the org code to log in does not consume a
-        # new seat, so it must bypass the capacity guard below.
+        # Map the invitation target_role → platform User.Role. Org admin/deputy =
+        # MANAGER (manages the org, does NOT teach, NOT a platform admin); org
+        # teacher → TEACHER; student → STUDENT. The org_role membership below keeps
+        # the original admin/deputy/teacher value.
+        role_map = {
+            InvitationCode.TargetRole.ADMIN: User.Role.MANAGER,
+            InvitationCode.TargetRole.DEPUTY: User.Role.MANAGER,
+            InvitationCode.TargetRole.TEACHER: User.Role.TEACHER,
+            InvitationCode.TargetRole.STUDENT: User.Role.STUDENT,
+        }
+        platform_role = role_map.get(invite.target_role, User.Role.STUDENT)
+        # A brand-new account created by an admin/deputy/teacher code is ORG-ONLY
+        # (no personal/freelancer workspace). Existing users are left untouched.
+        org_only = invite.target_role in (
+            InvitationCode.TargetRole.ADMIN,
+            InvitationCode.TargetRole.DEPUTY,
+            InvitationCode.TargetRole.TEACHER,
+        )
+
+        # An anonymous redemption MUST carry a phone — it is the account identity.
+        if not request.user.is_authenticated and not phone:
+            return Response(
+                {'detail': 'برای ورود با کد، شماره موبایل لازم است.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Is the redeeming party ALREADY a member? A returning member re-entering
+        # the code does not consume a new seat (bypasses the capacity guard), and
+        # for anonymous phone redemptions the code doubles as a re-entry login.
         if request.user.is_authenticated:
             is_returning = OrganizationMembership.objects.filter(
                 user=request.user, organization=org,
             ).exists()
-        elif is_student_code and phone:
+        elif phone:
             is_returning = OrganizationMembership.objects.filter(
-                user__phone=phone, user__role=User.Role.STUDENT, organization=org,
+                user__phone=phone, user__role=platform_role, organization=org,
             ).exists()
         else:
             is_returning = False
@@ -439,77 +464,27 @@ class RedeemInvitationView(APIView):
                 status=status.HTTP_409_CONFLICT,
             )
 
-        # ── Resolve / create the user ──
-        user = request.user if request.user.is_authenticated else None
-        if user is None:
-            if is_student_code and phone:
-                # Phone-based PASSWORDLESS student onboarding — the SAME helper
-                # class-invite login uses (apps.accounts.services), so org-redeemed
-                # and class-login students resolve to one STUDENT identity per
-                # phone. `phone` is canonical (RedeemInvitationSerializer).
-                user, _ = get_or_create_student_by_phone(
-                    phone,
-                    first_name=data.get('first_name', ''),
-                    last_name=data.get('last_name', ''),
-                )
-            else:
-                # Account-based onboarding (admin/deputy/teacher; or a student
-                # code redeemed with explicit credentials — back-compat).
-                username = data.get('username')
-                password = data.get('password')
-                if not username or not password:
-                    detail = (
-                        'برای پیوستن دانش‌آموز، شماره موبایل لازم است.'
-                        if is_student_code
-                        else 'برای ثبت‌نام لطفاً نام کاربری و رمز عبور وارد کنید.'
-                    )
-                    return Response({'detail': detail}, status=status.HTTP_400_BAD_REQUEST)
-
-                if User.objects.filter(username=username).exists():
-                    return Response(
-                        {'detail': 'این نام کاربری قبلاً استفاده شده است.'},
-                        status=status.HTTP_400_BAD_REQUEST,
-                    )
-
-                try:
-                    validate_password(password)
-                except DjangoValidationError as e:
-                    messages = e.messages if hasattr(e, 'messages') else [str(e)]
-                    return Response(
-                        {'detail': ' '.join(messages)},
-                        status=status.HTTP_400_BAD_REQUEST,
-                    )
-
-                # Map invitation target_role to platform User.Role.
-                # An org admin/deputy is a MANAGER — a distinct platform role that
-                # manages the organization but does NOT teach (and is NOT a platform
-                # ADMIN: no /admin access, no staff powers). Org teachers map to
-                # TEACHER, students to STUDENT. (The org-level org_role membership is
-                # still created below with the original admin/deputy value.)
-                role_map = {
-                    InvitationCode.TargetRole.ADMIN: 'MANAGER',
-                    InvitationCode.TargetRole.DEPUTY: 'MANAGER',
-                    InvitationCode.TargetRole.TEACHER: 'TEACHER',
-                    InvitationCode.TargetRole.STUDENT: 'STUDENT',
-                }
-                platform_role = role_map.get(invite.target_role, 'STUDENT')
-
-                # A brand-new account that joins through an org admin/deputy/teacher
-                # code is ORG-ONLY: no personal/freelancer workspace. An EXISTING
-                # user redeeming is untouched, so a freelancer who joins an org
-                # keeps their personal space and becomes "both".
-                org_only = invite.target_role in (
-                    InvitationCode.TargetRole.ADMIN,
-                    InvitationCode.TargetRole.DEPUTY,
-                    InvitationCode.TargetRole.TEACHER,
-                )
-                user = User.objects.create_user(
-                    username=username,
-                    password=password,
-                    first_name=data.get('first_name', ''),
-                    last_name=data.get('last_name', ''),
-                    role=platform_role,
-                    is_freelancer=not org_only,
+        # ── Resolve / create the user (a passwordless shell, keyed by phone) ──
+        # Uniform across roles: the same helper class-invite login uses, so an
+        # org-redeemed and a class-login account converge on ONE identity per
+        # (phone, role). Real credentials are set later in onboarding.
+        if request.user.is_authenticated:
+            user = request.user
+        else:
+            user, _ = get_or_create_user_by_phone(
+                phone,
+                platform_role,
+                first_name=data.get('first_name', ''),
+                last_name=data.get('last_name', ''),
+                is_freelancer=(False if org_only else None),
+            )
+            # Code + phone is a ONE-TIME onboarding entry. An already-activated
+            # account (has its own username/password) must sign in with those —
+            # the code can't keep granting passwordless access to it.
+            if user.is_profile_completed:
+                return Response(
+                    {'detail': 'این حساب قبلاً فعال شده است. لطفاً با نام کاربری و رمز عبور وارد شوید.'},
+                    status=status.HTTP_400_BAD_REQUEST,
                 )
 
         # ── Membership: create, or treat as an idempotent student login ──
@@ -528,10 +503,10 @@ class RedeemInvitationView(APIView):
                 org.save(update_fields=['owner'])
             # Atomic increment to prevent race conditions
             InvitationCode.objects.filter(pk=invite.pk).update(use_count=F('use_count') + 1)
-        elif not (is_student_code and request.user.is_anonymous):
-            # An account user (or authenticated student) re-redeeming is an error.
-            # An anonymous phone-student who is already a member falls through to a
-            # fresh token below — i.e. the org code doubles as their login.
+        elif request.user.is_authenticated:
+            # An already-authenticated user re-redeeming is an error. An anonymous
+            # phone redemption that is already a member (any role) falls through to
+            # a fresh token below — the code doubles as their re-entry login.
             return Response(
                 {'detail': 'شما قبلاً عضو این سازمان آموزشی هستید.'},
                 status=status.HTTP_400_BAD_REQUEST,

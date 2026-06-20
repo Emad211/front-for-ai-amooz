@@ -136,6 +136,26 @@ def test_invite_login_creates_student_when_only_admin_has_phone():
 
 
 @pytest.mark.django_db
+def test_invite_login_blocks_already_activated_account():
+    """Once a student finishes onboarding (own username/password), code + phone
+    must NOT grant passwordless access — they sign in with their credentials."""
+    client = APIClient()
+
+    student = baker.make(
+        'accounts.User', role='STUDENT', phone='09120000000',
+        username='done_stu', is_profile_completed=True,
+    )
+    student.set_password('Zx9!konkur2026'); student.save()
+
+    teacher = baker.make('accounts.User')
+    session = baker.make('classes.ClassCreationSession', teacher=teacher, is_published=True, title='t')
+    baker.make('classes.ClassInvitation', session=session, phone='09120000000', invite_code='DONE')
+
+    resp = client.post('/api/auth/invite-login/', {'code': 'DONE', 'phone': '09120000000'}, format='json')
+    assert resp.status_code == 400, resp.content
+
+
+@pytest.mark.django_db
 def test_invite_login_wrong_code():
     client = APIClient()
 

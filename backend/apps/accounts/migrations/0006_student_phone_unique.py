@@ -21,6 +21,10 @@ def wipe_non_admin_users(apps, schema_editor):
     # .delete() cascades through the ORM collector (memberships, classes,
     # enrollments, quiz/exam attempts, chat threads, notifications, …).
     doomed.delete()
+    # Surviving accounts are the platform admin(s) — already set up with real
+    # credentials, NOT code-onboarded passwordless shells. Mark them completed so
+    # the forced-onboarding gate never bounces them.
+    User.objects.update(is_profile_completed=True)
     if count:
         print(f"[accounts.0006] clean slate: deleted {count} non-admin user(s).")
 
