@@ -1,14 +1,20 @@
-"""Clean slate + enforce one STUDENT per phone.
+"""Clean slate (DATA ONLY) — delete non-admin users + canonicalize phones.
 
 The phone number is the platform's student identity key, but it had no DB
 uniqueness, which let one human become two ``User`` rows. Per the product owner
 the existing data is disposable, so this migration takes a clean slate — it
 deletes every non-admin user (cascading their classes/enrollments/attempts/
-memberships) and then adds the partial unique constraint. On a fresh database
-there are no users yet, so the wipe is a harmless no-op.
+memberships). On a fresh database there are no users yet, so the wipe is a
+harmless no-op.
+
+The partial unique constraint is added in the SEPARATE migration 0007: on
+PostgreSQL the cascading deletes here leave *pending trigger events* on
+``accounts_user``, and you cannot CREATE INDEX on a table with pending trigger
+events in the same transaction. Splitting the DML (this migration) from the DDL
+(0007) lets the deletes commit first, clearing those events.
 """
 
-from django.db import migrations, models
+from django.db import migrations
 from django.db.models import Q
 
 
@@ -54,12 +60,5 @@ class Migration(migrations.Migration):
     operations = [
         migrations.RunPython(wipe_non_admin_users, noop),
         migrations.RunPython(canonicalize_remaining_phones, noop),
-        migrations.AddConstraint(
-            model_name='user',
-            constraint=models.UniqueConstraint(
-                fields=['phone'],
-                condition=models.Q(role='STUDENT', phone__isnull=False),
-                name='uniq_student_phone',
-            ),
-        ),
+        # NOTE: AddConstraint(uniq_student_phone) lives in 0007 — see module docstring.
     ]
