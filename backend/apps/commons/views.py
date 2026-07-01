@@ -960,10 +960,10 @@ class AnalyticsRecentActivityView(APIView):
         for t in Ticket.objects.select_related('user').order_by('-created_at')[:per]:
             add('ticket', _display_name(t.user), f'تیکت «{t.subject}» را ثبت کرد',
                 t.created_at, target=t.subject, user_role=getattr(t.user, 'role', ''))
-        for m in (TicketMessage.objects.select_related('user', 'ticket')
+        for m in (TicketMessage.objects.select_related('author', 'ticket')
                   .order_by('-created_at')[:per]):
-            add('ticket_reply', _display_name(m.user), f'به تیکت «{m.ticket.subject}» پاسخ داد',
-                m.created_at, target=m.ticket.subject, user_role=getattr(m.user, 'role', ''))
+            add('ticket_reply', _display_name(m.author), f'به تیکت «{m.ticket.subject}» پاسخ داد',
+                m.created_at, target=m.ticket.subject, user_role=getattr(m.author, 'role', ''))
 
         # Admin broadcasts
         for n in AdminNotification.objects.order_by('-created_at')[:per]:
