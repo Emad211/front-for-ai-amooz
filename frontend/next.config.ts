@@ -1,8 +1,13 @@
 import type { NextConfig } from "next";
 
+// The /api rewrite runs SERVER-SIDE (inside the Next server / container), so its
+// target must be reachable from there. Prefer BACKEND_URL — in Docker it points
+// at the backend SERVICE (http://backend:8000) while NEXT_PUBLIC_API_URL stays
+// the browser-facing host URL (http://localhost:8000). In prod both are equal;
+// in local `npm run dev` only NEXT_PUBLIC_API_URL is set, so it falls back to it.
 const backendUrl =
-  process.env.NEXT_PUBLIC_API_URL ||
   process.env.BACKEND_URL ||
+  process.env.NEXT_PUBLIC_API_URL ||
   "http://localhost:8000";
 
 const nextConfig: NextConfig = {

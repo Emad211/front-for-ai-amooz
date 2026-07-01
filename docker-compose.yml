@@ -149,12 +149,13 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
       args:
-        # Baked into the client bundle at build time. The browser (on the host)
-        # reaches the host-published backend at localhost:8000; backend CORS is
-        # open under DEBUG, so every service calls it directly from the browser
-        # (the Next /api rewrite stays unused while this var is set).
+        # NEXT_PUBLIC_API_URL is baked into the CLIENT bundle → the browser (on the
+        # host) hits the host-published backend at localhost:8000 (CORS open under
+        # DEBUG). BACKEND_URL is the SERVER-SIDE /api rewrite target, which runs
+        # INSIDE this container, so it must use the backend SERVICE name — auth
+        # (login/refresh) goes through that same-origin /api proxy for the cookie.
         NEXT_PUBLIC_API_URL: http://localhost:8000
-        BACKEND_URL: http://localhost:8000
+        BACKEND_URL: http://backend:8000
     container_name: ai_amooz_front
     restart: unless-stopped
     ports:
@@ -162,7 +163,7 @@ services:
     environment:
       NODE_ENV: production
       NEXT_PUBLIC_API_URL: http://localhost:8000
-      BACKEND_URL: http://localhost:8000
+      BACKEND_URL: http://backend:8000
     depends_on:
       - backend
 
