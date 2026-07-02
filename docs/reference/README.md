@@ -28,7 +28,7 @@ Legend: ☐ not started · ◐ drafting · ☑ verified & merged
 | 3 | B1 | `backend-accounts.md` | Identity: roles, phone uniqueness, onboarding fields, migrations | ☑ | 2026-07-02 |
 | 4 | B2 | `backend-authentication.md` | JWT/OTP/login layer, code-login rules | ☑ | 2026-07-02 |
 | 5 | B3 | `backend-organizations.md` + `backend-waitlist.md` [a/b] | Tenancy, StudyGroup, invite codes, waitlist gate | ☑ | 2026-07-02 |
-| 6 | L1 | `llm-provider-client.md` | Provider selector, llm_client, env→model matrix | ☐ | — |
+| 6 | L1 | `llm-provider-client.md` | Provider selector, llm_client, env→model matrix | ☑ | 2026-07-02 |
 | 7 | L2 | `llm-structured-output.md` | generate_structured / validate_keep_dict / schemas | ☐ | — |
 | 8 | L3 | `llm-prompts-contract.md` | **HUB** — 26 live PROMPTS keys, placeholders, output keys | ☐ | — |
 | 9 | B4 | `backend-classes-models.md` | Classes ER map (17 models), status machine, JSON fields | ☐ | — |
@@ -60,5 +60,5 @@ Legend: ☐ not started · ◐ drafting · ☑ verified & merged
 | 35 | AUDIT | — | Final coverage pass: 8-point gate across the whole tree | ☐ | — |
 
 ## Coverage ledger
-- Total steps: 35 · Verified: 5 · Drafting: 0 · Not started: 30
+- Total steps: 35 · Verified: 6 · Drafting: 0 · Not started: 29
 - Stale (Last-verified > 60 days): none
