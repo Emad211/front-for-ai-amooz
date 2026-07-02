@@ -175,6 +175,25 @@ App Router with route groups under `frontend/src/app/`:
 
 Follow `.github/instructions/develop.instructions.md` (the team's standing rules). In short: explore and search before changing; small, tested increments; `camelCase` for variables/functions/hooks and `PascalCase` for types/components; avoid `any`; modular apps with clear boundaries, no cross-app coupling; secrets only via `.env`. Every bugfix adds a regression test first; auth/permission code needs negative (unauthorized/forbidden) tests.
 
+## Agent team (`.claude/agents/`) & documentation law
+
+The repo ships a permanent **16-member agentic product team** (project subagents) — roster, consultation
+loop, and usage rules in **`.claude/agents/README.md`** (the team manual). Operating rules for any AI
+session working here:
+
+- **Explicit invocation only:** launch team agents only when the user asks (directly, or via the
+  `/council <topic>` and `/feature-cycle <feature>` commands in `.claude/commands/`). Default mode: work
+  solo and read the agent files as zero-cost expert checklists — each encodes that specialty's hard-won
+  rules for THIS repo (migration DML/DDL split, prompt contract, RTL rules, deploy map, …).
+- **Mandatory consult matrix** (in the README): auth/permission changes → `security-auditor`; schema →
+  `database-engineer`; anything LLM → `ai-engineer` + contract test; non-trivial diffs → `code-reviewer`;
+  pushes → `release-manager` gate.
+- **Standard handoff:** every agent report ends with `Decisions / Files / Docs / Risks / Consult next`.
+- **Documentation law: code and its docs land together.** Docs home is **`docs/`** — `adr/` (numbered,
+  immutable decisions), `features/` (one living spec per feature), `releases/` (note per deploy),
+  `runbooks/` (ops lessons, e.g. `runbooks/local-stack.md`). Policy: `docs/README.md`. A change without
+  its doc update is not done. When an agent learns a new failure mode, it is added to that agent's file.
+
 ## Testing notes
 
 - pytest + pytest-django + DRF `APIClient` + model-bakery; `--reuse-db` for speed.
