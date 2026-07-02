@@ -29,7 +29,7 @@ Legend: ☐ not started · ◐ drafting · ☑ verified & merged
 | 4 | B2 | `backend-authentication.md` | JWT/OTP/login layer, code-login rules | ☑ | 2026-07-02 |
 | 5 | B3 | `backend-organizations.md` + `backend-waitlist.md` [a/b] | Tenancy, StudyGroup, invite codes, waitlist gate | ☑ | 2026-07-02 |
 | 6 | L1 | `llm-provider-client.md` | Provider selector, llm_client, env→model matrix | ☑ | 2026-07-02 |
-| 7 | L2 | `llm-structured-output.md` | generate_structured / validate_keep_dict / schemas | ☐ | — |
+| 7 | L2 | `llm-structured-output.md` | generate_structured / validate_keep_dict / schemas | ☑ | 2026-07-02 |
 | 8 | L3 | `llm-prompts-contract.md` | **HUB** — 26 live PROMPTS keys, placeholders, output keys | ☐ | — |
 | 9 | B4 | `backend-classes-models.md` | Classes ER map (17 models), status machine, JSON fields | ☐ | — |
 | 10 | L4 | `llm-pipeline-orchestration.md` | **HUB** — tasks.py state machines, cancellation, heartbeats | ☐ | — |
@@ -60,5 +60,5 @@ Legend: ☐ not started · ◐ drafting · ☑ verified & merged
 | 35 | AUDIT | — | Final coverage pass: 8-point gate across the whole tree | ☐ | — |
 
 ## Coverage ledger
-- Total steps: 35 · Verified: 6 · Drafting: 0 · Not started: 29
+- Total steps: 35 · Verified: 7 · Drafting: 0 · Not started: 28
 - Stale (Last-verified > 60 days): none
