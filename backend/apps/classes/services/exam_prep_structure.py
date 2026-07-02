@@ -27,6 +27,27 @@ def _get_env(name: str) -> str:
     return (os.getenv(name) or "").strip()
 
 
+def _select_model(*names: str) -> str:
+    """Select the LLM model from ENV only — no hardcoded defaults.
+
+    Checks each of ``names`` in order, then falls back to ``MODEL_NAME``. If
+    nothing is set, raises (a misconfigured deployment must fail loudly rather
+    than silently calling a hardcoded model). Mirrors ``structure.py._select_model``.
+    """
+    for n in names:
+        val = _get_env(n)
+        if val:
+            return val
+
+    fallback = _get_env("MODEL_NAME")
+    if fallback:
+        return fallback
+
+    raise RuntimeError(
+        f"No LLM model defined in ENV. Checked: {names} and fallback MODEL_NAME."
+    )
+
+
 def _restore_latex_escapes(value: Any) -> Any:
     """Restore LaTeX commands inside JSON strings."""
     replacement_map = {
@@ -99,13 +120,8 @@ def extract_exam_prep_structure(
         (exam_prep_json_obj, provider, model_name)
     """
 
-    # Select model from env (same behavior as original)
-    model = (
-        _get_env("STRUCTURE_MODEL")
-        or _get_env("REWRITE_MODEL")
-        or _get_env("MODEL_NAME")
-        or "gpt-4.1"  # default GapGPT model (our new standard)
-    )
+    # Select model from ENV only (raises if unset — no hardcoded default).
+    model = _select_model("STRUCTURE_MODEL", "REWRITE_MODEL")
 
     provider = preferred_provider()
 

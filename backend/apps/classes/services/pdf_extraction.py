@@ -60,12 +60,22 @@ def _cfg(name: str, default):
 
 
 def _select_vision_model() -> str:
-    return (
+    """Select the PDF vision model from ENV only — no hardcoded default.
+
+    Checks PDF_VISION_MODEL → MODEL_NAME → TRANSCRIPTION_MODEL. Raises if none is
+    set so a misconfigured deployment fails loudly instead of silently calling a
+    hardcoded model (matches the env-only rule used by the pipeline stages)."""
+    model = (
         (os.getenv("PDF_VISION_MODEL") or "").strip()
         or (os.getenv("MODEL_NAME") or "").strip()
         or (os.getenv("TRANSCRIPTION_MODEL") or "").strip()
-        or "gemini-2.5-flash"
     )
+    if not model:
+        raise RuntimeError(
+            "No PDF vision model defined in ENV. "
+            "Set PDF_VISION_MODEL, MODEL_NAME, or TRANSCRIPTION_MODEL."
+        )
+    return model
 
 
 # ---------------------------------------------------------------------------

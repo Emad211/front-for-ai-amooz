@@ -1,6 +1,6 @@
 # Reference — Stage: exam-prep pipeline (the 2-step set)
 
-- **Status:** Verified · **Created:** 2026-07-02 · **Last-verified:** 2026-07-02 (commit `1c3e149`)
+- **Status:** Verified · **Created:** 2026-07-02 · **Last-verified:** 2026-07-02 (post-fix)
 - **Owner (doc):** technical-writer · **Spec source:** `docs/reference/ROADMAP.md` step L9
 - **Layer:** llm (the standalone exam-prep pipeline)
 
@@ -50,10 +50,12 @@ step-1 transcription (shared infra) → L5.
 - Model env chain: `STRUCTURE_MODEL` → `REWRITE_MODEL` → `MODEL_NAME`.
 
 ## Gotchas
-- ⚠️ **`extract_exam_prep_structure` has a hardcoded `"gpt-4.1"` fallback** (`exam_prep_structure.py:107`)
-  at the END of the env chain — the only near-violation of the "no hardcoded model" rule in this stage.
-  It only fires if ALL of `STRUCTURE_MODEL`/`REWRITE_MODEL`/`MODEL_NAME` are unset. Flag for cleanup;
-  don't rely on it. (Recorded for the owning agent.)
+- **Model resolution is ENV-only** (`_select_model("STRUCTURE_MODEL", "REWRITE_MODEL")` → `MODEL_NAME`,
+  then **raises**). The old hardcoded `"gpt-4.1"` fallback was **removed** (2026-07-02) so a misconfigured
+  deploy fails loudly instead of silently calling a specific model. The sibling PDF stage's
+  `pdf_extraction._select_vision_model` was fixed the same way (dropped `"gemini-2.5-flash"`). Guard:
+  `apps/classes/test_model_selection_env_only.py`. (The chat-client default `llm_client._default_model`
+  still keeps `CHAT_MODEL or "gemini-2.5-flash"` — a deliberate general-chat default, out of scope here.)
 - Exam-prep has no adaptive-regenerate loop (that's the class quiz/final-exam feature, B6/L8); it has a
   reset-to-retake instead (B7).
 - Uses the `generate_text`+repair path, not `generate_structured` (part of L2's pending migration).
@@ -69,8 +71,8 @@ step-1 transcription (shared infra) → L5.
 ## Verified-by
 - `rg "^def |PROMPTS\[|exam_prep_*" exam_prep_structure.py` → `extract_exam_prep_structure:92`, prompt
   key `exam_prep_structure.default:112`, the parse-repair + asset-reinject helpers.
-- Read (2026-07-02): `exam_prep_structure.py:92-136` (env model chain **with the `gpt-4.1` fallback at
-  :107**, prompt build, generate_text call).
+- Read (2026-07-02): `exam_prep_structure.py:92-136` (env model chain via `_select_model` — **the
+  `gpt-4.1` fallback removed 2026-07-02**, now raises; prompt build, generate_text call).
 - `rg "^def |normalize" exam_prep_utils.py` → `normalize_exam_prep_questions:11`,
   `normalize_exam_prep_json:44`.
 - Output keys cross-checked against `test_prompts_contract.py:147-150`.
