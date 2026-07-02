@@ -9,6 +9,7 @@ a change is done only when its documentation is in the same commit series.
 
 | Directory | What lives here | Rules |
 |---|---|---|
+| `reference/` | Code-verified module/domain reference (the codebase map) | One doc per module per `reference/TEMPLATE.md`; progress + resume rules in `reference/README.md`; program: ADR-0002. |
 | `adr/` | Architecture Decision Records | Numbered (`ADR-NNNN-<slug>.md`), **immutable** — supersede with a new ADR, never rewrite. Status: Proposed → Accepted → Superseded-by-NNNN. |
 | `features/` | One living spec per feature | Status: Draft → Approved → Shipped. Updated whenever behavior changes — a stale feature doc is a bug. |
 | `releases/` | One note per meaningful push/deploy | Written by release-manager: changes, migrations, env, rebuild targets, verification, rollback. |
@@ -31,7 +32,8 @@ Templates: `adr/TEMPLATE.md`, `features/TEMPLATE.md`.
   `MEDIANA DOCUMENT.json` — pre-existing operational references.
 
 ## Index
-- ADRs: `adr/ADR-0001-agentic-team.md`
+- Reference: `reference/README.md` (index + 35-step program checklist) · `reference/00-architecture-overview.md`
+- ADRs: `adr/ADR-0001-agentic-team.md` · `adr/ADR-0002-reference-docs-program.md`
 - Features: (none yet — created per feature from the template)
 - Releases: (started with the next shipped change)
 - Runbooks: `runbooks/local-stack.md`
