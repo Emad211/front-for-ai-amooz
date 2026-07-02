@@ -45,7 +45,7 @@ Legend: ☐ not started · ◐ drafting · ☑ verified & merged
 | 20 | B8 | `backend-celery-ops.md` | Queues, beat, time limits, SMS, media compressor | ☑ | 2026-07-02 |
 | 21 | B9 | `backend-commons-admin.md` + `backend-notification.md` [a/b] | Admin API, analytics, tickets, notifications | ☑ | 2026-07-02 |
 | 22 | F1 | `frontend-app-shell.md` | Root layout, route-group inventory, next.config contract | ☑ | 2026-07-02 |
-| 23 | F2 | `frontend-conventions.md` | Tokens/RTL/Persian/math rules + lib catalog | ☐ | — |
+| 23 | F2 | `frontend-conventions.md` | Tokens/RTL/Persian/math rules + lib catalog | ☑ | 2026-07-02 |
 | 24 | F3 | `frontend-services-hooks.md` | 9 services + 34 hooks, endpoint mapping, error contract | ☐ | — |
 | 25 | F4 | `frontend-auth-guards.md` | Auth redirect, onboarding gate, routing, zod wizard | ☐ | — |
 | 26 | F5 | `frontend-auth-screens.md` | (auth) + start/ + join/ + onboarding screens | ☐ | — |
@@ -60,5 +60,5 @@ Legend: ☐ not started · ◐ drafting · ☑ verified & merged
 | 35 | AUDIT | — | Final coverage pass: 8-point gate across the whole tree | ☐ | — |
 
 ## Coverage ledger
-- Total steps: 35 · Verified: 22 (backend+LLM complete) · Drafting: 0 · Not started: 13
+- Total steps: 35 · Verified: 23 · Drafting: 0 · Not started: 12
 - Stale (Last-verified > 60 days): none
