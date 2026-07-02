@@ -57,8 +57,15 @@ Legend: ☐ not started · ◐ drafting · ☑ verified & merged
 | 32 | F11 | `frontend-shared-ui.md` | ui/ primitives + shared/layout/content components | ☑ | 2026-07-02 |
 | 33 | I1 | `infra-deploy.md` | Docker/compose/k8s/Hamravesh rebuild matrix | ☑ | 2026-07-02 |
 | 34 | I2 | `infra-testing.md` | pytest layout, markers, sqlite fallback, frontend gates | ☑ | 2026-07-02 |
-| 35 | AUDIT | — | Final coverage pass: 8-point gate across the whole tree | ☐ | — |
+| 35 | AUDIT | — | Final coverage pass: 8-point gate across the whole tree | ☑ | 2026-07-02 |
+
+## Program status: ✅ COMPLETE (2026-07-02)
+All 35 steps verified & merged. `docs/reference/` covers the whole codebase — backend (B0–B9), the LLM
+pipeline (L1–L10), frontend (F1–F11), infra (I1–I2), plus the S1 architecture overview. The AUDIT
+confirmed every doc is `Status: Verified` with a `Verified-by` evidence block, the index lists all docs,
+and `docs/README.md` links the subtree. **Maintenance from here:** when code in a module changes, refresh
+that doc's `Last-verified` (+ re-run its `Verified-by` commands) in the same commit series (docs-law).
 
 ## Coverage ledger
-- Total steps: 35 · Verified: 34 (all content docs done) · Drafting: 0 · Not started: 1 (AUDIT)
+- Total steps: 35 · Verified: **35** · Drafting: 0 · Not started: 0
 - Stale (Last-verified > 60 days): none
