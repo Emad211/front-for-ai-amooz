@@ -41,7 +41,7 @@ Legend: ☐ not started · ◐ drafting · ☑ verified & merged
 | 16 | L7 | `llm-prereqs-recap.md` | Steps 3–5: prerequisites, teaching, recap | ☑ | 2026-07-02 |
 | 17 | L8 | `llm-quizzes-adaptive.md` | Quizzes, final exam, adaptive weak-point loop | ☑ | 2026-07-02 |
 | 18 | L9 | `llm-exam-prep.md` | Exam-prep 2-step pipeline, question JSON contract | ☑ | 2026-07-02 |
-| 19 | L10 | `llm-pdf-and-cost.md` [a/b] | PDF ingest/export + LLMUsageLog cost attribution | ☐ | — |
+| 19 | L10 | `llm-pdf-and-cost.md` [a/b] | PDF ingest/export + LLMUsageLog cost attribution | ☑ | 2026-07-02 |
 | 20 | B8 | `backend-celery-ops.md` | Queues, beat, time limits, SMS, media compressor | ☐ | — |
 | 21 | B9 | `backend-commons-admin.md` + `backend-notification.md` [a/b] | Admin API, analytics, tickets, notifications | ☐ | — |
 | 22 | F1 | `frontend-app-shell.md` | Root layout, route-group inventory, next.config contract | ☐ | — |
@@ -60,5 +60,5 @@ Legend: ☐ not started · ◐ drafting · ☑ verified & merged
 | 35 | AUDIT | — | Final coverage pass: 8-point gate across the whole tree | ☐ | — |
 
 ## Coverage ledger
-- Total steps: 35 · Verified: 18 · Drafting: 0 · Not started: 17
+- Total steps: 35 · Verified: 19 · Drafting: 0 · Not started: 16
 - Stale (Last-verified > 60 days): none
