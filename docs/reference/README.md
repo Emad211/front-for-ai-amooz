@@ -32,7 +32,7 @@ Legend: ☐ not started · ◐ drafting · ☑ verified & merged
 | 7 | L2 | `llm-structured-output.md` | generate_structured / validate_keep_dict / schemas | ☑ | 2026-07-02 |
 | 8 | L3 | `llm-prompts-contract.md` | **HUB** — 26 live PROMPTS keys, placeholders, output keys | ☑ | 2026-07-02 |
 | 9 | B4 | `backend-classes-models.md` | Classes ER map (17 models), status machine, JSON fields | ☑ | 2026-07-02 |
-| 10 | L4 | `llm-pipeline-orchestration.md` | **HUB** — tasks.py state machines, cancellation, heartbeats | ☐ | — |
+| 10 | L4 | `llm-pipeline-orchestration.md` | **HUB** — tasks.py state machines, cancellation, heartbeats | ☑ | 2026-07-02 |
 | 11 | B5 | `backend-classes-teacher-views.md` | Teacher surface: pipeline control, invites, analytics | ☐ | — |
 | 12 | B6 | `backend-classes-student-views.md` | Student surface: content, chat, adaptive quiz/exam contract | ☐ | — |
 | 13 | B7 | `backend-classes-exam-prep.md` | Exam-prep surface (teacher + student) | ☐ | — |
@@ -60,5 +60,5 @@ Legend: ☐ not started · ◐ drafting · ☑ verified & merged
 | 35 | AUDIT | — | Final coverage pass: 8-point gate across the whole tree | ☐ | — |
 
 ## Coverage ledger
-- Total steps: 35 · Verified: 9 · Drafting: 0 · Not started: 26
+- Total steps: 35 · Verified: 10 · Drafting: 0 · Not started: 25
 - Stale (Last-verified > 60 days): none
