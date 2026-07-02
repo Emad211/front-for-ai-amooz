@@ -47,7 +47,7 @@ Legend: ☐ not started · ◐ drafting · ☑ verified & merged
 | 22 | F1 | `frontend-app-shell.md` | Root layout, route-group inventory, next.config contract | ☑ | 2026-07-02 |
 | 23 | F2 | `frontend-conventions.md` | Tokens/RTL/Persian/math rules + lib catalog | ☑ | 2026-07-02 |
 | 24 | F3 | `frontend-services-hooks.md` | 9 services + 34 hooks, endpoint mapping, error contract | ☑ | 2026-07-02 |
-| 25 | F4 | `frontend-auth-guards.md` | Auth redirect, onboarding gate, routing, zod wizard | ☐ | — |
+| 25 | F4 | `frontend-auth-guards.md` | Auth redirect, onboarding gate, routing, zod wizard | ☑ | 2026-07-02 |
 | 26 | F5 | `frontend-auth-screens.md` | (auth) + start/ + join/ + onboarding screens | ☐ | — |
 | 27 | F6 | `frontend-dashboard-student.md` [a/b] | Student area: learn, exam, chat, calendar, profile | ☐ | — |
 | 28 | F7 | `frontend-teacher.md` [a/b] | Teacher area: create-class, classes, students, analytics | ☐ | — |
@@ -60,5 +60,5 @@ Legend: ☐ not started · ◐ drafting · ☑ verified & merged
 | 35 | AUDIT | — | Final coverage pass: 8-point gate across the whole tree | ☐ | — |
 
 ## Coverage ledger
-- Total steps: 35 · Verified: 24 · Drafting: 0 · Not started: 11
+- Total steps: 35 · Verified: 25 · Drafting: 0 · Not started: 10
 - Stale (Last-verified > 60 days): none
