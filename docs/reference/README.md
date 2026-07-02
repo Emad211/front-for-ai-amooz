@@ -52,7 +52,7 @@ Legend: ☐ not started · ◐ drafting · ☑ verified & merged
 | 27 | F6 | `frontend-dashboard-student.md` | Student area: learn, exam, chat, calendar, profile | ☑ | 2026-07-02 |
 | 28 | F7 | `frontend-teacher.md` | Teacher area: create-class, classes, students, analytics | ☑ | 2026-07-02 |
 | 29 | F8 | `frontend-org.md` | Org manager area + workspace switcher | ☑ | 2026-07-02 |
-| 30 | F9 | `frontend-admin.md` | Admin area (13 routes) | ☐ | — |
+| 30 | F9 | `frontend-admin.md` | Admin area (15 routes) | ☑ | 2026-07-02 |
 | 31 | F10 | `frontend-marketing.md` | Landing (thin index) | ☐ | — |
 | 32 | F11 | `frontend-shared-ui.md` | ui/ primitives + shared/layout/content components | ☐ | — |
 | 33 | I1 | `infra-deploy.md` | Docker/compose/k8s/Hamravesh rebuild matrix | ☐ | — |
@@ -60,5 +60,5 @@ Legend: ☐ not started · ◐ drafting · ☑ verified & merged
 | 35 | AUDIT | — | Final coverage pass: 8-point gate across the whole tree | ☐ | — |
 
 ## Coverage ledger
-- Total steps: 35 · Verified: 29 · Drafting: 0 · Not started: 6
+- Total steps: 35 · Verified: 30 · Drafting: 0 · Not started: 5
 - Stale (Last-verified > 60 days): none
