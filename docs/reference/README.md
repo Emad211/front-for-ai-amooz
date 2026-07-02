@@ -50,7 +50,7 @@ Legend: ☐ not started · ◐ drafting · ☑ verified & merged
 | 25 | F4 | `frontend-auth-guards.md` | Auth redirect, onboarding gate, routing, zod wizard | ☑ | 2026-07-02 |
 | 26 | F5 | `frontend-auth-screens.md` | (auth) + start/ + join/ + onboarding screens | ☑ | 2026-07-02 |
 | 27 | F6 | `frontend-dashboard-student.md` | Student area: learn, exam, chat, calendar, profile | ☑ | 2026-07-02 |
-| 28 | F7 | `frontend-teacher.md` [a/b] | Teacher area: create-class, classes, students, analytics | ☐ | — |
+| 28 | F7 | `frontend-teacher.md` | Teacher area: create-class, classes, students, analytics | ☑ | 2026-07-02 |
 | 29 | F8 | `frontend-org.md` | Org manager area + workspace switcher | ☐ | — |
 | 30 | F9 | `frontend-admin.md` | Admin area (13 routes) | ☐ | — |
 | 31 | F10 | `frontend-marketing.md` | Landing (thin index) | ☐ | — |
@@ -60,5 +60,5 @@ Legend: ☐ not started · ◐ drafting · ☑ verified & merged
 | 35 | AUDIT | — | Final coverage pass: 8-point gate across the whole tree | ☐ | — |
 
 ## Coverage ledger
-- Total steps: 35 · Verified: 27 · Drafting: 0 · Not started: 8
+- Total steps: 35 · Verified: 28 · Drafting: 0 · Not started: 7
 - Stale (Last-verified > 60 days): none
