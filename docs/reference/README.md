@@ -39,7 +39,7 @@ Legend: ☐ not started · ◐ drafting · ☑ verified & merged
 | 14 | L5 | `llm-transcription.md` | Chunked transcription, multimodal shapes, env knobs | ☑ | 2026-07-02 |
 | 15 | L6 | `llm-structure-stage.md` | Structure extraction (step 2), validate_keep_dict | ☑ | 2026-07-02 |
 | 16 | L7 | `llm-prereqs-recap.md` | Steps 3–5: prerequisites, teaching, recap | ☑ | 2026-07-02 |
-| 17 | L8 | `llm-quizzes-adaptive.md` | Quizzes, final exam, adaptive weak-point loop | ☐ | — |
+| 17 | L8 | `llm-quizzes-adaptive.md` | Quizzes, final exam, adaptive weak-point loop | ☑ | 2026-07-02 |
 | 18 | L9 | `llm-exam-prep.md` | Exam-prep 2-step pipeline, question JSON contract | ☐ | — |
 | 19 | L10 | `llm-pdf-and-cost.md` [a/b] | PDF ingest/export + LLMUsageLog cost attribution | ☐ | — |
 | 20 | B8 | `backend-celery-ops.md` | Queues, beat, time limits, SMS, media compressor | ☐ | — |
@@ -60,5 +60,5 @@ Legend: ☐ not started · ◐ drafting · ☑ verified & merged
 | 35 | AUDIT | — | Final coverage pass: 8-point gate across the whole tree | ☐ | — |
 
 ## Coverage ledger
-- Total steps: 35 · Verified: 16 · Drafting: 0 · Not started: 19
+- Total steps: 35 · Verified: 17 · Drafting: 0 · Not started: 18
 - Stale (Last-verified > 60 days): none
