@@ -157,9 +157,15 @@ commons 5 · organizations 4 · waitlist 4 · core 3 · notification 1 · materi
   = role==ADMIN OR is_superuser OR is_staff (NOT DRF's is_staff-only IsAdminUser) — role=ADMIN alone grants
   access by design. (User-management admin endpoints already covered by `test_admin_users.py`.)
 
-### T11 — notification service + api
+### T11 — notification service + api ✅ DONE (`test_read_state_and_scoping.py`, +8)
 - **Owner:** backend-engineer · **Layer:** service/api (currently only 1 file)
 - Dispatch, list, read-state transitions. **Negative:** cannot read/mutate another user's notification.
+- **Result:** dispatch/recipients/broadcast/preferences already covered by `test_teacher_messaging.py` —
+  NOT duplicated. Read-state is `NotificationReadReceipt(user, notification_id)` (unique_together), so the
+  invariant is per-user isolation: teacher A marking a broadcast read leaves it unread for teacher B
+  (asserted end-to-end via the two feeds); mark-read idempotent (2×→1 receipt); read-all creates receipts
+  only for the caller; deny-by-default (anon→401/403, student→403 on the IsTeacherUser feed). `views.py`
+  82%, app 82%.
 
 ### T12 — chatbot service + api
 - **Owner:** backend-engineer + ai-engineer · **Layer:** service/api
