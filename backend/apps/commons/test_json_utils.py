@@ -63,3 +63,32 @@ def test_array_top_level():
 def test_empty_raises():
     with pytest.raises(ValueError):
         extract_json_object("")
+
+
+# --- T5 additions: broken-float rejoin, smart-quote normalization, raw-text net
+
+
+def test_broken_float_across_newline_is_rejoined():
+    """A float split by a newline (digit \n .digit) is stitched back together."""
+    # tier-1 json.loads fails on the raw newline-split number; the balanced-block
+    # path runs _repair_broken_numbers and recovers 12.5.
+    assert extract_json_object('{"x": 12\n.5}') == {"x": 12.5}
+    assert extract_json_object('{"x": 12.\n5}') == {"x": 12.5}
+
+
+def test_curly_smart_quotes_are_normalized():
+    """Typographic quotes on keys/values are folded to straight quotes before parse."""
+    assert extract_json_object('{“a”: “b”}') == {"a": "b"}
+
+
+def test_raw_text_safety_net_when_fence_would_truncate():
+    """A ```-fence whose value itself contains ``` must not truncate the JSON — the
+    greedy fence + raw-text tier-3 safety net recovers the whole object."""
+    text = (
+        'Sure:\n```json\n'
+        '{"content_markdown": "```python\nprint(1)\n```", "ok": true}\n'
+        '```'
+    )
+    obj = extract_json_object(text)
+    assert obj["ok"] is True
+    assert "print(1)" in obj["content_markdown"]

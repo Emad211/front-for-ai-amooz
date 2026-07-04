@@ -89,10 +89,15 @@ commons 5 · organizations 4 · waitlist 4 · core 3 · notification 1 · materi
 
 ## Phase 1 — Backend per-domain hardening (services → api → integration)
 
-### T5 — commons unit/service
+### T5 — commons unit/service ☑ (2026-07-04)
 - **Owner:** backend-engineer · **Layer:** unit/service
 - `json_utils.extract_json_object` (fences, greedy, malformed), `structured_llm.generate_structured` +
   `validate_keep_dict` (repair round-trip, raises-not-`{}`), `phone_utils.normalize_phone`, `schemas.py`.
+- **DONE:** existing guards were already strong (`test_structured_llm` 10, `test_json_utils` 9,
+  `test_phone_utils` full table) — NOT duplicated. Added 3 `json_utils` edges (broken-float rejoin,
+  curly-quote normalization, raw-text safety-net vs inner ```` ``` ````) + **new `test_schemas.py`** (8)
+  covering the Pydantic structure schemas that had **zero** tests (list-of-sections-with-units invariant,
+  `extra='allow'`, non-list rejections). 11 new unit tests, all green.
 
 ### T6 — accounts service + api
 - **Owner:** backend-engineer · **Consult:** security-auditor · **Layer:** service/api

@@ -22,7 +22,7 @@ frontend = Vitest/Playwright. Tests stay next-to-code (`apps/<app>/test_*.py`); 
 - [x] **T4** — ✅ `.github/workflows/tests.yml` (YAML validated): **backend** job on postgres:16 + redis:7 services (real migrations via `--create-db`, `-m "not benchmark"`, coverage xml/term, WeasyPrint+ffmpeg apt libs) + **frontend** job (`npm ci` → `typecheck` → `lint`). push(main)+PR triggered; no hard `--cov-fail-under` yet (pinned at T26). **⚠️ USER ACTION:** GitHub Actions must be enabled on the repo; watch the FIRST run — it may surface a missing system lib or a flaky migration that can't be verified from here.
 
 ## Phase 1 — Backend per-domain hardening (services → api → integration)
-- [ ] **T5** — `commons` unit/service: `json_utils.extract_json_object`, `structured_llm`, `phone_utils`, `structured` schemas.
+- [x] **T5** — ✅ `commons` unit/service: found `structured_llm` (10 tests), `json_utils` (9), `phone_utils` (thorough table) already strong — did NOT duplicate. **Added 11:** 3 `json_utils` edges (broken-float rejoin, curly-quote normalization, raw-text tier-3 safety-net when a fence value contains ```` ``` ````) + a new `test_schemas.py` (8) for the `StructureOutput/Section/Unit/RootObject` Pydantic models (was **0** tests) — the outline-is-list-of-sections-with-units invariant + extra='allow' + list-coercion rejections. All green (`unit`).
 - [ ] **T6** — `accounts` service+api: `get_or_create_user_by_phone`, uniqueness constraint, role model; negative auth.
 - [ ] **T7** — `authentication` api: token/login-by-identifier, refresh; negative (bad creds, blocked re-entry).
 - [ ] **T8** — `organizations` service+api: membership, study groups, manager oversight scope; negative (cross-org, role).
