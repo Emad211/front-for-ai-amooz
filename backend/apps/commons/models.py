@@ -42,6 +42,12 @@ class LLMUsageLog(models.Model):
         IMAGE_PLAN = 'image_plan', 'Image Plan'
         EXAM_PREP_HANDWRITING_VISION = 'exam_prep_handwriting_vision', 'Exam Prep Handwriting Vision'
         JSON_REPAIR = 'json_repair', 'JSON Repair'
+        # Exercise Hub (docs/features/exercise-hub.md)
+        EXERCISE_INGEST = 'exercise_ingest', 'Exercise Ingest (Vision/PDF)'
+        EXERCISE_STRUCTURE = 'exercise_structure', 'Exercise Structure'
+        EXERCISE_GRADING = 'exercise_grading', 'Exercise Grading'
+        EXERCISE_HANDWRITING_VISION = 'exercise_handwriting_vision', 'Exercise Handwriting Vision'
+        CHAT_EXERCISE = 'chat_exercise', 'Exercise Assistant Chat'
         # Other
         OTHER = 'other', 'Other'
 

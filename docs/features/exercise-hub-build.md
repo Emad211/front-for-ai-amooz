@@ -13,8 +13,13 @@ Postgres/CI is migration-truth. LLM fully mocked (0 tokens).
   tests (green). **database-engineer gate PASSED** (ship-ready, no edits): Decimal precision sound, CASCADE
   graph correct, callable JSON defaults, indexes adequate for gradebook queries, no pending-trigger-events
   risk, `0025` free for E9. Rollback = `migrate classes 0023` (auto-reversible CreateModel).
-- [ ] **E2** — `services/exercise_ingest.py` + `PROMPTS["exercise_structure"]` + `ExerciseStructureOutput`
-  Pydantic schema + `test_prompts_contract.py` update. Mocked happy/repair/raise.
+- [x] **E2** — ✅ `services/exercise_ingest.py` (`structure_exercise_markdown`, env-only model chain
+  `EXERCISE_STRUCTURE_MODEL→STRUCTURE_MODEL→MODEL_NAME`, `generate_structured` raise-not-silent) +
+  `PROMPTS["exercise_structure"]["default"]` (byte-for-byte output contract + SAFETY_PREAMBLE +
+  MATH block) + `ExerciseStructureOutput`/`ExerciseSectionOut`/`ExerciseQuestionOut` in `schemas.py` +
+  5 new `LLMUsageLog.Feature` members (migration `commons/0006`, no-op AlterField) + contract test updated
+  (LIVE_KEYS + OUTPUT_KEYS + safety list). Tests `test_exercise_ingest.py` (13: happy/repair/raise +
+  env-only + schema) + full `test_prompts_contract.py` green (60). OCR reused from `pdf_extraction`.
 - [ ] **E3** — `extract_exercise_content` Celery task (pipeline queue) + state machine + `cache.add`
   idempotency. Eager tests: transitions, double-dispatch no-op, FAILED path.
 - [ ] **E4** — teacher endpoints (CRUD / extract / publish / toggles) in `views_exercises.py`. owner-404 +

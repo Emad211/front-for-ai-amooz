@@ -12,7 +12,7 @@ Source of truth for the contract: ``PROMPTS['structure_content']`` in
 """
 from __future__ import annotations
 
-from typing import List, Optional
+from typing import Any, List, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -60,3 +60,40 @@ class StructureOutput(BaseModel):
 
     root_object: Optional[StructureRootObject] = None
     outline: List[StructureSection] = Field(default_factory=list)
+
+
+# ---------------------------------------------------------------------------
+# Exercise Hub — exercise structure extraction (services/exercise_ingest.py).
+# Contract source of truth: ``PROMPTS['exercise_structure']['default']``.
+# Load-bearing invariant: ``sections`` is a list of sections, each with a
+# ``questions`` list — exactly what the ingest task iterates to build rows.
+# ---------------------------------------------------------------------------
+
+
+class ExerciseQuestionOut(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    question_id: Optional[str] = None
+    question_text_markdown: Optional[str] = None
+    question_type: Optional[str] = None
+    options: Optional[List[Any]] = None
+    points: Optional[float] = None
+    reference_answer_markdown: Optional[str] = None
+
+
+class ExerciseSectionOut(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    section_id: Optional[str] = None
+    title: Optional[str] = None
+    questions: List[ExerciseQuestionOut] = Field(default_factory=list)
+
+
+class ExerciseStructureOutput(BaseModel):
+    """Top-level shape of the exercise-structure JSON: ``exercise_title`` +
+    ``sections`` (each a list of questions)."""
+
+    model_config = ConfigDict(extra="allow")
+
+    exercise_title: Optional[str] = None
+    sections: List[ExerciseSectionOut] = Field(default_factory=list)
