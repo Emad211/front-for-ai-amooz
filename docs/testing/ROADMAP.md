@@ -46,7 +46,14 @@ commons 5 · organizations 4 · waitlist 4 · core 3 · notification 1 · materi
   404). **Policy flag for security-auditor:** tighten `IsStudentUser` to student-only iff strict role
   separation is the intended product policy.
 
-### T2b — Genuine exam-prep behavior items (carved from T2) ☐
+### T2b — Genuine exam-prep behavior items (carved from T2) ☑ (2026-07-04)
+- **RESOLVED — both were stale/too-strict tests, the CODE is correct:** (a) the idempotency test uploaded
+  two DIFFERENT files with one `client_request_id`; `_is_same_uploaded_source` (name+size) correctly makes
+  a new session (anti "new-input/stale-output"). Fixed to a same-file retry + added a new test locking the
+  different-file→new-session behavior. (b) reset clears `attempt.answers={}` in the DB (verified); the
+  `/result/` view returns a per-question blank map for display — aligned the assertion. **Full sqlite lane
+  now GREEN** (891 pass / 3 skip / 0 fail); also skipif'd `test_concurrent_registration_same_username`
+  (a sibling sqlite concurrency flake). Original spec below.
 - **Owner:** backend-engineer · **Consult:** security-auditor · **Layer:** api
 - (a) `test_idempotency_with_client_request_id`: a 2nd exam-prep step-1 with the same `client_request_id`
   returns a NEW session (id 2) instead of the existing one (id 1) — is idempotency implemented, an

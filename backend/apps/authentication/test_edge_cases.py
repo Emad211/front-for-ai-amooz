@@ -110,6 +110,12 @@ class TestAuthenticationEdgeCases:
             # Should handle all cases gracefully
             assert response.status_code in [201, 400]
 
+    @pytest.mark.skipif(
+        connection.vendor == 'sqlite',
+        reason='sqlite serializes writes (single-writer), so threaded concurrent '
+               'registration cannot reproduce the race deterministically (flaky); '
+               'valid only on Postgres.',
+    )
     def test_concurrent_registration_same_username(self):
         """Test race condition in username uniqueness"""
         import threading

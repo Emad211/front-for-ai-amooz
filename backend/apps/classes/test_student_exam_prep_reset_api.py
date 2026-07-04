@@ -104,7 +104,10 @@ class TestStudentExamPrepResetApi:
         assert res.data['finalized'] is False
         assert res.data['score_0_100'] == 0
         assert res.data['correct_count'] == 0
-        assert res.data['answers'] == {}
+        # The stored attempt.answers is cleared to {} (asserted above); the result
+        # endpoint returns a per-question blank map for the UI (every question shown
+        # with an empty answer), consistent with the empty `items` below.
+        assert all(v == '' for v in res.data['answers'].values())
         assert {it['question_id'] for it in res.data['items']} == {'q1', 'q2'}
         assert all(it['selected_label'] == '' for it in res.data['items'])
         assert all(it['is_correct'] is False for it in res.data['items'])

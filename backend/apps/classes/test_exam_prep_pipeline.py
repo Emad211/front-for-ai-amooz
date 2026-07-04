@@ -144,7 +144,8 @@ class TestExamPrepStep1Transcription:
         assert res.status_code == 400
 
     def test_idempotency_with_client_request_id(self, monkeypatch):
-        """Same client_request_id should return existing session."""
+        """A genuine retry (SAME file + SAME client_request_id) dedupes to the
+        existing session — no duplicate is created."""
         user = User.objects.create_user(username='teacher4', password='pass', role=User.Role.TEACHER)
         token = str(RefreshToken.for_user(user).access_token)
 
@@ -171,16 +172,49 @@ class TestExamPrepStep1Transcription:
         )
         session_id_1 = res1.data['id']
 
-        # Second request with same client_request_id
-        upload2 = SimpleUploadedFile('exam2.ogg', b'fake-audio-2', content_type='audio/ogg')
+        # Second request: SAME file (same name + bytes) + SAME client_request_id →
+        # a genuine retry, must dedupe to the existing session.
+        upload2 = SimpleUploadedFile('exam1.ogg', b'fake-audio', content_type='audio/ogg')
         res2 = client.post(
             '/api/classes/exam-prep-sessions/step-1/',
-            {'title': 'Test2', 'file': upload2, 'client_request_id': client_request_id},
+            {'title': 'Test', 'file': upload2, 'client_request_id': client_request_id},
             format='multipart',
         )
 
-        # Should return same session
+        # Should return same session (idempotent hit)
         assert res2.data['id'] == session_id_1
+
+    def test_different_file_same_client_request_id_creates_new_session(self, monkeypatch):
+        """A DIFFERENT file reusing the same client_request_id must NOT return the
+        stale session (that would emit the old media's output for a new upload —
+        the 'new input, stale output' bug). It mints a fresh session instead."""
+        user = User.objects.create_user(username='teacher4b', password='pass', role=User.Role.TEACHER)
+        token = str(RefreshToken.for_user(user).access_token)
+
+        monkeypatch.setattr(
+            'apps.classes.views.transcribe_media_bytes',
+            lambda *, data, mime_type: ('# Transcript', 'gemini', 'models/gemini-2.5-flash'),
+        )
+
+        client = APIClient()
+        client.credentials(HTTP_AUTHORIZATION=f'Bearer {token}')
+
+        import uuid
+        client_request_id = str(uuid.uuid4())
+
+        res1 = client.post(
+            '/api/classes/exam-prep-sessions/step-1/',
+            {'title': 'A', 'file': SimpleUploadedFile('a.ogg', b'audio-A', content_type='audio/ogg'),
+             'client_request_id': client_request_id},
+            format='multipart',
+        )
+        res2 = client.post(
+            '/api/classes/exam-prep-sessions/step-1/',
+            {'title': 'B', 'file': SimpleUploadedFile('b.ogg', b'audio-B-different', content_type='audio/ogg'),
+             'client_request_id': client_request_id},
+            format='multipart',
+        )
+        assert res2.data['id'] != res1.data['id']
 
 
 @pytest.mark.django_db
