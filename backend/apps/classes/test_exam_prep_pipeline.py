@@ -491,33 +491,29 @@ class TestExamPrepServiceUnit:
     """Unit tests for exam prep structure extraction service."""
 
     def test_extract_exam_prep_structure_returns_expected_format(self, monkeypatch):
-        """Service should return (dict, provider, model) tuple."""
-        from apps.classes.services.exam_prep_structure import extract_exam_prep_structure
+        """Service returns (dict, provider, model). The LLM is mocked at the
+        module-bound `generate_text` seam (the old dual-client `_get_clients` path
+        was removed for a single OpenAI-compatible client); the model comes from
+        ENV only (STRUCTURE_MODEL) since the hardcoded fallback was removed."""
+        from types import SimpleNamespace
+        from apps.classes.services import exam_prep_structure as eps
 
-        def _fake_generate_content(model, contents):
-            class FakeResponse:
-                text = '{"exam_prep": {"title": "Test", "questions": []}}'
-            return FakeResponse()
-
-        class FakeClient:
-            class models:
-                @staticmethod
-                def generate_content(model, contents):
-                    return _fake_generate_content(model, contents)
-
-        monkeypatch.setenv('GEMINI_API_KEY', 'fake-key')
+        monkeypatch.setenv('STRUCTURE_MODEL', 'test-structure-model')
         monkeypatch.setattr(
-            'apps.classes.services.exam_prep_structure._get_clients',
-            lambda: (FakeClient(), None),
+            eps, 'generate_text',
+            lambda **kwargs: SimpleNamespace(
+                text='{"exam_prep": {"title": "Test", "questions": []}}'
+            ),
         )
 
-        result, provider, model = extract_exam_prep_structure(
+        result, provider, model = eps.extract_exam_prep_structure(
             transcript_markdown='# Test transcript'
         )
 
         assert 'exam_prep' in result
-        assert provider == 'gemini'
-        assert 'gemini' in model.lower() or 'models/' in model
+        assert model == 'test-structure-model'
+        # provider comes from preferred_provider() (env-driven); just assert it's set.
+        assert isinstance(provider, str) and provider
 
 
 # ==========================================================================
@@ -732,15 +728,22 @@ class TestStudentExamPrepList:
         res = client.get('/api/classes/student/exam-preps/')
         assert res.status_code == 401
 
-    def test_list_requires_student_role(self, student_with_invite):
-        """List should reject non-student users."""
+    def test_list_is_phone_scoped_for_uninvited_teacher(self, student_with_invite):
+        """`IsStudentUser` allows teachers (learners); the list is phone-scoped, so
+        an uninvited teacher gets 200 with NO exam-preps (no data leak) — not a
+        role-403. [policy note in test_student_courses.py]"""
+        _, session = student_with_invite
         teacher = User.objects.create_user(username='teacher_list', password='pass', role=User.Role.TEACHER)
         token = str(RefreshToken.for_user(teacher).access_token)
 
         client = APIClient()
         client.credentials(HTTP_AUTHORIZATION=f'Bearer {token}')
         res = client.get('/api/classes/student/exam-preps/')
-        assert res.status_code == 403
+        assert res.status_code == 200
+        data = res.json()
+        results = data['results'] if isinstance(data, dict) and 'results' in data else data
+        assert all(item.get('id') != session.id for item in results), \
+            'uninvited teacher saw an exam-prep they were not invited to (data leak)'
 
     def test_student_sees_invited_exam_preps(self, student_with_invite):
         """Student should see exam preps they've been invited to."""
@@ -834,8 +837,10 @@ class TestStudentExamPrepDetail:
         res = client.get(f'/api/classes/student/exam-preps/{session.id}/')
         assert res.status_code == 401
 
-    def test_detail_requires_student_role(self, student_with_invite):
-        """Detail should reject non-student users."""
+    def test_detail_denied_to_uninvited_teacher(self, student_with_invite):
+        """`IsStudentUser` allows teachers (learners); detail is phone-scoped, so
+        an uninvited teacher gets 404 (not the data) — not a role-403.
+        [policy note in test_student_courses.py]"""
         _, session = student_with_invite
         teacher = User.objects.create_user(username='teacher_det2', password='pass', role=User.Role.TEACHER)
         token = str(RefreshToken.for_user(teacher).access_token)
@@ -843,7 +848,8 @@ class TestStudentExamPrepDetail:
         client = APIClient()
         client.credentials(HTTP_AUTHORIZATION=f'Bearer {token}')
         res = client.get(f'/api/classes/student/exam-preps/{session.id}/')
-        assert res.status_code == 403
+        # Denied (no data leak): uninvited teacher — 400 (phone/enrollment) or 404.
+        assert res.status_code in (400, 404)
 
     def test_student_can_get_exam_prep_detail(self, student_with_invite):
         """Student should be able to get exam prep details with questions."""

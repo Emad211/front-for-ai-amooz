@@ -16,10 +16,12 @@ from __future__ import annotations
 
 import base64
 import os
+from datetime import timedelta
 from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
+from django.utils import timezone
 from model_bakery import baker
 
 from apps.classes.models import ClassCreationSession
@@ -387,6 +389,12 @@ def test_step1_heartbeat_bumps_updated_at_and_detects_cancel():
         status=Status.TRANSCRIBING,
         source_type=ClassCreationSession.SourceType.MEDIA,
     )
+    # Pin updated_at to a known past instant so the heartbeat's fresh timezone.now()
+    # is strictly greater — otherwise both writes can land in the same microsecond on
+    # a fast machine and the `>` assertion flakes.
+    past = timezone.now() - timedelta(hours=1)
+    ClassCreationSession.objects.filter(id=session.id).update(updated_at=past)
+    session.refresh_from_db()
     before = session.updated_at
 
     heartbeat = tasks._make_step1_heartbeat(session.id)

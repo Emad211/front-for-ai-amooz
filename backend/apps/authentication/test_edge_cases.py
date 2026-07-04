@@ -7,6 +7,7 @@ import json
 import threading
 import uuid
 from django.contrib.auth import get_user_model
+from django.db import connection
 from rest_framework.test import APIClient
 from rest_framework_simplejwt.tokens import RefreshToken
 from unittest.mock import patch
@@ -140,6 +141,11 @@ class TestAuthenticationEdgeCases:
         success_count = results.count(201)
         assert success_count == 5, f"Expected 5 successes with unique usernames, got {success_count}"
         
+    @pytest.mark.skipif(
+        connection.vendor == 'sqlite',
+        reason='sqlite serializes writes (single-writer) so the concurrent-INSERT '
+               'race cannot be reproduced; valid only on Postgres.',
+    )
     def test_real_race_condition_same_username(self):
         """Test actual race condition with same username"""
         client = APIClient()

@@ -71,7 +71,9 @@ def test_memory_service_trims_buffer(monkeypatch):
     monkeypatch.setattr(ms.redis.Redis, 'from_url', staticmethod(lambda *_a, **_k: fake))
 
     # Avoid real LLM calls if summarization is triggered.
-    monkeypatch.setattr(ms, 'generate_text', lambda *, contents, model=None: type('R', (), {'text': 'SUMMARY'})())
+    # memory_service calls generate_text(contents=..., feature='memory_summary'); the
+    # mock must accept the feature kwarg (and any future kwargs) or it TypeErrors.
+    monkeypatch.setattr(ms, 'generate_text', lambda *, contents, feature=None, model=None, **_: type('R', (), {'text': 'SUMMARY'})())
 
     mem = ms.MemoryService(thread_id='t3', max_buffer_messages=6, summarize_after_messages=7)
     mem.add(role='user', content='m1')
@@ -106,7 +108,9 @@ def test_memory_service_summarizes_overflow(monkeypatch):
     monkeypatch.setattr(ms.redis.Redis, 'from_url', staticmethod(lambda *_a, **_k: fake))
 
     # Make summarizer deterministic.
-    monkeypatch.setattr(ms, 'generate_text', lambda *, contents, model=None: type('R', (), {'text': 'SUMMARY'})())
+    # memory_service calls generate_text(contents=..., feature='memory_summary'); the
+    # mock must accept the feature kwarg (and any future kwargs) or it TypeErrors.
+    monkeypatch.setattr(ms, 'generate_text', lambda *, contents, feature=None, model=None, **_: type('R', (), {'text': 'SUMMARY'})())
 
     mem = ms.MemoryService(thread_id='t4', max_buffer_messages=6, summarize_after_messages=7)
     mem.add(role='user', content='u1')

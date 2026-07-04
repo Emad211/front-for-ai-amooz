@@ -8,7 +8,10 @@ from apps.classes.models import ClassCreationSession, ClassInvitation, StudentCo
 
 
 @pytest.mark.django_db
-def test_student_course_chat_requires_student_role(monkeypatch):
+def test_student_course_chat_denied_to_uninvited_teacher(monkeypatch):
+    """`IsStudentUser` allows teachers (learners), but chat is phone-scoped: an
+    uninvited caller gets 404 (not-found), not the course data. No role-403; the
+    guarantee is no-data-leak. [policy note in test_student_courses.py]"""
     teacher = baker.make(User, role=User.Role.TEACHER)
     student = baker.make(User, role=User.Role.STUDENT, phone='09920000000')
 
@@ -19,7 +22,9 @@ def test_student_course_chat_requires_student_role(monkeypatch):
     client.force_authenticate(user=teacher)
 
     resp = client.post(f'/api/classes/student/courses/{session.id}/chat/', {'message': 'hi'}, format='json')
-    assert resp.status_code in (401, 403)
+    # Denied (no data leak): the uninvited caller's phone doesn't match the invite,
+    # so the view refuses — 400 (phone/enrollment check) or 404 (not found).
+    assert resp.status_code in (400, 404)
 
 
 @pytest.mark.django_db

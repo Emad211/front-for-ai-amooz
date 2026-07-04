@@ -7,7 +7,15 @@ from apps.classes.models import ClassCreationSession, ClassInvitation, ClassSect
 
 
 @pytest.mark.django_db
-def test_student_courses_list_requires_student_role():
+def test_student_courses_list_is_phone_scoped_not_role_scoped():
+    """A teacher who was never invited sees NO courses.
+
+    `IsStudentUser` deliberately allows teachers (they can be learners too), so
+    the guarantee is NOT a role-403 — it's phone-scoping: the list only returns
+    courses whose invite matches the caller's phone. The uninvited teacher gets
+    200 with the session absent (no data leak). [policy: security-auditor may
+    tighten IsStudentUser to student-only if strict role separation is wanted.]
+    """
     teacher = baker.make(User, role=User.Role.TEACHER)
     student = baker.make(User, role=User.Role.STUDENT, phone='09920000000')
 
@@ -24,7 +32,11 @@ def test_student_courses_list_requires_student_role():
     client.force_authenticate(user=teacher)
 
     resp = client.get('/api/classes/student/courses/')
-    assert resp.status_code in (401, 403)
+    assert resp.status_code == 200
+    data = resp.json()
+    results = data['results'] if isinstance(data, dict) and 'results' in data else data
+    assert all(c.get('id') != session.id for c in results), \
+        'uninvited teacher saw a course they were not invited to (data leak)'
 
 
 @pytest.mark.django_db

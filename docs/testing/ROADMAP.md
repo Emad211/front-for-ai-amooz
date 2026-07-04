@@ -31,12 +31,29 @@ commons 5 · organizations 4 · waitlist 4 · core 3 · notification 1 · materi
   (sqlite `--no-migrations`, `-m "not benchmark"`). No hard gate yet; floor pinned in CI at T4. Note: run
   with `--cov-config=backend/pyproject.toml` from repo root so pytest-cov picks up the omit list.
 
-### T2 — Clear the 9 pre-existing failures
+### T2 — Clear the pre-existing failures ☑ (2026-07-04, stale/flaky tranche)
 - **Owner:** qa-engineer + backend-engineer · **Layer:** unit/api
 - Fix or correctly-mock: stale exam-prep `_get_clients` unit; exam-prep role-403 + idempotency;
   `requires_student_role`/`teacher_rejected` permission tests; `test_health.py` (`.data` on plain
   `HttpResponse`); 3 chatbot `_get_clients` tests. Suite must be **fully green** so the ratchet is honest.
-  Update the failure list in `.claude/agents/qa-engineer.md`.
+- **DONE (13/15):** `test_health` `.data`→`json.loads(content)`; `test_real_race_condition_same_username`
+  `skipif(connection.vendor=='sqlite')`; transcription heartbeat pinned to a past `updated_at` (kills the
+  same-microsecond flake); chatbot memory×2 mock lambda now accepts `feature=`; provider-selection test
+  rewritten to `preferred_provider()` (the dual-client `_get_clients` seam was removed); exam-prep service
+  unit rewritten to patch the module-bound `generate_text`; the **6 role tests** (`test_teacher_rejected`
+  + 5 `requires_student_role`) now assert the CURRENT policy — `IsStudentUser` deliberately allows
+  teachers, and phone-scoping (not role) yields the no-data-leak guarantee (uninvited → 200-empty / 400 /
+  404). **Policy flag for security-auditor:** tighten `IsStudentUser` to student-only iff strict role
+  separation is the intended product policy.
+
+### T2b — Genuine exam-prep behavior items (carved from T2) ☐
+- **Owner:** backend-engineer · **Consult:** security-auditor · **Layer:** api
+- (a) `test_idempotency_with_client_request_id`: a 2nd exam-prep step-1 with the same `client_request_id`
+  returns a NEW session (id 2) instead of the existing one (id 1) — is idempotency implemented, an
+  aspirational test, or a real dedup bug? (b) `test_reset_clears_attempt_and_allows_retake`: reset returns
+  `answers={'q1':'','q2':''}` not `{}` — should reset clear to `{}`? Read the views; fix real bugs
+  red-first or align the expectation with the documented behavior. These need care (real code, not test
+  cleanup) — deliberately NOT rushed into T2.
 
 ### T3 — Shared fixtures / factories
 - **Owner:** qa-engineer · **Layer:** infra

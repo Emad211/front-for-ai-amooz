@@ -28,10 +28,18 @@ cd frontend && npm run typecheck && npm run lint           # frontend gates (bui
 - Frontend has no unit runner yet; `tsc --noEmit` is the gate with a small **pre-existing error baseline:
   the bar is 0 NEW errors** (count before vs after).
 
-## Known pre-existing failures (do NOT chase as new; verify they're unchanged)
-- `test_real_race_condition_same_username` — sqlite concurrent-INSERT artifact.
-- A few exam-prep tests (role-403 + idempotency) in `test_exam_prep_pipeline.py`.
-- `test_health.py` (`.data` on plain HttpResponse) and 3 chatbot `_get_clients` tests.
+## Known pre-existing failures
+**Mostly CLEARED at T2 (2026-07-04)** — the historical list below was fixed; only T2b remains.
+- ✅ FIXED: `test_real_race_condition_same_username` (now `skipif(sqlite)`), `test_health.py`
+  (`.data`→`json.loads(content)`), 3 chatbot provider/`_get_clients` + memory tests (rewritten to the
+  current single-client seam / mock signature), transcription heartbeat flake (pinned past `updated_at`),
+  the exam-prep `_get_clients` service unit, and the 6 role tests (`IsStudentUser` allows teachers — now
+  assert the phone-scoping no-leak outcome, not role-403).
+- ⏳ **REMAINING (T2b, 2 tests):** `test_idempotency_with_client_request_id` (exam-prep step-1 dedup) and
+  `test_reset_clears_attempt_and_allows_retake` (reset → `{}` vs per-question blanks) — genuine behavior
+  questions, not test cleanup; carved to T2b for careful resolution (backend-engineer/security-auditor).
+- **Policy open item:** `IsStudentUser` deliberately permits teachers as learners; if strict teacher→403
+  separation is wanted, tighten it (security-auditor decision).
 If any OTHER test fails, it's real until proven otherwise — bisect against the change under test.
 
 ## Your craft
