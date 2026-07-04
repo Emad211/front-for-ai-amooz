@@ -14,7 +14,7 @@ frontend = Vitest/Playwright. Tests stay next-to-code (`apps/<app>/test_*.py`); 
 5. Checklist ticked + `ROADMAP.md` step marked done with the commit sha.
 
 ## Phase 0 — Foundations (runnable, measured, gated)
-- [ ] **T0** — Reliable-suite fix: document/settle the sqlite `--no-migrations` story + a Postgres test path; markers registered in `pytest.ini`.
+- [x] **T0** — ✅ `3814528`+ : marker taxonomy (unit/service/api/integration/permission/smoke/slow/benchmark) registered in both `pytest.ini` + `--strict-markers`; two-lane run story + `--reuse-db` hygiene in `docs/runbooks/testing.md`. **892 tests collect clean** under strict markers.
 - [ ] **T1** — Adopt `pytest-cov` + `.coveragerc`; record the **baseline** coverage number (the starting floor).
 - [ ] **T2** — Clear the 9 pre-existing failures (stale `_get_clients` unit, exam-prep 403/idempotency, `requires_student_role`/`teacher_rejected`, `test_health.py`, 3 chatbot `_get_clients`).
 - [ ] **T3** — Shared fixtures/factories: consolidate user/role/org/class/session builders into reusable `conftest`/factory fixtures.

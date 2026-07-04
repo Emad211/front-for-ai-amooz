@@ -12,13 +12,15 @@ commons 5 · organizations 4 · waitlist 4 · core 3 · notification 1 · materi
 
 ## Phase 0 — Foundations
 
-### T0 — Reliable, runnable suite
+### T0 — Reliable, runnable suite ☑ (2026-07-04)
 - **Owner:** qa-engineer · **Layer:** infra
 - Settle the run story: Postgres (Docker) = source of truth (migrations run); sqlite path documented as
   `DATABASE_URL=sqlite:///test.sqlite3 --no-migrations` because org migrations use `DO $$…$$` raw SQL
   (`organizations/0002-0006,0010`, `classes/0019`) that sqlite can't parse. Register all markers
-  (`unit,service,api,integration,benchmark`) in `pytest.ini` (kills `PytestUnknownMarkWarning`).
-- **DoD:** `python -m pytest` runs clean on Postgres; sqlite fallback documented in `docs/runbooks/`.
+  (`unit,service,api,integration,permission,smoke,slow,benchmark`) in `pytest.ini` + `--strict-markers`.
+- **DONE:** both `pytest.ini` files carry the 8-marker taxonomy + `--strict-markers`; `docs/runbooks/testing.md`
+  documents the two lanes + `--reuse-db`/`--create-db` hygiene. Verified: **892 tests collect clean** under
+  `--strict-markers` (only `unit`/`benchmark` were actually in use, both registered).
 
 ### T1 — Coverage measurement + baseline
 - **Owner:** qa-engineer · **Layer:** infra
