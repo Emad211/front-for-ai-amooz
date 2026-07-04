@@ -9,6 +9,7 @@ omit = [
     "*/migrations/*",
     "*/tests/*",
     "*/test_*.py",
+    "*/testing/*",
     "*/conftest.py",
     "*/settings*.py",
     "*/wsgi.py",

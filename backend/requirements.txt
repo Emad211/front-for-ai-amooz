@@ -44,3 +44,4 @@ pytest-django
 model-bakery
 pytest-cov
 coverage[toml]
+freezegun

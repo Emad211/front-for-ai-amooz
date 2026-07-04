@@ -62,10 +62,18 @@ commons 5 · organizations 4 · waitlist 4 · core 3 · notification 1 · materi
   red-first or align the expectation with the documented behavior. These need care (real code, not test
   cleanup) — deliberately NOT rushed into T2.
 
-### T3 — Shared fixtures / factories
+### T3 — Shared fixtures / factories ☑ (2026-07-04)
 - **Owner:** qa-engineer · **Layer:** infra
 - Consolidate repeated builders (user-by-role, org+membership, study group, class + creation session,
   enrolled student, quiz/exam JSON) into `conftest` fixtures / model-bakery recipes. Later steps reuse these.
+- **DONE:** `backend/testing/recipes.py` (Recipes for `admin/teacher/manager/student_completed/student_shell`
+  with `seq`-unique valid phones, `organization`/`org_membership`/`invite_code`/`study_group`,
+  `class_session`/`exam_prep_session`/`class_section`/`class_unit`) + fixtures in `backend/conftest.py`
+  (`admin_client`…`anon_client`, `other_teacher_client`/`other_student_client`, `mock_llm` patching the
+  module-bound `apps.classes.services.<stage>.generate_text` — zero tokens, `freeze_tehran` via freezegun).
+  Proof: `testing/test_fixtures_smoke.py` (8) + classes `test_permissions` refactored onto `anon_client`
+  + new `organizations/test_permissions_smoke.py` platform-admin matrix (`permission` marker). **26 green.**
+  `testing/` omitted from coverage; freezegun in requirements.
 
 ### T4 — CI gate
 - **Owner:** devops-engineer + qa-engineer · **Consult:** release-manager · **Layer:** infra

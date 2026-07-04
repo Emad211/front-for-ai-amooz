@@ -36,10 +36,9 @@ class TestTeacherEndpointPermissions:
         '/api/classes/exam-prep-sessions/',
     ]
 
-    def test_anonymous_rejected(self):
-        client = APIClient()
+    def test_anonymous_rejected(self, anon_client):
         for url in self.TEACHER_URLS:
-            resp = client.get(url)
+            resp = anon_client.get(url)
             assert resp.status_code in (401, 403), f'{url} allowed anonymous access'
 
     def test_student_rejected(self):
@@ -74,10 +73,9 @@ class TestStudentEndpointPermissions:
         '/api/classes/student/exam-preps/',
     ]
 
-    def test_anonymous_rejected(self):
-        client = APIClient()
+    def test_anonymous_rejected(self, anon_client):
         for url in self.STUDENT_URLS:
-            resp = client.get(url)
+            resp = anon_client.get(url)
             assert resp.status_code in (401, 403), f'{url} allowed anonymous access'
 
     def test_teacher_allowed_by_role_not_403(self):
