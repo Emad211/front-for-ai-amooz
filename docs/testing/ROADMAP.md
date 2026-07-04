@@ -225,10 +225,15 @@ commons 5 · organizations 4 · waitlist 4 · core 3 · notification 1 · materi
   KeyError — the str.format-avoidance property), all-occurrences replaced, unbalanced brace safe, no-kwargs
   identity, non-str coerced. 59 green across all prompt tests. 0-token (pure string).
 
-### T17 — Structure / prereqs / recap / quizzes services
+### T17 — Structure / prereqs / recap / quizzes services ✅ DONE (`test_pipeline_service_parse.py`, +6 unit/service)
 - **Owner:** ai-engineer · **Layer:** service
 - Each service with a mocked LLM client: structured-output happy path + one-repair path; `validate_keep_dict`
   preserves exact dict (structure.py). Frozen quiz/exam JSON shapes asserted.
+- **Result:** step3/step5 endpoint tests + generic `test_structured_llm` (T5) + adaptive math already covered —
+  NOT duplicated. Added the two service parse contracts via the module-bound `generate_text` seam (0-token):
+  structure `validate_keep_dict` happy (exact dict kept) + one-shot repair round-trip (generate_text called
+  twice, recovers) + raise-not-silent on still-bad; quizzes `extract_json_object` happy + prose-embedded-JSON
+  extraction + raise on garbage. `side_effect` drives the repair path. 30 green across the pipeline-service suite.
 
 ### T18 — Adaptive loop
 - **Owner:** ai-engineer · **Layer:** unit/api/integration
