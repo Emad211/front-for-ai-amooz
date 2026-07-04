@@ -42,3 +42,5 @@ tenacity
 pytest
 pytest-django
 model-bakery
+pytest-cov
+coverage[toml]

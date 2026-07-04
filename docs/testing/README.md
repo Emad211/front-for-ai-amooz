@@ -15,7 +15,7 @@ frontend = Vitest/Playwright. Tests stay next-to-code (`apps/<app>/test_*.py`); 
 
 ## Phase 0 — Foundations (runnable, measured, gated)
 - [x] **T0** — ✅ `3814528`+ : marker taxonomy (unit/service/api/integration/permission/smoke/slow/benchmark) registered in both `pytest.ini` + `--strict-markers`; two-lane run story + `--reuse-db` hygiene in `docs/runbooks/testing.md`. **892 tests collect clean** under strict markers.
-- [ ] **T1** — Adopt `pytest-cov` + `.coveragerc`; record the **baseline** coverage number (the starting floor).
+- [x] **T1** — ✅ `pytest-cov` + `coverage[toml]` added (requirements + `backend/pyproject.toml`, branch=true, omit migrations/tests/settings). **Baseline = 79%** branch coverage (measured 2026-07-04, sqlite `--no-migrations`, `-m "not benchmark"`, 875 pass / 15 pre-existing-fail). Starting floor = 79% (no hard gate yet — pinned in CI at T4). Reproducible run: add `--cov-config=backend/pyproject.toml`.
 - [ ] **T2** — Clear the 9 pre-existing failures (stale `_get_clients` unit, exam-prep 403/idempotency, `requires_student_role`/`teacher_rejected`, `test_health.py`, 3 chatbot `_get_clients`).
 - [ ] **T3** — Shared fixtures/factories: consolidate user/role/org/class/session builders into reusable `conftest`/factory fixtures.
 - [ ] **T4** — CI: GitHub Actions running the **backend** suite on Postgres (migrations run) + coverage report; frontend `tsc`/`lint` job.

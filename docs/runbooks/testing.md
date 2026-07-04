@@ -42,5 +42,8 @@ Canonical list lives in `.claude/agents/qa-engineer.md` (cleared to green in roa
 then, a red suite is expected; verify a failure is on that list before treating it as a regression.
 
 ## Coverage (from T1)
-`python -m pytest -m "not benchmark" --cov --cov-branch --cov-report=term-missing` (config in
-`backend/pyproject.toml`; floor is the measured baseline, ratcheted up-only).
+`python -m pytest -m "not benchmark" --cov --cov-branch --cov-config=backend/pyproject.toml
+--cov-report=term-missing` (config in `backend/pyproject.toml`). **Baseline = 79%** branch coverage
+(2026-07-04); floor is the measured baseline, ratcheted **up-only**, hard-gated in CI (T4), advisory in the
+sqlite lane. Pass `--cov-config=backend/pyproject.toml` when running from the repo root so the omit list
+(migrations/tests/settings) applies.

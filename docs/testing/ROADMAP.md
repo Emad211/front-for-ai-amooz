@@ -22,10 +22,14 @@ commons 5 · organizations 4 · waitlist 4 · core 3 · notification 1 · materi
   documents the two lanes + `--reuse-db`/`--create-db` hygiene. Verified: **892 tests collect clean** under
   `--strict-markers` (only `unit`/`benchmark` were actually in use, both registered).
 
-### T1 — Coverage measurement + baseline
+### T1 — Coverage measurement + baseline ☑ (2026-07-04)
 - **Owner:** qa-engineer · **Layer:** infra
 - Add `pytest-cov` to `backend/requirements.txt` (dev), a `.coveragerc` (omit migrations, tests, settings,
   `.venv`). Record the measured baseline % in `README.md` as the **starting floor**. No gate yet.
+- **DONE:** `pytest-cov` + `coverage[toml]` in requirements; config in `backend/pyproject.toml` (branch=true,
+  source=apps, omit migrations/tests/conftest/settings/wsgi/asgi/__init__/.venv). **Baseline = 79%** branch
+  (sqlite `--no-migrations`, `-m "not benchmark"`). No hard gate yet; floor pinned in CI at T4. Note: run
+  with `--cov-config=backend/pyproject.toml` from repo root so pytest-cov picks up the omit list.
 
 ### T2 — Clear the 9 pre-existing failures
 - **Owner:** qa-engineer + backend-engineer · **Layer:** unit/api

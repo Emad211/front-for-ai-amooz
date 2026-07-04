@@ -1,0 +1,30 @@
+# Tooling config home (coverage). Test discovery/markers stay in pytest.ini.
+# Program: ADR-0003 (docs/testing/). Run:
+#   python -m pytest -m "not benchmark" --cov --cov-branch --cov-report=term-missing
+
+[tool.coverage.run]
+branch = true
+source = ["apps"]
+omit = [
+    "*/migrations/*",
+    "*/tests/*",
+    "*/test_*.py",
+    "*/conftest.py",
+    "*/settings*.py",
+    "*/wsgi.py",
+    "*/asgi.py",
+    "*/__init__.py",
+    "*/.venv/*",
+    "manage.py",
+]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = false
+exclude_lines = [
+    "pragma: no cover",
+    "raise NotImplementedError",
+    "if TYPE_CHECKING:",
+    "def __repr__",
+    "raise AssertionError",
+]

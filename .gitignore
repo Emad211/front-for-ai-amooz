@@ -63,3 +63,7 @@ firestore-debug.log
 # Ignore local editor / OS files
 .vscode/
 .idea/
+
+# test artifacts
+.coverage
+*.sqlite3
