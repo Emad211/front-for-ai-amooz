@@ -167,9 +167,15 @@ commons 5 · organizations 4 · waitlist 4 · core 3 · notification 1 · materi
   only for the caller; deny-by-default (anon→401/403, student→403 on the IsTeacherUser feed). `views.py`
   82%, app 82%.
 
-### T12 — chatbot service + api
+### T12 — chatbot service + api ✅ DONE (`test_memory_resilience.py`, +7 unit)
 - **Owner:** backend-engineer + ai-engineer · **Layer:** service/api
 - Chat flow, history, media. Establish the correct `_get_clients` mock pattern (the source of 3 failures).
+- **Result:** chatbot is a services-only app (chat API lives in `classes` → covered at T14). Routing/widgets/
+  intents, memory redis/trim/overflow-summarize/activation, exam-prep answer-leak guard, `_safe_template_replace`
+  brace-survival + vision/json-mode already covered; the `_get_clients` pattern was already replaced by the
+  module-bound `generate_text` seam in T2 (NOT reintroduced). Added the untested MemoryService degrade-gracefully
+  branches: empty-`add` no-op, corrupt-cache→empty-state (never 500s a chat), non-list buffer coercion,
+  malformed-item sanitization, non-str-key skip, activation survives corrupt reload. `memory_service.py` 94%.
 
 ### T13 — classes teacher api + roster/invites/publish
 - **Owner:** backend-engineer · **Consult:** security-auditor · **Layer:** api
