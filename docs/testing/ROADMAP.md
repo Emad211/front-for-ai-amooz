@@ -235,11 +235,17 @@ commons 5 · organizations 4 · waitlist 4 · core 3 · notification 1 · materi
   twice, recovers) + raise-not-silent on still-bad; quizzes `extract_json_object` happy + prose-embedded-JSON
   extraction + raise on garbage. `side_effect` drives the repair path. 30 green across the pipeline-service suite.
 
-### T18 — Adaptive loop
+### T18 — Adaptive loop ✅ DONE (`test_adaptive_final_exam_shape.py`, +8 unit)
 - **Owner:** ai-engineer · **Layer:** unit/api/integration
 - `compute_weak_points_from` (both grading shapes: section 0-100 thr 70 + exam points), `regenerate`
   endpoints (409 when `last_passed` truthy, 400 when none, reset-to-None guard), `pregenerate_student_assessments`
   idempotency (`cache.add`). **Negative:** non-owner regenerate; answer-reveal only on POST not pre-answer GET.
+- **Result:** section-quiz weak-point path (`score_0_100`), both regenerate guards + `last_passed`/`last_score`
+  reset-to-None + 409-when-passed/None rate-limiter, and pregeneration idempotency/skip/missing-safe already
+  covered — NOT duplicated. Filled the untested **final-exam grading shape**: `_is_wrong` on `score_points`/
+  `max_points` (partial→wrong, full→ok, zero-max→can't-tell, label wins) + `compute_weak_points_from` driven
+  directly off a `ClassFinalExam.exam`-shaped dict (join correct_answer, most-missed-first, full-marks→empty).
+  25 green. (Non-owner regenerate is covered by the phone-scope model established in T14.)
 
 ### T19 — Transcription
 - **Owner:** ai-engineer · **Layer:** unit/integration
