@@ -146,9 +146,16 @@ commons 5 · organizations 4 · waitlist 4 · core 3 · notification 1 · materi
   leaves org count, invite-code count, and the already-SMSed token unchanged (no double-provision). SMS
   sender mocked. `views.py` 96%, app 89%.
 
-### T10 — commons admin api
+### T10 — commons admin api ✅ DONE (`test_admin_analytics.py`, +28 api/permission)
 - **Owner:** backend-engineer · **Consult:** security-auditor · **Layer:** api
 - `/api/admin/` analytics (Tehran tz), activity feed, user management. **Negative:** non-admin 403.
+- **Result:** the `/api/admin/analytics/*` surface (stats/chart/distribution/recent-activity) had 0 tests.
+  Added the security matrix on every endpoint (anon→401/403, student/teacher/MANAGER→403, admin→200),
+  exact aggregation vs ORM ground-truth (per-role counts, class published/failed filters, quiz pass-rate,
+  LLM totals), Tehran-tz day bucketing at a UTC↔Tehran boundary + zero-fill + clamp, and the activity feed
+  (event presence, ?type filter, ?limit≤100). **Contract note:** the admin permission is `IsPlatformAdmin`
+  = role==ADMIN OR is_superuser OR is_staff (NOT DRF's is_staff-only IsAdminUser) — role=ADMIN alone grants
+  access by design. (User-management admin endpoints already covered by `test_admin_users.py`.)
 
 ### T11 — notification service + api
 - **Owner:** backend-engineer · **Layer:** service/api (currently only 1 file)
