@@ -1,6 +1,7 @@
 from django.conf import settings
 from django.db import models
 from django.db.models import UniqueConstraint
+from django.utils import timezone
 import uuid
 
 
@@ -576,4 +577,200 @@ class StudentCourseChatMessage(models.Model):
         indexes = [
             models.Index(fields=['thread', 'created_at']),
             models.Index(fields=['lesson_id', 'created_at']),
+        ]
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Exercise Hub («بخش تمرین») — teacher-authored per-class exercises.
+# Design: docs/features/exercise-hub.md · docs/adr/ADR-0004-exercise-hub.md
+# All models FK to ClassCreationSession so ownership (teacher), phone-scope
+# (student via invites) and the publish gate derive from the parent session.
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+class ClassExercise(models.Model):
+    """One teacher-authored exercise attached to a class session.
+
+    Lifecycle: DRAFT → (extract) EXTRACTING → EXTRACTED → (publish) PUBLISHED;
+    FAILED is a re-runnable terminal for a failed extraction.
+    """
+
+    class Status(models.TextChoices):
+        DRAFT = 'draft', 'Draft'
+        EXTRACTING = 'extracting', 'Extracting'
+        EXTRACTED = 'extracted', 'Extracted'
+        PUBLISHED = 'published', 'Published'
+        FAILED = 'failed', 'Failed'
+
+    session = models.ForeignKey(
+        ClassCreationSession,
+        on_delete=models.CASCADE,
+        related_name='exercises',
+    )
+    title = models.CharField(max_length=255)
+    description = models.TextField(blank=True, default='')
+    status = models.CharField(
+        max_length=16, choices=Status.choices, default=Status.DRAFT, db_index=True,
+    )
+    # First real deadline field in the platform. Null = always-open exercise.
+    deadline = models.DateTimeField(null=True, blank=True)
+    # Whether late submissions are accepted after the deadline (flagged is_late).
+    allow_late = models.BooleanField(default=False)
+    # Exercise-level assistant switch. Effective per section = this AND section flag.
+    assistant_enabled = models.BooleanField(default=True)
+    # Persisted Celery task id for the extraction run (hard-revoke on re-run).
+    extract_task_id = models.CharField(max_length=255, blank=True, default='')
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self) -> str:
+        return f"{self.session_id}:{self.title}"
+
+    def deadline_passed(self) -> bool:
+        """True once the reveal window opens (reference answers may be shown).
+
+        Reference-answer reveal is gated on the deadline, NOT on grading, so an
+        early submitter cannot see the answers while classmates are still within
+        the deadline (owner decision 2026-07-05). A no-deadline exercise has no
+        shared window — the caller reveals on the student's own GRADED submission.
+        """
+        return self.deadline is not None and self.deadline < timezone.now()
+
+    class Meta:
+        indexes = [
+            models.Index(fields=['session', 'status']),
+        ]
+
+
+class ClassExerciseAsset(models.Model):
+    """A source file (PDF or image) uploaded for an exercise's extraction."""
+
+    class Kind(models.TextChoices):
+        PDF = 'pdf', 'PDF'
+        IMAGE = 'image', 'Image'
+
+    exercise = models.ForeignKey(
+        ClassExercise,
+        on_delete=models.CASCADE,
+        related_name='assets',
+    )
+    kind = models.CharField(max_length=8, choices=Kind.choices)
+    file = models.FileField(upload_to='exercises/source/')
+    order = models.PositiveIntegerField(default=0)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['order', 'id']
+
+
+class ClassExerciseSection(models.Model):
+    """A section of an exercise (a group of questions)."""
+
+    exercise = models.ForeignKey(
+        ClassExercise,
+        on_delete=models.CASCADE,
+        related_name='sections',
+    )
+    order = models.PositiveIntegerField()
+    title = models.CharField(max_length=255, blank=True, default='')
+    # Section-level assistant switch (AND-ed with the exercise-level flag).
+    assistant_enabled = models.BooleanField(default=True)
+
+    class Meta:
+        constraints = [
+            UniqueConstraint(
+                fields=['exercise', 'order'],
+                name='uniq_exercise_section_order',
+            ),
+        ]
+        ordering = ['order', 'id']
+
+
+class ClassExerciseQuestion(models.Model):
+    """One question inside a section, with the teacher's reference answer + points."""
+
+    class QuestionType(models.TextChoices):
+        DESCRIPTIVE = 'descriptive', 'Descriptive'
+        MULTIPLE_CHOICE = 'multiple_choice', 'Multiple Choice'
+        FILL_BLANK = 'fill_blank', 'Fill in the Blank'
+
+    section = models.ForeignKey(
+        ClassExerciseSection,
+        on_delete=models.CASCADE,
+        related_name='questions',
+    )
+    order = models.PositiveIntegerField()
+    question_markdown = models.TextField()
+    question_type = models.CharField(
+        max_length=20, choices=QuestionType.choices, default=QuestionType.DESCRIPTIVE,
+    )
+    # For MCQ/fill-blank: the option list (deterministic grading uses this).
+    options = models.JSONField(default=list, blank=True)
+    # The teacher's reference answer — the grading rubric. Mandatory to publish.
+    reference_answer_markdown = models.TextField(blank=True, default='')
+    max_points = models.DecimalField(max_digits=6, decimal_places=2, default=1)
+    grading_notes = models.TextField(blank=True, default='')
+
+    class Meta:
+        constraints = [
+            UniqueConstraint(
+                fields=['section', 'order'],
+                name='uniq_exercise_question_order',
+            ),
+        ]
+        ordering = ['order', 'id']
+
+
+class StudentExerciseSubmission(models.Model):
+    """A student's single submission to an exercise (unique per student+exercise)."""
+
+    class Status(models.TextChoices):
+        SUBMITTED = 'submitted', 'Submitted'
+        GRADING = 'grading', 'Grading'
+        GRADED = 'graded', 'Graded'
+        GRADING_FAILED = 'grading_failed', 'Grading Failed'
+
+    exercise = models.ForeignKey(
+        ClassExercise,
+        on_delete=models.CASCADE,
+        related_name='submissions',
+    )
+    student = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='exercise_submissions',
+    )
+    status = models.CharField(
+        max_length=16, choices=Status.choices, default=Status.SUBMITTED, db_index=True,
+    )
+    # {question_id: {text: str, images: [storage_path, ...]}}
+    answers = models.JSONField(default=dict, blank=True)
+    # {per_question: [{question_id, llm_score, llm_feedback, teacher_score,
+    #                  teacher_feedback, max_points, label}]}
+    result = models.JSONField(default=dict, blank=True)
+    score_points = models.DecimalField(max_digits=8, decimal_places=2, null=True, blank=True)
+    max_points = models.DecimalField(max_digits=8, decimal_places=2, null=True, blank=True)
+    is_late = models.BooleanField(default=False)
+    grading_task_id = models.CharField(max_length=255, blank=True, default='')
+    graded_at = models.DateTimeField(null=True, blank=True)
+    overridden_at = models.DateTimeField(null=True, blank=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self) -> str:
+        return f"{self.exercise_id}:{self.student_id}:{self.status}"
+
+    class Meta:
+        constraints = [
+            UniqueConstraint(
+                fields=['exercise', 'student'],
+                name='uniq_exercise_submission_student',
+            ),
+        ]
+        indexes = [
+            models.Index(fields=['exercise', 'status']),
+            models.Index(fields=['student', 'status']),
         ]

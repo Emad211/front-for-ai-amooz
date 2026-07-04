@@ -60,6 +60,12 @@ here, deliberately.
   applies from the next message (per-request server check); chat history kept; banner shown.
 - **Grades visible immediately** with the «نمره‌دهی هوشمند» label + teacher override afterwards
   (fast feedback is the core value); optional per-exercise review-gate = phase 2.
+- **Reference answers revealed only after the deadline passes** (owner decision 2026-07-05): the
+  student's own score + feedback show immediately on grading, but the correct/reference answers unlock
+  when `deadline < now` (for a no-deadline exercise: on the student's own GRADED submission). This closes
+  the leak window — an early submitter cannot see the answers while classmates are still within the
+  deadline. A dedicated **«پاسخ تمرین‌های تمام‌شده»** area lets students browse the answers of past
+  (deadline-passed) exercises.
 - **Report-card formula (MVP):** simple average (normalized 0–100) of graded exercises of that class.
   Teacher-only extras: class distribution/average, override history + raw LLM scores, late flags,
   full LLM rationale, non-submitters list.
@@ -119,10 +125,13 @@ database-engineer).
 - `PUT …/exercises/<eid>/draft/` (autosave) · `POST …/exercises/<eid>/questions/<qid>/image/` (type/size
   validated server-side) · `POST …/exercises/<eid>/submit/` (**409 after deadline** unless allow_late;
   duplicate → 409)
-- `GET …/exercises/<eid>/result/` (after GRADED: per-question score/feedback + reference answer reveal —
-  see Open decisions) · `POST …/exercises/<eid>/assistant/` (server guard: both toggles AND;
-  403 code `assistant_disabled`; context never contains reference answers pre-grading)
-- `GET student/courses/<sid>/report-card/` · `GET student/report-card/` (overall)
+- `GET …/exercises/<eid>/result/` (after GRADED: own per-question score/feedback; **reference answers
+  included only once the reveal condition holds — `deadline < now`, or no-deadline + own submission
+  GRADED**) · `POST …/exercises/<eid>/assistant/` (server guard: both toggles AND; 403 code
+  `assistant_disabled`; context never contains reference answers pre-grading)
+- `GET student/courses/<sid>/report-card/` · `GET student/report-card/` (overall) ·
+  `GET student/exercises/answers/` (the «پاسخ تمرین‌های تمام‌شده» browse — lists only deadline-passed
+  exercises of enrolled classes with their reference answers + the student's own submission if any)
 - `GET student/calendar/?from=&to=` — aggregate: published exercise deadlines of enrolled classes +
   invited exam-prep sessions with `scheduled_at`. Response items:
   `{id, kind: 'exercise_deadline'|'exam_prep', title, courseTitle, datetime (ISO, Tehran tz), isCompleted}`.
@@ -206,7 +215,8 @@ stored `per_question` (zero tokens), **no pregeneration** (nothing to pre-build)
   edit.regrade.warn «با تغییر سوال‌ها یا بارم، پاسخ‌های ثبت‌شده دوباره نمره‌دهی می‌شوند.» — all Persian
   digits + Jalali via `date-utils`.
 - **New frontend files:** teacher routes `(teacher)/teacher/my-classes/[classId]/exercises/{page,new/page,[exerciseId]/page,[exerciseId]/submissions/[studentId]/page}.tsx`;
-  student routes `(dashboard)/exercises/{page,[exerciseId]/page,[exerciseId]/result/page}.tsx`;
+  student routes `(dashboard)/exercises/{page,answers/page,[exerciseId]/page,[exerciseId]/result/page}.tsx`
+  (the `answers/` route = «پاسخ تمرین‌های تمام‌شده»);
   components `components/teacher/exercises/{exercise-list,exercise-wizard,extraction-review,rubric-editor,assistant-deadline-settings,class-gradebook-table,submission-grading-panel}.tsx`
   and `components/dashboard/exercises/{exercise-list,exercise-solver,section-nav,answer-input,exercise-assistant,exercise-report-card,grades-trend-chart}.tsx`;
   `services/exercises-service.ts`; hooks `use-exercises.ts, use-exercise-solver.ts, use-gradebook.ts`.
@@ -240,8 +250,10 @@ contract test updated with the three new keys. Avalai extraction accuracy on low
 **deliberately untested locally** (VPN) — opt-in `benchmark`-marker test later.
 
 ## Security notes
-Owner-404 (teacher) / phone-scope-404/400 (student) matrices above; reference-answer leak tests at E5
-(serializers) and E8 (assistant context); deadline + duplicate-submission enforced server-side (409);
+Owner-404 (teacher) / phone-scope-404/400 (student) matrices above; **reference answers are withheld by
+the serializer until the reveal condition holds (`deadline < now`, or no-deadline + own GRADED)** — leak
+tests at E5 (result + list serializers) and E8 (assistant context); deadline + duplicate-submission
+enforced server-side (409);
 image upload type/size validated server-side; assistant disable enforced server-side (403
 `assistant_disabled`); `{grading_items_json}` injection guard (student answer = DATA). security-auditor
 formally gates E5 + E8.
@@ -267,12 +279,14 @@ SUBMITTED, exercises stay usable.
    fallback in the wizard is the product-level mitigation.
 6. God-file growth → all new views in `views_exercises.py`; reviewer rejects additions to `views.py`.
 
-## Open decisions (for the product owner)
-1. **Reveal reference answer in the student's result after grading?** Council recommendation: **yes**
-   (consistent with the adaptive-loop reveal philosophy; the assistant teaches from it post-grading);
-   a per-exercise teacher switch can come in phase 2. → confirmed default: reveal.
-2. **LLM grade shown immediately** (labeled, override later) vs teacher review-gate first —
-   council recommendation and MVP default: **immediately**; review-gate = phase 2 per-exercise option.
+## Resolved decisions (product owner, 2026-07-05)
+1. **Reference-answer reveal is gated on the DEADLINE, not on grading.** Reference answers unlock when
+   `deadline < now` (no-deadline exercise → on the student's own GRADED submission). Prevents the
+   early-submitter leak window. A dedicated **«پاسخ تمرین‌های تمام‌شده»** student area
+   (`GET student/exercises/answers/`) browses past exercises' answers. The assistant may teach from the
+   reference answer only once that same reveal condition holds.
+2. **LLM grade shown immediately** (labeled «نمره‌دهی هوشمند», override later); review-gate = phase 2
+   per-exercise option.
 
 ## Dissent (recorded)
 product-manager proposed deferring the **per-section** assistant toggle to phase 2 (exercise-level covers
