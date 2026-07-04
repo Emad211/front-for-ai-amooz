@@ -213,11 +213,17 @@ commons 5 · organizations 4 · waitlist 4 · core 3 · notification 1 · materi
 
 ## Phase 2 — LLM / pipeline (ai-engineer; LLM always mocked outside `benchmark`)
 
-### T16 — Prompt contract + rendering
+### T16 — Prompt contract + rendering ✅ DONE (`test_prompt_render_robustness.py`, +7 unit) — Phase 2 begins
 - **Owner:** ai-engineer · **Layer:** unit
 - Extend `test_prompts_contract.py` / `prompt_rendering`: exact `PROMPTS` keys, `str.replace` placeholders,
   output-JSON keys byte-for-byte, shared blocks (`SAFETY_PREAMBLE`, `AUDIENCE_ADAPTIVE`, `MCQ_QUALITY`,
   `MATH_FORMAT_INSTRUCTIONS`). No unreferenced prompts re-added.
+- **Result:** the contract guard (LIVE_KEYS incl. adaptive≡default output keys, placeholder map incl.
+  `{{blank}}`, shared blocks, no-K12) + the 2 rendering happy paths already thorough — NOT duplicated, keys
+  untouched. Added the untested `_render_prompt` (str.replace) robustness: `{{blank}}` SURVIVES rendering
+  (model must see it), brace-containing values pass through verbatim, unprovided token left untouched (no
+  KeyError — the str.format-avoidance property), all-occurrences replaced, unbalanced brace safe, no-kwargs
+  identity, non-str coerced. 59 green across all prompt tests. 0-token (pure string).
 
 ### T17 — Structure / prereqs / recap / quizzes services
 - **Owner:** ai-engineer · **Layer:** service
