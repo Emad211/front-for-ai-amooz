@@ -135,10 +135,16 @@ commons 5 · organizations 4 · waitlist 4 · core 3 · notification 1 · materi
   `views.py` 85%, app 92%. (Migrations note: org raw-SQL DO$$ migrations run on Postgres/CI; sqlite lane
   uses --no-migrations.)
 
-### T9 — waitlist api
+### T9 — waitlist api ✅ DONE (`test_gate_and_provisioning.py`, +4)
 - **Owner:** backend-engineer · **Layer:** api
 - Approval gate (no account until approved), org approval auto-creates org+code, SMS-only path.
   **Negative:** unapproved cannot authenticate/act.
+- **Result:** suite already complete (intake→no-account, approve-teacher-token, approve-org-provisions,
+  single-use/expiring token, already-decided→409, SMS link) — NOT duplicated. Added the attacker's-view
+  gate + provisioning idempotency: PENDING applicant owns no account → can't get a JWT by phone (401) /
+  anon can't reach protected (401); REJECTED applicant still accountless; double-approve org is 409 AND
+  leaves org count, invite-code count, and the already-SMSed token unchanged (no double-provision). SMS
+  sender mocked. `views.py` 96%, app 89%.
 
 ### T10 — commons admin api
 - **Owner:** backend-engineer · **Consult:** security-auditor · **Layer:** api
