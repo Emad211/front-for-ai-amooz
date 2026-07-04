@@ -177,10 +177,16 @@ commons 5 · organizations 4 · waitlist 4 · core 3 · notification 1 · materi
   branches: empty-`add` no-op, corrupt-cache→empty-state (never 500s a chat), non-list buffer coercion,
   malformed-item sanitization, non-str-key skip, activation survives corrupt reload. `memory_service.py` 94%.
 
-### T13 — classes teacher api + roster/invites/publish
+### T13 — classes teacher api + roster/invites/publish ✅ DONE (`test_teacher_idor.py`, +11 permission)
 - **Owner:** backend-engineer · **Consult:** security-auditor · **Layer:** api
 - Teacher CRUD, org-class roster, invite code verify/SMS, publish. **Negative:** non-owner, non-teacher,
   cross-org. (Grep the 195 KB `views.py` — never read whole.)
+- **Result:** existing TestCrossTeacherIsolation (view/delete/publish/invite-POST 404) + pipeline-cancel
+  IDOR + roster/publish owner-flows already covered — NOT duplicated. Closed the remaining owner-scoped
+  surfaces: non-owner PATCH-update→404 (state untouched), session list is owner-scoped (no cross-teacher
+  leak in the feed), non-owner GET-invites + announcement-POST→404/403, student blocked from detail,
+  anon→401; PLUS the entire exam-prep parallel surface (non-owner view/delete/publish/invite + list-scoping
+  → 404) that the class-only isolation never exercised. All fail closed. 73 green in the teacher-area suite.
 
 ### T14 — classes student api
 - **Owner:** backend-engineer · **Consult:** security-auditor · **Layer:** api
