@@ -10,6 +10,7 @@ a change is done only when its documentation is in the same commit series.
 | Directory | What lives here | Rules |
 |---|---|---|
 | `reference/` | Code-verified module/domain reference (the codebase map) | One doc per module per `reference/TEMPLATE.md`; progress + resume rules in `reference/README.md`; program: ADR-0002. |
+| `testing/` | The loop-driven test build-out program | `testing/ROADMAP.md` per-step specs + `testing/README.md` progress checklist (the loop control file); program: ADR-0003. |
 | `adr/` | Architecture Decision Records | Numbered (`ADR-NNNN-<slug>.md`), **immutable** — supersede with a new ADR, never rewrite. Status: Proposed → Accepted → Superseded-by-NNNN. |
 | `features/` | One living spec per feature | Status: Draft → Approved → Shipped. Updated whenever behavior changes — a stale feature doc is a bug. |
 | `releases/` | One note per meaningful push/deploy | Written by release-manager: changes, migrations, env, rebuild targets, verification, rollback. |
