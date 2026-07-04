@@ -199,9 +199,15 @@ commons 5 · organizations 4 · waitlist 4 · core 3 · notification 1 · materi
   paths short-circuit before any LLM call (0-token). No role-403 anywhere — phone-scoped 404/400 per CLAUDE.md.
   32 green across the student-area suite.
 
-### T15 — classes model + serializer + settings guards
+### T15 — classes model + serializer + settings guards ✅ DONE (`test_fk_on_delete.py`, +6 unit) — Phase 1 complete
 - **Owner:** backend-engineer + database-engineer · **Layer:** unit/service
 - Model constraints, serializer annotations, env-only model-selection (no hardcoded model names — CLAUDE.md law).
+- **Result:** unique/partial constraints + indexes + choices, serializer camelCase + annotation-vs-N+1, DB/DRF/
+  cache/celery/security settings, and env-only model-selection (exam-prep + pdf-vision, the 29c6426 gpt-4.1 fix)
+  all already covered — NOT duplicated. Added the untested FK on_delete data-integrity behavior: organization +
+  study_group = SET_NULL (org/group delete nulls the FK but KEEPS the class — a CASCADE regression would wipe an
+  org's classes), teacher + session-children (invites/sections/units) = CASCADE. 56 green. **Phase 1 (backend
+  per-domain hardening, T5–T15) COMPLETE.**
 
 ---
 
