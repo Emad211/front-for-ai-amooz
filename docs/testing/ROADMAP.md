@@ -111,9 +111,16 @@ commons 5 · organizations 4 · waitlist 4 · core 3 · notification 1 · materi
   username base-collision suffixing, `_ensure_profile` heal. `services.py` 84% (only miss = concurrency race,
   backed by the constraint test).
 
-### T7 — authentication api
+### T7 — authentication api ✅ DONE (`test_login_by_identifier.py`, +7 api)
 - **Owner:** backend-engineer · **Consult:** security-auditor · **Layer:** api
 - Token issue/refresh, login-by-identifier. **Negative:** bad creds, expired/blocked, deny-by-default.
+- **Result:** the identifier suite was already deep (username/email happy + multi-account-by-password +
+  admin-priority + missing-field 400s + inactive→401 + unknown→401-no-leak + timing parity + refresh
+  rotation/blacklist) — NOT duplicated. Added the untested branches: explicit `role` disambiguation
+  (STUDENT/TEACHER select), ADMIN→superuser/staff fallback, malformed/garbage refresh→401, the
+  phone-is-not-a-token-identifier boundary (fails closed), and email-path enumeration parity (known-wrong-pw
+  ≡ unknown, both 401, no token leak). `serializers.py` 87%, app 92%. NOTE: `/api/token/` login-by-identifier
+  is **username OR email only — NOT phone** (phone login is the separate invite-code path).
 
 ### T8 — organizations service + api
 - **Owner:** backend-engineer · **Consult:** database-engineer, security-auditor · **Layer:** service/api
