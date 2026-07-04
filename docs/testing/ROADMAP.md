@@ -99,10 +99,17 @@ commons 5 · organizations 4 · waitlist 4 · core 3 · notification 1 · materi
   covering the Pydantic structure schemas that had **zero** tests (list-of-sections-with-units invariant,
   `extra='allow'`, non-list rejections). 11 new unit tests, all green.
 
-### T6 — accounts service + api
+### T6 — accounts service + api ✅ DONE (`test_services.py`, +11 unit)
 - **Owner:** backend-engineer · **Consult:** security-auditor · **Layer:** service/api
 - `get_or_create_user_by_phone`, partial unique constraint `uniq_student_phone`, role model, forced-onboarding
   funnel. **Negative:** completed account blocked from code re-entry; duplicate phone.
+- **Result:** constraint semantics (STUDENT-unique / TEACHER-shared / NULL-unconstrained) already in
+  `test_student_phone_unique.py`; `/complete-onboarding/` negatives (unauth→401/403, already-completed→400,
+  dup-username, immutable-phone, weak-pwd) already in `test_onboarding.py` — NOT duplicated. Filled the real
+  gap: the phone→user funnel service was untested — added passwordless-shell+profile-on-create, idempotent,
+  role-scoped (one phone→separate STUDENT/TEACHER), MANAGER→no profile, `is_freelancer` create-only,
+  username base-collision suffixing, `_ensure_profile` heal. `services.py` 84% (only miss = concurrency race,
+  backed by the constraint test).
 
 ### T7 — authentication api
 - **Owner:** backend-engineer · **Consult:** security-auditor · **Layer:** api
