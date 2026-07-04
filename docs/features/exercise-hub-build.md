@@ -20,8 +20,13 @@ Postgres/CI is migration-truth. LLM fully mocked (0 tokens).
   5 new `LLMUsageLog.Feature` members (migration `commons/0006`, no-op AlterField) + contract test updated
   (LIVE_KEYS + OUTPUT_KEYS + safety list). Tests `test_exercise_ingest.py` (13: happy/repair/raise +
   env-only + schema) + full `test_prompts_contract.py` green (60). OCR reused from `pdf_extraction`.
-- [ ] **E3** — `extract_exercise_content` Celery task (pipeline queue) + state machine + `cache.add`
-  idempotency. Eager tests: transitions, double-dispatch no-op, FAILED path.
+- [x] **E3** — ✅ `extract_exercise_content` Celery task (`tasks.py`, routed to `pipeline` queue) — state
+  machine {DRAFT,FAILED}→EXTRACTING→EXTRACTED/FAILED with a status guard + `cache.add` in-flight lock +
+  persisted `extract_task_id`. OCR (`ocr_assets_to_markdown`: PDF via `extract_pdf_to_markdown`, photo via a
+  standard `image_url` vision call, `EXERCISE_INGEST` feature) + `persist_exercise_structure` (clears old
+  rows on re-run, coerces question_type/points/options) added to `exercise_ingest.py`. 7 eager tests
+  (`test_exercise_extraction_task.py`): happy row-build, status guard, double-dispatch no-op, FAILED path,
+  re-run clears stale rows, missing-safe, task-id persisted — all green, 0 tokens.
 - [ ] **E4** — teacher endpoints (CRUD / extract / publish / toggles) in `views_exercises.py`. owner-404 +
   publish-validation (400/409) tests. **Follow-up from E1 db-gate:** the exercise/asset DELETE endpoint must
   GC the S3/MinIO blobs (FileField CASCADE removes rows, not storage objects).

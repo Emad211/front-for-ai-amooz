@@ -509,6 +509,7 @@ CELERY_TASK_ROUTES = {
     'apps.classes.tasks.process_exam_prep_full_pipeline': {'queue': 'pipeline'},
     'apps.classes.tasks.process_exam_prep_step1_transcription': {'queue': 'pipeline'},
     'apps.classes.tasks.process_exam_prep_step2_structure': {'queue': 'pipeline'},
+    'apps.classes.tasks.extract_exercise_content': {'queue': 'pipeline'},
     # SMS and lightweight tasks explicitly on the default queue.
     'apps.classes.tasks.send_publish_sms_task': {'queue': 'default'},
     'apps.classes.tasks.send_new_invites_sms_task': {'queue': 'default'},

@@ -1099,3 +1099,64 @@ def cleanup_stale_sessions(self) -> dict:
         logger.warning('Marked %d stale sessions as FAILED (stuck >2h).', count)
 
     return {'status': 'success', 'stale_count': count}
+
+
+# ---------------------------------------------------------------------------
+# Exercise Hub — async extraction (ingest OCR -> structure -> section/question
+# rows). Runs on the `pipeline` queue. Design: docs/features/exercise-hub.md.
+# ---------------------------------------------------------------------------
+
+@shared_task(
+    bind=True, max_retries=3, default_retry_delay=60, acks_late=True,
+    soft_time_limit=PIPELINE_TASK_SOFT_TIME_LIMIT, time_limit=PIPELINE_TASK_TIME_LIMIT,
+)
+def extract_exercise_content(self, exercise_id: int) -> dict:
+    """OCR the exercise's source assets, extract its structure, and persist rows.
+
+    State machine: {DRAFT, FAILED} --(run)--> EXTRACTING --(ok)--> EXTRACTED
+    (or --(error)--> FAILED). Idempotent: a status guard skips anything not in a
+    runnable state, and a `cache.add` lock rejects a concurrent second dispatch.
+    """
+    from django.core.cache import cache
+    from .models import ClassExercise
+    from .services.exercise_ingest import (
+        ocr_assets_to_markdown,
+        structure_exercise_markdown,
+        persist_exercise_structure,
+    )
+
+    exercise = ClassExercise.objects.filter(id=exercise_id).first()
+    if exercise is None:
+        return {'status': 'skipped', 'reason': 'exercise not found'}
+
+    runnable = {ClassExercise.Status.DRAFT, ClassExercise.Status.FAILED}
+    if exercise.status not in runnable:
+        return {'status': 'skipped', 'reason': f'status={exercise.status}'}
+
+    lock_key = f'exercise-extract:{exercise_id}'
+    if not cache.add(lock_key, '1', timeout=PIPELINE_TASK_TIME_LIMIT):
+        return {'status': 'skipped', 'reason': 'already dispatched'}
+
+    try:
+        exercise.status = ClassExercise.Status.EXTRACTING
+        exercise.extract_task_id = getattr(self.request, 'id', '') or ''
+        exercise.save(update_fields=['status', 'extract_task_id', 'updated_at'])
+
+        markdown = ocr_assets_to_markdown(exercise)
+        structure, _provider, _model = structure_exercise_markdown(ingest_markdown=markdown)
+        n_sections, n_questions = persist_exercise_structure(exercise, structure)
+
+        exercise.status = ClassExercise.Status.EXTRACTED
+        exercise.save(update_fields=['status', 'updated_at'])
+        return {
+            'status': 'extracted', 'exercise_id': exercise_id,
+            'sections': n_sections, 'questions': n_questions,
+        }
+    except Exception as exc:
+        logger.exception('Exercise extraction failed for %s', exercise_id)
+        ClassExercise.objects.filter(id=exercise_id).update(
+            status=ClassExercise.Status.FAILED,
+        )
+        return {'status': 'failed', 'exercise_id': exercise_id, 'reason': str(exc)}
+    finally:
+        cache.delete(lock_key)

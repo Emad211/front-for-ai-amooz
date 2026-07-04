@@ -228,7 +228,7 @@ stored `per_question` (zero tokens), **no pregeneration** (nothing to pre-build)
 |---|---|---|---|
 | **E1** | backend (+database-engineer review) | 5 models + migration `0024` (pure DDL) + constraint/FK-behavior tests | migrations apply on fresh Postgres & sqlite; uniq/index/CASCADE tests green |
 | **E2** | ai-engineer | `services/exercise_ingest.py` + `PROMPTS["exercise_structure"]` + Pydantic schemas + contract-test update | ✅ DONE — `structure_exercise_markdown` + `exercise_structure` prompt + `ExerciseStructureOutput` + 5 Feature enums (`commons/0006`) + contract test; 13 ingest tests + 60 contract green |
-| **E3** | backend | `extract_exercise_content` task (pipeline queue) + state machine + `cache.add` idempotency | eager tests: status transitions, double-dispatch no-op, FAILED path |
+| **E3** | backend | `extract_exercise_content` task (pipeline queue) + state machine + `cache.add` idempotency | ✅ DONE — task + OCR (`ocr_assets_to_markdown`) + `persist_exercise_structure`; 7 eager tests (transitions/double-dispatch/FAILED/re-run/task-id) green |
 | **E4** | backend | teacher endpoints (CRUD/extract/publish/toggles) in `views_exercises.py` | owner-404 + publish-validation (400/409) tests green |
 | **E5** | backend (**security-auditor gate**) | student endpoints (list/detail/draft/submit/image) + deadline guard + no-leak serializers | phone-scope, never-leak-reference-answer, 409-after-deadline tests green |
 | **E6** | ai-engineer + backend | grading service+task (`exercise_grading`, batch env, deterministic MCQ/fill-blank, retry idempotent, kill-switch) | mocked grading + idempotent re-run + GRADING_FAILED tests green |
