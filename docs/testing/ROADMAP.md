@@ -122,10 +122,18 @@ commons 5 · organizations 4 · waitlist 4 · core 3 · notification 1 · materi
   ≡ unknown, both 401, no token leak). `serializers.py` 87%, app 92%. NOTE: `/api/token/` login-by-identifier
   is **username OR email only — NOT phone** (phone login is the separate invite-code path).
 
-### T8 — organizations service + api
+### T8 — organizations service + api ✅ DONE (`test_tenancy_isolation.py`, +11 permission)
 - **Owner:** backend-engineer · **Consult:** database-engineer, security-auditor · **Layer:** service/api
 - Membership, study groups, manager oversight-only scope, per-teacher/class/group AI-cost read.
   **Negative:** cross-org access, manager write-attempt, role escalation.
+- **Result:** suite already deep (120+ tests) — study-group detail cross-org 404, cost org-scoping,
+  org-admin-can't-manage-other-org, teacher/student forbidden — NOT duplicated. Closed the classic
+  **valid-MANAGER-wrong-org IDOR**: manager of org A → 403 on org B's members/dashboard/groups(list+detail)/
+  classes/costs, asserted WITH org B seeded (real title + `1234` cost) to prove no leak; cross-org write
+  (create/patch/delete → 403, state unchanged); reverse member-injection (org-B teacher/student into org-A
+  group → 400). All routes gate on `IsOrgAdmin.check(user, org_pk)` (organization_id-scoped, fails closed).
+  `views.py` 85%, app 92%. (Migrations note: org raw-SQL DO$$ migrations run on Postgres/CI; sqlite lane
+  uses --no-migrations.)
 
 ### T9 — waitlist api
 - **Owner:** backend-engineer · **Layer:** api
