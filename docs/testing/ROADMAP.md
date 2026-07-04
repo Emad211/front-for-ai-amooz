@@ -259,10 +259,16 @@ commons 5 · organizations 4 · waitlist 4 · core 3 · notification 1 · materi
   ABSENT** (the silently-ignored payload behind the hallucinated-transcript bug), standard keys present.
   27 green.
 
-### T20 — Pipeline orchestration integration
+### T20 — Pipeline orchestration integration ✅ DONE (`test_pipeline_chaining.py`, +4 integration)
 - **Owner:** ai-engineer + backend-engineer · **Layer:** integration
 - Eager Celery: step1-5 chaining, cooperative cancel checkpoints between steps, hard-revoke path, idempotent
   dispatch, OOM-at-frame-extraction regression, `cleanup_stale_sessions` never reaps a live (heartbeating) run.
+- **Result:** cancel-before-start, `_pipeline_cancelled` helper, deleted-session aborts, concurrency cap,
+  cleanup_stale, step-transition guards, hard-revoke, OOM/no-slurp already covered — NOT duplicated. Added the
+  untested orchestration paths: the successful full chain (step1→…→step5 in order → terminal RECAPPED) and a
+  cooperative cancel arriving MID-chain (set as step2 completes → halts at the next checkpoint, `stopped_at=step2`,
+  steps 3/4/5 skipped), plus cancel-before-start=no-steps and missing-session=skipped. Real orchestrator, steps
+  mocked via `_run_pipeline_step` (advances status so the status-gated chain flows). 74 green.
 
 ### T21 — Exam-prep pipeline + api
 - **Owner:** ai-engineer + backend-engineer · **Consult:** security-auditor · **Layer:** integration/api
