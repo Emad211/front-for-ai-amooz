@@ -75,10 +75,15 @@ commons 5 · organizations 4 · waitlist 4 · core 3 · notification 1 · materi
   + new `organizations/test_permissions_smoke.py` platform-admin matrix (`permission` marker). **26 green.**
   `testing/` omitted from coverage; freezegun in requirements.
 
-### T4 — CI gate
+### T4 — CI gate ☑ (2026-07-04)
 - **Owner:** devops-engineer + qa-engineer · **Consult:** release-manager · **Layer:** infra
 - GitHub Actions workflow: backend job on a **Postgres service container** (migrations run), installs reqs,
   runs `pytest --cov`, uploads coverage; frontend job runs `tsc --noEmit` + `next lint`. PR-triggered.
+- **DONE:** `.github/workflows/tests.yml` — backend job (postgres:16 + redis:7 services, DATABASE_URL/
+  REDIS_URL env, apt: ffmpeg + libpango/cairo/gdk-pixbuf for WeasyPrint, `pytest -m "not benchmark"
+  --create-db --cov ... --cov-report=xml`) + frontend job (node 20, `npm ci`/`typecheck`/`lint`). push(main)
+  + PR. No `--cov-fail-under` yet (T26). YAML parse-validated. **CANNOT run Actions from here** → activates
+  on next GitHub push; the first run may need a system-lib tweak — flagged for the user to watch.
 
 ---
 
