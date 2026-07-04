@@ -247,11 +247,17 @@ commons 5 · organizations 4 · waitlist 4 · core 3 · notification 1 · materi
   directly off a `ClassFinalExam.exam`-shaped dict (join correct_answer, most-missed-first, full-marks→empty).
   25 green. (Non-owner regenerate is covered by the phone-scope model established in T14.)
 
-### T19 — Transcription
+### T19 — Transcription ✅ DONE (`test_transcription_message_shape.py`, +5 unit)
 - **Owner:** ai-engineer · **Layer:** unit/integration
 - Chunk splitting (>~1.5× `TRANSCRIPTION_CHUNK_SECONDS`), heartbeat bumps `updated_at`, cancellation
   (`TranscriptionAborted`→CANCELLED, never retried), avalai standard multimodal shape (`input_audio`,
   `image_url`), single-shot `transcribe_media_bytes` unchanged.
+- **Result:** `test_transcription_chunked.py` already covers chunking/windowed-frames/duration-cap/
+  cancellation/heartbeat + the multimodal shape through the full flow — NOT duplicated. Added a direct
+  unit test of the `_build_transcription_messages` builder: part ordering, audio-only, text-only, image-format
+  override, and the key regression guard — **the legacy `attachments`/`input_media`/`data_base64` shape is
+  ABSENT** (the silently-ignored payload behind the hallucinated-transcript bug), standard keys present.
+  27 green.
 
 ### T20 — Pipeline orchestration integration
 - **Owner:** ai-engineer + backend-engineer · **Layer:** integration
