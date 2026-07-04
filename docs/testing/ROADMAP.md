@@ -188,10 +188,16 @@ commons 5 · organizations 4 · waitlist 4 · core 3 · notification 1 · materi
   anon→401; PLUS the entire exam-prep parallel surface (non-owner view/delete/publish/invite + list-scoping
   → 404) that the class-only isolation never exercised. All fail closed. 73 green in the teacher-area suite.
 
-### T14 — classes student api
+### T14 — classes student api ✅ DONE (`test_student_access_gates.py`, +9 permission)
 - **Owner:** backend-engineer · **Consult:** security-auditor · **Layer:** api
 - Courses list, chapter/final content, PDF export, progress/enrollment, chat history. **Negative:**
   non-enrolled student blocked; other-student's session hidden.
+- **Result:** list phone-scoping, content/PDF/chapter-quiz/lesson-complete invite gates, enrollment/progress
+  already covered — NOT duplicated. Closed the untested gates on the same `is_published+invites__phone`
+  scope: final-exam GET (uninvited→404, no-phone→400, anon→401, unpublished-even-if-invited→404), exam-prep
+  detail GET (same trio + a CLASS session unreachable via the EXAM_PREP route), PDF-export anon→401. All deny
+  paths short-circuit before any LLM call (0-token). No role-403 anywhere — phone-scoped 404/400 per CLAUDE.md.
+  32 green across the student-area suite.
 
 ### T15 — classes model + serializer + settings guards
 - **Owner:** backend-engineer + database-engineer · **Layer:** unit/service
