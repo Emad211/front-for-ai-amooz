@@ -21,6 +21,7 @@ from .views_exercises import (
     TeacherSubmissionAllowRedoView,
     StudentCourseReportCardView,
     StudentOverallReportCardView,
+    StudentExerciseAssistantView,
 )
 from .views import (
     ClassPrerequisiteListView,
@@ -126,6 +127,7 @@ urlpatterns = [
     path('student/courses/<int:session_id>/exercises/<int:exercise_id>/submit/', StudentExerciseSubmitView.as_view(), name='student_exercise_submit'),
     path('student/courses/<int:session_id>/exercises/<int:exercise_id>/result/', StudentExerciseResultView.as_view(), name='student_exercise_result'),
     path('student/courses/<int:session_id>/exercises/<int:exercise_id>/questions/<int:question_id>/image/', StudentExerciseImageView.as_view(), name='student_exercise_image'),
+    path('student/courses/<int:session_id>/exercises/<int:exercise_id>/assistant/', StudentExerciseAssistantView.as_view(), name='student_exercise_assistant'),
 
     # Exam Prep Pipeline (2 steps)
     path('exam-prep-sessions/step-1/', ExamPrepStep1TranscribeView.as_view(), name='exam_prep_step1'),

@@ -64,8 +64,14 @@ Postgres/CI is migration-truth. LLM fully mocked (0 tokens).
   allow-redo owner-only, course/overall averages). **In-app notifications DEFERRED** to a thin follow-up
   (reusing `TeacherNotification`/`ClassAnnouncement` + phone-recipient resolution is non-trivial; kept out to
   avoid a rushed half-build — tracked as E7b / phase-2 candidate).
-- [ ] **E8** — assistant endpoint + two-level server guard + context builder (structural reference-answer
-  strip) + `PROMPTS["exercise_assistant_chat"]`. **security-auditor gate.** 403 + no-leak tests.
+- [x] **E8** — ✅ assistant chat: `services/exercise_assistant.py` (`build_question_context(reveal=…)` —
+  reference answer enters context ONLY post-reveal; MemoryService per (exercise,question,student); env-only
+  `EXERCISE_CHAT_MODEL→CHAT_MODEL→MODEL_NAME`, graceful fallback) + `POST …/exercises/<eid>/assistant/` in
+  `views_exercises.py` (phone-scope + **two-level server toggle** `exercise AND section` → 403
+  `assistant_disabled`) + `PROMPTS["exercise_assistant_chat"]` ({content,suggestions}) + `AssistantChatOutput`
+  schema + contract test. **security-auditor gate PASSED** (structural leak guard + toggle + phone-scope +
+  injection posture verified); Low-1 fixed (model-unset → graceful, not 500) + 2 negatives added
+  (cross-exercise IDOR, model-unset). 15 tests (incl. context-guard both directions) + contract green.
 - [ ] **E9** — migration `0025` (`scheduled_at` on session) + `GET student/calendar/` aggregate endpoint.
 
 ## Frontend

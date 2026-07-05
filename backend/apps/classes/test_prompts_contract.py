@@ -45,6 +45,7 @@ LIVE_KEYS = {
     "exam_prep_structure": ["default"],
     "exercise_structure": ["default"],
     "exercise_grading": ["default"],
+    "exercise_assistant_chat": ["default"],
     "chat_intent": None,
     "chat_system_prompt": None,
     "image_plan": ["default"],
@@ -126,6 +127,9 @@ PLACEHOLDERS = {
         "{image_description}", "{history}", "{user_message}",
     ],
     ("exam_prep_handwriting_vision", "default"): ["{question_context}", "{user_message}"],
+    ("exercise_assistant_chat", "default"): [
+        "{question_context}", "{student_work}", "{phase}", "{history}", "{user_message}",
+    ],
     ("notes_ai", "detailed_notes"): ["STRUCTURED_BLOCKS_JSON"],
     ("fetch_quizzes", "multiple_choice"): ["STRUCTURED_BLOCKS_JSON", "{num_questions}"],
     ("practice_tests", "mixed_questions"): ["STRUCTURED_BLOCKS_JSON", "{num_questions}"],
@@ -170,6 +174,7 @@ OUTPUT_KEYS = {
     ("section_quiz", "default"): ["questions", "correct_answer", "difficulty"],
     ("section_quiz", "adaptive"): ["questions", "correct_answer", "difficulty"],
     ("exam_prep_chat", "default"): ["content", "suggestions"],
+    ("exercise_assistant_chat", "default"): ["content", "suggestions"],
     ("exam_prep_handwriting_vision", "default"): [
         "description_markdown", "extracted_text_markdown", "clean_steps_markdown",
         "unclear_parts",
@@ -253,6 +258,7 @@ def test_shared_safety_block_injected_into_untrusted_content_prompts():
         ("text_grading", "default"),
         ("exercise_grading", "default"),
         ("exam_prep_chat", "default"),
+        ("exercise_assistant_chat", "default"),
     ]
     anchor = SAFETY_PREAMBLE.splitlines()[0]  # "### Safety & integrity (always apply)"
     for key, sub in must_have_safety:

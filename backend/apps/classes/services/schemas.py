@@ -124,3 +124,12 @@ class ExerciseGradingOutput(BaseModel):
     model_config = ConfigDict(extra="allow")
 
     per_question: List[ExerciseGradedQuestion] = Field(default_factory=list)
+
+
+class AssistantChatOutput(BaseModel):
+    """Exercise assistant reply shape (same as the exam-prep chat widget)."""
+
+    model_config = ConfigDict(extra="allow")
+
+    content: Optional[str] = None
+    suggestions: List[str] = Field(default_factory=list)

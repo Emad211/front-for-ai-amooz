@@ -233,7 +233,7 @@ stored `per_question` (zero tokens), **no pregeneration** (nothing to pre-build)
 | **E5** | backend (**security-auditor gate**) | student endpoints (list/detail/draft/submit/image) + deadline guard + no-leak serializers | ✅ DONE — 7 endpoints + `_reveal_open` + finished-answers browse + `DRAFT` status (mig 0025); 22 api tests; security gate PASSED (Low-1 fixed proactively, Low-2→E6) |
 | **E6** | ai-engineer + backend | grading service+task (`exercise_grading`, batch env, deterministic MCQ/fill-blank, retry idempotent, kill-switch) | ✅ DONE — `exercise_grading.py` + `grade_exercise_submission` task + dispatch wired; deterministic MCQ + LLM batch + sum + kill-switch; E5 Low-1/Low-2 closed; 13 tests + contract green |
 | **E7** | backend | result + report cards (per-exercise/per-course/overall) + teacher submissions list + override + allow-redo + in-app notifications (publish/graded) | ✅ DONE — gradebook (list/detail/override/allow-redo) + student course/overall report cards; override keeps `llm_score`, recomputes effective; 12 tests. **In-app notifications deferred to E7b** (recorded) |
-| **E8** | ai-engineer (**security-auditor gate**) | assistant endpoint + two-level server guard + context builder (structural strip of reference answers) + `exercise_assistant_chat` | 403 tests for both toggles + reference-answer-absent-from-context test green |
+| **E8** | ai-engineer (**security-auditor gate**) | assistant endpoint + two-level server guard + context builder (structural strip of reference answers) + `exercise_assistant_chat` | ✅ DONE — assistant chat + `build_question_context(reveal)` + two-level 403 toggle; security gate PASSED (Low-1 fixed); 15 tests + contract green |
 | **E9** | backend (+database-engineer) | migration `0025` (`scheduled_at`) + `GET student/calendar/` aggregate | documented shape returned; enrolled-only test green |
 | **E10** | frontend-engineer | teacher UI: service + wizard + gradebook + override + toggles | `tsc --noEmit` clean; full flow works on local stack |
 | **E11** | frontend-engineer | student UI: exercises hub + solver (text/photo) + assistant widget + report cards | tsc clean; RTL/KaTeX correct; disabled-assistant chip shown |
@@ -264,6 +264,17 @@ may be persisted into `result['per_question']`; **fixed proactively** by
 image MIME type trusts the client `content_type`; add magic-byte sniffing when E6
 feeds answer images to the LLM. **E6 pre-condition:** the grader must NOT write
 `reference_answer`/`grading_notes` into `result['per_question']`.
+
+**E8 assistant security-auditor gate (2026-07-05): PASSED, cleared.** Verified: the
+reference answer reaches the model ONLY via `build_question_context(reveal=True)`
+(structural guard — pre-reveal the model never sees it, so no jailbreak can extract
+it); the two-level assistant toggle is server-enforced (`exercise AND section` → 403
+`assistant_disabled`, deny-by-default); cross-exercise question smuggling blocked by
+`section__exercise` scoping (404); phone-scope + per-student memory thread (no
+cross-student bleed); `SAFETY_PREAMBLE` + DATA-fenced `user_message`/`student_work`;
+env-only model with a graceful fallback (Low-1 fixed: `_select_model` moved inside the
+try so a full model-misconfig degrades to a friendly message, not a 500). Two negatives
+added (cross-exercise IDOR, model-unset fallback).
 
 Owner-404 (teacher) / phone-scope-404/400 (student) matrices above; **reference answers are withheld by
 the serializer until the reveal condition holds (`deadline < now`, or no-deadline + own GRADED)** — leak

@@ -875,3 +875,52 @@ class StudentOverallReportCardView(APIView):
             return Response(_NO_PHONE, status=status.HTTP_400_BAD_REQUEST)
         rows, avg = _course_report(request.user)
         return Response({'average': avg, 'exercises': rows})
+
+
+class StudentExerciseAssistantView(APIView):
+    """In-exercise assistant chat. Two-level server-side toggle guard (exercise
+    AND section) -> 403 `assistant_disabled`. Reference answers enter the model
+    context only after reveal (structural leak guard in the service)."""
+
+    permission_classes = [IsAuthenticated, IsStudentUser]
+
+    def post(self, request, session_id: int, exercise_id: int):
+        phone = _student_phone(request)
+        if not phone:
+            return Response(_NO_PHONE, status=status.HTTP_400_BAD_REQUEST)
+        exercise = _published_exercise_for_student(phone, session_id, exercise_id)
+        if exercise is None:
+            return Response(_EX_NOT_FOUND, status=status.HTTP_404_NOT_FOUND)
+
+        question_id = request.data.get('question_id') if isinstance(request.data, dict) else None
+        question = ClassExerciseQuestion.objects.filter(
+            id=question_id, section__exercise=exercise,
+        ).select_related('section').first()
+        if question is None:
+            return Response({'detail': 'سوال پیدا نشد.'}, status=status.HTTP_404_NOT_FOUND)
+
+        # Two-level assistant toggle — server-side, deny-by-default.
+        if not (exercise.assistant_enabled and question.section.assistant_enabled):
+            return Response(
+                {'detail': 'دستیار برای این بخش غیرفعال است.', 'code': 'assistant_disabled'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        submission = StudentExerciseSubmission.objects.filter(
+            exercise=exercise, student=request.user,
+        ).first()
+        reveal = _reveal_open(exercise, submission)  # gates reference-answer teaching
+        student_work = ''
+        if submission and isinstance(submission.answers, dict):
+            entry = submission.answers.get(str(question.id))
+            if isinstance(entry, dict):
+                student_work = str(entry.get('text') or '')
+
+        from .services.exercise_assistant import handle_assistant_message
+        reply = handle_assistant_message(
+            exercise_id=exercise.id, question=question,
+            student_id=request.user.id,
+            user_message=str(request.data.get('message') or ''),
+            student_work=student_work, reveal=reveal,
+        )
+        return Response(reply)
