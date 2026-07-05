@@ -88,8 +88,16 @@ Postgres/CI is migration-truth. LLM fully mocked (0 tokens).
   llm-score-shown + teacher override + allow-redo) + route `my-classes/[classId]/exercises/page.tsx`. Persian
   microcopy from the spec; empty/loading/error states. **`tsc --noEmit` clean** for all exercise files (total
   stays at the pre-existing 13-error baseline — none introduced). Runtime preview deferred to E12/final.
-- [ ] **E11** — student UI: exercises hub + solver (text/photo) + assistant widget + report cards +
-  finished-answers browse. `tsc` clean; RTL/KaTeX.
+- [x] **E11** — ✅ student UI: `exercises-service.ts` extended with all student endpoints (list/detail/draft/
+  submit/image/result/report-card/finished-answers/assistant/calendar, fully typed) + `components/dashboard/
+  exercises/{exercise-solver,exercise-assistant,exercise-report-card}.tsx` + routes `(dashboard)/exercises/
+  {page (hub: overall report card + upcoming deadlines from calendar), [exerciseId]/page (solver: per-section
+  chips, text + camera-capture image answer, debounced draft autosave, section-aware assistant widget with
+  «دستیار برای این بخش غیرفعال است», submit AlertDialog), [exerciseId]/result/page (own scores/feedback;
+  reference answers only when `answersRevealed`), answers/page (finished-answers browse)}`. Question text via
+  `MarkdownWithMath` (KaTeX). **Client leak guard:** the solver never requests/renders the reference answer
+  (backend withholds it); only result/answers show it post-reveal. **`tsc --noEmit` clean** for all exercise
+  files (total stays at the 13-error baseline). Runtime preview deferred to E12/final.
 - [ ] **E12** — calendar: remove mock, wire service + Jalali conversion + exam-prep events. `tsc` clean.
 
 **Definition of done (every step):** GREEN on the sqlite fast lane (Postgres = CI truth); new code documented

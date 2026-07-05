@@ -240,7 +240,7 @@ stored `per_question` (zero tokens), **no pregeneration** (nothing to pre-build)
 | **E8** | ai-engineer (**security-auditor gate**) | assistant endpoint + two-level server guard + context builder (structural strip of reference answers) + `exercise_assistant_chat` | ✅ DONE — assistant chat + `build_question_context(reveal)` + two-level 403 toggle; security gate PASSED (Low-1 fixed); 15 tests + contract green |
 | **E9** | backend (+database-engineer) | migration `0026` (`scheduled_at`) + `GET student/calendar/` aggregate | ✅ DONE — nullable `scheduled_at` (db-eng approved) + calendar endpoint (both kinds, Tehran-tz, isCompleted, from/to); 9 tests green. **Backend complete.** |
 | **E10** | frontend-engineer | teacher UI: service + wizard + gradebook + override + toggles | ✅ DONE — exercises-service.ts + exercise-manager (create/extract-poll/edit/publish) + gradebook-table (override/allow-redo) + route page; tsc clean (baseline unchanged) |
-| **E11** | frontend-engineer | student UI: exercises hub + solver (text/photo) + assistant widget + report cards | tsc clean; RTL/KaTeX correct; disabled-assistant chip shown |
+| **E11** | frontend-engineer | student UI: exercises hub + solver (text/photo) + assistant widget + report cards | ✅ DONE — service (student endpoints) + hub/solver/result/answers pages + assistant/report-card; disabled-assistant chip; solver never fetches reference; tsc clean |
 | **E12** | frontend-engineer | calendar: remove mock, wire service + Jalali conversion + exam-prep events | mock deleted; real events render; tsc clean |
 
 Cross-cutting gates: `code-reviewer` on every non-trivial diff; `release-manager` at pushes; every step

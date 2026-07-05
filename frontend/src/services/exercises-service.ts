@@ -289,3 +289,209 @@ export async function allowRedo(submissionId: number): Promise<{ status: Submiss
     headers: authHeaders(),
   });
 }
+
+/* ── Student types ─────────────────────────────────────────────────── */
+
+export type StudentExerciseListItem = {
+  id: number;
+  title: string;
+  status: ExerciseStatus;
+  deadline: string | null;
+  deadlinePassed: boolean;
+  submissionStatus: SubmissionStatus | null;
+};
+
+// Solving-view question — NEVER carries the reference answer (server withholds it).
+export type StudentQuestion = {
+  id: number;
+  order: number;
+  questionMarkdown: string;
+  questionType: QuestionType;
+  options: unknown[];
+  maxPoints: string;
+  referenceAnswerMarkdown?: string; // present only in result/answers after reveal
+};
+
+export type StudentSection = {
+  id: number;
+  order: number;
+  title: string;
+  assistantEnabled: boolean;
+  questions: StudentQuestion[];
+};
+
+export type StudentExerciseDetail = {
+  id: number;
+  title: string;
+  description: string;
+  status: ExerciseStatus;
+  deadline: string | null;
+  assistantEnabled: boolean;
+  sections: StudentSection[];
+  myAnswers: Record<string, { text?: string; images?: string[] }>;
+  submissionStatus: SubmissionStatus | null;
+};
+
+export type StudentAnswers = Record<string, { text?: string; images?: string[] }>;
+
+export type ExerciseResult = {
+  status: SubmissionStatus;
+  detail?: string;
+  scorePoints?: string | null;
+  maxPoints?: string | null;
+  result?: { per_question?: PerQuestionResult[] };
+  answersRevealed?: boolean;
+  exercise?: {
+    id: number;
+    title: string;
+    sections: StudentSection[];
+  };
+};
+
+export type ReportCard = {
+  average: number | null;
+  exercises: Array<{
+    exerciseId: number;
+    exerciseTitle: string;
+    scorePoints: string | null;
+    maxPoints: string | null;
+    percent: number;
+  }>;
+};
+
+export type FinishedAnswer = {
+  id: number;
+  sessionId: number;
+  courseTitle: string;
+  title: string;
+  sections: StudentSection[];
+};
+
+export type AssistantReply = { content: string; suggestions: string[] };
+
+export type CalendarEventDto = {
+  id: string;
+  kind: 'exercise_deadline' | 'exam_prep';
+  title: string;
+  courseTitle: string;
+  datetime: string | null;
+  sessionId: number;
+  exerciseId?: number;
+  isCompleted: boolean;
+};
+
+/* ── Student endpoints ─────────────────────────────────────────────── */
+
+export async function listStudentExercises(sessionId: number): Promise<StudentExerciseListItem[]> {
+  return requestJson(`${API_URL}/classes/student/courses/${sessionId}/exercises/`, {
+    method: 'GET',
+    headers: authHeaders(),
+  });
+}
+
+export async function getStudentExercise(
+  sessionId: number,
+  exerciseId: number
+): Promise<StudentExerciseDetail> {
+  return requestJson(
+    `${API_URL}/classes/student/courses/${sessionId}/exercises/${exerciseId}/`,
+    { method: 'GET', headers: authHeaders() }
+  );
+}
+
+export async function saveExerciseDraft(
+  sessionId: number,
+  exerciseId: number,
+  answers: StudentAnswers
+): Promise<{ status: SubmissionStatus; saved: boolean }> {
+  return requestJson(
+    `${API_URL}/classes/student/courses/${sessionId}/exercises/${exerciseId}/draft/`,
+    { method: 'PUT', headers: jsonHeaders(), body: JSON.stringify({ answers }) }
+  );
+}
+
+export async function uploadAnswerImage(
+  sessionId: number,
+  exerciseId: number,
+  questionId: number,
+  file: File
+): Promise<{ path: string }> {
+  const form = new FormData();
+  form.append('file', file);
+  return requestJson(
+    `${API_URL}/classes/student/courses/${sessionId}/exercises/${exerciseId}/questions/${questionId}/image/`,
+    { method: 'POST', headers: authHeaders(), body: form }
+  );
+}
+
+export async function submitExercise(
+  sessionId: number,
+  exerciseId: number,
+  answers: StudentAnswers
+): Promise<{ status: SubmissionStatus; isLate: boolean }> {
+  return requestJson(
+    `${API_URL}/classes/student/courses/${sessionId}/exercises/${exerciseId}/submit/`,
+    { method: 'POST', headers: jsonHeaders(), body: JSON.stringify({ answers }) }
+  );
+}
+
+export async function getExerciseResult(
+  sessionId: number,
+  exerciseId: number
+): Promise<ExerciseResult> {
+  return requestJson(
+    `${API_URL}/classes/student/courses/${sessionId}/exercises/${exerciseId}/result/`,
+    { method: 'GET', headers: authHeaders() }
+  );
+}
+
+export async function getCourseReportCard(sessionId: number): Promise<ReportCard> {
+  return requestJson(`${API_URL}/classes/student/courses/${sessionId}/report-card/`, {
+    method: 'GET',
+    headers: authHeaders(),
+  });
+}
+
+export async function getOverallReportCard(): Promise<ReportCard> {
+  return requestJson(`${API_URL}/classes/student/report-card/`, {
+    method: 'GET',
+    headers: authHeaders(),
+  });
+}
+
+export async function getFinishedAnswers(): Promise<FinishedAnswer[]> {
+  return requestJson(`${API_URL}/classes/student/exercises/answers/`, {
+    method: 'GET',
+    headers: authHeaders(),
+  });
+}
+
+export async function askAssistant(
+  sessionId: number,
+  exerciseId: number,
+  questionId: number,
+  message: string
+): Promise<AssistantReply> {
+  return requestJson(
+    `${API_URL}/classes/student/courses/${sessionId}/exercises/${exerciseId}/assistant/`,
+    {
+      method: 'POST',
+      headers: jsonHeaders(),
+      body: JSON.stringify({ question_id: questionId, message }),
+    }
+  );
+}
+
+export async function getStudentCalendar(
+  from?: string,
+  to?: string
+): Promise<CalendarEventDto[]> {
+  const params = new URLSearchParams();
+  if (from) params.set('from', from);
+  if (to) params.set('to', to);
+  const qs = params.toString();
+  return requestJson(`${API_URL}/classes/student/calendar/${qs ? `?${qs}` : ''}`, {
+    method: 'GET',
+    headers: authHeaders(),
+  });
+}
