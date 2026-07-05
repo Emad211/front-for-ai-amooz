@@ -22,6 +22,7 @@ from .views_exercises import (
     StudentCourseReportCardView,
     StudentOverallReportCardView,
     StudentExerciseAssistantView,
+    StudentCalendarView,
 )
 from .views import (
     ClassPrerequisiteListView,
@@ -114,6 +115,9 @@ urlpatterns = [
     path('exercises/submissions/<int:submission_id>/', TeacherSubmissionDetailView.as_view(), name='exercise_submission_detail'),
     path('exercises/submissions/<int:submission_id>/override/', TeacherSubmissionOverrideView.as_view(), name='exercise_submission_override'),
     path('exercises/submissions/<int:submission_id>/allow-redo/', TeacherSubmissionAllowRedoView.as_view(), name='exercise_submission_allow_redo'),
+
+    # Exercise Hub — student calendar (E9)
+    path('student/calendar/', StudentCalendarView.as_view(), name='student_calendar'),
 
     # Exercise Hub — student report cards (E7)
     path('student/report-card/', StudentOverallReportCardView.as_view(), name='student_overall_report_card'),

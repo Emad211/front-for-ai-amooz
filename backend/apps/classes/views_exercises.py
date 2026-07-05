@@ -877,6 +877,107 @@ class StudentOverallReportCardView(APIView):
         return Response({'average': avg, 'exercises': rows})
 
 
+class StudentCalendarView(APIView):
+    """Aggregate calendar for a student: published exercise deadlines of enrolled
+    classes + scheduled (timed) exam-prep sessions they were invited to. Returns
+    Tehran-tz ISO datetimes; the frontend does the Jalali conversion."""
+
+    permission_classes = [IsAuthenticated, IsStudentUser]
+
+    def get(self, request):
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+        from django.utils.dateparse import parse_datetime
+        from .models import StudentExamPrepAttempt
+
+        phone = _student_phone(request)
+        if not phone:
+            return Response(_NO_PHONE, status=status.HTTP_400_BAD_REQUEST)
+
+        tehran = ZoneInfo('Asia/Tehran')
+
+        def _parse(raw):
+            if not raw:
+                return None
+            dt = parse_datetime(raw)
+            if dt is None:
+                try:
+                    dt = datetime.fromisoformat(raw)
+                except (ValueError, TypeError):
+                    return None
+            if timezone.is_naive(dt):
+                dt = timezone.make_aware(dt, tehran)
+            return dt
+
+        dt_from = _parse(request.query_params.get('from'))
+        dt_to = _parse(request.query_params.get('to'))
+
+        def _iso(dt):
+            return timezone.localtime(dt, tehran).isoformat() if dt else None
+
+        # Exercise deadlines of enrolled (invited + published) classes.
+        exercises = ClassExercise.objects.filter(
+            status=ClassExercise.Status.PUBLISHED,
+            session__is_published=True,
+            session__invites__phone=phone,
+            deadline__isnull=False,
+        ).select_related('session').distinct()
+        if dt_from:
+            exercises = exercises.filter(deadline__gte=dt_from)
+        if dt_to:
+            exercises = exercises.filter(deadline__lte=dt_to)
+
+        submitted_ex = set(
+            StudentExerciseSubmission.objects.filter(
+                student=request.user, exercise__in=exercises,
+            ).exclude(status=StudentExerciseSubmission.Status.DRAFT)
+            .values_list('exercise_id', flat=True)
+        )
+
+        # Scheduled (timed) exam-prep sessions the student was invited to.
+        exam_preps = ClassCreationSession.objects.filter(
+            pipeline_type=ClassCreationSession.PipelineType.EXAM_PREP,
+            is_published=True,
+            invites__phone=phone,
+            scheduled_at__isnull=False,
+        ).distinct()
+        if dt_from:
+            exam_preps = exam_preps.filter(scheduled_at__gte=dt_from)
+        if dt_to:
+            exam_preps = exam_preps.filter(scheduled_at__lte=dt_to)
+
+        finalized_sessions = set(
+            StudentExamPrepAttempt.objects.filter(
+                student=request.user, session__in=exam_preps, finalized=True,
+            ).values_list('session_id', flat=True)
+        )
+
+        events = []
+        for ex in exercises:
+            events.append({
+                'id': f'exercise-{ex.id}',
+                'kind': 'exercise_deadline',
+                'title': ex.title,
+                'courseTitle': ex.session.title,
+                'datetime': _iso(ex.deadline),
+                'sessionId': ex.session_id,
+                'exerciseId': ex.id,
+                'isCompleted': ex.id in submitted_ex,
+            })
+        for s in exam_preps:
+            events.append({
+                'id': f'exam_prep-{s.id}',
+                'kind': 'exam_prep',
+                'title': s.title,
+                'courseTitle': s.title,
+                'datetime': _iso(s.scheduled_at),
+                'sessionId': s.id,
+                'isCompleted': s.id in finalized_sessions,
+            })
+        events.sort(key=lambda e: e['datetime'] or '')
+        return Response(events)
+
+
 class StudentExerciseAssistantView(APIView):
     """In-exercise assistant chat. Two-level server-side toggle guard (exercise
     AND section) -> 403 `assistant_disabled`. Reference answers enter the model

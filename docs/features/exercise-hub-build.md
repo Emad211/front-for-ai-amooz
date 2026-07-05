@@ -72,7 +72,12 @@ Postgres/CI is migration-truth. LLM fully mocked (0 tokens).
   schema + contract test. **security-auditor gate PASSED** (structural leak guard + toggle + phone-scope +
   injection posture verified); Low-1 fixed (model-unset → graceful, not 500) + 2 negatives added
   (cross-exercise IDOR, model-unset). 15 tests (incl. context-guard both directions) + contract green.
-- [ ] **E9** — migration `0025` (`scheduled_at` on session) + `GET student/calendar/` aggregate endpoint.
+- [x] **E9** — ✅ **BACKEND COMPLETE.** migration `0026` (nullable `scheduled_at` on `ClassCreationSession`,
+  pure DDL — **database-engineer approved**: metadata-only Postgres add, no index needed) + `GET
+  student/calendar/` aggregate in `views_exercises.py`: phone-scoped events = published exercise deadlines of
+  enrolled classes + scheduled exam-prep sessions; Tehran-tz ISO datetime (Jalali in frontend), `isCompleted`
+  from submission/attempt, `from`/`to` window filter. 9 api tests (both kinds, excludes-non-enrolled,
+  isCompleted both ways, from/to filter, no-phone 400, anon 401, no-deadline excluded) green.
 
 ## Frontend
 - [ ] **E10** — teacher UI: service + upload wizard + gradebook + override + toggles. `tsc` clean.

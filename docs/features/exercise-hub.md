@@ -100,9 +100,13 @@ here, deliberately.
 | `ClassExerciseQuestion` | section FK · order · `question_markdown` · `question_type{descriptive,multiple_choice,fill_blank}` · `options` JSON null · `reference_answer_markdown` · `max_points` Decimal · `grading_notes` | uniq (section, order) |
 | `StudentExerciseSubmission` | exercise FK · student FK · Status{SUBMITTED,GRADING,GRADED,GRADING_FAILED} · `answers` JSON (text + image storage paths per question) · `result` JSON (`per_question`: llm_score/llm_feedback/teacher_score/teacher_feedback) · `score_points` · `max_points` snapshot · `is_late` · `grading_task_id` · `graded_at` · `overridden_at` | **uniq (exercise, student)** |
 
-Migrations: `classes/0024_exercises` (pure DDL — CreateModel + constraints only) and **separate**
-`classes/0025` adding nullable `scheduled_at` to `ClassCreationSession` (for timed exam-prep calendar
-events). DML/DDL split law respected; rollback = reverse migrations, no data backfill needed.
+Migrations (all pure DDL, DML/DDL split respected, reversible with no backfill): `classes/0024_exercises`
+(CreateModel + constraints), `classes/0025_exercise_submission_draft` (adds `DRAFT` to the submission
+status — no-op AlterField), `classes/0026_session_scheduled_at` (adds nullable `scheduled_at` to
+`ClassCreationSession` for timed exam-prep calendar events — **database-engineer approved**: metadata-only
+add on Postgres, no rewrite/long lock, no index needed since the calendar query is pre-filtered by
+`invites__phone` + indexed `pipeline_type`; rollback = `migrate classes 0025`). Feature-enum additions ride
+`commons/0006` (no-op AlterField).
 `LLMUsageLog.Feature` choices additions generate a no-op AlterField migration (coordinate with
 database-engineer).
 
@@ -234,7 +238,7 @@ stored `per_question` (zero tokens), **no pregeneration** (nothing to pre-build)
 | **E6** | ai-engineer + backend | grading service+task (`exercise_grading`, batch env, deterministic MCQ/fill-blank, retry idempotent, kill-switch) | ✅ DONE — `exercise_grading.py` + `grade_exercise_submission` task + dispatch wired; deterministic MCQ + LLM batch + sum + kill-switch; E5 Low-1/Low-2 closed; 13 tests + contract green |
 | **E7** | backend | result + report cards (per-exercise/per-course/overall) + teacher submissions list + override + allow-redo + in-app notifications (publish/graded) | ✅ DONE — gradebook (list/detail/override/allow-redo) + student course/overall report cards; override keeps `llm_score`, recomputes effective; 12 tests. **In-app notifications deferred to E7b** (recorded) |
 | **E8** | ai-engineer (**security-auditor gate**) | assistant endpoint + two-level server guard + context builder (structural strip of reference answers) + `exercise_assistant_chat` | ✅ DONE — assistant chat + `build_question_context(reveal)` + two-level 403 toggle; security gate PASSED (Low-1 fixed); 15 tests + contract green |
-| **E9** | backend (+database-engineer) | migration `0025` (`scheduled_at`) + `GET student/calendar/` aggregate | documented shape returned; enrolled-only test green |
+| **E9** | backend (+database-engineer) | migration `0026` (`scheduled_at`) + `GET student/calendar/` aggregate | ✅ DONE — nullable `scheduled_at` (db-eng approved) + calendar endpoint (both kinds, Tehran-tz, isCompleted, from/to); 9 tests green. **Backend complete.** |
 | **E10** | frontend-engineer | teacher UI: service + wizard + gradebook + override + toggles | `tsc --noEmit` clean; full flow works on local stack |
 | **E11** | frontend-engineer | student UI: exercises hub + solver (text/photo) + assistant widget + report cards | tsc clean; RTL/KaTeX correct; disabled-assistant chip shown |
 | **E12** | frontend-engineer | calendar: remove mock, wire service + Jalali conversion + exam-prep events | mock deleted; real events render; tsc clean |

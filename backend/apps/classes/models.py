@@ -70,6 +70,10 @@ class ClassCreationSession(models.Model):
     level = models.CharField(max_length=64, blank=True, default='')
     duration = models.CharField(max_length=64, blank=True, default='')
 
+    # Optional scheduled time for a timed exam-prep session — teacher-set; drives
+    # the student calendar (Exercise Hub, docs/features/exercise-hub.md).
+    scheduled_at = models.DateTimeField(null=True, blank=True)
+
     class SourceType(models.TextChoices):
         MEDIA = 'media', 'Media (audio/video)'
         PDF = 'pdf', 'PDF'
