@@ -80,7 +80,14 @@ Postgres/CI is migration-truth. LLM fully mocked (0 tokens).
   isCompleted both ways, from/to filter, no-phone 400, anon 401, no-deadline excluded) green.
 
 ## Frontend
-- [ ] **E10** — teacher UI: service + upload wizard + gradebook + override + toggles. `tsc` clean.
+- [x] **E10** — ✅ teacher UI: `src/services/exercises-service.ts` (fully typed — all E4/E7 teacher endpoints
+  via the service layer, `NEXT_PUBLIC_API_URL` guard, 401-refresh, multipart upload) + `components/teacher/
+  exercises/exercise-manager.tsx` (list + create/upload + extraction **polling** + per-question
+  reference-answer/points editor + assistant/deadline settings + publish/delete with AlertDialog) +
+  `gradebook-table.tsx` (submissions matrix, **sticky name column right** for RTL, override dialog with
+  llm-score-shown + teacher override + allow-redo) + route `my-classes/[classId]/exercises/page.tsx`. Persian
+  microcopy from the spec; empty/loading/error states. **`tsc --noEmit` clean** for all exercise files (total
+  stays at the pre-existing 13-error baseline — none introduced). Runtime preview deferred to E12/final.
 - [ ] **E11** — student UI: exercises hub + solver (text/photo) + assistant widget + report cards +
   finished-answers browse. `tsc` clean; RTL/KaTeX.
 - [ ] **E12** — calendar: remove mock, wire service + Jalali conversion + exam-prep events. `tsc` clean.
