@@ -35,10 +35,20 @@ Postgres/CI is migration-truth. LLM fully mocked (0 tokens).
   tests (`test_exercise_teacher_api.py`): happy CRUD + publish gate + full negative matrix (anon→401,
   student→403, cross-teacher→404) green. Self-reviewed vs the code-reviewer checklist; security-auditor budget
   reserved for the E5/E8 gates.
-- [ ] **E5** — student endpoints (list / detail / draft / submit / image) + deadline guard + no-leak
-  serializers + the «پاسخ تمرین‌های تمام‌شده» answers browse (reveal gated on deadline). **security-auditor gate.**
+- [x] **E5** — ✅ student endpoints in `views_exercises.py` (7): list / detail(solving, never reveals) /
+  draft(autosave, `DRAFT` status, migration `0025`) / image(type+size, path-safe) / submit(deadline+duplicate
+  409, race-safe) / result(reveal-gated) / «پاسخ تمرین‌های تمام‌شده» answers browse. Reveal rule single-sourced
+  in `_reveal_open` (deadline-passed OR no-deadline+own-GRADED); leak-safe serializers (`_q_for_solving` never
+  carries the reference answer). 22 api tests (phone-scope 404/400, anon 401, leak guards on detail/list/result/
+  browse, submit/deadline/duplicate). **security-auditor gate PASSED** (cleared, no blocking findings); Low-1
+  (`result` passthrough) closed proactively via `_result_for_student` + test; **Low-2 (image MIME sniffing)
+  carried to E6** — add magic-byte check when the grader feeds answer images to the LLM; **E6 pre-condition:
+  grader must not write reference_answer/grading_notes into `result['per_question']`.**
 - [ ] **E6** — grading service + task (`exercise_grading`, batch env, deterministic MCQ/fill-blank, retry
   idempotent, `EXERCISE_LLM_GRADING` kill-switch). Mocked grading + idempotent re-run + GRADING_FAILED.
+  **Carry-ins from E5 security gate:** (Low-1) the grader must NOT persist `reference_answer`/`grading_notes`
+  into `result['per_question']` (it is student-echoed); (Low-2) add magic-byte image sniffing before feeding
+  answer images to the LLM. Also wire the grading dispatch into `StudentExerciseSubmitView` (hook is marked).
 - [ ] **E7** — result + report cards (per-exercise / per-course / overall) + teacher submissions list +
   override (llm_score immutable) + allow-redo + in-app notifications.
 - [ ] **E8** — assistant endpoint + two-level server guard + context builder (structural reference-answer

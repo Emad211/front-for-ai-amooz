@@ -9,7 +9,11 @@ Design + permission matrix: docs/features/exercise-hub.md · ADR-0004.
 """
 from __future__ import annotations
 
-from django.db import transaction
+import os
+
+from django.core.files.storage import default_storage
+from django.db import IntegrityError, transaction
+from django.utils import timezone
 from rest_framework import status
 from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.permissions import IsAuthenticated
@@ -22,8 +26,9 @@ from .models import (
     ClassExerciseAsset,
     ClassExerciseQuestion,
     ClassExerciseSection,
+    StudentExerciseSubmission,
 )
-from .permissions import IsTeacherUser
+from .permissions import IsStudentUser, IsTeacherUser
 from .serializers_exercises import (
     ExerciseCreateSerializer,
     ExerciseDetailSerializer,
@@ -286,3 +291,382 @@ class ExerciseQuestionDetailView(APIView):
             return Response({'detail': 'سوال پیدا نشد.'}, status=status.HTTP_404_NOT_FOUND)
         q.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Student API — phone-scoped. A student only ever reaches a PUBLISHED exercise
+# of a published class they were invited to (via phone). No phone -> 400.
+# Reference answers are withheld until the reveal condition holds (deadline
+# passed, or no-deadline + own GRADED) — a single helper decides that.
+# ═══════════════════════════════════════════════════════════════════════════
+
+_NO_PHONE = {'detail': 'شماره موبایل برای حساب کاربری ثبت نشده است.'}
+_EX_NOT_FOUND = {'detail': 'تمرین پیدا نشد.'}
+
+_MAX_IMAGE_BYTES = int(os.getenv('EXERCISE_MAX_IMAGE_BYTES', str(8 * 1024 * 1024)))
+
+
+def _student_phone(request):
+    return (getattr(request.user, 'phone', None) or '').strip()
+
+
+def _published_exercise_for_student(phone, session_id, exercise_id):
+    return (
+        ClassExercise.objects.filter(
+            id=exercise_id,
+            session_id=session_id,
+            status=ClassExercise.Status.PUBLISHED,
+            session__is_published=True,
+            session__invites__phone=phone,
+        )
+        .prefetch_related('sections__questions')
+        .first()
+    )
+
+
+def _reveal_open(exercise, submission) -> bool:
+    """THE single reveal rule: reference answers may be shown only when the
+    deadline has passed, or (no deadline) when the student's own submission is
+    graded. Never before — an early submitter must not see the answers while
+    classmates are still within the deadline (owner decision 2026-07-05)."""
+    if exercise.deadline_passed():
+        return True
+    if exercise.deadline is None and submission is not None:
+        return submission.status == StudentExerciseSubmission.Status.GRADED
+    return False
+
+
+# Keys that must never reach a student before reveal, even if a future grader
+# (E6) accidentally persists them into result['per_question']. Defense-in-depth
+# so the reveal gate holds regardless of what the grading payload contains
+# (security-auditor E5 Low-1).
+_REVEAL_ONLY_RESULT_KEYS = {
+    'reference_answer', 'reference_answer_markdown', 'grading_notes',
+}
+
+
+def _result_for_student(result, *, reveal: bool):
+    """Return ``result`` with any reference-answer-ish keys stripped from each
+    ``per_question`` entry when the reveal condition is not yet open."""
+    if reveal or not isinstance(result, dict):
+        return result
+    per_q = result.get('per_question')
+    if not isinstance(per_q, list):
+        return result
+    cleaned = [
+        {k: v for k, v in pq.items() if k not in _REVEAL_ONLY_RESULT_KEYS}
+        if isinstance(pq, dict) else pq
+        for pq in per_q
+    ]
+    return {**result, 'per_question': cleaned}
+
+
+def _q_for_solving(q) -> dict:
+    """Solving-view question shape — NEVER contains the reference answer."""
+    return {
+        'id': q.id, 'order': q.order,
+        'questionMarkdown': q.question_markdown,
+        'questionType': q.question_type,
+        'options': q.options,
+        'maxPoints': str(q.max_points),
+    }
+
+
+def _q_with_answer(q) -> dict:
+    """Reveal-view question shape — adds the reference answer. Only ever used
+    once ``_reveal_open`` returned True."""
+    d = _q_for_solving(q)
+    d['referenceAnswerMarkdown'] = q.reference_answer_markdown
+    return d
+
+
+def _serialize_exercise(exercise, *, reveal: bool) -> dict:
+    q_fn = _q_with_answer if reveal else _q_for_solving
+    return {
+        'id': exercise.id,
+        'title': exercise.title,
+        'description': exercise.description,
+        'status': exercise.status,
+        'deadline': exercise.deadline.isoformat() if exercise.deadline else None,
+        'assistantEnabled': exercise.assistant_enabled,
+        'sections': [
+            {
+                'id': s.id, 'order': s.order, 'title': s.title,
+                'assistantEnabled': s.assistant_enabled,
+                'questions': [q_fn(q) for q in s.questions.all()],
+            }
+            for s in exercise.sections.all()
+        ],
+    }
+
+
+class StudentExerciseListView(APIView):
+    """List the PUBLISHED exercises of an enrolled class (+ own submission state)."""
+
+    permission_classes = [IsAuthenticated, IsStudentUser]
+
+    def get(self, request, session_id: int):
+        phone = _student_phone(request)
+        if not phone:
+            return Response(_NO_PHONE, status=status.HTTP_400_BAD_REQUEST)
+        session = ClassCreationSession.objects.filter(
+            id=session_id, is_published=True, invites__phone=phone,
+        ).first()
+        if session is None:
+            return Response({'detail': 'کلاس پیدا نشد.'}, status=status.HTTP_404_NOT_FOUND)
+
+        exercises = ClassExercise.objects.filter(
+            session=session, status=ClassExercise.Status.PUBLISHED,
+        ).order_by('-created_at')
+        subs = {
+            s.exercise_id: s.status
+            for s in StudentExerciseSubmission.objects.filter(
+                exercise__in=exercises, student=request.user,
+            )
+        }
+        now = timezone.now()
+        return Response([
+            {
+                'id': ex.id, 'title': ex.title, 'status': ex.status,
+                'deadline': ex.deadline.isoformat() if ex.deadline else None,
+                'deadlinePassed': ex.deadline is not None and ex.deadline < now,
+                'submissionStatus': subs.get(ex.id),
+            }
+            for ex in exercises
+        ])
+
+
+class StudentExerciseDetailView(APIView):
+    """The solving view — sections/questions WITHOUT reference answers, plus the
+    student's own draft/submission answers to resume."""
+
+    permission_classes = [IsAuthenticated, IsStudentUser]
+
+    def get(self, request, session_id: int, exercise_id: int):
+        phone = _student_phone(request)
+        if not phone:
+            return Response(_NO_PHONE, status=status.HTTP_400_BAD_REQUEST)
+        exercise = _published_exercise_for_student(phone, session_id, exercise_id)
+        if exercise is None:
+            return Response(_EX_NOT_FOUND, status=status.HTTP_404_NOT_FOUND)
+        submission = StudentExerciseSubmission.objects.filter(
+            exercise=exercise, student=request.user,
+        ).first()
+        data = _serialize_exercise(exercise, reveal=False)  # solving = never reveal
+        data['myAnswers'] = submission.answers if submission else {}
+        data['submissionStatus'] = submission.status if submission else None
+        return Response(data)
+
+
+class StudentExerciseDraftView(APIView):
+    """Autosave the student's in-progress answers (upsert a DRAFT submission)."""
+
+    permission_classes = [IsAuthenticated, IsStudentUser]
+
+    def put(self, request, session_id: int, exercise_id: int):
+        phone = _student_phone(request)
+        if not phone:
+            return Response(_NO_PHONE, status=status.HTTP_400_BAD_REQUEST)
+        exercise = _published_exercise_for_student(phone, session_id, exercise_id)
+        if exercise is None:
+            return Response(_EX_NOT_FOUND, status=status.HTTP_404_NOT_FOUND)
+        submission = StudentExerciseSubmission.objects.filter(
+            exercise=exercise, student=request.user,
+        ).first()
+        if submission and submission.status != StudentExerciseSubmission.Status.DRAFT:
+            return Response(
+                {'detail': 'این تمرین قبلاً ارسال شده است.'}, status=status.HTTP_409_CONFLICT,
+            )
+        answers = request.data.get('answers') if isinstance(request.data, dict) else None
+        if not isinstance(answers, dict):
+            answers = {}
+        if submission is None:
+            submission = StudentExerciseSubmission.objects.create(
+                exercise=exercise, student=request.user,
+                status=StudentExerciseSubmission.Status.DRAFT, answers=answers,
+            )
+        else:
+            submission.answers = answers
+            submission.save(update_fields=['answers', 'updated_at'])
+        return Response({'status': submission.status, 'saved': True})
+
+
+class StudentExerciseImageView(APIView):
+    """Upload one handwriting/photo answer image for a question (server-side
+    type + size validation), recorded on the DRAFT submission."""
+
+    permission_classes = [IsAuthenticated, IsStudentUser]
+    parser_classes = [MultiPartParser, FormParser]
+
+    def post(self, request, session_id: int, exercise_id: int, question_id: int):
+        phone = _student_phone(request)
+        if not phone:
+            return Response(_NO_PHONE, status=status.HTTP_400_BAD_REQUEST)
+        exercise = _published_exercise_for_student(phone, session_id, exercise_id)
+        if exercise is None:
+            return Response(_EX_NOT_FOUND, status=status.HTTP_404_NOT_FOUND)
+        question = ClassExerciseQuestion.objects.filter(
+            id=question_id, section__exercise=exercise,
+        ).first()
+        if question is None:
+            return Response({'detail': 'سوال پیدا نشد.'}, status=status.HTTP_404_NOT_FOUND)
+
+        up = request.FILES.get('file')
+        if up is None:
+            return Response({'detail': 'فایل ارسال نشده است.'}, status=status.HTTP_400_BAD_REQUEST)
+        content_type = (getattr(up, 'content_type', '') or '').lower()
+        if not content_type.startswith('image/'):
+            return Response(
+                {'detail': 'فقط تصویر مجاز است.'}, status=status.HTTP_400_BAD_REQUEST,
+            )
+        if up.size and up.size > _MAX_IMAGE_BYTES:
+            return Response(
+                {'detail': 'حجم تصویر بیش از حد مجاز است.'},
+                status=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            )
+
+        path = default_storage.save(
+            f'exercises/answers/{exercise.id}/{request.user.id}/{question_id}_{up.name}',
+            up,
+        )
+        submission, _created = StudentExerciseSubmission.objects.get_or_create(
+            exercise=exercise, student=request.user,
+            defaults={'status': StudentExerciseSubmission.Status.DRAFT},
+        )
+        if submission.status != StudentExerciseSubmission.Status.DRAFT:
+            return Response(
+                {'detail': 'این تمرین قبلاً ارسال شده است.'}, status=status.HTTP_409_CONFLICT,
+            )
+        answers = submission.answers if isinstance(submission.answers, dict) else {}
+        qkey = str(question_id)
+        entry = answers.get(qkey) if isinstance(answers.get(qkey), dict) else {}
+        images = entry.get('images') if isinstance(entry.get('images'), list) else []
+        images.append(path)
+        entry['images'] = images
+        answers[qkey] = entry
+        submission.answers = answers
+        submission.save(update_fields=['answers', 'updated_at'])
+        return Response({'path': path}, status=status.HTTP_201_CREATED)
+
+
+class StudentExerciseSubmitView(APIView):
+    """Finalize the submission. 409 after the deadline (unless allow_late) and on
+    a duplicate final submission. (Grading dispatch is wired at E6.)"""
+
+    permission_classes = [IsAuthenticated, IsStudentUser]
+
+    def post(self, request, session_id: int, exercise_id: int):
+        phone = _student_phone(request)
+        if not phone:
+            return Response(_NO_PHONE, status=status.HTTP_400_BAD_REQUEST)
+        exercise = _published_exercise_for_student(phone, session_id, exercise_id)
+        if exercise is None:
+            return Response(_EX_NOT_FOUND, status=status.HTTP_404_NOT_FOUND)
+
+        past_deadline = exercise.deadline is not None and exercise.deadline < timezone.now()
+        if past_deadline and not exercise.allow_late:
+            return Response(
+                {'detail': 'مهلت ارسال این تمرین گذشته است.'}, status=status.HTTP_409_CONFLICT,
+            )
+
+        answers = request.data.get('answers') if isinstance(request.data, dict) else None
+        submission = StudentExerciseSubmission.objects.filter(
+            exercise=exercise, student=request.user,
+        ).first()
+        if submission and submission.status != StudentExerciseSubmission.Status.DRAFT:
+            return Response(
+                {'detail': 'شما قبلاً پاسخ این تمرین را ارسال کرده‌اید.'},
+                status=status.HTTP_409_CONFLICT,
+            )
+        if submission is None:
+            try:
+                submission = StudentExerciseSubmission.objects.create(
+                    exercise=exercise, student=request.user,
+                    status=StudentExerciseSubmission.Status.SUBMITTED,
+                    answers=answers if isinstance(answers, dict) else {},
+                    is_late=bool(past_deadline),
+                )
+            except IntegrityError:
+                return Response(
+                    {'detail': 'شما قبلاً پاسخ این تمرین را ارسال کرده‌اید.'},
+                    status=status.HTTP_409_CONFLICT,
+                )
+        else:
+            if isinstance(answers, dict):
+                submission.answers = answers
+            submission.status = StudentExerciseSubmission.Status.SUBMITTED
+            submission.is_late = bool(past_deadline)
+            submission.save(update_fields=['answers', 'status', 'is_late', 'updated_at'])
+        # E6 hooks the grading dispatch here.
+        return Response(
+            {'status': submission.status, 'isLate': submission.is_late},
+            status=status.HTTP_201_CREATED,
+        )
+
+
+class StudentExerciseResultView(APIView):
+    """The student's own graded result. Reference answers appear ONLY when the
+    reveal condition holds (deadline passed, or no-deadline + own GRADED)."""
+
+    permission_classes = [IsAuthenticated, IsStudentUser]
+
+    def get(self, request, session_id: int, exercise_id: int):
+        phone = _student_phone(request)
+        if not phone:
+            return Response(_NO_PHONE, status=status.HTTP_400_BAD_REQUEST)
+        exercise = _published_exercise_for_student(phone, session_id, exercise_id)
+        if exercise is None:
+            return Response(_EX_NOT_FOUND, status=status.HTTP_404_NOT_FOUND)
+        submission = StudentExerciseSubmission.objects.filter(
+            exercise=exercise, student=request.user,
+        ).first()
+        if submission is None or submission.status == StudentExerciseSubmission.Status.DRAFT:
+            return Response({'detail': 'هنوز پاسخی ارسال نکرده‌اید.'}, status=status.HTTP_404_NOT_FOUND)
+        if submission.status != StudentExerciseSubmission.Status.GRADED:
+            return Response({
+                'status': submission.status,
+                'detail': 'پاسخ شما ارسال شد. نتیجه پس از نمره‌دهی نمایش داده می‌شود.',
+            })
+        reveal = _reveal_open(exercise, submission)
+        return Response({
+            'status': submission.status,
+            'scorePoints': str(submission.score_points) if submission.score_points is not None else None,
+            'maxPoints': str(submission.max_points) if submission.max_points is not None else None,
+            'result': _result_for_student(submission.result, reveal=reveal),
+            'answersRevealed': reveal,
+            'exercise': _serialize_exercise(exercise, reveal=reveal),
+        })
+
+
+class StudentFinishedAnswersView(APIView):
+    """«پاسخ تمرین‌های تمام‌شده» — browse the reference answers of past
+    (deadline-passed) exercises of the student's enrolled classes."""
+
+    permission_classes = [IsAuthenticated, IsStudentUser]
+
+    def get(self, request):
+        phone = _student_phone(request)
+        if not phone:
+            return Response(_NO_PHONE, status=status.HTTP_400_BAD_REQUEST)
+        now = timezone.now()
+        exercises = (
+            ClassExercise.objects.filter(
+                status=ClassExercise.Status.PUBLISHED,
+                session__is_published=True,
+                session__invites__phone=phone,
+                deadline__isnull=False,
+                deadline__lt=now,  # reveal is open
+            )
+            .prefetch_related('sections__questions')
+            .select_related('session')
+            .order_by('-deadline')
+            .distinct()
+        )
+        return Response([
+            {
+                'sessionId': ex.session_id,
+                'courseTitle': ex.session.title,
+                **_serialize_exercise(ex, reveal=True),  # deadline passed -> reveal
+            }
+            for ex in exercises
+        ])

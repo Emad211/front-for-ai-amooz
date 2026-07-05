@@ -230,7 +230,7 @@ stored `per_question` (zero tokens), **no pregeneration** (nothing to pre-build)
 | **E2** | ai-engineer | `services/exercise_ingest.py` + `PROMPTS["exercise_structure"]` + Pydantic schemas + contract-test update | ✅ DONE — `structure_exercise_markdown` + `exercise_structure` prompt + `ExerciseStructureOutput` + 5 Feature enums (`commons/0006`) + contract test; 13 ingest tests + 60 contract green |
 | **E3** | backend | `extract_exercise_content` task (pipeline queue) + state machine + `cache.add` idempotency | ✅ DONE — task + OCR (`ocr_assets_to_markdown`) + `persist_exercise_structure`; 7 eager tests (transitions/double-dispatch/FAILED/re-run/task-id) green |
 | **E4** | backend | teacher endpoints (CRUD/extract/publish/toggles) in `views_exercises.py` | ✅ DONE — `views_exercises.py` + `serializers_exercises.py` + routes; create/list/detail/patch/delete(+S3 GC)/extract/publish/section-toggle/question-CRUD; 17 api tests (owner-404 + role + publish-gate) green |
-| **E5** | backend (**security-auditor gate**) | student endpoints (list/detail/draft/submit/image) + deadline guard + no-leak serializers | phone-scope, never-leak-reference-answer, 409-after-deadline tests green |
+| **E5** | backend (**security-auditor gate**) | student endpoints (list/detail/draft/submit/image) + deadline guard + no-leak serializers | ✅ DONE — 7 endpoints + `_reveal_open` + finished-answers browse + `DRAFT` status (mig 0025); 22 api tests; security gate PASSED (Low-1 fixed proactively, Low-2→E6) |
 | **E6** | ai-engineer + backend | grading service+task (`exercise_grading`, batch env, deterministic MCQ/fill-blank, retry idempotent, kill-switch) | mocked grading + idempotent re-run + GRADING_FAILED tests green |
 | **E7** | backend | result + report cards (per-exercise/per-course/overall) + teacher submissions list + override + allow-redo + in-app notifications (publish/graded) | override keeps `llm_score` untouched; aggregation query-count test green |
 | **E8** | ai-engineer (**security-auditor gate**) | assistant endpoint + two-level server guard + context builder (structural strip of reference answers) + `exercise_assistant_chat` | 403 tests for both toggles + reference-answer-absent-from-context test green |
@@ -250,6 +250,21 @@ contract test updated with the three new keys. Avalai extraction accuracy on low
 **deliberately untested locally** (VPN) — opt-in `benchmark`-marker test later.
 
 ## Security notes
+**E5 security-auditor gate (2026-07-05): PASSED, cleared to commit.** Verified: the
+reveal gate is single-sourced in `_reveal_open`; phone-scope on all 7 student
+endpoints; cross-student IDOR closed (every submission scoped `student=request.user`,
+no client-supplied ids); deadline + duplicate-submit enforced server-side (409,
+`uniq_exercise_submission_student` race-safe); image upload path-safe (overwrite +
+traversal closed by `AWS_S3_FILE_OVERWRITE=False` + per-student `exercise/user`
+path). Findings: **Low-1** — the `result` field is student-echoed, so nothing secret
+may be persisted into `result['per_question']`; **fixed proactively** by
+`_result_for_student` stripping `reference_answer`/`reference_answer_markdown`/
+`grading_notes` while reveal is closed (defense-in-depth before E6), locked by
+`test_result_passthrough_strips_reference_before_reveal`. **Low-2** (carry to E6) —
+image MIME type trusts the client `content_type`; add magic-byte sniffing when E6
+feeds answer images to the LLM. **E6 pre-condition:** the grader must NOT write
+`reference_answer`/`grading_notes` into `result['per_question']`.
+
 Owner-404 (teacher) / phone-scope-404/400 (student) matrices above; **reference answers are withheld by
 the serializer until the reveal condition holds (`deadline < now`, or no-deadline + own GRADED)** — leak
 tests at E5 (result + list serializers) and E8 (assistant context); deadline + duplicate-submission

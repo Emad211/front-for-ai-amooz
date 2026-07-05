@@ -8,6 +8,13 @@ from .views_exercises import (
     ExerciseSectionDetailView,
     ExerciseQuestionListCreateView,
     ExerciseQuestionDetailView,
+    StudentExerciseListView,
+    StudentExerciseDetailView,
+    StudentExerciseDraftView,
+    StudentExerciseImageView,
+    StudentExerciseSubmitView,
+    StudentExerciseResultView,
+    StudentFinishedAnswersView,
 )
 from .views import (
     ClassPrerequisiteListView,
@@ -94,6 +101,15 @@ urlpatterns = [
     path('exercises/<int:exercise_id>/questions/', ExerciseQuestionListCreateView.as_view(), name='exercise_question_create'),
     path('exercises/sections/<int:section_id>/', ExerciseSectionDetailView.as_view(), name='exercise_section_detail'),
     path('exercises/questions/<int:question_id>/', ExerciseQuestionDetailView.as_view(), name='exercise_question_detail'),
+
+    # Exercise Hub — student API (phone-scoped)
+    path('student/exercises/answers/', StudentFinishedAnswersView.as_view(), name='student_exercise_answers'),
+    path('student/courses/<int:session_id>/exercises/', StudentExerciseListView.as_view(), name='student_exercise_list'),
+    path('student/courses/<int:session_id>/exercises/<int:exercise_id>/', StudentExerciseDetailView.as_view(), name='student_exercise_detail'),
+    path('student/courses/<int:session_id>/exercises/<int:exercise_id>/draft/', StudentExerciseDraftView.as_view(), name='student_exercise_draft'),
+    path('student/courses/<int:session_id>/exercises/<int:exercise_id>/submit/', StudentExerciseSubmitView.as_view(), name='student_exercise_submit'),
+    path('student/courses/<int:session_id>/exercises/<int:exercise_id>/result/', StudentExerciseResultView.as_view(), name='student_exercise_result'),
+    path('student/courses/<int:session_id>/exercises/<int:exercise_id>/questions/<int:question_id>/image/', StudentExerciseImageView.as_view(), name='student_exercise_image'),
 
     # Exam Prep Pipeline (2 steps)
     path('exam-prep-sessions/step-1/', ExamPrepStep1TranscribeView.as_view(), name='exam_prep_step1'),

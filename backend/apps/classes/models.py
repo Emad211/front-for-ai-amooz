@@ -727,6 +727,7 @@ class StudentExerciseSubmission(models.Model):
     """A student's single submission to an exercise (unique per student+exercise)."""
 
     class Status(models.TextChoices):
+        DRAFT = 'draft', 'Draft'  # autosaved, not yet finally submitted
         SUBMITTED = 'submitted', 'Submitted'
         GRADING = 'grading', 'Grading'
         GRADED = 'graded', 'Graded'
