@@ -298,6 +298,7 @@ export type StudentExerciseListItem = {
   status: ExerciseStatus;
   deadline: string | null;
   deadlinePassed: boolean;
+  allowLate: boolean;
   submissionStatus: SubmissionStatus | null;
 };
 

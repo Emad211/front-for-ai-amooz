@@ -109,6 +109,16 @@ Postgres/CI is migration-truth. LLM fully mocked (0 tokens).
   tokens (events reuse existing type/priority styles). **`tsc --noEmit` clean** (stays at the 13-error
   baseline — none introduced); conversion verified in Node against 4 cases incl. tz day-boundary + Nowruz
   1405. No backend/model change.
+- [x] **E12b — navigation wiring fix (2026-07-05, user-reported):** E10/E11 pages existed but were linked
+  from NO menu. Added: student «تمرین‌ها» in `DASHBOARD_NAV_LINKS` (desktop header + mobile bottom nav,
+  subroute-aware active state) · teacher «تمرین‌ها» button in `ClassDetailHeader` **and** class-card
+  dropdown (both guarded `basePath === '/teacher'` — admin has no exercises route) · student hub rebuilt
+  with the complete per-class catalog (`listStudentExercises` — no-deadline exercises now visible) +
+  `allowLate` added to the backend student list (+regression test) so window-closed exercises route to
+  «مشاهدهٔ پاسخ‌ها» not a 409 dead-end · GRADING_FAILED result now returns failure-specific Persian detail ·
+  REMOVED the legacy create-class «بارگذاری تمرین / کامینگ سون» placeholder (FileUploadSection lesson-only,
+  step pill «۲. فایل درسی», subtitle updated) · reviewed by ux-designer + code-reviewer (all must/should-fix
+  applied). tsc at 13-error baseline; student-api+reportcard tests green on real Postgres.
 
 **Definition of done (every step):** GREEN on the sqlite fast lane (Postgres = CI truth); new code documented
 in `exercise-hub.md` (docs law); auth/permission changes carry negative tests; commit `feat(exercise): E# …`

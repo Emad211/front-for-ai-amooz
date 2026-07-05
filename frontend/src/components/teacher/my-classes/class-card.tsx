@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { formatDistanceToNow } from 'date-fns';
 import { faIR } from 'date-fns/locale';
-import { MoreVertical, Users, BookOpen, Star, Calendar, Edit, Trash2, Eye } from 'lucide-react';
+import { MoreVertical, Users, BookOpen, Star, Calendar, Edit, Trash2, Eye, NotebookPen } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -151,6 +151,15 @@ export function ClassCard({ cls, basePath = '/admin', onDelete }: ClassCardProps
                     مدیریت دانش‌آموزان
                   </Link>
                 </DropdownMenuItem>
+                {/* Exercises route exists only under the teacher panel (not /admin). */}
+                {basePath === '/teacher' && (
+                  <DropdownMenuItem asChild>
+                    <Link href={`${basePath}/my-classes/${cls.id}/exercises`}>
+                      <NotebookPen className="w-4 h-4 ml-2" />
+                      تمرین‌ها
+                    </Link>
+                  </DropdownMenuItem>
+                )}
                 <DropdownMenuSeparator />
                 <DropdownMenuItem 
                   className="text-destructive focus:text-destructive"

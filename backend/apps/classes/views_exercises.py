@@ -430,6 +430,7 @@ class StudentExerciseListView(APIView):
                 'id': ex.id, 'title': ex.title, 'status': ex.status,
                 'deadline': ex.deadline.isoformat() if ex.deadline else None,
                 'deadlinePassed': ex.deadline is not None and ex.deadline < now,
+                'allowLate': ex.allow_late,
                 'submissionStatus': subs.get(ex.id),
             }
             for ex in exercises
@@ -626,10 +627,13 @@ class StudentExerciseResultView(APIView):
         if submission is None or submission.status == StudentExerciseSubmission.Status.DRAFT:
             return Response({'detail': 'هنوز پاسخی ارسال نکرده‌اید.'}, status=status.HTTP_404_NOT_FOUND)
         if submission.status != StudentExerciseSubmission.Status.GRADED:
-            return Response({
-                'status': submission.status,
-                'detail': 'پاسخ شما ارسال شد. نتیجه پس از نمره‌دهی نمایش داده می‌شود.',
-            })
+            # Failure-specific copy — a generic "wait for grading" would contradict
+            # the «خطا در نمره‌دهی» badge the hub shows for GRADING_FAILED.
+            if submission.status == StudentExerciseSubmission.Status.GRADING_FAILED:
+                detail = 'نمره‌دهی خودکار با خطا مواجه شد. پاسخ شما محفوظ است و پس از بررسی، نتیجه ثبت می‌شود.'
+            else:
+                detail = 'پاسخ شما ارسال شد. نتیجه پس از نمره‌دهی نمایش داده می‌شود.'
+            return Response({'status': submission.status, 'detail': detail})
         reveal = _reveal_open(exercise, submission)
         return Response({
             'status': submission.status,

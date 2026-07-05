@@ -137,7 +137,7 @@ export function CreateClassPage() {
   const [studyGroups, setStudyGroups] = useState<StudyGroup[]>([]);
   const [selectedStudyGroupId, setSelectedStudyGroupId] = useState<string>('none');
   const [pipelineType, setPipelineType] = useState<PipelineType>('class');
-  const [expandedSections, setExpandedSections] = useState<string[]>(['info', 'files', 'exercises', 'students']);
+  const [expandedSections, setExpandedSections] = useState<string[]>(['info', 'files', 'students']);
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [level, setLevel] = useState<string>('');
@@ -645,14 +645,14 @@ export function CreateClassPage() {
             </h1>
             <p className="text-muted-foreground text-sm md:text-base">
               {pipelineType === 'class'
-                ? 'اطلاعات را تکمیل کنید، فایل‌ها را بارگذاری کنید و با کد دعوت دانش‌آموزان را اضافه کنید.'
+                ? 'اطلاعات را تکمیل کنید، فایل درسی را بارگذاری کنید و با کد دعوت دانش‌آموزان را اضافه کنید.'
                 : 'فایل صوتی یا ویدیویی حل تست‌ها را بارگذاری کنید تا سوالات و پاسخ‌ها استخراج شوند.'}
             </p>
           </div>
           {pipelineType === 'class' ? (
             <div className="flex flex-wrap gap-2 text-xs md:text-sm text-muted-foreground">
               <span className={cn("px-3 py-1 rounded-full", !status ? "bg-primary/10 text-primary" : "bg-muted")}>۱. اطلاعات کلاس</span>
-              <span className={cn("px-3 py-1 rounded-full", (status && status !== 'recapped') ? "bg-primary/10 text-primary" : "bg-muted")}>۲. فایل‌ها و تمرین‌ها</span>
+              <span className={cn("px-3 py-1 rounded-full", (status && status !== 'recapped') ? "bg-primary/10 text-primary" : "bg-muted")}>۲. فایل درسی</span>
               <span className={cn("px-3 py-1 rounded-full", status === 'recapped' ? "bg-primary/10 text-primary" : "bg-muted")}>۳. دعوت دانش‌آموزان</span>
             </div>
           ) : (
@@ -739,8 +739,6 @@ export function CreateClassPage() {
 
       <FileUploadSection
         title={pipelineType === 'class' ? 'بارگذاری فایل درسی' : 'بارگذاری فایل حل تست'}
-        icon="upload"
-        type="lesson"
         isExpanded={expandedSections.includes('files')}
         onToggle={() => toggleSection('files')}
         accept="audio/*,video/*,application/pdf,.pdf"
@@ -866,19 +864,8 @@ export function CreateClassPage() {
         </div>
       </FileUploadSection>
 
-      {/* Only show exercise section for class pipeline */}
-      {pipelineType === 'class' && (
-        <FileUploadSection
-          title="بارگذاری تمرین"
-          description="اختیاری"
-          badgeText="کامینگ سون"
-          icon="exercise"
-          type="exercise"
-          isExpanded={expandedSections.includes('exercises')}
-          onToggle={() => toggleSection('exercises')}
-          disabled
-        />
-      )}
+      {/* Exercises are managed after class creation in «کلاس‌های من ← تمرین‌ها»
+          (see docs/features/exercise-hub.md) — no upload section here. */}
 
       {/* Student roster:
           - org class → managed by the org via the study group (no manual invites)

@@ -1,5 +1,5 @@
-import { 
-  BarChart3, 
+import {
+  BarChart3,
   Building2,
   Coins,
   Home,
@@ -19,6 +19,7 @@ import {
   KeyRound,
   ClipboardList,
   UserCog,
+  NotebookPen,
 } from 'lucide-react';
 import { NavSection, NavItem, OrgRole } from '@/types';
 
@@ -31,6 +32,7 @@ export const LANDING_NAV_LINKS = [
 export const DASHBOARD_NAV_LINKS: NavItem[] = [
   { label: "خانه", href: "/home", icon: Home },
   { label: "کلاس‌ها", href: "/classes", icon: BookOpen },
+  { label: "تمرین‌ها", href: "/exercises", icon: NotebookPen },
   { label: "آمادگی آزمون", href: "/exam-prep", icon: Target },
 ];
 

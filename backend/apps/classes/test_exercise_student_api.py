@@ -98,6 +98,16 @@ class TestReferenceAnswerLeakGuard:
         assert res.status_code == 200
         assert REF not in json.dumps(res.data, ensure_ascii=False)
 
+    def test_list_carries_allow_late_flag(self):
+        """The student hub needs allowLate to route expired-deadline exercises
+        honestly (solve-late vs. view-answers)."""
+        session, ex = _published_exercise()
+        ex.allow_late = True
+        ex.save(update_fields=['allow_late'])
+        res = _auth(_student()).get(f'/api/classes/student/courses/{session.id}/exercises/')
+        assert res.status_code == 200
+        assert res.data[0]['allowLate'] is True
+
     def test_result_hides_reference_answer_before_deadline(self):
         """Graded, but the deadline has NOT passed -> reference answer withheld."""
         session, ex = _published_exercise(deadline=timezone.now() + timedelta(days=1))

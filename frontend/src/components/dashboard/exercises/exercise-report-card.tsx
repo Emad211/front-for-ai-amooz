@@ -19,7 +19,7 @@ export function ExerciseReportCard({ data, title }: { data: ReportCard; title: s
       </CardHeader>
       <CardContent className="space-y-3">
         {data.exercises.length === 0 ? (
-          <p className="text-sm text-muted-foreground">هنوز تمرینِ نمره‌گذاری‌شده‌ای ندارید.</p>
+          <p className="text-sm text-muted-foreground">هنوز تمرینِ نمره‌دهی‌شده‌ای ندارید.</p>
         ) : (
           data.exercises.map((row) => (
             <div key={row.exerciseId} className="space-y-1">

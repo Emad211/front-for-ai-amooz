@@ -1,6 +1,6 @@
 'use client';
 
-import { Upload, FileText, Plus, ChevronDown } from 'lucide-react';
+import { Upload, FileText, ChevronDown } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 import type { ReactNode } from 'react';
@@ -8,56 +8,37 @@ import type { ReactNode } from 'react';
 interface FileUploadSectionProps {
   title: string;
   description?: string;
-  badgeText?: string;
-  icon: 'upload' | 'exercise';
   isExpanded: boolean;
   onToggle: () => void;
-  type: 'lesson' | 'exercise';
   accept?: string;
   multiple?: boolean;
   onFilesSelected?: (files: FileList | null) => void;
-  disabled?: boolean;
   children?: ReactNode;
 }
 
-export function FileUploadSection({ 
-  title, 
-  description, 
-  badgeText,
-  icon, 
-  isExpanded, 
+export function FileUploadSection({
+  title,
+  description,
+  isExpanded,
   onToggle,
-  type,
   accept,
   multiple,
   onFilesSelected,
-  disabled,
   children,
 }: FileUploadSectionProps) {
-  const Icon = icon === 'upload' ? Upload : FileText;
-  const iconColor = type === 'lesson' ? 'text-primary' : 'text-muted-foreground';
-  const bgColor = type === 'lesson' ? 'bg-primary/10' : 'bg-muted';
-
   return (
     <Card className="border-border/40 rounded-2xl overflow-hidden bg-card/70 backdrop-blur">
-      <CardHeader 
+      <CardHeader
         className="cursor-pointer hover:bg-primary/5 transition-colors"
         onClick={onToggle}
       >
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className={cn("w-10 h-10 rounded-xl flex items-center justify-center", bgColor)}>
-              <Icon className={cn("h-5 w-5", iconColor)} />
+            <div className="w-10 h-10 rounded-xl flex items-center justify-center bg-primary/10">
+              <Upload className="h-5 w-5 text-primary" />
             </div>
             <div>
-              <div className="flex items-center gap-2">
-                <CardTitle className="text-lg">{title}</CardTitle>
-                {badgeText ? (
-                  <span className="px-2 py-0.5 rounded-full bg-muted text-[11px] text-muted-foreground">
-                    {badgeText}
-                  </span>
-                ) : null}
-              </div>
+              <CardTitle className="text-lg">{title}</CardTitle>
               {description && <p className="text-xs text-muted-foreground mt-0.5">{description}</p>}
             </div>
           </div>
@@ -69,44 +50,27 @@ export function FileUploadSection({
       </CardHeader>
       {isExpanded && (
         <CardContent className="pt-0">
-          <label 
-            htmlFor={`dropzone-${type}`} 
-            className={cn(
-              "flex flex-col items-center justify-center w-full border-2 border-dashed border-primary/30 rounded-2xl cursor-pointer bg-primary/5 hover:bg-primary/10 transition-colors",
-              type === 'lesson' ? "h-44" : "h-36",
-              disabled && "cursor-not-allowed opacity-60 hover:bg-primary/5"
-            )}
-            aria-disabled={disabled ? 'true' : undefined}
+          <label
+            htmlFor="dropzone-lesson"
+            className="flex flex-col items-center justify-center w-full h-44 border-2 border-dashed border-primary/30 rounded-2xl cursor-pointer bg-primary/5 hover:bg-primary/10 transition-colors"
           >
             <div className="flex flex-col items-center gap-2 px-3 sm:px-4 text-center">
-              {type === 'lesson' ? (
-                <>
-                  <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center">
-                    <FileText className="h-6 w-6 text-primary" />
-                  </div>
-                  <p className="text-xs sm:text-sm text-muted-foreground">
-                    فایل‌ها را بکشید و رها کنید یا <span className="text-primary font-medium">کلیک کنید</span>
-                  </p>
-                  <p className="text-[10px] sm:text-xs text-muted-foreground">
-                    صوت / ویدیو / PDF
-                  </p>
-                </>
-              ) : (
-                <>
-                  <Plus className="h-6 w-6 text-muted-foreground" />
-                  <p className="text-xs sm:text-sm text-muted-foreground">
-                    {disabled ? 'به‌زودی' : 'افزودن فایل تمرین'}
-                  </p>
-                </>
-              )}
+              <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center">
+                <FileText className="h-6 w-6 text-primary" />
+              </div>
+              <p className="text-xs sm:text-sm text-muted-foreground">
+                فایل‌ها را بکشید و رها کنید یا <span className="text-primary font-medium">کلیک کنید</span>
+              </p>
+              <p className="text-[10px] sm:text-xs text-muted-foreground">
+                صوت / ویدیو / PDF
+              </p>
             </div>
             <input
-              id={`dropzone-${type}`}
+              id="dropzone-lesson"
               type="file"
               className="hidden"
               accept={accept}
-              multiple={multiple ?? type === 'lesson'}
-              disabled={disabled}
+              multiple={multiple ?? true}
               onChange={(e) => onFilesSelected?.(e.target.files)}
             />
           </label>

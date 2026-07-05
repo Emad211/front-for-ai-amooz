@@ -181,10 +181,25 @@ exercises), grading only on final submit, answer-length env cap, report cards = 
 stored `per_question` (zero tokens), **no pregeneration** (nothing to pre-build).
 
 ## UX (owner: ux-designer)
-- **Teacher nav:** tabs inside `my-classes/[classId]`: «محتوا · تمرین‌ها · دانش‌آموزان · اطلاعیه‌ها» (no new
-  top-level menu). **Student nav:** standalone routes `(dashboard)/exercises`, `exercises/[exerciseId]`,
-  `exercises/[exerciseId]/result` — URL-stable for calendar/home deep links; entry points: learn
-  sidebar item, open-count badge on class cards, calendar/home.
+- **Entry points — AS BUILT (2026-07-05, post-E12 wiring fix):** the pages shipped in E10/E11 initially
+  had NO navigation entry (user-reported). Wired now:
+  - **Student:** «تمرین‌ها» item in `DASHBOARD_NAV_LINKS` (`constants/navigation.ts`) → `/exercises`;
+    renders in the desktop header AND the mobile bottom nav (4 items; active state matches subroutes).
+    The hub lists the **complete per-class catalog** via `listStudentExercises` (exercises without a
+    deadline are visible — «بدون مهلت») + open future deadlines agenda + overall report card. Backend
+    list now carries `allowLate`; window-closed exercises (deadline passed, no late) route to
+    «مشاهدهٔ پاسخ‌ها» instead of a dead-end solver.
+  - **Teacher:** «تمرین‌ها» button (NotebookPen) in `ClassDetailHeader` + a «تمرین‌ها» item in the
+    my-classes `class-card` dropdown — both **guarded `basePath === '/teacher'`** (admin has no
+    exercises route). The old create-class «بارگذاری تمرین / کامینگ سون» placeholder was REMOVED
+    (`FileUploadSection` is lesson-only now; step pill = «۲. فایل درسی»).
+  - Original design below said "tabs inside my-classes/[classId]" and an open-count class-card badge —
+    the tab layout and count badge remain **unbuilt follow-ups**, as do: in-class student entry on the
+    course page, `/exercises/answers?exercise=<id>` deep-link, «نمره‌دهی» wording unification.
+- **Teacher nav (original design):** tabs inside `my-classes/[classId]`: «محتوا · تمرین‌ها · دانش‌آموزان ·
+  اطلاعیه‌ها» (no new top-level menu). **Student nav:** standalone routes `(dashboard)/exercises`,
+  `exercises/[exerciseId]`, `exercises/[exerciseId]/result` — URL-stable for calendar/home deep links;
+  entry points: learn sidebar item, open-count badge on class cards, calendar/home.
 - **Teacher wizard (4 steps, server-side draft, resumable):** ① info+upload (multi-file drag&drop) →
   ② extraction review (pipeline-tracker-style progress; accordion edit; merge/split/delete/add-manual;
   extraction error → retry OR **manual question entry fallback**) → ③ reference answers + points (live
