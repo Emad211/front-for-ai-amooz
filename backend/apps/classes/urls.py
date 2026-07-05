@@ -15,6 +15,12 @@ from .views_exercises import (
     StudentExerciseSubmitView,
     StudentExerciseResultView,
     StudentFinishedAnswersView,
+    TeacherSubmissionListView,
+    TeacherSubmissionDetailView,
+    TeacherSubmissionOverrideView,
+    TeacherSubmissionAllowRedoView,
+    StudentCourseReportCardView,
+    StudentOverallReportCardView,
 )
 from .views import (
     ClassPrerequisiteListView,
@@ -101,6 +107,16 @@ urlpatterns = [
     path('exercises/<int:exercise_id>/questions/', ExerciseQuestionListCreateView.as_view(), name='exercise_question_create'),
     path('exercises/sections/<int:section_id>/', ExerciseSectionDetailView.as_view(), name='exercise_section_detail'),
     path('exercises/questions/<int:question_id>/', ExerciseQuestionDetailView.as_view(), name='exercise_question_detail'),
+
+    # Exercise Hub — teacher gradebook (E7)
+    path('exercises/<int:exercise_id>/submissions/', TeacherSubmissionListView.as_view(), name='exercise_submissions'),
+    path('exercises/submissions/<int:submission_id>/', TeacherSubmissionDetailView.as_view(), name='exercise_submission_detail'),
+    path('exercises/submissions/<int:submission_id>/override/', TeacherSubmissionOverrideView.as_view(), name='exercise_submission_override'),
+    path('exercises/submissions/<int:submission_id>/allow-redo/', TeacherSubmissionAllowRedoView.as_view(), name='exercise_submission_allow_redo'),
+
+    # Exercise Hub — student report cards (E7)
+    path('student/report-card/', StudentOverallReportCardView.as_view(), name='student_overall_report_card'),
+    path('student/courses/<int:session_id>/report-card/', StudentCourseReportCardView.as_view(), name='student_course_report_card'),
 
     # Exercise Hub — student API (phone-scoped)
     path('student/exercises/answers/', StudentFinishedAnswersView.as_view(), name='student_exercise_answers'),

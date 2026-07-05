@@ -54,8 +54,16 @@ Postgres/CI is migration-truth. LLM fully mocked (0 tokens).
   answer/grading_notes NEVER written into `result['per_question']` (test locks it); Low-2 — `is_real_image`
   Pillow magic-byte sniff. 13 tests (happy sum, MCQ-no-LLM, idempotent, GRADING_FAILED, kill-switch, no-leak,
   image sniff) + contract green (62).
-- [ ] **E7** — result + report cards (per-exercise / per-course / overall) + teacher submissions list +
-  override (llm_score immutable) + allow-redo + in-app notifications.
+- [x] **E7** — ✅ teacher gradebook + student report cards in `views_exercises.py`: `GET exercises/<eid>/
+  submissions/` (owner-scoped list) + `GET submissions/<id>/` (detail) + `PATCH submissions/<id>/override/`
+  (**writes teacher_score/teacher_feedback beside an IMMUTABLE llm_score**; recomputes effective `score_points`
+  = teacher_score-if-set-else-llm_score; `overridden_at`) + `POST submissions/<id>/allow-redo/` (reset→DRAFT,
+  keeps answers). Student: `GET student/courses/<sid>/report-card/` + `GET student/report-card/` — average =
+  mean of the student's GRADED-exercise percentages (no-submission past-deadline excluded, not zeroed). No
+  model change → no migration. 12 api tests (override-keeps-llm + recompute-8.00, owner/phone negatives,
+  allow-redo owner-only, course/overall averages). **In-app notifications DEFERRED** to a thin follow-up
+  (reusing `TeacherNotification`/`ClassAnnouncement` + phone-recipient resolution is non-trivial; kept out to
+  avoid a rushed half-build — tracked as E7b / phase-2 candidate).
 - [ ] **E8** — assistant endpoint + two-level server guard + context builder (structural reference-answer
   strip) + `PROMPTS["exercise_assistant_chat"]`. **security-auditor gate.** 403 + no-leak tests.
 - [ ] **E9** — migration `0025` (`scheduled_at` on session) + `GET student/calendar/` aggregate endpoint.

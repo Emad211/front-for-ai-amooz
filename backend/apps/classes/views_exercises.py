@@ -673,3 +673,205 @@ class StudentFinishedAnswersView(APIView):
             }
             for ex in exercises
         ])
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# E7 — Report cards + teacher override + allow-redo.
+# Override writes teacher_score/teacher_feedback beside an IMMUTABLE llm_score
+# (audit); the effective score_points is recomputed = teacher_score if set else
+# llm_score. Report cards = simple average of the student's GRADED exercises'
+# percentages (past-deadline no-submission exercises are excluded, not zeroed).
+# ═══════════════════════════════════════════════════════════════════════════
+
+from decimal import Decimal as _Decimal  # noqa: E402
+
+
+def _owned_submission(request, submission_id):
+    return StudentExerciseSubmission.objects.filter(
+        id=submission_id, exercise__session__teacher=request.user,
+    ).select_related('exercise', 'student').first()
+
+
+def _effective(pq: dict):
+    ts = pq.get('teacher_score')
+    if ts is not None:
+        return float(ts)
+    llm = pq.get('llm_score')
+    if llm is not None:
+        return float(llm)
+    return float(pq.get('score_points') or 0)
+
+
+def _recompute_submission_score(submission) -> None:
+    result = submission.result if isinstance(submission.result, dict) else {}
+    per_q = result.get('per_question') if isinstance(result.get('per_question'), list) else []
+    for pq in per_q:
+        if isinstance(pq, dict):
+            pq['score_points'] = round(_effective(pq), 2)
+    total = sum(_effective(pq) for pq in per_q if isinstance(pq, dict))
+    submission.result = {'per_question': per_q}
+    submission.score_points = _Decimal(str(round(total, 2)))
+
+
+class TeacherSubmissionListView(APIView):
+    """List every student submission for one owned exercise (gradebook column)."""
+
+    permission_classes = [IsAuthenticated, IsTeacherUser]
+
+    def get(self, request, exercise_id: int):
+        exercise = _owned_exercise(request, exercise_id)
+        if exercise is None:
+            return Response(_NOT_FOUND, status=status.HTTP_404_NOT_FOUND)
+        subs = StudentExerciseSubmission.objects.filter(
+            exercise=exercise,
+        ).exclude(status=StudentExerciseSubmission.Status.DRAFT).select_related('student')
+        return Response([
+            {
+                'id': s.id,
+                'studentId': s.student_id,
+                'studentName': (s.student.get_full_name() or s.student.username),
+                'status': s.status,
+                'isLate': s.is_late,
+                'scorePoints': str(s.score_points) if s.score_points is not None else None,
+                'maxPoints': str(s.max_points) if s.max_points is not None else None,
+                'overridden': s.overridden_at is not None,
+            }
+            for s in subs
+        ])
+
+
+class TeacherSubmissionDetailView(APIView):
+    """Full detail of one owned submission (teacher sees answers + result)."""
+
+    permission_classes = [IsAuthenticated, IsTeacherUser]
+
+    def get(self, request, submission_id: int):
+        submission = _owned_submission(request, submission_id)
+        if submission is None:
+            return Response({'detail': 'ارسال پیدا نشد.'}, status=status.HTTP_404_NOT_FOUND)
+        return Response({
+            'id': submission.id,
+            'studentId': submission.student_id,
+            'studentName': (submission.student.get_full_name() or submission.student.username),
+            'status': submission.status,
+            'isLate': submission.is_late,
+            'answers': submission.answers,
+            'result': submission.result,
+            'scorePoints': str(submission.score_points) if submission.score_points is not None else None,
+            'maxPoints': str(submission.max_points) if submission.max_points is not None else None,
+            'overriddenAt': submission.overridden_at.isoformat() if submission.overridden_at else None,
+        })
+
+
+class TeacherSubmissionOverrideView(APIView):
+    """Override per-question scores/feedback. llm_score is NEVER overwritten."""
+
+    permission_classes = [IsAuthenticated, IsTeacherUser]
+
+    def patch(self, request, submission_id: int):
+        submission = _owned_submission(request, submission_id)
+        if submission is None:
+            return Response({'detail': 'ارسال پیدا نشد.'}, status=status.HTTP_404_NOT_FOUND)
+        raw = request.data.get('overrides') if isinstance(request.data, dict) else None
+        overrides = {}
+        if isinstance(raw, list):
+            for o in raw:
+                if isinstance(o, dict) and o.get('question_id') is not None:
+                    overrides[str(o['question_id'])] = o
+        result = submission.result if isinstance(submission.result, dict) else {}
+        per_q = result.get('per_question') if isinstance(result.get('per_question'), list) else []
+        for pq in per_q:
+            if not isinstance(pq, dict):
+                continue
+            o = overrides.get(str(pq.get('question_id')))
+            if not o:
+                continue
+            if 'teacher_score' in o and o['teacher_score'] is not None:
+                pq['teacher_score'] = float(o['teacher_score'])  # llm_score untouched
+            if 'teacher_feedback' in o:
+                pq['teacher_feedback'] = str(o['teacher_feedback'] or '')
+        submission.result = {'per_question': per_q}
+        _recompute_submission_score(submission)
+        submission.overridden_at = timezone.now()
+        submission.save(update_fields=['result', 'score_points', 'overridden_at', 'updated_at'])
+        return Response({
+            'id': submission.id,
+            'scorePoints': str(submission.score_points),
+            'result': submission.result,
+        })
+
+
+class TeacherSubmissionAllowRedoView(APIView):
+    """Grant a re-submission: reset the submission to DRAFT (keeps answers,
+    clears the grade so the student must retake — the exam-prep reset pattern)."""
+
+    permission_classes = [IsAuthenticated, IsTeacherUser]
+
+    def post(self, request, submission_id: int):
+        submission = _owned_submission(request, submission_id)
+        if submission is None:
+            return Response({'detail': 'ارسال پیدا نشد.'}, status=status.HTTP_404_NOT_FOUND)
+        submission.status = StudentExerciseSubmission.Status.DRAFT
+        submission.result = {}
+        submission.score_points = None
+        submission.max_points = None
+        submission.graded_at = None
+        submission.overridden_at = None
+        submission.save(update_fields=[
+            'status', 'result', 'score_points', 'max_points',
+            'graded_at', 'overridden_at', 'updated_at',
+        ])
+        return Response({'status': submission.status})
+
+
+def _course_report(student, session_id=None):
+    """Build the student's graded-exercise percentages (optionally one course)."""
+    qs = StudentExerciseSubmission.objects.filter(
+        student=student, status=StudentExerciseSubmission.Status.GRADED,
+    ).select_related('exercise')
+    if session_id is not None:
+        qs = qs.filter(exercise__session_id=session_id)
+    rows = []
+    for s in qs:
+        mx = float(s.max_points or 0)
+        pct = round(float(s.score_points or 0) / mx * 100, 1) if mx > 0 else 0.0
+        rows.append({
+            'exerciseId': s.exercise_id,
+            'exerciseTitle': s.exercise.title,
+            'scorePoints': str(s.score_points) if s.score_points is not None else None,
+            'maxPoints': str(s.max_points) if s.max_points is not None else None,
+            'percent': pct,
+        })
+    avg = round(sum(r['percent'] for r in rows) / len(rows), 1) if rows else None
+    return rows, avg
+
+
+class StudentCourseReportCardView(APIView):
+    """The student's report card for one enrolled course (per-exercise + average)."""
+
+    permission_classes = [IsAuthenticated, IsStudentUser]
+
+    def get(self, request, session_id: int):
+        phone = _student_phone(request)
+        if not phone:
+            return Response(_NO_PHONE, status=status.HTTP_400_BAD_REQUEST)
+        session = ClassCreationSession.objects.filter(
+            id=session_id, is_published=True, invites__phone=phone,
+        ).first()
+        if session is None:
+            return Response({'detail': 'کلاس پیدا نشد.'}, status=status.HTTP_404_NOT_FOUND)
+        rows, avg = _course_report(request.user, session_id=session_id)
+        return Response({'average': avg, 'exercises': rows})
+
+
+class StudentOverallReportCardView(APIView):
+    """The student's overall report card across all enrolled courses."""
+
+    permission_classes = [IsAuthenticated, IsStudentUser]
+
+    def get(self, request):
+        phone = _student_phone(request)
+        if not phone:
+            return Response(_NO_PHONE, status=status.HTTP_400_BAD_REQUEST)
+        rows, avg = _course_report(request.user)
+        return Response({'average': avg, 'exercises': rows})
