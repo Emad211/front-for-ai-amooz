@@ -1160,3 +1160,62 @@ def extract_exercise_content(self, exercise_id: int) -> dict:
         return {'status': 'failed', 'exercise_id': exercise_id, 'reason': str(exc)}
     finally:
         cache.delete(lock_key)
+
+
+# ---------------------------------------------------------------------------
+# Exercise Hub — async grading (SUBMITTED -> GRADING -> GRADED / GRADING_FAILED).
+# Runs on the `pipeline` queue. Design: docs/features/exercise-hub.md.
+# ---------------------------------------------------------------------------
+
+@shared_task(
+    bind=True, max_retries=3, default_retry_delay=60, acks_late=True,
+    soft_time_limit=PIPELINE_TASK_SOFT_TIME_LIMIT, time_limit=PIPELINE_TASK_TIME_LIMIT,
+)
+def grade_exercise_submission(self, submission_id: int) -> dict:
+    """Grade one exercise submission with the LLM (+ deterministic MCQ/fill-blank).
+
+    Guarded: only SUBMITTED is runnable; a `cache.add` lock rejects a concurrent
+    second dispatch; the EXERCISE_LLM_GRADING kill-switch leaves it SUBMITTED.
+    Idempotent re-run (deterministic overwrite of result/score).
+    """
+    from django.core.cache import cache
+    from .models import StudentExerciseSubmission
+    from .services.exercise_grading import (
+        grade_submission, apply_grading_result, grading_enabled,
+    )
+
+    submission = StudentExerciseSubmission.objects.filter(id=submission_id).first()
+    if submission is None:
+        return {'status': 'skipped', 'reason': 'submission not found'}
+    if submission.status != StudentExerciseSubmission.Status.SUBMITTED:
+        return {'status': 'skipped', 'reason': f'status={submission.status}'}
+    if not grading_enabled():
+        return {'status': 'skipped', 'reason': 'grading disabled'}
+
+    lock_key = f'exercise-grade:{submission_id}'
+    if not cache.add(lock_key, '1', timeout=PIPELINE_TASK_TIME_LIMIT):
+        return {'status': 'skipped', 'reason': 'already dispatched'}
+
+    try:
+        submission.status = StudentExerciseSubmission.Status.GRADING
+        submission.grading_task_id = getattr(self.request, 'id', '') or ''
+        submission.save(update_fields=['status', 'grading_task_id', 'updated_at'])
+
+        result = grade_submission(submission)
+        apply_grading_result(submission, result)
+        submission.status = StudentExerciseSubmission.Status.GRADED
+        submission.save(update_fields=[
+            'status', 'result', 'score_points', 'max_points', 'graded_at', 'updated_at',
+        ])
+        return {
+            'status': 'graded', 'submission_id': submission_id,
+            'score_points': str(submission.score_points),
+        }
+    except Exception as exc:
+        logger.exception('Exercise grading failed for %s', submission_id)
+        StudentExerciseSubmission.objects.filter(id=submission_id).update(
+            status=StudentExerciseSubmission.Status.GRADING_FAILED,
+        )
+        return {'status': 'failed', 'submission_id': submission_id, 'reason': str(exc)}
+    finally:
+        cache.delete(lock_key)

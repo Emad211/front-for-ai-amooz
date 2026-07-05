@@ -597,7 +597,10 @@ class StudentExerciseSubmitView(APIView):
             submission.status = StudentExerciseSubmission.Status.SUBMITTED
             submission.is_late = bool(past_deadline)
             submission.save(update_fields=['answers', 'status', 'is_late', 'updated_at'])
-        # E6 hooks the grading dispatch here.
+        # Dispatch async grading (the task no-ops if the kill-switch is off).
+        from .tasks import grade_exercise_submission
+        sid = submission.id
+        transaction.on_commit(lambda: grade_exercise_submission.delay(sid))
         return Response(
             {'status': submission.status, 'isLate': submission.is_late},
             status=status.HTTP_201_CREATED,

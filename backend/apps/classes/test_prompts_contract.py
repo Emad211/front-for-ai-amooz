@@ -44,6 +44,7 @@ LIVE_KEYS = {
     "recap_and_notes": ["default"],
     "exam_prep_structure": ["default"],
     "exercise_structure": ["default"],
+    "exercise_grading": ["default"],
     "chat_intent": None,
     "chat_system_prompt": None,
     "image_plan": ["default"],
@@ -101,6 +102,7 @@ PLACEHOLDERS = {
     ],
     ("image_plan", "default"): ["{unit_content}", "{user_message}"],
     ("text_grading", "default"): ["{question}", "{reference_answer}", "{student_answer}"],
+    ("exercise_grading", "default"): ["{grading_items_json}"],
     ("exam_prep_hint", "default"): [
         "{question}", "{student_answer}", "{reference_answer}", "{attempt_number}",
     ],
@@ -158,6 +160,10 @@ OUTPUT_KEYS = {
     ("chat_system_prompt", None): ["content", "suggestions"],
     ("image_plan", "default"): ["images", "caption"],
     ("text_grading", "default"): ["score_0_100", "label", "feedback", "missing_points"],
+    ("exercise_grading", "default"): [
+        "per_question", "question_id", "score_points", "max_points", "label",
+        "feedback", "missing_points",
+    ],
     ("exam_prep_hint", "default"): ["hint", "encouragement"],
     ("final_exam_pool", "default"): ["exam_title", "questions", "correct_answer", "points"],
     ("final_exam_pool", "adaptive"): ["exam_title", "questions", "correct_answer", "points"],
@@ -245,6 +251,7 @@ def test_shared_safety_block_injected_into_untrusted_content_prompts():
         ("exercise_structure", "default"),
         ("chat_system_prompt", None),
         ("text_grading", "default"),
+        ("exercise_grading", "default"),
         ("exam_prep_chat", "default"),
     ]
     anchor = SAFETY_PREAMBLE.splitlines()[0]  # "### Safety & integrity (always apply)"

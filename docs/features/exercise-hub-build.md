@@ -44,11 +44,16 @@ Postgres/CI is migration-truth. LLM fully mocked (0 tokens).
   (`result` passthrough) closed proactively via `_result_for_student` + test; **Low-2 (image MIME sniffing)
   carried to E6** — add magic-byte check when the grader feeds answer images to the LLM; **E6 pre-condition:
   grader must not write reference_answer/grading_notes into `result['per_question']`.**
-- [ ] **E6** — grading service + task (`exercise_grading`, batch env, deterministic MCQ/fill-blank, retry
-  idempotent, `EXERCISE_LLM_GRADING` kill-switch). Mocked grading + idempotent re-run + GRADING_FAILED.
-  **Carry-ins from E5 security gate:** (Low-1) the grader must NOT persist `reference_answer`/`grading_notes`
-  into `result['per_question']` (it is student-echoed); (Low-2) add magic-byte image sniffing before feeding
-  answer images to the LLM. Also wire the grading dispatch into `StudentExerciseSubmitView` (hook is marked).
+- [x] **E6** — ✅ grading `services/exercise_grading.py` + task `grade_exercise_submission` (pipeline queue) +
+  dispatch wired into `StudentExerciseSubmitView` (`transaction.on_commit`). `PROMPTS["exercise_grading"]`
+  (single `{grading_items_json}` placeholder, `per_question` output = final-exam score shape) +
+  `ExerciseGradingOutput` schema + contract test updated. **MCQ/fill-blank graded deterministically (no LLM)**,
+  descriptive batched by `EXERCISE_GRADING_BATCH_SIZE` (5), totals via `sum()`, model env-only
+  `EXERCISE_GRADING_MODEL→MODEL_NAME`, `cache.add`+status-guard idempotency, `EXERCISE_LLM_GRADING` kill-switch
+  (off→stays SUBMITTED), SUBMITTED→GRADING→GRADED/GRADING_FAILED. **E5 carry-ins done:** Low-1 — reference
+  answer/grading_notes NEVER written into `result['per_question']` (test locks it); Low-2 — `is_real_image`
+  Pillow magic-byte sniff. 13 tests (happy sum, MCQ-no-LLM, idempotent, GRADING_FAILED, kill-switch, no-leak,
+  image sniff) + contract green (62).
 - [ ] **E7** — result + report cards (per-exercise / per-course / overall) + teacher submissions list +
   override (llm_score immutable) + allow-redo + in-app notifications.
 - [ ] **E8** — assistant endpoint + two-level server guard + context builder (structural reference-answer

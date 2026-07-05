@@ -97,3 +97,30 @@ class ExerciseStructureOutput(BaseModel):
 
     exercise_title: Optional[str] = None
     sections: List[ExerciseSectionOut] = Field(default_factory=list)
+
+
+# ---------------------------------------------------------------------------
+# Exercise Hub — grading output (services/exercise_grading.py). Same score shape
+# as the final exam, so ``compute_weak_points_from`` reuses the parser.
+# Contract: ``PROMPTS['exercise_grading']['default']``.
+# ---------------------------------------------------------------------------
+
+
+class ExerciseGradedQuestion(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    question_id: Optional[str] = None
+    score_points: Optional[float] = None
+    max_points: Optional[float] = None
+    label: Optional[str] = None
+    feedback: Optional[str] = None
+    missing_points: List[str] = Field(default_factory=list)
+
+
+class ExerciseGradingOutput(BaseModel):
+    """Batch grading result: a list of per-question scores. The load-bearing
+    invariant is that ``per_question`` is a list."""
+
+    model_config = ConfigDict(extra="allow")
+
+    per_question: List[ExerciseGradedQuestion] = Field(default_factory=list)
