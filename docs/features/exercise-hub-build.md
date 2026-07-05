@@ -27,9 +27,14 @@ Postgres/CI is migration-truth. LLM fully mocked (0 tokens).
   rows on re-run, coerces question_type/points/options) added to `exercise_ingest.py`. 7 eager tests
   (`test_exercise_extraction_task.py`): happy row-build, status guard, double-dispatch no-op, FAILED path,
   re-run clears stale rows, missing-safe, task-id persisted — all green, 0 tokens.
-- [ ] **E4** — teacher endpoints (CRUD / extract / publish / toggles) in `views_exercises.py`. owner-404 +
-  publish-validation (400/409) tests. **Follow-up from E1 db-gate:** the exercise/asset DELETE endpoint must
-  GC the S3/MinIO blobs (FileField CASCADE removes rows, not storage objects).
+- [x] **E4** — ✅ teacher endpoints in `views_exercises.py` (+ `serializers_exercises.py`, routes in `urls.py`;
+  `views.py` untouched): create+asset-upload / list / detail / PATCH (title/deadline/allow_late/
+  assistant_enabled) / DELETE (with **S3/MinIO blob GC** — E1 follow-up done) / extract-dispatch (409 while
+  EXTRACTING) / publish (400 if any question lacks reference-answer or max_points, 409 wrong status) /
+  section-toggle / question CRUD. All owner-scoped (`session__teacher=request.user` → non-owner 404). 17 api
+  tests (`test_exercise_teacher_api.py`): happy CRUD + publish gate + full negative matrix (anon→401,
+  student→403, cross-teacher→404) green. Self-reviewed vs the code-reviewer checklist; security-auditor budget
+  reserved for the E5/E8 gates.
 - [ ] **E5** — student endpoints (list / detail / draft / submit / image) + deadline guard + no-leak
   serializers + the «پاسخ تمرین‌های تمام‌شده» answers browse (reveal gated on deadline). **security-auditor gate.**
 - [ ] **E6** — grading service + task (`exercise_grading`, batch env, deterministic MCQ/fill-blank, retry

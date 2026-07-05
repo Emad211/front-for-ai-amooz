@@ -1,5 +1,14 @@
 from django.urls import path
 
+from .views_exercises import (
+    ExerciseListCreateView,
+    ExerciseDetailView,
+    ExerciseExtractView,
+    ExercisePublishView,
+    ExerciseSectionDetailView,
+    ExerciseQuestionListCreateView,
+    ExerciseQuestionDetailView,
+)
 from .views import (
     ClassPrerequisiteListView,
     ClassCreationSessionPublishView,
@@ -76,6 +85,15 @@ urlpatterns = [
     path('creation-sessions/<int:session_id>/students/', ClassSessionStudentsView.as_view(), name='class_creation_session_students'),
     path('creation-sessions/<int:session_id>/announcements/', ClassAnnouncementListCreateView.as_view(), name='class_creation_session_announcements'),
     path('creation-sessions/<int:session_id>/announcements/<int:announcement_id>/', ClassAnnouncementDetailView.as_view(), name='class_creation_session_announcement_detail'),
+
+    # Exercise Hub — teacher API (docs/features/exercise-hub.md)
+    path('creation-sessions/<int:session_id>/exercises/', ExerciseListCreateView.as_view(), name='exercise_list_create'),
+    path('exercises/<int:exercise_id>/', ExerciseDetailView.as_view(), name='exercise_detail'),
+    path('exercises/<int:exercise_id>/extract/', ExerciseExtractView.as_view(), name='exercise_extract'),
+    path('exercises/<int:exercise_id>/publish/', ExercisePublishView.as_view(), name='exercise_publish'),
+    path('exercises/<int:exercise_id>/questions/', ExerciseQuestionListCreateView.as_view(), name='exercise_question_create'),
+    path('exercises/sections/<int:section_id>/', ExerciseSectionDetailView.as_view(), name='exercise_section_detail'),
+    path('exercises/questions/<int:question_id>/', ExerciseQuestionDetailView.as_view(), name='exercise_question_detail'),
 
     # Exam Prep Pipeline (2 steps)
     path('exam-prep-sessions/step-1/', ExamPrepStep1TranscribeView.as_view(), name='exam_prep_step1'),
