@@ -98,7 +98,17 @@ Postgres/CI is migration-truth. LLM fully mocked (0 tokens).
   `MarkdownWithMath` (KaTeX). **Client leak guard:** the solver never requests/renders the reference answer
   (backend withholds it); only result/answers show it post-reveal. **`tsc --noEmit` clean** for all exercise
   files (total stays at the 13-error baseline). Runtime preview deferred to E12/final.
-- [ ] **E12** — calendar: remove mock, wire service + Jalali conversion + exam-prep events. `tsc` clean.
+- [x] **E12** — ✅ **FRONTEND + FEATURE COMPLETE.** Dashboard homepage calendar wired from mock to the
+  real `getStudentCalendar` endpoint (E9): `DashboardService.getCalendarEvents` now fetches
+  `CalendarEventDto[]` and maps each to the UI `CalendarEvent` via a new `toCalendarEvent` helper —
+  Tehran-tz ISO → zero-padded **Jalali** `YYYY-MM-DD` + `HH:MM` (`Intl` `calendar:'persian'`,
+  `timeZone:'Asia/Tehran'`, `numberingSystem:'latn'` so days never drift & lexical date compare stays
+  chronological), `kind` → `type`/`priority` (`exam_prep`→exam/high, `exercise_deadline`→assignment/med,
+  completed→low), `isCompleted` passed through; undated events dropped; empty-safe when
+  `NEXT_PUBLIC_API_URL` unset. `MOCK_CALENDAR_EVENTS` import + fake 500ms delay removed. No new CSS
+  tokens (events reuse existing type/priority styles). **`tsc --noEmit` clean** (stays at the 13-error
+  baseline — none introduced); conversion verified in Node against 4 cases incl. tz day-boundary + Nowruz
+  1405. No backend/model change.
 
 **Definition of done (every step):** GREEN on the sqlite fast lane (Postgres = CI truth); new code documented
 in `exercise-hub.md` (docs law); auth/permission changes carry negative tests; commit `feat(exercise): E# …`

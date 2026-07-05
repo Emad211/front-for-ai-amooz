@@ -3,14 +3,63 @@ import {
   MOCK_ACTIVITIES,
   MOCK_UPCOMING_EVENTS,
   MOCK_NOTIFICATIONS,
-  MOCK_CALENDAR_EVENTS,
 } from '@/constants/mock';
-import type { Course, CourseContent, Ticket, UserProfile } from '@/types';
+import type { CalendarEvent, Course, CourseContent, Ticket, UserProfile } from '@/types';
 import { clearAuthStorage, getStoredTokens, persistTokens, persistUser, refreshAccessToken } from '@/services/auth-service';
+import { getStudentCalendar, type CalendarEventDto } from '@/services/exercises-service';
 
 const RAW_API_URL = (process.env.NEXT_PUBLIC_API_URL ?? '').replace(/\/$/, '');
 const API_URL = RAW_API_URL.endsWith('/api') ? RAW_API_URL : `${RAW_API_URL}/api`;
 const BASE_URL = RAW_API_URL.replace(/\/api$/, '');
+
+/**
+ * Convert a backend calendar DTO (Tehran-tz ISO datetime, see E9) into the UI
+ * `CalendarEvent` shape the Jalali calendar engine expects: a zero-padded Jalali
+ * `YYYY-MM-DD` date + `HH:MM` time, both computed in `Asia/Tehran` so the day
+ * never drifts across the browser's timezone. Returns null for undated events.
+ */
+function toCalendarEvent(dto: CalendarEventDto): CalendarEvent | null {
+  if (!dto.datetime) return null;
+  const when = new Date(dto.datetime);
+  if (Number.isNaN(when.getTime())) return null;
+
+  const dateParts = new Intl.DateTimeFormat('en-US', {
+    calendar: 'persian',
+    timeZone: 'Asia/Tehran',
+    numberingSystem: 'latn',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(when);
+  const timeParts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Asia/Tehran',
+    numberingSystem: 'latn',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).formatToParts(when);
+  const part = (parts: Intl.DateTimeFormatPart[], type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((p) => p.type === type)?.value ?? '';
+
+  const year = part(dateParts, 'year');
+  const month = part(dateParts, 'month');
+  const day = part(dateParts, 'day');
+  let hour = part(timeParts, 'hour');
+  if (hour === '24') hour = '00'; // some engines emit "24" for midnight
+  const minute = part(timeParts, 'minute');
+
+  const isExam = dto.kind === 'exam_prep';
+  return {
+    id: dto.id,
+    title: dto.title,
+    subject: dto.courseTitle,
+    date: `${year}-${month}-${day}`,
+    time: `${hour}:${minute}`,
+    type: isExam ? 'exam' : 'assignment',
+    priority: dto.isCompleted ? 'low' : isExam ? 'high' : 'medium',
+    isCompleted: dto.isCompleted,
+  };
+}
 
 function getAccessToken(): string {
   if (typeof window === 'undefined') {
@@ -565,9 +614,12 @@ export const DashboardService = {
     });
   },
 
-  getCalendarEvents: async () => {
-    await new Promise(resolve => setTimeout(resolve, 500));
-    return MOCK_CALENDAR_EVENTS;
+  getCalendarEvents: async (): Promise<CalendarEvent[]> => {
+    if (!RAW_API_URL) return [];
+    const dtos = await getStudentCalendar();
+    return dtos
+      .map(toCalendarEvent)
+      .filter((event): event is CalendarEvent => event !== null);
   },
 
   getCourseContent: async (courseId?: string): Promise<CourseContent> => {

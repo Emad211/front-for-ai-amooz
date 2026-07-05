@@ -241,7 +241,7 @@ stored `per_question` (zero tokens), **no pregeneration** (nothing to pre-build)
 | **E9** | backend (+database-engineer) | migration `0026` (`scheduled_at`) + `GET student/calendar/` aggregate | ✅ DONE — nullable `scheduled_at` (db-eng approved) + calendar endpoint (both kinds, Tehran-tz, isCompleted, from/to); 9 tests green. **Backend complete.** |
 | **E10** | frontend-engineer | teacher UI: service + wizard + gradebook + override + toggles | ✅ DONE — exercises-service.ts + exercise-manager (create/extract-poll/edit/publish) + gradebook-table (override/allow-redo) + route page; tsc clean (baseline unchanged) |
 | **E11** | frontend-engineer | student UI: exercises hub + solver (text/photo) + assistant widget + report cards | ✅ DONE — service (student endpoints) + hub/solver/result/answers pages + assistant/report-card; disabled-assistant chip; solver never fetches reference; tsc clean |
-| **E12** | frontend-engineer | calendar: remove mock, wire service + Jalali conversion + exam-prep events | mock deleted; real events render; tsc clean |
+| **E12** | frontend-engineer | calendar: remove mock, wire service + Jalali conversion + exam-prep events | ✅ DONE — `getCalendarEvents` → real `getStudentCalendar` (E9); `toCalendarEvent` maps Tehran-tz ISO → Jalali `YYYY-MM-DD`+`HH:MM` (`Intl` persian/Asia-Tehran/latn) + kind→type/priority + isCompleted; mock + fake delay deleted; tsc clean; conversion Node-verified. **Exercise Hub feature COMPLETE (E1–E12).** |
 
 Cross-cutting gates: `code-reviewer` on every non-trivial diff; `release-manager` at pushes; every step
 updates this doc (docs law). Backend steps follow the sqlite-fast-lane/Postgres-truth test protocol of
