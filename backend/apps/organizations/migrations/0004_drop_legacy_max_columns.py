@@ -46,7 +46,7 @@ BEGIN
               'created_at', 'updated_at'
           )
     LOOP
-        RAISE NOTICE 'Dropping legacy column: %%', col.column_name;
+        RAISE NOTICE 'Dropping legacy column: %', col.column_name;
         EXECUTE format(
             'ALTER TABLE organizations_organization DROP COLUMN %I',
             col.column_name
