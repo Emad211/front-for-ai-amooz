@@ -29,6 +29,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { MarkdownWithMath } from '@/components/content/markdown-with-math';
 import { ExerciseAssistant } from '@/components/dashboard/exercises/exercise-assistant';
+import { formatPersianDateTime } from '@/lib/date-utils';
 import {
   type StudentExerciseDetail,
   type StudentAnswers,
@@ -66,13 +67,16 @@ export function ExerciseSolver({
   const alreadySubmitted =
     detail?.submissionStatus != null && detail.submissionStatus !== 'draft';
 
-  // Debounced autosave.
+  // Debounced autosave (+ a small saved indicator).
+  const [draftSaved, setDraftSaved] = useState(false);
   const persistDraft = useCallback(
     (next: StudentAnswers) => {
       if (alreadySubmitted) return;
-      saveExerciseDraft(sessionId, exerciseId, next).catch(() => {
-        /* best-effort autosave */
-      });
+      saveExerciseDraft(sessionId, exerciseId, next)
+        .then(() => setDraftSaved(true))
+        .catch(() => {
+          /* best-effort autosave */
+        });
     },
     [sessionId, exerciseId, alreadySubmitted]
   );
@@ -85,6 +89,7 @@ export function ExerciseSolver({
 
   const setText = (qid: number, text: string) => {
     dirty.current = true;
+    setDraftSaved(false);
     setAnswers((prev) => ({ ...prev, [qid]: { ...prev[String(qid)], text } }));
   };
 
@@ -127,14 +132,37 @@ export function ExerciseSolver({
     return <p className="py-16 text-center text-muted-foreground">تمرین پیدا نشد.</p>;
   }
 
+  const deadlineMs = detail.deadline ? Date.parse(detail.deadline) : null;
+  const deadlinePassed = deadlineMs != null && deadlineMs < Date.now();
+  const deadlineSoon =
+    deadlineMs != null && !deadlinePassed && deadlineMs - Date.now() < 24 * 3600 * 1000;
+
   return (
     <div dir="rtl" className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h1 className="text-xl font-bold">
           <MarkdownWithMath markdown={detail.title} as="span" />
         </h1>
-        {alreadySubmitted && <Badge variant="secondary">ارسال‌شده</Badge>}
+        <div className="flex flex-wrap items-center gap-2">
+          {draftSaved && !alreadySubmitted && (
+            <span className="text-xs text-muted-foreground">پیش‌نویس ذخیره شد ✓</span>
+          )}
+          {detail.deadline && !deadlinePassed && (
+            <Badge variant={deadlineSoon ? 'destructive' : 'outline'}>
+              {deadlineSoon ? 'کمتر از ۲۴ ساعت تا پایان مهلت' : `مهلت: ${formatPersianDateTime(detail.deadline)}`}
+            </Badge>
+          )}
+          {deadlinePassed && <Badge variant="destructive">مهلت به پایان رسیده</Badge>}
+          {alreadySubmitted && <Badge variant="secondary">ارسال‌شده</Badge>}
+        </div>
       </div>
+
+      {deadlinePassed && !alreadySubmitted && (
+        <p className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
+          مهلت ارسال این تمرین به پایان رسیده است. اگر مدرس ارسال با تأخیر را مجاز کرده باشد،
+          پاسخ شما با برچسب «با تأخیر» ثبت می‌شود؛ در غیر این صورت ارسال پذیرفته نخواهد شد.
+        </p>
+      )}
 
       {/* Section chips */}
       {detail.sections.length > 1 && (

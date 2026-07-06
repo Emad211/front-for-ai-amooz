@@ -7,7 +7,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
-import { Loader2, Upload, Trash2, CheckCircle2, FileText } from 'lucide-react';
+import { Loader2, Upload, Trash2, CheckCircle2, FileText, Plus } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -45,7 +45,10 @@ import {
   publishExercise,
   deleteExercise,
   updateExercise,
+  updateSection,
   updateQuestion,
+  createQuestion,
+  deleteQuestion,
 } from '@/services/exercises-service';
 
 const STATUS_LABEL: Record<ExerciseStatus, string> = {
@@ -358,25 +361,98 @@ function ExerciseEditor({
 
       <Accordion type="multiple" className="w-full">
         {detail.sections.map((section) => (
-          <AccordionItem key={section.id} value={`s-${section.id}`}>
-            <AccordionTrigger>{section.title || 'بخش بدون عنوان'}</AccordionTrigger>
-            <AccordionContent className="space-y-4">
-              {section.questions.map((q) => (
-                <QuestionEditor key={q.id} question={q} />
-              ))}
-            </AccordionContent>
-          </AccordionItem>
+          <SectionEditor
+            key={section.id}
+            exerciseId={detail.id}
+            section={section}
+            onChanged={onSaved}
+          />
         ))}
       </Accordion>
     </div>
   );
 }
 
+function SectionEditor({
+  exerciseId,
+  section,
+  onChanged,
+}: {
+  exerciseId: number;
+  section: ExerciseDetail['sections'][number];
+  onChanged: () => Promise<void>;
+}) {
+  const [assistant, setAssistant] = useState(section.assistantEnabled);
+  const [adding, setAdding] = useState(false);
+
+  // Per-section assistant switch — AND-ed with the exercise-level flag server-side.
+  const toggleAssistant = async (value: boolean) => {
+    setAssistant(value);
+    try {
+      await updateSection(section.id, { assistant_enabled: value });
+      toast.success(
+        value ? 'دستیار برای این بخش فعال شد.' : 'دستیار برای این بخش غیرفعال شد.'
+      );
+    } catch (err) {
+      setAssistant(!value); // revert optimistic update
+      toast.error(err instanceof Error ? err.message : 'ذخیرهٔ تنظیم بخش ناموفق بود.');
+    }
+  };
+
+  // Manual question entry — the fallback when extraction misses a question.
+  const addQuestion = async () => {
+    setAdding(true);
+    try {
+      await createQuestion(exerciseId, {
+        section_id: section.id,
+        question_markdown: 'متن سوال جدید را اینجا بنویسید.',
+        max_points: 1,
+      });
+      toast.success('سوال جدید اضافه شد. متن، پاسخ مرجع و بارم آن را تکمیل کنید.');
+      await onChanged();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'افزودن سوال ناموفق بود.');
+    } finally {
+      setAdding(false);
+    }
+  };
+
+  return (
+    <AccordionItem value={`s-${section.id}`}>
+      <AccordionTrigger>{section.title || 'بخش بدون عنوان'}</AccordionTrigger>
+      <AccordionContent className="space-y-4">
+        <div className="flex items-center gap-2 rounded-md bg-muted/40 p-2">
+          <Switch
+            checked={assistant}
+            onCheckedChange={toggleAssistant}
+            id={`sec-asst-${section.id}`}
+          />
+          <Label htmlFor={`sec-asst-${section.id}`}>دستیار هوشمند برای این بخش</Label>
+        </div>
+        {section.questions.map((q) => (
+          <QuestionEditor key={q.id} question={q} onChanged={onChanged} />
+        ))}
+        <Button size="sm" variant="outline" onClick={addQuestion} disabled={adding}>
+          {adding ? (
+            <Loader2 className="ms-2 h-4 w-4 animate-spin" />
+          ) : (
+            <Plus className="ms-2 h-4 w-4" />
+          )}
+          افزودن سوال
+        </Button>
+      </AccordionContent>
+    </AccordionItem>
+  );
+}
+
 function QuestionEditor({
   question,
+  onChanged,
 }: {
   question: ExerciseDetail['sections'][number]['questions'][number];
+  onChanged: () => Promise<void>;
 }) {
+  const [text, setText] = useState(question.questionMarkdown);
   const [reference, setReference] = useState(question.referenceAnswerMarkdown);
   const [points, setPoints] = useState(question.maxPoints);
   const [saving, setSaving] = useState(false);
@@ -385,10 +461,11 @@ function QuestionEditor({
     setSaving(true);
     try {
       await updateQuestion(question.id, {
+        question_markdown: text,
         reference_answer_markdown: reference,
         max_points: Number(points),
       });
-      toast.success('پاسخ مرجع ذخیره شد.');
+      toast.success('سوال ذخیره شد.');
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'ذخیره ناموفق بود.');
     } finally {
@@ -396,9 +473,46 @@ function QuestionEditor({
     }
   };
 
+  const remove = async () => {
+    try {
+      await deleteQuestion(question.id);
+      toast.success('سوال حذف شد.');
+      await onChanged();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'حذف سوال ناموفق بود.');
+    }
+  };
+
   return (
     <div className="space-y-2 rounded-md border border-border p-3">
-      <p className="text-sm font-medium">{question.questionMarkdown}</p>
+      <div className="flex items-start gap-2">
+        <Textarea
+          placeholder="متن سوال"
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          rows={2}
+          className="text-sm font-medium"
+        />
+        <AlertDialog>
+          <AlertDialogTrigger asChild>
+            <Button size="icon" variant="ghost" aria-label="حذف سوال">
+              <Trash2 className="h-4 w-4 text-destructive" />
+            </Button>
+          </AlertDialogTrigger>
+          <AlertDialogContent dir="rtl">
+            <AlertDialogHeader>
+              <AlertDialogTitle>حذف سوال</AlertDialogTitle>
+              <AlertDialogDescription>
+                این سوال از تمرین حذف می‌شود. مطمئن هستید؟
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>بازگشت</AlertDialogCancel>
+              <AlertDialogAction onClick={remove}>حذف</AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      </div>
       <Textarea
         placeholder="پاسخ مرجع (مبنای نمره‌دهی)"
         value={reference}
@@ -416,7 +530,7 @@ function QuestionEditor({
           className="w-24"
         />
         <Button size="sm" variant="secondary" onClick={save} disabled={saving} className="ms-auto">
-          ثبت پاسخ‌مرجع
+          ذخیرهٔ سوال
         </Button>
       </div>
     </div>

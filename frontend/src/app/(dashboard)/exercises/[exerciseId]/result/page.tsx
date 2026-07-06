@@ -76,9 +76,13 @@ export default function StudentExerciseResultPage({ params }: PageProps) {
                   {q && <MarkdownWithMath markdown={q.questionMarkdown} />}
                   <p className="text-sm">
                     نمره: {pq.teacher_score ?? pq.score_points ?? 0} از {pq.max_points ?? 0}
-                    {pq.teacher_score != null && (
+                    {pq.teacher_score != null ? (
                       <Badge variant="outline" className="ms-2">
                         بازبینی‌شده توسط مدرس
+                      </Badge>
+                    ) : (
+                      <Badge variant="secondary" className="ms-2">
+                        نمره‌دهی هوشمند
                       </Badge>
                     )}
                   </p>

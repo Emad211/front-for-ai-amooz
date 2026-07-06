@@ -258,6 +258,32 @@ export async function updateQuestion(
   });
 }
 
+/** Manual question entry — the ADR-0004 fallback when extraction misses/mangles a question. */
+export async function createQuestion(
+  exerciseId: number,
+  data: {
+    section_id: number;
+    question_markdown: string;
+    question_type?: QuestionType;
+    options?: unknown[];
+    reference_answer_markdown?: string;
+    max_points?: number;
+  }
+): Promise<{ id: number }> {
+  return requestJson(`${API_URL}/classes/exercises/${exerciseId}/questions/`, {
+    method: 'POST',
+    headers: jsonHeaders(),
+    body: JSON.stringify(data),
+  });
+}
+
+export async function deleteQuestion(questionId: number): Promise<void> {
+  await requestJson(`${API_URL}/classes/exercises/questions/${questionId}/`, {
+    method: 'DELETE',
+    headers: authHeaders(),
+  });
+}
+
 export async function listSubmissions(exerciseId: number): Promise<SubmissionListItem[]> {
   return requestJson(`${API_URL}/classes/exercises/${exerciseId}/submissions/`, {
     method: 'GET',

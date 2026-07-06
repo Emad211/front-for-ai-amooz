@@ -109,6 +109,22 @@ Postgres/CI is migration-truth. LLM fully mocked (0 tokens).
   tokens (events reuse existing type/priority styles). **`tsc --noEmit` clean** (stays at the 13-error
   baseline — none introduced); conversion verified in Node against 4 cases incl. tz day-boundary + Nowruz
   1405. No backend/model change.
+- [x] **E12c — audit gap-fix batch + REAL Docker E2E (2026-07-06):** closes the tech-lead
+  plan-vs-built audit's frontend gaps: gradebook grading dialog now RENDERS answer photos
+  (`answerImageUrl` → `/media` proxy, thumbnail + full-size link) and shows the automatic score for
+  deterministic rows (was «—»); **per-section assistant Switch** in the section editor (the chair-ruled
+  MVP item — wires the previously-unused `updateSection`, optimistic + revert); **manual question
+  add/edit/delete** (`createQuestion`/`deleteQuestion` service fns + editable question text + per-question
+  delete AlertDialog — the ADR-0004 OCR-fallback mitigation; zero-section FAILED case still retry-only);
+  solver deadline UX (Jalali deadline badge, «کمتر از ۲۴ ساعت», past-deadline banner honoring allow-late
+  wording, «پیش‌نویس ذخیره شد ✓» indicator); result page shows «نمره‌دهی هوشمند» badge when no teacher
+  override. tsc at the 13-error baseline. **Verified END-TO-END on the real local Docker stack** (fresh
+  backend image, migrations 0024–0026 applied on live Postgres): student login → hub (Jalali deadline,
+  catalog) → solver (KaTeX, autosave) → submit → REAL Celery deterministic grading (2.00/5.00, one right
+  one wrong) → result page (score + hidden reference pre-deadline) → teacher gradebook (row, dialog,
+  real answers) → teacher override 1.5 → effective 3.50/5.00 + «ویرایش معلم» badge → per-section switch
+  persisted to DB both ways. Env note (machine-local): `frontend/.env.local` now uses `127.0.0.1:8000`
+  (Next dev proxy resolved `localhost`→`::1` after a Docker Desktop restart and EACCES'd; IPv4 pin fixes it).
 - [x] **E12b — navigation wiring fix (2026-07-05, user-reported):** E10/E11 pages existed but were linked
   from NO menu. Added: student «تمرین‌ها» in `DASHBOARD_NAV_LINKS` (desktop header + mobile bottom nav,
   subroute-aware active state) · teacher «تمرین‌ها» button in `ClassDetailHeader` **and** class-card

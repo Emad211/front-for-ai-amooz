@@ -47,6 +47,19 @@ const SUB_STATUS_LABEL: Record<SubmissionStatus, string> = {
   grading_failed: 'خطا در نمره‌دهی',
 };
 
+// Answer photos are stored as storage paths (e.g. exercises/answers/…) and
+// served by the Django /media proxy — resolve against the backend origin
+// (same convention as markdown-with-math's resolveImgSrc).
+const API_BASE = (process.env.NEXT_PUBLIC_API_URL || '')
+  .replace(/\/+$/, '')
+  .replace(/\/api$/, '');
+
+function answerImageUrl(path: string): string {
+  const s = String(path).trim();
+  if (/^(https?:)?\/\//i.test(s) || s.startsWith('data:')) return s;
+  return `${API_BASE}/media/${s.replace(/^\/+/, '').replace(/^media\//, '')}`;
+}
+
 export function GradebookTable({ exerciseId }: { exerciseId: number }) {
   const [rows, setRows] = useState<SubmissionListItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -199,10 +212,35 @@ function GradingDialog({
               return (
                 <div key={qid} className="space-y-2 rounded-md border border-border p-3">
                   <p className="text-sm text-muted-foreground">
-                    پاسخ دانش‌آموز: {answer?.text || '—'}
+                    پاسخ دانش‌آموز: {answer?.text || (answer?.images?.length ? '(پاسخ تصویری)' : '—')}
                   </p>
+                  {(answer?.images?.length ?? 0) > 0 && (
+                    <div className="flex flex-wrap gap-2">
+                      {(answer?.images ?? []).map((img) => (
+                        <a
+                          key={img}
+                          href={answerImageUrl(img)}
+                          target="_blank"
+                          rel="noreferrer"
+                          title="نمایش در اندازهٔ کامل"
+                        >
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                            src={answerImageUrl(img)}
+                            alt="پاسخ تصویری دانش‌آموز"
+                            className="h-28 w-28 rounded-md border border-border object-cover"
+                            loading="lazy"
+                          />
+                        </a>
+                      ))}
+                    </div>
+                  )}
                   <p className="text-sm">
-                    نمرهٔ هوشمند: {pq.llm_score ?? '—'} از {pq.max_points ?? '—'}
+                    {/* Deterministic (MCQ/fill-blank) rows have no llm_score — before an
+                        override, score_points still holds the automatic score. */}
+                    نمرهٔ هوشمند:{' '}
+                    {pq.llm_score ?? (pq.teacher_score == null ? pq.score_points ?? '—' : '—')} از{' '}
+                    {pq.max_points ?? '—'}
                     {pq.feedback ? ` — ${pq.feedback}` : ''}
                   </p>
                   <div className="flex flex-wrap items-center gap-2">
