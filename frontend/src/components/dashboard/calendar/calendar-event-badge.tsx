@@ -2,6 +2,7 @@
 
 import { cn } from '@/lib/utils';
 import { EVENT_TYPE_CONFIG } from '@/constants/calendar';
+import { MathText } from '@/components/content/math-text';
 import type { CalendarEvent } from '@/types';
 
 interface CalendarEventBadgeProps {
@@ -39,7 +40,7 @@ export function CalendarEventBadge({ event, compact = false, onClick }: Calendar
         config.color
       )}
     >
-      {event.title}
+      <MathText text={event.title} />
     </div>
   );
 }

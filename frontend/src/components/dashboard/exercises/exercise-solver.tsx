@@ -28,6 +28,7 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
 import { MarkdownWithMath } from '@/components/content/markdown-with-math';
+import { MathText } from '@/components/content/math-text';
 import { ExerciseAssistant } from '@/components/dashboard/exercises/exercise-assistant';
 import { formatPersianDateTime } from '@/lib/date-utils';
 import {
@@ -141,7 +142,7 @@ export function ExerciseSolver({
     <div dir="rtl" className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h1 className="text-xl font-bold">
-          <MarkdownWithMath markdown={detail.title} as="span" />
+          <MathText text={detail.title} />
         </h1>
         <div className="flex flex-wrap items-center gap-2">
           {draftSaved && !alreadySubmitted && (
@@ -178,7 +179,7 @@ export function ExerciseSolver({
                   : 'bg-muted text-muted-foreground'
               }`}
             >
-              {s.title || `بخش ${i + 1}`}
+              <MathText text={s.title || `بخش ${i + 1}`} />
             </button>
           ))}
         </div>

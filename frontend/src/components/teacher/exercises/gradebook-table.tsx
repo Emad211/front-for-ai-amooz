@@ -28,6 +28,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
+import { MarkdownWithMath } from '@/components/content/markdown-with-math';
 import {
   type SubmissionListItem,
   type SubmissionDetail,
@@ -211,9 +212,16 @@ function GradingDialog({
               const answer = detail.answers[qid];
               return (
                 <div key={qid} className="space-y-2 rounded-md border border-border p-3">
-                  <p className="text-sm text-muted-foreground">
-                    پاسخ دانش‌آموز: {answer?.text || (answer?.images?.length ? '(پاسخ تصویری)' : '—')}
-                  </p>
+                  {answer?.text ? (
+                    <div className="space-y-1 text-sm">
+                      <p className="text-muted-foreground">پاسخ دانش‌آموز:</p>
+                      <MarkdownWithMath markdown={answer.text} className="text-sm" />
+                    </div>
+                  ) : (
+                    <p className="text-sm text-muted-foreground">
+                      پاسخ دانش‌آموز: {answer?.images?.length ? '(پاسخ تصویری)' : '—'}
+                    </p>
+                  )}
                   {(answer?.images?.length ?? 0) > 0 && (
                     <div className="flex flex-wrap gap-2">
                       {(answer?.images ?? []).map((img) => (
@@ -241,8 +249,13 @@ function GradingDialog({
                     نمرهٔ هوشمند:{' '}
                     {pq.llm_score ?? (pq.teacher_score == null ? pq.score_points ?? '—' : '—')} از{' '}
                     {pq.max_points ?? '—'}
-                    {pq.feedback ? ` — ${pq.feedback}` : ''}
                   </p>
+                  {pq.feedback && (
+                    <div className="rounded-md bg-muted p-2 text-sm">
+                      <p className="mb-1 text-muted-foreground">بازخورد هوشمند:</p>
+                      <MarkdownWithMath markdown={pq.feedback} />
+                    </div>
+                  )}
                   <div className="flex flex-wrap items-center gap-2">
                     <Label className="text-sm">نمرهٔ دستی</Label>
                     <Input

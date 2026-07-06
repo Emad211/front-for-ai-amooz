@@ -3,6 +3,7 @@
 import { Clock, MapPin, BookOpen } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { EVENT_TYPE_CONFIG, PERSIAN_MONTHS } from '@/constants/calendar';
+import { MathText } from '@/components/content/math-text';
 import type { CalendarEvent } from '@/types';
 
 interface CalendarEventCardProps {
@@ -36,7 +37,9 @@ export function CalendarEventCard({ event, onClick, compact = false }: CalendarE
 
         {/* Content */}
         <div className="flex-1 min-w-0">
-          <h4 className="font-bold text-sm truncate">{event.title}</h4>
+          <h4 className="font-bold text-sm truncate">
+            <MathText text={event.title} />
+          </h4>
           <div className="flex items-center gap-2 mt-1">
             {event.time && (
               <span className="flex items-center gap-1 text-xs text-muted-foreground">
@@ -46,7 +49,7 @@ export function CalendarEventCard({ event, onClick, compact = false }: CalendarE
             )}
             {event.subject && (
               <span className={cn('text-xs px-1.5 py-0.5 rounded', config.bgColor, config.color)}>
-                {event.subject}
+                <MathText text={event.subject} />
               </span>
             )}
           </div>
@@ -72,14 +75,20 @@ export function CalendarEventCard({ event, onClick, compact = false }: CalendarE
       {/* Content */}
       <div className="flex-1 min-w-0">
         <div className="flex items-start justify-between gap-2">
-          <h4 className="font-bold text-base truncate min-w-0">{event.title}</h4>
+          <h4 className="font-bold text-base truncate min-w-0">
+            <MathText text={event.title} />
+          </h4>
           <span className={cn('text-xs px-2 py-1 rounded-lg shrink-0', config.bgColor, config.color)}>
             {config.label}
           </span>
         </div>
         
         {event.description && (
-          <p className="text-sm text-muted-foreground mt-1 line-clamp-1">{event.description}</p>
+          <MathText
+            as="div"
+            text={event.description}
+            className="text-sm text-muted-foreground mt-1 line-clamp-1"
+          />
         )}
 
         <div className="flex items-center gap-3 mt-3 flex-wrap">
@@ -99,7 +108,7 @@ export function CalendarEventCard({ event, onClick, compact = false }: CalendarE
           {event.subject && (
             <span className="flex items-center gap-1.5 text-xs text-muted-foreground bg-muted/50 px-2 py-1 rounded-lg">
               <BookOpen className="w-3.5 h-3.5" />
-              {event.subject}
+              <MathText text={event.subject} />
             </span>
           )}
         </div>

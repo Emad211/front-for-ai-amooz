@@ -2,6 +2,7 @@
 
 import { ArrowLeft } from 'lucide-react';
 import { Event } from '@/types';
+import { MathText } from '@/components/content/math-text';
 
 interface EventCardProps extends Event {}
 
@@ -13,7 +14,9 @@ export const EventCard = ({ title, status, icon, date, month }: EventCardProps) 
         <span className="text-[10px] font-bold uppercase mt-1">{month}</span>
       </div>
       <div>
-        <h4 className="font-bold text-foreground group-hover:text-primary transition-colors">{title}</h4>
+        <h4 className="font-bold text-foreground group-hover:text-primary transition-colors">
+          <MathText text={title} />
+        </h4>
         <p className="text-xs text-muted-foreground flex items-center gap-1.5 mt-1.5">
           <span className="p-1 bg-background rounded-md border border-border group-hover:border-primary/30 transition-colors">
             {icon}

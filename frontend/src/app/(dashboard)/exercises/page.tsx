@@ -13,6 +13,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ExerciseReportCard } from '@/components/dashboard/exercises/exercise-report-card';
+import { MathText } from '@/components/content/math-text';
 import { DashboardService } from '@/services/dashboard-service';
 import { formatPersianDateTime } from '@/lib/date-utils';
 import {
@@ -140,10 +141,12 @@ export default function StudentExercisesHubPage() {
                 <Card key={ev.id}>
                   <CardContent className="flex items-center justify-between gap-2 py-4">
                     <div className="min-w-0">
-                      <p className="truncate font-medium">{ev.title}</p>
+                      <p className="truncate font-medium">
+                        <MathText text={ev.title} />
+                      </p>
                       <p className="flex items-center gap-1 text-xs text-muted-foreground">
                         <CalendarClock className="h-3 w-3" />
-                        {ev.courseTitle}
+                        <MathText text={ev.courseTitle} />
                         {ev.datetime && <span>· مهلت: {formatPersianDateTime(ev.datetime)}</span>}
                       </p>
                     </div>
@@ -170,7 +173,7 @@ export default function StudentExercisesHubPage() {
                   <CardHeader className="pb-2">
                     <CardTitle className="flex items-center gap-2 text-base">
                       <NotebookPen className="h-4 w-4 text-primary" />
-                      {cls.courseTitle}
+                      <MathText text={cls.courseTitle} />
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-2">
@@ -182,7 +185,9 @@ export default function StudentExercisesHubPage() {
                           className="flex items-center justify-between gap-2 rounded-md border border-border p-3"
                         >
                           <div className="min-w-0">
-                            <p className="truncate font-medium">{ex.title}</p>
+                            <p className="truncate font-medium">
+                              <MathText text={ex.title} />
+                            </p>
                             <p className="flex items-center gap-1 text-xs text-muted-foreground">
                               {ex.deadline ? (
                                 <>

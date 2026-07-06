@@ -34,6 +34,7 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
 import { GradebookTable } from '@/components/teacher/exercises/gradebook-table';
+import { MathText } from '@/components/content/math-text';
 import {
   type ExerciseDetail,
   type ExerciseListItem,
@@ -248,7 +249,9 @@ function ExerciseCard({
       <CardHeader className="flex flex-row items-center justify-between gap-2">
         <div className="flex items-center gap-2">
           <FileText className="h-4 w-4 text-muted-foreground" />
-          <CardTitle className="text-base">{summary.title}</CardTitle>
+          <CardTitle className="text-base">
+            <MathText text={summary.title} />
+          </CardTitle>
           <Badge variant={STATUS_VARIANT[summary.status]}>{STATUS_LABEL[summary.status]}</Badge>
         </div>
         <div className="flex items-center gap-2">
@@ -419,7 +422,9 @@ function SectionEditor({
 
   return (
     <AccordionItem value={`s-${section.id}`}>
-      <AccordionTrigger>{section.title || 'بخش بدون عنوان'}</AccordionTrigger>
+      <AccordionTrigger>
+        <MathText text={section.title || 'بخش بدون عنوان'} />
+      </AccordionTrigger>
       <AccordionContent className="space-y-4">
         <div className="flex items-center gap-2 rounded-md bg-muted/40 p-2">
           <Switch

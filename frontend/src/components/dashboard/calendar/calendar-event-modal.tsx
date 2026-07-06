@@ -10,6 +10,7 @@ import {
 } from '@/components/ui/dialog';
 import { cn } from '@/lib/utils';
 import { EVENT_TYPE_CONFIG, PERSIAN_MONTHS } from '@/constants/calendar';
+import { MathText } from '@/components/content/math-text';
 import type { CalendarEvent } from '@/types';
 
 interface CalendarEventModalProps {
@@ -47,7 +48,7 @@ export function CalendarEventModal({ event, isOpen, onClose }: CalendarEventModa
               </Button>
             </div>
             <DialogTitle className={cn('text-2xl font-bold mt-4 text-start', config.color)}>
-              {event.title}
+              <MathText text={event.title} />
             </DialogTitle>
           </DialogHeader>
         </div>
@@ -66,7 +67,7 @@ export function CalendarEventModal({ event, isOpen, onClose }: CalendarEventModa
           {/* Details */}
           <div className="mt-10 space-y-4">
             {event.description && (
-              <p className="text-muted-foreground">{event.description}</p>
+              <MathText as="div" text={event.description} className="text-muted-foreground" />
             )}
 
             <div className="space-y-3">
@@ -104,7 +105,7 @@ export function CalendarEventModal({ event, isOpen, onClose }: CalendarEventModa
                   </div>
                   <div>
                     <p className="text-xs text-muted-foreground">درس</p>
-                    <p className="font-medium">{event.subject}</p>
+                    <MathText as="div" text={event.subject} className="font-medium" />
                   </div>
                 </div>
               )}

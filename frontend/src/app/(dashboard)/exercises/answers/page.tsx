@@ -12,6 +12,7 @@ import {
   AccordionTrigger,
 } from '@/components/ui/accordion';
 import { MarkdownWithMath } from '@/components/content/markdown-with-math';
+import { MathText } from '@/components/content/math-text';
 import { type FinishedAnswer, getFinishedAnswers } from '@/services/exercises-service';
 
 export default function FinishedAnswersPage() {
@@ -42,15 +43,20 @@ export default function FinishedAnswersPage() {
             <Card key={ex.id}>
               <CardHeader>
                 <CardTitle className="text-base">
-                  {ex.title}
-                  <span className="ms-2 text-xs font-normal text-muted-foreground">{ex.courseTitle}</span>
+                  <MathText text={ex.title} />
+                  <MathText
+                    text={ex.courseTitle}
+                    className="ms-2 text-xs font-normal text-muted-foreground"
+                  />
                 </CardTitle>
               </CardHeader>
               <CardContent>
                 <Accordion type="multiple" className="w-full">
                   {ex.sections.map((s) => (
                     <AccordionItem key={s.id} value={`s-${s.id}`}>
-                      <AccordionTrigger>{s.title || 'بخش'}</AccordionTrigger>
+                      <AccordionTrigger>
+                        <MathText text={s.title || 'بخش'} />
+                      </AccordionTrigger>
                       <AccordionContent className="space-y-3">
                         {s.questions.map((q) => (
                           <div key={q.id} className="space-y-1 rounded-md border border-border p-3">

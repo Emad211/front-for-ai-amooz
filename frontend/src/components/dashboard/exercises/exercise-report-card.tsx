@@ -4,6 +4,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
 import { Badge } from '@/components/ui/badge';
+import { MathText } from '@/components/content/math-text';
 import { type ReportCard } from '@/services/exercises-service';
 
 export function ExerciseReportCard({ data, title }: { data: ReportCard; title: string }) {
@@ -24,7 +25,7 @@ export function ExerciseReportCard({ data, title }: { data: ReportCard; title: s
           data.exercises.map((row) => (
             <div key={row.exerciseId} className="space-y-1">
               <div className="flex items-center justify-between text-sm">
-                <span>{row.exerciseTitle}</span>
+                <MathText text={row.exerciseTitle} />
                 <span className="text-muted-foreground">
                   {row.scorePoints} از {row.maxPoints} ({row.percent}٪)
                 </span>
