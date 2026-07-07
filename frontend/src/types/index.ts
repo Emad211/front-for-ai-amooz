@@ -222,6 +222,7 @@ export interface DashboardEvent {
   date: string;
   month: string;
   icon: 'clock' | 'file';
+  href?: string;
 }
 
 export interface AdminAnalyticsStat {
@@ -266,6 +267,7 @@ export interface CalendarEvent {
   id: string;
   title: string;
   description?: string;
+  datetime?: string | null;
   date: string; // Format: YYYY-MM-DD (Jalali)
   time?: string; // Format: HH:MM
   endTime?: string;
@@ -274,6 +276,11 @@ export interface CalendarEvent {
   subject?: string;
   location?: string;
   isCompleted?: boolean;
+  kind?: 'exercise_deadline' | 'exam_prep';
+  sessionId?: number;
+  exerciseId?: number;
+  href?: string;
+  actionLabel?: string;
 }
 
 export interface CalendarDay {

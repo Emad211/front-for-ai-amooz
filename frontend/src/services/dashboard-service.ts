@@ -1,16 +1,68 @@
-import {
-  MOCK_DASHBOARD_STATS,
-  MOCK_ACTIVITIES,
-  MOCK_UPCOMING_EVENTS,
-  MOCK_NOTIFICATIONS,
-} from '@/constants/mock';
-import type { CalendarEvent, Course, CourseContent, Ticket, UserProfile } from '@/types';
+import type {
+  CalendarEvent,
+  Course,
+  CourseContent,
+  DashboardEvent,
+  Ticket,
+  UserProfile,
+} from '@/types';
 import { clearAuthStorage, getStoredTokens, persistTokens, persistUser, refreshAccessToken } from '@/services/auth-service';
-import { getStudentCalendar, type CalendarEventDto } from '@/services/exercises-service';
+import {
+  getStudentCalendar,
+  listStudentExercises,
+  type CalendarEventDto,
+  type StudentExerciseListItem,
+} from '@/services/exercises-service';
+import { PERSIAN_MONTHS } from '@/constants/calendar';
+import { getStudentExerciseAction } from '@/lib/exercise-actions';
 
 const RAW_API_URL = (process.env.NEXT_PUBLIC_API_URL ?? '').replace(/\/$/, '');
 const API_URL = RAW_API_URL.endsWith('/api') ? RAW_API_URL : `${RAW_API_URL}/api`;
 const BASE_URL = RAW_API_URL.replace(/\/api$/, '');
+
+type CalendarExerciseLookup = Map<string, StudentExerciseListItem>;
+
+function calendarExerciseKey(sessionId: number, exerciseId: number): string {
+  return `${sessionId}:${exerciseId}`;
+}
+
+async function loadCalendarExerciseLookup(
+  dtos: CalendarEventDto[]
+): Promise<CalendarExerciseLookup> {
+  const sessionIds = Array.from(
+    new Set(
+      dtos
+        .filter((dto) => dto.kind === 'exercise_deadline' && dto.exerciseId)
+        .map((dto) => dto.sessionId)
+        .filter((sessionId) => Number.isFinite(sessionId))
+    )
+  );
+
+  const perSession = await Promise.all(
+    sessionIds.map(async (sessionId) => {
+      const exercises = await listStudentExercises(sessionId).catch(
+        () => [] as StudentExerciseListItem[]
+      );
+      return [sessionId, exercises] as const;
+    })
+  );
+
+  const lookup: CalendarExerciseLookup = new Map();
+  perSession.forEach(([sessionId, exercises]) => {
+    exercises.forEach((exercise) => {
+      lookup.set(calendarExerciseKey(sessionId, exercise.id), exercise);
+    });
+  });
+  return lookup;
+}
+
+function findCalendarExercise(
+  dto: CalendarEventDto,
+  lookup?: CalendarExerciseLookup
+): StudentExerciseListItem | undefined {
+  if (dto.kind !== 'exercise_deadline' || !dto.exerciseId) return undefined;
+  return lookup?.get(calendarExerciseKey(dto.sessionId, dto.exerciseId));
+}
 
 /**
  * Convert a backend calendar DTO (Tehran-tz ISO datetime, see E9) into the UI
@@ -18,7 +70,10 @@ const BASE_URL = RAW_API_URL.replace(/\/api$/, '');
  * `YYYY-MM-DD` date + `HH:MM` time, both computed in `Asia/Tehran` so the day
  * never drifts across the browser's timezone. Returns null for undated events.
  */
-function toCalendarEvent(dto: CalendarEventDto): CalendarEvent | null {
+function toCalendarEvent(
+  dto: CalendarEventDto,
+  exercise?: StudentExerciseListItem
+): CalendarEvent | null {
   if (!dto.datetime) return null;
   const when = new Date(dto.datetime);
   if (Number.isNaN(when.getTime())) return null;
@@ -49,15 +104,67 @@ function toCalendarEvent(dto: CalendarEventDto): CalendarEvent | null {
   const minute = part(timeParts, 'minute');
 
   const isExam = dto.kind === 'exam_prep';
+  const exerciseAction = exercise ? getStudentExerciseAction(exercise, dto.sessionId) : null;
+  const fallbackExerciseHref =
+    dto.kind === 'exercise_deadline' && dto.exerciseId
+      ? dto.isCompleted
+        ? `/exercises/${dto.exerciseId}/result?session=${dto.sessionId}`
+        : `/exercises/${dto.exerciseId}?session=${dto.sessionId}`
+      : undefined;
+  const href =
+    exerciseAction?.href ??
+    fallbackExerciseHref ??
+    (isExam ? `/exam/${dto.sessionId}` : undefined);
+  const actionLabel =
+    exerciseAction?.label ??
+    (isExam ? 'باز کردن' : dto.isCompleted ? 'دیدن نتیجه' : 'شروع تمرین');
+  const isCompleted =
+    dto.isCompleted ||
+    Boolean(exercise?.submissionStatus && exercise.submissionStatus !== 'draft');
+  const assignmentPriority =
+    exerciseAction?.kind === 'continue'
+      ? 'high'
+      : exerciseAction?.kind === 'start'
+        ? 'medium'
+        : 'low';
+
   return {
     id: dto.id,
     title: dto.title,
+    description: isExam ? 'جلسه آمادگی آزمون' : `مهلت ارسال تمرین · ${actionLabel}`,
+    datetime: dto.datetime,
     subject: dto.courseTitle,
     date: `${year}-${month}-${day}`,
     time: `${hour}:${minute}`,
     type: isExam ? 'exam' : 'assignment',
-    priority: dto.isCompleted ? 'low' : isExam ? 'high' : 'medium',
-    isCompleted: dto.isCompleted,
+    priority: isExam ? (isCompleted ? 'low' : 'high') : assignmentPriority,
+    isCompleted,
+    kind: dto.kind,
+    sessionId: dto.sessionId,
+    exerciseId: dto.exerciseId,
+    href,
+    actionLabel,
+  };
+}
+
+function toDashboardEvent(event: CalendarEvent): DashboardEvent {
+  const [, rawMonth, rawDay] = event.date.split('-');
+  const monthIndex = Math.max(0, Number(rawMonth) - 1);
+  const label =
+    event.type === 'assignment'
+      ? event.actionLabel ?? (event.isCompleted ? 'تمرین تکمیل شده' : 'مهلت تمرین')
+      : event.isCompleted
+        ? 'آمادگی آزمون تکمیل شده'
+        : 'زمان آمادگی آزمون';
+
+  return {
+    id: event.id,
+    title: event.title,
+    status: event.time ? `${label} · ${event.time}` : label,
+    date: rawDay ?? '',
+    month: PERSIAN_MONTHS[monthIndex] ?? '',
+    icon: event.type === 'assignment' ? 'file' : 'clock',
+    href: event.href,
   };
 }
 
@@ -339,8 +446,42 @@ export const DashboardService = {
     return [];
   },
 
-  getUpcomingEvents: async () => {
-    return [];
+  getUpcomingEvents: async (): Promise<DashboardEvent[]> => {
+    if (!RAW_API_URL) return [];
+    const events = await DashboardService.getCalendarEvents();
+    const today = new Intl.DateTimeFormat('en-US', {
+      calendar: 'persian',
+      timeZone: 'Asia/Tehran',
+      numberingSystem: 'latn',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    })
+      .formatToParts(new Date())
+      .reduce((acc, part) => {
+        if (part.type === 'year' || part.type === 'month' || part.type === 'day') {
+          acc[part.type] = part.value;
+        }
+        return acc;
+      }, {} as Record<'year' | 'month' | 'day', string>);
+    const todayKey = `${today.year}-${today.month}-${today.day}`;
+    const now = Date.now();
+    return events
+      .filter((event) => {
+        if (event.datetime) {
+          const eventTime = Date.parse(event.datetime);
+          return Number.isNaN(eventTime) ? event.date >= todayKey : eventTime > now;
+        }
+        return event.date >= todayKey;
+      })
+      .sort((a, b) => {
+        const aTime = a.datetime ? Date.parse(a.datetime) : Number.NaN;
+        const bTime = b.datetime ? Date.parse(b.datetime) : Number.NaN;
+        if (!Number.isNaN(aTime) && !Number.isNaN(bTime)) return aTime - bTime;
+        return `${a.date} ${a.time ?? ''}`.localeCompare(`${b.date} ${b.time ?? ''}`);
+      })
+      .slice(0, 5)
+      .map(toDashboardEvent);
   },
 
   getStudentProfile: async () => {
@@ -617,8 +758,9 @@ export const DashboardService = {
   getCalendarEvents: async (): Promise<CalendarEvent[]> => {
     if (!RAW_API_URL) return [];
     const dtos = await getStudentCalendar();
+    const exerciseLookup = await loadCalendarExerciseLookup(dtos);
     return dtos
-      .map(toCalendarEvent)
+      .map((dto) => toCalendarEvent(dto, findCalendarExercise(dto, exerciseLookup)))
       .filter((event): event is CalendarEvent => event !== null);
   },
 

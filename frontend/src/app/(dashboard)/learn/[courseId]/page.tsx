@@ -22,11 +22,13 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { ErrorState } from '@/components/shared/error-state';
 import { DashboardService } from '@/services/dashboard-service';
 import { useProfile } from '@/hooks/use-profile';
+import { StudentExerciseQuickAction } from '@/components/dashboard/exercises/student-exercise-quick-action';
 
 export default function LearnPage() {
     const params = useParams();
     const rawCourseId = (params as any)?.courseId as string | string[] | undefined;
     const courseId = Array.isArray(rawCourseId) ? rawCourseId[0] : rawCourseId;
+    const numericCourseId = Number(courseId);
     const { content, currentLesson, isLoading, error, reload, setCurrentLesson, setContent } = useCourseContent(courseId);
     const { user } = useProfile();
     const [isChatOpen, setIsChatOpen] = React.useState(true);
@@ -411,6 +413,13 @@ export default function LearnPage() {
                     "flex-1 flex flex-col relative transition-all duration-300 ease-in-out", 
                     isChatOpen ? "lg:w-[calc(100%-20rem-24rem)]" : "w-full"
                 )}>
+                    {Number.isFinite(numericCourseId) && (
+                        <StudentExerciseQuickAction
+                            sessionId={numericCourseId}
+                            variant="learn-bar"
+                            className="mx-3 mt-3 lg:mx-0 lg:mb-3 lg:mt-0"
+                        />
+                    )}
                     <LessonContent
                         content={content}
                         lesson={currentLesson}

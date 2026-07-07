@@ -7,6 +7,7 @@ import Link from 'next/link';
 import { Course } from '@/types';
 import { TagBadge } from '@/components/ui/tag-badge';
 import React from 'react';
+import { StudentExerciseQuickAction } from '@/components/dashboard/exercises/student-exercise-quick-action';
 
 interface CourseCardProps {
   course: Course;
@@ -14,6 +15,7 @@ interface CourseCardProps {
 
 export const CourseCard = ({ course }: CourseCardProps) => {
   const courseId = encodeURIComponent(String(course.id));
+  const numericCourseId = Number(course.id);
 
   const [hasVisited, setHasVisited] = React.useState(false);
 
@@ -42,7 +44,10 @@ export const CourseCard = ({ course }: CourseCardProps) => {
         <h3 className="font-black text-xl md:text-2xl text-foreground mb-3 group-hover:text-primary transition-colors">{course.title}</h3>
         <p className="text-muted-foreground text-sm md:text-base leading-relaxed font-medium">{course.description}</p>
       </CardContent>
-      <div className="px-6 md:px-8 pb-6 md:pb-8">
+      <div className="space-y-3 px-6 md:px-8 pb-6 md:pb-8">
+        {Number.isFinite(numericCourseId) && (
+          <StudentExerciseQuickAction sessionId={numericCourseId} variant="course-card" />
+        )}
         {isContinue ? (
           <Button
             asChild

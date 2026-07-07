@@ -1,6 +1,7 @@
 'use client';
 
 import { X, Clock, MapPin, BookOpen, AlertCircle } from 'lucide-react';
+import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -26,7 +27,13 @@ export function CalendarEventModal({ event, isOpen, onClose }: CalendarEventModa
   const dateParts = event.date.split('-');
   const day = parseInt(dateParts[2]);
   const month = PERSIAN_MONTHS[parseInt(dateParts[1]) - 1];
-  const year = dateParts[0];
+  const actionLabel =
+    event.actionLabel ??
+    (event.type === 'assignment'
+      ? event.isCompleted
+        ? 'دیدن نتیجه'
+        : 'شروع تمرین'
+      : 'باز کردن');
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
@@ -121,9 +128,22 @@ export function CalendarEventModal({ event, isOpen, onClose }: CalendarEventModa
 
           {/* Actions */}
           <div className="flex gap-3 mt-6">
-            <Button className="flex-1 h-12 rounded-xl" onClick={onClose}>
-              متوجه شدم
-            </Button>
+            {event.href ? (
+              <>
+                <Button variant="outline" className="h-12 rounded-xl" onClick={onClose}>
+                  بستن
+                </Button>
+                <Button className="flex-1 h-12 rounded-xl" asChild>
+                  <Link href={event.href} onClick={onClose}>
+                    {actionLabel}
+                  </Link>
+                </Button>
+              </>
+            ) : (
+              <Button className="flex-1 h-12 rounded-xl" onClick={onClose}>
+                متوجه شدم
+              </Button>
+            )}
           </div>
         </div>
       </DialogContent>

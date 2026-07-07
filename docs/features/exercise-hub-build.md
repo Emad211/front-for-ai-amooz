@@ -209,6 +209,19 @@ exceptions, student receives safe feedback and later the answer key.
   horizontal overflow for small RTL screens. UX gate: accepted with the class-workspace pattern and
   stateful exercise entry. No backend/API change. `tsc --noEmit` stays at the pre-existing 13-error
   baseline with no exercise/nav errors.
+- [x] **E17 — student exercise discoverability / state-aware entry points (2026-07-07):** added a
+  shared student action resolver for every published exercise state:
+  `شروع تمرین`, `ادامه تمرین`, `دیدن نتیجه`, `پاسخ‌نامه`. Student class cards now surface the next
+  actionable exercise per course, and the learn view shows the same CTA as a compact in-context bar.
+  The student `/exercises` hub now builds its upcoming-deadline strip from the full
+  `listStudentExercises` state instead of the thinner calendar DTO, so draft/submitted/closed states
+  route correctly. `DashboardService.getCalendarEvents` now enriches exercise calendar items by joining
+  each exercise deadline DTO with its class exercise list before mapping to UI `CalendarEvent`s; home
+  upcoming cards and calendar modal actions use the same state-aware labels/hrefs, and home filters by
+  raw ISO datetime so same-day expired deadlines do not deep-link to a 409 solve path. Calendar event
+  cards gained keyboard activation/focus rings. Code-review gate found the first calendar/home pass was
+  only `isCompleted`-aware; fixed before commit. `tsc --noEmit` remains at the known 13-error baseline;
+  smoke routes `/home`, `/classes`, `/learn/1`, `/calendar`, `/exercises` returned 200.
 
 **Definition of done (every step):** GREEN on the sqlite fast lane (Postgres = CI truth); new code documented
 in `exercise-hub.md` (docs law); auth/permission changes carry negative tests; commit `feat(exercise): E# …`

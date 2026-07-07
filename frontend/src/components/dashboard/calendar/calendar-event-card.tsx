@@ -1,5 +1,6 @@
 'use client';
 
+import type { KeyboardEvent } from 'react';
 import { Clock, MapPin, BookOpen } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { EVENT_TYPE_CONFIG, PERSIAN_MONTHS } from '@/constants/calendar';
@@ -14,6 +15,19 @@ interface CalendarEventCardProps {
 
 export function CalendarEventCard({ event, onClick, compact = false }: CalendarEventCardProps) {
   const config = EVENT_TYPE_CONFIG[event.type];
+  const interactiveProps = onClick
+    ? {
+        role: 'button' as const,
+        tabIndex: 0,
+        onClick,
+        onKeyDown: (e: KeyboardEvent<HTMLDivElement>) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            onClick();
+          }
+        },
+      }
+    : {};
 
   // Extract day and month from date for display
   const dateParts = event.date.split('-');
@@ -23,10 +37,11 @@ export function CalendarEventCard({ event, onClick, compact = false }: CalendarE
   if (compact) {
     return (
       <div
-        onClick={onClick}
+        {...interactiveProps}
         className={cn(
-          'flex items-center gap-3 p-3 rounded-xl bg-card border border-border/50 cursor-pointer',
-          'hover:shadow-md hover:border-border transition-all'
+          'flex items-center gap-3 p-3 rounded-xl bg-card border border-border/50',
+          'hover:shadow-md hover:border-border transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
+          onClick ? 'cursor-pointer' : 'cursor-default'
         )}
       >
         {/* Date Badge */}
@@ -60,10 +75,11 @@ export function CalendarEventCard({ event, onClick, compact = false }: CalendarE
 
   return (
     <div
-      onClick={onClick}
+      {...interactiveProps}
       className={cn(
-        'flex gap-2 md:gap-4 p-3 md:p-4 rounded-2xl bg-card border border-border/50 cursor-pointer',
-        'hover:shadow-lg hover:border-border transition-all'
+        'flex gap-2 md:gap-4 p-3 md:p-4 rounded-2xl bg-card border border-border/50',
+        'hover:shadow-lg hover:border-border transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
+        onClick ? 'cursor-pointer' : 'cursor-default'
       )}
     >
       {/* Date Badge */}

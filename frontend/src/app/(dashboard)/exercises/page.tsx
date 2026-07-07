@@ -17,11 +17,13 @@ import { MathText } from '@/components/content/math-text';
 import { DashboardService } from '@/services/dashboard-service';
 import { formatPersianDateTime } from '@/lib/date-utils';
 import {
+  getStudentExerciseAction,
+  isExerciseWindowClosed,
+} from '@/lib/exercise-actions';
+import {
   type ReportCard,
-  type CalendarEventDto,
   type StudentExerciseListItem,
   getOverallReportCard,
-  getStudentCalendar,
   listStudentExercises,
 } from '@/services/exercises-service';
 
@@ -31,9 +33,26 @@ type ClassExercises = {
   items: StudentExerciseListItem[];
 };
 
+type UpcomingExercise = {
+  id: string;
+  sessionId: number;
+  courseTitle: string;
+  exercise: StudentExerciseListItem;
+};
+
 /** Submission window is closed: deadline passed and late submission not allowed. */
 function isClosed(ex: StudentExerciseListItem): boolean {
-  return ex.deadlinePassed && !ex.allowLate;
+  return isExerciseWindowClosed(ex);
+}
+
+function compareUpcomingExercises(a: UpcomingExercise, b: UpcomingExercise): number {
+  const aDeadline = a.exercise.deadline
+    ? Date.parse(a.exercise.deadline)
+    : Number.POSITIVE_INFINITY;
+  const bDeadline = b.exercise.deadline
+    ? Date.parse(b.exercise.deadline)
+    : Number.POSITIVE_INFINITY;
+  return aDeadline - bDeadline;
 }
 
 function statusBadge(ex: StudentExerciseListItem) {
@@ -56,46 +75,19 @@ function statusBadge(ex: StudentExerciseListItem) {
   }
 }
 
-function actionFor(ex: StudentExerciseListItem, sessionId: number): { label: string; href: string } {
-  if (ex.submissionStatus && ex.submissionStatus !== 'draft') {
-    return { label: 'مشاهدهٔ کارنامه', href: `/exercises/${ex.id}/result?session=${sessionId}` };
-  }
-  // Window closed (deadline passed, no late submission) → the only honest action
-  // is browsing the revealed answers; solving/submitting would 409.
-  if (isClosed(ex)) {
-    return { label: 'مشاهدهٔ پاسخ‌ها', href: '/exercises/answers' };
-  }
-  if (ex.submissionStatus === 'draft') {
-    return { label: 'ادامهٔ حل', href: `/exercises/${ex.id}?session=${sessionId}` };
-  }
-  return { label: 'حلِ تمرین', href: `/exercises/${ex.id}?session=${sessionId}` };
-}
-
 export default function StudentExercisesHubPage() {
   const [report, setReport] = useState<ReportCard | null>(null);
-  const [events, setEvents] = useState<CalendarEventDto[]>([]);
+  const [events, setEvents] = useState<UpcomingExercise[]>([]);
   const [classes, setClasses] = useState<ClassExercises[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const load = async () => {
-      const [r, cal, courses] = await Promise.all([
+      const [r, courses] = await Promise.all([
         getOverallReportCard().catch(() => null),
-        getStudentCalendar().catch(() => [] as CalendarEventDto[]),
         DashboardService.getCourses().catch(() => []),
       ]);
       setReport(r);
-      // Agenda = only OPEN exercise deadlines still in the future.
-      const now = Date.now();
-      setEvents(
-        cal.filter(
-          (e) =>
-            e.kind === 'exercise_deadline' &&
-            !e.isCompleted &&
-            e.datetime !== null &&
-            Date.parse(e.datetime) > now
-        )
-      );
       // Complete catalog: every published exercise of every enrolled class.
       const perClass = await Promise.all(
         courses.map(async (course) => {
@@ -107,9 +99,29 @@ export default function StudentExercisesHubPage() {
           return { sessionId, courseTitle: course.title, items };
         })
       );
-      setClasses(
-        perClass.filter((c): c is ClassExercises => c !== null && c.items.length > 0)
+      const classExercises = perClass.filter(
+        (c): c is ClassExercises => c !== null && c.items.length > 0
       );
+      const now = Date.now();
+      setEvents(
+        classExercises
+          .flatMap((cls) =>
+            cls.items.map((exercise) => ({
+              id: `${cls.sessionId}:${exercise.id}`,
+              sessionId: cls.sessionId,
+              courseTitle: cls.courseTitle,
+              exercise,
+            }))
+          )
+          .filter(({ exercise }) => {
+            if (!exercise.deadline) return false;
+            const deadline = Date.parse(exercise.deadline);
+            return !Number.isNaN(deadline) && deadline > now;
+          })
+          .sort(compareUpcomingExercises)
+          .slice(0, 5)
+      );
+      setClasses(classExercises);
     };
     load().finally(() => setLoading(false));
   }, []);
@@ -137,27 +149,30 @@ export default function StudentExercisesHubPage() {
           {events.length > 0 && (
             <section className="space-y-3">
               <h2 className="text-lg font-semibold">مهلت‌های پیش‌رو</h2>
-              {events.map((ev) => (
-                <Card key={ev.id}>
-                  <CardContent className="flex items-center justify-between gap-2 py-4">
-                    <div className="min-w-0">
-                      <p className="truncate font-medium">
-                        <MathText text={ev.title} />
-                      </p>
-                      <p className="flex items-center gap-1 text-xs text-muted-foreground">
-                        <CalendarClock className="h-3 w-3" />
-                        <MathText text={ev.courseTitle} />
-                        {ev.datetime && <span>· مهلت: {formatPersianDateTime(ev.datetime)}</span>}
-                      </p>
-                    </div>
-                    <Button size="sm" variant="outline" asChild>
-                      <Link href={`/exercises/${ev.exerciseId}?session=${ev.sessionId}`}>
-                        حلِ تمرین
-                      </Link>
-                    </Button>
-                  </CardContent>
-                </Card>
-              ))}
+              {events.map((ev) => {
+                const action = getStudentExerciseAction(ev.exercise, ev.sessionId);
+                return (
+                  <Card key={ev.id}>
+                    <CardContent className="flex items-center justify-between gap-2 py-4">
+                      <div className="min-w-0">
+                        <p className="truncate font-medium">
+                          <MathText text={ev.exercise.title} />
+                        </p>
+                        <p className="flex items-center gap-1 text-xs text-muted-foreground">
+                          <CalendarClock className="h-3 w-3" />
+                          <MathText text={ev.courseTitle} />
+                          {ev.exercise.deadline && (
+                            <span>· مهلت: {formatPersianDateTime(ev.exercise.deadline)}</span>
+                          )}
+                        </p>
+                      </div>
+                      <Button size="sm" variant="outline" asChild>
+                        <Link href={action.href}>{action.label}</Link>
+                      </Button>
+                    </CardContent>
+                  </Card>
+                );
+              })}
             </section>
           )}
 
@@ -178,7 +193,7 @@ export default function StudentExercisesHubPage() {
                   </CardHeader>
                   <CardContent className="space-y-2">
                     {cls.items.map((ex) => {
-                      const action = actionFor(ex, cls.sessionId);
+                      const action = getStudentExerciseAction(ex, cls.sessionId);
                       return (
                         <div
                           key={ex.id}

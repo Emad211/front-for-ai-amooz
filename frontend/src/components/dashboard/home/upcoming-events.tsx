@@ -23,16 +23,23 @@ export function UpcomingEvents({ events }: UpcomingEventsProps) {
         </CardTitle>
       </CardHeader>
       <CardContent className="p-4 md:p-6 space-y-3 md:space-y-4">
-        {events.map((event) => (
-          <EventCard 
-            key={event.id}
-            title={event.title} 
-            status={event.status} 
-            date={event.date} 
-            month={event.month} 
-            icon={event.icon === 'clock' ? <Clock className="h-3 w-3 md:h-4 md:w-4"/> : <FileText className="h-3 w-3 md:h-4 md:w-4"/>}
-          />
-        ))}
+        {events.length > 0 ? (
+          events.map((event) => (
+            <EventCard
+              key={event.id}
+              title={event.title}
+              status={event.status}
+              date={event.date}
+              month={event.month}
+              href={event.href}
+              icon={event.icon === 'clock' ? <Clock className="h-3 w-3 md:h-4 md:w-4"/> : <FileText className="h-3 w-3 md:h-4 md:w-4"/>}
+            />
+          ))
+        ) : (
+          <div className="rounded-2xl border border-dashed border-border/70 bg-muted/10 px-4 py-6 text-center text-sm text-muted-foreground">
+            تمرین یا رویداد نزدیکی برای امروز به بعد ندارید.
+          </div>
+        )}
         <Button variant="outline" className="w-full h-10 md:h-12 border-primary/30 text-primary text-xs md:text-sm font-bold hover:bg-primary/10 hover:border-primary rounded-xl md:rounded-2xl mt-2 transition-all" asChild>
           <Link href="/calendar">مشاهده تقویم کامل</Link>
         </Button>
