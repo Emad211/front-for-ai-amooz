@@ -25,6 +25,8 @@ spec:
             - "-A"
             - "core"
             - "worker"
+            - "-Q"
+            - "default,pipeline"
             - "--loglevel=info"
             - "--concurrency=2"
             - "--max-tasks-per-child=50"

@@ -64,3 +64,32 @@ def test_response_format_forwarded_only_when_set(mock_factory, _mock_track):
         response_format={"type": "json_object"},
     )
     assert fake.chat.completions.create.call_args.kwargs["response_format"] == {"type": "json_object"}
+
+
+class _StatusError(Exception):
+    def __init__(self, status_code):
+        super().__init__(f"HTTP {status_code}")
+        self.status_code = status_code
+
+
+class _ResponseStatusError(Exception):
+    def __init__(self, status_code):
+        super().__init__(f"HTTP {status_code}")
+        self.response = MagicMock(status_code=status_code)
+
+
+@pytest.mark.parametrize("status_code", [408, 409, 429, 500, 502, 503, 504])
+def test_llm_transient_classifier_retries_provider_and_transport_failures(status_code):
+    assert llm.is_transient_llm_error(_StatusError(status_code)) is True
+    assert llm.is_transient_llm_error(_ResponseStatusError(status_code)) is True
+
+
+@pytest.mark.parametrize("status_code", [400, 401, 403, 404, 422])
+def test_llm_transient_classifier_does_not_retry_permanent_http_errors(status_code):
+    assert llm.is_transient_llm_error(_StatusError(status_code)) is False
+
+
+def test_llm_transient_classifier_does_not_retry_response_format_rejection():
+    assert llm.is_transient_llm_error(
+        RuntimeError("400: response_format is not supported by this model")
+    ) is False

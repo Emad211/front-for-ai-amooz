@@ -300,6 +300,17 @@ PLACEHOLDERS + OUTPUT_KEYS + safety-block list in the same commit):**
 New `LLMUsageLog.Feature` members: `EXERCISE_INGEST, EXERCISE_STRUCTURE, EXERCISE_GRADING,
 EXERCISE_REFERENCE_INGEST, EXERCISE_HANDWRITING_VISION, CHAT_EXERCISE`.
 
+**Retry/failure semantics (E18 reliability hardening):** Exercise extraction/grading treats only
+provider/network-transient LLM failures as retryable: timeout/transport errors, 408, 409, 429, and 5xx
+(including AvalAI 502). Permanent failures — malformed request shape, unsupported `response_format`,
+missing env/model/key, 401/403/413/422, empty/parser/application failures — fail fast. The OpenAI SDK's
+hidden retry layer is disabled by default (`OPENAI_SDK_MAX_RETRIES=0`) so app-level retry timing is
+owned by Tenacity + Celery. On a retryable failure, `extract_exercise_content` and
+`grade_exercise_submission` keep `EXTRACTING`/`GRADING` and call `self.retry()`; redelivery with the
+same persisted task id may resume from that state instead of skipping itself. Deploy invariants are
+test-locked: workers consume `-Q default,pipeline`, beat runs separately, Redis visibility timeout
+exceeds hard task limits, and broker Redis uses `noeviction`.
+
 **Cost model (10-page PDF, 20 questions, 30 students):** ingest ~15–25k + structure ~10–15k (once per
 exercise); grading ~14k/student → **~420k tokens per class round = the dominant, recurring cost**.
 Mitigations baked in: deterministic MCQ/fill-blank grading (up to ~80% saved on objective-heavy

@@ -478,6 +478,9 @@ CELERY_RESULT_BACKEND = os.getenv('CELERY_RESULT_BACKEND', REDIS_URL)
 CELERY_ACCEPT_CONTENT = ['json']
 CELERY_TASK_SERIALIZER = 'json'
 CELERY_RESULT_SERIALIZER = 'json'
+CELERY_VISIBILITY_TIMEOUT = _get_env_int('CELERY_VISIBILITY_TIMEOUT', 6 * 60 * 60)
+CELERY_BROKER_TRANSPORT_OPTIONS = {'visibility_timeout': CELERY_VISIBILITY_TIMEOUT}
+CELERY_RESULT_BACKEND_TRANSPORT_OPTIONS = {'visibility_timeout': CELERY_VISIBILITY_TIMEOUT}
 
 # CRITICAL: Celery's built-in default queue is named "celery", but the
 # worker command uses  -Q default,pipeline .  Without the line below,
@@ -509,11 +512,13 @@ CELERY_TASK_ROUTES = {
     'apps.classes.tasks.process_exam_prep_full_pipeline': {'queue': 'pipeline'},
     'apps.classes.tasks.process_exam_prep_step1_transcription': {'queue': 'pipeline'},
     'apps.classes.tasks.process_exam_prep_step2_structure': {'queue': 'pipeline'},
+    'apps.classes.tasks.pregenerate_student_assessments': {'queue': 'pipeline'},
     'apps.classes.tasks.extract_exercise_content': {'queue': 'pipeline'},
     'apps.classes.tasks.grade_exercise_submission': {'queue': 'pipeline'},
     # SMS and lightweight tasks explicitly on the default queue.
     'apps.classes.tasks.send_publish_sms_task': {'queue': 'default'},
     'apps.classes.tasks.send_new_invites_sms_task': {'queue': 'default'},
+    'apps.classes.tasks.send_teacher_message_sms_task': {'queue': 'default'},
     'apps.classes.tasks.cleanup_stale_sessions': {'queue': 'default'},
 }
 CELERY_TASK_REJECT_ON_WORKER_LOST = True  # requeue tasks if worker is killed (OOM)

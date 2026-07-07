@@ -1,0 +1,42 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ai-amooz-celery-beat
+  namespace: ai-products-ai-amooz
+  labels:
+    app: ai-amooz-celery-beat
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ai-amooz-celery-beat
+  template:
+    metadata:
+      labels:
+        app: ai-amooz-celery-beat
+    spec:
+      containers:
+        - name: beat
+          image: registry.hamdocker.ir/ai-products/ai-amooz-backend:latest
+          imagePullPolicy: Always
+
+          command: ["celery"]
+          args:
+            - "-A"
+            - "core"
+            - "beat"
+            - "--loglevel=info"
+
+          envFrom:
+            - secretRef:
+                name: ai-amooz-backend-secrets
+
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "50m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+
+      restartPolicy: Always

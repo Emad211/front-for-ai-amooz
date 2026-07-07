@@ -8,8 +8,10 @@ local import, so patching those module attributes intercepts all LLM/OCR work.
 from __future__ import annotations
 
 import pytest
+from celery.exceptions import Retry as CeleryRetry
 from model_bakery import baker
 
+from apps.chatbot.services.llm_client import ProviderTransientError
 from apps.classes import tasks
 from apps.classes.services import exercise_ingest as ing
 from apps.classes.models import (
@@ -37,10 +39,12 @@ STRUCTURE = {
 }
 
 
-def _mock_pipeline(monkeypatch, *, structure=STRUCTURE, raise_on_structure=False):
+def _mock_pipeline(monkeypatch, *, structure=STRUCTURE, raise_on_structure=False, transient=False):
     monkeypatch.setattr(ing, "ocr_assets_to_markdown", lambda exercise: "# ocr markdown")
 
     def fake_structure(*, ingest_markdown):
+        if transient:
+            raise ProviderTransientError("avalai 502")
         if raise_on_structure:
             raise RuntimeError("boom")
         return structure, "test", "test-model"
@@ -98,6 +102,36 @@ def test_failure_marks_failed(monkeypatch):
     assert result["status"] == "failed"
     ex.refresh_from_db()
     assert ex.status == Status.FAILED
+
+
+def test_transient_provider_failure_uses_celery_retry_without_marking_failed(monkeypatch):
+    _mock_pipeline(monkeypatch, transient=True)
+    ex = baker.make(ClassExercise, status=Status.DRAFT)
+    monkeypatch.setattr(tasks.extract_exercise_content.request, "id", "retry-task", raising=False)
+
+    def fake_retry(*, exc=None, countdown=None):
+        raise CeleryRetry(exc=exc, when=countdown)
+
+    monkeypatch.setattr(tasks.extract_exercise_content, "retry", fake_retry)
+
+    with pytest.raises(CeleryRetry):
+        tasks.extract_exercise_content.run(ex.id)
+
+    ex.refresh_from_db()
+    assert ex.status == Status.EXTRACTING
+    assert ex.extract_task_id != ""
+
+
+def test_redelivered_same_extraction_task_can_resume_from_extracting(monkeypatch):
+    _mock_pipeline(monkeypatch)
+    ex = baker.make(ClassExercise, status=Status.EXTRACTING, extract_task_id="same-task")
+    monkeypatch.setattr(tasks.extract_exercise_content.request, "id", "same-task", raising=False)
+
+    result = tasks.extract_exercise_content.run(ex.id)
+
+    assert result["status"] == "extracted"
+    ex.refresh_from_db()
+    assert ex.status == Status.EXTRACTED
 
 
 def test_rerun_from_failed_clears_old_rows(monkeypatch):

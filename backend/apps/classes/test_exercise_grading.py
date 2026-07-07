@@ -7,8 +7,10 @@ from __future__ import annotations
 from decimal import Decimal
 
 import pytest
+from celery.exceptions import Retry as CeleryRetry
 from model_bakery import baker
 
+from apps.chatbot.services.llm_client import ProviderTransientError
 from apps.classes import tasks
 from apps.classes.services import exercise_grading as grading
 from apps.classes.models import (
@@ -124,6 +126,38 @@ class TestGradingTask:
         assert result['status'] == 'failed'
         sub.refresh_from_db()
         assert sub.status == SubStatus.GRADING_FAILED
+
+    def test_transient_provider_failure_uses_celery_retry_without_marking_failed(self, monkeypatch):
+        ex, q1, q2, sub, calls = _submission_with_questions(
+            monkeypatch,
+            descriptive_llm=lambda items: (_ for _ in ()).throw(ProviderTransientError('avalai 502')),
+        )
+
+        def fake_retry(*, exc=None, countdown=None):
+            raise CeleryRetry(exc=exc, when=countdown)
+
+        monkeypatch.setattr(tasks.grade_exercise_submission.request, 'id', 'retry-task', raising=False)
+        monkeypatch.setattr(tasks.grade_exercise_submission, 'retry', fake_retry)
+
+        with pytest.raises(CeleryRetry):
+            tasks.grade_exercise_submission.run(sub.id)
+
+        sub.refresh_from_db()
+        assert sub.status == SubStatus.GRADING
+        assert sub.grading_task_id != ''
+
+    def test_redelivered_same_grading_task_can_resume_from_grading(self, monkeypatch):
+        ex, q1, q2, sub, calls = _submission_with_questions(monkeypatch)
+        sub.status = SubStatus.GRADING
+        sub.grading_task_id = 'same-task'
+        sub.save(update_fields=['status', 'grading_task_id'])
+        monkeypatch.setattr(tasks.grade_exercise_submission.request, 'id', 'same-task', raising=False)
+
+        result = tasks.grade_exercise_submission.run(sub.id)
+
+        assert result['status'] == 'graded'
+        sub.refresh_from_db()
+        assert sub.status == SubStatus.GRADED
 
     def test_kill_switch_leaves_submitted(self, monkeypatch):
         monkeypatch.setenv('EXERCISE_LLM_GRADING', '0')

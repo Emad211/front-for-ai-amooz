@@ -222,6 +222,21 @@ exceptions, student receives safe feedback and later the answer key.
   cards gained keyboard activation/focus rings. Code-review gate found the first calendar/home pass was
   only `isCompleted`-aware; fixed before commit. `tsc --noEmit` remains at the known 13-error baseline;
   smoke routes `/home`, `/classes`, `/learn/1`, `/calendar`, `/exercises` returned 200.
+- [x] **E18 — async reliability for extraction/grading under AvalAI 502/timeouts (2026-07-08):**
+  tightened LLM retry ownership and Celery task semantics for Exercise Hub. `llm_client` now exposes a
+  typed `ProviderTransientError` and an allowlist classifier: retry timeouts/transport failures, 408,
+  409, 429, and 5xx; fail fast on permanent 4xx, unsupported `response_format`, missing config, parser
+  failures, and application bugs. OpenAI SDK retries are disabled by default via `OPENAI_SDK_MAX_RETRIES=0`
+  so retry timing is owned by the app-level Tenacity/Celery policy instead of multiplying hidden SDK
+  retries. `extract_exercise_content` and `grade_exercise_submission` leave `EXTRACTING`/`GRADING` in
+  place on transient provider failure and call `self.retry()` with bounded exponential countdown; retry
+  redelivery with the same persisted task id may resume from that in-progress state instead of skipping.
+  Deploy guardrails: `pregenerate_student_assessments` routed to `pipeline`, teacher SMS routed to
+  `default`, Redis visibility timeout defaults to 21600s and is mirrored to broker/result transport
+  options, prod compose worker consumes `-Q default,pipeline`, prod compose/K8s include a separate
+  Celery beat process, and prod compose Redis uses `noeviction` rather than broker-key LRU eviction.
+  Tests: 63 targeted sqlite-fast-lane tests passed across LLM classifier, extraction task, grading task,
+  and Celery/deploy settings.
 
 **Definition of done (every step):** GREEN on the sqlite fast lane (Postgres = CI truth); new code documented
 in `exercise-hub.md` (docs law); auth/permission changes carry negative tests; commit `feat(exercise): E# …`

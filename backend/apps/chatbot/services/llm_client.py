@@ -7,7 +7,14 @@ import threading
 from dataclasses import dataclass
 from typing import Any, Optional, List, Dict
 
-from openai import OpenAI
+import httpx
+from openai import (
+    APIConnectionError,
+    APIStatusError,
+    APITimeoutError,
+    OpenAI,
+    RateLimitError,
+)
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception
 
 from apps.commons.llm_prompts import PROMPTS
@@ -50,6 +57,14 @@ def _default_llm_timeout() -> float:
         return 600.0
 
 
+def _openai_sdk_max_retries() -> int:
+    """Keep retry ownership in this module instead of multiplying SDK retries."""
+    try:
+        return max(0, int(os.getenv("OPENAI_SDK_MAX_RETRIES", "0")))
+    except (TypeError, ValueError):
+        return 0
+
+
 # ====================================================================
 # Helper to strip "models/" prefix if present
 # ====================================================================
@@ -85,7 +100,7 @@ def _get_gapgpt_client() -> OpenAI:
     if not api_key:
         raise RuntimeError("AVALAI_API_KEY missing (expected to contain GAPGPT key).")
 
-    return OpenAI(api_key=api_key, base_url=base_url)
+    return OpenAI(api_key=api_key, base_url=base_url, max_retries=_openai_sdk_max_retries())
 
 
 # ====================================================================
@@ -152,15 +167,54 @@ def _response_format_unsupported(exc: Exception) -> bool:
     return False
 
 
+class ProviderTransientError(RuntimeError):
+    """A provider/network failure that is safe for Celery pipeline retry."""
+
+
+_RETRYABLE_HTTP_STATUSES = {408, 409, 429}
+
+
+def _http_status_from_exception(exc: BaseException) -> int | None:
+    raw = getattr(exc, "status_code", None)
+    if isinstance(raw, int):
+        return raw
+    response = getattr(exc, "response", None)
+    raw = getattr(response, "status_code", None)
+    return raw if isinstance(raw, int) else None
+
+
+def is_transient_llm_error(exc: BaseException) -> bool:
+    """Return True only for provider failures worth retrying.
+
+    Permanent request/config/application failures must fail fast. Retrying a
+    malformed multimodal payload, missing key, 401, 413, or parser failure just
+    burns worker slots and tokens while delaying the teacher-facing failure.
+    """
+    if isinstance(exc, ProviderTransientError):
+        return True
+    if isinstance(exc, Exception) and _response_format_unsupported(exc):
+        return False
+    if isinstance(exc, (APITimeoutError, APIConnectionError, RateLimitError)):
+        return True
+    if isinstance(exc, APIStatusError):
+        status = _http_status_from_exception(exc)
+        return status in _RETRYABLE_HTTP_STATUSES or (status is not None and status >= 500)
+    if isinstance(exc, (httpx.TimeoutException, httpx.TransportError)):
+        return True
+
+    status = _http_status_from_exception(exc)
+    if status is None:
+        return False
+    return status in _RETRYABLE_HTTP_STATUSES or status >= 500
+
+
 def _should_retry_llm_call(exc: BaseException) -> bool:
-    """Retry transient errors, but NOT a permanent ``response_format`` rejection.
+    """Retry only transient provider/network failures.
 
     Retrying a 400 about an unsupported parameter just wastes calls; ``generate_json``
     handles that case by retrying once WITHOUT json mode, so fail fast here.
     """
-    if isinstance(exc, Exception) and _response_format_unsupported(exc):
-        return False
-    return True
+    return is_transient_llm_error(exc)
 
 
 # ====================================================================
@@ -223,6 +277,8 @@ def _call_gapgpt_with_messages(
             model_name=clean_model,
             error_message=str(exc),
         )
+        if is_transient_llm_error(exc):
+            raise ProviderTransientError(str(exc)) from exc
         raise
 
 

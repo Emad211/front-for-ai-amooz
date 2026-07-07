@@ -33,6 +33,8 @@ from celery import shared_task
 from celery.exceptions import Retry as CeleryRetry
 from billiard.exceptions import SoftTimeLimitExceeded
 
+from apps.chatbot.services.llm_client import is_transient_llm_error
+
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
@@ -52,6 +54,15 @@ PIPELINE_TASK_TIME_LIMIT = int(os.getenv('PIPELINE_TASK_TIME_LIMIT', str(4 * 360
 _PIPELINE_TIMEOUT_FA = (
     'پردازش از سقف زمانی مجاز فراتر رفت. لطفاً فایل را به جلسات کوتاه‌تر تقسیم کنید و دوباره تلاش کنید.'
 )
+
+
+def _current_task_id(task) -> str:
+    return getattr(getattr(task, 'request', None), 'id', '') or ''
+
+
+def _retry_countdown(task, *, base: int = 60, cap: int = 5 * 60) -> int:
+    retries = getattr(getattr(task, 'request', None), 'retries', 0) or 0
+    return min(base * (2 ** int(retries)), cap)
 
 
 # ---------------------------------------------------------------------------
@@ -1129,8 +1140,14 @@ def extract_exercise_content(self, exercise_id: int) -> dict:
     if exercise is None:
         return {'status': 'skipped', 'reason': 'exercise not found'}
 
+    task_id = _current_task_id(self)
     runnable = {ClassExercise.Status.DRAFT, ClassExercise.Status.FAILED}
-    if exercise.status not in runnable:
+    is_same_retry = (
+        exercise.status == ClassExercise.Status.EXTRACTING
+        and exercise.extract_task_id
+        and exercise.extract_task_id == task_id
+    )
+    if exercise.status not in runnable and not is_same_retry:
         return {'status': 'skipped', 'reason': f'status={exercise.status}'}
 
     lock_key = f'exercise-extract:{exercise_id}'
@@ -1138,9 +1155,10 @@ def extract_exercise_content(self, exercise_id: int) -> dict:
         return {'status': 'skipped', 'reason': 'already dispatched'}
 
     try:
-        exercise.status = ClassExercise.Status.EXTRACTING
-        exercise.extract_task_id = getattr(self.request, 'id', '') or ''
-        exercise.save(update_fields=['status', 'extract_task_id', 'updated_at'])
+        if not is_same_retry:
+            exercise.status = ClassExercise.Status.EXTRACTING
+            exercise.extract_task_id = task_id
+            exercise.save(update_fields=['status', 'extract_task_id', 'updated_at'])
 
         markdown = ocr_assets_to_markdown(exercise)
         structure, _provider, _model = structure_exercise_markdown(ingest_markdown=markdown)
@@ -1153,6 +1171,16 @@ def extract_exercise_content(self, exercise_id: int) -> dict:
             'sections': n_sections, 'questions': n_questions,
         }
     except Exception as exc:
+        if is_transient_llm_error(exc) and self.request.retries < self.max_retries:
+            countdown = _retry_countdown(self)
+            logger.warning(
+                'Exercise extraction transient failure for %s; retrying in %ss '
+                '(attempt %s/%s): %s',
+                exercise_id, countdown, self.request.retries + 1, self.max_retries + 1,
+                str(exc)[:300],
+            )
+            raise self.retry(exc=exc, countdown=countdown)
+
         logger.exception('Exercise extraction failed for %s', exercise_id)
         ClassExercise.objects.filter(id=exercise_id).update(
             status=ClassExercise.Status.FAILED,
@@ -1187,7 +1215,14 @@ def grade_exercise_submission(self, submission_id: int) -> dict:
     submission = StudentExerciseSubmission.objects.filter(id=submission_id).first()
     if submission is None:
         return {'status': 'skipped', 'reason': 'submission not found'}
-    if submission.status != StudentExerciseSubmission.Status.SUBMITTED:
+
+    task_id = _current_task_id(self)
+    is_same_retry = (
+        submission.status == StudentExerciseSubmission.Status.GRADING
+        and submission.grading_task_id
+        and submission.grading_task_id == task_id
+    )
+    if submission.status != StudentExerciseSubmission.Status.SUBMITTED and not is_same_retry:
         return {'status': 'skipped', 'reason': f'status={submission.status}'}
     if not grading_enabled():
         return {'status': 'skipped', 'reason': 'grading disabled'}
@@ -1197,9 +1232,10 @@ def grade_exercise_submission(self, submission_id: int) -> dict:
         return {'status': 'skipped', 'reason': 'already dispatched'}
 
     try:
-        submission.status = StudentExerciseSubmission.Status.GRADING
-        submission.grading_task_id = getattr(self.request, 'id', '') or ''
-        submission.save(update_fields=['status', 'grading_task_id', 'updated_at'])
+        if not is_same_retry:
+            submission.status = StudentExerciseSubmission.Status.GRADING
+            submission.grading_task_id = task_id
+            submission.save(update_fields=['status', 'grading_task_id', 'updated_at'])
 
         result = grade_submission(submission)
         apply_grading_result(submission, result)
@@ -1212,6 +1248,16 @@ def grade_exercise_submission(self, submission_id: int) -> dict:
             'score_points': str(submission.score_points),
         }
     except Exception as exc:
+        if is_transient_llm_error(exc) and self.request.retries < self.max_retries:
+            countdown = _retry_countdown(self)
+            logger.warning(
+                'Exercise grading transient failure for %s; retrying in %ss '
+                '(attempt %s/%s): %s',
+                submission_id, countdown, self.request.retries + 1, self.max_retries + 1,
+                str(exc)[:300],
+            )
+            raise self.retry(exc=exc, countdown=countdown)
+
         logger.exception('Exercise grading failed for %s', submission_id)
         StudentExerciseSubmission.objects.filter(id=submission_id).update(
             status=StudentExerciseSubmission.Status.GRADING_FAILED,

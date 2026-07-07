@@ -5,6 +5,8 @@ Verifies that production-critical settings are correctly configured for
 """
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 from django.conf import settings
 
@@ -111,6 +113,44 @@ class TestCelerySettings:
     def test_prefetch_multiplier_is_one(self):
         """Prefetch multiplier should be 1 for long-running tasks."""
         assert settings.CELERY_WORKER_PREFETCH_MULTIPLIER == 1
+
+    def test_default_queue_is_consumed_by_workers(self):
+        assert settings.CELERY_TASK_DEFAULT_QUEUE == 'default'
+
+    def test_known_tasks_are_routed_to_consumed_queues(self):
+        routes = settings.CELERY_TASK_ROUTES
+        assert routes['apps.classes.tasks.extract_exercise_content']['queue'] == 'pipeline'
+        assert routes['apps.classes.tasks.grade_exercise_submission']['queue'] == 'pipeline'
+        assert routes['apps.classes.tasks.pregenerate_student_assessments']['queue'] == 'pipeline'
+        assert routes['apps.classes.tasks.send_teacher_message_sms_task']['queue'] == 'default'
+        assert routes['apps.classes.tasks.cleanup_stale_sessions']['queue'] == 'default'
+
+    def test_redis_visibility_timeout_exceeds_hard_task_limit(self):
+        from apps.classes import tasks
+
+        assert settings.CELERY_VISIBILITY_TIMEOUT > settings.CELERY_TASK_TIME_LIMIT
+        assert settings.CELERY_VISIBILITY_TIMEOUT > tasks.PIPELINE_TASK_TIME_LIMIT
+        assert (
+            settings.CELERY_BROKER_TRANSPORT_OPTIONS['visibility_timeout']
+            == settings.CELERY_VISIBILITY_TIMEOUT
+        )
+        assert (
+            settings.CELERY_RESULT_BACKEND_TRANSPORT_OPTIONS['visibility_timeout']
+            == settings.CELERY_VISIBILITY_TIMEOUT
+        )
+
+    def test_deploy_manifests_consume_routed_queues_and_run_beat(self):
+        repo_root = Path(__file__).resolve().parents[3]
+        compose = (repo_root / 'docker-compose.prod.yml').read_text(encoding='utf-8')
+        k8s_worker = (repo_root / 'k8s/celery-worker-deployment.yaml').read_text(encoding='utf-8')
+        k8s_beat = (repo_root / 'k8s/celery-beat-deployment.yaml').read_text(encoding='utf-8')
+
+        assert 'celery -A core worker -Q default,pipeline' in compose
+        assert 'celery -A core beat --loglevel=info' in compose
+        assert '--maxmemory-policy noeviction' in compose
+        assert '"-Q"' in k8s_worker and '"default,pipeline"' in k8s_worker
+        assert 'name: ai-amooz-celery-beat' in k8s_beat
+        assert '"beat"' in k8s_beat
 
 
 class TestFileUploadSettings:
