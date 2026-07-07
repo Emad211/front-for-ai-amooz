@@ -390,7 +390,7 @@ stored `per_question` (zero tokens), **no pregeneration** (nothing to pre-build)
 | # | Owner (+gate) | Scope | DoD |
 |---|---|---|---|
 | **E15** | product-manager + ux-designer + ai-engineer + security-auditor | Product reframe + build loop protocol | ✅ DONE when this spec states the V2 thesis, anti-promises, terminology decision, no-rename/no-code rule, acceptance criteria, and E15–E45 roadmap; team critique incorporated |
-| **E16** | frontend-engineer + ux-designer | Teacher class IA: make exercises a first-class class workspace | Class detail exposes tabs/sections: «نمای کلی / محتوا / تمرین‌ها / دانش‌آموزان / اطلاعیه‌ها»; exercise entry is visible and stateful |
+| **E16** | frontend-engineer + ux-designer | Teacher class IA: make exercises a first-class class workspace | ✅ DONE — persistent class workspace nav appears on overview/edit/students/exercises with «نمای کلی / محتوا / تمرین‌ها / دانش‌آموزان / اطلاعیه‌ها»; «تمرین‌ها» is active/stateful with exercise count/status badge from `listExercises`; overview exposes real content/announcements anchors |
 | **E17** | frontend-engineer + ux-designer | Student exercise discoverability | Home, class cards, learn view, calendar, and `/exercises` deep-link to state-aware actions: «شروع تمرین»، «ادامه تمرین»، «دیدن نتیجه»، «پاسخ‌نامه» |
 | **E18** | ux-designer | Persian microcopy normalization | One vocabulary set across teacher/student: «پاسخ‌نامه»، «نمره‌دهی هوشمند»، «بازبینی مدرس»، «شروع/ادامه تمرین»; stale "3-step" or legacy upload copy absent |
 | **E19** | backend + database-engineer | True unset points + publish gate | `max_points` can distinguish unset from teacher-confirmed; extraction never silently turns missing points into `1`; publish gate tests lock it |

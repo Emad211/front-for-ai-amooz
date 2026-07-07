@@ -10,6 +10,7 @@ import {
   ClassEditForm,
   ClassChaptersEditor,
 } from '@/components/teacher/class-edit';
+import { ClassWorkspaceNav } from '@/components/teacher/class-detail';
 import type { ClassChapter, ClassDetail } from '@/types';
 import {
   applyChaptersToCourseStructure,
@@ -80,6 +81,7 @@ export default function TeacherClassEditPage({ params }: PageProps) {
   return (
     <div className="space-y-6">
       <ClassEditHeader classId={classId} title={detail.title} status={detail.status} basePath="/teacher" />
+      <ClassWorkspaceNav classId={classId} basePath="/teacher" />
 
       <div className="space-y-6">
         <ClassEditForm classDetail={detail} onSave={handleSave} isSaving={isSaving} />

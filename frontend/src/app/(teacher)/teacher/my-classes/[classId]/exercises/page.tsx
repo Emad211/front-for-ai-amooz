@@ -4,6 +4,7 @@ import { use } from 'react';
 import Link from 'next/link';
 import { ArrowRight } from 'lucide-react';
 
+import { ClassWorkspaceNav } from '@/components/teacher/class-detail';
 import { ExerciseManager } from '@/components/teacher/exercises/exercise-manager';
 import { Button } from '@/components/ui/button';
 
@@ -26,6 +27,7 @@ export default function TeacherClassExercisesPage({ params }: PageProps) {
           </Link>
         </Button>
       </div>
+      <ClassWorkspaceNav classId={classId} basePath="/teacher" className="mb-6" />
       {Number.isFinite(sessionId) ? (
         <ExerciseManager sessionId={sessionId} />
       ) : (

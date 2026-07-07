@@ -199,6 +199,16 @@ exceptions, student receives safe feedback and later the answer key.
   PM guard against accidental rebrand/scope rollback; UX IA and microcopy criteria; AI feedback/reveal
   and handwriting-confidence risks; security blockers for notifications, audit, private media, and
   no-deadline reveal. No runtime code changed.
+- [x] **E16 — teacher class IA / first-class exercises workspace (2026-07-07):** added a persistent
+  in-class workspace nav across teacher class overview/edit/students/exercises:
+  «نمای کلی / محتوا / تمرین‌ها / دانش‌آموزان / اطلاعیه‌ها». The exercise entry is no longer just a
+  hidden header/dropdown affordance: it appears as a tab with a silent state badge fetched from the
+  existing `listExercises` service (`بدون تمرین`, `در حال استخراج`, `آماده انتشار`, `پیش‌نویس`,
+  `نیازمند بررسی`, or published count/state). The overview now exposes real `#content` and
+  `#announcements` anchors for the nav; active state uses `aria-current`, keyboard focus rings, and
+  horizontal overflow for small RTL screens. UX gate: accepted with the class-workspace pattern and
+  stateful exercise entry. No backend/API change. `tsc --noEmit` stays at the pre-existing 13-error
+  baseline with no exercise/nav errors.
 
 **Definition of done (every step):** GREEN on the sqlite fast lane (Postgres = CI truth); new code documented
 in `exercise-hub.md` (docs law); auth/permission changes carry negative tests; commit `feat(exercise): E# …`

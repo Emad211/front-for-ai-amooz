@@ -5,6 +5,7 @@ import { Loader2 } from 'lucide-react';
 import { useTeacherClassDetail } from '@/hooks/use-teacher-class-detail';
 import {
   ClassDetailHeader,
+  ClassWorkspaceNav,
   ClassInfoCard,
   ClassChaptersCard,
   ClassStudentsPreview,
@@ -147,10 +148,11 @@ export default function TeacherClassDetailPage({ params }: PageProps) {
         status={detail.status}
         basePath="/teacher"
       />
+      <ClassWorkspaceNav classId={classId} basePath="/teacher" />
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6">
         <div className="md:col-span-2 space-y-6">
-          <Card className="p-4 md:p-6 rounded-3xl border border-border/60">
+          <Card id="content" className="p-4 md:p-6 rounded-3xl border border-border/60 scroll-mt-24">
             <div className="flex flex-col gap-3" dir="rtl">
               <div className="flex items-center justify-between">
                 <h2 className="text-base md:text-lg font-black">خروجی پایپ‌لاین</h2>
@@ -260,7 +262,9 @@ export default function TeacherClassDetailPage({ params }: PageProps) {
             onToggle={() => setIsInviteExpanded((p) => !p)}
             sessionId={Number(detail.id)}
           />
-          <ClassAnnouncementsCard sessionId={Number(detail.id)} sessionType="class" />
+          <div id="announcements" className="scroll-mt-24">
+            <ClassAnnouncementsCard sessionId={Number(detail.id)} sessionType="class" />
+          </div>
         </div>
 
         <div className="md:col-span-1">

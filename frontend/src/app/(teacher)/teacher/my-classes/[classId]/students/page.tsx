@@ -5,6 +5,7 @@ import { Info, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useTeacherClassDetail } from '@/hooks/use-teacher-class-detail';
 import { useTeacherClassActions } from '@/hooks/use-teacher-class-actions';
+import { ClassWorkspaceNav } from '@/components/teacher/class-detail';
 import {
   ClassStudentsHeader,
   ClassStudentsStats,
@@ -55,6 +56,7 @@ export default function TeacherClassStudentsPage({ params }: PageProps) {
         studentsCount={students.length}
         canManageRoster={!isOrgClass}
       />
+      <ClassWorkspaceNav classId={classId} basePath="/teacher" />
 
       {isOrgClass && (
         <div
