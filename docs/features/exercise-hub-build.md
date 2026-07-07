@@ -184,6 +184,22 @@ Postgres/CI is migration-truth. LLM fully mocked (0 tokens).
   service, teacher API preview/apply/ownership/validation/caps, student image ownership/merge behavior,
   and grading defense-in-depth.
 
+## V2 — class assignment + feedback workflow hardening
+
+E15+ follows a stricter loop per step: **generate → evaluate with the required team gate →
+correct → repeat targeted verification → finalize with docs + commit + push**. V2 keeps the shipped
+`Exercise Hub` name and `ClassExercise` technical surface, but reframes the product as a per-class
+assignment workflow: teacher creates/publishes, student submits, AI pre-grades, teacher reviews
+exceptions, student receives safe feedback and later the answer key.
+
+- [x] **E15 — product reframe + build-loop protocol (2026-07-07):** docs-only reset of the V2 thesis.
+  `exercise-hub.md` now records the assignment-workflow thesis, anti-promises (AI pre-grading, hint
+  assistant, report cards as learning signals), canonical terminology decision (`تمرین‌ها` stays in UI;
+  no model/API rename), V2 acceptance criteria, and the E15–E45 roadmap. Team evaluation incorporated:
+  PM guard against accidental rebrand/scope rollback; UX IA and microcopy criteria; AI feedback/reveal
+  and handwriting-confidence risks; security blockers for notifications, audit, private media, and
+  no-deadline reveal. No runtime code changed.
+
 **Definition of done (every step):** GREEN on the sqlite fast lane (Postgres = CI truth); new code documented
 in `exercise-hub.md` (docs law); auth/permission changes carry negative tests; commit `feat(exercise): E# …`
 + push; tick here + note in the roadmap table of `exercise-hub.md`.

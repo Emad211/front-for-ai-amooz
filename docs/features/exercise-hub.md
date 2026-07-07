@@ -1,8 +1,54 @@
-# Exercise Hub («بخش تمرین») — per-class teacher-authored exercises with LLM grading, a toggleable AI assistant, report cards, and a real calendar
+# Exercise Hub («بخش تمرین») — class assignment and feedback workflow with AI-assisted grading
 
-- **Status:** Approved (council 2026-07-05) · **Created:** 2026-07-05 · **Last-verified:** 2026-07-05
-- **Owner:** product-manager · **Spec by:** council (product-manager, tech-lead [chair], ai-engineer, ux-designer) · **Built by:** E1–E12 roadmap below
+- **Status:** V1 shipped through E14; V2 build loop active from E15 (2026-07-07)
+- **Created:** 2026-07-05 · **Last-verified:** 2026-07-07
+- **Owner:** product-manager · **Spec by:** council (product-manager, tech-lead [chair], ai-engineer, ux-designer) · **Built by:** E1–E14; V2 roadmap E15–E45 below
 - **ADR:** [ADR-0004](../adr/ADR-0004-exercise-hub.md)
+
+## V2 product thesis (E15 decision)
+Exercise Hub is **not** an "AI homework universe" and not a generic chat surface. It is a
+classroom assignment workflow:
+
+> AI-Amooz helps teachers turn real class homework into trackable, feedback-rich assignments without
+> manually grading every answer.
+
+The feature must therefore optimize for three daily jobs:
+
+1. **Teacher:** create/publish an assignment quickly, then review only the submissions that need human
+   attention.
+2. **Student:** know what is due now, submit text or handwriting photos without friction, and understand
+   what to fix next.
+3. **Platform:** keep rubrics/reference answers private until the reveal gate, keep student answer media
+   private, and make AI cost/trust observable.
+
+V2 deliberately narrows the product language:
+
+- Say **AI pre-grading / نمره‌دهی هوشمند** with teacher authority, not "fully automatic grading".
+- Say **hint-oriented assistant / راهنمایی بدون نمایش پاسخ نهایی**, not "the assistant cannot reveal the
+  answer" as an absolute guarantee. The reference answer can be structurally hidden, but the model can
+  still solve many questions from the question text.
+- Treat **reference answers as rubrics**: sample answer + acceptable variants + scoring notes + common
+  mistakes + points.
+- Treat **report cards as learning signals**, not official grade averages. Averages are secondary to
+  weak points, missed concepts, completion, late/missing work, and recommended next action.
+
+**Terminology decision:** product UI keeps «تمرین‌ها» because it is already shipped, friendlier for
+students, and consistent with the platform tone. The spec may use "assignment workflow" in English to
+clarify the operational model. E15 does **not** authorize model/API/component renames (`ClassExercise`,
+routes, and service names stay as-is until a separate explicit refactor).
+
+## V2 build loop protocol
+Each E15+ step follows the same loop:
+
+1. **Generate:** implement the smallest coherent slice (code/docs/tests together).
+2. **Evaluate:** run the mandatory team gate for the slice and self-review against this spec.
+3. **Correct:** apply findings before calling the step done.
+4. **Repeat if needed:** rerun the targeted tests/typechecks/review until the slice is stable.
+5. **Finalize:** update this spec + build log, commit, push, and record remaining risks.
+
+Mandatory gates continue to apply: schema → `database-engineer`; auth/permission/private media →
+`security-auditor`; LLM/prompt/grading → `ai-engineer` + prompt contract test; meaningful UI/IA →
+`ux-designer`; non-trivial diff → `code-reviewer`; push → release gate.
 
 ## Problem
 Teachers (TEACHER) have no way to assign real homework/exercises inside a class: today the platform only
@@ -24,29 +70,48 @@ here, deliberately.
 - **T4 toggle دستیار:** assistant off (exercise-level OR section-level) → student chat request gets
   **403 `assistant_disabled` server-side** (UI hiding alone is not enforcement).
 - **T5 کارنامه + override:** teacher can override any grade; override labeled «بازبینی‌شده توسط مدرس»;
-  the original LLM score is **kept (audit, teacher-only)**; student gets a notification.
+  the original LLM score is **kept (audit, teacher-only)**. Publish/graded/override notifications were
+  planned in V1 but are **not shipped yet**; E35 owns them.
 - **S2 ارسال:** text and/or handwriting photos per question; unanswered questions → non-blocking
   Persian warning; submit after deadline → **409 server-side**; one final submission
   (unique(exercise, student)); resubmission only if the teacher explicitly allows (reset pattern).
-- **S4 دستیار:** before grading the assistant gives hints but **cannot reveal the answer even under
-  prompt injection** — structurally impossible: reference answers are stripped from its context.
+- **S4 دستیار:** before reveal the assistant receives no teacher reference answer or grading notes and
+  must act as a hint-oriented tutor. This is a structural reference-answer guard, **not** a promise that
+  a general LLM can never solve the question from the question text.
 - **S5/S6 کارنامه + تقویم:** per-exercise report + per-class average (own data only); calendar shows
   real exercise deadlines (+ scheduled exam-preps) instead of mock.
 
+### V2 acceptance criteria (superseding product-quality bar)
+- **Discoverability:** teacher exercise work is a first-class class tab/workspace, not a hidden button;
+  student exercise work is visible from home, class, learn, calendar, and `/exercises` with state-aware
+  CTAs.
+- **Modes:** exercises have clear product modes: practice, homework, and assessment. Feedback, retry,
+  reveal, and review behavior derive from the selected mode.
+- **Trust:** every AI grade can be audited; low-confidence, unreadable, missing, high-value, or disputed
+  answers route to a teacher review queue.
+- **Privacy:** student answer photos and teacher answer-key assets are private records, not generic public
+  media. Reference answers, grading notes, and teacher rationale never leak before the reveal gate.
+- **Learning loop:** grading is not the end state. Results must support correction/reflection, weak-point
+  insight, and teacher reteaching decisions.
+- **Operational value:** teacher dashboard answers "what needs my attention today?" before it shows broad
+  analytics.
+
 ## Scope
-- **In (MVP):** create/extract/edit/publish flow (PDF + photos); reference answers (extracted-if-present,
+- **In (V1 shipped through E14):** create/extract/edit/publish flow (PDF + photos); reference answers (extracted-if-present,
   teacher-edited, mandatory); deadlines; **assistant toggle at BOTH exercise and section level** (chair
   ruling — explicit owner requirement; PM's defer-to-phase-2 dissent recorded); text + handwriting-photo
   submissions; async LLM grading with teacher rubric + deterministic grading for MCQ/fill-blank; teacher
   override with audit; per-exercise + per-class report cards (simple average); teacher gradebook matrix;
-  in-app notifications (publish, graded); real calendar endpoint + frontend wiring.
+  real calendar endpoint + frontend wiring; handwriting-photo grading; teacher reference-ingest preview/apply.
 - **Out (explicitly):** adaptive/regenerate loop for exercises; live proctoring; class-session events in
   the calendar (no meeting model exists); cross-student comparisons shown to students.
 - **Later phases (named, deferred):** weighted combined report card (exercise+quiz+final exam) — weighting
   policy is a real product decision; SMS deadline reminders (Mediana cost + Celery beat scheduling);
   per-student deadline extensions; per-exercise grade weights; teacher review-gate before grade release;
-  separate answer-key upload (`exercise_structure.answer_key` strategy); report-card PDF export
-  (WeasyPrint); auto late-penalty.
+  report-card PDF export (WeasyPrint); auto late-penalty.
+- **Unresolved V2 contract gaps:** in-app notifications (E35), append-only grading audit (E22), private
+  answer media serving (E23), explicit no-deadline reveal policy (E21), confidence/review routing (E26),
+  and post-publish regrade story (E36).
 
 ## Policies (product — decided in council)
 - **Late submissions:** closed at deadline by default; per-exercise toggle «پذیرش ارسال با تأخیر» →
@@ -66,6 +131,9 @@ here, deliberately.
   the leak window — an early submitter cannot see the answers while classmates are still within the
   deadline. A dedicated **«پاسخ تمرین‌های تمام‌شده»** area lets students browse the answers of past
   (deadline-passed) exercises.
+- **V2 reveal tightening:** no-deadline + own-graded reveal is safe only for practice/self-study. Homework
+  and assessment modes must use an explicit shared release (`answer_release_at` or manual release) before
+  they are considered safe. E21 owns the schema/API/UI decision.
 - **Report-card formula (MVP):** simple average (normalized 0–100) of graded exercises of that class.
   Teacher-only extras: class distribution/average, override history + raw LLM scores, late flags,
   full LLM rationale, non-submitters list.
@@ -93,6 +161,8 @@ here, deliberately.
   (default 5) questions; **MCQ/fill-blank graded deterministically without LLM**; totals computed with
   `sum()` never by the model; retries idempotent (status-guard + persisted `grading_task_id`);
   kill-switch env `EXERCISE_LLM_GRADING` (default on) → submissions stay SUBMITTED for manual grading.
+  V2 E24 hardens retries/cost attribution; V2 E25 makes student-visible pre-reveal feedback structurally
+  or deterministically safe, because the grader itself must see the reference answer.
 - **Handwriting-photo answers (E13):** before grading, every answered question whose
   `answers[qid].images` carries storage paths gets a **vision-extract step**
   (`exercise_grading._effective_answer_text`): one standard-shape OpenAI multimodal call per question
@@ -296,7 +366,7 @@ stored `per_question` (zero tokens), **no pregeneration** (nothing to pre-build)
   `services/exercises-service.ts`; hooks `use-exercises.ts, use-exercise-solver.ts, use-gradebook.ts`.
   Calendar: type + data wiring only (components exist).
 
-## Roadmap — E1…E12 (one step per iteration; each committable + tested; docs updated in the same commit)
+## Roadmap — E1…E14 (V1 foundation; one step per iteration; each committable + tested; docs updated in the same commit)
 
 | # | Owner (+gate) | Scope | DoD |
 |---|---|---|---|
@@ -311,8 +381,45 @@ stored `per_question` (zero tokens), **no pregeneration** (nothing to pre-build)
 | **E9** | backend (+database-engineer) | migration `0026` (`scheduled_at`) + `GET student/calendar/` aggregate | ✅ DONE — nullable `scheduled_at` (db-eng approved) + calendar endpoint (both kinds, Tehran-tz, isCompleted, from/to); 9 tests green. **Backend complete.** |
 | **E10** | frontend-engineer | teacher UI: service + wizard + gradebook + override + toggles | ✅ DONE — exercises-service.ts + exercise-manager (create/extract-poll/edit/publish) + gradebook-table (override/allow-redo) + route page; tsc clean (baseline unchanged) |
 | **E11** | frontend-engineer | student UI: exercises hub + solver (text/photo) + assistant widget + report cards | ✅ DONE — service (student endpoints) + hub/solver/result/answers pages + assistant/report-card; disabled-assistant chip; solver never fetches reference; tsc clean |
-| **E12** | frontend-engineer | calendar: remove mock, wire service + Jalali conversion + exam-prep events | ✅ DONE — `getCalendarEvents` → real `getStudentCalendar` (E9); `toCalendarEvent` maps Tehran-tz ISO → Jalali `YYYY-MM-DD`+`HH:MM` (`Intl` persian/Asia-Tehran/latn) + kind→type/priority + isCompleted; mock + fake delay deleted; tsc clean; conversion Node-verified. **Exercise Hub feature COMPLETE (E1–E12).** |
+| **E12** | frontend-engineer | calendar: remove mock, wire service + Jalali conversion + exam-prep events | ✅ DONE — `getCalendarEvents` → real `getStudentCalendar` (E9); `toCalendarEvent` maps Tehran-tz ISO → Jalali `YYYY-MM-DD`+`HH:MM` (`Intl` persian/Asia-Tehran/latn) + kind→type/priority + isCompleted; mock + fake delay deleted; tsc clean; conversion Node-verified. **E1–E12 foundation complete; V1 continued with E13/E14 hardening.** |
 | **E13** | ai-engineer | handwriting-photo grading slice (audit gap: `answers[qid].images` never reached the LLM — photo-only answers silently scored 0) | ✅ DONE — vision-extract step in `exercise_grading.py` (`exercise_handwriting_vision` prompt + `HandwritingTranscriptionOutput`; standard `image_url` shape; `is_real_image` sniff wired at grading **and** upload; `EXERCISE_MAX_IMAGES_PER_QUESTION=3`; fail-open per question; reference-answer leak guard test-locked); 6 new grading tests + 1 upload negative + contract — all green, 0 tokens |
+| **E14** | ai-engineer + backend + frontend | teacher reference-ingest preview/apply for flexible answer-key sources | ✅ DONE — `exercise_reference_ingest` prompt/schema/feature; preview writes nothing; apply is transactional update-only on existing questions, no overwrite unless explicit; PUBLISHED rejected until regrade story; UI review Sheet with Markdown+KaTeX; caps, source validation, prompt trimming, and URL sanitization hardened |
+
+## Roadmap — Exercise Hub V2 (E15…E45)
+
+| # | Owner (+gate) | Scope | DoD |
+|---|---|---|---|
+| **E15** | product-manager + ux-designer + ai-engineer + security-auditor | Product reframe + build loop protocol | ✅ DONE when this spec states the V2 thesis, anti-promises, terminology decision, no-rename/no-code rule, acceptance criteria, and E15–E45 roadmap; team critique incorporated |
+| **E16** | frontend-engineer + ux-designer | Teacher class IA: make exercises a first-class class workspace | Class detail exposes tabs/sections: «نمای کلی / محتوا / تمرین‌ها / دانش‌آموزان / اطلاعیه‌ها»; exercise entry is visible and stateful |
+| **E17** | frontend-engineer + ux-designer | Student exercise discoverability | Home, class cards, learn view, calendar, and `/exercises` deep-link to state-aware actions: «شروع تمرین»، «ادامه تمرین»، «دیدن نتیجه»، «پاسخ‌نامه» |
+| **E18** | ux-designer | Persian microcopy normalization | One vocabulary set across teacher/student: «پاسخ‌نامه»، «نمره‌دهی هوشمند»، «بازبینی مدرس»، «شروع/ادامه تمرین»; stale "3-step" or legacy upload copy absent |
+| **E19** | backend + database-engineer | True unset points + publish gate | `max_points` can distinguish unset from teacher-confirmed; extraction never silently turns missing points into `1`; publish gate tests lock it |
+| **E20** | backend + frontend + product-manager | Exercise modes | `practice/homework/assessment` policy exists; retry, grading visibility, reveal, assistant behavior, and UI labels derive from mode |
+| **E21** | backend + security-auditor | Explicit reveal policy | `answer_release_at` or manual release prevents no-deadline graded homework from leaking answers; no-deadline self-study is labeled as such |
+| **E22** | backend + security-auditor | Append-only grading audit trail | Override/regrade/redo records actor, reason, old/new values, timestamp; `llm_score` remains immutable |
+| **E23** | backend + security-auditor | Private answer media serving | Student answer images and answer-key/reference assets are served through authorized endpoints or scoped signed URLs, not raw public paths |
+| **E24** | backend + ai-engineer | Exercise LLM reliability and cost attribution | Exercise extraction/grading tasks attribute usage to teacher/session, retry transient provider failures, and expose actionable failure states |
+| **E25** | ai-engineer + security-auditor | Student-safe pre-reveal feedback | Pre-deadline grading feedback cannot reveal canonical answer phrasing; deterministic leak/redaction tests cover feedback, `missing_points`, stored `result`, serializers, and result UI; full solution feedback unlocks only after reveal or teacher review |
+| **E26** | ai-engineer + backend | Confidence / needs-review routing | Handwriting vision returns confidence/warnings; missing LLM output, unreadable handwriting, borderline/high-value answers, and schema drift route to teacher review instead of silent zero |
+| **E27** | frontend-engineer + ux-designer | Teacher exercise operations dashboard | Filters: همه، پیش‌نویس، نیازمند پاسخ‌نامه، منتشرشده، نیازمند تصحیح، تمام‌شده; each row/card has state counts and next action |
+| **E28** | frontend-engineer + ux-designer | Real 4-step teacher wizard | Steps: مشخصات و فایل‌ها، بازبینی سؤال‌ها، پاسخ‌نامه و بارم، تنظیمات انتشار; progress visible; draft resumable |
+| **E29** | frontend-engineer | Extraction review workspace | Add/delete/edit/reorder questions; split/merge if feasible; confidence warnings; LaTeX preview everywhere teacher edits scientific text |
+| **E30** | frontend-engineer + backend | Rubric editor | Per-question answer, accepted variants, grading notes, points, total-points summary, validation errors near fields |
+| **E31** | frontend-engineer + ai-engineer | Reference-ingest as rubric step | Review table shows source item, matched question, confidence, proposed answer/points, conflict warning, apply checkbox |
+| **E32** | frontend-engineer + ux-designer | Publish settings | Jalali deadline, late policy, exercise mode, reveal policy, assistant policy, student preview, and publish checklist |
+| **E33** | backend + frontend | Gradebook triage | Non-submitters, late, failed grading, low-confidence, needs-review, and override hotspots are visible and filterable |
+| **E34** | frontend-engineer | Submission review workspace | Question, reference/rubric, student text/photos, AI score/feedback, manual score, teacher feedback, redo action in one review surface |
+| **E35** | backend + security-auditor | In-app notifications (E7b) | Publish, due-soon, graded, override, redo, and answer-release notifications are idempotent, recipient-scoped, and secret-free |
+| **E36** | backend + ai-engineer + product-manager | Regrade story | Post-publish content/rubric edits either trigger explicit regrade/audit flow or are blocked/limited with honest copy |
+| **E37** | frontend-engineer + ux-designer | Student hub as action queue | Tabs: «برای انجام»، «در انتظار نمره»، «نتیجه‌ها»، «پاسخ‌نامه‌ها»; due-soon comes before report cards |
+| **E38** | frontend-engineer + ai-engineer | Focused solver | Active question drives assistant context; unanswered warning lists count; past-deadline read-only; mobile assistant Sheet; safe bottom spacing |
+| **E39** | frontend-engineer + security-auditor | Result/review mode | Per-question cards show question, student's own answer, score, safe feedback, reference answer if unlocked, and locked reveal copy otherwise |
+| **E40** | backend + frontend + pedagogy review | Correction/reflection loop | After grading, student can submit non-scored correction/reflection; teacher can see whether feedback was acted on |
+| **E41** | backend + frontend + data-analyst | Mastery-centered report cards | Averages are secondary; weak concepts, trend, missed work, late work, and recommended next practice are foregrounded |
+| **E42** | frontend-engineer | LaTeX/Markdown audit | Every exercise scientific text path uses `MarkdownWithMath`/`MathText` as appropriate, with sanitized links/images and teacher preview |
+| **E43** | frontend-engineer + ux-designer | Accessibility/mobile audit | 375px, 768px, RTL, keyboard nav, focus states, table/mobile card handling, contrast, and fixed footer overlap verified |
+| **E44** | qa-engineer | Docker E2E | Real local stack: teacher creates/publishes; student submits text/photo; Celery grades; teacher overrides; reveal/result paths verified |
+| **E45** | data-analyst + release-manager | Metrics and release gate | Publish rate, second-exercise retention, time-to-publish, submission rate, override delta, unreadable-photo rate, grading failure, cost/submission tracked |
 
 Cross-cutting gates: `code-reviewer` on every non-trivial diff; `release-manager` at pushes; every step
 updates this doc (docs law). Backend steps follow the sqlite-fast-lane/Postgres-truth test protocol of
@@ -360,9 +467,11 @@ image upload type/size validated server-side; assistant disable enforced server-
 formally gates E5 + E8.
 
 ## Metrics (data-analyst, Asia/Tehran)
-Exercises published/week · submission rate before deadline · median time-to-grade · override rate
-(proxy for LLM grading trust) · assistant messages per submission · grading token cost per class round
-(from `LLMUsageLog` features) · notification→submission conversion (informs the phase-2 SMS decision).
+Exercises published/week · second exercise within 14 days · median time from start/upload to publish ·
+submission rate before deadline · median time-to-feedback · result/feedback view rate · override rate +
+average override delta (proxy for LLM grading trust) · unreadable-photo / needs-review rate · grading
+failure rate · assistant messages per submission · grading token cost per class round (from `LLMUsageLog`
+features) · notification→submission conversion after E35.
 
 ## Rollout
 E1–E9 = backend image rebuild (migrations `0024`,`0025` auto-run in order on container start);
@@ -374,18 +483,22 @@ SUBMITTED, exercises stay usable.
 1. `pipeline` queue congestion at deadlines (mass grading behind ingest) → monitor; dedicated `grading`
    queue is the named phase-2 escape hatch; kill-switch works today.
 2. Grading output truncation on long exercises → per-section/batch chunking from day one (E6).
-3. Reference-answer leak (serializer or assistant context) → explicit tests E5/E8 + structural strip.
-4. Teacher trust in LLM grades → override + audit history is MVP-mandatory, not optional.
+3. Reference-answer leak (serializer or assistant context) → explicit tests E5/E8 + structural strip;
+   pre-reveal grading feedback remains a V2 hardening item (E25) because the grader sees the rubric.
+4. Teacher trust in LLM grades → immutable LLM score exists, but append-only audit is still E22.
 5. OCR quality on poor scans/handwriting via Avalai → unknown until opt-in benchmark; manual-entry
    fallback in the wizard is the product-level mitigation.
-6. God-file growth → all new views in `views_exercises.py`; reviewer rejects additions to `views.py`.
+6. Student answer/reference media privacy → E14 made image paths server-owned, but raw serving is not the
+   final privacy boundary; E23 is required before broad production claims of private media.
+7. God-file growth → all new views in `views_exercises.py`; reviewer rejects additions to `views.py`.
 
 ## Resolved decisions (product owner, 2026-07-05)
-1. **Reference-answer reveal is gated on the DEADLINE, not on grading.** Reference answers unlock when
+1. **Reference-answer reveal is gated on the DEADLINE, not on grading (V1 policy).** Reference answers unlock when
    `deadline < now` (no-deadline exercise → on the student's own GRADED submission). Prevents the
    early-submitter leak window. A dedicated **«پاسخ تمرین‌های تمام‌شده»** student area
    (`GET student/exercises/answers/`) browses past exercises' answers. The assistant may teach from the
-   reference answer only once that same reveal condition holds.
+   reference answer only once that same reveal condition holds. V2 keeps deadline-gated reveal for shared
+   homework/assessment, but moves no-deadline homework/assessment to E21's explicit shared release policy.
 2. **LLM grade shown immediately** (labeled «نمره‌دهی هوشمند», override later); review-gate = phase 2
    per-exercise option.
 
