@@ -29,6 +29,24 @@ VALID = json.dumps({
     ],
 })
 
+REFERENCE_VALID = json.dumps({
+    "mode_detected": "numbered_answers",
+    "items": [
+        {
+            "item_id": "i1",
+            "question_number": 1,
+            "question_text_markdown": None,
+            "question_type": None,
+            "options": None,
+            "points": 2,
+            "reference_answer_markdown": "پاسخ مرجع ۱",
+            "confidence": 0.91,
+            "notes": "شماره سوال واضح است.",
+        }
+    ],
+    "warnings": [],
+})
+
 
 def _resp(text):
     return SimpleNamespace(text=text, provider="test", model="test-model")
@@ -102,3 +120,45 @@ class TestExerciseStructureSchema:
     def test_extra_keys_allowed(self):
         obj = ExerciseStructureOutput.model_validate({"sections": [], "brand_new": 1})
         assert obj.model_dump().get("brand_new") == 1
+
+
+class TestReferenceIngestMarkdown:
+    def test_reference_ingest_happy_parse(self, monkeypatch):
+        monkeypatch.setenv("EXERCISE_REFERENCE_INGEST_MODEL", "reference-model")
+        _patch_llm(monkeypatch, _resp(REFERENCE_VALID))
+
+        obj, _provider, model = ing.ingest_reference_answers_markdown(
+            source_markdown="۱) پاسخ مرجع ۱",
+            existing_questions=[{"id": 10, "number": 1, "question_markdown": "سوال"}],
+            mode_hint="numbered_answers",
+        )
+        assert model == "reference-model"
+        assert obj["mode_detected"] == "numbered_answers"
+        assert obj["items"][0]["reference_answer_markdown"] == "پاسخ مرجع ۱"
+
+    def test_reference_ingest_repair_round_trip(self, monkeypatch):
+        monkeypatch.setenv("EXERCISE_REFERENCE_INGEST_MODEL", "reference-model")
+        calls = _patch_llm(monkeypatch, _resp("not json"), _resp(REFERENCE_VALID))
+
+        obj, _provider, _model = ing.ingest_reference_answers_markdown(
+            source_markdown="x",
+            existing_questions=[],
+            mode_hint="auto",
+        )
+        assert obj["items"][0]["question_number"] == 1
+        assert len(calls) == 2
+
+    def test_reference_ingest_env_only(self, monkeypatch):
+        for var in (
+            "EXERCISE_REFERENCE_INGEST_MODEL",
+            "EXERCISE_STRUCTURE_MODEL",
+            "STRUCTURE_MODEL",
+            "MODEL_NAME",
+        ):
+            monkeypatch.delenv(var, raising=False)
+        with pytest.raises(RuntimeError):
+            ing.ingest_reference_answers_markdown(
+                source_markdown="x",
+                existing_questions=[],
+                mode_hint="auto",
+            )

@@ -45,6 +45,7 @@ class LLMUsageLog(models.Model):
         # Exercise Hub (docs/features/exercise-hub.md)
         EXERCISE_INGEST = 'exercise_ingest', 'Exercise Ingest (Vision/PDF)'
         EXERCISE_STRUCTURE = 'exercise_structure', 'Exercise Structure'
+        EXERCISE_REFERENCE_INGEST = 'exercise_reference_ingest', 'Exercise Reference Ingest'
         EXERCISE_GRADING = 'exercise_grading', 'Exercise Grading'
         EXERCISE_HANDWRITING_VISION = 'exercise_handwriting_vision', 'Exercise Handwriting Vision'
         CHAT_EXERCISE = 'chat_exercise', 'Exercise Assistant Chat'

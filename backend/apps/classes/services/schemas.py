@@ -100,6 +100,43 @@ class ExerciseStructureOutput(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# Exercise Hub — teacher reference-answer ingest (services/exercise_ingest.py).
+# Contract: ``PROMPTS['exercise_reference_ingest']['default']``.
+# It accepts messy OCR/source text where questions and teacher answers may be
+# mixed, separated, numbered, or answer-only. Matching is applied server-side.
+# ---------------------------------------------------------------------------
+
+
+class ExerciseReferenceIngestItem(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    item_id: Optional[str] = None
+    question_number: Optional[int] = None
+    question_text_markdown: Optional[str] = None
+    question_type: Optional[str] = None
+    options: Optional[List[Any]] = None
+    points: Optional[float] = None
+    reference_answer_markdown: Optional[str] = None
+    confidence: Optional[float] = None
+    notes: Optional[str] = None
+
+
+class ExerciseReferenceIngestOutput(BaseModel):
+    """Top-level teacher reference ingest JSON.
+
+    ``items`` is the only load-bearing invariant; each item may become a new
+    question, update an existing question, or be returned as skipped when the
+    target question is ambiguous.
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    mode_detected: Optional[str] = None
+    items: List[ExerciseReferenceIngestItem] = Field(default_factory=list)
+    warnings: List[str] = Field(default_factory=list)
+
+
+# ---------------------------------------------------------------------------
 # Exercise Hub — grading output (services/exercise_grading.py). Same score shape
 # as the final exam, so ``compute_weak_points_from`` reuses the parser.
 # Contract: ``PROMPTS['exercise_grading']['default']``.
@@ -124,6 +161,18 @@ class ExerciseGradingOutput(BaseModel):
     model_config = ConfigDict(extra="allow")
 
     per_question: List[ExerciseGradedQuestion] = Field(default_factory=list)
+
+
+class HandwritingTranscriptionOutput(BaseModel):
+    """Vision transcription of a student's handwritten answer photo(s).
+    Contract: ``PROMPTS['exercise_handwriting_vision']['default']``. ``text`` is
+    deliberately REQUIRED (unlike the lenient siblings) so a missing key triggers
+    ``generate_structured``'s repair round-trip instead of silently yielding an
+    empty transcription."""
+
+    model_config = ConfigDict(extra="allow")
+
+    text: str
 
 
 class AssistantChatOutput(BaseModel):

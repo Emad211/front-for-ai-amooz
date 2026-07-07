@@ -136,6 +136,50 @@ Postgres/CI is migration-truth. LLM fully mocked (0 tokens).
   step pill «۲. فایل درسی», subtitle updated) · reviewed by ux-designer + code-reviewer (all must/should-fix
   applied). tsc at 13-error baseline; student-api+reportcard tests green on real Postgres.
 
+- [x] **E13 — handwriting vision slice (2026-07-06, audit gap-fix):** the tech-lead audit found the
+  plan breach that student answer photos (`answers[qid].images`, uploaded via
+  `StudentExerciseImageView`) NEVER reached the LLM — a photo-only answer silently scored 0. Closed:
+  `exercise_grading.py` now runs a per-question **vision-extract step** before grading
+  (`_effective_answer_text` → `_transcribe_answer_images`): storage read via `default_storage`,
+  `is_real_image` Pillow sniff per image (the previously-dead Low-2 helper, now wired at grading AND
+  at upload — garbage bytes with an `image/*` content_type get 400 «فایل ارسالی تصویر معتبر نیست.»),
+  cap `EXERCISE_MAX_IMAGES_PER_QUESTION` (default 3), model chain
+  `EXERCISE_VISION_MODEL→IMAGE_MODEL→MODEL_NAME` (env-only, raise if unset), ONE standard-shape OpenAI
+  multimodal call per question (`image_url` data URIs — legacy shapes are silently ignored by the
+  AvalAI gateway), `generate_structured(schema=HandwritingTranscriptionOutput)` (new single-required-key
+  schema) under the new prompt `PROMPTS['exercise_handwriting_vision']['default']`
+  (SAFETY_PREAMBLE + MATH_FORMAT_INSTRUCTIONS, placeholder `{question_text}` only — **leak guard: the
+  reference answer / grading notes are structurally absent from the vision context**, test-locked),
+  usage logged under `LLMUsageLog.Feature.EXERCISE_HANDWRITING_VISION` (enum pre-existed, no
+  migration). Merge rules: photo-only → extracted text used verbatim (deterministic MCQ/fill-blank
+  matching intact); typed+photo descriptive → appended under `[متن استخراج‌شده از تصویر پاسخ]`;
+  typed+photo deterministic → vision skipped (typed answer authoritative, saves tokens). Fail-open per
+  question for transient vision failures: logs a warning and grades typed text; **missing vision model
+  ENV now fails grading** so photo-only submissions are not silently graded as zero.
+  Tests (0 tokens, sqlite fast lane): 6 new in `test_exercise_grading.py` (photo-only end-to-end via
+  deterministic MCQ, vision-failure fallback → GRADED, fake-bytes skip without a vision call,
+  reference-answer-absent-from-vision-prompt, image cap + standard-shape assertion, delimiter append)
+  + 1 upload negative in `test_exercise_student_api.py` + contract test updated
+  (LIVE_KEYS/PLACEHOLDERS/OUTPUT_KEYS/safety-preamble list) — 72 + 24 passed. Cost: +1 small vision
+  call per photo-answered question (~1–2k tokens/question at 3-image cap); zero for typed-only
+  submissions.
+
+- [x] **E14 — teacher reference ingest preview/apply (2026-07-07):** added a teacher-only
+  Reference Ingest layer for flexible source formats (mixed Q&A, single Q&A, numbered answer keys,
+  answer-only text, small PDF/photos). Backend: new prompt `exercise_reference_ingest/default` +
+  `ExerciseReferenceIngestOutput` schema + `LLMUsageLog.Feature.EXERCISE_REFERENCE_INGEST`
+  (`commons/0007` no-op AlterField), conservative server-side matching
+  (`matched/ambiguous/unmatched`), owner/status-gated `POST /reference-ingest/preview/` (no DB write)
+  and transactional update-only `POST /reference-ingest/apply/` (existing questions only; no overwrite
+  unless `replaceExisting=true`; `PUBLISHED` 409 until re-grade flow exists). Security hardening:
+  source/reference uploads now use count/size allowlists + PDF magic-byte / Pillow image sniff before
+  storage/LLM; student answer-image upload checks submission status before `default_storage.save` and
+  caps stored images per question. Frontend: exercise editor now exposes a visible «ورود سؤال و پاسخ
+  مرجع» panel with Sheet-based preview/review, target-question selector, Persian guidance, and
+  Markdown+KaTeX rendering for extracted rubric text. Tests added/updated for prompt contract,
+  reference ingest service, teacher API preview/apply/ownership/validation, and student orphan-upload
+  regression.
+
 **Definition of done (every step):** GREEN on the sqlite fast lane (Postgres = CI truth); new code documented
 in `exercise-hub.md` (docs law); auth/permission changes carry negative tests; commit `feat(exercise): E# …`
 + push; tick here + note in the roadmap table of `exercise-hub.md`.

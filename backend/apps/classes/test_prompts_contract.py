@@ -44,7 +44,9 @@ LIVE_KEYS = {
     "recap_and_notes": ["default"],
     "exam_prep_structure": ["default"],
     "exercise_structure": ["default"],
+    "exercise_reference_ingest": ["default"],
     "exercise_grading": ["default"],
+    "exercise_handwriting_vision": ["default"],
     "exercise_assistant_chat": ["default"],
     "chat_intent": None,
     "chat_system_prompt": None,
@@ -104,6 +106,9 @@ PLACEHOLDERS = {
     ("image_plan", "default"): ["{unit_content}", "{user_message}"],
     ("text_grading", "default"): ["{question}", "{reference_answer}", "{student_answer}"],
     ("exercise_grading", "default"): ["{grading_items_json}"],
+    ("exercise_reference_ingest", "default"): [
+        "{mode_hint}", "{existing_questions_json}", "{source_markdown}",
+    ],
     ("exam_prep_hint", "default"): [
         "{question}", "{student_answer}", "{reference_answer}", "{attempt_number}",
     ],
@@ -127,6 +132,7 @@ PLACEHOLDERS = {
         "{image_description}", "{history}", "{user_message}",
     ],
     ("exam_prep_handwriting_vision", "default"): ["{question_context}", "{user_message}"],
+    ("exercise_handwriting_vision", "default"): ["{question_text}"],
     ("exercise_assistant_chat", "default"): [
         "{question_context}", "{student_work}", "{phase}", "{history}", "{user_message}",
     ],
@@ -160,6 +166,11 @@ OUTPUT_KEYS = {
         "question_text_markdown", "question_type", "options", "points",
         "reference_answer_markdown",
     ],
+    ("exercise_reference_ingest", "default"): [
+        "mode_detected", "items", "item_id", "question_number",
+        "question_text_markdown", "question_type", "options", "points",
+        "reference_answer_markdown", "confidence", "notes", "warnings",
+    ],
     ("chat_intent", None): ["intent"],
     ("chat_system_prompt", None): ["content", "suggestions"],
     ("image_plan", "default"): ["images", "caption"],
@@ -179,6 +190,8 @@ OUTPUT_KEYS = {
         "description_markdown", "extracted_text_markdown", "clean_steps_markdown",
         "unclear_parts",
     ],
+    # Quoted on purpose: the schema's single key would otherwise match trivially.
+    ("exercise_handwriting_vision", "default"): ['"text"'],
     ("notes_ai", "detailed_notes"): ["items", "related_unit_id", "notes_markdown"],
     ("fetch_quizzes", "multiple_choice"): [
         "questions", "related_unit_id", "correct_answer", "explanation",
@@ -254,9 +267,11 @@ def test_shared_safety_block_injected_into_untrusted_content_prompts():
         ("prerequisites_prompt", "default"),
         ("exam_prep_structure", "default"),
         ("exercise_structure", "default"),
+        ("exercise_reference_ingest", "default"),
         ("chat_system_prompt", None),
         ("text_grading", "default"),
         ("exercise_grading", "default"),
+        ("exercise_handwriting_vision", "default"),
         ("exam_prep_chat", "default"),
         ("exercise_assistant_chat", "default"),
     ]

@@ -144,8 +144,174 @@ class TestImageSniff:
         assert grading.is_real_image(b'') is False
 
     def test_is_real_image_accepts_png(self):
-        import io
-        from PIL import Image
-        buf = io.BytesIO()
-        Image.new('RGB', (2, 2)).save(buf, format='PNG')
-        assert grading.is_real_image(buf.getvalue()) is True
+        assert grading.is_real_image(_png_bytes()) is True
+
+
+# ---------------------------------------------------------------------------
+# E13 — handwriting-photo answers are vision-extracted before grading.
+# ALL LLM + storage reads mocked: 0 tokens.
+# ---------------------------------------------------------------------------
+
+
+def _png_bytes() -> bytes:
+    import io
+    from PIL import Image
+    buf = io.BytesIO()
+    Image.new('RGB', (2, 2)).save(buf, format='PNG')
+    return buf.getvalue()
+
+
+def _photo_submission(*, qtype=None, reference='ب', text='', images=(),
+                      grading_notes=''):
+    """One-question submission whose answer carries handwriting photo paths."""
+    qtype = qtype or QType.MULTIPLE_CHOICE
+    ex = baker.make(ClassExercise, status=ClassExercise.Status.PUBLISHED)
+    sec = baker.make(ClassExerciseSection, exercise=ex, order=0)
+    q = baker.make(ClassExerciseQuestion, section=sec, order=0,
+                   question_type=qtype, question_markdown='سؤال؟',
+                   reference_answer_markdown=reference,
+                   grading_notes=grading_notes, max_points=Decimal('2'))
+    student = baker.make('accounts.User', role='STUDENT')
+    entry = {'images': list(images)}
+    if text:
+        entry['text'] = text
+    sub = baker.make(StudentExerciseSubmission, exercise=ex, student=student,
+                     status=SubStatus.SUBMITTED, answers={str(q.id): entry})
+    return ex, q, sub
+
+
+class TestHandwritingVision:
+    def _mock_vision(self, monkeypatch, *, text='ب', raise_exc=None):
+        """Mock storage read (real PNG bytes) + the vision LLM; returns capture."""
+        from apps.classes.services.schemas import HandwritingTranscriptionOutput
+        monkeypatch.setenv('EXERCISE_VISION_MODEL', 'test-vision-model')
+        monkeypatch.setattr(grading, '_read_answer_image', lambda path: _png_bytes())
+        captured = {'calls': 0, 'kwargs': None}
+
+        def fake_generate_structured(**kwargs):
+            captured['calls'] += 1
+            captured['kwargs'] = kwargs
+            if raise_exc is not None:
+                raise raise_exc
+            return HandwritingTranscriptionOutput(text=text)
+
+        monkeypatch.setattr(grading, 'generate_structured', fake_generate_structured)
+        return captured
+
+    def test_photo_only_answer_extracted_and_graded(self, monkeypatch):
+        """(a) Photo-only MCQ answer: vision text is used verbatim, so the
+        deterministic comparison grades it end-to-end — no grading-LLM call."""
+        ex, q, sub = _photo_submission(images=['exercises/answers/1/1/a.png'])
+        captured = self._mock_vision(monkeypatch, text='ب')
+
+        def boom(items):
+            raise AssertionError('grading LLM must not be called for MCQ-only')
+
+        monkeypatch.setattr(grading, '_grade_descriptive_batch', boom)
+        result = _run(sub.id)
+        assert result['status'] == 'graded'
+        assert captured['calls'] == 1  # exactly one vision call
+        sub.refresh_from_db()
+        assert sub.status == SubStatus.GRADED
+        assert str(sub.score_points) == '2.00'  # extracted 'ب' == reference 'ب'
+
+    def test_vision_failure_falls_back_to_text_only(self, monkeypatch):
+        """(b) Vision blows up -> the typed text is graded alone and the
+        submission still ends GRADED (never fail a submission on a bad photo)."""
+        ex, q, sub = _photo_submission(
+            qtype=QType.DESCRIPTIVE, reference='SECRET-REFERENCE',
+            text='متن تایپ‌شده', images=['exercises/answers/1/1/a.png'],
+        )
+        self._mock_vision(monkeypatch, raise_exc=RuntimeError('vision boom'))
+        seen = {}
+
+        def fake_batch(items):
+            seen['student_answer'] = items[0]['student_answer']
+            return {items[0]['question_id']: {
+                'question_id': items[0]['question_id'], 'llm_score': 1.0,
+                'score_points': 1.0, 'max_points': items[0]['max_points'],
+                'label': 'partially_correct', 'feedback': '', 'missing_points': [],
+                'teacher_score': None, 'teacher_feedback': None,
+            }}
+
+        monkeypatch.setattr(grading, '_grade_descriptive_batch', fake_batch)
+        assert _run(sub.id)['status'] == 'graded'
+        sub.refresh_from_db()
+        assert sub.status == SubStatus.GRADED
+        assert seen['student_answer'] == 'متن تایپ‌شده'
+        assert '[متن استخراج‌شده از تصویر پاسخ]' not in seen['student_answer']
+
+    def test_missing_vision_model_fails_grading_instead_of_silent_zero(self, monkeypatch):
+        """A deployment misconfiguration is not a bad-photo transient. For a
+        photo-only answer, silently grading empty text as zero would be
+        misleading, so the task must surface GRADING_FAILED."""
+        for var in ('EXERCISE_VISION_MODEL', 'IMAGE_MODEL', 'MODEL_NAME'):
+            monkeypatch.delenv(var, raising=False)
+        ex, q, sub = _photo_submission(images=['exercises/answers/1/1/a.png'])
+        monkeypatch.setattr(grading, '_read_answer_image', lambda path: _png_bytes())
+
+        result = _run(sub.id)
+        assert result['status'] == 'failed'
+        sub.refresh_from_db()
+        assert sub.status == SubStatus.GRADING_FAILED
+
+    def test_fake_image_bytes_skipped_without_vision_call(self, monkeypatch):
+        """(c) Bytes that fail is_real_image are skipped -> no vision call."""
+        ex, q, sub = _photo_submission(images=['exercises/answers/1/1/a.png'])
+        captured = self._mock_vision(monkeypatch)
+        monkeypatch.setattr(grading, '_read_answer_image', lambda path: b'not an image')
+        assert _run(sub.id)['status'] == 'graded'
+        assert captured['calls'] == 0
+        sub.refresh_from_db()
+        assert sub.status == SubStatus.GRADED
+        assert str(sub.score_points) == '0.00'  # no readable answer -> incorrect
+
+    def test_reference_answer_never_in_vision_prompt(self, monkeypatch):
+        """(d) Leak guard: the vision call must never see the reference answer
+        or the grading notes — it only transcribes the student's photo."""
+        ex, q, sub = _photo_submission(
+            qtype=QType.DESCRIPTIVE, reference='SECRET-REFERENCE',
+            grading_notes='SECRET-NOTES', images=['exercises/answers/1/1/a.png'],
+        )
+        captured = self._mock_vision(monkeypatch, text='راه‌حل من')
+        monkeypatch.setattr(grading, '_grade_descriptive_batch', lambda items: {})
+        assert _run(sub.id)['status'] == 'graded'
+        assert captured['calls'] == 1
+        import json
+        blob = json.dumps(captured['kwargs'].get('messages'), ensure_ascii=False, default=str)
+        assert 'SECRET-REFERENCE' not in blob
+        assert 'SECRET-NOTES' not in blob
+        assert 'سؤال؟' in blob  # the question text IS the allowed context
+
+    def test_image_cap_respected(self, monkeypatch):
+        """(e) EXERCISE_MAX_IMAGES_PER_QUESTION (default 3) caps the payload."""
+        paths = [f'exercises/answers/1/1/{i}.png' for i in range(5)]
+        ex, q, sub = _photo_submission(images=paths)
+        captured = self._mock_vision(monkeypatch, text='ب')
+        assert _run(sub.id)['status'] == 'graded'
+        content = captured['kwargs']['messages'][0]['content']
+        image_parts = [p for p in content if p.get('type') == 'image_url']
+        assert len(image_parts) == 3
+        # Standard OpenAI shape — the AvalAI gateway ignores legacy shapes.
+        assert all(p['image_url']['url'].startswith('data:image/') for p in image_parts)
+
+    def test_extracted_text_appended_with_delimiter(self, monkeypatch):
+        """Typed + photo on a descriptive question -> extracted text appended
+        under the Persian delimiter, typed text first."""
+        ex, q, sub = _photo_submission(
+            qtype=QType.DESCRIPTIVE, reference='REF', text='متن تایپ‌شده',
+            images=['exercises/answers/1/1/a.png'],
+        )
+        captured = self._mock_vision(monkeypatch, text='حل دست‌نویس')
+        seen = {}
+
+        def fake_batch(items):
+            seen['student_answer'] = items[0]['student_answer']
+            return {}
+
+        monkeypatch.setattr(grading, '_grade_descriptive_batch', fake_batch)
+        assert _run(sub.id)['status'] == 'graded'
+        assert captured['calls'] == 1
+        assert seen['student_answer'] == (
+            'متن تایپ‌شده\n\n[متن استخراج‌شده از تصویر پاسخ]\nحل دست‌نویس'
+        )

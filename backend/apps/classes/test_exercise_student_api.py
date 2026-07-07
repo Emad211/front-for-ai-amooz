@@ -11,6 +11,7 @@ import json
 from datetime import timedelta
 
 import pytest
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.utils import timezone
 from model_bakery import baker
 from rest_framework.test import APIClient
@@ -216,6 +217,49 @@ class TestDraftAndImage:
             {'file': fake}, format='multipart',
         )
         assert res.status_code == 400
+
+    def test_image_rejects_fake_image_bytes(self):
+        """E13/Low-2: content_type says image/png but the BYTES are garbage —
+        the Pillow sniff must reject it before anything is stored."""
+        session, ex = _published_exercise()
+        q = ClassExerciseQuestion.objects.filter(section__exercise=ex).first()
+        fake = SimpleUploadedFile('x.png', b'GARBAGE-not-a-real-image',
+                                  content_type='image/png')
+        res = _auth(_student()).post(
+            _url(session.id, ex.id, f'questions/{q.id}/image/'),
+            {'file': fake}, format='multipart',
+        )
+        assert res.status_code == 400
+        assert res.data['detail'] == 'فایل ارسالی تصویر معتبر نیست.'
+
+    def test_image_after_submit_does_not_store_orphan_file(self, monkeypatch):
+        from apps.classes import views_exercises as vx
+
+        session, ex = _published_exercise()
+        student = _student()
+        q = ClassExerciseQuestion.objects.filter(section__exercise=ex).first()
+        baker.make(
+            StudentExerciseSubmission,
+            exercise=ex,
+            student=student,
+            status=SubStatus.SUBMITTED,
+        )
+        monkeypatch.setattr(vx, 'is_real_image', lambda _data: True)
+        called = {'save': 0}
+
+        def fake_save(*_args, **_kwargs):
+            called['save'] += 1
+            return 'should-not-happen'
+
+        monkeypatch.setattr(vx.default_storage, 'save', fake_save)
+        img = SimpleUploadedFile('x.png', b'valid-enough-for-mocked-sniff',
+                                 content_type='image/png')
+        res = _auth(student).post(
+            _url(session.id, ex.id, f'questions/{q.id}/image/'),
+            {'file': img}, format='multipart',
+        )
+        assert res.status_code == 409
+        assert called['save'] == 0
 
 
 class TestFinishedAnswersBrowse:

@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import pytest
 from decimal import Decimal
+from django.core.files.uploadedfile import SimpleUploadedFile
 from model_bakery import baker
 from rest_framework.test import APIClient
 from rest_framework_simplejwt.tokens import RefreshToken
@@ -46,6 +47,8 @@ LIST = '/api/classes/creation-sessions/{}/exercises/'
 DETAIL = '/api/classes/exercises/{}/'
 EXTRACT = '/api/classes/exercises/{}/extract/'
 PUBLISH = '/api/classes/exercises/{}/publish/'
+REF_PREVIEW = '/api/classes/exercises/{}/reference-ingest/preview/'
+REF_APPLY = '/api/classes/exercises/{}/reference-ingest/apply/'
 
 
 class TestCreateAndList:
@@ -73,6 +76,18 @@ class TestCreateAndList:
         session = _session(_teacher())
         student = baker.make(User, role=User.Role.STUDENT)
         assert _auth(student).get(LIST.format(session.id)).status_code == 403
+
+    def test_create_rejects_fake_image_asset_without_creating_exercise(self):
+        owner = _teacher()
+        session = _session(owner)
+        bad = SimpleUploadedFile('bad.png', b'not-an-image', content_type='image/png')
+        res = _auth(owner).post(
+            LIST.format(session.id),
+            {'title': 'تمرین خراب', 'files': [bad]},
+            format='multipart',
+        )
+        assert res.status_code == 400
+        assert not ClassExercise.objects.filter(title='تمرین خراب').exists()
 
 
 class TestDetailUpdateDelete:
@@ -187,3 +202,138 @@ class TestSectionAndQuestionOwnership:
         assert ok.status_code == 200
         q.refresh_from_db()
         assert q.reference_answer_markdown == 'پاسخ'
+
+
+class TestReferenceIngest:
+    def _exercise_with_questions(self, owner):
+        ex = _exercise(owner, status=Status.EXTRACTED)
+        sec = baker.make(ClassExerciseSection, exercise=ex, order=0, title='بخش اول')
+        q1 = baker.make(
+            ClassExerciseQuestion,
+            section=sec,
+            order=0,
+            question_markdown='سوال اول',
+            reference_answer_markdown='',
+            max_points=Decimal('1'),
+        )
+        q2 = baker.make(
+            ClassExerciseQuestion,
+            section=sec,
+            order=1,
+            question_markdown='سوال دوم',
+            reference_answer_markdown='پاسخ موجود',
+            max_points=Decimal('1'),
+        )
+        return ex, q1, q2
+
+    def test_preview_returns_candidates_without_writing(self, monkeypatch):
+        from apps.classes import views_exercises as vx
+
+        owner = _teacher()
+        ex, q1, _q2 = self._exercise_with_questions(owner)
+        monkeypatch.setattr(
+            vx,
+            'ingest_reference_answers_markdown',
+            lambda **_kw: ({
+                'mode_detected': 'numbered_answers',
+                'items': [{
+                    'item_id': 'i1',
+                    'question_number': 1,
+                    'reference_answer_markdown': 'پاسخ مرجع',
+                    'points': 2,
+                    'confidence': 0.95,
+                    'notes': '',
+                }],
+                'warnings': [],
+            }, 'test', 'model'),
+        )
+
+        res = _auth(owner).post(
+            REF_PREVIEW.format(ex.id),
+            {'source_text': '۱) پاسخ مرجع', 'mode_hint': 'numbered_answers'},
+            format='multipart',
+        )
+        assert res.status_code == 200, res.content
+        assert res.data['items'][0]['matchStatus'] == 'matched'
+        assert res.data['items'][0]['targetQuestionId'] == q1.id
+        q1.refresh_from_db()
+        assert q1.reference_answer_markdown == ''
+
+    def test_preview_cross_teacher_404_and_student_403(self, monkeypatch):
+        from apps.classes import views_exercises as vx
+
+        owner, other = _teacher(), _teacher()
+        student = baker.make(User, role=User.Role.STUDENT)
+        ex, _q1, _q2 = self._exercise_with_questions(owner)
+        called = {'n': 0}
+
+        def fake(**_kw):
+            called['n'] += 1
+            return ({'items': []}, 'p', 'm')
+
+        monkeypatch.setattr(vx, 'ingest_reference_answers_markdown', fake)
+        assert _auth(other).post(
+            REF_PREVIEW.format(ex.id), {'source_text': 'x'}, format='multipart',
+        ).status_code == 404
+        assert _auth(student).post(
+            REF_PREVIEW.format(ex.id), {'source_text': 'x'}, format='multipart',
+        ).status_code == 403
+        assert called['n'] == 0
+
+    def test_preview_rejects_invalid_image_bytes(self, monkeypatch):
+        owner = _teacher()
+        ex, _q1, _q2 = self._exercise_with_questions(owner)
+        bad = SimpleUploadedFile('bad.png', b'not-an-image', content_type='image/png')
+        res = _auth(owner).post(
+            REF_PREVIEW.format(ex.id),
+            {'files': [bad]},
+            format='multipart',
+        )
+        assert res.status_code == 400
+
+    def test_apply_updates_only_explicit_target_question(self):
+        owner = _teacher()
+        ex, q1, q2 = self._exercise_with_questions(owner)
+        res = _auth(owner).post(
+            REF_APPLY.format(ex.id),
+            {'items': [{
+                'targetQuestionId': q1.id,
+                'referenceAnswerMarkdown': 'پاسخ تازه',
+                'maxPoints': 2,
+            }]},
+            format='json',
+        )
+        assert res.status_code == 200, res.content
+        q1.refresh_from_db()
+        q2.refresh_from_db()
+        assert q1.reference_answer_markdown == 'پاسخ تازه'
+        assert q1.max_points == Decimal('2')
+        assert q2.reference_answer_markdown == 'پاسخ موجود'
+
+    def test_apply_does_not_overwrite_existing_reference_without_flag(self):
+        owner = _teacher()
+        ex, _q1, q2 = self._exercise_with_questions(owner)
+        res = _auth(owner).post(
+            REF_APPLY.format(ex.id),
+            {'items': [{
+                'targetQuestionId': q2.id,
+                'referenceAnswerMarkdown': 'پاسخ جایگزین',
+            }]},
+            format='json',
+        )
+        assert res.status_code == 200, res.content
+        q2.refresh_from_db()
+        assert q2.reference_answer_markdown == 'پاسخ موجود'
+        assert res.data['skipped'][0]['reason'] == 'existing_reference'
+
+    def test_apply_blocks_published_exercise_until_regrade_story_exists(self):
+        owner = _teacher()
+        ex, q1, _q2 = self._exercise_with_questions(owner)
+        ex.status = Status.PUBLISHED
+        ex.save(update_fields=['status'])
+        res = _auth(owner).post(
+            REF_APPLY.format(ex.id),
+            {'items': [{'targetQuestionId': q1.id, 'referenceAnswerMarkdown': 'x'}]},
+            format='json',
+        )
+        assert res.status_code == 409

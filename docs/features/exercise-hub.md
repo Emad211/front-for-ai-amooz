@@ -77,11 +77,35 @@ here, deliberately.
 - **Ingest is async** on the **`pipeline`** queue: upload → DRAFT → `POST /extract/` → EXTRACTING →
   EXTRACTED → teacher review/edit → reference answers → publish. `cache.add` idempotency + status guards;
   failure → FAILED + re-runnable.
+- **Reference Ingest layer (teacher-only, E14):** after questions exist, the teacher can paste text or
+  upload small PDF/photos containing reference answers (or mixed Q+A) to
+  `POST /reference-ingest/preview/`. The server OCRs the source, runs
+  `exercise_reference_ingest`, and returns a **review-only** patch with
+  `matched/ambiguous/unmatched` items. Nothing is saved during preview. The teacher then sends selected
+  items to `POST /reference-ingest/apply/`, which updates only existing questions in a transaction.
+  Ambiguous/low-confidence items never auto-apply; answer-only input without a clear target must be
+  manually mapped by the teacher. MVP is pre-publish only (`PUBLISHED` → 409) until a re-grade/audit flow
+  exists.
 - **Grading is on-submit async** on the `pipeline` queue (not sync = timeout; not nightly batch =
   pointless UX delay). One `generate_structured` call per batch of `EXERCISE_GRADING_BATCH_SIZE`
   (default 5) questions; **MCQ/fill-blank graded deterministically without LLM**; totals computed with
   `sum()` never by the model; retries idempotent (status-guard + persisted `grading_task_id`);
   kill-switch env `EXERCISE_LLM_GRADING` (default on) → submissions stay SUBMITTED for manual grading.
+- **Handwriting-photo answers (E13):** before grading, every answered question whose
+  `answers[qid].images` carries storage paths gets a **vision-extract step**
+  (`exercise_grading._effective_answer_text`): one standard-shape OpenAI multimodal call per question
+  (`image_url` data URIs — the legacy `attachments` shape is silently ignored by the gateway), images
+  sniffed with `is_real_image` (Pillow verify, Low-2) and capped at `EXERCISE_MAX_IMAGES_PER_QUESTION`
+  (default 3); model chain `EXERCISE_VISION_MODEL→IMAGE_MODEL→MODEL_NAME` (raise if unset); usage logged
+  under `LLMUsageLog.Feature.EXERCISE_HANDWRITING_VISION`. Text merge rules: photo-only → extracted text
+  IS the answer (verbatim, so deterministic MCQ/fill-blank matching works); typed+photo descriptive →
+  appended under the delimiter `[متن استخراج‌شده از تصویر پاسخ]`; typed+photo deterministic → typed text
+  authoritative, vision skipped (cost). **Failure semantics:** unreadable image / missing file /
+  transient vision exception logs a warning and grades whatever typed text exists, but a deployment
+  misconfiguration (no vision model in ENV) raises and marks the submission `GRADING_FAILED` instead of
+  silently grading a photo-only answer as zero. Leak guard: the vision prompt carries ONLY the question
+  text — never `reference_answer_markdown`/`grading_notes` (test-locked). The same `is_real_image`
+  sniff also rejects fake-image bytes at upload time (`StudentExerciseImageView`, 400).
 - **Override:** `teacher_score`/`teacher_feedback` written alongside `llm_score` inside
   `result['per_question']`; `llm_score` never overwritten; final `score_points` recomputed.
 - **Assistant leak guard is structural:** before grading the reference answer is **not in the model's
@@ -106,7 +130,7 @@ status — no-op AlterField), `classes/0026_session_scheduled_at` (adds nullable
 `ClassCreationSession` for timed exam-prep calendar events — **database-engineer approved**: metadata-only
 add on Postgres, no rewrite/long lock, no index needed since the calendar query is pre-filtered by
 `invites__phone` + indexed `pipeline_type`; rollback = `migrate classes 0025`). Feature-enum additions ride
-`commons/0006` (no-op AlterField).
+`commons/0006` + `commons/0007_exercise_reference_ingest_feature` (no-op AlterField).
 `LLMUsageLog.Feature` choices additions generate a no-op AlterField migration (coordinate with
 database-engineer).
 
@@ -116,6 +140,11 @@ database-engineer).
 - `POST creation-sessions/<sid>/exercises/` (+ asset upload) · `GET exercises/` · `GET exercises/<eid>/`
 - `POST exercises/<eid>/extract/` (409 while EXTRACTING) · `POST exercises/<eid>/publish/` (400 if any
   question lacks reference answer/points; 409 wrong status)
+- `POST exercises/<eid>/reference-ingest/preview/` (multipart: `source_text`, `files[]`, `mode_hint`,
+  optional `target_question_id`) → review-only `{modeDetected, items, warnings, counts}`; owner-scoped,
+  status-gated, no DB write. `POST exercises/<eid>/reference-ingest/apply/` → transactional update of
+  selected existing questions only; no new question creation and no overwrite of existing reference
+  answers unless `replaceExisting=true`.
 - `PATCH exercises/<eid>/` (title/deadline/allow_late/**assistant_enabled**) ·
   `PATCH exercises/sections/<id>/` (**assistant_enabled**) · CRUD `exercises/<eid>/questions/`
   (content edits after PUBLISHED trigger the re-grade warning flow)
@@ -153,6 +182,13 @@ PLACEHOLDERS + OUTPUT_KEYS + safety-block list in the same commit):**
   `exercise_title, sections[{section_id,title,questions[{question_id,question_text_markdown,question_type,options,points,reference_answer_markdown}]}]`
   (`points`/`reference_answer_markdown` nullable — extracted if present, teacher always wins).
   Phase 2: strategy `answer_key` (`{questions_json}` placeholder).
+- `exercise_reference_ingest` / `default` — placeholders **`{mode_hint}`**,
+  **`{existing_questions_json}`**, **`{source_markdown}`**. Used for teacher-provided answer keys,
+  mixed Q+A sheets, single Q+A, and answer-only sources after questions already exist. Output:
+  `mode_detected, items[{item_id, question_number, question_text_markdown, question_type, options,
+  points, reference_answer_markdown, confidence, notes}], warnings`. The model proposes candidates only;
+  server-side matching decides `matched/ambiguous/unmatched`, and teacher review is mandatory before
+  apply. +`SAFETY_PREAMBLE` + `MATH_FORMAT_INSTRUCTIONS`; source/OCR is DATA, not instructions.
 - `exercise_grading` / `default` — placeholder **`{grading_items_json}`** =
   `[{question_id, question_text, reference_answer, max_points, student_answer}]`; +`SAFETY_PREAMBLE` +
   student-answer-is-DATA injection guard. Output:
@@ -162,17 +198,28 @@ PLACEHOLDERS + OUTPUT_KEYS + safety-block list in the same commit):**
   single-question scale, hard no-reveal rule, no batching.)
 - `exercise_assistant_chat` / `default` — placeholders `{question_context} {student_work} {phase}
   {history} {user_message}`; output `{content, suggestions}` (frontend chat widget unchanged).
+- `exercise_handwriting_vision` / `default` (E13) — placeholder **`{question_text}`** (context only;
+  by contract this prompt NEVER carries the reference answer or grading notes — the leak guard is
+  structural, like the assistant's). Output: `{text}` (validated by
+  `HandwritingTranscriptionOutput` — `text` deliberately **required** so a missing key triggers the
+  `generate_structured` repair round-trip instead of a silent empty transcription). +`SAFETY_PREAMBLE`
+  +`MATH_FORMAT_INSTRUCTIONS`; handwriting content = DATA, not instructions.
 - **Reused verbatim (no new keys):** `pdf_extraction.default` (PDF pages AND uploaded photos — a photo
-  is a page) and `exam_prep_handwriting_vision` (student handwriting photos → two-phase: vision extract →
-  text grading; `unclear_parts` → UI asks the student to type the unclear part before submit; cost
-  attributed via the `feature` call-site parameter, no prompt fork).
+  is a page). *(The original plan reused `exam_prep_handwriting_vision` for student answer photos; the
+  build (E13) added the dedicated single-key `exercise_handwriting_vision` instead — the exam-prep
+  4-key output shape is tutoring-oriented and overweight for a pure transcription step.)*
 
 **Env (models are env-only; missing chain → raise, never a hardcoded name):**
 `EXERCISE_STRUCTURE_MODEL→STRUCTURE_MODEL→MODEL_NAME` · `EXERCISE_GRADING_MODEL→MODEL_NAME` ·
-`EXERCISE_VISION_MODEL→(handwriting chain)→MODEL_NAME` · `EXERCISE_CHAT_MODEL→CHAT_MODEL→MODEL_NAME` ·
-`EXERCISE_GRADING_BATCH_SIZE=5` · `EXERCISE_MAX_IMAGES_PER_CALL` · `EXERCISE_LLM_GRADING=1` (kill-switch).
+`EXERCISE_REFERENCE_INGEST_MODEL→EXERCISE_STRUCTURE_MODEL→STRUCTURE_MODEL→MODEL_NAME` ·
+`EXERCISE_VISION_MODEL→IMAGE_MODEL→MODEL_NAME` (ingest OCR **and** the E13 handwriting step) ·
+`EXERCISE_CHAT_MODEL→CHAT_MODEL→MODEL_NAME` · `EXERCISE_GRADING_BATCH_SIZE=5` ·
+`EXERCISE_MAX_IMAGES_PER_QUESTION=3` (E13 vision cap) ·
+`EXERCISE_MAX_SOURCE_FILES=10` / `EXERCISE_MAX_SOURCE_FILE_BYTES=20971520` ·
+`EXERCISE_REFERENCE_MAX_FILES=5` / `EXERCISE_REFERENCE_MAX_FILE_BYTES=8388608` ·
+`EXERCISE_LLM_GRADING=1` (kill-switch).
 New `LLMUsageLog.Feature` members: `EXERCISE_INGEST, EXERCISE_STRUCTURE, EXERCISE_GRADING,
-EXERCISE_HANDWRITING_VISION, CHAT_EXERCISE`.
+EXERCISE_REFERENCE_INGEST, EXERCISE_HANDWRITING_VISION, CHAT_EXERCISE`.
 
 **Cost model (10-page PDF, 20 questions, 30 students):** ingest ~15–25k + structure ~10–15k (once per
 exercise); grading ~14k/student → **~420k tokens per class round = the dominant, recurring cost**.
@@ -257,6 +304,7 @@ stored `per_question` (zero tokens), **no pregeneration** (nothing to pre-build)
 | **E10** | frontend-engineer | teacher UI: service + wizard + gradebook + override + toggles | ✅ DONE — exercises-service.ts + exercise-manager (create/extract-poll/edit/publish) + gradebook-table (override/allow-redo) + route page; tsc clean (baseline unchanged) |
 | **E11** | frontend-engineer | student UI: exercises hub + solver (text/photo) + assistant widget + report cards | ✅ DONE — service (student endpoints) + hub/solver/result/answers pages + assistant/report-card; disabled-assistant chip; solver never fetches reference; tsc clean |
 | **E12** | frontend-engineer | calendar: remove mock, wire service + Jalali conversion + exam-prep events | ✅ DONE — `getCalendarEvents` → real `getStudentCalendar` (E9); `toCalendarEvent` maps Tehran-tz ISO → Jalali `YYYY-MM-DD`+`HH:MM` (`Intl` persian/Asia-Tehran/latn) + kind→type/priority + isCompleted; mock + fake delay deleted; tsc clean; conversion Node-verified. **Exercise Hub feature COMPLETE (E1–E12).** |
+| **E13** | ai-engineer | handwriting-photo grading slice (audit gap: `answers[qid].images` never reached the LLM — photo-only answers silently scored 0) | ✅ DONE — vision-extract step in `exercise_grading.py` (`exercise_handwriting_vision` prompt + `HandwritingTranscriptionOutput`; standard `image_url` shape; `is_real_image` sniff wired at grading **and** upload; `EXERCISE_MAX_IMAGES_PER_QUESTION=3`; fail-open per question; reference-answer leak guard test-locked); 6 new grading tests + 1 upload negative + contract — all green, 0 tokens |
 
 Cross-cutting gates: `code-reviewer` on every non-trivial diff; `release-manager` at pushes; every step
 updates this doc (docs law). Backend steps follow the sqlite-fast-lane/Postgres-truth test protocol of

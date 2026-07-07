@@ -96,6 +96,53 @@ export type QuestionOverride = {
   teacher_feedback?: string;
 };
 
+export type ReferenceIngestMode =
+  | 'auto'
+  | 'full_qa'
+  | 'single_qa'
+  | 'numbered_answers'
+  | 'answer_only';
+
+export type ReferenceIngestPreviewItem = {
+  id: string;
+  itemId: string;
+  matchStatus: 'matched' | 'ambiguous' | 'unmatched';
+  targetQuestionId: number | null;
+  targetQuestionLabel: string;
+  hasExistingReference: boolean;
+  questionNumber: number | null;
+  questionMarkdown: string;
+  questionType: QuestionType | null;
+  options: unknown[] | null;
+  maxPoints: number | null;
+  referenceAnswerMarkdown: string;
+  confidence: number;
+  notes: string;
+};
+
+export type ReferenceIngestPreview = {
+  modeDetected: string;
+  items: ReferenceIngestPreviewItem[];
+  warnings: string[];
+  counts: {
+    total: number;
+    matched: number;
+    ambiguous: number;
+    unmatched: number;
+  };
+};
+
+export type ReferenceIngestApplyItem = {
+  targetQuestionId: number;
+  referenceAnswerMarkdown?: string;
+  maxPoints?: number | null;
+  questionMarkdown?: string;
+  questionType?: QuestionType | null;
+  options?: unknown[] | null;
+  replaceExisting?: boolean;
+  replaceQuestionText?: boolean;
+};
+
 function assertApiUrl(): void {
   if (!RAW_API_URL) {
     throw new Error('NEXT_PUBLIC_API_URL تنظیم نشده است.');
@@ -281,6 +328,40 @@ export async function deleteQuestion(questionId: number): Promise<void> {
   await requestJson(`${API_URL}/classes/exercises/questions/${questionId}/`, {
     method: 'DELETE',
     headers: authHeaders(),
+  });
+}
+
+export async function previewReferenceIngest(
+  exerciseId: number,
+  data: {
+    modeHint: ReferenceIngestMode;
+    sourceText?: string;
+    targetQuestionId?: number | null;
+    files?: File[];
+  }
+): Promise<ReferenceIngestPreview> {
+  const form = new FormData();
+  form.append('mode_hint', data.modeHint);
+  if (data.sourceText?.trim()) form.append('source_text', data.sourceText);
+  if (data.targetQuestionId != null) {
+    form.append('target_question_id', String(data.targetQuestionId));
+  }
+  (data.files ?? []).forEach((f) => form.append('files', f));
+  return requestJson(`${API_URL}/classes/exercises/${exerciseId}/reference-ingest/preview/`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: form,
+  });
+}
+
+export async function applyReferenceIngest(
+  exerciseId: number,
+  items: ReferenceIngestApplyItem[]
+): Promise<{ appliedCount: number; updatedQuestionIds: number[]; skipped: Array<{ targetQuestionId: number; reason: string }> }> {
+  return requestJson(`${API_URL}/classes/exercises/${exerciseId}/reference-ingest/apply/`, {
+    method: 'POST',
+    headers: jsonHeaders(),
+    body: JSON.stringify({ items }),
   });
 }
 

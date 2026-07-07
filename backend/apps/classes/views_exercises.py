@@ -10,6 +10,7 @@ Design + permission matrix: docs/features/exercise-hub.md · ADR-0004.
 from __future__ import annotations
 
 import os
+from decimal import Decimal, InvalidOperation
 
 from django.core.files.storage import default_storage
 from django.db import IntegrityError, transaction
@@ -29,6 +30,13 @@ from .models import (
     StudentExerciseSubmission,
 )
 from .permissions import IsStudentUser, IsTeacherUser
+from .services.exercise_ingest import (
+    build_reference_ingest_preview,
+    compact_existing_questions,
+    ingest_reference_answers_markdown,
+    ocr_uploaded_files_to_markdown,
+)
+from .services.file_validation import is_probably_pdf, is_real_image, uploaded_content_type, uploaded_name
 from .serializers_exercises import (
     ExerciseCreateSerializer,
     ExerciseDetailSerializer,
@@ -40,6 +48,24 @@ from .serializers_exercises import (
 from .tasks import extract_exercise_content
 
 _NOT_FOUND = {'detail': 'تمرین پیدا نشد.'}
+
+
+def _int_env(name: str, default: int) -> int:
+    try:
+        return max(1, int(os.getenv(name, str(default))))
+    except (TypeError, ValueError):
+        return default
+
+
+_MAX_SOURCE_FILES = _int_env('EXERCISE_MAX_SOURCE_FILES', 10)
+_MAX_SOURCE_FILE_BYTES = _int_env('EXERCISE_MAX_SOURCE_FILE_BYTES', 20 * 1024 * 1024)
+_MAX_REFERENCE_FILES = _int_env('EXERCISE_REFERENCE_MAX_FILES', 5)
+_MAX_REFERENCE_FILE_BYTES = _int_env('EXERCISE_REFERENCE_MAX_FILE_BYTES', 8 * 1024 * 1024)
+_REFERENCE_EDITABLE_STATUSES = {
+    ClassExercise.Status.DRAFT,
+    ClassExercise.Status.EXTRACTED,
+    ClassExercise.Status.FAILED,
+}
 
 
 def _owned_exercise(request, exercise_id):
@@ -54,6 +80,65 @@ def _asset_kind(uploaded) -> str:
     if 'pdf' in ct or name.endswith('.pdf'):
         return ClassExerciseAsset.Kind.PDF
     return ClassExerciseAsset.Kind.IMAGE
+
+
+def _read_uploaded_for_validation(uploaded, max_bytes: int):
+    size = int(getattr(uploaded, 'size', 0) or 0)
+    if size and size > max_bytes:
+        return None, Response(
+            {'detail': 'حجم فایل بیش از حد مجاز است.'},
+            status=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+        )
+    data = uploaded.read()
+    try:
+        uploaded.seek(0)
+    except Exception:
+        pass
+    if not data:
+        return None, Response({'detail': 'فایل ارسالی خالی است.'}, status=status.HTTP_400_BAD_REQUEST)
+    if len(data) > max_bytes:
+        return None, Response(
+            {'detail': 'حجم فایل بیش از حد مجاز است.'},
+            status=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+        )
+    return data, None
+
+
+def _validate_exercise_source_file(uploaded, *, max_bytes: int):
+    data, error = _read_uploaded_for_validation(uploaded, max_bytes)
+    if error is not None:
+        return None, error
+    ct = uploaded_content_type(uploaded)
+    name = uploaded_name(uploaded)
+    looks_pdf = 'pdf' in ct or name.endswith('.pdf')
+    looks_image = ct.startswith('image/') or name.endswith(('.jpg', '.jpeg', '.png', '.webp'))
+    if looks_pdf and is_probably_pdf(data):
+        return ClassExerciseAsset.Kind.PDF, None
+    if looks_image and is_real_image(data):
+        return ClassExerciseAsset.Kind.IMAGE, None
+    return None, Response(
+        {'detail': 'فقط PDF یا تصویر معتبر مجاز است.'},
+        status=status.HTTP_400_BAD_REQUEST,
+    )
+
+
+def _reference_editable_response(exercise):
+    if exercise.status == ClassExercise.Status.PUBLISHED:
+        return Response(
+            {'detail': 'پس از انتشار، تغییر پاسخ مرجع نیازمند جریان بازنمره‌دهی است.'},
+            status=status.HTTP_409_CONFLICT,
+        )
+    if exercise.status == ClassExercise.Status.EXTRACTING:
+        return Response(
+            {'detail': 'تا پایان استخراج تمرین صبر کنید.'},
+            status=status.HTTP_409_CONFLICT,
+        )
+    if exercise.status not in _REFERENCE_EDITABLE_STATUSES:
+        return Response(
+            {'detail': 'در وضعیت فعلی امکان ورود پاسخ مرجع وجود ندارد.'},
+            status=status.HTTP_409_CONFLICT,
+        )
+    return None
 
 
 class ExerciseListCreateView(APIView):
@@ -80,14 +165,28 @@ class ExerciseListCreateView(APIView):
 
         serializer = ExerciseCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
+        uploaded_files = request.FILES.getlist('files')
+        if len(uploaded_files) > _MAX_SOURCE_FILES:
+            return Response(
+                {'detail': 'تعداد فایل‌های تمرین بیش از حد مجاز است.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        validated_assets = []
+        for uploaded in uploaded_files:
+            kind, error = _validate_exercise_source_file(
+                uploaded, max_bytes=_MAX_SOURCE_FILE_BYTES,
+            )
+            if error is not None:
+                return error
+            validated_assets.append((kind, uploaded))
         exercise = ClassExercise.objects.create(
             session=session,
             title=serializer.validated_data['title'],
             description=serializer.validated_data.get('description', ''),
         )
-        for idx, uploaded in enumerate(request.FILES.getlist('files')):
+        for idx, (kind, uploaded) in enumerate(validated_assets):
             ClassExerciseAsset.objects.create(
-                exercise=exercise, kind=_asset_kind(uploaded), file=uploaded, order=idx,
+                exercise=exercise, kind=kind, file=uploaded, order=idx,
             )
         return Response(
             ExerciseDetailSerializer(exercise).data, status=status.HTTP_201_CREATED,
@@ -293,6 +392,223 @@ class ExerciseQuestionDetailView(APIView):
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
+class ExerciseReferenceIngestPreviewView(APIView):
+    """Preview teacher-provided reference answers/questions before applying.
+
+    This endpoint intentionally writes nothing to the database. It OCRs the
+    source (text/PDF/images), asks the structured LLM for candidates, then maps
+    them conservatively onto existing questions for teacher review.
+    """
+
+    permission_classes = [IsAuthenticated, IsTeacherUser]
+    parser_classes = [MultiPartParser, FormParser]
+
+    def post(self, request, exercise_id: int):
+        exercise = _owned_exercise(request, exercise_id)
+        if exercise is None:
+            return Response(_NOT_FOUND, status=status.HTTP_404_NOT_FOUND)
+        gate = _reference_editable_response(exercise)
+        if gate is not None:
+            return gate
+
+        files = request.FILES.getlist('files')
+        if len(files) > _MAX_REFERENCE_FILES:
+            return Response(
+                {'detail': 'تعداد فایل‌های پاسخ مرجع بیش از حد مجاز است.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        for uploaded in files:
+            _kind, error = _validate_exercise_source_file(
+                uploaded, max_bytes=_MAX_REFERENCE_FILE_BYTES,
+            )
+            if error is not None:
+                return error
+
+        source_text = (
+            request.data.get('source_text')
+            or request.data.get('sourceText')
+            or ''
+        )
+        mode_hint = (
+            request.data.get('mode_hint')
+            or request.data.get('modeHint')
+            or 'auto'
+        )
+        target_raw = request.data.get('target_question_id') or request.data.get('targetQuestionId')
+        target_question_id = None
+        if target_raw not in (None, '', 'all'):
+            try:
+                target_question_id = int(target_raw)
+            except (TypeError, ValueError):
+                return Response({'detail': 'سوال هدف نامعتبر است.'}, status=status.HTTP_400_BAD_REQUEST)
+            exists = ClassExerciseQuestion.objects.filter(
+                id=target_question_id, section__exercise=exercise,
+            ).exists()
+            if not exists:
+                return Response({'detail': 'سوال هدف پیدا نشد.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        if not str(source_text).strip() and not files:
+            return Response(
+                {'detail': 'متن یا فایل پاسخ مرجع را وارد کنید.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            ocr_markdown = ocr_uploaded_files_to_markdown(files) if files else ''
+        except ValueError:
+            return Response(
+                {'detail': 'فایل ارسالی قابل خواندن نیست.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        except Exception:
+            return Response(
+                {'detail': 'استخراج فایل کامل نشد. دوباره تلاش کنید یا متن را دستی وارد کنید.'},
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+
+        source_markdown = "\n\n---\n\n".join(
+            part.strip() for part in [str(source_text or ''), ocr_markdown] if part and part.strip()
+        )
+        if not source_markdown.strip():
+            return Response(
+                {'detail': 'متنی از فایل یا ورودی شما استخراج نشد.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        existing = compact_existing_questions(exercise)
+        try:
+            extracted, _provider, _model = ingest_reference_answers_markdown(
+                source_markdown=source_markdown,
+                existing_questions=existing,
+                mode_hint=str(mode_hint or 'auto'),
+            )
+        except RuntimeError:
+            return Response(
+                {'detail': 'استخراج پاسخ مرجع کامل نشد. دوباره تلاش کنید یا دستی وارد کنید.'},
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+        preview = build_reference_ingest_preview(
+            exercise=exercise,
+            extracted=extracted,
+            target_question_id=target_question_id,
+        )
+        return Response(preview)
+
+
+class ExerciseReferenceIngestApplyView(APIView):
+    """Apply teacher-reviewed reference-answer patches to existing questions."""
+
+    permission_classes = [IsAuthenticated, IsTeacherUser]
+
+    def post(self, request, exercise_id: int):
+        raw_items = request.data.get('items') if isinstance(request.data, dict) else None
+        if not isinstance(raw_items, list) or not raw_items:
+            return Response({'detail': 'هیچ موردی برای اعمال ارسال نشده است.'},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        with transaction.atomic():
+            exercise = ClassExercise.objects.select_for_update().filter(
+                id=exercise_id, session__teacher=request.user,
+            ).first()
+            if exercise is None:
+                return Response(_NOT_FOUND, status=status.HTTP_404_NOT_FOUND)
+            gate = _reference_editable_response(exercise)
+            if gate is not None:
+                return gate
+            questions = {
+                q.id: q for q in ClassExerciseQuestion.objects.select_for_update().filter(
+                    section__exercise=exercise,
+                )
+            }
+            applied: list[int] = []
+            skipped: list[dict] = []
+            errors: list[dict] = []
+
+            for idx, item in enumerate(raw_items, start=1):
+                if not isinstance(item, dict):
+                    errors.append({'index': idx, 'detail': 'مورد ارسالی نامعتبر است.'})
+                    continue
+                qid_raw = item.get('targetQuestionId') or item.get('target_question_id')
+                try:
+                    qid = int(qid_raw)
+                except (TypeError, ValueError):
+                    errors.append({'index': idx, 'detail': 'سوال هدف نامعتبر است.'})
+                    continue
+                q = questions.get(qid)
+                if q is None:
+                    errors.append({'index': idx, 'detail': 'سوال هدف پیدا نشد.'})
+                    continue
+
+                replace_existing = bool(
+                    item.get('replaceExisting') or item.get('replace_existing')
+                )
+                replace_question_text = bool(
+                    item.get('replaceQuestionText') or item.get('replace_question_text')
+                )
+                fields: list[str] = []
+                ref = str(
+                    item.get('referenceAnswerMarkdown')
+                    or item.get('reference_answer_markdown')
+                    or ''
+                ).strip()
+                if ref:
+                    if (q.reference_answer_markdown or '').strip() and not replace_existing:
+                        skipped.append({
+                            'targetQuestionId': q.id,
+                            'reason': 'existing_reference',
+                        })
+                    else:
+                        q.reference_answer_markdown = ref
+                        fields.append('reference_answer_markdown')
+
+                if item.get('maxPoints') is not None or item.get('max_points') is not None:
+                    raw_points = item.get('maxPoints') if item.get('maxPoints') is not None else item.get('max_points')
+                    try:
+                        points = Decimal(str(raw_points))
+                    except (InvalidOperation, TypeError, ValueError):
+                        errors.append({'index': idx, 'detail': 'بارم نامعتبر است.'})
+                        continue
+                    if points <= 0:
+                        errors.append({'index': idx, 'detail': 'بارم باید بزرگ‌تر از صفر باشد.'})
+                        continue
+                    q.max_points = points
+                    fields.append('max_points')
+
+                question_text = str(
+                    item.get('questionMarkdown') or item.get('question_markdown') or ''
+                ).strip()
+                if question_text and replace_question_text:
+                    q.question_markdown = question_text
+                    fields.append('question_markdown')
+
+                question_type = item.get('questionType') or item.get('question_type')
+                if question_type in dict(ClassExerciseQuestion.QuestionType.choices):
+                    q.question_type = question_type
+                    fields.append('question_type')
+                options = item.get('options')
+                if isinstance(options, list):
+                    q.options = options
+                    fields.append('options')
+
+                if fields:
+                    q.save(update_fields=sorted(set(fields)))
+                    applied.append(q.id)
+                elif not any(s.get('targetQuestionId') == q.id for s in skipped):
+                    skipped.append({'targetQuestionId': q.id, 'reason': 'empty_patch'})
+
+            if errors:
+                transaction.set_rollback(True)
+                return Response(
+                    {'detail': 'برخی موارد قابل اعمال نیستند.', 'errors': errors},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+        return Response({
+            'appliedCount': len(set(applied)),
+            'updatedQuestionIds': sorted(set(applied)),
+            'skipped': skipped,
+        })
+
+
 # ═══════════════════════════════════════════════════════════════════════════
 # Student API — phone-scoped. A student only ever reaches a PUBLISHED exercise
 # of a published class they were invited to (via phone). No phone -> 400.
@@ -304,6 +620,7 @@ _NO_PHONE = {'detail': 'شماره موبایل برای حساب کاربری �
 _EX_NOT_FOUND = {'detail': 'تمرین پیدا نشد.'}
 
 _MAX_IMAGE_BYTES = int(os.getenv('EXERCISE_MAX_IMAGE_BYTES', str(8 * 1024 * 1024)))
+_MAX_IMAGES_PER_QUESTION = _int_env('EXERCISE_MAX_IMAGES_PER_QUESTION', 3)
 
 
 def _student_phone(request):
@@ -525,11 +842,15 @@ class StudentExerciseImageView(APIView):
                 {'detail': 'حجم تصویر بیش از حد مجاز است.'},
                 status=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
             )
-
-        path = default_storage.save(
-            f'exercises/answers/{exercise.id}/{request.user.id}/{question_id}_{up.name}',
-            up,
-        )
+        # Low-2: content_type is client-controlled — sniff the actual bytes
+        # (Pillow verify) before persisting anything the grader will later
+        # feed to the vision model.
+        if not is_real_image(up.read()):
+            return Response(
+                {'detail': 'فایل ارسالی تصویر معتبر نیست.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        up.seek(0)  # reset after the sniff read so the full bytes get saved
         submission, _created = StudentExerciseSubmission.objects.get_or_create(
             exercise=exercise, student=request.user,
             defaults={'status': StudentExerciseSubmission.Status.DRAFT},
@@ -542,6 +863,15 @@ class StudentExerciseImageView(APIView):
         qkey = str(question_id)
         entry = answers.get(qkey) if isinstance(answers.get(qkey), dict) else {}
         images = entry.get('images') if isinstance(entry.get('images'), list) else []
+        if len(images) >= _MAX_IMAGES_PER_QUESTION:
+            return Response(
+                {'detail': 'تعداد تصاویر این پاسخ بیش از حد مجاز است.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        path = default_storage.save(
+            f'exercises/answers/{exercise.id}/{request.user.id}/{question_id}_{up.name}',
+            up,
+        )
         images.append(path)
         entry['images'] = images
         answers[qkey] = entry

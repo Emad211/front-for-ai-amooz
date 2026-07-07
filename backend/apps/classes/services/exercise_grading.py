@@ -11,11 +11,19 @@ Security (E5 gate carry-ins):
   score/feedback/label live there.
 * Low-2 — answer images are magic-byte sniffed (Pillow verify) before being sent
   to the vision model.
+
+Handwriting photos (E13): answers carrying ``images`` (storage paths uploaded via
+``StudentExerciseImageView``) are vision-extracted to text BEFORE grading — one
+standard-shape multimodal call per question (``exercise_handwriting_vision``
+prompt, NEVER carrying the reference answer). A vision failure degrades that
+question to text-only grading; it never fails the whole submission.
 """
 from __future__ import annotations
 
+import base64
 import json
 import logging
+import mimetypes
 import os
 import re
 from decimal import Decimal
@@ -24,7 +32,8 @@ from typing import Any
 from apps.commons.llm_prompts import PROMPTS
 from apps.commons.models import LLMUsageLog
 from apps.commons.structured_llm import generate_structured
-from .schemas import ExerciseGradingOutput
+from .file_validation import is_real_image
+from .schemas import ExerciseGradingOutput, HandwritingTranscriptionOutput
 
 logger = logging.getLogger(__name__)
 
@@ -60,19 +69,6 @@ def grading_enabled() -> bool:
     return _get_env("EXERCISE_LLM_GRADING").lower() not in {"0", "false", "no", "off"}
 
 
-def is_real_image(data: bytes) -> bool:
-    """Low-2: verify the bytes are a real image before sending to the LLM."""
-    if not data:
-        return False
-    try:
-        from PIL import Image  # lazy — Pillow is a heavy import
-        import io
-        Image.open(io.BytesIO(data)).verify()
-        return True
-    except Exception:
-        return False
-
-
 def _norm(text: str) -> str:
     """Normalize for deterministic comparison (whitespace + Persian/Arabic digits)."""
     s = str(text or "").strip().lower()
@@ -88,6 +84,119 @@ def _student_text(answers: dict, question_id) -> str:
     if isinstance(entry, str):
         return entry.strip()
     return ""
+
+
+# ---------------------------------------------------------------------------
+# Handwriting photos -> text (vision extract, E13)
+# ---------------------------------------------------------------------------
+
+
+def _max_images_per_question() -> int:
+    try:
+        return max(1, int(os.getenv("EXERCISE_MAX_IMAGES_PER_QUESTION", "3")))
+    except (TypeError, ValueError):
+        return 3
+
+
+def _student_images(answers: dict, question_id) -> list[str]:
+    """Storage paths of the answer photos uploaded for one question."""
+    entry = answers.get(str(question_id)) if isinstance(answers, dict) else None
+    if not isinstance(entry, dict):
+        return []
+    images = entry.get("images")
+    if not isinstance(images, list):
+        return []
+    return [p for p in images if isinstance(p, str) and p.strip()]
+
+
+def _read_answer_image(path: str) -> bytes:
+    """Read one stored answer image (kept tiny so tests can stub storage)."""
+    from django.core.files.storage import default_storage
+    with default_storage.open(path) as fh:
+        return fh.read()
+
+
+def _image_data_url(path: str, data: bytes) -> str:
+    mime, _enc = mimetypes.guess_type(path)
+    if not (mime or "").startswith("image/"):
+        mime = "image/jpeg"
+    return f"data:{mime};base64,{base64.b64encode(data).decode()}"
+
+
+def _transcribe_answer_images(question, image_paths: list[str]) -> str:
+    """Vision-extract the student's handwritten answer photo(s) into text.
+
+    ONE standard-shape OpenAI multimodal call per question (``image_url`` data
+    URIs — the legacy ``attachments`` shape is silently ignored by the Avalai
+    gateway). Every image passes the ``is_real_image`` sniff (Low-2), capped at
+    ``EXERCISE_MAX_IMAGES_PER_QUESTION``. LEAK GUARD: the prompt carries ONLY
+    the question text — never the reference answer or grading notes. Raises on
+    LLM failure; the caller degrades that question to text-only grading.
+    """
+    cap = _max_images_per_question()
+    parts: list[dict] = []
+    for path in image_paths:
+        if len(parts) >= cap:
+            break
+        try:
+            data = _read_answer_image(path)
+        except Exception:
+            logger.warning("Answer image unreadable, skipping: %s", path)
+            continue
+        if not is_real_image(data):  # Low-2: sniff before any LLM call
+            logger.warning("Answer image failed the image sniff, skipping: %s", path)
+            continue
+        parts.append({"type": "image_url", "image_url": {"url": _image_data_url(path, data)}})
+    if not parts:
+        return ""
+
+    model = _select_model("EXERCISE_VISION_MODEL", "IMAGE_MODEL")
+    prompt = str(PROMPTS["exercise_handwriting_vision"]["default"]).replace(
+        "{question_text}", str(question.question_markdown or ""),
+    )
+    messages = [{"role": "user", "content": [{"type": "text", "text": prompt}] + parts}]
+    obj = generate_structured(
+        schema=HandwritingTranscriptionOutput, messages=messages,
+        feature=LLMUsageLog.Feature.EXERCISE_HANDWRITING_VISION, model=model,
+        timeout=_LLM_TIMEOUT_SECONDS,
+    )
+    return (obj.text or "").strip()
+
+
+def _effective_answer_text(question, answers: dict) -> str:
+    """Typed text + vision-extracted photo text for one question.
+
+    Rules:
+    * Photo-only answer -> the extracted text IS the answer (verbatim, so the
+      deterministic MCQ/fill-blank comparison still works).
+    * Typed + photo on a DESCRIPTIVE question -> extracted text is appended
+      under a clear Persian delimiter for the grader.
+    * Typed + photo on a deterministic question -> the typed text is
+      authoritative for exact-match grading; skip the vision call (cost).
+    * Any vision failure -> grade whatever typed text exists (never fail the
+      whole submission because of one bad image).
+    """
+    stext = _student_text(answers, question.id)
+    image_paths = _student_images(answers, question.id)
+    if not image_paths:
+        return stext
+    if stext and question.question_type in _DETERMINISTIC_TYPES:
+        return stext
+    try:
+        extracted = _transcribe_answer_images(question, image_paths)
+    except Exception as exc:
+        if isinstance(exc, RuntimeError) and "No LLM model defined" in str(exc):
+            raise
+        logger.warning(
+            "Handwriting vision failed for question %s; grading text only",
+            question.id, exc_info=True,
+        )
+        return stext
+    if not extracted:
+        return stext
+    if not stext:
+        return extracted
+    return f"{stext}\n\n[متن استخراج‌شده از تصویر پاسخ]\n{extracted}"
 
 
 def _grade_deterministic(question, student_answer: str) -> dict:
@@ -163,7 +272,9 @@ def grade_submission(submission) -> dict:
     descriptive_qs: dict[str, Any] = {}
 
     for q in questions:
-        stext = _student_text(answers, q.id)
+        # Vision-extract any handwriting photos into the answer text first
+        # (fail-open per question — see _effective_answer_text).
+        stext = _effective_answer_text(q, answers)
         if q.question_type in _DETERMINISTIC_TYPES:
             per_question.append(_grade_deterministic(q, stext))
         else:
