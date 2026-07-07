@@ -98,15 +98,19 @@ def _max_images_per_question() -> int:
         return 3
 
 
-def _student_images(answers: dict, question_id) -> list[str]:
+def _student_images(answers: dict, question, student_id: int) -> list[str]:
     """Storage paths of the answer photos uploaded for one question."""
-    entry = answers.get(str(question_id)) if isinstance(answers, dict) else None
+    entry = answers.get(str(question.id)) if isinstance(answers, dict) else None
     if not isinstance(entry, dict):
         return []
     images = entry.get("images")
     if not isinstance(images, list):
         return []
-    return [p for p in images if isinstance(p, str) and p.strip()]
+    prefix = f"exercises/answers/{question.section.exercise_id}/{student_id}/{question.id}_"
+    return [
+        p for p in images
+        if isinstance(p, str) and p.startswith(prefix)
+    ]
 
 
 def _read_answer_image(path: str) -> bytes:
@@ -163,7 +167,7 @@ def _transcribe_answer_images(question, image_paths: list[str]) -> str:
     return (obj.text or "").strip()
 
 
-def _effective_answer_text(question, answers: dict) -> str:
+def _effective_answer_text(question, answers: dict, *, student_id: int) -> str:
     """Typed text + vision-extracted photo text for one question.
 
     Rules:
@@ -177,7 +181,7 @@ def _effective_answer_text(question, answers: dict) -> str:
       whole submission because of one bad image).
     """
     stext = _student_text(answers, question.id)
-    image_paths = _student_images(answers, question.id)
+    image_paths = _student_images(answers, question, student_id)
     if not image_paths:
         return stext
     if stext and question.question_type in _DETERMINISTIC_TYPES:
@@ -262,6 +266,7 @@ def grade_submission(submission) -> dict:
 
     questions = list(
         ClassExerciseQuestion.objects
+        .select_related("section")
         .filter(section__exercise=submission.exercise)
         .order_by("section__order", "order")
     )
@@ -274,7 +279,7 @@ def grade_submission(submission) -> dict:
     for q in questions:
         # Vision-extract any handwriting photos into the answer text first
         # (fail-open per question — see _effective_answer_text).
-        stext = _effective_answer_text(q, answers)
+        stext = _effective_answer_text(q, answers, student_id=submission.student_id)
         if q.question_type in _DETERMINISTIC_TYPES:
             per_question.append(_grade_deterministic(q, stext))
         else:

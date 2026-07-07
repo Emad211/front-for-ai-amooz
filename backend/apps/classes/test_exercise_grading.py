@@ -172,11 +172,18 @@ def _photo_submission(*, qtype=None, reference='ب', text='', images=(),
                    reference_answer_markdown=reference,
                    grading_notes=grading_notes, max_points=Decimal('2'))
     student = baker.make('accounts.User', role='STUDENT')
-    entry = {'images': list(images)}
+    entry = {}
     if text:
         entry['text'] = text
     sub = baker.make(StudentExerciseSubmission, exercise=ex, student=student,
                      status=SubStatus.SUBMITTED, answers={str(q.id): entry})
+    if images:
+        entry['images'] = [
+            f'exercises/answers/{ex.id}/{student.id}/{q.id}_{idx}.png'
+            for idx, _path in enumerate(images)
+        ]
+        sub.answers = {str(q.id): entry}
+        sub.save(update_fields=['answers'])
     return ex, q, sub
 
 
@@ -265,6 +272,23 @@ class TestHandwritingVision:
         sub.refresh_from_db()
         assert sub.status == SubStatus.GRADED
         assert str(sub.score_points) == '0.00'  # no readable answer -> incorrect
+
+    def test_unowned_image_path_ignored_without_storage_read(self, monkeypatch):
+        """Client/legacy JSON must not let the grader open arbitrary storage paths."""
+        ex, q, sub = _photo_submission()
+        sub.answers = {str(q.id): {'images': ['exercises/answers/999/999/x.png']}}
+        sub.save(update_fields=['answers'])
+        captured = self._mock_vision(monkeypatch)
+        read_called = {'n': 0}
+
+        def fake_read(_path):
+            read_called['n'] += 1
+            return _png_bytes()
+
+        monkeypatch.setattr(grading, '_read_answer_image', fake_read)
+        assert _run(sub.id)['status'] == 'graded'
+        assert captured['calls'] == 0
+        assert read_called['n'] == 0
 
     def test_reference_answer_never_in_vision_prompt(self, monkeypatch):
         """(d) Leak guard: the vision call must never see the reference answer

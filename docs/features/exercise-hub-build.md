@@ -173,12 +173,16 @@ Postgres/CI is migration-truth. LLM fully mocked (0 tokens).
   and transactional update-only `POST /reference-ingest/apply/` (existing questions only; no overwrite
   unless `replaceExisting=true`; `PUBLISHED` 409 until re-grade flow exists). Security hardening:
   source/reference uploads now use count/size allowlists + PDF magic-byte / Pillow image sniff before
-  storage/LLM; student answer-image upload checks submission status before `default_storage.save` and
-  caps stored images per question. Frontend: exercise editor now exposes a visible «ورود سؤال و پاسخ
+  storage/LLM; preview has reference-specific OCR page/unit caps and source-text caps before the LLM;
+  apply has item/field/points caps and skips the entire item when `replaceExisting=false` on an existing
+  reference answer; student answer-image paths are server-owned (draft/submit JSON cannot point grading
+  at arbitrary storage paths) and uploads check submission status before `default_storage.save`. Frontend:
+  exercise editor now exposes a visible «ورود سؤال و پاسخ
   مرجع» panel with Sheet-based preview/review, target-question selector, Persian guidance, and
-  Markdown+KaTeX rendering for extracted rubric text. Tests added/updated for prompt contract,
-  reference ingest service, teacher API preview/apply/ownership/validation, and student orphan-upload
-  regression.
+  Markdown+KaTeX rendering for extracted rubric text; shared Markdown rendering now sanitizes link/image
+  URLs before `dangerouslySetInnerHTML`. Tests added/updated for prompt contract, reference ingest
+  service, teacher API preview/apply/ownership/validation/caps, student image ownership/merge behavior,
+  and grading defense-in-depth.
 
 **Definition of done (every step):** GREEN on the sqlite fast lane (Postgres = CI truth); new code documented
 in `exercise-hub.md` (docs law); auth/permission changes carry negative tests; commit `feat(exercise): E# …`

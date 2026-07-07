@@ -85,7 +85,9 @@ here, deliberately.
   items to `POST /reference-ingest/apply/`, which updates only existing questions in a transaction.
   Ambiguous/low-confidence items never auto-apply; answer-only input without a clear target must be
   manually mapped by the teacher. MVP is pre-publish only (`PUBLISHED` → 409) until a re-grade/audit flow
-  exists.
+  exists. The preview path is bounded by reference-specific file/page/OCR/source-text caps before the LLM;
+  apply is bounded by item/field/points caps and never mutates an existing-reference question unless
+  `replaceExisting=true`.
 - **Grading is on-submit async** on the `pipeline` queue (not sync = timeout; not nightly batch =
   pointless UX delay). One `generate_structured` call per batch of `EXERCISE_GRADING_BATCH_SIZE`
   (default 5) questions; **MCQ/fill-blank graded deterministically without LLM**; totals computed with
@@ -217,6 +219,12 @@ PLACEHOLDERS + OUTPUT_KEYS + safety-block list in the same commit):**
 `EXERCISE_MAX_IMAGES_PER_QUESTION=3` (E13 vision cap) ·
 `EXERCISE_MAX_SOURCE_FILES=10` / `EXERCISE_MAX_SOURCE_FILE_BYTES=20971520` ·
 `EXERCISE_REFERENCE_MAX_FILES=5` / `EXERCISE_REFERENCE_MAX_FILE_BYTES=8388608` ·
+`EXERCISE_REFERENCE_MAX_SOURCE_CHARS=50000` ·
+`EXERCISE_REFERENCE_MAX_PDF_PAGES=20` / `EXERCISE_REFERENCE_MAX_OCR_UNITS=20` ·
+`EXERCISE_REFERENCE_MAX_APPLY_ITEMS=100` / `EXERCISE_REFERENCE_MAX_MARKDOWN_CHARS=20000` ·
+`EXERCISE_REFERENCE_MAX_OPTIONS=12` / `EXERCISE_REFERENCE_MAX_OPTION_CHARS=2000` ·
+`EXERCISE_REFERENCE_MAX_POINTS=1000` ·
+`EXERCISE_REFERENCE_CONTEXT_MAX_QUESTIONS=120` / `EXERCISE_REFERENCE_CONTEXT_QUESTION_CHARS=1200` ·
 `EXERCISE_LLM_GRADING=1` (kill-switch).
 New `LLMUsageLog.Feature` members: `EXERCISE_INGEST, EXERCISE_STRUCTURE, EXERCISE_GRADING,
 EXERCISE_REFERENCE_INGEST, EXERCISE_HANDWRITING_VISION, CHAT_EXERCISE`.

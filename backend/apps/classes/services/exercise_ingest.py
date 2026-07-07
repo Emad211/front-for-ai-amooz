@@ -33,6 +33,8 @@ _VALID_QUESTION_TYPES = {"descriptive", "multiple_choice", "fill_blank"}
 
 _LLM_TIMEOUT_SECONDS = int(os.getenv("LLM_TIMEOUT_SECONDS", "600"))
 _REFERENCE_MATCH_THRESHOLD = float(os.getenv("EXERCISE_REFERENCE_MATCH_THRESHOLD", "0.70"))
+_REFERENCE_CONTEXT_MAX_QUESTIONS = int(os.getenv("EXERCISE_REFERENCE_CONTEXT_MAX_QUESTIONS", "120"))
+_REFERENCE_CONTEXT_QUESTION_CHARS = int(os.getenv("EXERCISE_REFERENCE_CONTEXT_QUESTION_CHARS", "1200"))
 
 
 def _get_env(name: str) -> str:
@@ -223,7 +225,14 @@ def ocr_uploaded_files_to_markdown(files) -> str:
 # ---------------------------------------------------------------------------
 
 
-def compact_existing_questions(exercise) -> list[dict[str, Any]]:
+def _clip_text(value: Any, max_chars: int) -> str:
+    text = str(value or "")
+    if len(text) <= max_chars:
+        return text
+    return text[:max_chars].rstrip() + "\n...[trimmed]"
+
+
+def compact_existing_questions(exercise, *, question_ids: list[int] | None = None) -> list[dict[str, Any]]:
     """Compact question context sent to the reference-ingest prompt."""
     from ..models import ClassExerciseQuestion
 
@@ -233,15 +242,17 @@ def compact_existing_questions(exercise) -> list[dict[str, Any]]:
         .select_related("section")
         .order_by("section__order", "order", "id")
     )
+    if question_ids:
+        qs = qs.filter(id__in=question_ids)
     out: list[dict[str, Any]] = []
-    for idx, q in enumerate(qs, start=1):
+    for idx, q in enumerate(qs[:_REFERENCE_CONTEXT_MAX_QUESTIONS], start=1):
         out.append({
             "id": q.id,
             "number": idx,
             "section_id": q.section_id,
             "section_title": q.section.title,
             "question_order": q.order,
-            "question_markdown": q.question_markdown,
+            "question_markdown": _clip_text(q.question_markdown, _REFERENCE_CONTEXT_QUESTION_CHARS),
             "question_type": q.question_type,
             "has_reference_answer": bool((q.reference_answer_markdown or "").strip()),
             "max_points": str(q.max_points),

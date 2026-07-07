@@ -19,15 +19,31 @@ function escapeHtml(text: string): string {
 		.replaceAll("'", '&#39;');
 }
 
+function unescapeMarkdownUrl(text: string): string {
+	return String(text)
+		.replaceAll('&amp;', '&')
+		.replaceAll('&quot;', '"')
+		.replaceAll('&#39;', "'");
+}
+
 // Backend (Django) serves extracted figure images at /media/...; the Next.js
 // origin differs, so relative media URLs are resolved against the API base.
 const API_BASE = (process.env.NEXT_PUBLIC_API_URL || '').replace(/\/+$/, '');
 
-function resolveImgSrc(src: string): string {
-	const s = String(src).trim();
-	if (/^(https?:)?\/\//i.test(s) || s.startsWith('data:')) return s;
-	if (s.startsWith('/')) return API_BASE + s;
-	return s;
+function sanitizeMarkdownUrl(raw: string, { image = false }: { image?: boolean } = {}): string | null {
+	const s = unescapeMarkdownUrl(raw).trim();
+	if (!s || /[\u0000-\u001f\u007f]/.test(s)) return null;
+	if (/^https?:\/\//i.test(s)) return s;
+	if (s.startsWith('//')) return null;
+	if (s.startsWith('/')) {
+		if (image && API_BASE && s.startsWith('/media/')) return API_BASE + s;
+		return s;
+	}
+	return null;
+}
+
+function resolveImgSrc(src: string): string | null {
+	return sanitizeMarkdownUrl(src, { image: true });
 }
 
 // ---- GFM table support ------------------------------------------------------
@@ -184,11 +200,17 @@ function formatMarkdown(md: string): string {
 	// ============ STEP 6b: Images (MUST run before links) ============
 	// ![alt](src) → <img>. Relative /media/... srcs resolve to the backend.
 	html = html.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (_m, alt, src) => {
-		return `<img src="${resolveImgSrc(src)}" alt="${alt}" class="md-img" loading="lazy" />`;
+		const safeSrc = resolveImgSrc(src);
+		if (!safeSrc) return '';
+		return `<img src="${escapeHtml(safeSrc)}" alt="${escapeHtml(String(alt))}" class="md-img" loading="lazy" />`;
 	});
 
 	// ============ STEP 7: Links ============
-	html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noreferrer" class="md-link">$1</a>');
+	html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_m, label, href) => {
+		const safeHref = sanitizeMarkdownUrl(href);
+		if (!safeHref) return String(label);
+		return `<a href="${escapeHtml(safeHref)}" target="_blank" rel="noreferrer" class="md-link">${label}</a>`;
+	});
 
 	// ============ STEP 8: Paragraphs ============
 	html = html.replace(/\n\n+/g, '</p><p class="md-p">');

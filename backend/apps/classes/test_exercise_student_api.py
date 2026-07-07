@@ -199,6 +199,20 @@ class TestDraftAndImage:
                                     {'answers': {'1': {'text': 'draft'}}}, format='json')
         assert res.status_code == 200 and res.data['saved'] is True
 
+    def test_draft_strips_client_supplied_image_paths(self):
+        session, ex = _published_exercise()
+        student = _student()
+        q = ClassExerciseQuestion.objects.filter(section__exercise=ex).first()
+        evil = 'exercises/answers/999/999/owned-by-someone-else.png'
+        res = _auth(student).put(
+            _url(session.id, ex.id, 'draft/'),
+            {'answers': {str(q.id): {'text': 'draft', 'images': [evil]}}},
+            format='json',
+        )
+        assert res.status_code == 200
+        sub = StudentExerciseSubmission.objects.get(exercise=ex, student=student)
+        assert sub.answers == {str(q.id): {'text': 'draft'}}
+
     def test_draft_blocked_after_submit(self):
         session, ex = _published_exercise()
         student = _student()
@@ -206,6 +220,32 @@ class TestDraftAndImage:
         res = _auth(student).put(_url(session.id, ex.id, 'draft/'),
                                  {'answers': {}}, format='json')
         assert res.status_code == 409
+
+    def test_submit_preserves_server_owned_images_and_ignores_client_paths(self):
+        session, ex = _published_exercise()
+        student = _student()
+        q = ClassExerciseQuestion.objects.filter(section__exercise=ex).first()
+        owned = f'exercises/answers/{ex.id}/{student.id}/{q.id}_answer.png'
+        baker.make(
+            StudentExerciseSubmission,
+            exercise=ex,
+            student=student,
+            status=SubStatus.DRAFT,
+            answers={str(q.id): {'images': [owned]}},
+        )
+        res = _auth(student).post(
+            _url(session.id, ex.id, 'submit/'),
+            {'answers': {
+                str(q.id): {
+                    'text': 'final text',
+                    'images': ['exercises/answers/999/999/evil.png'],
+                },
+            }},
+            format='json',
+        )
+        assert res.status_code == 201
+        sub = StudentExerciseSubmission.objects.get(exercise=ex, student=student)
+        assert sub.answers == {str(q.id): {'text': 'final text', 'images': [owned]}}
 
     def test_image_rejects_non_image(self):
         session, ex = _published_exercise()

@@ -16,6 +16,7 @@ from apps.accounts.models import User
 from apps.classes.models import (
     ClassCreationSession,
     ClassExercise,
+    ClassExerciseAsset,
     ClassExerciseQuestion,
     ClassExerciseSection,
 )
@@ -88,6 +89,37 @@ class TestCreateAndList:
         )
         assert res.status_code == 400
         assert not ClassExercise.objects.filter(title='تمرین خراب').exists()
+
+    def test_create_rejects_fake_pdf_asset_without_creating_exercise(self):
+        owner = _teacher()
+        session = _session(owner)
+        bad = SimpleUploadedFile('bad.pdf', b'not-a-pdf', content_type='application/pdf')
+        res = _auth(owner).post(
+            LIST.format(session.id),
+            {'title': 'تمرین PDF خراب', 'files': [bad]},
+            format='multipart',
+        )
+        assert res.status_code == 400
+        assert not ClassExercise.objects.filter(title='تمرین PDF خراب').exists()
+        assert ClassExerciseAsset.objects.count() == 0
+
+    def test_create_rejects_too_many_assets_before_creating_exercise(self, monkeypatch):
+        from apps.classes import views_exercises as vx
+
+        owner = _teacher()
+        session = _session(owner)
+        monkeypatch.setattr(vx, '_MAX_SOURCE_FILES', 1)
+        files = [
+            SimpleUploadedFile('a.pdf', b'not-even-validated', content_type='application/pdf'),
+            SimpleUploadedFile('b.pdf', b'not-even-validated', content_type='application/pdf'),
+        ]
+        res = _auth(owner).post(
+            LIST.format(session.id),
+            {'title': 'تمرین فایل زیاد', 'files': files},
+            format='multipart',
+        )
+        assert res.status_code == 400
+        assert not ClassExercise.objects.filter(title='تمرین فایل زیاد').exists()
 
 
 class TestDetailUpdateDelete:
@@ -291,6 +323,181 @@ class TestReferenceIngest:
         )
         assert res.status_code == 400
 
+    def test_preview_blocks_published_exercise_before_llm(self, monkeypatch):
+        from apps.classes import views_exercises as vx
+
+        owner = _teacher()
+        ex, _q1, _q2 = self._exercise_with_questions(owner)
+        ex.status = Status.PUBLISHED
+        ex.save(update_fields=['status'])
+        called = {'n': 0}
+
+        def fake(**_kw):
+            called['n'] += 1
+            return ({'items': []}, 'p', 'm')
+
+        monkeypatch.setattr(vx, 'ingest_reference_answers_markdown', fake)
+        res = _auth(owner).post(
+            REF_PREVIEW.format(ex.id), {'source_text': 'x'}, format='multipart',
+        )
+        assert res.status_code == 409
+        assert called['n'] == 0
+
+    def test_preview_rejects_too_many_files_before_llm(self, monkeypatch):
+        from apps.classes import views_exercises as vx
+
+        owner = _teacher()
+        ex, _q1, _q2 = self._exercise_with_questions(owner)
+        called = {'n': 0}
+
+        def fake(**_kw):
+            called['n'] += 1
+            return ({'items': []}, 'p', 'm')
+
+        monkeypatch.setattr(vx, '_MAX_REFERENCE_FILES', 1)
+        monkeypatch.setattr(vx, 'ingest_reference_answers_markdown', fake)
+        files = [
+            SimpleUploadedFile('a.pdf', b'not-validated', content_type='application/pdf'),
+            SimpleUploadedFile('b.pdf', b'not-validated', content_type='application/pdf'),
+        ]
+        res = _auth(owner).post(
+            REF_PREVIEW.format(ex.id), {'files': files}, format='multipart',
+        )
+        assert res.status_code == 400
+        assert called['n'] == 0
+
+    def test_preview_rejects_fake_pdf_before_llm(self, monkeypatch):
+        from apps.classes import views_exercises as vx
+
+        owner = _teacher()
+        ex, _q1, _q2 = self._exercise_with_questions(owner)
+        called = {'n': 0}
+
+        def fake(**_kw):
+            called['n'] += 1
+            return ({'items': []}, 'p', 'm')
+
+        monkeypatch.setattr(vx, 'ingest_reference_answers_markdown', fake)
+        bad = SimpleUploadedFile('bad.pdf', b'not-a-pdf', content_type='application/pdf')
+        res = _auth(owner).post(
+            REF_PREVIEW.format(ex.id), {'files': [bad]}, format='multipart',
+        )
+        assert res.status_code == 400
+        assert called['n'] == 0
+
+    def test_preview_rejects_file_size_limit_before_llm(self, monkeypatch):
+        from apps.classes import views_exercises as vx
+
+        owner = _teacher()
+        ex, _q1, _q2 = self._exercise_with_questions(owner)
+        called = {'n': 0}
+
+        def fake(**_kw):
+            called['n'] += 1
+            return ({'items': []}, 'p', 'm')
+
+        monkeypatch.setattr(vx, '_MAX_REFERENCE_FILE_BYTES', 3)
+        monkeypatch.setattr(vx, 'ingest_reference_answers_markdown', fake)
+        too_large = SimpleUploadedFile('big.pdf', b'%PDF-1.7', content_type='application/pdf')
+        res = _auth(owner).post(
+            REF_PREVIEW.format(ex.id), {'files': [too_large]}, format='multipart',
+        )
+        assert res.status_code == 413
+        assert called['n'] == 0
+
+    def test_preview_rejects_invalid_mode_hint_before_llm(self, monkeypatch):
+        from apps.classes import views_exercises as vx
+
+        owner = _teacher()
+        ex, _q1, _q2 = self._exercise_with_questions(owner)
+        called = {'n': 0}
+
+        def fake(**_kw):
+            called['n'] += 1
+            return ({'items': []}, 'p', 'm')
+
+        monkeypatch.setattr(vx, 'ingest_reference_answers_markdown', fake)
+        res = _auth(owner).post(
+            REF_PREVIEW.format(ex.id),
+            {'source_text': 'x', 'mode_hint': 'x' * 100},
+            format='multipart',
+        )
+        assert res.status_code == 400
+        assert called['n'] == 0
+
+    def test_preview_rejects_pdf_page_budget_before_ocr_and_llm(self, monkeypatch):
+        from apps.classes import views_exercises as vx
+
+        owner = _teacher()
+        ex, _q1, _q2 = self._exercise_with_questions(owner)
+        called = {'ocr': 0, 'llm': 0}
+
+        def fake_ocr(_files):
+            called['ocr'] += 1
+            return 'ocr'
+
+        def fake_llm(**_kw):
+            called['llm'] += 1
+            return ({'items': []}, 'p', 'm')
+
+        monkeypatch.setattr(vx, '_MAX_REFERENCE_PDF_PAGES', 2)
+        monkeypatch.setattr(vx, '_reference_ocr_unit_count', lambda _uploaded, _kind: 3)
+        monkeypatch.setattr(vx, 'ocr_uploaded_files_to_markdown', fake_ocr)
+        monkeypatch.setattr(vx, 'ingest_reference_answers_markdown', fake_llm)
+        pdf = SimpleUploadedFile('answers.pdf', b'%PDF-1.7', content_type='application/pdf')
+        res = _auth(owner).post(
+            REF_PREVIEW.format(ex.id),
+            {'files': [pdf]},
+            format='multipart',
+        )
+        assert res.status_code == 413
+        assert called == {'ocr': 0, 'llm': 0}
+
+    def test_preview_rejects_oversized_source_text_before_llm(self, monkeypatch):
+        from apps.classes import views_exercises as vx
+
+        owner = _teacher()
+        ex, _q1, _q2 = self._exercise_with_questions(owner)
+        called = {'n': 0}
+
+        def fake(**_kw):
+            called['n'] += 1
+            return ({'items': []}, 'p', 'm')
+
+        monkeypatch.setattr(vx, '_MAX_REFERENCE_SOURCE_CHARS', 10)
+        monkeypatch.setattr(vx, 'ingest_reference_answers_markdown', fake)
+        res = _auth(owner).post(
+            REF_PREVIEW.format(ex.id),
+            {'source_text': 'x' * 11},
+            format='multipart',
+        )
+        assert res.status_code == 413
+        assert called['n'] == 0
+
+    def test_preview_rejects_oversized_ocr_text_before_llm(self, monkeypatch):
+        from apps.classes import views_exercises as vx
+
+        owner = _teacher()
+        ex, _q1, _q2 = self._exercise_with_questions(owner)
+        called = {'n': 0}
+
+        def fake(**_kw):
+            called['n'] += 1
+            return ({'items': []}, 'p', 'm')
+
+        monkeypatch.setattr(vx, '_MAX_REFERENCE_SOURCE_CHARS', 10)
+        monkeypatch.setattr(vx, '_reference_ocr_unit_count', lambda _uploaded, _kind: 1)
+        monkeypatch.setattr(vx, 'ocr_uploaded_files_to_markdown', lambda _files: 'x' * 11)
+        monkeypatch.setattr(vx, 'ingest_reference_answers_markdown', fake)
+        pdf = SimpleUploadedFile('answers.pdf', b'%PDF-1.7', content_type='application/pdf')
+        res = _auth(owner).post(
+            REF_PREVIEW.format(ex.id),
+            {'files': [pdf]},
+            format='multipart',
+        )
+        assert res.status_code == 413
+        assert called['n'] == 0
+
     def test_apply_updates_only_explicit_target_question(self):
         owner = _teacher()
         ex, q1, q2 = self._exercise_with_questions(owner)
@@ -310,6 +517,27 @@ class TestReferenceIngest:
         assert q1.max_points == Decimal('2')
         assert q2.reference_answer_markdown == 'پاسخ موجود'
 
+    def test_apply_permission_matrix_does_not_write(self):
+        owner, other = _teacher(), _teacher()
+        student = baker.make(User, role=User.Role.STUDENT)
+        ex, q1, _q2 = self._exercise_with_questions(owner)
+        payload = {'items': [{
+            'targetQuestionId': q1.id,
+            'referenceAnswerMarkdown': 'نباید ذخیره شود',
+        }]}
+
+        assert APIClient().post(
+            REF_APPLY.format(ex.id), payload, format='json',
+        ).status_code in (401, 403)
+        assert _auth(student).post(
+            REF_APPLY.format(ex.id), payload, format='json',
+        ).status_code == 403
+        assert _auth(other).post(
+            REF_APPLY.format(ex.id), payload, format='json',
+        ).status_code == 404
+        q1.refresh_from_db()
+        assert q1.reference_answer_markdown == ''
+
     def test_apply_does_not_overwrite_existing_reference_without_flag(self):
         owner = _teacher()
         ex, _q1, q2 = self._exercise_with_questions(owner)
@@ -318,13 +546,96 @@ class TestReferenceIngest:
             {'items': [{
                 'targetQuestionId': q2.id,
                 'referenceAnswerMarkdown': 'پاسخ جایگزین',
+                'maxPoints': 5,
             }]},
             format='json',
         )
         assert res.status_code == 200, res.content
         q2.refresh_from_db()
         assert q2.reference_answer_markdown == 'پاسخ موجود'
+        assert q2.max_points == Decimal('1')
         assert res.data['skipped'][0]['reason'] == 'existing_reference'
+
+    def test_apply_replaces_existing_reference_only_with_flag(self):
+        owner = _teacher()
+        ex, _q1, q2 = self._exercise_with_questions(owner)
+        res = _auth(owner).post(
+            REF_APPLY.format(ex.id),
+            {'items': [{
+                'targetQuestionId': q2.id,
+                'referenceAnswerMarkdown': 'پاسخ جایگزین',
+                'replaceExisting': True,
+            }]},
+            format='json',
+        )
+        assert res.status_code == 200, res.content
+        q2.refresh_from_db()
+        assert q2.reference_answer_markdown == 'پاسخ جایگزین'
+
+    def test_apply_rolls_back_mixed_valid_and_invalid_items(self):
+        owner = _teacher()
+        ex, q1, q2 = self._exercise_with_questions(owner)
+        q3 = baker.make(
+            ClassExerciseQuestion,
+            section=q1.section,
+            order=2,
+            question_markdown='سوال سوم',
+            reference_answer_markdown='',
+            max_points=Decimal('1'),
+        )
+        res = _auth(owner).post(
+            REF_APPLY.format(ex.id),
+            {'items': [
+                {'targetQuestionId': q1.id, 'referenceAnswerMarkdown': 'پاسخ معتبر'},
+                {'targetQuestionId': q3.id, 'maxPoints': -1},
+            ]},
+            format='json',
+        )
+        assert res.status_code == 400
+        q1.refresh_from_db()
+        q2.refresh_from_db()
+        q3.refresh_from_db()
+        assert q1.reference_answer_markdown == ''
+        assert q2.max_points == Decimal('1')
+        assert q3.max_points == Decimal('1')
+
+    def test_apply_rejects_too_many_items_before_writing(self, monkeypatch):
+        from apps.classes import views_exercises as vx
+
+        owner = _teacher()
+        ex, q1, _q2 = self._exercise_with_questions(owner)
+        monkeypatch.setattr(vx, '_MAX_REFERENCE_APPLY_ITEMS', 1)
+        res = _auth(owner).post(
+            REF_APPLY.format(ex.id),
+            {'items': [
+                {'targetQuestionId': q1.id, 'referenceAnswerMarkdown': 'a'},
+                {'targetQuestionId': q1.id, 'referenceAnswerMarkdown': 'b'},
+            ]},
+            format='json',
+        )
+        assert res.status_code == 400
+        q1.refresh_from_db()
+        assert q1.reference_answer_markdown == ''
+
+    def test_apply_rejects_huge_points_without_writing(self, monkeypatch):
+        from apps.classes import views_exercises as vx
+
+        owner = _teacher()
+        ex, q1, _q2 = self._exercise_with_questions(owner)
+        monkeypatch.setattr(vx, '_MAX_REFERENCE_POINTS', Decimal('10'))
+        res = _auth(owner).post(
+            REF_APPLY.format(ex.id),
+            {'items': [{
+                'targetQuestionId': q1.id,
+                'referenceAnswerMarkdown': 'پاسخ',
+                'maxPoints': 1000000,
+            }]},
+            format='json',
+        )
+        assert res.status_code == 400
+        q1.refresh_from_db()
+        assert q1.reference_answer_markdown == ''
+        assert q1.max_points == Decimal('1')
 
     def test_apply_blocks_published_exercise_until_regrade_story_exists(self):
         owner = _teacher()

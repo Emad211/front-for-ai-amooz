@@ -10,11 +10,13 @@ Design + permission matrix: docs/features/exercise-hub.md · ADR-0004.
 from __future__ import annotations
 
 import os
+from io import BytesIO
 from decimal import Decimal, InvalidOperation
 
 from django.core.files.storage import default_storage
 from django.db import IntegrityError, transaction
 from django.utils import timezone
+from pypdf import PdfReader
 from rest_framework import status
 from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.permissions import IsAuthenticated
@@ -57,10 +59,26 @@ def _int_env(name: str, default: int) -> int:
         return default
 
 
+def _decimal_env(name: str, default: str) -> Decimal:
+    try:
+        return Decimal(os.getenv(name, default))
+    except (InvalidOperation, TypeError, ValueError):
+        return Decimal(default)
+
+
 _MAX_SOURCE_FILES = _int_env('EXERCISE_MAX_SOURCE_FILES', 10)
 _MAX_SOURCE_FILE_BYTES = _int_env('EXERCISE_MAX_SOURCE_FILE_BYTES', 20 * 1024 * 1024)
 _MAX_REFERENCE_FILES = _int_env('EXERCISE_REFERENCE_MAX_FILES', 5)
 _MAX_REFERENCE_FILE_BYTES = _int_env('EXERCISE_REFERENCE_MAX_FILE_BYTES', 8 * 1024 * 1024)
+_MAX_REFERENCE_SOURCE_CHARS = _int_env('EXERCISE_REFERENCE_MAX_SOURCE_CHARS', 50_000)
+_MAX_REFERENCE_PDF_PAGES = _int_env('EXERCISE_REFERENCE_MAX_PDF_PAGES', 20)
+_MAX_REFERENCE_OCR_UNITS = _int_env('EXERCISE_REFERENCE_MAX_OCR_UNITS', 20)
+_MAX_REFERENCE_APPLY_ITEMS = _int_env('EXERCISE_REFERENCE_MAX_APPLY_ITEMS', 100)
+_MAX_REFERENCE_MARKDOWN_CHARS = _int_env('EXERCISE_REFERENCE_MAX_MARKDOWN_CHARS', 20_000)
+_MAX_REFERENCE_OPTIONS = _int_env('EXERCISE_REFERENCE_MAX_OPTIONS', 12)
+_MAX_REFERENCE_OPTION_CHARS = _int_env('EXERCISE_REFERENCE_MAX_OPTION_CHARS', 2_000)
+_MAX_REFERENCE_POINTS = _decimal_env('EXERCISE_REFERENCE_MAX_POINTS', '1000')
+_REFERENCE_MODE_HINTS = {'auto', 'full_qa', 'single_qa', 'numbered_answers', 'answer_only'}
 _REFERENCE_EDITABLE_STATUSES = {
     ClassExercise.Status.DRAFT,
     ClassExercise.Status.EXTRACTED,
@@ -72,14 +90,6 @@ def _owned_exercise(request, exercise_id):
     return ClassExercise.objects.filter(
         id=exercise_id, session__teacher=request.user,
     ).first()
-
-
-def _asset_kind(uploaded) -> str:
-    ct = (getattr(uploaded, 'content_type', '') or '').lower()
-    name = (getattr(uploaded, 'name', '') or '').lower()
-    if 'pdf' in ct or name.endswith('.pdf'):
-        return ClassExerciseAsset.Kind.PDF
-    return ClassExerciseAsset.Kind.IMAGE
 
 
 def _read_uploaded_for_validation(uploaded, max_bytes: int):
@@ -120,6 +130,20 @@ def _validate_exercise_source_file(uploaded, *, max_bytes: int):
         {'detail': 'فقط PDF یا تصویر معتبر مجاز است.'},
         status=status.HTTP_400_BAD_REQUEST,
     )
+
+
+def _reference_ocr_unit_count(uploaded, kind: str) -> int:
+    if kind == ClassExerciseAsset.Kind.IMAGE:
+        return 1
+    data = uploaded.read()
+    try:
+        uploaded.seek(0)
+    except Exception:
+        pass
+    try:
+        return max(1, len(PdfReader(BytesIO(data)).pages))
+    except Exception as exc:
+        raise ValueError('invalid pdf') from exc
 
 
 def _reference_editable_response(exercise):
@@ -417,23 +441,54 @@ class ExerciseReferenceIngestPreviewView(APIView):
                 {'detail': 'تعداد فایل‌های پاسخ مرجع بیش از حد مجاز است.'},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+        pdf_pages = 0
+        ocr_units = 0
         for uploaded in files:
-            _kind, error = _validate_exercise_source_file(
+            kind, error = _validate_exercise_source_file(
                 uploaded, max_bytes=_MAX_REFERENCE_FILE_BYTES,
             )
             if error is not None:
                 return error
+            try:
+                units = _reference_ocr_unit_count(uploaded, kind)
+            except ValueError:
+                return Response(
+                    {'detail': 'فایل PDF ارسالی قابل خواندن نیست.'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            ocr_units += units
+            if kind == ClassExerciseAsset.Kind.PDF:
+                pdf_pages += units
+        if pdf_pages > _MAX_REFERENCE_PDF_PAGES:
+            return Response(
+                {'detail': 'تعداد صفحات PDF پاسخ مرجع بیش از حد مجاز است.'},
+                status=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            )
+        if ocr_units > _MAX_REFERENCE_OCR_UNITS:
+            return Response(
+                {'detail': 'حجم پردازش فایل‌های پاسخ مرجع بیش از حد مجاز است.'},
+                status=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            )
 
         source_text = (
             request.data.get('source_text')
             or request.data.get('sourceText')
             or ''
         )
+        source_text = str(source_text or '')
+        if len(source_text) > _MAX_REFERENCE_SOURCE_CHARS:
+            return Response(
+                {'detail': 'متن پاسخ مرجع بیش از حد مجاز است.'},
+                status=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            )
         mode_hint = (
             request.data.get('mode_hint')
             or request.data.get('modeHint')
             or 'auto'
         )
+        mode_hint = str(mode_hint or 'auto').strip()
+        if mode_hint not in _REFERENCE_MODE_HINTS:
+            return Response({'detail': 'نوع ورودی پاسخ مرجع نامعتبر است.'}, status=status.HTTP_400_BAD_REQUEST)
         target_raw = request.data.get('target_question_id') or request.data.get('targetQuestionId')
         target_question_id = None
         if target_raw not in (None, '', 'all'):
@@ -467,20 +522,28 @@ class ExerciseReferenceIngestPreviewView(APIView):
             )
 
         source_markdown = "\n\n---\n\n".join(
-            part.strip() for part in [str(source_text or ''), ocr_markdown] if part and part.strip()
+            part.strip() for part in [source_text, ocr_markdown] if part and part.strip()
         )
         if not source_markdown.strip():
             return Response(
                 {'detail': 'متنی از فایل یا ورودی شما استخراج نشد.'},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+        if len(source_markdown) > _MAX_REFERENCE_SOURCE_CHARS:
+            return Response(
+                {'detail': 'متن استخراج‌شدهٔ پاسخ مرجع بیش از حد مجاز است.'},
+                status=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            )
 
-        existing = compact_existing_questions(exercise)
+        existing = compact_existing_questions(
+            exercise,
+            question_ids=[target_question_id] if target_question_id is not None else None,
+        )
         try:
             extracted, _provider, _model = ingest_reference_answers_markdown(
                 source_markdown=source_markdown,
                 existing_questions=existing,
-                mode_hint=str(mode_hint or 'auto'),
+                mode_hint=mode_hint,
             )
         except RuntimeError:
             return Response(
@@ -505,6 +568,11 @@ class ExerciseReferenceIngestApplyView(APIView):
         if not isinstance(raw_items, list) or not raw_items:
             return Response({'detail': 'هیچ موردی برای اعمال ارسال نشده است.'},
                             status=status.HTTP_400_BAD_REQUEST)
+        if len(raw_items) > _MAX_REFERENCE_APPLY_ITEMS:
+            return Response(
+                {'detail': 'تعداد موارد ارسالی بیش از حد مجاز است.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         with transaction.atomic():
             exercise = ClassExercise.objects.select_for_update().filter(
@@ -546,20 +614,24 @@ class ExerciseReferenceIngestApplyView(APIView):
                     item.get('replaceQuestionText') or item.get('replace_question_text')
                 )
                 fields: list[str] = []
+                if (q.reference_answer_markdown or '').strip() and not replace_existing:
+                    skipped.append({
+                        'targetQuestionId': q.id,
+                        'reason': 'existing_reference',
+                    })
+                    continue
+
                 ref = str(
                     item.get('referenceAnswerMarkdown')
                     or item.get('reference_answer_markdown')
                     or ''
                 ).strip()
+                if len(ref) > _MAX_REFERENCE_MARKDOWN_CHARS:
+                    errors.append({'index': idx, 'detail': 'پاسخ مرجع بیش از حد طولانی است.'})
+                    continue
                 if ref:
-                    if (q.reference_answer_markdown or '').strip() and not replace_existing:
-                        skipped.append({
-                            'targetQuestionId': q.id,
-                            'reason': 'existing_reference',
-                        })
-                    else:
-                        q.reference_answer_markdown = ref
-                        fields.append('reference_answer_markdown')
+                    q.reference_answer_markdown = ref
+                    fields.append('reference_answer_markdown')
 
                 if item.get('maxPoints') is not None or item.get('max_points') is not None:
                     raw_points = item.get('maxPoints') if item.get('maxPoints') is not None else item.get('max_points')
@@ -571,12 +643,18 @@ class ExerciseReferenceIngestApplyView(APIView):
                     if points <= 0:
                         errors.append({'index': idx, 'detail': 'بارم باید بزرگ‌تر از صفر باشد.'})
                         continue
+                    if points > _MAX_REFERENCE_POINTS:
+                        errors.append({'index': idx, 'detail': 'بارم بیش از حد مجاز است.'})
+                        continue
                     q.max_points = points
                     fields.append('max_points')
 
                 question_text = str(
                     item.get('questionMarkdown') or item.get('question_markdown') or ''
                 ).strip()
+                if len(question_text) > _MAX_REFERENCE_MARKDOWN_CHARS:
+                    errors.append({'index': idx, 'detail': 'متن سوال بیش از حد طولانی است.'})
+                    continue
                 if question_text and replace_question_text:
                     q.question_markdown = question_text
                     fields.append('question_markdown')
@@ -587,6 +665,12 @@ class ExerciseReferenceIngestApplyView(APIView):
                     fields.append('question_type')
                 options = item.get('options')
                 if isinstance(options, list):
+                    if len(options) > _MAX_REFERENCE_OPTIONS:
+                        errors.append({'index': idx, 'detail': 'تعداد گزینه‌ها بیش از حد مجاز است.'})
+                        continue
+                    if any(len(str(opt)) > _MAX_REFERENCE_OPTION_CHARS for opt in options):
+                        errors.append({'index': idx, 'detail': 'متن گزینه بیش از حد طولانی است.'})
+                        continue
                     q.options = options
                     fields.append('options')
 
@@ -625,6 +709,63 @@ _MAX_IMAGES_PER_QUESTION = _int_env('EXERCISE_MAX_IMAGES_PER_QUESTION', 3)
 
 def _student_phone(request):
     return (getattr(request.user, 'phone', None) or '').strip()
+
+
+def _answer_image_prefix(exercise_id: int, student_id: int, question_id: int) -> str:
+    return f'exercises/answers/{exercise_id}/{student_id}/{question_id}_'
+
+
+def _owned_answer_images(answers: dict, exercise_id: int, student_id: int, question_id: int) -> list[str]:
+    entry = answers.get(str(question_id)) if isinstance(answers, dict) else None
+    if not isinstance(entry, dict):
+        return []
+    images = entry.get('images')
+    if not isinstance(images, list):
+        return []
+    prefix = _answer_image_prefix(exercise_id, student_id, question_id)
+    return [
+        path for path in images
+        if isinstance(path, str) and path.startswith(prefix)
+    ][:_MAX_IMAGES_PER_QUESTION]
+
+
+def _sanitize_student_answers(exercise, student, incoming_answers, existing_answers=None) -> dict:
+    """Keep answer text from JSON; keep images only if the server recorded them."""
+    incoming = incoming_answers if isinstance(incoming_answers, dict) else {}
+    existing = existing_answers if isinstance(existing_answers, dict) else {}
+    question_ids = set(
+        ClassExerciseQuestion.objects.filter(section__exercise=exercise)
+        .values_list('id', flat=True)
+    )
+    sanitized: dict[str, dict] = {}
+    for key, value in incoming.items():
+        try:
+            qid = int(key)
+        except (TypeError, ValueError):
+            continue
+        if qid not in question_ids:
+            continue
+        entry: dict = {}
+        if isinstance(value, dict) and 'text' in value:
+            entry['text'] = str(value.get('text') or '')
+        elif isinstance(value, str):
+            entry['text'] = value
+        images = _owned_answer_images(existing, exercise.id, student.id, qid)
+        if images:
+            entry['images'] = images
+        if entry:
+            sanitized[str(qid)] = entry
+
+    # Preserve photo-only answers uploaded through the server endpoint even if
+    # the final submit body omits that question.
+    for qid in question_ids:
+        key = str(qid)
+        if key in sanitized:
+            continue
+        images = _owned_answer_images(existing, exercise.id, student.id, qid)
+        if images:
+            sanitized[key] = {'images': images}
+    return sanitized
 
 
 def _published_exercise_for_student(phone, session_id, exercise_id):
@@ -771,7 +912,10 @@ class StudentExerciseDetailView(APIView):
             exercise=exercise, student=request.user,
         ).first()
         data = _serialize_exercise(exercise, reveal=False)  # solving = never reveal
-        data['myAnswers'] = submission.answers if submission else {}
+        data['myAnswers'] = (
+            _sanitize_student_answers(exercise, request.user, submission.answers, submission.answers)
+            if submission else {}
+        )
         data['submissionStatus'] = submission.status if submission else None
         return Response(data)
 
@@ -796,8 +940,8 @@ class StudentExerciseDraftView(APIView):
                 {'detail': 'این تمرین قبلاً ارسال شده است.'}, status=status.HTTP_409_CONFLICT,
             )
         answers = request.data.get('answers') if isinstance(request.data, dict) else None
-        if not isinstance(answers, dict):
-            answers = {}
+        existing_answers = submission.answers if submission else {}
+        answers = _sanitize_student_answers(exercise, request.user, answers, existing_answers)
         if submission is None:
             submission = StudentExerciseSubmission.objects.create(
                 exercise=exercise, student=request.user,
@@ -862,14 +1006,14 @@ class StudentExerciseImageView(APIView):
         answers = submission.answers if isinstance(submission.answers, dict) else {}
         qkey = str(question_id)
         entry = answers.get(qkey) if isinstance(answers.get(qkey), dict) else {}
-        images = entry.get('images') if isinstance(entry.get('images'), list) else []
+        images = _owned_answer_images(answers, exercise.id, request.user.id, question_id)
         if len(images) >= _MAX_IMAGES_PER_QUESTION:
             return Response(
                 {'detail': 'تعداد تصاویر این پاسخ بیش از حد مجاز است.'},
                 status=status.HTTP_400_BAD_REQUEST,
             )
         path = default_storage.save(
-            f'exercises/answers/{exercise.id}/{request.user.id}/{question_id}_{up.name}',
+            f'{_answer_image_prefix(exercise.id, request.user.id, question_id)}{up.name}',
             up,
         )
         images.append(path)
@@ -910,11 +1054,12 @@ class StudentExerciseSubmitView(APIView):
                 status=status.HTTP_409_CONFLICT,
             )
         if submission is None:
+            sanitized_answers = _sanitize_student_answers(exercise, request.user, answers)
             try:
                 submission = StudentExerciseSubmission.objects.create(
                     exercise=exercise, student=request.user,
                     status=StudentExerciseSubmission.Status.SUBMITTED,
-                    answers=answers if isinstance(answers, dict) else {},
+                    answers=sanitized_answers,
                     is_late=bool(past_deadline),
                 )
             except IntegrityError:
@@ -923,8 +1068,9 @@ class StudentExerciseSubmitView(APIView):
                     status=status.HTTP_409_CONFLICT,
                 )
         else:
-            if isinstance(answers, dict):
-                submission.answers = answers
+            submission.answers = _sanitize_student_answers(
+                exercise, request.user, answers, submission.answers,
+            )
             submission.status = StudentExerciseSubmission.Status.SUBMITTED
             submission.is_late = bool(past_deadline)
             submission.save(update_fields=['answers', 'status', 'is_late', 'updated_at'])
