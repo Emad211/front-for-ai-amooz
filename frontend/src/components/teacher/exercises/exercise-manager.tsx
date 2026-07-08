@@ -94,6 +94,34 @@ const ACTIVE_WORKFLOW_STAGES = new Set([
   'building_review_draft',
 ]);
 
+const RAW_WORKFLOW_WARNING_RE = /(answer for q|traceback|exception|runtimeerror|http\s*\d{3}|\\[a-z]+|\$[A-Za-z\\])/i;
+
+function sanitizeWorkflowWarningsForCard(warnings: string[]): string[] {
+  const out: string[] = [];
+  let genericNeeded = false;
+
+  for (const warning of warnings) {
+    const text = warning.replace(/\s+/g, ' ').trim();
+    if (!text) {
+      continue;
+    }
+    const asciiLetters = [...text].filter((ch) => /[A-Za-z]/.test(ch)).length;
+    if (text.length > 180 || asciiLetters >= 18 || RAW_WORKFLOW_WARNING_RE.test(text)) {
+      genericNeeded = true;
+      continue;
+    }
+    if (!out.includes(text)) {
+      out.push(text);
+    }
+  }
+
+  if (genericNeeded) {
+    out.unshift('برخی موارد این پیش‌نویس برای بازبینی دستی علامت‌گذاری شده‌اند.');
+  }
+
+  return out.slice(0, 3);
+}
+
 const SOURCE_ROLE_OPTIONS: Array<{ value: ExerciseSourceRole; label: string }> = [
   { value: 'auto', label: 'تشخیص خودکار' },
   { value: 'question_only', label: 'فقط سوال' },
@@ -471,6 +499,10 @@ function ExerciseCard({
   const [busy, setBusy] = useState(false);
   const [showGradebook, setShowGradebook] = useState(false);
   const loadedFor = useRef<ExerciseStatus | null>(null);
+  const cardWarnings = useMemo(
+    () => sanitizeWorkflowWarningsForCard(summary.workflowWarnings),
+    [summary.workflowWarnings]
+  );
 
   const loadDetail = useCallback(async () => {
     try {
@@ -605,11 +637,15 @@ function ExerciseCard({
           )}
         </div>
         <Progress value={summary.progressPercent} className="h-2" />
-        {summary.workflowWarnings.length > 0 && (
+        {cardWarnings.length > 0 && (
           <div className="rounded-md border border-amber-300/40 bg-amber-500/5 p-3 text-xs leading-6 text-amber-800 dark:text-amber-200">
-            {summary.workflowWarnings.map((warning) => (
-              <p key={warning}>{warning}</p>
-            ))}
+            <ul className="space-y-1">
+              {cardWarnings.map((warning) => (
+                <li key={warning} className="list-inside list-disc">
+                  {warning}
+                </li>
+              ))}
+            </ul>
           </div>
         )}
       </CardContent>

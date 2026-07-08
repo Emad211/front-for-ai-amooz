@@ -394,6 +394,39 @@ class TestReferenceIngest:
         q1.refresh_from_db()
         assert q1.reference_answer_markdown == ''
 
+    def test_preview_summarizes_raw_diagnostic_warnings(self, monkeypatch):
+        from apps.classes import views_exercises as vx
+
+        owner = _teacher()
+        ex, _q1, _q2 = self._exercise_with_questions(owner)
+        monkeypatch.setattr(
+            vx,
+            'ingest_reference_answers_markdown',
+            lambda **_kw: ({
+                'mode_detected': 'numbered_answers',
+                'items': [{
+                    'item_id': 'i1',
+                    'question_number': 999,
+                    'reference_answer_markdown': 'پاسخ مرجع',
+                    'points': 2,
+                    'confidence': 0.95,
+                    'notes': '',
+                }],
+                'warnings': [
+                    'Answer for Q6 appears to solve a different problem than the one stated in the question.',
+                ],
+            }, 'test', 'model'),
+        )
+
+        res = _auth(owner).post(
+            REF_PREVIEW.format(ex.id),
+            {'source_text': '۶) پاسخ مرجع', 'mode_hint': 'numbered_answers'},
+            format='multipart',
+        )
+        assert res.status_code == 200, res.content
+        assert all('Answer for Q6' not in warning for warning in res.data['warnings'])
+        assert any('بازبینی' in warning for warning in res.data['warnings'])
+
     def test_preview_cross_teacher_404_and_student_403(self, monkeypatch):
         from apps.classes import views_exercises as vx
 

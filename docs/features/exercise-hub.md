@@ -191,7 +191,7 @@ here, deliberately.
 ## Data
 | Model | Key fields | Constraints |
 |---|---|---|
-| `ClassExercise` | session FK CASCADE · title · description · Status{DRAFT,EXTRACTING,EXTRACTED,PUBLISHED,FAILED} · `deadline` (DateTime, null — first real deadline field in the platform) · `allow_late` (bool, default False) · `assistant_enabled` (bool, default True) · `intake_config` JSON (one-step teacher intake snapshot incl. per-file role/writing/layout) · `workflow_state` JSON (`stage`, `progressPercent`, `message`, `warnings`, `readyForReview`) · `extract_task_id` · `review_ready_notified_at` | index (session, status) |
+| `ClassExercise` | session FK CASCADE · title · description · Status{DRAFT,EXTRACTING,EXTRACTED,PUBLISHED,FAILED} · `deadline` (DateTime, null — first real deadline field in the platform) · `allow_late` (bool, default False) · `assistant_enabled` (bool, default True) · `intake_config` JSON (one-step teacher intake snapshot incl. per-file role/writing/layout) · `workflow_state` JSON (`stage`, `progressPercent`, `message`, `warnings`, `readyForReview`) — teacher-facing warnings stay as short Persian summaries; raw LLM diagnostics must not persist into the durable card state · `extract_task_id` · `review_ready_notified_at` | index (session, status) |
 | `ClassExerciseAsset` | exercise FK · kind{pdf,image} · file · order | — |
 | `ClassExerciseSection` | exercise FK · order · title · `assistant_enabled` (bool, default True) | uniq (exercise, order) |
 | `ClassExerciseQuestion` | section FK · order · `question_markdown` · `question_type{descriptive,multiple_choice,fill_blank}` · `options` JSON null · `reference_answer_markdown` · `max_points` Decimal · `grading_notes` | uniq (section, order) |

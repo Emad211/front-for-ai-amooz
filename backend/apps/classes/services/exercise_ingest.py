@@ -35,6 +35,10 @@ _LLM_TIMEOUT_SECONDS = int(os.getenv("LLM_TIMEOUT_SECONDS", "600"))
 _REFERENCE_MATCH_THRESHOLD = float(os.getenv("EXERCISE_REFERENCE_MATCH_THRESHOLD", "0.70"))
 _REFERENCE_CONTEXT_MAX_QUESTIONS = int(os.getenv("EXERCISE_REFERENCE_CONTEXT_MAX_QUESTIONS", "120"))
 _REFERENCE_CONTEXT_QUESTION_CHARS = int(os.getenv("EXERCISE_REFERENCE_CONTEXT_QUESTION_CHARS", "1200"))
+_RAW_REFERENCE_WARNING_RE = re.compile(
+    r'(answer for q|traceback|exception|runtimeerror|http\s*\d{3}|\\[a-z]+|\$[A-Za-z\\])',
+    re.IGNORECASE,
+)
 
 
 def _get_env(name: str) -> str:
@@ -294,6 +298,50 @@ def _question_label(q: dict[str, Any]) -> str:
     return f"سوال {number} - {title}"
 
 
+def _normalize_reference_warning_list(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    out: list[str] = []
+    generic_needed = False
+    for item in value:
+        raw = str(item or "")
+        text = " ".join(raw.split()).strip()
+        if not text:
+            continue
+        ascii_letters = sum(1 for ch in text if ("a" <= ch.lower() <= "z"))
+        if (
+            len(text) > 180
+            or ascii_letters >= 18
+            or "\n" in raw
+            or _RAW_REFERENCE_WARNING_RE.search(text)
+        ):
+            generic_needed = True
+            continue
+        if text not in out:
+            out.append(text)
+    if generic_needed:
+        out.append("بخشی از پاسخ‌های مرجع به‌صورت قطعی قابل اعمال نبود و برای بازبینی علامت‌گذاری شد.")
+    return out[:3]
+
+
+def _normalize_reference_item_note(text: str, *, match_status: str) -> str:
+    cleaned = " ".join(str(text or "").split()).strip()
+    if not cleaned:
+        return ""
+    ascii_letters = sum(1 for ch in cleaned if ("a" <= ch.lower() <= "z"))
+    if (
+        len(cleaned) > 180
+        or ascii_letters >= 18
+        or _RAW_REFERENCE_WARNING_RE.search(cleaned)
+    ):
+        if match_status == "unmatched":
+            return "این مورد به سوال مشخصی تطبیق داده نشد."
+        if match_status == "ambiguous":
+            return "این مورد نیاز به بازبینی دستی معلم دارد."
+        return ""
+    return cleaned
+
+
 def build_reference_ingest_preview(
     *,
     exercise,
@@ -310,7 +358,9 @@ def build_reference_ingest_preview(
         items = []
 
     preview_items: list[dict[str, Any]] = []
-    warnings = list(extracted.get("warnings") or []) if isinstance(extracted, dict) else []
+    warnings = _normalize_reference_warning_list(
+        extracted.get("warnings") if isinstance(extracted, dict) else []
+    )
 
     for idx, item in enumerate(items, start=1):
         if not isinstance(item, dict):
@@ -373,6 +423,7 @@ def build_reference_ingest_preview(
             match_notes.append("پاسخ مرجع صریحی در این مورد پیدا نشد.")
 
         target_id = int(matched_q["id"]) if matched_q else None
+        safe_notes = _normalize_reference_item_note(notes, match_status=match_status)
         preview_items.append({
             "id": f"item-{idx}",
             "itemId": item.get("item_id") or f"i{idx}",
@@ -387,7 +438,7 @@ def build_reference_ingest_preview(
             "maxPoints": points,
             "referenceAnswerMarkdown": ref_answer,
             "confidence": round(confidence, 2),
-            "notes": " ".join([notes, *match_notes]).strip(),
+            "notes": " ".join([safe_notes, *match_notes]).strip(),
         })
 
     counts = {

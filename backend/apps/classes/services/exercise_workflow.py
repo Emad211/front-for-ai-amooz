@@ -66,10 +66,10 @@ def _clean_warning_list(value: Any) -> list[str]:
         return []
     out: list[str] = []
     for item in value:
-        text = str(item or '').strip()
-        if text:
+        text = " ".join(str(item or '').split()).strip()
+        if text and text not in out:
             out.append(text)
-    return out
+    return out[:6]
 
 
 def normalize_workflow_state(value: Any) -> dict[str, Any]:

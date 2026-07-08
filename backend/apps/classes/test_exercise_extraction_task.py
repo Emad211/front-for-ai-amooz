@@ -108,6 +108,7 @@ def test_failure_marks_failed(monkeypatch):
     ex.refresh_from_db()
     assert ex.status == Status.FAILED
     assert ex.workflow_state['stage'] == 'failed'
+    assert ex.workflow_state['warnings'] == ['ساخت پیش‌نویس تمرین کامل نشد. دوباره تلاش کنید یا منابع را بازبینی کنید.']
     assert ex.review_ready_notified_at is None
 
 
@@ -213,6 +214,93 @@ def test_answer_ingest_low_confidence_becomes_warning_not_hard_fail(monkeypatch)
     ex.refresh_from_db()
     assert ex.workflow_state['stage'] == 'ready_for_review'
     assert ex.workflow_state['warnings']
+
+
+def test_answer_ingest_raw_diagnostics_are_not_leaked_to_workflow_state(monkeypatch):
+    _mock_pipeline(monkeypatch)
+    monkeypatch.setattr(tasks.send_exercise_review_ready_sms_task, 'delay', lambda _eid: None)
+    monkeypatch.setattr(
+        ing,
+        'ingest_reference_answers_markdown',
+        lambda **kwargs: ({
+            'mode_detected': 'question_and_answer',
+            'items': [{
+                'item_id': 'i1',
+                'question_number': 999,
+                'reference_answer_markdown': 'پاسخ',
+                'confidence': 0.95,
+                'question_text_markdown': None,
+                'question_type': None,
+                'options': None,
+                'points': 2,
+                'notes': '',
+            }],
+            'warnings': [
+                'Answer for Q4 seems to refer to a different definition of $A_n$ and needs manual review.',
+            ],
+        }, 'test', 'model'),
+    )
+    ex = baker.make(
+        ClassExercise,
+        status=Status.DRAFT,
+        intake_config={
+            'sources': [
+                {
+                    'assetOrder': 0,
+                    'assetName': 'qa.png',
+                    'role': 'question_and_answer',
+                    'writingMode': 'typed',
+                    'answerLayout': 'inline',
+                }
+            ]
+        },
+    )
+
+    result = _run(ex.id)
+
+    assert result['status'] == 'extracted'
+    ex.refresh_from_db()
+    assert all('Answer for Q4' not in warning for warning in ex.workflow_state['warnings'])
+    assert any('بازبینی' in warning for warning in ex.workflow_state['warnings'])
+
+
+def test_answer_ingest_exception_text_is_not_leaked_to_workflow_state(monkeypatch):
+    _mock_pipeline(monkeypatch)
+    monkeypatch.setattr(tasks.send_exercise_review_ready_sms_task, 'delay', lambda _eid: None)
+
+    def boom(**kwargs):
+        raise RuntimeError('HTTP 502 upstream failure while matching answers')
+
+    monkeypatch.setattr(ing, 'ingest_reference_answers_markdown', boom)
+    ex = baker.make(
+        ClassExercise,
+        status=Status.DRAFT,
+        intake_config={
+            'sources': [
+                {
+                    'assetOrder': 0,
+                    'assetName': 'questions.png',
+                    'role': 'question_only',
+                    'writingMode': 'typed',
+                    'answerLayout': 'auto',
+                },
+                {
+                    'assetOrder': 1,
+                    'assetName': 'answers.png',
+                    'role': 'answer_only',
+                    'writingMode': 'typed',
+                    'answerLayout': 'separate',
+                }
+            ]
+        },
+    )
+
+    result = _run(ex.id)
+
+    assert result['status'] == 'extracted'
+    ex.refresh_from_db()
+    assert all('502' not in warning for warning in ex.workflow_state['warnings'])
+    assert any('خودکار اعمال نشد' in warning for warning in ex.workflow_state['warnings'])
 
 
 def test_review_ready_notification_is_only_queued_once(monkeypatch):

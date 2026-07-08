@@ -1344,12 +1344,11 @@ def extract_exercise_content(self, exercise_id: int) -> dict:
                         warnings.append('پاسخ‌های مرجع این تمرین خودکار اعمال نشد و نیاز به بازبینی دارد.')
                 else:
                     warnings.append('از منابع پاسخ‌نامه متن قابل استفاده‌ای استخراج نشد.')
-            except Exception as answer_exc:
+            except Exception:
                 logger.exception('Exercise reference ingest fallback warning for %s', exercise_id)
                 warnings.append(
                     'پاسخ‌های مرجع این تمرین خودکار اعمال نشد و برای انتشار باید بازبینی شود.'
                 )
-                warnings.append(str(answer_exc)[:200])
         else:
             warnings.append('برای این تمرین پاسخ‌نامه‌ای تشخیص داده نشد؛ پیش از انتشار پاسخ‌های مرجع را بازبینی کنید.')
 
@@ -1399,7 +1398,7 @@ def extract_exercise_content(self, exercise_id: int) -> dict:
             status=ClassExercise.Status.FAILED,
             workflow_state=build_workflow_state(
                 'failed',
-                warnings=[str(exc)[:300]],
+                warnings=['ساخت پیش‌نویس تمرین کامل نشد. دوباره تلاش کنید یا منابع را بازبینی کنید.'],
                 ready_for_review=False,
             ),
         )
