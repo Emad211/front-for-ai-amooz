@@ -17,6 +17,7 @@ import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { Progress } from '@/components/ui/progress';
+import { JalaliDateTimePicker } from '@/components/ui/jalali-date-time-picker';
 import {
   Select,
   SelectContent,
@@ -44,7 +45,7 @@ import {
 import { GradebookTable } from '@/components/teacher/exercises/gradebook-table';
 import { ReferenceIngestPanel } from '@/components/teacher/exercises/reference-ingest-panel';
 import { MathText } from '@/components/content/math-text';
-import { formatPersianDateTime } from '@/lib/date-utils';
+import { formatPersianDateTime, toLocalDateTimeValue } from '@/lib/date-utils';
 import {
   type ExerciseAnswerLayout,
   type ExerciseDetail,
@@ -264,11 +265,10 @@ export function ExerciseManager({ sessionId }: { sessionId: number }) {
               {!noDeadline && (
                 <div className="space-y-2">
                   <Label htmlFor="exercise-deadline">مهلت ارسال</Label>
-                  <Input
+                  <JalaliDateTimePicker
                     id="exercise-deadline"
-                    type="datetime-local"
                     value={deadline}
-                    onChange={(e) => setDeadline(e.target.value)}
+                    onChange={setDeadline}
                   />
                 </div>
               )}
@@ -620,7 +620,7 @@ function ExerciseEditor({
   onSaved: () => Promise<void>;
 }) {
   const [assistant, setAssistant] = useState(detail.assistantEnabled);
-  const [deadline, setDeadline] = useState(detail.deadline ? detail.deadline.slice(0, 16) : '');
+  const [deadline, setDeadline] = useState(toLocalDateTimeValue(detail.deadline));
   const allQuestions = useMemo(
     () =>
       detail.sections.flatMap((section) =>
@@ -654,11 +654,10 @@ function ExerciseEditor({
         </div>
         <div className="flex flex-col gap-1">
           <Label htmlFor={`dl-${detail.id}`}>مهلت ارسال</Label>
-          <Input
+          <JalaliDateTimePicker
             id={`dl-${detail.id}`}
-            type="datetime-local"
             value={deadline}
-            onChange={(e) => setDeadline(e.target.value)}
+            onChange={setDeadline}
             className="w-56"
           />
         </div>

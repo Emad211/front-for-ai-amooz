@@ -25,6 +25,36 @@ export function formatPersianDateTime(dateInput: string | Date | number | undefi
   }
 }
 
+function parseDateInput(dateInput: string | Date | number | undefined | null): Date | null {
+  if (!dateInput) return null;
+
+  const date = new Date(dateInput);
+  if (Number.isNaN(date.getTime())) return null;
+  return date;
+}
+
+function pad2(value: number): string {
+  return String(value).padStart(2, '0');
+}
+
+/**
+ * Convert a date-like input to the local `YYYY-MM-DDTHH:mm` shape used by
+ * date/time form controls. This preserves the user's local timezone instead of
+ * exposing a raw UTC ISO substring.
+ */
+export function toLocalDateTimeValue(
+  dateInput: string | Date | number | undefined | null,
+): string {
+  const date = parseDateInput(dateInput);
+  if (!date) return '';
+
+  return [
+    date.getFullYear(),
+    pad2(date.getMonth() + 1),
+    pad2(date.getDate()),
+  ].join('-') + `T${pad2(date.getHours())}:${pad2(date.getMinutes())}`;
+}
+
 /**
  * Formats a date string or object to a Solar Hijri (Persian) date only.
  * Format: YYYY/MM/DD
