@@ -604,6 +604,7 @@ class ClassExercise(models.Model):
         EXTRACTING = 'extracting', 'Extracting'
         EXTRACTED = 'extracted', 'Extracted'
         PUBLISHED = 'published', 'Published'
+        CANCELLED = 'cancelled', 'Cancelled'
         FAILED = 'failed', 'Failed'
 
     session = models.ForeignKey(
@@ -628,6 +629,9 @@ class ClassExercise(models.Model):
     workflow_state = models.JSONField(default=dict, blank=True)
     # Persisted Celery task id for the extraction run (hard-revoke on re-run).
     extract_task_id = models.CharField(max_length=255, blank=True, default='')
+    # Cooperative-cancellation flag for the extraction task; a re-delivered task
+    # must see this and stop even if hard revoke missed the running worker child.
+    cancel_requested = models.BooleanField(default=False)
     # One-shot ready-for-review notification guard/version for the teacher feed + SMS.
     review_ready_notified_at = models.DateTimeField(null=True, blank=True)
 

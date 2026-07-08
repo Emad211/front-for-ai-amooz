@@ -65,6 +65,29 @@ def _retry_countdown(task, *, base: int = 60, cap: int = 5 * 60) -> int:
     return min(base * (2 ** int(retries)), cap)
 
 
+def _exercise_extract_cancelled(exercise) -> bool:
+    """Cooperative cancellation checkpoint for exercise extraction.
+
+    Re-delivered / retried tasks must stop as soon as the teacher has cancelled
+    the current extraction, even if the original worker child ignored or missed
+    the hard revoke.
+    """
+    exercise.refresh_from_db(fields=['status', 'cancel_requested', 'workflow_state', 'updated_at'])
+    if not getattr(exercise, 'cancel_requested', False) and exercise.status != exercise.Status.CANCELLED:
+        return False
+
+    from .services.exercise_workflow import build_workflow_state
+
+    exercise.status = exercise.Status.CANCELLED
+    exercise.workflow_state = build_workflow_state(
+        'cancelled',
+        message='استخراج تمرین توسط شما متوقف شد.',
+        ready_for_review=False,
+    )
+    exercise.save(update_fields=['status', 'workflow_state', 'updated_at'])
+    return True
+
+
 # ---------------------------------------------------------------------------
 # LLM usage attribution
 # ---------------------------------------------------------------------------
@@ -1214,9 +1237,12 @@ def extract_exercise_content(self, exercise_id: int) -> dict:
         return {'status': 'skipped', 'reason': 'exercise not found'}
 
     task_id = _current_task_id(self)
+    if exercise.status == ClassExercise.Status.CANCELLED and exercise.cancel_requested:
+        return {'status': 'cancelled', 'exercise_id': exercise_id, 'stopped_at': 'pre_start'}
     runnable = {
         ClassExercise.Status.DRAFT,
         ClassExercise.Status.FAILED,
+        ClassExercise.Status.CANCELLED,
         ClassExercise.Status.EXTRACTED,
     }
     is_same_retry = (
@@ -1235,8 +1261,12 @@ def extract_exercise_content(self, exercise_id: int) -> dict:
         if not is_same_retry:
             exercise.status = ClassExercise.Status.EXTRACTING
             exercise.extract_task_id = task_id
+            exercise.cancel_requested = False
             exercise.workflow_state = build_workflow_state('reading_sources')
-            exercise.save(update_fields=['status', 'extract_task_id', 'workflow_state', 'updated_at'])
+            exercise.save(update_fields=['status', 'extract_task_id', 'cancel_requested', 'workflow_state', 'updated_at'])
+
+        if _exercise_extract_cancelled(exercise):
+            return {'status': 'cancelled', 'exercise_id': exercise_id, 'stopped_at': 'start'}
 
         intake_config = exercise.intake_config if isinstance(exercise.intake_config, dict) else {}
         has_source_entries = bool(source_entries(intake_config))
@@ -1258,12 +1288,18 @@ def extract_exercise_content(self, exercise_id: int) -> dict:
             asset_orders=question_orders or None,
             preamble=_exercise_source_hint(intake_config),
         )
+        if _exercise_extract_cancelled(exercise):
+            return {'status': 'cancelled', 'exercise_id': exercise_id, 'stopped_at': 'ocr'}
         if not (markdown or '').strip():
             raise RuntimeError('از منابع سوال، متن قابل استفاده‌ای استخراج نشد.')
 
         update_workflow_state(exercise, 'extracting_questions')
         structure, _provider, _model = structure_exercise_markdown(ingest_markdown=markdown)
+        if _exercise_extract_cancelled(exercise):
+            return {'status': 'cancelled', 'exercise_id': exercise_id, 'stopped_at': 'structure'}
         n_sections, n_questions = persist_exercise_structure(exercise, structure)
+        if _exercise_extract_cancelled(exercise):
+            return {'status': 'cancelled', 'exercise_id': exercise_id, 'stopped_at': 'persist'}
 
         if answer_orders:
             update_workflow_state(exercise, 'matching_reference_answers')
@@ -1279,6 +1315,8 @@ def extract_exercise_content(self, exercise_id: int) -> dict:
                         existing_questions=compact_existing_questions(exercise),
                         mode_hint=_reference_mode_hint(intake_config),
                     )
+                    if _exercise_extract_cancelled(exercise):
+                        return {'status': 'cancelled', 'exercise_id': exercise_id, 'stopped_at': 'answer_ingest'}
                     preview = build_reference_ingest_preview(
                         exercise=exercise,
                         extracted=extracted,
@@ -1316,13 +1354,16 @@ def extract_exercise_content(self, exercise_id: int) -> dict:
             warnings.append('برای این تمرین پاسخ‌نامه‌ای تشخیص داده نشد؛ پیش از انتشار پاسخ‌های مرجع را بازبینی کنید.')
 
         update_workflow_state(exercise, 'building_review_draft', warnings=warnings)
+        if _exercise_extract_cancelled(exercise):
+            return {'status': 'cancelled', 'exercise_id': exercise_id, 'stopped_at': 'draft'}
         exercise.status = ClassExercise.Status.EXTRACTED
         exercise.workflow_state = build_workflow_state(
             'ready_for_review',
             warnings=warnings,
             ready_for_review=True,
         )
-        exercise.save(update_fields=['status', 'workflow_state', 'updated_at'])
+        exercise.cancel_requested = False
+        exercise.save(update_fields=['status', 'cancel_requested', 'workflow_state', 'updated_at'])
 
         notified_now = (
             ClassExercise.objects.filter(

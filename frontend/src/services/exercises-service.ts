@@ -7,7 +7,7 @@ import { refreshAccessToken } from '@/services/auth-service';
 const RAW_API_URL = (process.env.NEXT_PUBLIC_API_URL ?? '').replace(/\/$/, '');
 const API_URL = RAW_API_URL.endsWith('/api') ? RAW_API_URL : `${RAW_API_URL}/api`;
 
-export type ExerciseStatus = 'draft' | 'extracting' | 'extracted' | 'published' | 'failed';
+export type ExerciseStatus = 'draft' | 'extracting' | 'extracted' | 'published' | 'cancelled' | 'failed';
 export type SubmissionStatus = 'draft' | 'submitted' | 'grading' | 'graded' | 'grading_failed';
 export type QuestionType = 'descriptive' | 'multiple_choice' | 'fill_blank';
 export type ExerciseWorkflowStage =
@@ -18,6 +18,7 @@ export type ExerciseWorkflowStage =
   | 'matching_reference_answers'
   | 'building_review_draft'
   | 'ready_for_review'
+  | 'cancelled'
   | 'failed';
 export type ExerciseSourceRole = 'auto' | 'question_only' | 'question_and_answer' | 'answer_only';
 export type ExerciseWritingMode = 'auto' | 'typed' | 'handwritten' | 'mixed';
@@ -304,6 +305,13 @@ export async function deleteExercise(exerciseId: number): Promise<void> {
 
 export async function extractExercise(exerciseId: number): Promise<{ detail: string; status: string }> {
   return requestJson(`${API_URL}/classes/exercises/${exerciseId}/extract/`, {
+    method: 'POST',
+    headers: authHeaders(),
+  });
+}
+
+export async function cancelExerciseExtraction(exerciseId: number): Promise<ExerciseDetail> {
+  return requestJson(`${API_URL}/classes/exercises/${exerciseId}/cancel/`, {
     method: 'POST',
     headers: authHeaders(),
   });

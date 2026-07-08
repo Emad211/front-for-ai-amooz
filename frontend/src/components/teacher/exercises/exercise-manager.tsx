@@ -7,7 +7,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
-import { Loader2, Upload, Trash2, CheckCircle2, FileText, Plus } from 'lucide-react';
+import { Loader2, Upload, Trash2, CheckCircle2, FileText, Plus, Ban } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -57,6 +57,7 @@ import {
   createExercise,
   getExercise,
   extractExercise,
+  cancelExerciseExtraction,
   publishExercise,
   deleteExercise,
   updateExercise,
@@ -71,6 +72,7 @@ const STATUS_LABEL: Record<ExerciseStatus, string> = {
   extracting: 'در حال استخراج',
   extracted: 'آمادهٔ ویرایش',
   published: 'منتشرشده',
+  cancelled: 'متوقف‌شده',
   failed: 'خطا در استخراج',
 };
 
@@ -79,6 +81,7 @@ const STATUS_VARIANT: Record<ExerciseStatus, 'default' | 'secondary' | 'destruct
   extracting: 'secondary',
   extracted: 'secondary',
   published: 'default',
+  cancelled: 'outline',
   failed: 'destructive',
 };
 
@@ -520,6 +523,20 @@ function ExerciseCard({
     }
   };
 
+  const doCancel = async () => {
+    setBusy(true);
+    try {
+      await cancelExerciseExtraction(summary.id);
+      toast.success('استخراج تمرین متوقف شد.');
+      await onChanged();
+      setOpen(false);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'لغو استخراج ناموفق بود.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <Card>
       <CardHeader className="flex flex-row items-center justify-between gap-2">
@@ -531,7 +548,13 @@ function ExerciseCard({
           <Badge variant={STATUS_VARIANT[summary.status]}>{STATUS_LABEL[summary.status]}</Badge>
         </div>
         <div className="flex items-center gap-2">
-          {summary.status === 'failed' && (
+          {ACTIVE_WORKFLOW_STAGES.has(summary.workflowStage) && (
+            <Button size="sm" variant="outline" onClick={doCancel} disabled={busy}>
+              {busy ? <Loader2 className="ms-2 h-4 w-4 animate-spin" /> : <Ban className="ms-2 h-4 w-4" />}
+              لغو استخراج
+            </Button>
+          )}
+          {(summary.status === 'failed' || summary.status === 'cancelled') && (
             <Button size="sm" variant="secondary" onClick={doExtract} disabled={busy}>
               استخراج دوباره
             </Button>

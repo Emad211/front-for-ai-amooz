@@ -109,20 +109,22 @@ export function JalaliDateTimePicker({
         </Button>
       </PopoverTrigger>
       <PopoverContent
-        align="center"
-        sideOffset={8}
-        className="w-[min(22rem,calc(100vw-2rem))] rounded-xl border-border bg-card p-0"
+        side="bottom"
+        align="end"
+        sideOffset={10}
+        collisionPadding={12}
+        className="w-[min(19.5rem,calc(100vw-1rem))] overflow-hidden rounded-xl border-border bg-card p-0"
         dir="rtl"
       >
-        <div className="space-y-4 p-4">
-          <div className="space-y-1">
+        <div className="space-y-3 p-3">
+          <div className="space-y-1 px-1">
             <p className="text-sm font-semibold text-foreground">انتخاب مهلت شمسی</p>
             <p className="text-xs text-muted-foreground">
               تاریخ را از تقویم انتخاب کنید و ساعت را دقیق تنظیم کنید.
             </p>
           </div>
 
-          <div className="overflow-hidden rounded-xl border border-border/80 bg-background/70 p-2">
+          <div className="overflow-hidden rounded-xl border border-border/80 bg-background/70 p-1.5">
             <DayPicker
               mode="single"
               selected={selected ?? undefined}
@@ -134,24 +136,24 @@ export function JalaliDateTimePicker({
               className="p-0"
               classNames={{
                 months: 'flex flex-col',
-                month: 'space-y-3',
-                caption: 'relative flex items-center justify-center px-8 pt-1',
+                month: 'space-y-2',
+                caption: 'relative flex items-center justify-center px-10 pt-1',
                 caption_label: 'text-sm font-semibold text-foreground',
                 nav: 'flex items-center gap-1',
                 button_previous:
-                  'absolute right-0 inline-flex h-8 w-8 items-center justify-center rounded-md border border-border bg-transparent text-muted-foreground transition hover:bg-muted hover:text-foreground',
+                  'absolute right-1 inline-flex h-7 w-7 items-center justify-center rounded-md border border-border bg-transparent text-muted-foreground transition hover:bg-muted hover:text-foreground',
                 button_next:
-                  'absolute left-0 inline-flex h-8 w-8 items-center justify-center rounded-md border border-border bg-transparent text-muted-foreground transition hover:bg-muted hover:text-foreground',
+                  'absolute left-1 inline-flex h-7 w-7 items-center justify-center rounded-md border border-border bg-transparent text-muted-foreground transition hover:bg-muted hover:text-foreground',
                 month_caption: 'flex justify-center',
-                weekdays: 'grid grid-cols-7 gap-1',
+                weekdays: 'grid grid-cols-7 gap-0.5',
                 weekday:
-                  'flex h-9 items-center justify-center rounded-md text-[0.78rem] font-medium text-muted-foreground',
-                week: 'grid grid-cols-7 gap-1',
+                  'flex h-8 items-center justify-center rounded-md text-[0.76rem] font-medium text-muted-foreground',
+                week: 'grid grid-cols-7 gap-0.5',
                 day: cn(
                   buttonVariants({ variant: 'ghost' }),
-                  'h-10 w-full rounded-lg p-0 text-sm font-medium text-foreground hover:bg-muted aria-selected:opacity-100',
+                  'h-9 w-full rounded-lg p-0 text-sm font-medium text-foreground hover:bg-muted aria-selected:opacity-100',
                 ),
-                day_button: 'h-10 w-full',
+                day_button: 'h-9 w-full',
                 selected:
                   'bg-primary text-primary-foreground hover:bg-primary hover:text-primary-foreground',
                 today: 'border border-primary/50 bg-primary/10 text-primary',
@@ -169,7 +171,7 @@ export function JalaliDateTimePicker({
             />
           </div>
 
-          <div className="space-y-3 rounded-xl border border-border/80 bg-background/70 p-3">
+          <div className="space-y-2 rounded-xl border border-border/80 bg-background/70 p-3">
             <div className="flex items-center gap-2 text-sm font-medium text-foreground">
               <Clock3 className="h-4 w-4 text-primary" />
               <span>ساعت مهلت</span>
@@ -216,7 +218,7 @@ export function JalaliDateTimePicker({
             </div>
           </div>
 
-          <div className="flex items-center justify-between gap-3 border-t border-border pt-1">
+          <div className="flex items-center justify-between gap-3 border-t border-border px-1 pt-1">
             <Button
               type="button"
               variant="ghost"

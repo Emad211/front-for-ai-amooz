@@ -231,3 +231,34 @@ def test_review_ready_notification_is_only_queued_once(monkeypatch):
     assert second['status'] == 'extracted'
     assert ex.review_ready_notified_at == first_ts
     assert calls == [ex.id]
+
+
+def test_cancelled_extraction_stops_at_first_checkpoint(monkeypatch):
+    _mock_pipeline(monkeypatch)
+    ex = baker.make(
+        ClassExercise,
+        status=Status.EXTRACTING,
+        extract_task_id='cancel-task',
+        cancel_requested=True,
+    )
+    monkeypatch.setattr(tasks.extract_exercise_content.request, "id", "cancel-task", raising=False)
+
+    result = tasks.extract_exercise_content.run(ex.id)
+
+    assert result['status'] == 'cancelled'
+    ex.refresh_from_db()
+    assert ex.status == Status.CANCELLED
+    assert ex.workflow_state['stage'] == 'cancelled'
+
+
+def test_cancelled_status_is_rerunnable(monkeypatch):
+    _mock_pipeline(monkeypatch)
+    monkeypatch.setattr(tasks.send_exercise_review_ready_sms_task, 'delay', lambda _eid: None)
+    ex = baker.make(ClassExercise, status=Status.CANCELLED, cancel_requested=False)
+
+    result = _run(ex.id)
+
+    assert result['status'] == 'extracted'
+    ex.refresh_from_db()
+    assert ex.status == Status.EXTRACTED
+    assert ex.cancel_requested is False

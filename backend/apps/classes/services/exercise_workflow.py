@@ -11,6 +11,7 @@ WORKFLOW_STAGE_PROGRESS = {
     'matching_reference_answers': 80,
     'building_review_draft': 95,
     'ready_for_review': 100,
+    'cancelled': 0,
     'failed': 0,
 }
 
@@ -22,6 +23,7 @@ WORKFLOW_STAGE_MESSAGE = {
     'matching_reference_answers': 'در حال تطبیق پاسخ‌های مرجع با سوال‌ها هستیم.',
     'building_review_draft': 'در حال ساخت پیش‌نویس قابل بازبینی هستیم.',
     'ready_for_review': 'پیش‌نویس تمرین آمادهٔ بازبینی است.',
+    'cancelled': 'استخراج تمرین متوقف شد.',
     'failed': 'در ساخت پیش‌نویس تمرین خطا رخ داد.',
 }
 

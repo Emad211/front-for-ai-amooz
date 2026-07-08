@@ -90,6 +90,7 @@ def _create_payload(
 LIST = '/api/classes/creation-sessions/{}/exercises/'
 DETAIL = '/api/classes/exercises/{}/'
 EXTRACT = '/api/classes/exercises/{}/extract/'
+CANCEL = '/api/classes/exercises/{}/cancel/'
 PUBLISH = '/api/classes/exercises/{}/publish/'
 REF_PREVIEW = '/api/classes/exercises/{}/reference-ingest/preview/'
 REF_APPLY = '/api/classes/exercises/{}/reference-ingest/apply/'
@@ -225,6 +226,51 @@ class TestExtract:
         owner, other = _teacher(), _teacher()
         ex = _exercise(owner)
         assert _auth(other).post(EXTRACT.format(ex.id)).status_code == 404
+
+    def test_cancel_running_extraction_sets_cancelled_and_revokes(self, monkeypatch):
+        owner = _teacher()
+        ex = _exercise(owner, status=Status.EXTRACTING, extract_task_id='task-123')
+
+        revoked = {}
+
+        def fake_revoke(task_id, terminate=False, signal=None):
+            revoked.update({'task_id': task_id, 'terminate': terminate, 'signal': signal})
+
+        monkeypatch.setattr('apps.classes.views_exercises.celery_app.control.revoke', fake_revoke)
+
+        res = _auth(owner).post(CANCEL.format(ex.id))
+
+        assert res.status_code == 200
+        ex.refresh_from_db()
+        assert ex.status == Status.CANCELLED
+        assert ex.cancel_requested is True
+        assert ex.workflow_state['stage'] == 'cancelled'
+        assert revoked == {'task_id': 'task-123', 'terminate': True, 'signal': 'SIGTERM'}
+
+    def test_cancel_conflicts_when_not_extracting(self):
+        owner = _teacher()
+        ex = _exercise(owner, status=Status.DRAFT)
+        assert _auth(owner).post(CANCEL.format(ex.id)).status_code == 409
+
+    def test_cancel_queued_extraction_before_worker_pickup(self):
+        owner = _teacher()
+        ex = _exercise(
+            owner,
+            status=Status.DRAFT,
+            workflow_state={'stage': 'queued', 'progressPercent': 5, 'message': 'queued'},
+        )
+
+        res = _auth(owner).post(CANCEL.format(ex.id))
+
+        assert res.status_code == 200
+        ex.refresh_from_db()
+        assert ex.status == Status.CANCELLED
+        assert ex.cancel_requested is True
+
+    def test_cancel_cross_teacher_404(self):
+        owner, other = _teacher(), _teacher()
+        ex = _exercise(owner, status=Status.EXTRACTING)
+        assert _auth(other).post(CANCEL.format(ex.id)).status_code == 404
 
 
 class TestPublishGate:

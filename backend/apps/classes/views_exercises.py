@@ -10,6 +10,7 @@ Design + permission matrix: docs/features/exercise-hub.md · ADR-0004.
 from __future__ import annotations
 
 import os
+import logging
 from io import BytesIO
 from decimal import Decimal, InvalidOperation
 
@@ -23,6 +24,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from core.celery import app as celery_app
 from .models import (
     ClassCreationSession,
     ClassExercise,
@@ -55,6 +57,7 @@ from .serializers_exercises import (
 from .tasks import extract_exercise_content
 
 _NOT_FOUND = {'detail': 'تمرین پیدا نشد.'}
+logger = logging.getLogger(__name__)
 
 
 def _int_env(name: str, default: int) -> int:
@@ -344,6 +347,64 @@ class ExerciseExtractView(APIView):
             {'detail': 'استخراج دوبارهٔ تمرین آغاز شد.', 'status': ClassExercise.Status.EXTRACTING},
             status=status.HTTP_202_ACCEPTED,
         )
+
+
+def _cancel_exercise_extraction(exercise: ClassExercise) -> None:
+    """Stop a running exercise extraction as safely as possible.
+
+    The DB transition happens first (cooperative stop), then Celery revoke is
+    attempted as a best-effort hard stop for an in-flight OCR/LLM call.
+    """
+    exercise.cancel_requested = True
+    exercise.status = ClassExercise.Status.CANCELLED
+    exercise.workflow_state = build_workflow_state(
+        'cancelled',
+        message='استخراج تمرین توسط شما متوقف شد.',
+        ready_for_review=False,
+    )
+    exercise.save(update_fields=['cancel_requested', 'status', 'workflow_state', 'updated_at'])
+
+    task_id = (exercise.extract_task_id or '').strip()
+    if task_id:
+        try:
+            celery_app.control.revoke(task_id, terminate=True, signal='SIGTERM')
+        except Exception:
+            logger.warning(
+                'Failed to revoke exercise extraction task %s for exercise %s '
+                '(cooperative cancel flag still set).',
+                task_id,
+                exercise.id,
+                exc_info=True,
+            )
+
+
+class ExerciseCancelView(APIView):
+    """Cancel a running exercise extraction (teacher, owner-only)."""
+
+    permission_classes = [IsAuthenticated, IsTeacherUser]
+
+    def post(self, request, exercise_id: int):
+        exercise = _owned_exercise(request, exercise_id)
+        if exercise is None:
+            return Response(_NOT_FOUND, status=status.HTTP_404_NOT_FOUND)
+        raw_workflow = exercise.workflow_state if isinstance(exercise.workflow_state, dict) else {}
+        workflow_stage = str(raw_workflow.get('stage') or '')
+        active_stages = {
+            'queued',
+            'reading_sources',
+            'ocr_and_transcription',
+            'extracting_questions',
+            'matching_reference_answers',
+            'building_review_draft',
+        }
+        if exercise.status != ClassExercise.Status.EXTRACTING and workflow_stage not in active_stages:
+            return Response(
+                {'detail': 'استخراج فعالی برای لغو وجود ندارد.'},
+                status=status.HTTP_409_CONFLICT,
+            )
+
+        _cancel_exercise_extraction(exercise)
+        return Response(ExerciseDetailSerializer(exercise).data)
 
 
 class ExercisePublishView(APIView):
