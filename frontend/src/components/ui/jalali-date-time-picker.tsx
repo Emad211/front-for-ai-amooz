@@ -109,8 +109,9 @@ export function JalaliDateTimePicker({
         </Button>
       </PopoverTrigger>
       <PopoverContent
-        align="start"
-        className="w-[min(92vw,22rem)] rounded-xl border-border bg-card p-0"
+        align="center"
+        sideOffset={8}
+        className="w-[min(22rem,calc(100vw-2rem))] rounded-xl border-border bg-card p-0"
         dir="rtl"
       >
         <div className="space-y-4 p-4">
@@ -121,7 +122,7 @@ export function JalaliDateTimePicker({
             </p>
           </div>
 
-          <div className="rounded-xl border border-border/80 bg-background/70 p-2">
+          <div className="overflow-hidden rounded-xl border border-border/80 bg-background/70 p-2">
             <DayPicker
               mode="single"
               selected={selected ?? undefined}
