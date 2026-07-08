@@ -18,7 +18,7 @@ from django.utils import timezone
 from model_bakery import baker
 from rest_framework.test import APIClient
 
-from apps.classes.models import ClassExercise
+from apps.classes.models import ClassCreationSession, ClassExercise
 from apps.notification.models import AdminNotification, NotificationReadReceipt
 
 pytestmark = [pytest.mark.django_db]
@@ -129,3 +129,29 @@ class TestReadStateIsPerUser:
         ).exists()
         # The other user got no receipts from A's read-all.
         assert not NotificationReadReceipt.objects.filter(user=other).exists()
+
+    def test_read_all_marks_class_and_exam_ready_virtual_notifications(self, teacher_client, teacher_user):
+        class_session = baker.make(
+            'classes.ClassCreationSession',
+            teacher=teacher_user,
+            pipeline_type=ClassCreationSession.PipelineType.CLASS,
+            status=ClassCreationSession.Status.RECAPPED,
+            review_ready_notified_at=timezone.now(),
+        )
+        exam_session = baker.make(
+            'classes.ClassCreationSession',
+            teacher=teacher_user,
+            pipeline_type=ClassCreationSession.PipelineType.EXAM_PREP,
+            status=ClassCreationSession.Status.EXAM_STRUCTURED,
+            review_ready_notified_at=timezone.now(),
+        )
+
+        assert teacher_client.post(READ_ALL).status_code == 200
+        assert NotificationReadReceipt.objects.filter(
+            user=teacher_user,
+            notification_id=f'class-ready-{class_session.id}',
+        ).exists()
+        assert NotificationReadReceipt.objects.filter(
+            user=teacher_user,
+            notification_id=f'exam-ready-{exam_session.id}',
+        ).exists()

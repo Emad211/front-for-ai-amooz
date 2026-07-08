@@ -77,7 +77,6 @@ export function JalaliDateTimePicker({
   const handleSelect = (date: Date | undefined) => {
     if (!date) return;
     commitDate(date);
-    setOpen(false);
   };
 
   const handleTimeChange = (nextHour: string, nextMinute: string) => {
@@ -113,10 +112,10 @@ export function JalaliDateTimePicker({
         align="end"
         sideOffset={10}
         collisionPadding={12}
-        className="w-[min(19.5rem,calc(100vw-1rem))] overflow-hidden rounded-xl border-border bg-card p-0"
+        className="w-[min(28rem,calc(100vw-1rem))] overflow-visible rounded-2xl border-border bg-card p-0 shadow-2xl"
         dir="rtl"
       >
-        <div className="space-y-3 p-3">
+        <div className="space-y-4 p-4">
           <div className="space-y-1 px-1">
             <p className="text-sm font-semibold text-foreground">انتخاب مهلت شمسی</p>
             <p className="text-xs text-muted-foreground">
@@ -124,7 +123,7 @@ export function JalaliDateTimePicker({
             </p>
           </div>
 
-          <div className="overflow-hidden rounded-xl border border-border/80 bg-background/70 p-1.5">
+          <div className="overflow-hidden rounded-2xl border border-border/80 bg-background/70 p-3">
             <DayPicker
               mode="single"
               selected={selected ?? undefined}
@@ -135,25 +134,27 @@ export function JalaliDateTimePicker({
               fixedWeeks
               className="p-0"
               classNames={{
-                months: 'flex flex-col',
-                month: 'space-y-2',
-                caption: 'relative flex items-center justify-center px-10 pt-1',
-                caption_label: 'text-sm font-semibold text-foreground',
+                months: 'flex w-full flex-col',
+                month: 'w-full space-y-3',
+                caption: 'relative flex min-h-10 items-center justify-center px-12 py-1',
+                caption_label: 'text-base font-semibold text-foreground',
                 nav: 'flex items-center gap-1',
                 button_previous:
-                  'absolute right-1 inline-flex h-7 w-7 items-center justify-center rounded-md border border-border bg-transparent text-muted-foreground transition hover:bg-muted hover:text-foreground',
+                  'absolute right-1 top-1/2 inline-flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full border border-border bg-card text-muted-foreground transition hover:bg-muted hover:text-foreground',
                 button_next:
-                  'absolute left-1 inline-flex h-7 w-7 items-center justify-center rounded-md border border-border bg-transparent text-muted-foreground transition hover:bg-muted hover:text-foreground',
+                  'absolute left-1 top-1/2 inline-flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full border border-border bg-card text-muted-foreground transition hover:bg-muted hover:text-foreground',
                 month_caption: 'flex justify-center',
-                weekdays: 'grid grid-cols-7 gap-0.5',
+                table: 'w-full border-collapse',
+                head_row: 'grid w-full grid-cols-7 gap-1',
                 weekday:
-                  'flex h-8 items-center justify-center rounded-md text-[0.76rem] font-medium text-muted-foreground',
-                week: 'grid grid-cols-7 gap-0.5',
+                  'flex h-9 items-center justify-center rounded-lg text-sm font-medium text-muted-foreground',
+                tbody: 'grid w-full gap-1',
+                row: 'grid w-full grid-cols-7 gap-1',
                 day: cn(
                   buttonVariants({ variant: 'ghost' }),
-                  'h-9 w-full rounded-lg p-0 text-sm font-medium text-foreground hover:bg-muted aria-selected:opacity-100',
+                  'h-10 w-full min-w-0 rounded-xl p-0 text-sm font-medium text-foreground hover:bg-muted aria-selected:opacity-100',
                 ),
-                day_button: 'h-9 w-full',
+                day_button: 'h-10 w-full text-center',
                 selected:
                   'bg-primary text-primary-foreground hover:bg-primary hover:text-primary-foreground',
                 today: 'border border-primary/50 bg-primary/10 text-primary',
@@ -171,7 +172,7 @@ export function JalaliDateTimePicker({
             />
           </div>
 
-          <div className="space-y-2 rounded-xl border border-border/80 bg-background/70 p-3">
+          <div className="space-y-2 rounded-2xl border border-border/80 bg-background/70 p-3">
             <div className="flex items-center gap-2 text-sm font-medium text-foreground">
               <Clock3 className="h-4 w-4 text-primary" />
               <span>ساعت مهلت</span>
@@ -218,20 +219,29 @@ export function JalaliDateTimePicker({
             </div>
           </div>
 
-          <div className="flex items-center justify-between gap-3 border-t border-border px-1 pt-1">
-            <Button
-              type="button"
-              variant="ghost"
-              className="px-2 text-muted-foreground hover:text-foreground"
-              onClick={() => {
-                const now = new Date();
-                onChange(formatLocalDateTimeValue(applyTime(now, hour, minute)));
-                setOpen(false);
-              }}
-            >
-              امروز
-            </Button>
+          <div className="flex flex-col gap-3 border-t border-border px-1 pt-1 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                variant="ghost"
+                className="px-2 text-muted-foreground hover:text-foreground"
+                onClick={() => {
+                  const now = new Date();
+                  onChange(formatLocalDateTimeValue(applyTime(now, hour, minute)));
+                }}
+              >
+                امروز
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                className="px-2 text-muted-foreground hover:text-foreground"
+                onClick={() => setOpen(false)}
+              >
+                بستن
+              </Button>
+            </div>
+            <div className="flex flex-wrap items-center justify-end gap-2">
               {selected ? (
                 <span className="text-xs text-muted-foreground">{formatPersianDateTime(selected)}</span>
               ) : (
@@ -244,11 +254,19 @@ export function JalaliDateTimePicker({
                   size="icon"
                   className="h-8 w-8 text-muted-foreground hover:text-destructive"
                   onClick={() => onChange('')}
-                  aria-label="پاک کردن مهلت"
+                    aria-label="پاک کردن مهلت"
                 >
                   <X className="h-4 w-4" />
                 </Button>
               ) : null}
+              <Button
+                type="button"
+                size="sm"
+                onClick={() => setOpen(false)}
+                disabled={!selected}
+              >
+                تایید
+              </Button>
             </div>
           </div>
         </div>

@@ -1,68 +1,30 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+
 import { Progress } from '@/components/ui/progress';
 import type { UploadProgress } from '@/services/classes-service';
 
-/* ------------------------------------------------------------------ */
-/* Step definitions                                                    */
-/* ------------------------------------------------------------------ */
-
-type StepDef = {
-  /** Backend processing statuses for this step */
-  processingStatus: string;
-  /** Backend done status for this step */
-  doneStatus: string;
+type PipelineTrackerProps = {
+  pipelineType: 'class' | 'exam_prep';
+  status: string | null;
+  workflowStage?: string | null;
+  workflowMessage?: string | null;
+  progressPercent?: number | null;
+  workflowWarnings?: string[];
+  readyForReview?: boolean;
+  uploadProgress: UploadProgress | null;
+  isUploading: boolean;
+  errorMessage: string | null;
+  sessionId: number | null;
+  startedAt?: string | null;
 };
-
-const CLASS_STEPS: StepDef[] = [
-  { processingStatus: 'transcribing', doneStatus: 'transcribed' },
-  { processingStatus: 'structuring', doneStatus: 'structured' },
-  { processingStatus: 'prereq_extracting', doneStatus: 'prereq_extracted' },
-  { processingStatus: 'prereq_teaching', doneStatus: 'prereq_taught' },
-  { processingStatus: 'recapping', doneStatus: 'recapped' },
-];
-
-const EXAM_PREP_STEPS: StepDef[] = [
-  { processingStatus: 'exam_transcribing', doneStatus: 'exam_transcribed' },
-  { processingStatus: 'exam_structuring', doneStatus: 'exam_structured' },
-];
-
-/* ------------------------------------------------------------------ */
-/* Elapsed timer hook                                                  */
-/* ------------------------------------------------------------------ */
-
-function useElapsed(isRunning: boolean): number {
-  const startRef = useRef<number | null>(null);
-  const [elapsed, setElapsed] = useState(0);
-
-  useEffect(() => {
-    if (!isRunning) {
-      startRef.current = null;
-      return;
-    }
-
-    if (!startRef.current) {
-      startRef.current = Date.now();
-    }
-
-    const id = window.setInterval(() => {
-      if (startRef.current) {
-        setElapsed(Math.floor((Date.now() - startRef.current) / 1000));
-      }
-    }, 1000);
-
-    return () => window.clearInterval(id);
-  }, [isRunning]);
-
-  return elapsed;
-}
 
 function formatElapsed(seconds: number): string {
   if (seconds < 60) return `${seconds} ثانیه`;
-  const m = Math.floor(seconds / 60);
-  const s = seconds % 60;
-  return `${m}:${String(s).padStart(2, '0')} دقیقه`;
+  const minutes = Math.floor(seconds / 60);
+  const remainder = seconds % 60;
+  return `${minutes}:${String(remainder).padStart(2, '0')} دقیقه`;
 }
 
 function formatBytes(bytes: number): string {
@@ -71,175 +33,189 @@ function formatBytes(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-/* ------------------------------------------------------------------ */
-/* Step state resolver                                                 */
-/* ------------------------------------------------------------------ */
+function useElapsedSince(startedAt: string | null | undefined, isRunning: boolean): number {
+  const [elapsed, setElapsed] = useState(0);
+  const startMs = useMemo(() => {
+    if (!startedAt) return null;
+    const parsed = new Date(startedAt).getTime();
+    return Number.isFinite(parsed) ? parsed : null;
+  }, [startedAt]);
 
-type StepState = 'idle' | 'active' | 'done' | 'failed';
+  useEffect(() => {
+    if (!isRunning || !startMs) {
+      setElapsed(0);
+      return;
+    }
 
-function resolveStepStates(
-  steps: StepDef[],
-  currentStatus: string | null,
-): StepState[] {
-  if (!currentStatus) return steps.map(() => 'idle');
-  if (currentStatus === 'failed') {
-    // Find which step was active and mark it as failed
-    const states: StepState[] = [];
-    let foundActive = false;
-    for (const step of steps) {
-      if (step.processingStatus === currentStatus || (!foundActive && step.doneStatus !== currentStatus)) {
-        // Everything before the current position is done
-      }
-      states.push('idle');
-    }
-    // Better approach: mark all up to the processing step as done, the processing one as failed
-    let lastActive = -1;
-    for (let i = 0; i < steps.length; i++) {
-      if (steps[i].processingStatus === currentStatus) {
-        lastActive = i;
-      }
-    }
-    // If none matched (generic "failed"), find the last step in progress by checking done statuses
-    return steps.map((_, i) => {
-      if (i < lastActive) return 'done';
-      if (i === lastActive) return 'failed';
-      return 'idle';
-    });
-  }
+    const tick = () => setElapsed(Math.max(0, Math.floor((Date.now() - startMs) / 1000)));
+    tick();
+    const id = window.setInterval(tick, 1000);
+    return () => window.clearInterval(id);
+  }, [isRunning, startMs]);
 
-  const result: StepState[] = [];
-  let passedCurrent = false;
-
-  for (const step of steps) {
-    if (passedCurrent) {
-      result.push('idle');
-      continue;
-    }
-    if (step.processingStatus === currentStatus) {
-      result.push('active');
-      passedCurrent = true;
-      continue;
-    }
-    if (step.doneStatus === currentStatus) {
-      result.push('done');
-      // Next step might be starting, let the rest be idle
-      passedCurrent = true;
-      continue;
-    }
-    // If we haven't passed current, this step is complete
-    result.push('done');
-  }
-
-  return result;
+  return elapsed;
 }
 
-/* ------------------------------------------------------------------ */
-/* Component Props                                                     */
-/* ------------------------------------------------------------------ */
-
-export type PipelineTrackerProps = {
-  pipelineType: 'class' | 'exam_prep';
-  /** Current backend status string */
-  status: string | null;
-  /** Upload progress (only during upload phase) */
-  uploadProgress: UploadProgress | null;
-  /** Whether the Step-1 HTTP call is currently in-flight */
-  isUploading: boolean;
-  /** Error message if any */
-  errorMessage: string | null;
-  /** Session ID for display */
-  sessionId: number | null;
+const CLASS_STAGE_LABELS: Record<string, string> = {
+  queued: 'در صف',
+  reading_source: 'دریافت منبع',
+  transcribing: 'تبدیل به متن',
+  structuring: 'ساختاردهی',
+  extracting_prerequisites: 'استخراج پیش‌نیازها',
+  teaching_prerequisites: 'آموزش پیش‌نیازها',
+  building_recap: 'ساخت جمع‌بندی',
+  ready_for_review: 'آماده بازبینی',
+  failed: 'خطا',
+  cancelled: 'متوقف‌شده',
 };
 
-/* ------------------------------------------------------------------ */
-/* Main Component                                                      */
-/* ------------------------------------------------------------------ */
+const EXAM_STAGE_LABELS: Record<string, string> = {
+  queued: 'در صف',
+  reading_source: 'دریافت منبع',
+  transcribing: 'تبدیل به متن',
+  extracting_questions: 'استخراج سوال‌ها',
+  ready_for_review: 'آماده بازبینی',
+  failed: 'خطا',
+  cancelled: 'متوقف‌شده',
+};
+
+const CLASS_FLOW = ['queued', 'reading_source', 'transcribing', 'structuring', 'extracting_prerequisites', 'teaching_prerequisites', 'building_recap', 'ready_for_review'];
+const EXAM_FLOW = ['queued', 'reading_source', 'transcribing', 'extracting_questions', 'ready_for_review'];
 
 export function PipelineTracker({
   pipelineType,
   status,
+  workflowStage,
+  workflowMessage,
+  progressPercent,
+  workflowWarnings = [],
+  readyForReview = false,
   uploadProgress,
   isUploading,
   errorMessage,
   sessionId,
+  startedAt,
 }: PipelineTrackerProps) {
-  const steps = pipelineType === 'class' ? CLASS_STEPS : EXAM_PREP_STEPS;
-  const stepStates = resolveStepStates(steps, status);
-  const isCancelled = status === 'cancelled';
-  const isPipelineActive = isUploading || (status !== null && status !== 'failed' && status !== 'cancelled' && !steps.some(s => s.doneStatus === status));
-  const isPipelineDone = status !== null && steps.some(s => s.doneStatus === status) && steps[steps.length - 1].doneStatus === status;
-  const elapsed = useElapsed(isPipelineActive);
-
-  // Upload phase is before any status
-  const isUploadPhase = isUploading && !status;
+  const isCancelled = status === 'cancelled' || workflowStage === 'cancelled';
+  const isFailed = status === 'failed' || workflowStage === 'failed' || Boolean(errorMessage);
+  const stage = workflowStage ?? null;
+  const effectiveProgress = Math.max(0, Math.min(100, Number(progressPercent ?? 0)));
+  const stageLabels = pipelineType === 'class' ? CLASS_STAGE_LABELS : EXAM_STAGE_LABELS;
+  const stageFlow = pipelineType === 'class' ? CLASS_FLOW : EXAM_FLOW;
+  const isPipelineActive = Boolean(
+    isUploading ||
+      (stage && !readyForReview && stage !== 'failed' && stage !== 'cancelled')
+  );
+  const elapsed = useElapsedSince(startedAt, isPipelineActive);
+  const currentStageIndex = stage ? stageFlow.indexOf(stage) : -1;
+  const cleanedWarnings = workflowWarnings.filter(Boolean).slice(0, 3);
+  const hasTracker = Boolean(stage || isUploading || errorMessage || readyForReview);
+  const warningIdRef = useRef(`pipeline-warnings-${Math.random().toString(36).slice(2)}`);
 
   return (
     <div className="mt-4 space-y-4">
-      {/* ── Upload Progress ── */}
-      {isUploadPhase && uploadProgress && (
-        <div className="rounded-xl border bg-card p-4 space-y-3 animate-in fade-in slide-in-from-top-2 duration-300">
-          <div className="flex items-center justify-between text-sm font-medium">
+      {isUploading && uploadProgress && (
+        <div className="space-y-3 rounded-2xl border bg-card p-4 animate-in fade-in slide-in-from-top-2 duration-300">
+          <div className="flex items-center justify-between gap-3 text-sm font-medium">
             <div className="flex items-center gap-2">
               <span className="relative flex h-3 w-3">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75" />
-                <span className="relative inline-flex rounded-full h-3 w-3 bg-primary" />
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-75" />
+                <span className="relative inline-flex h-3 w-3 rounded-full bg-primary" />
               </span>
-              <span>
-                {uploadProgress.phase === 'uploading' ? 'در حال آپلود فایل…' : 'در حال پردازش سرور…'}
-              </span>
+              <span>{uploadProgress.phase === 'uploading' ? 'در حال بارگذاری فایل…' : 'در حال ثبت و آماده‌سازی…'}</span>
             </div>
             {uploadProgress.phase === 'uploading' && uploadProgress.percent >= 0 && (
               <span className="text-xs tabular-nums text-muted-foreground">
-                {uploadProgress.percent}%
-                {uploadProgress.total > 0 && (
-                  <> — {formatBytes(uploadProgress.loaded)} / {formatBytes(uploadProgress.total)}</>
-                )}
+                {uploadProgress.percent}%{uploadProgress.total > 0 ? ` — ${formatBytes(uploadProgress.loaded)} / ${formatBytes(uploadProgress.total)}` : ''}
               </span>
             )}
           </div>
-
           {uploadProgress.phase === 'uploading' && uploadProgress.percent >= 0 ? (
             <Progress value={uploadProgress.percent} className="h-2" />
           ) : (
-            <div className="h-2 w-full rounded-full bg-muted overflow-hidden">
-              <div className="h-full bg-primary/60 rounded-full animate-pulse w-full" />
+            <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
+              <div className="h-full w-full animate-pulse rounded-full bg-primary/60" />
             </div>
           )}
         </div>
       )}
 
-      {/* ── Pipeline Steps ── */}
-      {(status || isPipelineDone) && !isCancelled && (
-        <div className="rounded-xl border bg-card p-4 space-y-3 animate-in fade-in slide-in-from-top-2 duration-300">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              {isPipelineActive && (
-                <span className="relative flex h-3 w-3">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75" />
-                  <span className="relative inline-flex rounded-full h-3 w-3 bg-primary" />
-                </span>
-              )}
-              <h4 className="text-sm font-semibold">
-                {isPipelineDone ? 'پردازش کامل شد' : 'در حال پردازش…'}
-              </h4>
+      {hasTracker && !isCancelled && (
+        <div className="space-y-4 rounded-2xl border bg-card p-4 animate-in fade-in slide-in-from-top-2 duration-300">
+          <div className="flex items-start justify-between gap-4">
+            <div className="space-y-1">
+              <div className="flex items-center gap-2">
+                {isPipelineActive && (
+                  <span className="relative flex h-3 w-3">
+                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-75" />
+                    <span className="relative inline-flex h-3 w-3 rounded-full bg-primary" />
+                  </span>
+                )}
+                <h4 className="text-sm font-semibold text-foreground">
+                  {readyForReview ? 'آماده بازبینی' : 'در حال پردازش'}
+                </h4>
+              </div>
+              <p className="text-xs leading-6 text-muted-foreground">
+                {workflowMessage || (readyForReview ? 'پیش‌نویس شما آماده بازبینی و انتشار است.' : 'وضعیت پردازش در حال به‌روزرسانی است.')}
+              </p>
             </div>
-            {isPipelineActive && (
-              <span className="text-xs tabular-nums text-muted-foreground">
-                ⏱ {formatElapsed(elapsed)}
-              </span>
-            )}
+            {isPipelineActive && startedAt ? (
+              <span className="text-xs tabular-nums text-muted-foreground">⏱ {formatElapsed(elapsed)}</span>
+            ) : null}
           </div>
 
-          {/* Overall progress bar */}
-          <OverallProgress stepStates={stepStates} />
+          <div className="space-y-2">
+            <div className="flex items-center justify-between text-[11px] text-muted-foreground">
+              <span>{stage ? stageLabels[stage] ?? 'در حال پردازش' : 'در حال پردازش'}</span>
+              <span className="tabular-nums">{effectiveProgress}%</span>
+            </div>
+            <Progress value={effectiveProgress} className="h-2" />
+          </div>
+
+          <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+            {stageFlow.map((flowStage, index) => {
+              const state =
+                flowStage === stage
+                  ? readyForReview
+                    ? 'done'
+                    : 'active'
+                  : currentStageIndex >= 0 && index < currentStageIndex
+                    ? 'done'
+                    : 'idle';
+              return (
+                <div
+                  key={flowStage}
+                  className={
+                    state === 'done'
+                      ? 'rounded-xl border border-primary/20 bg-primary/10 px-3 py-2 text-sm text-primary'
+                      : state === 'active'
+                        ? 'rounded-xl border border-primary/30 bg-primary/5 px-3 py-2 text-sm text-foreground'
+                        : 'rounded-xl border border-border/70 bg-muted/20 px-3 py-2 text-sm text-muted-foreground'
+                  }
+                >
+                  {stageLabels[flowStage] ?? flowStage}
+                </div>
+              );
+            })}
+          </div>
+
+          {cleanedWarnings.length > 0 ? (
+            <div className="space-y-2 rounded-2xl border border-amber-500/30 bg-amber-500/5 p-3" aria-describedby={warningIdRef.current}>
+              <p className="text-sm font-medium text-amber-700 dark:text-amber-300">نیازمند توجه شما</p>
+              <ul id={warningIdRef.current} className="space-y-1 text-xs leading-6 text-amber-700/90 dark:text-amber-200/90">
+                {cleanedWarnings.map((warning) => (
+                  <li key={warning}>• {warning}</li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
         </div>
       )}
 
-      {/* ── Error display ── */}
-      {errorMessage && (
-        <div className="rounded-xl border border-destructive/30 bg-destructive/5 p-4 animate-in fade-in slide-in-from-top-2 duration-300">
+      {isFailed && errorMessage && (
+        <div className="rounded-2xl border border-destructive/30 bg-destructive/5 p-4 animate-in fade-in slide-in-from-top-2 duration-300">
           <div className="flex items-start gap-2">
-            <span className="text-destructive text-lg mt-0.5">⚠️</span>
+            <span className="mt-0.5 text-lg text-destructive">⚠️</span>
             <div className="space-y-1">
               <p className="text-sm font-medium text-destructive">خطا در پردازش</p>
               <p className="text-xs text-destructive/80">{errorMessage}</p>
@@ -248,59 +224,27 @@ export function PipelineTracker({
         </div>
       )}
 
-      {/* ── Cancelled banner (amber — distinct from failed/red and done/green) ── */}
       {isCancelled && (
-        <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-4 animate-in fade-in slide-in-from-top-2 duration-300">
+        <div className="rounded-2xl border border-amber-500/30 bg-amber-500/5 p-4 animate-in fade-in slide-in-from-top-2 duration-300">
           <div className="flex items-center gap-2">
-            <span className="text-amber-600 text-lg">🚫</span>
-            <p className="text-sm font-medium text-amber-700 dark:text-amber-400">
-              پردازش توسط شما لغو شد.
-            </p>
+            <span className="text-lg text-amber-600">🚫</span>
+            <p className="text-sm font-medium text-amber-700 dark:text-amber-400">پردازش توسط شما لغو شد.</p>
           </div>
         </div>
       )}
 
-      {/* ── Done banner ── */}
-      {isPipelineDone && !errorMessage && (
-        <div className="rounded-xl border border-green-500/30 bg-green-500/5 p-4 animate-in fade-in slide-in-from-top-2 duration-300">
+      {readyForReview && !isFailed && !isCancelled ? (
+        <div className="rounded-2xl border border-green-500/30 bg-green-500/5 p-4 animate-in fade-in slide-in-from-top-2 duration-300">
           <div className="flex items-center gap-2">
-            <span className="text-green-600 text-lg">✅</span>
-            <p className="text-sm font-medium text-green-700 dark:text-green-400">
-              پردازش با موفقیت کامل شد!
-            </p>
+            <span className="text-lg text-green-600">✅</span>
+            <p className="text-sm font-medium text-green-700 dark:text-green-400">پیش‌نویس آماده است و می‌توانید برای بازبینی و انتشار برگردید.</p>
           </div>
         </div>
-      )}
+      ) : null}
 
-      {/* ── Session ID ── */}
-      {sessionId && (
-        <p className="text-[11px] text-muted-foreground/60 tabular-nums">
-          شناسه جلسه: {sessionId}
-        </p>
-      )}
-    </div>
-  );
-}
-
-/* ------------------------------------------------------------------ */
-/* Overall progress bar                                                */
-/* ------------------------------------------------------------------ */
-
-function OverallProgress({ stepStates }: { stepStates: StepState[] }) {
-  const total = stepStates.length;
-  const doneCount = stepStates.filter((s) => s === 'done').length;
-  const activeCount = stepStates.filter((s) => s === 'active').length;
-
-  // Each done step = 1 full, active step = 0.5
-  const progress = Math.round(((doneCount + activeCount * 0.5) / total) * 100);
-
-  return (
-    <div className="space-y-1">
-      <div className="flex items-center justify-between text-[11px] text-muted-foreground">
-        <span>پیشرفت کلی</span>
-        <span className="tabular-nums">{progress}%</span>
-      </div>
-      <Progress value={progress} className="h-1.5" />
+      {sessionId ? (
+        <p className="text-[11px] tabular-nums text-muted-foreground/60">شناسه جلسه: {sessionId}</p>
+      ) : null}
     </div>
   );
 }

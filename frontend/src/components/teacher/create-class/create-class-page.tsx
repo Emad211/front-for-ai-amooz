@@ -9,8 +9,10 @@ import { ClassInfoForm } from './class-info-form';
 import { FileUploadSection } from './file-upload-section';
 import { StudentInviteSection } from './student-invite-section';
 import { Card } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import {
@@ -42,6 +44,7 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
 import { Ban, Loader2 } from 'lucide-react';
+import { ExerciseIntakeForm, buildEmptyExerciseIntakeDraft, type ExerciseIntakeDraft } from '@/components/teacher/exercises/exercise-intake-form';
 import { useWorkspace } from '@/hooks/use-workspace';
 import { OrganizationService } from '@/services/organization-service';
 import type { StudyGroup } from '@/types';
@@ -143,6 +146,8 @@ export function CreateClassPage() {
   const [level, setLevel] = useState<string>('');
   const [duration, setDuration] = useState<string>('');
   const [lessonFile, setLessonFile] = useState<File | null>(null);
+  const [includeExercises, setIncludeExercises] = useState(false);
+  const [pendingExercises, setPendingExercises] = useState<ExerciseIntakeDraft[]>([buildEmptyExerciseIntakeDraft()]);
   const [step1ClientRequestId, setStep1ClientRequestId] = useState<string | null>(null);
   // Class pipeline state
   const [activeSessionId, setActiveSessionId] = useState<number | null>(null);
@@ -413,6 +418,23 @@ export function CreateClassPage() {
     );
   };
 
+  const updatePendingExercise = (clientExerciseKey: string, next: ExerciseIntakeDraft) => {
+    setPendingExercises((prev) =>
+      prev.map((exercise) => (exercise.clientExerciseKey === clientExerciseKey ? next : exercise)),
+    );
+  };
+
+  const addPendingExercise = () => {
+    setPendingExercises((prev) => [...prev, buildEmptyExerciseIntakeDraft()]);
+  };
+
+  const removePendingExercise = (clientExerciseKey: string) => {
+    setPendingExercises((prev) => {
+      const next = prev.filter((exercise) => exercise.clientExerciseKey !== clientExerciseKey);
+      return next.length > 0 ? next : [buildEmptyExerciseIntakeDraft()];
+    });
+  };
+
   // Class Pipeline computed values
   const sessionIdForActions = sessionDetail?.id ?? activeSessionId ?? null;
   const status = sessionDetail?.status ?? optimisticStatus ?? null;
@@ -429,20 +451,35 @@ export function CreateClassPage() {
 
   // Current pipeline state based on selected type
   const currentSessionId = pipelineType === 'class' ? sessionIdForActions : examPrepSessionIdForActions;
-  const currentPipelineMessage = pipelineType === 'class' ? classPipelineMessage : examPrepPipelineMessage;
-  const currentIsPipelineDone = pipelineType === 'class' ? isClassPipelineDone : isExamPrepPipelineDone;
-  const currentIsPipelineFailed = pipelineType === 'class' ? isClassPipelineFailed : isExamPrepPipelineFailed;
   const currentPipelineError = pipelineType === 'class' ? pipelineError : examPrepPipelineError;
   const currentIsPipelineRunning = pipelineType === 'class' ? isClassPipelineRunning : isExamPrepPipelineRunning;
   const currentCanStartPipeline = pipelineType === 'class' ? canStartClassPipeline : canStartExamPrepPipeline;
   const currentIsPipelineStarting = pipelineType === 'class' ? isPipelineStarting : isExamPrepPipelineStarting;
   const currentStatus = pipelineType === 'class' ? status : examPrepStatus;
+  const currentWorkflowStage = pipelineType === 'class' ? sessionDetail?.workflowStage ?? null : examPrepSessionDetail?.workflowStage ?? null;
+  const currentWorkflowMessage = pipelineType === 'class' ? sessionDetail?.workflowMessage ?? null : examPrepSessionDetail?.workflowMessage ?? null;
+  const currentProgressPercent = pipelineType === 'class' ? sessionDetail?.progressPercent ?? null : examPrepSessionDetail?.progressPercent ?? null;
+  const currentWorkflowWarnings = pipelineType === 'class' ? sessionDetail?.workflowWarnings ?? [] : examPrepSessionDetail?.workflowWarnings ?? [];
+  const currentReadyForReview = pipelineType === 'class' ? sessionDetail?.readyForReview ?? false : examPrepSessionDetail?.readyForReview ?? false;
+  const currentStartedAt = pipelineType === 'class' ? sessionDetail?.created_at ?? null : examPrepSessionDetail?.created_at ?? null;
   const currentIsPipelineCancelled = currentStatus === 'cancelled';
   // A running pipeline with a known session id is the only thing we can revoke.
   const canCancelPipeline = currentIsPipelineRunning && Boolean(currentSessionId);
 
   const startFullPipeline = async () => {
     if (!lessonFile) return;
+    if (pipelineType === 'class' && includeExercises) {
+      const invalid = pendingExercises.find(
+        (exercise) =>
+          !exercise.title.trim() ||
+          exercise.sources.length === 0 ||
+          (!exercise.noDeadline && !exercise.deadline),
+      );
+      if (invalid) {
+        toast.error('بخش تمرین را کامل کنید: عنوان، منبع و وضعیت مهلت هر تمرین باید مشخص باشد.');
+        return;
+      }
+    }
 
     const clientRequestId = step1ClientRequestId ?? (globalThis.crypto?.randomUUID?.() ?? null);
     if (clientRequestId && clientRequestId !== step1ClientRequestId) {
@@ -469,6 +506,18 @@ export function CreateClassPage() {
             runFullPipeline: true,
             organizationId: activeWorkspace?.id ?? undefined,
             studyGroupId: selectedStudyGroupId !== 'none' ? Number(selectedStudyGroupId) : undefined,
+            pendingExercises: includeExercises
+              ? pendingExercises.map((exercise) => ({
+                  clientExerciseKey: exercise.clientExerciseKey,
+                  title: exercise.title.trim(),
+                  noDeadline: exercise.noDeadline,
+                  deadline: exercise.noDeadline ? null : new Date(exercise.deadline).toISOString(),
+                  allowLate: exercise.allowLate,
+                  assistantEnabled: exercise.assistantEnabled,
+                  teacherNote: exercise.teacherNote.trim(),
+                  sources: exercise.sources,
+                }))
+              : [],
           },
           { onProgress: (p) => setUploadProgress(p) },
         );
@@ -645,21 +694,21 @@ export function CreateClassPage() {
             </h1>
             <p className="text-muted-foreground text-sm md:text-base">
               {pipelineType === 'class'
-                ? 'اطلاعات را تکمیل کنید، فایل درسی را بارگذاری کنید و با کد دعوت دانش‌آموزان را اضافه کنید.'
-                : 'فایل صوتی یا ویدیویی حل تست‌ها را بارگذاری کنید تا سوالات و پاسخ‌ها استخراج شوند.'}
+                ? 'همه اطلاعات کلاس را یک‌جا ثبت کنید، ذخیره و پردازش را بزنید، و بعد از آماده‌شدن برای بازبینی و انتشار برگردید.'
+                : 'اطلاعات و فایل آمادگی آزمون را یک‌جا ثبت کنید؛ بعد از پایان پردازش، برای بازبینی و انتشار به شما خبر می‌دهیم.'}
             </p>
           </div>
           {pipelineType === 'class' ? (
             <div className="flex flex-wrap gap-2 text-xs md:text-sm text-muted-foreground">
-              <span className={cn("px-3 py-1 rounded-full", !status ? "bg-primary/10 text-primary" : "bg-muted")}>۱. اطلاعات کلاس</span>
-              <span className={cn("px-3 py-1 rounded-full", (status && status !== 'recapped') ? "bg-primary/10 text-primary" : "bg-muted")}>۲. فایل درسی</span>
-              <span className={cn("px-3 py-1 rounded-full", status === 'recapped' ? "bg-primary/10 text-primary" : "bg-muted")}>۳. دعوت دانش‌آموزان</span>
+              <span className={cn("px-3 py-1 rounded-full", !status ? "bg-primary/10 text-primary" : "bg-muted")}>۱. ثبت اطلاعات</span>
+              <span className={cn("px-3 py-1 rounded-full", (status && status !== 'recapped') ? "bg-primary/10 text-primary" : "bg-muted")}>۲. پردازش خودکار</span>
+              <span className={cn("px-3 py-1 rounded-full", status === 'recapped' ? "bg-primary/10 text-primary" : "bg-muted")}>۳. بازبینی و انتشار</span>
             </div>
           ) : (
             <div className="flex flex-wrap gap-2 text-xs md:text-sm text-muted-foreground">
-              <span className={cn("px-3 py-1 rounded-full", (!examPrepStatus || examPrepStatus.includes('trans')) ? "bg-primary/10 text-primary" : "bg-muted")}>۱. ترنسکریپت</span>
-              <span className={cn("px-3 py-1 rounded-full", examPrepStatus === 'exam_structuring' ? "bg-primary/10 text-primary" : "bg-muted")}>۲. استخراج سوالات</span>
-              <span className={cn("px-3 py-1 rounded-full", examPrepStatus === 'exam_structured' ? "bg-primary/10 text-primary" : "bg-muted")}>۳. دعوت دانش‌آموزان</span>
+              <span className={cn("px-3 py-1 rounded-full", (!examPrepStatus || examPrepStatus.includes('trans')) ? "bg-primary/10 text-primary" : "bg-muted")}>۱. ثبت اطلاعات</span>
+              <span className={cn("px-3 py-1 rounded-full", examPrepStatus === 'exam_structuring' ? "bg-primary/10 text-primary" : "bg-muted")}>۲. پردازش خودکار</span>
+              <span className={cn("px-3 py-1 rounded-full", examPrepStatus === 'exam_structured' ? "bg-primary/10 text-primary" : "bg-muted")}>۳. بازبینی و انتشار</span>
             </div>
           )}
         </div>
@@ -762,89 +811,12 @@ export function CreateClassPage() {
           }
         }}
       >
-        <div className="mt-4 space-y-3">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-            <div className="text-xs text-muted-foreground">
-              {lessonFile ? `فایل انتخاب‌شده: ${lessonFile.name}` : 'یک فایل صوتی یا ویدیویی انتخاب کنید.'}
+          <div className="mt-4 space-y-3">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+              <div className="text-xs text-muted-foreground">
+                {lessonFile ? `فایل انتخاب‌شده: ${lessonFile.name}` : 'یک فایل صوتی یا ویدیویی انتخاب کنید.'}
+              </div>
             </div>
-            <div className="flex items-center gap-2">
-              <Button
-                type="button"
-                className="rounded-xl h-10 px-5"
-                disabled={!currentCanStartPipeline}
-                onClick={startFullPipeline}
-              >
-                {currentIsPipelineStarting || currentIsPipelineRunning
-                  ? 'در حال پردازش…'
-                  : 'شروع پردازش'}
-              </Button>
-
-              {/* ── Cancel pipeline (sits right beside the start button) ── */}
-              {canCancelPipeline && (
-                <AlertDialog
-                  open={cancelDialogOpen}
-                  onOpenChange={(open) => {
-                    // Lock the dialog open while a cancel request is in flight.
-                    if (!isCancelling) setCancelDialogOpen(open);
-                  }}
-                >
-                  <AlertDialogTrigger asChild>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      className="rounded-xl h-10 px-4 border-destructive/40 text-destructive hover:bg-destructive/10 hover:text-destructive"
-                      title="لغو پردازش پایپ‌لاین"
-                    >
-                      <Ban className="h-4 w-4" />
-                      <span className="ms-1.5">لغو پردازش</span>
-                    </Button>
-                  </AlertDialogTrigger>
-                  <AlertDialogContent
-                    dir="rtl"
-                    onEscapeKeyDown={(e) => {
-                      if (isCancelling) e.preventDefault();
-                    }}
-                  >
-                    <AlertDialogHeader>
-                      <AlertDialogTitle>لغو پردازش پایپ‌لاین؟</AlertDialogTitle>
-                      <AlertDialogDescription>
-                        با لغو، پردازش جاری بلافاصله متوقف می‌شود و این جلسه دیگر قابل ادامه نیست.
-                        برای تولید دوباره باید فایل را آپلود کرده و پردازش را از ابتدا شروع کنید.
-                        این عمل قابل بازگشت نیست.
-                      </AlertDialogDescription>
-                    </AlertDialogHeader>
-                    <AlertDialogFooter>
-                      <AlertDialogCancel disabled={isCancelling}>انصراف</AlertDialogCancel>
-                      <AlertDialogAction
-                        disabled={isCancelling}
-                        onClick={async (e) => {
-                          // Block Radix auto-close so the dialog stays locked
-                          // during the request; we close it ourselves on success.
-                          e.preventDefault();
-                          try {
-                            await cancelPipeline();
-                            setCancelDialogOpen(false);
-                          } catch {
-                            // toast already shown; keep the dialog open to retry.
-                          }
-                        }}
-                        className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                      >
-                        {isCancelling ? (
-                          <>
-                            <Loader2 className="h-4 w-4 animate-spin" />
-                            <span className="ms-1.5">در حال لغو…</span>
-                          </>
-                        ) : (
-                          'بله، لغو کن'
-                        )}
-                      </AlertDialogAction>
-                    </AlertDialogFooter>
-                  </AlertDialogContent>
-                </AlertDialog>
-              )}
-            </div>
-          </div>
 
           {!title.trim() && (
             <div className="text-xs text-muted-foreground">
@@ -856,16 +828,193 @@ export function CreateClassPage() {
           <PipelineTracker
             pipelineType={pipelineType}
             status={currentStatus}
+            workflowStage={currentWorkflowStage}
+            workflowMessage={currentWorkflowMessage}
+            progressPercent={currentProgressPercent}
+            workflowWarnings={currentWorkflowWarnings}
+            readyForReview={currentReadyForReview}
             uploadProgress={uploadProgress}
             isUploading={currentIsPipelineStarting}
             errorMessage={currentPipelineError}
             sessionId={currentSessionId}
+            startedAt={currentStartedAt}
           />
         </div>
       </FileUploadSection>
 
-      {/* Exercises are managed after class creation in «کلاس‌های من ← تمرین‌ها»
-          (see docs/features/exercise-hub.md) — no upload section here. */}
+      {pipelineType === 'class' ? (
+        <Card className="space-y-4 rounded-3xl border-border/40 p-4 sm:p-5" dir="rtl">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div className="space-y-1.5">
+              <div className="flex items-center gap-2">
+                <Checkbox
+                  id="include-embedded-exercises"
+                  checked={includeExercises}
+                  onCheckedChange={(checked) => setIncludeExercises(Boolean(checked))}
+                />
+                <Label htmlFor="include-embedded-exercises" className="text-sm font-semibold">
+                  برای این کلاس تمرین هم می‌سازم
+                </Label>
+              </div>
+              <p className="text-xs leading-6 text-muted-foreground">
+                اگر این گزینه را روشن کنید، همین حالا همه اطلاعات تمرین را هم می‌گیرید. بعد از آماده‌شدن کلاس،
+                پیش‌نویس تمرین‌ها خودکار ساخته می‌شوند و برای بازبینی به شما خبر می‌دهیم.
+              </p>
+            </div>
+            <Badge variant={includeExercises ? 'default' : 'outline'} className="self-start rounded-full px-3 py-1">
+              {includeExercises ? `${pendingExercises.length} تمرین آماده ثبت` : 'اختیاری'}
+            </Badge>
+          </div>
+
+          {includeExercises ? (
+            <div className="space-y-4">
+              {(sessionDetail?.pendingExercises ?? []).length > 0 ? (
+                <div className="space-y-2 rounded-2xl border border-border/70 bg-muted/20 p-3">
+                  <p className="text-sm font-medium">وضعیت تمرین‌های ثبت‌شده برای این کلاس</p>
+                  <div className="space-y-2">
+                    {(sessionDetail?.pendingExercises ?? []).map((exercise) => (
+                      <div key={`${exercise.clientExerciseKey}-${exercise.exerciseId ?? 'pending'}`} className="rounded-xl border border-border/60 bg-background/70 px-3 py-2">
+                        <div className="flex items-center justify-between gap-3">
+                          <span className="text-sm font-medium">{exercise.title}</span>
+                          <Badge variant={exercise.status === 'failed' ? 'destructive' : exercise.exerciseId ? 'secondary' : 'outline'}>
+                            {exercise.status === 'failed'
+                              ? 'خطا در ساخت'
+                              : exercise.exerciseId
+                                ? 'در صف استخراج'
+                                : 'در انتظار آماده‌شدن کلاس'}
+                          </Badge>
+                        </div>
+                        {exercise.message ? (
+                          <p className="mt-1 text-xs text-muted-foreground">{exercise.message}</p>
+                        ) : null}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+
+              {pendingExercises.map((exercise, index) => (
+                <Card key={exercise.clientExerciseKey} className="rounded-2xl border-border/60 p-4">
+                  <div className="mb-4 flex items-center justify-between gap-3">
+                    <div className="space-y-1">
+                      <p className="text-sm font-semibold">تمرین {index + 1}</p>
+                      <p className="text-xs text-muted-foreground">
+                        این تمرین بعد از کامل‌شدن پردازش کلاس، خودکار ساخته و استخراج می‌شود.
+                      </p>
+                    </div>
+                    {pendingExercises.length > 1 ? (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => removePendingExercise(exercise.clientExerciseKey)}
+                      >
+                        حذف
+                      </Button>
+                    ) : null}
+                  </div>
+                  <ExerciseIntakeForm
+                    value={exercise}
+                    compact
+                    onChange={(next) => updatePendingExercise(exercise.clientExerciseKey, next)}
+                  />
+                </Card>
+              ))}
+
+              <div className="flex justify-end">
+                <Button type="button" variant="outline" onClick={addPendingExercise}>
+                  افزودن تمرین دیگر
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <div className="rounded-2xl border border-dashed border-border px-4 py-5 text-sm text-muted-foreground">
+              اگر تمرین را همین حالا ثبت نکنید، بعداً هم از صفحه تمرین‌های کلاس می‌توانید آن را اضافه کنید.
+            </div>
+          )}
+        </Card>
+      ) : null}
+
+      <Card className="space-y-3 rounded-3xl border-border/40 p-4 sm:p-5" dir="rtl">
+        <div className="space-y-1">
+          <p className="text-sm font-semibold">ثبت نهایی و شروع پردازش</p>
+          <p className="text-xs leading-6 text-muted-foreground">
+            بعد از زدن این دکمه، پردازش در پس‌زمینه انجام می‌شود. لازم نیست روی صفحه بمانید؛ بعد از آماده‌شدن، برای بازبینی به شما خبر می‌دهیم.
+          </p>
+        </div>
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-end">
+          {canCancelPipeline && (
+            <AlertDialog
+              open={cancelDialogOpen}
+              onOpenChange={(open) => {
+                if (!isCancelling) setCancelDialogOpen(open);
+              }}
+            >
+              <AlertDialogTrigger asChild>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="rounded-xl h-10 px-4 border-destructive/40 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                  title="لغو پردازش پایپ‌لاین"
+                >
+                  <Ban className="h-4 w-4" />
+                  <span className="ms-1.5">لغو پردازش</span>
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent
+                dir="rtl"
+                onEscapeKeyDown={(e) => {
+                  if (isCancelling) e.preventDefault();
+                }}
+              >
+                <AlertDialogHeader>
+                  <AlertDialogTitle>لغو پردازش پایپ‌لاین؟</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    با لغو، پردازش جاری بلافاصله متوقف می‌شود و این جلسه دیگر قابل ادامه نیست.
+                    برای تولید دوباره باید فایل را آپلود کرده و پردازش را از ابتدا شروع کنید.
+                    این عمل قابل بازگشت نیست.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel disabled={isCancelling}>انصراف</AlertDialogCancel>
+                  <AlertDialogAction
+                    disabled={isCancelling}
+                    onClick={async (e) => {
+                      e.preventDefault();
+                      try {
+                        await cancelPipeline();
+                        setCancelDialogOpen(false);
+                      } catch {
+                        // toast already shown; keep the dialog open to retry.
+                      }
+                    }}
+                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                  >
+                    {isCancelling ? (
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        <span className="ms-1.5">در حال لغو…</span>
+                      </>
+                    ) : (
+                      'بله، لغو کن'
+                    )}
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          )}
+          <Button
+            type="button"
+            className="rounded-xl h-10 px-5"
+            disabled={!currentCanStartPipeline}
+            onClick={startFullPipeline}
+          >
+            {currentIsPipelineStarting || currentIsPipelineRunning
+              ? 'در حال پردازش…'
+              : 'ذخیره و پردازش'}
+          </Button>
+        </div>
+      </Card>
 
       {/* Student roster:
           - org class → managed by the org via the study group (no manual invites)
@@ -938,7 +1087,7 @@ export function CreateClassPage() {
           onClick={publish}
           type="button"
         >
-          ذخیره و انتشار
+          بازبینی و انتشار
         </Button>
       </div>
     </div>

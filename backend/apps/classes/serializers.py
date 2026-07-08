@@ -1,6 +1,7 @@
 import json
 
 from django.conf import settings
+from django.utils.dateparse import parse_datetime
 from rest_framework import serializers
 
 from drf_spectacular.utils import extend_schema_field
@@ -8,6 +9,12 @@ from drf_spectacular.utils import extend_schema_field
 from apps.commons.phone_utils import is_valid_iran_mobile, normalize_phone
 
 from .models import ClassAnnouncement, ClassCreationSession, ClassInvitation, ClassPrerequisite
+from .services.exercise_workflow import (
+    ANSWER_LAYOUT_CHOICES,
+    SOURCE_ROLE_CHOICES,
+    WRITING_MODE_CHOICES,
+)
+from .services.session_workflow import serialize_session_workflow_fields
 
 
 def is_pdf_upload(value) -> bool:
@@ -47,12 +54,118 @@ class Step1TranscribeRequestSerializer(serializers.Serializer):
     file = serializers.FileField()
     client_request_id = serializers.UUIDField(required=False)
     run_full_pipeline = serializers.BooleanField(required=False, default=False)
+    pending_exercises = serializers.CharField(required=False, allow_blank=True, default='[]')
 
     def validate_file(self, value):
         return validate_step1_upload(value)
 
+    def validate_pending_exercises(self, value):
+        raw = value
+        if isinstance(raw, str):
+            try:
+                raw = json.loads(raw or '[]')
+            except json.JSONDecodeError as exc:
+                raise serializers.ValidationError('تنظیمات تمرین‌های همراه نامعتبر است.') from exc
+        if not isinstance(raw, list):
+            raise serializers.ValidationError('تنظیمات تمرین‌های همراه نامعتبر است.')
+        out: list[dict] = []
+        seen_exercise_keys: set[str] = set()
+        for ex_idx, item in enumerate(raw, start=1):
+            if not isinstance(item, dict):
+                raise serializers.ValidationError(f'تمرین شمارهٔ {ex_idx} نامعتبر است.')
+            client_exercise_key = str(item.get('clientExerciseKey') or '').strip()
+            if not client_exercise_key:
+                raise serializers.ValidationError(f'کلید تمرین شمارهٔ {ex_idx} خالی است.')
+            if client_exercise_key in seen_exercise_keys:
+                raise serializers.ValidationError(f'کلید تمرین شمارهٔ {ex_idx} تکراری است.')
+            seen_exercise_keys.add(client_exercise_key)
+            title = str(item.get('title') or '').strip()
+            if not title:
+                raise serializers.ValidationError(f'عنوان تمرین شمارهٔ {ex_idx} الزامی است.')
+            no_deadline = bool(item.get('noDeadline', item.get('no_deadline', False)))
+            deadline = item.get('deadline')
+            if not no_deadline and not deadline:
+                raise serializers.ValidationError(f'مهلت تمرین شمارهٔ {ex_idx} مشخص نشده است.')
+            normalized_deadline = None
+            if deadline:
+                normalized_deadline = parse_datetime(str(deadline))
+                if normalized_deadline is None:
+                    raise serializers.ValidationError(f'مهلت تمرین شمارهٔ {ex_idx} نامعتبر است.')
+            sources = item.get('sources')
+            if not isinstance(sources, list) or not sources:
+                raise serializers.ValidationError(f'حداقل یک منبع برای تمرین شمارهٔ {ex_idx} لازم است.')
+            seen_keys: set[str] = set()
+            norm_sources: list[dict] = []
+            for src_idx, src in enumerate(sources, start=1):
+                if not isinstance(src, dict):
+                    raise serializers.ValidationError(f'منبع شمارهٔ {src_idx} در تمرین {ex_idx} نامعتبر است.')
+                client_file_key = str(src.get('clientFileKey') or '').strip()
+                if not client_file_key:
+                    raise serializers.ValidationError(f'کلید فایل منبع {src_idx} در تمرین {ex_idx} خالی است.')
+                if client_file_key in seen_keys:
+                    raise serializers.ValidationError(f'کلید فایل منبع {src_idx} در تمرین {ex_idx} تکراری است.')
+                seen_keys.add(client_file_key)
+                role = str(src.get('role') or 'auto')
+                writing_mode = str(src.get('writingMode') or 'auto')
+                answer_layout = str(src.get('answerLayout') or 'auto')
+                if role not in SOURCE_ROLE_CHOICES:
+                    raise serializers.ValidationError(f'نقش منبع {src_idx} در تمرین {ex_idx} نامعتبر است.')
+                if writing_mode not in WRITING_MODE_CHOICES:
+                    raise serializers.ValidationError(f'نوع نوشتار منبع {src_idx} در تمرین {ex_idx} نامعتبر است.')
+                if answer_layout not in ANSWER_LAYOUT_CHOICES:
+                    raise serializers.ValidationError(f'چیدمان پاسخ منبع {src_idx} در تمرین {ex_idx} نامعتبر است.')
+                norm_sources.append({
+                    'clientFileKey': client_file_key,
+                    'role': role,
+                    'writingMode': writing_mode,
+                    'answerLayout': answer_layout,
+                })
+            out.append({
+                'clientExerciseKey': client_exercise_key,
+                'title': title,
+                'noDeadline': no_deadline,
+                'deadline': normalized_deadline.isoformat() if normalized_deadline else None,
+                'allowLate': bool(item.get('allowLate', item.get('allow_late', False))),
+                'assistantEnabled': bool(item.get('assistantEnabled', item.get('assistant_enabled', True))),
+                'teacherNote': str(item.get('teacherNote', item.get('teacher_note', '')) or '').strip(),
+                'sources': norm_sources,
+            })
+        return out
+
 
 class Step1TranscribeResponseSerializer(serializers.ModelSerializer):
+    workflowStage = serializers.SerializerMethodField()
+    workflowMessage = serializers.SerializerMethodField()
+    progressPercent = serializers.SerializerMethodField()
+    workflowWarnings = serializers.SerializerMethodField()
+    readyForReview = serializers.SerializerMethodField()
+    reviewReadyNotifiedAt = serializers.SerializerMethodField()
+    pendingExercises = serializers.SerializerMethodField()
+
+    def _wf(self, obj):
+        return serialize_session_workflow_fields(obj)
+
+    def get_workflowStage(self, obj):
+        return self._wf(obj)['workflowStage']
+
+    def get_workflowMessage(self, obj):
+        return self._wf(obj)['workflowMessage']
+
+    def get_progressPercent(self, obj):
+        return self._wf(obj)['progressPercent']
+
+    def get_workflowWarnings(self, obj):
+        return self._wf(obj)['workflowWarnings']
+
+    def get_readyForReview(self, obj):
+        return self._wf(obj)['readyForReview']
+
+    def get_reviewReadyNotifiedAt(self, obj):
+        return self._wf(obj)['reviewReadyNotifiedAt']
+
+    def get_pendingExercises(self, obj):
+        return self._wf(obj)['pendingExercises']
+
     class Meta:
         model = ClassCreationSession
         fields = [
@@ -66,6 +179,13 @@ class Step1TranscribeResponseSerializer(serializers.ModelSerializer):
             'source_original_name',
             'transcript_markdown',
             'created_at',
+            'workflowStage',
+            'workflowMessage',
+            'progressPercent',
+            'workflowWarnings',
+            'readyForReview',
+            'reviewReadyNotifiedAt',
+            'pendingExercises',
         ]
 
 
@@ -141,6 +261,37 @@ class ClassCreationSessionListSerializer(serializers.ModelSerializer):
     invites_count = serializers.IntegerField(read_only=True, source='_invites_count')
     lessons_count = serializers.IntegerField(read_only=True, source='_lessons_count')
     organization_id = serializers.IntegerField(read_only=True, allow_null=True)
+    workflowStage = serializers.SerializerMethodField()
+    workflowMessage = serializers.SerializerMethodField()
+    progressPercent = serializers.SerializerMethodField()
+    workflowWarnings = serializers.SerializerMethodField()
+    readyForReview = serializers.SerializerMethodField()
+    reviewReadyNotifiedAt = serializers.SerializerMethodField()
+    pendingExercises = serializers.SerializerMethodField()
+
+    def _wf(self, obj):
+        return serialize_session_workflow_fields(obj)
+
+    def get_workflowStage(self, obj):
+        return self._wf(obj)['workflowStage']
+
+    def get_workflowMessage(self, obj):
+        return self._wf(obj)['workflowMessage']
+
+    def get_progressPercent(self, obj):
+        return self._wf(obj)['progressPercent']
+
+    def get_workflowWarnings(self, obj):
+        return self._wf(obj)['workflowWarnings']
+
+    def get_readyForReview(self, obj):
+        return self._wf(obj)['readyForReview']
+
+    def get_reviewReadyNotifiedAt(self, obj):
+        return self._wf(obj)['reviewReadyNotifiedAt']
+
+    def get_pendingExercises(self, obj):
+        return self._wf(obj)['pendingExercises']
 
     class Meta:
         model = ClassCreationSession
@@ -157,17 +308,55 @@ class ClassCreationSessionListSerializer(serializers.ModelSerializer):
             'organization_id',
             'created_at',
             'updated_at',
+            'workflowStage',
+            'workflowMessage',
+            'progressPercent',
+            'workflowWarnings',
+            'readyForReview',
+            'reviewReadyNotifiedAt',
+            'pendingExercises',
         ]
 
 
 class ClassCreationSessionDetailSerializer(serializers.ModelSerializer):
     invites_count = serializers.SerializerMethodField()
+    workflowStage = serializers.SerializerMethodField()
+    workflowMessage = serializers.SerializerMethodField()
+    progressPercent = serializers.SerializerMethodField()
+    workflowWarnings = serializers.SerializerMethodField()
+    readyForReview = serializers.SerializerMethodField()
+    reviewReadyNotifiedAt = serializers.SerializerMethodField()
+    pendingExercises = serializers.SerializerMethodField()
 
     def get_invites_count(self, obj: ClassCreationSession) -> int:
         # Prefer the annotation if available (from list views), otherwise fall back.
         if hasattr(obj, '_invites_count'):
             return obj._invites_count
         return obj.invites.count()
+
+    def _wf(self, obj):
+        return serialize_session_workflow_fields(obj)
+
+    def get_workflowStage(self, obj):
+        return self._wf(obj)['workflowStage']
+
+    def get_workflowMessage(self, obj):
+        return self._wf(obj)['workflowMessage']
+
+    def get_progressPercent(self, obj):
+        return self._wf(obj)['progressPercent']
+
+    def get_workflowWarnings(self, obj):
+        return self._wf(obj)['workflowWarnings']
+
+    def get_readyForReview(self, obj):
+        return self._wf(obj)['readyForReview']
+
+    def get_reviewReadyNotifiedAt(self, obj):
+        return self._wf(obj)['reviewReadyNotifiedAt']
+
+    def get_pendingExercises(self, obj):
+        return self._wf(obj)['pendingExercises']
 
     class Meta:
         model = ClassCreationSession
@@ -191,6 +380,13 @@ class ClassCreationSessionDetailSerializer(serializers.ModelSerializer):
             'invites_count',
             'created_at',
             'updated_at',
+            'workflowStage',
+            'workflowMessage',
+            'progressPercent',
+            'workflowWarnings',
+            'readyForReview',
+            'reviewReadyNotifiedAt',
+            'pendingExercises',
         ]
 
 class ClassAnnouncementSerializer(serializers.ModelSerializer):
@@ -477,13 +673,49 @@ class ExamPrepStep1TranscribeRequestSerializer(serializers.Serializer):
     file = serializers.FileField()
     client_request_id = serializers.UUIDField(required=False)
     run_full_pipeline = serializers.BooleanField(required=False, default=False)
+    pending_exercises = serializers.CharField(required=False, allow_blank=True, default='[]')
 
     def validate_file(self, value):
         return validate_step1_upload(value)
 
+    def validate_pending_exercises(self, value):
+        return []
+
 
 class ExamPrepStep1TranscribeResponseSerializer(serializers.ModelSerializer):
     """Response serializer for Exam Prep Step 1: Transcription."""
+    workflowStage = serializers.SerializerMethodField()
+    workflowMessage = serializers.SerializerMethodField()
+    progressPercent = serializers.SerializerMethodField()
+    workflowWarnings = serializers.SerializerMethodField()
+    readyForReview = serializers.SerializerMethodField()
+    reviewReadyNotifiedAt = serializers.SerializerMethodField()
+    pendingExercises = serializers.SerializerMethodField()
+
+    def _wf(self, obj):
+        return serialize_session_workflow_fields(obj)
+
+    def get_workflowStage(self, obj):
+        return self._wf(obj)['workflowStage']
+
+    def get_workflowMessage(self, obj):
+        return self._wf(obj)['workflowMessage']
+
+    def get_progressPercent(self, obj):
+        return self._wf(obj)['progressPercent']
+
+    def get_workflowWarnings(self, obj):
+        return self._wf(obj)['workflowWarnings']
+
+    def get_readyForReview(self, obj):
+        return self._wf(obj)['readyForReview']
+
+    def get_reviewReadyNotifiedAt(self, obj):
+        return self._wf(obj)['reviewReadyNotifiedAt']
+
+    def get_pendingExercises(self, obj):
+        return self._wf(obj)['pendingExercises']
+
     class Meta:
         model = ClassCreationSession
         fields = [
@@ -498,6 +730,13 @@ class ExamPrepStep1TranscribeResponseSerializer(serializers.ModelSerializer):
             'source_original_name',
             'transcript_markdown',
             'created_at',
+            'workflowStage',
+            'workflowMessage',
+            'progressPercent',
+            'workflowWarnings',
+            'readyForReview',
+            'reviewReadyNotifiedAt',
+            'pendingExercises',
         ]
 
 
@@ -526,6 +765,13 @@ class ExamPrepSessionDetailSerializer(serializers.ModelSerializer):
     exam_prep_data = serializers.SerializerMethodField()
     invites_count = serializers.SerializerMethodField()
     organization_id = serializers.IntegerField(read_only=True, allow_null=True)
+    workflowStage = serializers.SerializerMethodField()
+    workflowMessage = serializers.SerializerMethodField()
+    progressPercent = serializers.SerializerMethodField()
+    workflowWarnings = serializers.SerializerMethodField()
+    readyForReview = serializers.SerializerMethodField()
+    reviewReadyNotifiedAt = serializers.SerializerMethodField()
+    pendingExercises = serializers.SerializerMethodField()
 
     @extend_schema_field(serializers.DictField())
     def get_exam_prep_data(self, obj: ClassCreationSession):
@@ -542,6 +788,30 @@ class ExamPrepSessionDetailSerializer(serializers.ModelSerializer):
         if hasattr(obj, '_invites_count'):
             return obj._invites_count
         return obj.invites.count()
+
+    def _wf(self, obj):
+        return serialize_session_workflow_fields(obj)
+
+    def get_workflowStage(self, obj):
+        return self._wf(obj)['workflowStage']
+
+    def get_workflowMessage(self, obj):
+        return self._wf(obj)['workflowMessage']
+
+    def get_progressPercent(self, obj):
+        return self._wf(obj)['progressPercent']
+
+    def get_workflowWarnings(self, obj):
+        return self._wf(obj)['workflowWarnings']
+
+    def get_readyForReview(self, obj):
+        return self._wf(obj)['readyForReview']
+
+    def get_reviewReadyNotifiedAt(self, obj):
+        return self._wf(obj)['reviewReadyNotifiedAt']
+
+    def get_pendingExercises(self, obj):
+        return self._wf(obj)['pendingExercises']
 
     class Meta:
         model = ClassCreationSession
@@ -565,6 +835,13 @@ class ExamPrepSessionDetailSerializer(serializers.ModelSerializer):
             'error_detail',
             'created_at',
             'updated_at',
+            'workflowStage',
+            'workflowMessage',
+            'progressPercent',
+            'workflowWarnings',
+            'readyForReview',
+            'reviewReadyNotifiedAt',
+            'pendingExercises',
         ]
 
 

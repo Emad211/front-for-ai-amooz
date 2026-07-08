@@ -520,6 +520,7 @@ CELERY_TASK_ROUTES = {
     'apps.classes.tasks.send_new_invites_sms_task': {'queue': 'default'},
     'apps.classes.tasks.send_teacher_message_sms_task': {'queue': 'default'},
     'apps.classes.tasks.send_exercise_review_ready_sms_task': {'queue': 'default'},
+    'apps.classes.tasks.send_session_review_ready_sms_task': {'queue': 'default'},
     'apps.classes.tasks.cleanup_stale_sessions': {'queue': 'default'},
 }
 CELERY_TASK_REJECT_ON_WORKER_LOST = True  # requeue tasks if worker is killed (OOM)

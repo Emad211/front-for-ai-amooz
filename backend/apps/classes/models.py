@@ -99,6 +99,9 @@ class ClassCreationSession(models.Model):
 
     # Client-provided id for retry safety (frontend/network retries).
     client_request_id = models.UUIDField(null=True, blank=True, default=None)
+    workflow_state = models.JSONField(default=dict, blank=True)
+    review_ready_notified_at = models.DateTimeField(null=True, blank=True)
+    pending_exercises = models.JSONField(default=list, blank=True)
 
     structure_json = models.TextField(blank=True)
 

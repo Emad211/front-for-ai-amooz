@@ -8,6 +8,7 @@ the new upload as a fresh session (never return stale output, never drop the fil
 """
 import tempfile
 import uuid
+import json
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
@@ -94,6 +95,44 @@ class Step1IdempotencyViewTests(APITestCase):
             format="multipart",
         )
 
+    def _post_with_pending_exercise(self, *, name, content, key, exercise_title, exercise_key="exercise-1"):
+        upload = SimpleUploadedFile(name, content, content_type="video/mp4")
+        source_upload = SimpleUploadedFile(
+            "exercise.pdf",
+            b"%PDF-1.4\n1 0 obj\n<<>>\nendobj\ntrailer\n<<>>\n%%EOF",
+            content_type="application/pdf",
+        )
+        return self.client.post(
+            _STEP1_URL,
+            {
+                "title": "class",
+                "file": upload,
+                "client_request_id": str(key),
+                "pending_exercises": json.dumps(
+                    [
+                        {
+                            "clientExerciseKey": exercise_key,
+                            "title": exercise_title,
+                            "noDeadline": True,
+                            "allowLate": False,
+                            "assistantEnabled": True,
+                            "teacherNote": "",
+                            "sources": [
+                                {
+                                    "clientFileKey": "source-1",
+                                    "role": "question_only",
+                                    "writingMode": "typed",
+                                    "answerLayout": "auto",
+                                }
+                            ],
+                        }
+                    ]
+                ),
+                f"exercise_{exercise_key}__file_source-1": source_upload,
+            },
+            format="multipart",
+        )
+
     def test_reused_key_with_different_file_creates_new_session(self):
         key = uuid.uuid4()
         r1 = self._post(name="old.mp4", content=b"AAAAAAAA", key=key)
@@ -114,3 +153,23 @@ class Step1IdempotencyViewTests(APITestCase):
         r2 = self._post(name="same.mp4", content=b"IDENTICALBYTES", key=key)
         assert r1.data["id"] == r2.data["id"], "a true retry must dedupe to one session"
         assert ClassCreationSession.objects.filter(teacher=self.teacher).count() == 1
+
+    def test_same_key_same_lesson_file_but_changed_pending_exercises_creates_new_session(self):
+        key = uuid.uuid4()
+        r1 = self._post_with_pending_exercise(
+            name="same.mp4",
+            content=b"IDENTICALBYTES",
+            key=key,
+            exercise_title="تمرین اول",
+        )
+        assert r1.status_code in (200, 202), r1.content
+
+        r2 = self._post_with_pending_exercise(
+            name="same.mp4",
+            content=b"IDENTICALBYTES",
+            key=key,
+            exercise_title="تمرین دوم",
+        )
+        assert r2.status_code in (200, 202), r2.content
+        assert r1.data["id"] != r2.data["id"], "changed embedded exercise payload must not reuse stale session"
+        assert ClassCreationSession.objects.filter(teacher=self.teacher).count() == 2

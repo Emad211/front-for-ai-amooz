@@ -85,7 +85,7 @@ class TeacherNotificationListView(APIView):
         responses={200: AdminNotificationSerializer(many=True)},
     )
     def get(self, request):
-        from apps.classes.models import ClassExercise
+        from apps.classes.models import ClassCreationSession, ClassExercise
 
         user = request.user
         admin_qs = AdminNotification.objects.filter(
@@ -97,6 +97,13 @@ class TeacherNotificationListView(APIView):
                 review_ready_notified_at__isnull=False,
             )
             .select_related('session')
+            .order_by('-review_ready_notified_at')
+        )
+        session_qs = (
+            ClassCreationSession.objects.filter(
+                teacher=user,
+                review_ready_notified_at__isnull=False,
+            )
             .order_by('-review_ready_notified_at')
         )
 
@@ -127,6 +134,33 @@ class TeacherNotificationListView(APIView):
                 },
             )
             for item in exercise_qs
+            if item.review_ready_notified_at is not None
+        )
+        items.extend(
+            (
+                item.review_ready_notified_at,
+                {
+                    'id': f'{"exam" if item.pipeline_type == ClassCreationSession.PipelineType.EXAM_PREP else "class"}-ready-{item.id}',
+                    'title': (
+                        f'پیش‌نویس آمادگی آزمون «{item.title}» آماده است'
+                        if item.pipeline_type == ClassCreationSession.PipelineType.EXAM_PREP
+                        else f'پیش‌نویس کلاس «{item.title}» آماده است'
+                    ),
+                    'message': (
+                        'پیش‌نویس آمادگی آزمون شما آماده بازبینی است. برای بررسی و انتشار، وارد پنل معلم AI-Amooz شوید.'
+                        if item.pipeline_type == ClassCreationSession.PipelineType.EXAM_PREP
+                        else 'پیش‌نویس کلاس شما آماده بازبینی است. برای بررسی و انتشار، وارد پنل معلم AI-Amooz شوید.'
+                    ),
+                    'type': 'success',
+                    'createdAt': item.review_ready_notified_at.isoformat(),
+                    'link': (
+                        f'/teacher/my-exams/{item.id}'
+                        if item.pipeline_type == ClassCreationSession.PipelineType.EXAM_PREP
+                        else f'/teacher/my-classes/{item.id}'
+                    ),
+                },
+            )
+            for item in session_qs
             if item.review_ready_notified_at is not None
         )
         candidate_ids = [payload['id'] for _dt, payload in items]
@@ -323,7 +357,7 @@ class MarkAllNotificationsReadView(APIView):
         
         ids_to_mark.extend([f'admin-{item.id}' for item in admin_qs])
         if user.role == User.Role.TEACHER:
-            from apps.classes.models import ClassExercise
+            from apps.classes.models import ClassCreationSession, ClassExercise
 
             exercise_ids = (
                 ClassExercise.objects.filter(
@@ -333,6 +367,13 @@ class MarkAllNotificationsReadView(APIView):
                 .values_list('id', flat=True)
             )
             ids_to_mark.extend([f'exercise-ready-{eid}' for eid in exercise_ids])
+            ready_sessions = ClassCreationSession.objects.filter(
+                teacher=user,
+                review_ready_notified_at__isnull=False,
+            ).values_list('id', 'pipeline_type')
+            for sid, pipeline_type in ready_sessions:
+                prefix = 'exam' if pipeline_type == ClassCreationSession.PipelineType.EXAM_PREP else 'class'
+                ids_to_mark.append(f'{prefix}-ready-{sid}')
 
         # If student, also handle ClassAnnouncements + teacher messages addressed to them.
         if user.role == User.Role.STUDENT:

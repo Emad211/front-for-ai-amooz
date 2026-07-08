@@ -7,6 +7,13 @@ export type Step1TranscribeResponse = {
   source_original_name: string;
   transcript_markdown: string;
   created_at: string;
+  workflowStage?: string;
+  workflowMessage?: string;
+  progressPercent?: number;
+  workflowWarnings?: string[];
+  readyForReview?: boolean;
+  reviewReadyNotifiedAt: string | null;
+  pendingExercises?: PendingExerciseSnapshot[];
 };
 
 export type Step2StructureResponse = {
@@ -46,6 +53,38 @@ export type ClassCreationSessionDetail = {
   invites_count?: number;
   created_at: string;
   updated_at: string;
+  workflowStage?: string;
+  workflowMessage?: string;
+  progressPercent?: number;
+  workflowWarnings?: string[];
+  readyForReview?: boolean;
+  reviewReadyNotifiedAt?: string | null;
+  pendingExercises?: PendingExerciseSnapshot[];
+};
+
+export type PendingExerciseSourceSnapshot = {
+  clientFileKey: string;
+  assetOrder?: number;
+  assetName?: string;
+  assetKind?: 'pdf' | 'image';
+  role: 'auto' | 'question_only' | 'question_and_answer' | 'answer_only';
+  writingMode: 'auto' | 'typed' | 'handwritten' | 'mixed';
+  answerLayout: 'auto' | 'inline' | 'end' | 'separate';
+  storagePath?: string;
+};
+
+export type PendingExerciseSnapshot = {
+  clientExerciseKey: string;
+  title: string;
+  noDeadline: boolean;
+  deadline: string | null;
+  allowLate: boolean;
+  assistantEnabled: boolean;
+  teacherNote: string;
+  status?: 'pending' | 'queued' | 'failed';
+  message?: string;
+  exerciseId?: number;
+  sources: PendingExerciseSourceSnapshot[];
 };
 
 export type ClassInvite = {
@@ -587,6 +626,22 @@ export async function transcribeClassCreationStep1(
     runFullPipeline?: boolean;
     organizationId?: number;
     studyGroupId?: number;
+    pendingExercises?: Array<{
+      clientExerciseKey: string;
+      title: string;
+      noDeadline: boolean;
+      deadline: string | null;
+      allowLate: boolean;
+      assistantEnabled: boolean;
+      teacherNote: string;
+      sources: Array<{
+        clientFileKey: string;
+        file: File;
+        role: 'auto' | 'question_only' | 'question_and_answer' | 'answer_only';
+        writingMode: 'auto' | 'typed' | 'handwritten' | 'mixed';
+        answerLayout: 'auto' | 'inline' | 'end' | 'separate';
+      }>;
+    }>;
   },
   options?: { onProgress?: (p: UploadProgress) => void },
 ): Promise<Step1TranscribeResponse> {
@@ -609,6 +664,33 @@ export async function transcribeClassCreationStep1(
   }
   if (params.studyGroupId) {
     formData.append('study_group', String(params.studyGroupId));
+  }
+  if (params.pendingExercises?.length) {
+    formData.append(
+      'pending_exercises',
+      JSON.stringify(
+        params.pendingExercises.map((exercise) => ({
+          clientExerciseKey: exercise.clientExerciseKey,
+          title: exercise.title,
+          noDeadline: exercise.noDeadline,
+          deadline: exercise.deadline,
+          allowLate: exercise.allowLate,
+          assistantEnabled: exercise.assistantEnabled,
+          teacherNote: exercise.teacherNote,
+          sources: exercise.sources.map((source) => ({
+            clientFileKey: source.clientFileKey,
+            role: source.role,
+            writingMode: source.writingMode,
+            answerLayout: source.answerLayout,
+          })),
+        })),
+      ),
+    );
+    for (const exercise of params.pendingExercises) {
+      for (const source of exercise.sources) {
+        formData.append(`exercise_${exercise.clientExerciseKey}__file_${source.clientFileKey}`, source.file, source.file.name);
+      }
+    }
   }
 
   const url = `${API_URL}/classes/creation-sessions/step-1/`;
@@ -685,6 +767,13 @@ export interface ExamPrepStep1Response {
   source_original_name: string;
   transcript_markdown: string;
   created_at: string;
+  workflowStage?: string;
+  workflowMessage?: string;
+  progressPercent?: number;
+  workflowWarnings?: string[];
+  readyForReview?: boolean;
+  reviewReadyNotifiedAt?: string | null;
+  pendingExercises?: PendingExerciseSnapshot[];
 }
 
 export interface ExamPrepSessionDetail {
@@ -706,6 +795,13 @@ export interface ExamPrepSessionDetail {
   created_at: string;
   updated_at: string;
   source_type?: 'media' | 'pdf';
+  workflowStage?: string;
+  workflowMessage?: string;
+  progressPercent?: number;
+  workflowWarnings?: string[];
+  readyForReview?: boolean;
+  reviewReadyNotifiedAt?: string | null;
+  pendingExercises?: PendingExerciseSnapshot[];
 }
 
 export interface ExamPrepData {
@@ -740,6 +836,7 @@ export async function transcribeExamPrepStep1(
     runFullPipeline?: boolean;
     organizationId?: number;
     studyGroupId?: number;
+    pendingExercises?: never[];
   },
   options?: { onProgress?: (p: UploadProgress) => void },
 ): Promise<ExamPrepStep1Response> {

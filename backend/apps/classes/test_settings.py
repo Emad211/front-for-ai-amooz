@@ -123,6 +123,7 @@ class TestCelerySettings:
         assert routes['apps.classes.tasks.grade_exercise_submission']['queue'] == 'pipeline'
         assert routes['apps.classes.tasks.pregenerate_student_assessments']['queue'] == 'pipeline'
         assert routes['apps.classes.tasks.send_teacher_message_sms_task']['queue'] == 'default'
+        assert routes['apps.classes.tasks.send_session_review_ready_sms_task']['queue'] == 'default'
         assert routes['apps.classes.tasks.cleanup_stale_sessions']['queue'] == 'default'
 
     def test_redis_visibility_timeout_exceeds_hard_task_limit(self):

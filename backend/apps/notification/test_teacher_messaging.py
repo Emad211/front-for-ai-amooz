@@ -217,6 +217,39 @@ def test_teacher_feed_includes_owned_exercise_ready_notifications_only():
     assert all('تمرین دیگری' not in item['title'] for item in res.data)
 
 
+def test_teacher_feed_includes_owned_class_and_exam_ready_notifications_only():
+    teacher = _teacher(username='feed_owner', phone='09150000001')
+    other_teacher = _teacher(username='feed_other', phone='09150000002')
+    class_session = _session_with_invite(teacher, '09120000777')
+    exam_session = _session_with_invite(other_teacher, '09120000666')
+    class_session.review_ready_notified_at = timezone.now()
+    class_session.save(update_fields=['review_ready_notified_at'])
+    own_exam = ClassCreationSession.objects.create(
+        teacher=teacher,
+        title='E',
+        description='exam',
+        source_file=SimpleUploadedFile('e.ogg', b'x', content_type='audio/ogg'),
+        source_mime_type='audio/ogg',
+        source_original_name='e.ogg',
+        status=ClassCreationSession.Status.EXAM_STRUCTURED,
+        pipeline_type=ClassCreationSession.PipelineType.EXAM_PREP,
+        is_published=False,
+    )
+    own_exam.review_ready_notified_at = timezone.now()
+    own_exam.save(update_fields=['review_ready_notified_at'])
+    exam_session.review_ready_notified_at = timezone.now()
+    exam_session.save(update_fields=['review_ready_notified_at'])
+
+    client = APIClient()
+    client.force_authenticate(user=teacher)
+    res = client.get('/api/notifications/teacher/')
+    assert res.status_code == 200
+    ids = {item['id'] for item in res.data}
+    assert f'class-ready-{class_session.id}' in ids
+    assert f'exam-ready-{own_exam.id}' in ids
+    assert f'class-ready-{exam_session.id}' not in ids
+
+
 # ---------------------------------------------------------------------------
 # preferences
 # ---------------------------------------------------------------------------

@@ -6,9 +6,12 @@ import logging
 import re
 import uuid
 from datetime import timedelta
+from pathlib import Path
 from urllib.parse import quote
 
 from django.conf import settings
+from django.core.files.base import File
+from django.core.files.storage import default_storage
 from django.db import IntegrityError, transaction
 from django.utils import timezone
 
@@ -98,6 +101,12 @@ from .services.adaptive_quiz import compute_weak_points, compute_weak_points_fro
 from .services.pdf_export import generate_course_pdf
 from .services.exam_prep_structure import extract_exam_prep_structure
 from .services.invite_codes import get_or_create_invite_code_for_phone
+from .services.exercise_workflow import normalize_source_config
+from .services.session_workflow import (
+    build_session_workflow_state,
+    serialize_session_workflow_fields,
+)
+from .services.file_validation import is_probably_pdf, is_real_image, uploaded_content_type, uploaded_name
 
 from .tasks import (
     process_class_step1_transcription,
@@ -130,6 +139,162 @@ def _dispatch_pipeline_task(session, task) -> None:
     transaction.on_commit(
         lambda: task.apply_async(args=[session.id], task_id=task_id)
     )
+
+
+_MAX_PENDING_EXERCISE_SOURCE_BYTES = 20 * 1024 * 1024
+
+
+def _pending_exercise_uploads_by_key(request) -> dict[tuple[str, str], object]:
+    out: dict[tuple[str, str], object] = {}
+    for field_name, uploaded in request.FILES.items():
+        if not field_name.startswith('exercise_') or '__file_' not in field_name:
+            continue
+        exercise_part, source_part = field_name.split('__file_', 1)
+        exercise_key = exercise_part.removeprefix('exercise_').strip()
+        source_key = source_part.strip()
+        if exercise_key and source_key:
+            out[(exercise_key, source_key)] = uploaded
+    return out
+
+
+def _pending_exercises_signature(pending_exercises: list[dict], uploads: dict[tuple[str, str], object] | None = None) -> list[dict]:
+    uploads = uploads or {}
+    signature: list[dict] = []
+    for ex_idx, exercise in enumerate(pending_exercises, start=1):
+        if not isinstance(exercise, dict):
+            continue
+        exercise_key = str(exercise.get('clientExerciseKey') or '').strip() or f'pending-exercise-{ex_idx}'
+        sources_signature: list[dict] = []
+        for src_idx, source in enumerate(exercise.get('sources') or [], start=1):
+            if not isinstance(source, dict):
+                continue
+            client_file_key = str(source.get('clientFileKey') or '').strip()
+            uploaded = uploads.get((exercise_key, client_file_key))
+            sources_signature.append({
+                'clientFileKey': client_file_key,
+                'assetName': str(
+                    source.get('assetName')
+                    or getattr(uploaded, 'name', '')
+                    or f'source-{src_idx}'
+                ),
+                'assetBytes': int(
+                    source.get('assetBytes')
+                    or getattr(uploaded, 'size', 0)
+                    or 0
+                ),
+                'role': str(source.get('role') or 'auto'),
+                'writingMode': str(source.get('writingMode') or 'auto'),
+                'answerLayout': str(source.get('answerLayout') or 'auto'),
+            })
+        signature.append({
+            'clientExerciseKey': exercise_key,
+            'title': str(exercise.get('title') or '').strip(),
+            'noDeadline': bool(exercise.get('noDeadline', False)),
+            'deadline': exercise.get('deadline'),
+            'allowLate': bool(exercise.get('allowLate', False)),
+            'assistantEnabled': bool(exercise.get('assistantEnabled', True)),
+            'teacherNote': str(exercise.get('teacherNote', '') or '').strip(),
+            'sources': sources_signature,
+        })
+    return signature
+
+
+def _same_pending_exercise_payload(existing, request, pending_exercises: list[dict]) -> bool:
+    existing_snapshot = getattr(existing, 'pending_exercises', None)
+    if not isinstance(existing_snapshot, list):
+        existing_snapshot = []
+    uploads = _pending_exercise_uploads_by_key(request)
+    return _pending_exercises_signature(existing_snapshot) == _pending_exercises_signature(
+        pending_exercises,
+        uploads,
+    )
+
+
+def _validate_pending_exercise_source_file(uploaded):
+    size = int(getattr(uploaded, 'size', 0) or 0)
+    if size and size > _MAX_PENDING_EXERCISE_SOURCE_BYTES:
+        raise serializers.ValidationError('حجم فایل منبع تمرین بیش از حد مجاز است.')
+    data = uploaded.read()
+    try:
+        uploaded.seek(0)
+    except Exception:
+        pass
+    if not data:
+        raise serializers.ValidationError('فایل منبع تمرین خالی است.')
+    if len(data) > _MAX_PENDING_EXERCISE_SOURCE_BYTES:
+        raise serializers.ValidationError('حجم فایل منبع تمرین بیش از حد مجاز است.')
+    ct = uploaded_content_type(uploaded)
+    name = uploaded_name(uploaded)
+    looks_pdf = 'pdf' in ct or name.endswith('.pdf')
+    looks_image = ct.startswith('image/') or name.endswith(('.jpg', '.jpeg', '.png', '.webp'))
+    if looks_pdf and is_probably_pdf(data):
+        return 'pdf'
+    if looks_image and is_real_image(data):
+        return 'image'
+    raise serializers.ValidationError('منبع تمرین باید PDF یا تصویر معتبر باشد.')
+
+
+def _delete_pending_exercise_snapshot_files(pending_snapshot: list[dict]) -> None:
+    for exercise in pending_snapshot:
+        if not isinstance(exercise, dict):
+            continue
+        for source in exercise.get('sources') or []:
+            if not isinstance(source, dict):
+                continue
+            storage_path = str(source.get('storagePath') or '').strip()
+            if not storage_path:
+                continue
+            try:
+                default_storage.delete(storage_path)
+            except Exception:
+                logger.warning('Failed to cleanup pending exercise source %s', storage_path, exc_info=True)
+
+
+def _store_pending_exercises_snapshot(request, pending_exercises: list[dict]) -> list[dict]:
+    uploads = _pending_exercise_uploads_by_key(request)
+    out: list[dict] = []
+    try:
+        for ex_idx, exercise in enumerate(pending_exercises, start=1):
+            exercise_key = str(exercise.get('clientExerciseKey') or '').strip() or f'pending-exercise-{ex_idx}'
+            stored_sources: list[dict] = []
+            for src_idx, source in enumerate(exercise.get('sources') or [], start=1):
+                client_file_key = str(source.get('clientFileKey') or '').strip()
+                uploaded = uploads.get((exercise_key, client_file_key))
+                if uploaded is None:
+                    raise serializers.ValidationError(
+                        {'pending_exercises': f'فایل منبع {src_idx} برای تمرین {ex_idx} ارسال نشده است.'}
+                    )
+                kind = _validate_pending_exercise_source_file(uploaded)
+                ext = Path(getattr(uploaded, 'name', '') or '').suffix or ('.pdf' if kind == 'pdf' else '.bin')
+                stored_path = default_storage.save(
+                    f'class_creation/pending_exercises/{uuid.uuid4().hex}{ext}',
+                    File(uploaded),
+                )
+                stored_sources.append({
+                    **normalize_source_config(
+                        source,
+                        asset_order=src_idx - 1,
+                        asset_name=getattr(uploaded, 'name', '') or f'source-{src_idx}',
+                        asset_kind=kind,
+                    ),
+                    'assetBytes': int(getattr(uploaded, 'size', 0) or 0),
+                    'storagePath': stored_path,
+                })
+            out.append({
+                'clientExerciseKey': exercise_key,
+                'title': exercise['title'],
+                'noDeadline': bool(exercise.get('noDeadline', False)),
+                'deadline': exercise.get('deadline'),
+                'allowLate': bool(exercise.get('allowLate', False)),
+                'assistantEnabled': bool(exercise.get('assistantEnabled', True)),
+                'teacherNote': str(exercise.get('teacherNote', '') or '').strip(),
+                'sources': stored_sources,
+                'status': 'pending',
+            })
+        return out
+    except Exception:
+        _delete_pending_exercise_snapshot_files(out)
+        raise
 
 
 from apps.chatbot.services.student_course_chat import (
@@ -462,6 +627,7 @@ class Step1TranscribeView(APIView):
         description = serializer.validated_data.get('description', '')
         client_request_id = serializer.validated_data.get('client_request_id')
         run_full_pipeline = bool(serializer.validated_data.get('run_full_pipeline', False))
+        pending_exercises = serializer.validated_data.get('pending_exercises') or []
 
         # Limit concurrent in-progress sessions per teacher to prevent resource abuse.
         _ACTIVE_STATUSES = [
@@ -493,11 +659,15 @@ class Step1TranscribeView(APIView):
                 client_request_id=client_request_id,
             ).first()
             if existing is not None:
-                if _is_same_uploaded_source(existing, upload):
+                same_source = _is_same_uploaded_source(existing, upload)
+                same_pending_payload = _same_pending_exercise_payload(existing, request, pending_exercises)
+                if same_source and same_pending_payload:
                     logger.info(
-                        "STEP1 IDEMPOTENT HIT: same file resubmitted; returning EXISTING "
-                        "session=%s (status=%s) for client_request_id=%s.",
-                        existing.id, existing.status, client_request_id,
+                        "STEP1 IDEMPOTENT HIT: same file and same embedded exercise payload; "
+                        "returning EXISTING session=%s (status=%s) for client_request_id=%s.",
+                        existing.id,
+                        existing.status,
+                        client_request_id,
                     )
                     payload = Step1TranscribeResponseSerializer(existing).data
                     http_status = (
@@ -507,10 +677,14 @@ class Step1TranscribeView(APIView):
                     )
                     return Response(payload, status=http_status)
                 logger.warning(
-                    "STEP1 IDEMPOTENT KEY REUSED for a DIFFERENT file (existing session=%s "
-                    "name=%r vs new upload name=%r) — NOT returning stale output; processing "
-                    "the new upload as a fresh session.",
-                    existing.id, existing.source_original_name, getattr(upload, 'name', '?'),
+                    "STEP1 IDEMPOTENT KEY REUSED with changed payload (session=%s same_source=%s "
+                    "same_pending=%s existing_name=%r new_name=%r) — NOT returning stale output; "
+                    "processing the new upload as a fresh session.",
+                    existing.id,
+                    same_source,
+                    same_pending_payload,
+                    existing.source_original_name,
+                    getattr(upload, 'name', '?'),
                 )
                 client_request_id = None
 
@@ -570,6 +744,7 @@ class Step1TranscribeView(APIView):
                             {'detail': 'گروه آموزشی نامعتبر است یا متعلق به این سازمان آموزشی نیست.'},
                             status=status.HTTP_400_BAD_REQUEST,
                         )
+                pending_exercise_snapshot = _store_pending_exercises_snapshot(request, pending_exercises)
 
                 session = ClassCreationSession.objects.create(
                     teacher=request.user,
@@ -586,8 +761,14 @@ class Step1TranscribeView(APIView):
                     client_request_id=client_request_id,
                     organization=organization,
                     study_group=study_group,
+                    pending_exercises=pending_exercise_snapshot,
+                    workflow_state=build_session_workflow_state(
+                        'queued',
+                        pending_exercises=pending_exercise_snapshot,
+                    ),
                 )
         except IntegrityError:
+            _delete_pending_exercise_snapshot_files(locals().get('pending_exercise_snapshot', []))
             # Double-submit race: another request already created the session.
             if client_request_id is not None:
                 existing = ClassCreationSession.objects.filter(
@@ -603,6 +784,7 @@ class Step1TranscribeView(APIView):
                 status=status.HTTP_409_CONFLICT,
             )
         except Exception as exc:
+            _delete_pending_exercise_snapshot_files(locals().get('pending_exercise_snapshot', []))
             logger.exception(
                 'Failed to create session (file upload to storage failed): %s', exc,
             )
@@ -3526,6 +3708,7 @@ class ExamPrepStep1TranscribeView(APIView):
                     client_request_id=client_request_id,
                     organization=organization,
                     study_group=study_group,
+                    workflow_state=build_session_workflow_state('queued'),
                 )
         except IntegrityError:
             if client_request_id is not None:

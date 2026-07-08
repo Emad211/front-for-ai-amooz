@@ -28,10 +28,13 @@ import os
 import tempfile
 import time
 from datetime import timedelta
+from pathlib import Path
 
 from celery import shared_task
 from celery.exceptions import Retry as CeleryRetry
 from billiard.exceptions import SoftTimeLimitExceeded
+from django.core.files.base import File
+from django.utils import timezone
 
 from apps.chatbot.services.llm_client import is_transient_llm_error
 
@@ -86,6 +89,188 @@ def _exercise_extract_cancelled(exercise) -> bool:
     )
     exercise.save(update_fields=['status', 'workflow_state', 'updated_at'])
     return True
+
+
+def _session_workflow_stage_for_status(status_value: str) -> str:
+    mapping = {
+        'transcribing': 'transcribing',
+        'transcribed': 'transcribing',
+        'structuring': 'structuring',
+        'structured': 'structuring',
+        'prereq_extracting': 'extracting_prerequisites',
+        'prereq_extracted': 'extracting_prerequisites',
+        'prereq_teaching': 'teaching_prerequisites',
+        'prereq_taught': 'teaching_prerequisites',
+        'recapping': 'building_recap',
+        'recapped': 'ready_for_review',
+        'exam_transcribing': 'transcribing',
+        'exam_transcribed': 'transcribing',
+        'exam_structuring': 'extracting_questions',
+        'exam_structured': 'ready_for_review',
+        'failed': 'failed',
+        'cancelled': 'cancelled',
+    }
+    return mapping.get(status_value, 'queued')
+
+
+def _sync_session_workflow_to_status(session, *, message: str | None = None, warnings: list[str] | None = None) -> None:
+    from .services.session_workflow import build_session_workflow_state
+
+    current = getattr(session, 'workflow_state', None)
+    pending = []
+    if isinstance(current, dict) and isinstance(current.get('pendingExercises'), list):
+        pending = current.get('pendingExercises') or []
+    session.workflow_state = build_session_workflow_state(
+        _session_workflow_stage_for_status(session.status),
+        message=message,
+        warnings=warnings,
+        ready_for_review=session.status in {'recapped', 'exam_structured'},
+        pending_exercises=pending,
+    )
+
+
+def _session_cancelled(session) -> bool:
+    from .services.session_workflow import build_session_workflow_state
+
+    session.refresh_from_db(fields=['status', 'cancel_requested', 'workflow_state', 'pending_exercises', 'updated_at'])
+    if not getattr(session, 'cancel_requested', False) and session.status != session.Status.CANCELLED:
+        return False
+    pending = []
+    current = getattr(session, 'workflow_state', None)
+    if isinstance(current, dict) and isinstance(current.get('pendingExercises'), list):
+        pending = current.get('pendingExercises') or []
+    session.status = session.Status.CANCELLED
+    session.workflow_state = build_session_workflow_state(
+        'cancelled',
+        message='پردازش توسط شما متوقف شد.',
+        ready_for_review=False,
+        pending_exercises=pending,
+    )
+    session.save(update_fields=['status', 'workflow_state', 'updated_at'])
+    return True
+
+
+def _session_pending_exercises(session) -> list[dict]:
+    raw = getattr(session, 'pending_exercises', None)
+    if not isinstance(raw, list):
+        return []
+    return [item for item in raw if isinstance(item, dict)]
+
+
+def _save_session_pending_exercises(session, pending: list[dict], *, stage: str | None = None, warnings: list[str] | None = None) -> None:
+    current = getattr(session, 'workflow_state', None)
+    current_warnings = []
+    if isinstance(current, dict) and isinstance(current.get('warnings'), list):
+        current_warnings = current.get('warnings') or []
+    merged_warnings = warnings if warnings is not None else current_warnings
+    next_stage = stage or _session_workflow_stage_for_status(session.status)
+    session.pending_exercises = pending
+    _sync_session_workflow_to_status(session, warnings=merged_warnings)
+    session.workflow_state['stage'] = next_stage
+    session.workflow_state['pendingExercises'] = pending
+    session.save(update_fields=['pending_exercises', 'workflow_state', 'updated_at'])
+
+
+def _queue_session_review_ready_sms(session_id: int) -> None:
+    try:
+        send_session_review_ready_sms_task.delay(session_id)
+    except Exception:
+        logger.exception('Failed to queue session-ready SMS for %s', session_id)
+
+
+def _materialize_pending_exercises(session) -> list[str]:
+    """Create queued exercise drafts for any embedded exercise snapshots.
+
+    Idempotent on ``clientExerciseKey``/``exerciseId`` persisted in
+    ``session.pending_exercises``. Errors are recorded back onto the snapshot
+    rows and returned as user-facing warnings without failing the class session.
+    """
+    from django.db import transaction
+    from .models import ClassExercise, ClassExerciseAsset
+    from .services.exercise_workflow import build_workflow_state
+
+    pending = _session_pending_exercises(session)
+    if not pending:
+        return []
+
+    warnings: list[str] = []
+    changed = False
+    for item in pending:
+        if item.get('exerciseId'):
+            continue
+        title = str(item.get('title') or '').strip() or 'تمرین بدون عنوان'
+        try:
+            with transaction.atomic():
+                exercise = ClassExercise.objects.create(
+                    session=session,
+                    title=title,
+                    description=str(item.get('teacherNote') or '').strip(),
+                    deadline=item.get('deadline'),
+                    allow_late=bool(item.get('allowLate')),
+                    assistant_enabled=bool(item.get('assistantEnabled', True)),
+                    workflow_state=build_workflow_state('queued'),
+                    intake_config={
+                        'v': 1,
+                        'mode': 'embedded_class_create',
+                        'autoExtract': True,
+                        'noDeadline': bool(item.get('noDeadline')),
+                        'deadline': item.get('deadline').isoformat() if getattr(item.get('deadline'), 'isoformat', None) else item.get('deadline'),
+                        'allowLate': bool(item.get('allowLate')),
+                        'assistantEnabled': bool(item.get('assistantEnabled', True)),
+                        'teacherNote': str(item.get('teacherNote') or '').strip(),
+                        'sources': item.get('sources') if isinstance(item.get('sources'), list) else [],
+                    },
+                )
+                for source in item.get('sources') or []:
+                    if not isinstance(source, dict):
+                        continue
+                    storage_path = str(source.get('storagePath') or '').strip()
+                    if not storage_path:
+                        continue
+                    ClassExerciseAsset.objects.create(
+                        exercise=exercise,
+                        kind=str(source.get('assetKind') or ClassExerciseAsset.Kind.PDF),
+                        file=storage_path,
+                        order=int(source.get('assetOrder') or 0),
+                    )
+                transaction.on_commit(lambda eid=exercise.id: extract_exercise_content.delay(eid))
+        except Exception:
+            logger.exception('Failed to create embedded exercise for session %s title=%s', session.id, title)
+            item['status'] = 'failed'
+            item['message'] = 'پیش‌نویس این تمرین ساخته نشد و نیاز به بررسی دوباره دارد.'
+            warnings.append(f'ساخت تمرین «{title}» کامل نشد و باید دوباره بررسی شود.')
+            changed = True
+            continue
+
+        item['exerciseId'] = exercise.id
+        item['status'] = 'queued'
+        item['message'] = 'در صف ساخت پیش‌نویس تمرین قرار گرفت.'
+        changed = True
+
+    if changed:
+        _save_session_pending_exercises(session, pending)
+    return warnings
+
+
+def _mark_session_ready_for_review(session) -> None:
+    warnings = []
+    if session.pipeline_type == session.PipelineType.CLASS:
+        warnings.extend(_materialize_pending_exercises(session))
+
+    _sync_session_workflow_to_status(session, warnings=warnings)
+    session.status = session.status
+    session.save(update_fields=['workflow_state', 'updated_at'])
+
+    notified_now = (
+        session.__class__.objects.filter(
+            id=session.id,
+            review_ready_notified_at__isnull=True,
+        ).update(review_ready_notified_at=timezone.now()) > 0
+    )
+    if notified_now:
+        session.refresh_from_db(fields=['review_ready_notified_at'])
+    if notified_now:
+        _queue_session_review_ready_sms(session.id)
 
 
 # ---------------------------------------------------------------------------
@@ -236,7 +421,12 @@ def _safe_mark_failed(session, error_detail: str) -> None:
         if session.status != session.Status.FAILED:
             session.status = session.Status.FAILED
             session.error_detail = (error_detail or '')[:2000]
-            session.save(update_fields=['status', 'error_detail', 'updated_at'])
+            _sync_session_workflow_to_status(
+                session,
+                message='پردازش کامل نشد. دوباره تلاش کنید یا منبع را بازبینی کنید.',
+                warnings=['پردازش کامل نشد. دوباره تلاش کنید یا منبع را بازبینی کنید.'],
+            )
+            session.save(update_fields=['status', 'error_detail', 'workflow_state', 'updated_at'])
     except Exception:
         logger.info(
             'Could not mark session %s as FAILED (likely deleted).',
@@ -255,7 +445,11 @@ def _safe_mark_cancelled(session) -> None:
         session.refresh_from_db()
         if session.status != session.Status.CANCELLED:
             session.status = session.Status.CANCELLED
-            session.save(update_fields=['status', 'updated_at'])
+            _sync_session_workflow_to_status(
+                session,
+                message='پردازش توسط شما متوقف شد.',
+            )
+            session.save(update_fields=['status', 'workflow_state', 'updated_at'])
     except Exception:
         logger.info(
             'Could not mark session %s as CANCELLED (likely deleted).',
@@ -272,7 +466,7 @@ def _pipeline_cancelled(session) -> bool:
     tasks call this at every step boundary so an in-flight pipeline stops
     promptly even if ``app.control.revoke`` could not kill the worker.
     """
-    if getattr(session, 'cancel_requested', False) or session.status == session.Status.CANCELLED:
+    if _session_cancelled(session):
         _safe_mark_cancelled(session)
         return True
     return False
@@ -450,6 +644,8 @@ def process_class_step1_transcription(self, session_id: int) -> dict:
         return {'status': 'skipped', 'reason': 'session not found'}
     if session.status != ClassCreationSession.Status.TRANSCRIBING:
         return {'status': 'skipped', 'reason': f'unexpected status {session.status}'}
+    _sync_session_workflow_to_status(session, message='فایل جلسه دریافت شد و در حال تبدیل به متن هستیم.')
+    session.save(update_fields=['workflow_state', 'updated_at'])
 
     tmp_path: str | None = None
     try:
@@ -473,7 +669,8 @@ def process_class_step1_transcription(self, session_id: int) -> dict:
         session.llm_model = model_name
         session.source_page_count = page_count
         session.status = ClassCreationSession.Status.TRANSCRIBED
-        session.save(update_fields=['transcript_markdown', 'llm_provider', 'llm_model', 'source_page_count', 'status', 'updated_at'])
+        _sync_session_workflow_to_status(session, message='متن جلسه آماده شد و در صف ساختاردهی قرار گرفت.')
+        session.save(update_fields=['transcript_markdown', 'llm_provider', 'llm_model', 'source_page_count', 'status', 'workflow_state', 'updated_at'])
 
         # Delete the uploaded source file to free disk space.
         # Only the transcript text is needed from this point on.
@@ -519,10 +716,13 @@ def process_class_step2_structure(self, session_id: int) -> dict:
         return {'status': 'skipped', 'reason': 'session not found'}
     if session.status != ClassCreationSession.Status.STRUCTURING:
         return {'status': 'skipped', 'reason': f'unexpected status {session.status}'}
+    _sync_session_workflow_to_status(session)
+    session.save(update_fields=['workflow_state', 'updated_at'])
     if not (session.transcript_markdown or '').strip():
         session.status = ClassCreationSession.Status.FAILED
         session.error_detail = 'برای این جلسه هنوز متن درس آماده نیست.'
-        session.save(update_fields=['status', 'error_detail', 'updated_at'])
+        _sync_session_workflow_to_status(session, warnings=[session.error_detail])
+        session.save(update_fields=['status', 'error_detail', 'workflow_state', 'updated_at'])
         return {'status': 'failed', 'error': session.error_detail}
 
     try:
@@ -533,7 +733,8 @@ def process_class_step2_structure(self, session_id: int) -> dict:
         session.llm_provider = provider
         session.llm_model = model_name
         session.status = ClassCreationSession.Status.STRUCTURED
-        session.save(update_fields=['structure_json', 'llm_provider', 'llm_model', 'status', 'updated_at'])
+        _sync_session_workflow_to_status(session, message='ساختار جلسه آماده شد و حالا پیش‌نیازها را استخراج می‌کنیم.')
+        session.save(update_fields=['structure_json', 'llm_provider', 'llm_model', 'status', 'workflow_state', 'updated_at'])
         sync_structure_from_session(session=session)
         return {'status': 'success', 'session_id': session_id}
     except Exception as exc:
@@ -555,10 +756,13 @@ def process_class_step3_prerequisites(self, session_id: int) -> dict:
         return {'status': 'skipped', 'reason': 'session not found'}
     if session.status != ClassCreationSession.Status.PREREQ_EXTRACTING:
         return {'status': 'skipped', 'reason': f'unexpected status {session.status}'}
+    _sync_session_workflow_to_status(session)
+    session.save(update_fields=['workflow_state', 'updated_at'])
     if not (session.transcript_markdown or '').strip():
         session.status = ClassCreationSession.Status.FAILED
         session.error_detail = 'برای این جلسه هنوز متن درس آماده نیست.'
-        session.save(update_fields=['status', 'error_detail', 'updated_at'])
+        _sync_session_workflow_to_status(session, warnings=[session.error_detail])
+        session.save(update_fields=['status', 'error_detail', 'workflow_state', 'updated_at'])
         return {'status': 'failed', 'error': session.error_detail}
 
     try:
@@ -580,7 +784,8 @@ def process_class_step3_prerequisites(self, session_id: int) -> dict:
         session.llm_provider = provider
         session.llm_model = model_name
         session.status = ClassCreationSession.Status.PREREQ_EXTRACTED
-        session.save(update_fields=['llm_provider', 'llm_model', 'status', 'updated_at'])
+        _sync_session_workflow_to_status(session, message='پیش‌نیازها آماده شد و حالا توضیح هر مورد ساخته می‌شود.')
+        session.save(update_fields=['llm_provider', 'llm_model', 'status', 'workflow_state', 'updated_at'])
         return {'status': 'success', 'session_id': session_id}
     except Exception as exc:
         if self.request.retries >= self.max_retries:
@@ -601,6 +806,8 @@ def process_class_step4_prereq_teaching(self, session_id: int, prerequisite_name
         return {'status': 'skipped', 'reason': 'session not found'}
     if session.status != ClassCreationSession.Status.PREREQ_TEACHING:
         return {'status': 'skipped', 'reason': f'unexpected status {session.status}'}
+    _sync_session_workflow_to_status(session)
+    session.save(update_fields=['workflow_state', 'updated_at'])
 
     qs = ClassPrerequisite.objects.filter(session=session).order_by('order')
     if prerequisite_name:
@@ -608,7 +815,8 @@ def process_class_step4_prereq_teaching(self, session_id: int, prerequisite_name
     if not qs.exists():
         session.status = ClassCreationSession.Status.FAILED
         session.error_detail = 'پیش نیازها یافت نشدند. ابتدا مرحله پیش نیازها را اجرا کنید.'
-        session.save(update_fields=['status', 'error_detail', 'updated_at'])
+        _sync_session_workflow_to_status(session, warnings=[session.error_detail])
+        session.save(update_fields=['status', 'error_detail', 'workflow_state', 'updated_at'])
         return {'status': 'failed', 'error': session.error_detail}
 
     try:
@@ -623,7 +831,8 @@ def process_class_step4_prereq_teaching(self, session_id: int, prerequisite_name
         if model_name:
             session.llm_model = model_name
         session.status = ClassCreationSession.Status.PREREQ_TAUGHT
-        session.save(update_fields=['llm_provider', 'llm_model', 'status', 'updated_at'])
+        _sync_session_workflow_to_status(session, message='آموزش پیش‌نیازها آماده شد و حالا جمع‌بندی ساخته می‌شود.')
+        session.save(update_fields=['llm_provider', 'llm_model', 'status', 'workflow_state', 'updated_at'])
         return {'status': 'success', 'session_id': session_id}
     except Exception as exc:
         if self.request.retries >= self.max_retries:
@@ -644,10 +853,13 @@ def process_class_step5_recap(self, session_id: int) -> dict:
         return {'status': 'skipped', 'reason': 'session not found'}
     if session.status != ClassCreationSession.Status.RECAPPING:
         return {'status': 'skipped', 'reason': f'unexpected status {session.status}'}
+    _sync_session_workflow_to_status(session)
+    session.save(update_fields=['workflow_state', 'updated_at'])
     if not (session.structure_json or '').strip():
         session.status = ClassCreationSession.Status.FAILED
         session.error_detail = 'برای این جلسه هنوز ساختار مرحله ۲ آماده نیست.'
-        session.save(update_fields=['status', 'error_detail', 'updated_at'])
+        _sync_session_workflow_to_status(session, warnings=[session.error_detail])
+        session.save(update_fields=['status', 'error_detail', 'workflow_state', 'updated_at'])
         return {'status': 'failed', 'error': session.error_detail}
 
     try:
@@ -656,7 +868,9 @@ def process_class_step5_recap(self, session_id: int) -> dict:
         session.llm_provider = provider
         session.llm_model = model_name
         session.status = ClassCreationSession.Status.RECAPPED
-        session.save(update_fields=['recap_markdown', 'llm_provider', 'llm_model', 'status', 'updated_at'])
+        _sync_session_workflow_to_status(session)
+        session.save(update_fields=['recap_markdown', 'llm_provider', 'llm_model', 'status', 'workflow_state', 'updated_at'])
+        _mark_session_ready_for_review(session)
         return {'status': 'success', 'session_id': session_id}
     except Exception as exc:
         if self.request.retries >= self.max_retries:
@@ -700,7 +914,8 @@ def process_class_full_pipeline(self, session_id: int) -> dict:
     # Step 2
     if session.status == ClassCreationSession.Status.TRANSCRIBED:
         session.status = ClassCreationSession.Status.STRUCTURING
-        if not _safe_save(session, ['status', 'updated_at']):
+        _sync_session_workflow_to_status(session)
+        if not _safe_save(session, ['status', 'workflow_state', 'updated_at']):
             return {'status': 'aborted', 'reason': 'session deleted'}
         if not _run_pipeline_step(process_class_step2_structure, 'step2_structure', session_id, session):
             return {'status': 'failed', 'stopped_at': 'step2'}
@@ -715,7 +930,8 @@ def process_class_full_pipeline(self, session_id: int) -> dict:
     # Step 3
     if session.status == ClassCreationSession.Status.STRUCTURED:
         session.status = ClassCreationSession.Status.PREREQ_EXTRACTING
-        if not _safe_save(session, ['status', 'updated_at']):
+        _sync_session_workflow_to_status(session)
+        if not _safe_save(session, ['status', 'workflow_state', 'updated_at']):
             return {'status': 'aborted', 'reason': 'session deleted'}
         if not _run_pipeline_step(process_class_step3_prerequisites, 'step3_prerequisites', session_id, session):
             return {'status': 'failed', 'stopped_at': 'step3'}
@@ -730,7 +946,8 @@ def process_class_full_pipeline(self, session_id: int) -> dict:
     # Step 4
     if session.status == ClassCreationSession.Status.PREREQ_EXTRACTED:
         session.status = ClassCreationSession.Status.PREREQ_TEACHING
-        if not _safe_save(session, ['status', 'updated_at']):
+        _sync_session_workflow_to_status(session)
+        if not _safe_save(session, ['status', 'workflow_state', 'updated_at']):
             return {'status': 'aborted', 'reason': 'session deleted'}
         if not _run_pipeline_step(process_class_step4_prereq_teaching, 'step4_prereq_teaching', session_id, session):
             return {'status': 'failed', 'stopped_at': 'step4'}
@@ -745,7 +962,8 @@ def process_class_full_pipeline(self, session_id: int) -> dict:
     # Step 5
     if session.status == ClassCreationSession.Status.PREREQ_TAUGHT:
         session.status = ClassCreationSession.Status.RECAPPING
-        if not _safe_save(session, ['status', 'updated_at']):
+        _sync_session_workflow_to_status(session)
+        if not _safe_save(session, ['status', 'workflow_state', 'updated_at']):
             return {'status': 'aborted', 'reason': 'session deleted'}
         if not _run_pipeline_step(process_class_step5_recap, 'step5_recap', session_id, session):
             return {'status': 'failed', 'stopped_at': 'step5'}
@@ -780,6 +998,8 @@ def process_exam_prep_step1_transcription(self, session_id: int) -> dict:
         return {'status': 'skipped', 'reason': 'session not found'}
     if session.status != ClassCreationSession.Status.EXAM_TRANSCRIBING:
         return {'status': 'skipped', 'reason': f'unexpected status {session.status}'}
+    _sync_session_workflow_to_status(session, message='منبع آمادگی آزمون دریافت شد و در حال تبدیل به متن هستیم.')
+    session.save(update_fields=['workflow_state', 'updated_at'])
 
     tmp_path: str | None = None
     try:
@@ -803,7 +1023,8 @@ def process_exam_prep_step1_transcription(self, session_id: int) -> dict:
         session.llm_model = model_name
         session.source_page_count = page_count
         session.status = ClassCreationSession.Status.EXAM_TRANSCRIBED
-        session.save(update_fields=['transcript_markdown', 'llm_provider', 'llm_model', 'source_page_count', 'status', 'updated_at'])
+        _sync_session_workflow_to_status(session, message='متن آمادگی آزمون آماده شد و حالا سوال‌ها را استخراج می‌کنیم.')
+        session.save(update_fields=['transcript_markdown', 'llm_provider', 'llm_model', 'source_page_count', 'status', 'workflow_state', 'updated_at'])
 
         # Delete the uploaded source file to free disk space.
         _cleanup_source_file(session)
@@ -848,10 +1069,13 @@ def process_exam_prep_step2_structure(self, session_id: int) -> dict:
         return {'status': 'skipped', 'reason': 'session not found'}
     if session.status != ClassCreationSession.Status.EXAM_STRUCTURING:
         return {'status': 'skipped', 'reason': f'unexpected status {session.status}'}
+    _sync_session_workflow_to_status(session)
+    session.save(update_fields=['workflow_state', 'updated_at'])
     if not (session.transcript_markdown or '').strip():
         session.status = ClassCreationSession.Status.FAILED
         session.error_detail = 'برای این جلسه هنوز ترنسکریپت مرحله ۱ آماده نیست.'
-        session.save(update_fields=['status', 'error_detail', 'updated_at'])
+        _sync_session_workflow_to_status(session, warnings=[session.error_detail])
+        session.save(update_fields=['status', 'error_detail', 'workflow_state', 'updated_at'])
         return {'status': 'failed', 'error': session.error_detail}
 
     try:
@@ -863,7 +1087,9 @@ def process_exam_prep_step2_structure(self, session_id: int) -> dict:
         session.llm_provider = provider
         session.llm_model = model_name
         session.status = ClassCreationSession.Status.EXAM_STRUCTURED
-        session.save(update_fields=['exam_prep_json', 'llm_provider', 'llm_model', 'status', 'updated_at'])
+        _sync_session_workflow_to_status(session)
+        session.save(update_fields=['exam_prep_json', 'llm_provider', 'llm_model', 'status', 'workflow_state', 'updated_at'])
+        _mark_session_ready_for_review(session)
         return {'status': 'success', 'session_id': session_id}
     except Exception as exc:
         if self.request.retries >= self.max_retries:
@@ -902,7 +1128,8 @@ def process_exam_prep_full_pipeline(self, session_id: int) -> dict:
     # Step 2
     if session.status == ClassCreationSession.Status.EXAM_TRANSCRIBED:
         session.status = ClassCreationSession.Status.EXAM_STRUCTURING
-        if not _safe_save(session, ['status', 'updated_at']):
+        _sync_session_workflow_to_status(session)
+        if not _safe_save(session, ['status', 'workflow_state', 'updated_at']):
             return {'status': 'aborted', 'reason': 'session deleted'}
         if not _run_pipeline_step(process_exam_prep_step2_structure, 'step2_structure', session_id, session):
             return {'status': 'failed', 'stopped_at': 'step2'}
@@ -1124,6 +1351,30 @@ def send_exercise_review_ready_sms_task(self, exercise_id: int) -> dict:
         logger.error(
             'Exercise-ready SMS failed for exercise %s (attempt %s/%s): %s',
             exercise_id, self.request.retries + 1, self.max_retries + 1, str(exc)[:200],
+        )
+        if self.request.retries >= self.max_retries:
+            return {'status': 'failed', 'error': str(exc)[:500]}
+        backoff = 30 * (2 ** self.request.retries)
+        raise self.retry(exc=exc, countdown=backoff)
+
+
+@shared_task(bind=True, max_retries=5, acks_late=True)
+def send_session_review_ready_sms_task(self, session_id: int) -> dict:
+    """Send the ready-for-review SMS for a class or exam-prep session."""
+    from .services.mediana_sms import send_session_review_ready_sms
+
+    logger.info(
+        '[SMS] send_session_review_ready_sms_task STARTED session=%s attempt=%s/%s',
+        session_id, self.request.retries + 1, self.max_retries + 1,
+    )
+    try:
+        send_session_review_ready_sms(session_id)
+        logger.info('[SMS] send_session_review_ready_sms_task SUCCESS session=%s', session_id)
+        return {'status': 'success', 'session_id': session_id}
+    except Exception as exc:
+        logger.error(
+            'Session-ready SMS failed for session %s (attempt %s/%s): %s',
+            session_id, self.request.retries + 1, self.max_retries + 1, str(exc)[:200],
         )
         if self.request.retries >= self.max_retries:
             return {'status': 'failed', 'error': str(exc)[:500]}
