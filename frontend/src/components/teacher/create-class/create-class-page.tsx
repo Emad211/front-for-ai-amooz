@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -18,14 +17,11 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import {
   getClassCreationSessionDetail,
   type ClassCreationSessionDetail,
-  publishClassCreationSession,
   cancelClassCreationSession,
   transcribeClassCreationStep1,
-  updateClassCreationSession,
   // Exam Prep imports
   transcribeExamPrepStep1,
   fetchExamPrepSession,
-  publishExamPrepSession,
   cancelExamPrepSession,
   type ExamPrepSessionDetail,
   type ExamPrepStatus,
@@ -135,7 +131,6 @@ function getExamPrepPipelineMessage(status?: string | null) {
 }
 
 export function CreateClassPage() {
-  const router = useRouter();
   const { activeWorkspace } = useWorkspace();
   const [studyGroups, setStudyGroups] = useState<StudyGroup[]>([]);
   const [selectedStudyGroupId, setSelectedStudyGroupId] = useState<string>('none');
@@ -616,69 +611,6 @@ export function CreateClassPage() {
     }
   };
 
-  const publish = async () => {
-    if (pipelineType === 'class') {
-      if (!sessionIdForActions) {
-        toast.error('ابتدا مرحله ۱ را انجام دهید.');
-        return;
-      }
-      if (sessionDetail?.status === 'failed') {
-        toast.error('این جلسه با خطا متوقف شده است.');
-        return;
-      }
-      if (sessionDetail?.status !== 'recapped') {
-        toast.error('ابتدا پردازش را کامل کنید.');
-        return;
-      }
-
-      try {
-        await updateClassCreationSession(sessionIdForActions, {
-          title: title.trim() || undefined,
-          description,
-          level: level.trim() || undefined,
-          duration: duration.trim() || undefined,
-        });
-        await publishClassCreationSession(sessionIdForActions);
-
-        window.localStorage.removeItem(ACTIVE_SESSION_STORAGE_KEY);
-        window.localStorage.removeItem(CREATE_CLASS_DRAFT_STORAGE_KEY);
-        window.localStorage.removeItem(CREATE_CLASS_LAST_STATUS_STORAGE_KEY);
-        toast.success('کلاس با موفقیت منتشر شد');
-        router.push(`/teacher/my-classes/${sessionIdForActions}`);
-      } catch (e) {
-        const msg = e instanceof Error ? e.message : 'خطا در انتشار کلاس';
-        toast.error(msg);
-      }
-    } else {
-      // Exam Prep Pipeline
-      if (!examPrepSessionIdForActions) {
-        toast.error('ابتدا مرحله ۱ را انجام دهید.');
-        return;
-      }
-      if (examPrepSessionDetail?.status === 'failed') {
-        toast.error('این جلسه با خطا متوقف شده است.');
-        return;
-      }
-      if (examPrepSessionDetail?.status !== 'exam_structured') {
-        toast.error('ابتدا پردازش را کامل کنید.');
-        return;
-      }
-
-      try {
-        await publishExamPrepSession(examPrepSessionIdForActions);
-
-        window.localStorage.removeItem(ACTIVE_EXAM_PREP_SESSION_STORAGE_KEY);
-        window.localStorage.removeItem(CREATE_EXAM_PREP_DRAFT_STORAGE_KEY);
-        window.localStorage.removeItem(CREATE_EXAM_PREP_LAST_STATUS_STORAGE_KEY);
-        toast.success('آمادگی آزمون با موفقیت منتشر شد');
-        router.push(`/teacher/my-exams/${examPrepSessionIdForActions}`);
-      } catch (e) {
-        const msg = e instanceof Error ? e.message : 'خطا در انتشار';
-        toast.error(msg);
-      }
-    }
-  };
-
   return (
     <div className="space-y-8" dir="rtl">
       <Card className="relative overflow-hidden border-border/40 bg-gradient-to-l from-primary/10 via-background to-background rounded-3xl shadow-xl shadow-primary/5">
@@ -694,21 +626,21 @@ export function CreateClassPage() {
             </h1>
             <p className="text-muted-foreground text-sm md:text-base">
               {pipelineType === 'class'
-                ? 'همه اطلاعات کلاس را یک‌جا ثبت کنید، ذخیره و پردازش را بزنید، و بعد از آماده‌شدن برای بازبینی و انتشار برگردید.'
-                : 'اطلاعات و فایل آمادگی آزمون را یک‌جا ثبت کنید؛ بعد از پایان پردازش، برای بازبینی و انتشار به شما خبر می‌دهیم.'}
+                ? 'همه اطلاعات کلاس را یک‌جا ثبت کنید و ذخیره و پردازش را بزنید؛ بعد از آماده‌شدن، از صفحه کلاس‌ها پیش‌نویس را بازبینی و منتشر کنید.'
+                : 'اطلاعات و فایل آمادگی آزمون را یک‌جا ثبت کنید؛ بعد از پایان پردازش، از صفحه آمادگی آزمون‌ها پیش‌نویس را بازبینی و منتشر کنید.'}
             </p>
           </div>
           {pipelineType === 'class' ? (
             <div className="flex flex-wrap gap-2 text-xs md:text-sm text-muted-foreground">
               <span className={cn("px-3 py-1 rounded-full", !status ? "bg-primary/10 text-primary" : "bg-muted")}>۱. ثبت اطلاعات</span>
               <span className={cn("px-3 py-1 rounded-full", (status && status !== 'recapped') ? "bg-primary/10 text-primary" : "bg-muted")}>۲. پردازش خودکار</span>
-              <span className={cn("px-3 py-1 rounded-full", status === 'recapped' ? "bg-primary/10 text-primary" : "bg-muted")}>۳. بازبینی و انتشار</span>
+              <span className={cn("px-3 py-1 rounded-full", status === 'recapped' ? "bg-primary/10 text-primary" : "bg-muted")}>۳. بازبینی در کلاس‌ها</span>
             </div>
           ) : (
             <div className="flex flex-wrap gap-2 text-xs md:text-sm text-muted-foreground">
               <span className={cn("px-3 py-1 rounded-full", (!examPrepStatus || examPrepStatus.includes('trans')) ? "bg-primary/10 text-primary" : "bg-muted")}>۱. ثبت اطلاعات</span>
               <span className={cn("px-3 py-1 rounded-full", examPrepStatus === 'exam_structuring' ? "bg-primary/10 text-primary" : "bg-muted")}>۲. پردازش خودکار</span>
-              <span className={cn("px-3 py-1 rounded-full", examPrepStatus === 'exam_structured' ? "bg-primary/10 text-primary" : "bg-muted")}>۳. بازبینی و انتشار</span>
+              <span className={cn("px-3 py-1 rounded-full", examPrepStatus === 'exam_structured' ? "bg-primary/10 text-primary" : "bg-muted")}>۳. بازبینی در آزمون‌ها</span>
             </div>
           )}
         </div>
@@ -1073,21 +1005,12 @@ export function CreateClassPage() {
         </Card>
       )}
 
-      <div className="flex flex-col sm:flex-row items-center justify-end gap-3 pt-4">
+      <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-4">
+        <p className="text-xs leading-6 text-muted-foreground">
+          انتشار از این صفحه انجام نمی‌شود؛ بعد از آماده‌شدن، از صفحه کلاس‌ها یا آمادگی آزمون وارد پیش‌نویس شوید و همان‌جا بازبینی و منتشر کنید.
+        </p>
         <Button variant="outline" className="w-full sm:w-auto rounded-xl h-11 px-6">
           انصراف
-        </Button>
-        <Button
-          className="w-full sm:w-auto bg-primary text-primary-foreground hover:bg-primary/90 rounded-xl h-11 px-8"
-          disabled={
-            pipelineType === 'class'
-              ? !sessionIdForActions || sessionDetail?.status !== 'recapped'
-              : !examPrepSessionIdForActions || examPrepSessionDetail?.status !== 'exam_structured'
-          }
-          onClick={publish}
-          type="button"
-        >
-          بازبینی و انتشار
         </Button>
       </div>
     </div>

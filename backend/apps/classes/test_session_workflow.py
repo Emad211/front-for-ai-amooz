@@ -4,7 +4,7 @@ from django.db import transaction
 from model_bakery import baker
 
 from apps.classes.models import ClassCreationSession, ClassExercise, ClassExerciseAsset
-from apps.classes.tasks import _mark_session_ready_for_review
+from apps.classes.tasks import _make_step1_heartbeat, _mark_session_ready_for_review
 
 
 User = get_user_model()
@@ -116,3 +116,24 @@ def test_mark_exam_session_ready_for_review_notifies_once_without_exercises(monk
 
     _mark_session_ready_for_review(session)
     assert sms_calls == [session.id]
+
+
+@pytest.mark.django_db
+def test_step1_heartbeat_persists_chunk_progress():
+    teacher = baker.make(User, role=User.Role.TEACHER)
+    session = baker.make(
+        ClassCreationSession,
+        teacher=teacher,
+        status=ClassCreationSession.Status.TRANSCRIBING,
+        workflow_state={'stage': 'queued', 'progressPercent': 5},
+        cancel_requested=False,
+    )
+
+    heartbeat = _make_step1_heartbeat(session.id)
+
+    assert heartbeat(2, 4) is True
+
+    session.refresh_from_db()
+    assert session.workflow_state['stage'] == 'transcribing'
+    assert session.workflow_state['progressPercent'] == 37
+    assert session.workflow_state['message'] == 'در حال تبدیل فایل به متن هستیم (2 از 4).'

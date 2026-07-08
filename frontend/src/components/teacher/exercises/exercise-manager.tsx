@@ -215,16 +215,6 @@ export function ExerciseManager({ sessionId }: { sessionId: number }) {
             submitting={creating}
             onSubmit={handleCreate}
           />
-
-          <div className="flex flex-wrap items-center justify-between gap-3 rounded-md bg-muted/30 px-4 py-3">
-            <p className="text-sm text-muted-foreground">
-              بعد از زدن این دکمه، ساخت پیش‌نویس و استخراج سوال‌ها در پس‌زمینه انجام می‌شود و برای بازبینی به شما اطلاع می‌دهیم.
-            </p>
-            <Button onClick={handleCreate} disabled={creating}>
-              {creating ? <Loader2 className="ms-2 h-4 w-4 animate-spin" /> : null}
-              ساخت پیش‌نویس تمرین
-            </Button>
-          </div>
         </CardContent>
       </Card>
 

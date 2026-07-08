@@ -572,21 +572,26 @@ def _make_step1_heartbeat(session_id: int):
       deleted the session, so a 2-hour lecture stops within one chunk instead
       of only at the next step boundary.
     """
-    from django.utils import timezone
     from .models import ClassCreationSession
 
     def _heartbeat(done: int, total: int):
-        updated = (
-            ClassCreationSession.objects
-            .filter(id=session_id)
-            .update(updated_at=timezone.now())
-        )
-        if not updated:
+        session = ClassCreationSession.objects.filter(id=session_id).first()
+        if session is None:
             logger.info('STEP1 heartbeat: session %s deleted — aborting transcription.', session_id)
             return False
-        if ClassCreationSession.objects.filter(id=session_id, cancel_requested=True).exists():
+        if session.cancel_requested:
             logger.info('STEP1 heartbeat: session %s cancel requested — aborting transcription.', session_id)
             return False
+        _sync_session_workflow_to_status(session)
+        if total > 1 and isinstance(session.workflow_state, dict):
+            bounded_done = max(0, min(done, total))
+            chunk_progress = int(30 + (15 * bounded_done / max(total, 1)))
+            session.workflow_state['progressPercent'] = max(
+                session.workflow_state.get('progressPercent') or 0,
+                min(chunk_progress, 45),
+            )
+            session.workflow_state['message'] = f'در حال تبدیل فایل به متن هستیم ({bounded_done} از {total}).'
+        session.save(update_fields=['workflow_state', 'updated_at'])
         if total > 1:
             logger.info('STEP1 progress: session=%s chunk %d/%d transcribed', session_id, done, total)
         return True

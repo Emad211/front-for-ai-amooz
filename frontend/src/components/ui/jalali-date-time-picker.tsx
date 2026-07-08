@@ -145,11 +145,11 @@ export function JalaliDateTimePicker({
                   'absolute left-1 top-1/2 inline-flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full border border-border bg-card text-muted-foreground transition hover:bg-muted hover:text-foreground',
                 month_caption: 'flex justify-center',
                 table: 'w-full border-collapse',
-                head_row: 'grid w-full grid-cols-7 gap-1',
+                weekdays: 'grid w-full grid-cols-7 gap-1',
                 weekday:
                   'flex h-9 items-center justify-center rounded-lg text-sm font-medium text-muted-foreground',
-                tbody: 'grid w-full gap-1',
-                row: 'grid w-full grid-cols-7 gap-1',
+                weeks: 'grid w-full gap-1',
+                week: 'grid w-full grid-cols-7 gap-1',
                 day: cn(
                   buttonVariants({ variant: 'ghost' }),
                   'h-10 w-full min-w-0 rounded-xl p-0 text-sm font-medium text-foreground hover:bg-muted aria-selected:opacity-100',

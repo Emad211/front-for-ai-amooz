@@ -45,7 +45,7 @@ Teacher flow is now:
 3. optionally define embedded exercise drafts (class only)
 4. press `ذخیره و پردازش`
 5. leave the page safely
-6. return later for `بازبینی و انتشار`
+6. return later from the class/exam list into the draft detail page for `بازبینی و انتشار`
 
 ### Embedded exercises in create-class
 
@@ -115,12 +115,24 @@ The shared Jalali picker now:
 - anchors from the RTL end
 - keeps date selection open until the teacher confirms
 - uses an explicit `تایید` action
+- uses the current `react-day-picker` class contract (`weekdays`/`week`) so weekday labels and day
+  numbers stay in a stable 7-column grid
 - avoids the previous clipped / half-empty popover layout
 
 ### CTA placement
 
 `ذخیره و پردازش` was moved below the optional embedded exercise block so the primary CTA appears
 after all blocking teacher inputs.
+
+`بازبینی و انتشار` is intentionally not rendered on the create-class/create-exam page. After
+processing, the teacher returns through the class or exam list and publishes from the draft detail
+surface where the generated content can be reviewed.
+
+### Progress durability
+
+Class/exam progress remains backend-owned. During long chunked transcription, the Celery heartbeat
+now also persists intra-step progress and a chunk message instead of only bumping `updated_at`; if a
+new session stays at `queued`/5%, that means the worker has not picked up the task yet.
 
 ## Verification
 
