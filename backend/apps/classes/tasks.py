@@ -1084,6 +1084,30 @@ def send_teacher_message_sms_task(self, notification_id: int) -> dict:
         raise self.retry(exc=exc, countdown=backoff)
 
 
+@shared_task(bind=True, max_retries=5, acks_late=True)
+def send_exercise_review_ready_sms_task(self, exercise_id: int) -> dict:
+    """Send the ready-for-review SMS to the owning teacher."""
+    from .services.mediana_sms import send_exercise_review_ready_sms
+
+    logger.info(
+        '[SMS] send_exercise_review_ready_sms_task STARTED exercise=%s attempt=%s/%s',
+        exercise_id, self.request.retries + 1, self.max_retries + 1,
+    )
+    try:
+        send_exercise_review_ready_sms(exercise_id)
+        logger.info('[SMS] send_exercise_review_ready_sms_task SUCCESS exercise=%s', exercise_id)
+        return {'status': 'success', 'exercise_id': exercise_id}
+    except Exception as exc:
+        logger.error(
+            'Exercise-ready SMS failed for exercise %s (attempt %s/%s): %s',
+            exercise_id, self.request.retries + 1, self.max_retries + 1, str(exc)[:200],
+        )
+        if self.request.retries >= self.max_retries:
+            return {'status': 'failed', 'error': str(exc)[:500]}
+        backoff = 30 * (2 ** self.request.retries)
+        raise self.retry(exc=exc, countdown=backoff)
+
+
 @shared_task(bind=True, max_retries=0)
 def cleanup_stale_sessions(self) -> dict:
     """Mark sessions stuck in *ING statuses for >2 hours as FAILED.
@@ -1117,6 +1141,40 @@ def cleanup_stale_sessions(self) -> dict:
 # rows). Runs on the `pipeline` queue. Design: docs/features/exercise-hub.md.
 # ---------------------------------------------------------------------------
 
+
+def _exercise_source_hint(intake_config: dict | None) -> str:
+    from .services.exercise_workflow import source_entries
+
+    rows = source_entries(intake_config)
+    if not rows:
+        return ''
+    lines = [
+        'TEACHER_INTAKE_HINTS:',
+        'Use these teacher-provided source hints as guidance only:',
+    ]
+    for row in rows:
+        lines.append(
+            f"- {row.get('assetName') or 'source'} | role={row.get('role') or 'auto'}"
+            f" | writing={row.get('writingMode') or 'auto'}"
+            f" | answer_layout={row.get('answerLayout') or 'auto'}"
+        )
+    return '\n'.join(lines)
+
+
+def _reference_mode_hint(intake_config: dict | None) -> str:
+    from .services.exercise_workflow import source_entries
+
+    rows = source_entries(intake_config)
+    if not rows:
+        return 'auto'
+    layouts = {str(row.get('answerLayout') or 'auto') for row in rows}
+    roles = {str(row.get('role') or 'auto') for row in rows}
+    if 'question_and_answer' in roles and 'inline' in layouts:
+        return 'full_qa'
+    if 'answer_only' in roles and layouts & {'end', 'separate'}:
+        return 'numbered_answers'
+    return 'auto'
+
 @shared_task(
     bind=True, max_retries=3, default_retry_delay=60, acks_late=True,
     soft_time_limit=PIPELINE_TASK_SOFT_TIME_LIMIT, time_limit=PIPELINE_TASK_TIME_LIMIT,
@@ -1129,11 +1187,26 @@ def extract_exercise_content(self, exercise_id: int) -> dict:
     runnable state, and a `cache.add` lock rejects a concurrent second dispatch.
     """
     from django.core.cache import cache
+    from django.utils import timezone
     from .models import ClassExercise
     from .services.exercise_ingest import (
+        apply_reference_preview_items,
+        build_reference_ingest_preview,
+        compact_existing_questions,
+        ingest_reference_answers_markdown,
         ocr_assets_to_markdown,
-        structure_exercise_markdown,
         persist_exercise_structure,
+        structure_exercise_markdown,
+    )
+    from .services.exercise_workflow import (
+        SOURCE_ROLE_ANSWER_ONLY,
+        SOURCE_ROLE_AUTO,
+        SOURCE_ROLE_QUESTION_AND_ANSWER,
+        SOURCE_ROLE_QUESTION_ONLY,
+        build_workflow_state,
+        source_entries,
+        source_orders_for_roles,
+        update_workflow_state,
     )
 
     exercise = ClassExercise.objects.filter(id=exercise_id).first()
@@ -1141,7 +1214,11 @@ def extract_exercise_content(self, exercise_id: int) -> dict:
         return {'status': 'skipped', 'reason': 'exercise not found'}
 
     task_id = _current_task_id(self)
-    runnable = {ClassExercise.Status.DRAFT, ClassExercise.Status.FAILED}
+    runnable = {
+        ClassExercise.Status.DRAFT,
+        ClassExercise.Status.FAILED,
+        ClassExercise.Status.EXTRACTED,
+    }
     is_same_retry = (
         exercise.status == ClassExercise.Status.EXTRACTING
         and exercise.extract_task_id
@@ -1158,17 +1235,112 @@ def extract_exercise_content(self, exercise_id: int) -> dict:
         if not is_same_retry:
             exercise.status = ClassExercise.Status.EXTRACTING
             exercise.extract_task_id = task_id
-            exercise.save(update_fields=['status', 'extract_task_id', 'updated_at'])
+            exercise.workflow_state = build_workflow_state('reading_sources')
+            exercise.save(update_fields=['status', 'extract_task_id', 'workflow_state', 'updated_at'])
 
-        markdown = ocr_assets_to_markdown(exercise)
+        intake_config = exercise.intake_config if isinstance(exercise.intake_config, dict) else {}
+        has_source_entries = bool(source_entries(intake_config))
+        warnings: list[str] = []
+        question_orders = source_orders_for_roles(
+            intake_config,
+            {SOURCE_ROLE_AUTO, SOURCE_ROLE_QUESTION_ONLY, SOURCE_ROLE_QUESTION_AND_ANSWER},
+        )
+        answer_orders = source_orders_for_roles(
+            intake_config,
+            {SOURCE_ROLE_QUESTION_AND_ANSWER, SOURCE_ROLE_ANSWER_ONLY},
+        )
+        if not question_orders and has_source_entries:
+            raise RuntimeError('هیچ منبعی برای استخراج سوال‌های تمرین پیدا نشد.')
+
+        update_workflow_state(exercise, 'ocr_and_transcription')
+        markdown = ocr_assets_to_markdown(
+            exercise,
+            asset_orders=question_orders or None,
+            preamble=_exercise_source_hint(intake_config),
+        )
+        if not (markdown or '').strip():
+            raise RuntimeError('از منابع سوال، متن قابل استفاده‌ای استخراج نشد.')
+
+        update_workflow_state(exercise, 'extracting_questions')
         structure, _provider, _model = structure_exercise_markdown(ingest_markdown=markdown)
         n_sections, n_questions = persist_exercise_structure(exercise, structure)
 
+        if answer_orders:
+            update_workflow_state(exercise, 'matching_reference_answers')
+            try:
+                answer_markdown = ocr_assets_to_markdown(
+                    exercise,
+                    asset_orders=answer_orders or None,
+                    preamble=_exercise_source_hint(intake_config),
+                )
+                if (answer_markdown or '').strip():
+                    extracted, _p2, _m2 = ingest_reference_answers_markdown(
+                        source_markdown=answer_markdown,
+                        existing_questions=compact_existing_questions(exercise),
+                        mode_hint=_reference_mode_hint(intake_config),
+                    )
+                    preview = build_reference_ingest_preview(
+                        exercise=exercise,
+                        extracted=extracted,
+                    )
+                    warnings.extend(str(w).strip() for w in preview.get('warnings') or [] if str(w).strip())
+                    counts = preview.get('counts') or {}
+                    auto_items = [
+                        item for item in preview.get('items') or []
+                        if isinstance(item, dict)
+                        and item.get('matchStatus') == 'matched'
+                        and str(item.get('referenceAnswerMarkdown') or '').strip()
+                    ]
+                    apply_result = apply_reference_preview_items(
+                        exercise=exercise,
+                        preview_items=auto_items,
+                        replace_existing=False,
+                    )
+                    ambiguous = int(counts.get('ambiguous') or 0)
+                    unmatched = int(counts.get('unmatched') or 0)
+                    if ambiguous:
+                        warnings.append(f'{ambiguous} پاسخ مرجع نیاز به بازبینی دستی دارد.')
+                    if unmatched:
+                        warnings.append(f'{unmatched} مورد پاسخ‌نامه به سوالی تطبیق داده نشد.')
+                    if apply_result['appliedCount'] == 0:
+                        warnings.append('پاسخ‌های مرجع این تمرین خودکار اعمال نشد و نیاز به بازبینی دارد.')
+                else:
+                    warnings.append('از منابع پاسخ‌نامه متن قابل استفاده‌ای استخراج نشد.')
+            except Exception as answer_exc:
+                logger.exception('Exercise reference ingest fallback warning for %s', exercise_id)
+                warnings.append(
+                    'پاسخ‌های مرجع این تمرین خودکار اعمال نشد و برای انتشار باید بازبینی شود.'
+                )
+                warnings.append(str(answer_exc)[:200])
+        else:
+            warnings.append('برای این تمرین پاسخ‌نامه‌ای تشخیص داده نشد؛ پیش از انتشار پاسخ‌های مرجع را بازبینی کنید.')
+
+        update_workflow_state(exercise, 'building_review_draft', warnings=warnings)
         exercise.status = ClassExercise.Status.EXTRACTED
-        exercise.save(update_fields=['status', 'updated_at'])
+        exercise.workflow_state = build_workflow_state(
+            'ready_for_review',
+            warnings=warnings,
+            ready_for_review=True,
+        )
+        exercise.save(update_fields=['status', 'workflow_state', 'updated_at'])
+
+        notified_now = (
+            ClassExercise.objects.filter(
+                id=exercise_id,
+                review_ready_notified_at__isnull=True,
+            )
+            .update(review_ready_notified_at=timezone.now())
+            > 0
+        )
+        if notified_now:
+            try:
+                send_exercise_review_ready_sms_task.delay(exercise.id)
+            except Exception:
+                logger.exception('Failed to queue exercise-ready SMS for %s', exercise.id)
         return {
             'status': 'extracted', 'exercise_id': exercise_id,
             'sections': n_sections, 'questions': n_questions,
+            'warnings': warnings,
         }
     except Exception as exc:
         if is_transient_llm_error(exc) and self.request.retries < self.max_retries:
@@ -1184,6 +1356,11 @@ def extract_exercise_content(self, exercise_id: int) -> dict:
         logger.exception('Exercise extraction failed for %s', exercise_id)
         ClassExercise.objects.filter(id=exercise_id).update(
             status=ClassExercise.Status.FAILED,
+            workflow_state=build_workflow_state(
+                'failed',
+                warnings=[str(exc)[:300]],
+                ready_for_review=False,
+            ),
         )
         return {'status': 'failed', 'exercise_id': exercise_id, 'reason': str(exc)}
     finally:

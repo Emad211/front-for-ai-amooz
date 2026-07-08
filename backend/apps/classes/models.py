@@ -622,8 +622,14 @@ class ClassExercise(models.Model):
     allow_late = models.BooleanField(default=False)
     # Exercise-level assistant switch. Effective per section = this AND section flag.
     assistant_enabled = models.BooleanField(default=True)
+    # Snapshot of the teacher's one-step intake payload (kept small on purpose).
+    intake_config = models.JSONField(default=dict, blank=True)
+    # Durable UI workflow state for the async draft-building flow.
+    workflow_state = models.JSONField(default=dict, blank=True)
     # Persisted Celery task id for the extraction run (hard-revoke on re-run).
     extract_task_id = models.CharField(max_length=255, blank=True, default='')
+    # One-shot ready-for-review notification guard/version for the teacher feed + SMS.
+    review_ready_notified_at = models.DateTimeField(null=True, blank=True)
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

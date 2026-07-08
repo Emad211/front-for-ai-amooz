@@ -165,12 +165,15 @@ def _ocr_image_to_markdown(*, data: bytes, mime_type: str) -> str:
     return (resp.text if hasattr(resp, "text") else str(resp)).strip()
 
 
-def ocr_assets_to_markdown(exercise) -> str:
-    """Concatenate the OCR Markdown of every source asset of an exercise."""
+def ocr_assets_to_markdown(exercise, *, asset_orders: list[int] | None = None, preamble: str = "") -> str:
+    """Concatenate the OCR Markdown of selected source assets of an exercise."""
     from .pdf_extraction import extract_pdf_to_markdown
 
-    parts: list[str] = []
-    for asset in exercise.assets.all():
+    qs = exercise.assets.all().order_by("order", "id")
+    if asset_orders is not None:
+        qs = qs.filter(order__in=asset_orders)
+    parts: list[str] = [preamble.strip()] if (preamble or "").strip() else []
+    for asset in qs:
         data = asset.file.read()
         if not data:
             continue
@@ -398,6 +401,80 @@ def build_reference_ingest_preview(
         "items": preview_items,
         "warnings": warnings,
         "counts": counts,
+    }
+
+
+def apply_reference_preview_items(
+    *,
+    exercise,
+    preview_items: list[dict[str, Any]],
+    replace_existing: bool = False,
+) -> dict[str, Any]:
+    """Apply matched reference-answer preview items onto question rows.
+
+    Used by both the teacher-reviewed API flow and the automatic draft-building
+    flow. The caller decides which preview items are safe enough to pass here.
+    """
+    from ..models import ClassExerciseQuestion
+
+    questions = {
+        q.id: q for q in ClassExerciseQuestion.objects.filter(section__exercise=exercise)
+    }
+    applied: list[int] = []
+    skipped: list[dict[str, Any]] = []
+
+    for item in preview_items:
+        if not isinstance(item, dict):
+            continue
+        try:
+            qid = int(item.get("targetQuestionId"))
+        except (TypeError, ValueError):
+            continue
+        q = questions.get(qid)
+        if q is None:
+            continue
+        if (q.reference_answer_markdown or "").strip() and not replace_existing:
+            skipped.append({"targetQuestionId": q.id, "reason": "existing_reference"})
+            continue
+
+        fields: list[str] = []
+        ref = str(item.get("referenceAnswerMarkdown") or item.get("reference_answer_markdown") or "").strip()
+        if ref:
+            q.reference_answer_markdown = ref
+            fields.append("reference_answer_markdown")
+
+        raw_points = item.get("maxPoints") if item.get("maxPoints") is not None else item.get("max_points")
+        if raw_points is not None:
+            points = _coerce_points(raw_points)
+            if points > 0:
+                q.max_points = points
+                fields.append("max_points")
+
+        question_text = str(item.get("questionMarkdown") or item.get("question_markdown") or "").strip()
+        if question_text and bool(item.get("replaceQuestionText") or item.get("replace_question_text")):
+            q.question_markdown = question_text
+            fields.append("question_markdown")
+
+        question_type = item.get("questionType") or item.get("question_type")
+        if question_type in _VALID_QUESTION_TYPES:
+            q.question_type = question_type
+            fields.append("question_type")
+
+        options = item.get("options")
+        if isinstance(options, list):
+            q.options = options
+            fields.append("options")
+
+        if not fields:
+            skipped.append({"targetQuestionId": q.id, "reason": "empty_patch"})
+            continue
+        q.save(update_fields=sorted(set(fields)))
+        applied.append(q.id)
+
+    return {
+        "appliedCount": len(set(applied)),
+        "updatedQuestionIds": sorted(set(applied)),
+        "skipped": skipped,
     }
 
 

@@ -2,9 +2,10 @@
 import pytest
 from django.contrib.auth import get_user_model
 from django.core.files.uploadedfile import SimpleUploadedFile
+from django.utils import timezone
 from rest_framework.test import APIClient
 
-from apps.classes.models import ClassCreationSession, ClassInvitation
+from apps.classes.models import ClassCreationSession, ClassExercise, ClassInvitation
 from apps.notification.models import (
     TeacherNotification,
     TeacherNotificationRecipient,
@@ -187,6 +188,33 @@ def test_broadcast_sms_flag_queues_without_crashing(monkeypatch):
     # force it by asserting the task was scheduled via the captured delay.
     # (DRF test wraps each request; on_commit runs on commit which pytest-django
     # may defer — so we just assert the response contract here.)
+
+
+def test_teacher_feed_includes_owned_exercise_ready_notifications_only():
+    teacher = _teacher()
+    other_teacher = _teacher(username='t2', phone='09150000099')
+    session = _session_with_invite(teacher, '09120000999')
+    other_session = _session_with_invite(other_teacher, '09120000888')
+    mine = ClassExercise.objects.create(
+        session=session,
+        title='تمرین من',
+        status=ClassExercise.Status.EXTRACTED,
+        review_ready_notified_at=timezone.now(),
+    )
+    ClassExercise.objects.create(
+        session=other_session,
+        title='تمرین دیگری',
+        status=ClassExercise.Status.EXTRACTED,
+        review_ready_notified_at=timezone.now(),
+    )
+
+    client = APIClient()
+    client.force_authenticate(user=teacher)
+    res = client.get('/api/notifications/teacher/')
+    assert res.status_code == 200
+    ids = {item['id'] for item in res.data}
+    assert f'exercise-ready-{mine.id}' in ids
+    assert all('تمرین دیگری' not in item['title'] for item in res.data)
 
 
 # ---------------------------------------------------------------------------

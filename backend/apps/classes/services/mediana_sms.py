@@ -177,6 +177,43 @@ def send_teacher_message_sms(notification_id: int) -> None:
             logger.warning('Mediana teacher-message SMS errorMessage: %s', meta.get('errorMessage'))
 
 
+def send_exercise_review_ready_sms(exercise_id: int) -> None:
+    """Send the teacher a one-shot SMS when an exercise draft is ready to review."""
+    from apps.classes.models import ClassExercise
+
+    api_key = _get_env('MEDIANA_API_KEY')
+    if not api_key:
+        logger.info('MEDIANA_API_KEY not set; skipping exercise-ready SMS exercise=%s', exercise_id)
+        return
+
+    exercise = (
+        ClassExercise.objects.filter(id=exercise_id)
+        .select_related('session__teacher')
+        .first()
+    )
+    if exercise is None:
+        logger.info('Exercise-ready SMS skipped: exercise not found id=%s', exercise_id)
+        return
+
+    phone = (getattr(exercise.session.teacher, 'phone', None) or '').strip()
+    if not phone:
+        logger.info('Exercise-ready SMS skipped: teacher phone missing exercise=%s', exercise_id)
+        return
+
+    text = 'پیش‌نویس تمرین شما آماده است. برای بررسی و انتشار، وارد پنل معلم AI-Amooz شوید.'
+    result = send_peer_to_peer_sms(
+        api_key=api_key,
+        requests=[{
+            'RefId': f'exercise-ready-{exercise.id}',
+            'TextMessage': text,
+            'Recipients': [phone],
+        }],
+    )
+    meta = result.get('meta') if isinstance(result, dict) else None
+    if isinstance(meta, dict) and meta.get('errorMessage'):
+        logger.warning('Mediana exercise-ready SMS errorMessage: %s', meta.get('errorMessage'))
+
+
 def send_invite_sms_for_ids(session_id: int, invite_ids: list[int]) -> None:
     """Send SMS to specific invitations (e.g. newly added to a published session)."""
     from apps.classes.models import ClassInvitation

@@ -38,6 +38,11 @@ from .services.exercise_ingest import (
     ingest_reference_answers_markdown,
     ocr_uploaded_files_to_markdown,
 )
+from .services.exercise_workflow import (
+    build_workflow_state,
+    normalize_source_config,
+    update_workflow_state,
+)
 from .services.file_validation import is_probably_pdf, is_real_image, uploaded_content_type, uploaded_name
 from .serializers_exercises import (
     ExerciseCreateSerializer,
@@ -132,6 +137,17 @@ def _validate_exercise_source_file(uploaded, *, max_bytes: int):
     )
 
 
+def _uploaded_sources_by_key(request) -> dict[str, object]:
+    out: dict[str, object] = {}
+    for field_name, uploaded in request.FILES.items():
+        if not field_name.startswith('file_'):
+            continue
+        key = field_name.removeprefix('file_').strip()
+        if key:
+            out[key] = uploaded
+    return out
+
+
 def _reference_ocr_unit_count(uploaded, kind: str) -> int:
     if kind == ClassExerciseAsset.Kind.IMAGE:
         return 1
@@ -189,29 +205,68 @@ class ExerciseListCreateView(APIView):
 
         serializer = ExerciseCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        uploaded_files = request.FILES.getlist('files')
-        if len(uploaded_files) > _MAX_SOURCE_FILES:
+        source_configs = serializer.validated_data['sources']
+        uploaded_by_key = _uploaded_sources_by_key(request)
+        if len(source_configs) > _MAX_SOURCE_FILES:
             return Response(
                 {'detail': 'تعداد فایل‌های تمرین بیش از حد مجاز است.'},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+        if len(uploaded_by_key) != len(source_configs):
+            return Response(
+                {'detail': 'برای هر منبع باید فایل متناظر بارگذاری شود.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         validated_assets = []
-        for uploaded in uploaded_files:
+        for source in source_configs:
+            uploaded = uploaded_by_key.get(source['clientFileKey'])
+            if uploaded is None:
+                return Response(
+                    {'detail': f"فایل منبع «{source['clientFileKey']}» پیدا نشد."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
             kind, error = _validate_exercise_source_file(
                 uploaded, max_bytes=_MAX_SOURCE_FILE_BYTES,
             )
             if error is not None:
                 return error
-            validated_assets.append((kind, uploaded))
+            validated_assets.append((source, kind, uploaded))
+
+        intake_sources: list[dict] = []
         exercise = ClassExercise.objects.create(
             session=session,
             title=serializer.validated_data['title'],
-            description=serializer.validated_data.get('description', ''),
+            description=serializer.validated_data.get('teacher_note', ''),
+            deadline=serializer.validated_data['deadline'],
+            allow_late=serializer.validated_data.get('allow_late', False),
+            assistant_enabled=serializer.validated_data.get('assistant_enabled', True),
+            workflow_state=build_workflow_state('queued'),
         )
-        for idx, (kind, uploaded) in enumerate(validated_assets):
+        for idx, (source, kind, uploaded) in enumerate(validated_assets):
             ClassExerciseAsset.objects.create(
                 exercise=exercise, kind=kind, file=uploaded, order=idx,
             )
+            intake_sources.append(
+                normalize_source_config(
+                    source,
+                    asset_order=idx,
+                    asset_name=uploaded_name(uploaded),
+                    asset_kind=kind,
+                )
+            )
+        exercise.intake_config = {
+            'v': 1,
+            'mode': 'single_step',
+            'autoExtract': True,
+            'noDeadline': bool(serializer.validated_data['no_deadline']),
+            'deadline': exercise.deadline.isoformat() if exercise.deadline else None,
+            'allowLate': exercise.allow_late,
+            'assistantEnabled': exercise.assistant_enabled,
+            'teacherNote': exercise.description,
+            'sources': intake_sources,
+        }
+        exercise.save(update_fields=['intake_config', 'updated_at'])
+        transaction.on_commit(lambda: extract_exercise_content.delay(exercise.id))
         return Response(
             ExerciseDetailSerializer(exercise).data, status=status.HTTP_201_CREATED,
         )
@@ -272,9 +327,21 @@ class ExerciseExtractView(APIView):
                 {'detail': 'استخراج این تمرین در حال انجام است.'},
                 status=status.HTTP_409_CONFLICT,
             )
+        if exercise.status == ClassExercise.Status.PUBLISHED:
+            return Response(
+                {'detail': 'برای تمرین منتشرشده استخراج دوباره مجاز نیست.'},
+                status=status.HTTP_409_CONFLICT,
+            )
+        update_workflow_state(
+            exercise,
+            'queued',
+            message='استخراج دوبارهٔ تمرین در صف قرار گرفت.',
+            warnings=[],
+            ready_for_review=False,
+        )
         transaction.on_commit(lambda: extract_exercise_content.delay(exercise.id))
         return Response(
-            {'detail': 'استخراج تمرین آغاز شد.', 'status': ClassExercise.Status.EXTRACTING},
+            {'detail': 'استخراج دوبارهٔ تمرین آغاز شد.', 'status': ClassExercise.Status.EXTRACTING},
             status=status.HTTP_202_ACCEPTED,
         )
 

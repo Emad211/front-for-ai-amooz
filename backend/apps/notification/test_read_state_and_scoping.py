@@ -14,9 +14,11 @@ idempotency of the mark and deny-by-default on the endpoints.
 from __future__ import annotations
 
 import pytest
+from django.utils import timezone
 from model_bakery import baker
 from rest_framework.test import APIClient
 
+from apps.classes.models import ClassExercise
 from apps.notification.models import AdminNotification, NotificationReadReceipt
 
 pytestmark = [pytest.mark.django_db]
@@ -63,6 +65,20 @@ class TestMarkReadIdempotent:
             user=teacher_user, notification_id=nid,
         ).count() == 1
 
+    def test_exercise_ready_marking_twice_yields_one_receipt(self, teacher_client, teacher_user):
+        session = baker.make('classes.ClassCreationSession', teacher=teacher_user)
+        exercise = baker.make(
+            ClassExercise,
+            session=session,
+            review_ready_notified_at=timezone.now(),
+        )
+        nid = f'exercise-ready-{exercise.id}'
+        assert teacher_client.post(_read_url(nid)).status_code == 200
+        assert teacher_client.post(_read_url(nid)).status_code == 200
+        assert NotificationReadReceipt.objects.filter(
+            user=teacher_user, notification_id=nid,
+        ).count() == 1
+
 
 # ── Per-user read-state isolation (the security property) ────────────────────
 
@@ -97,9 +113,19 @@ class TestReadStateIsPerUser:
         """read-all marks the CALLER's visible notifications — never another user's."""
         baker.make(AdminNotification, audience=AdminNotification.Audience.ALL)
         baker.make(AdminNotification, audience=AdminNotification.Audience.TEACHERS)
+        session = baker.make('classes.ClassCreationSession', teacher=teacher_user)
+        exercise = baker.make(
+            ClassExercise,
+            session=session,
+            review_ready_notified_at=timezone.now(),
+        )
         other = baker.make('accounts.User', role='TEACHER')
 
         assert teacher_client.post(READ_ALL).status_code == 200
         assert NotificationReadReceipt.objects.filter(user=teacher_user).exists()
+        assert NotificationReadReceipt.objects.filter(
+            user=teacher_user,
+            notification_id=f'exercise-ready-{exercise.id}',
+        ).exists()
         # The other user got no receipts from A's read-all.
         assert not NotificationReadReceipt.objects.filter(user=other).exists()

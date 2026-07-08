@@ -134,24 +134,24 @@ export function ReferenceIngestPanel({
     <div className="rounded-md border border-border bg-background p-3">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="space-y-1">
-          <h3 className="text-sm font-semibold">ورود سؤال و پاسخ مرجع</h3>
+          <h3 className="text-sm font-semibold">اصلاح از روی منبع تکمیلی</h3>
           <p className="max-w-3xl text-xs leading-6 text-muted-foreground">
-            می‌توانید پاسخ‌نامهٔ جدا، عکس دست‌نویس، متن تایپ‌شده یا فایل شامل سؤال و پاسخ را بدهید.
-            قبل از ذخیره، هر مورد برای بازبینی شما نمایش داده می‌شود.
+            اگر پیش‌نویس آماده شد اما بخشی از پاسخ‌نامه یا بارم دقیق درنیامد، اینجا منبع تکمیلی می‌دهید
+            و قبل از اعمال، همه‌چیز را بازبینی می‌کنید.
           </p>
         </div>
         <Sheet open={open} onOpenChange={setOpen}>
           <SheetTrigger asChild>
             <Button variant="outline" size="sm">
               <Wand2 className="ms-2 h-4 w-4" />
-              استخراج سؤال‌ها و پاسخ‌های مرجع
+              افزودن منبع تکمیلی
             </Button>
           </SheetTrigger>
           <SheetContent side="left" dir="rtl" className="flex h-full w-full flex-col overflow-y-auto sm:max-w-2xl">
             <SheetHeader>
-              <SheetTitle>استخراج سؤال و پاسخ مرجع</SheetTitle>
+              <SheetTitle>اصلاح پاسخ‌های مرجع از روی منبع تکمیلی</SheetTitle>
               <SheetDescription>
-                منبع را وارد کنید؛ خروجی فقط پس از تایید شما روی سوال‌های تمرین اعمال می‌شود.
+                این مسیر تکمیلی است. منبع را وارد کنید؛ خروجی فقط پس از تایید شما روی سوال‌های تمرین اعمال می‌شود.
               </SheetDescription>
             </SheetHeader>
 
@@ -232,7 +232,7 @@ export function ReferenceIngestPanel({
 
               <Button onClick={runPreview} disabled={busy} variant="secondary">
                 {busy ? <Loader2 className="ms-2 h-4 w-4 animate-spin" /> : <Wand2 className="ms-2 h-4 w-4" />}
-                پیش‌نمایش استخراج
+                پیش‌نمایش اصلاح
               </Button>
 
               {preview && (

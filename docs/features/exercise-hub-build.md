@@ -184,6 +184,25 @@ Postgres/CI is migration-truth. LLM fully mocked (0 tokens).
   service, teacher API preview/apply/ownership/validation/caps, student image ownership/merge behavior,
   and grading defense-in-depth.
 
+- [x] **2026-07-08 — one-step teacher intake + durable extraction workflow:** teacher authoring was
+  redesigned from a split `create → extract → review-source` flow into a single intake card. Backend:
+  `ClassExercise` gained `intake_config`, `workflow_state`, `review_ready_notified_at` (`classes/0027`);
+  `POST creation-sessions/<sid>/exercises/` now accepts deadline/no-deadline, allow-late, assistant
+  default, teacher note, `sources[]` metadata keyed by `clientFileKey`, uploads, and auto-dispatches
+  `extract_exercise_content` on commit. The extraction task now persists stage-based progress
+  (`queued` → `reading_sources` → `ocr_and_transcription` → `extracting_questions` →
+  `matching_reference_answers` → `building_review_draft` → `ready_for_review`), uses per-file hints for
+  question-vs-answer sources, applies confident reference-answer matches automatically, degrades to
+  warnings instead of hard-failing when answer matching is weak, and sends the one-shot teacher SMS
+  `پیش‌نویس تمرین شما آماده است. برای بررسی و انتشار، وارد پنل معلم AI-Amooz شوید.` plus a virtual
+  teacher notification (`exercise-ready-<id>`). Frontend: `exercise-manager.tsx` now gathers all intake
+  data up front, uploads files under `file_<clientFileKey>`, shows durable progress/warnings on each
+  exercise card, reserves manual `/extract/` for rerun, and renames the old reference-ingest tool to
+  `افزودن منبع تکمیلی`. Verification:
+  `pytest backend/apps/classes/test_prompts_contract.py backend/apps/classes/test_exercise_teacher_api.py backend/apps/classes/test_exercise_extraction_task.py backend/apps/notification/test_teacher_messaging.py backend/apps/notification/test_read_state_and_scoping.py -q`
+  → **129 passed**; `frontend npm run typecheck` stays at the pre-existing **13-error baseline** (no new
+  exercise-intake errors introduced).
+
 ## V2 — class assignment + feedback workflow hardening
 
 E15+ follows a stricter loop per step: **generate → evaluate with the required team gate →

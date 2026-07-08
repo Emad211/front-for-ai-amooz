@@ -16,6 +16,14 @@ import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
+import { Progress } from '@/components/ui/progress';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import {
   Accordion,
   AccordionContent,
@@ -36,10 +44,14 @@ import {
 import { GradebookTable } from '@/components/teacher/exercises/gradebook-table';
 import { ReferenceIngestPanel } from '@/components/teacher/exercises/reference-ingest-panel';
 import { MathText } from '@/components/content/math-text';
+import { formatPersianDateTime } from '@/lib/date-utils';
 import {
+  type ExerciseAnswerLayout,
   type ExerciseDetail,
   type ExerciseListItem,
+  type ExerciseSourceRole,
   type ExerciseStatus,
+  type ExerciseWritingMode,
   listExercises,
   createExercise,
   getExercise,
@@ -69,12 +81,82 @@ const STATUS_VARIANT: Record<ExerciseStatus, 'default' | 'secondary' | 'destruct
   failed: 'destructive',
 };
 
+const ACTIVE_WORKFLOW_STAGES = new Set([
+  'queued',
+  'reading_sources',
+  'ocr_and_transcription',
+  'extracting_questions',
+  'matching_reference_answers',
+  'building_review_draft',
+]);
+
+const SOURCE_ROLE_OPTIONS: Array<{ value: ExerciseSourceRole; label: string }> = [
+  { value: 'auto', label: 'تشخیص خودکار' },
+  { value: 'question_only', label: 'فقط سوال' },
+  { value: 'question_and_answer', label: 'سوال و پاسخ با هم' },
+  { value: 'answer_only', label: 'فقط پاسخ‌نامه' },
+];
+
+const WRITING_MODE_OPTIONS: Array<{ value: ExerciseWritingMode; label: string }> = [
+  { value: 'auto', label: 'تشخیص خودکار' },
+  { value: 'typed', label: 'تایپی' },
+  { value: 'handwritten', label: 'دست‌نویس' },
+  { value: 'mixed', label: 'ترکیبی' },
+];
+
+const ANSWER_LAYOUT_OPTIONS: Array<{ value: ExerciseAnswerLayout; label: string }> = [
+  { value: 'auto', label: 'تشخیص خودکار' },
+  { value: 'inline', label: 'پاسخ زیر هر سوال' },
+  { value: 'end', label: 'پاسخ‌ها در انتهای فایل' },
+  { value: 'separate', label: 'پاسخ‌نامه جداگانه' },
+];
+
+type IntakeSourceDraft = {
+  clientFileKey: string;
+  file: File;
+  role: ExerciseSourceRole;
+  writingMode: ExerciseWritingMode;
+  answerLayout: ExerciseAnswerLayout;
+};
+
 export function ExerciseManager({ sessionId }: { sessionId: number }) {
   const [exercises, setExercises] = useState<ExerciseListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const [title, setTitle] = useState('');
-  const [files, setFiles] = useState<File[]>([]);
+  const [noDeadline, setNoDeadline] = useState(true);
+  const [deadline, setDeadline] = useState('');
+  const [allowLate, setAllowLate] = useState(false);
+  const [assistantEnabled, setAssistantEnabled] = useState(true);
+  const [teacherNote, setTeacherNote] = useState('');
+  const [sources, setSources] = useState<IntakeSourceDraft[]>([]);
+
+  const addFiles = (nextFiles: File[]) => {
+    setSources((prev) => [
+      ...prev,
+      ...nextFiles.map((file, index) => ({
+        clientFileKey: globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${index}-${Math.random()}`,
+        file,
+        role: 'auto' as ExerciseSourceRole,
+        writingMode: 'auto' as ExerciseWritingMode,
+        answerLayout: 'auto' as ExerciseAnswerLayout,
+      })),
+    ]);
+  };
+
+  const updateSource = <K extends keyof IntakeSourceDraft>(
+    clientFileKey: string,
+    field: K,
+    value: IntakeSourceDraft[K]
+  ) => {
+    setSources((prev) =>
+      prev.map((item) => (item.clientFileKey === clientFileKey ? { ...item, [field]: value } : item))
+    );
+  };
+
+  const removeSource = (clientFileKey: string) => {
+    setSources((prev) => prev.filter((item) => item.clientFileKey !== clientFileKey));
+  };
 
   const refresh = useCallback(async () => {
     try {
@@ -90,34 +172,60 @@ export function ExerciseManager({ sessionId }: { sessionId: number }) {
     void refresh();
   }, [refresh]);
 
-  const anyExtracting = useMemo(
-    () => exercises.some((e) => e.status === 'extracting'),
+  const anyProcessing = useMemo(
+    () => exercises.some((e) => ACTIVE_WORKFLOW_STAGES.has(e.workflowStage)),
     [exercises]
   );
 
-  // Poll while any exercise is extracting.
+  // Poll while any exercise is still moving through the async draft-building stages.
   useEffect(() => {
-    if (!anyExtracting) return;
+    if (!anyProcessing) return;
     const id = window.setInterval(() => void refresh(), 4000);
     return () => window.clearInterval(id);
-  }, [anyExtracting, refresh]);
+  }, [anyProcessing, refresh]);
 
   const handleCreate = async () => {
     if (!title.trim()) {
       toast.error('عنوان تمرین را وارد کنید.');
       return;
     }
+    if (sources.length === 0) {
+      toast.error('حداقل یک منبع برای ساخت تمرین لازم است.');
+      return;
+    }
+    if (!noDeadline && !deadline) {
+      toast.error('برای این تمرین باید مهلت ارسال را تعیین کنید.');
+      return;
+    }
     setCreating(true);
     try {
-      const created = await createExercise(sessionId, { title: title.trim(), files });
+      await createExercise(sessionId, {
+        title: title.trim(),
+        no_deadline: noDeadline,
+        deadline: noDeadline ? null : new Date(deadline).toISOString(),
+        allow_late: allowLate,
+        assistant_enabled: assistantEnabled,
+        teacher_note: teacherNote.trim(),
+        files: sources.map((item) => ({
+          clientFileKey: item.clientFileKey,
+          file: item.file,
+        })),
+        sources: sources.map((item) => ({
+          clientFileKey: item.clientFileKey,
+          role: item.role,
+          writingMode: item.writingMode,
+          answerLayout: item.answerLayout,
+        })),
+      });
       setTitle('');
-      setFiles([]);
-      toast.success('تمرین ساخته شد. برای استخراج سوال‌ها، «استخراج سوال‌ها» را بزنید.');
+      setNoDeadline(true);
+      setDeadline('');
+      setAllowLate(false);
+      setAssistantEnabled(true);
+      setTeacherNote('');
+      setSources([]);
+      toast.success('پیش‌نویس تمرین در صف ساخت قرار گرفت. پس از آماده‌شدن برای بازبینی به شما اطلاع می‌دهیم.');
       await refresh();
-      if (files.length > 0) {
-        await extractExercise(created.id);
-        await refresh();
-      }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'ساخت تمرین ناموفق بود.');
     } finally {
@@ -132,30 +240,197 @@ export function ExerciseManager({ sessionId }: { sessionId: number }) {
         <CardHeader>
           <CardTitle className="text-lg">ایجاد تمرین جدید</CardTitle>
         </CardHeader>
-        <CardContent className="space-y-3">
-          <Input
-            placeholder="عنوان تمرین"
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-          />
-          <div className="flex flex-wrap items-center gap-3">
-            <label className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-dashed border-border px-3 py-2 text-sm text-muted-foreground hover:bg-muted">
-              <Upload className="h-4 w-4" />
-              <span>بارگذاری فایل تمرین (PDF یا عکس)</span>
-              <input
-                type="file"
-                multiple
-                accept="application/pdf,image/*"
-                className="hidden"
-                onChange={(e) => setFiles(Array.from(e.target.files ?? []))}
+        <CardContent className="space-y-5">
+          <div className="grid gap-4 lg:grid-cols-2">
+            <div className="space-y-2">
+              <Label htmlFor="exercise-title">عنوان تمرین</Label>
+              <Input
+                id="exercise-title"
+                placeholder="مثلاً: تمرین فصل سوم"
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
               />
-            </label>
-            {files.length > 0 && (
-              <span className="text-sm text-muted-foreground">{files.length} فایل انتخاب شد</span>
+            </div>
+            <div className="space-y-2">
+              <div className="flex items-center justify-between rounded-md border border-border px-3 py-2">
+                <div>
+                  <p className="text-sm font-medium">بدون مهلت</p>
+                  <p className="text-xs text-muted-foreground">
+                    اگر خاموش باشد، تمرین با تاریخ و ساعت مشخص ساخته می‌شود.
+                  </p>
+                </div>
+                <Switch checked={noDeadline} onCheckedChange={setNoDeadline} />
+              </div>
+              {!noDeadline && (
+                <div className="space-y-2">
+                  <Label htmlFor="exercise-deadline">مهلت ارسال</Label>
+                  <Input
+                    id="exercise-deadline"
+                    type="datetime-local"
+                    value={deadline}
+                    onChange={(e) => setDeadline(e.target.value)}
+                  />
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="grid gap-4 lg:grid-cols-2">
+            <div className="flex items-center justify-between rounded-md border border-border px-3 py-2">
+              <div>
+                <p className="text-sm font-medium">اجازهٔ ارسال دیرهنگام</p>
+                <p className="text-xs text-muted-foreground">
+                  پاسخ‌های بعد از مهلت را نگه می‌داریم و با برچسب دیرهنگام مشخص می‌کنیم.
+                </p>
+              </div>
+              <Switch checked={allowLate} onCheckedChange={setAllowLate} />
+            </div>
+            <div className="flex items-center justify-between rounded-md border border-border px-3 py-2">
+              <div>
+                <p className="text-sm font-medium">دستیار هوشمند</p>
+                <p className="text-xs text-muted-foreground">
+                  معلم می‌تواند همین حالا وضعیت پیش‌فرض دستیار را برای کل تمرین تعیین کند.
+                </p>
+              </div>
+              <Switch checked={assistantEnabled} onCheckedChange={setAssistantEnabled} />
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="teacher-note">توضیح معلم</Label>
+            <Textarea
+              id="teacher-note"
+              rows={3}
+              placeholder="هر توضیحی که به تشخیص بهتر ساختار، پاسخ‌نامه یا بازبینی بعدی کمک می‌کند."
+              value={teacherNote}
+              onChange={(e) => setTeacherNote(e.target.value)}
+            />
+          </div>
+
+          <div className="space-y-3 rounded-md border border-dashed border-border p-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="space-y-1">
+                <p className="text-sm font-medium">منابع تمرین</p>
+                <p className="text-xs leading-6 text-muted-foreground">
+                  PDF یا عکس را یک‌جا بدهید. اگر لازم باشد، برای هر فایل فقط نقش و نوع آن را اصلاح می‌کنید.
+                </p>
+              </div>
+              <label className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-border px-3 py-2 text-sm hover:bg-muted">
+                <Upload className="h-4 w-4" />
+                <span>افزودن فایل</span>
+                <input
+                  type="file"
+                  multiple
+                  accept="application/pdf,image/*"
+                  className="hidden"
+                  onChange={(e) => {
+                    addFiles(Array.from(e.target.files ?? []));
+                    e.currentTarget.value = '';
+                  }}
+                />
+              </label>
+            </div>
+
+            {sources.length === 0 ? (
+              <p className="rounded-md bg-muted/40 px-3 py-4 text-sm text-muted-foreground">
+                هنوز فایلی انتخاب نشده است.
+              </p>
+            ) : (
+              <div className="space-y-3">
+                {sources.map((source, index) => (
+                  <div key={source.clientFileKey} className="space-y-3 rounded-md border border-border p-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-medium">{source.file.name}</p>
+                        <p className="text-xs text-muted-foreground">
+                          منبع {index + 1} • {Math.max(1, Math.round(source.file.size / 1024))} کیلوبایت
+                        </p>
+                      </div>
+                      <Button
+                        type="button"
+                        size="icon"
+                        variant="ghost"
+                        aria-label="حذف منبع"
+                        onClick={() => removeSource(source.clientFileKey)}
+                      >
+                        <Trash2 className="h-4 w-4 text-destructive" />
+                      </Button>
+                    </div>
+                    <div className="grid gap-3 lg:grid-cols-3">
+                      <div className="space-y-1">
+                        <Label>نقش منبع</Label>
+                        <Select
+                          value={source.role}
+                          onValueChange={(value) =>
+                            updateSource(source.clientFileKey, 'role', value as ExerciseSourceRole)
+                          }
+                        >
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {SOURCE_ROLE_OPTIONS.map((option) => (
+                              <SelectItem key={option.value} value={option.value}>
+                                {option.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-1">
+                        <Label>نوع نوشتار</Label>
+                        <Select
+                          value={source.writingMode}
+                          onValueChange={(value) =>
+                            updateSource(source.clientFileKey, 'writingMode', value as ExerciseWritingMode)
+                          }
+                        >
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {WRITING_MODE_OPTIONS.map((option) => (
+                              <SelectItem key={option.value} value={option.value}>
+                                {option.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-1">
+                        <Label>چیدمان پاسخ‌ها</Label>
+                        <Select
+                          value={source.answerLayout}
+                          onValueChange={(value) =>
+                            updateSource(source.clientFileKey, 'answerLayout', value as ExerciseAnswerLayout)
+                          }
+                        >
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {ANSWER_LAYOUT_OPTIONS.map((option) => (
+                              <SelectItem key={option.value} value={option.value}>
+                                {option.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
             )}
+          </div>
+
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-md bg-muted/30 px-4 py-3">
+            <p className="text-sm text-muted-foreground">
+              بعد از زدن این دکمه، ساخت پیش‌نویس و استخراج سوال‌ها در پس‌زمینه انجام می‌شود و برای بازبینی به شما اطلاع می‌دهیم.
+            </p>
             <Button onClick={handleCreate} disabled={creating}>
               {creating ? <Loader2 className="ms-2 h-4 w-4 animate-spin" /> : null}
-              ایجاد تمرین جدید
+              ساخت پیش‌نویس تمرین
             </Button>
           </div>
         </CardContent>
@@ -168,7 +443,7 @@ export function ExerciseManager({ sessionId }: { sessionId: number }) {
         </div>
       ) : exercises.length === 0 ? (
         <p className="rounded-md border border-dashed border-border py-10 text-center text-muted-foreground">
-          هنوز تمرینی برای این کلاس نساخته‌اید. اولین تمرین را با بارگذاری PDF یا عکس بسازید.
+          هنوز تمرینی برای این کلاس نساخته‌اید. فایل‌ها را یک‌بار بارگذاری کنید تا پیش‌نویس تمرین برای بازبینی آماده شود.
         </p>
       ) : (
         <div className="space-y-4">
@@ -213,7 +488,7 @@ function ExerciseCard({
     setBusy(true);
     try {
       await extractExercise(summary.id);
-      toast.info('در حال استخراج سوال‌ها از فایل شما… این کار ممکن است چند دقیقه طول بکشد.');
+      toast.info('استخراج دوباره در پس‌زمینه آغاز شد. بعد از آماده‌شدن می‌توانید بازبینی کنید.');
       await onChanged();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'استخراج ناموفق بود.');
@@ -256,14 +531,14 @@ function ExerciseCard({
           <Badge variant={STATUS_VARIANT[summary.status]}>{STATUS_LABEL[summary.status]}</Badge>
         </div>
         <div className="flex items-center gap-2">
-          {(summary.status === 'draft' || summary.status === 'failed') && (
+          {summary.status === 'failed' && (
             <Button size="sm" variant="secondary" onClick={doExtract} disabled={busy}>
-              استخراج سوال‌ها
+              استخراج دوباره
             </Button>
           )}
           {(summary.status === 'extracted' || summary.status === 'published') && (
             <Button size="sm" variant="outline" onClick={() => setOpen((v) => !v)}>
-              {open ? 'بستن' : 'ویرایش سوال‌ها'}
+              {open ? 'بستن' : summary.status === 'published' ? 'مشاهده و مدیریت' : 'بازبینی و انتشار'}
             </Button>
           )}
           {summary.status === 'published' && (
@@ -296,6 +571,25 @@ function ExerciseCard({
           </AlertDialog>
         </div>
       </CardHeader>
+
+      <CardContent className="space-y-3 pt-0">
+        <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+          <span>آخرین وضعیت: {summary.workflowMessage}</span>
+          {summary.deadline ? (
+            <Badge variant="outline">مهلت: {formatPersianDateTime(summary.deadline)}</Badge>
+          ) : (
+            <Badge variant="outline">بدون مهلت</Badge>
+          )}
+        </div>
+        <Progress value={summary.progressPercent} className="h-2" />
+        {summary.workflowWarnings.length > 0 && (
+          <div className="rounded-md border border-amber-300/40 bg-amber-500/5 p-3 text-xs leading-6 text-amber-800 dark:text-amber-200">
+            {summary.workflowWarnings.map((warning) => (
+              <p key={warning}>{warning}</p>
+            ))}
+          </div>
+        )}
+      </CardContent>
 
       {open && detail && (
         <CardContent className="space-y-4">

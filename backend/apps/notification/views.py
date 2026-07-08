@@ -85,27 +85,62 @@ class TeacherNotificationListView(APIView):
         responses={200: AdminNotificationSerializer(many=True)},
     )
     def get(self, request):
+        from apps.classes.models import ClassExercise
+
         user = request.user
-        qs = AdminNotification.objects.filter(
+        admin_qs = AdminNotification.objects.filter(
             audience__in=[AdminNotification.Audience.ALL, AdminNotification.Audience.TEACHERS],
         ).order_by('-created_at')
-
-        read_ids = set(
-            NotificationReadReceipt.objects.filter(user=user).values_list('notification_id', flat=True)
+        exercise_qs = (
+            ClassExercise.objects.filter(
+                session__teacher=user,
+                review_ready_notified_at__isnull=False,
+            )
+            .select_related('session')
+            .order_by('-review_ready_notified_at')
         )
 
-        out = [
-            {
+        items = [
+            (
+                item.created_at,
+                {
                 'id': f'admin-{item.id}',
                 'title': item.title,
                 'message': item.message,
                 'type': item.notification_type,
-                'isRead': f'admin-{item.id}' in read_ids,
                 'createdAt': item.created_at.isoformat(),
                 'link': '/teacher/notifications',
-            }
-            for item in qs
+                },
+            )
+            for item in admin_qs
         ]
+        items.extend(
+            (
+                item.review_ready_notified_at,
+                {
+                    'id': f'exercise-ready-{item.id}',
+                    'title': f'پیش‌نویس «{item.title}» آماده است',
+                    'message': 'پیش‌نویس تمرین شما آماده است. برای بررسی و انتشار، وارد پنل معلم AI-Amooz شوید.',
+                    'type': 'success',
+                    'createdAt': item.review_ready_notified_at.isoformat(),
+                    'link': f'/teacher/my-classes/{item.session_id}/exercises?exercise={item.id}',
+                },
+            )
+            for item in exercise_qs
+            if item.review_ready_notified_at is not None
+        )
+        candidate_ids = [payload['id'] for _dt, payload in items]
+        read_ids = set(
+            NotificationReadReceipt.objects.filter(
+                user=user,
+                notification_id__in=candidate_ids,
+            ).values_list('notification_id', flat=True)
+        )
+        out = []
+        for created_at, payload in sorted(items, key=lambda pair: pair[0], reverse=True):
+            row = dict(payload)
+            row['isRead'] = row['id'] in read_ids
+            out.append(row)
         return Response(out, status=status.HTTP_200_OK)
 
 
@@ -287,6 +322,17 @@ class MarkAllNotificationsReadView(APIView):
             admin_qs = admin_qs | AdminNotification.objects.filter(audience=AdminNotification.Audience.TEACHERS)
         
         ids_to_mark.extend([f'admin-{item.id}' for item in admin_qs])
+        if user.role == User.Role.TEACHER:
+            from apps.classes.models import ClassExercise
+
+            exercise_ids = (
+                ClassExercise.objects.filter(
+                    session__teacher=user,
+                    review_ready_notified_at__isnull=False,
+                )
+                .values_list('id', flat=True)
+            )
+            ids_to_mark.extend([f'exercise-ready-{eid}' for eid in exercise_ids])
 
         # If student, also handle ClassAnnouncements + teacher messages addressed to them.
         if user.role == User.Role.STUDENT:

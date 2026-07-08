@@ -70,8 +70,9 @@ here, deliberately.
 - **T4 toggle دستیار:** assistant off (exercise-level OR section-level) → student chat request gets
   **403 `assistant_disabled` server-side** (UI hiding alone is not enforcement).
 - **T5 کارنامه + override:** teacher can override any grade; override labeled «بازبینی‌شده توسط مدرس»;
-  the original LLM score is **kept (audit, teacher-only)**. Publish/graded/override notifications were
-  planned in V1 but are **not shipped yet**; E35 owns them.
+  the original LLM score is **kept (audit, teacher-only)**. Review-ready notifications for the teacher
+  authoring flow are now shipped (SMS + in-app teacher feed); publish/graded/override notifications are
+  still not shipped yet and remain under E35.
 - **S2 ارسال:** text and/or handwriting photos per question; unanswered questions → non-blocking
   Persian warning; submit after deadline → **409 server-side**; one final submission
   (unique(exercise, student)); resubmission only if the teacher explicitly allows (reset pattern).
@@ -190,7 +191,7 @@ here, deliberately.
 ## Data
 | Model | Key fields | Constraints |
 |---|---|---|
-| `ClassExercise` | session FK CASCADE · title · description · Status{DRAFT,EXTRACTING,EXTRACTED,PUBLISHED,FAILED} · `deadline` (DateTime, null — first real deadline field in the platform) · `allow_late` (bool, default False) · `assistant_enabled` (bool, default True) · `extract_task_id` | index (session, status) |
+| `ClassExercise` | session FK CASCADE · title · description · Status{DRAFT,EXTRACTING,EXTRACTED,PUBLISHED,FAILED} · `deadline` (DateTime, null — first real deadline field in the platform) · `allow_late` (bool, default False) · `assistant_enabled` (bool, default True) · `intake_config` JSON (one-step teacher intake snapshot incl. per-file role/writing/layout) · `workflow_state` JSON (`stage`, `progressPercent`, `message`, `warnings`, `readyForReview`) · `extract_task_id` · `review_ready_notified_at` | index (session, status) |
 | `ClassExerciseAsset` | exercise FK · kind{pdf,image} · file · order | — |
 | `ClassExerciseSection` | exercise FK · order · title · `assistant_enabled` (bool, default True) | uniq (exercise, order) |
 | `ClassExerciseQuestion` | section FK · order · `question_markdown` · `question_type{descriptive,multiple_choice,fill_blank}` · `options` JSON null · `reference_answer_markdown` · `max_points` Decimal · `grading_notes` | uniq (section, order) |
@@ -202,6 +203,8 @@ status — no-op AlterField), `classes/0026_session_scheduled_at` (adds nullable
 `ClassCreationSession` for timed exam-prep calendar events — **database-engineer approved**: metadata-only
 add on Postgres, no rewrite/long lock, no index needed since the calendar query is pre-filtered by
 `invites__phone` + indexed `pipeline_type`; rollback = `migrate classes 0025`). Feature-enum additions ride
+`classes/0027_classexercise_intake_config_and_more` (adds `intake_config`, `workflow_state`,
+`review_ready_notified_at` for the one-step async authoring flow) +
 `commons/0006` + `commons/0007_exercise_reference_ingest_feature` (no-op AlterField).
 `LLMUsageLog.Feature` choices additions generate a no-op AlterField migration (coordinate with
 database-engineer).
@@ -209,8 +212,14 @@ database-engineer).
 ## API (contract-first; teacher = `[IsAuthenticated, IsTeacherUser]` + `session__teacher=request.user` → non-owner **404**; student = `[IsAuthenticated, IsStudentUser]` + `session__is_published=True, session__invites__phone, exercise.status=PUBLISHED` → **404**, no-phone → **400**)
 
 **Teacher** (all under `/api/classes/…`, implemented in `views_exercises.py`):
-- `POST creation-sessions/<sid>/exercises/` (+ asset upload) · `GET exercises/` · `GET exercises/<eid>/`
-- `POST exercises/<eid>/extract/` (409 while EXTRACTING) · `POST exercises/<eid>/publish/` (400 if any
+- `POST creation-sessions/<sid>/exercises/` (+ full one-step intake: title, deadline/no-deadline,
+  allow-late, assistant toggle, teacher note, file metadata `sources[]`, uploaded files keyed by
+  `clientFileKey`) automatically creates the draft + assets AND enqueues extraction on commit. The
+  response already includes the durable workflow fields:
+  `{workflowStage, workflowMessage, progressPercent, workflowWarnings, readyForReview, reviewReadyNotifiedAt}`.
+  `GET exercises/` and `GET exercises/<eid>/` return the same workflow contract for polling/re-entry.
+- `POST exercises/<eid>/extract/` (manual retry/rerun only; 409 while EXTRACTING and for PUBLISHED) ·
+  `POST exercises/<eid>/publish/` (400 if any
   question lacks reference answer/points; 409 wrong status)
 - `POST exercises/<eid>/reference-ingest/preview/` (multipart: `source_text`, `files[]`, `mode_hint`,
   optional `target_question_id`) → review-only `{modeDetected, items, warnings, counts}`; owner-scoped,
@@ -338,11 +347,16 @@ stored `per_question` (zero tokens), **no pregeneration** (nothing to pre-build)
   `exercises/[exerciseId]`, `exercises/[exerciseId]/result` — URL-stable for calendar/home deep links;
   entry points: learn sidebar item, open-count badge on class cards, calendar/home.
 - **Teacher wizard (4 steps, server-side draft, resumable):** ① info+upload (multi-file drag&drop) →
-  ② extraction review (pipeline-tracker-style progress; accordion edit; merge/split/delete/add-manual;
-  extraction error → retry OR **manual question entry fallback**) → ③ reference answers + points (live
-  «جمع بارم» total) → ④ assistant toggles (whole + per-section switches; per-section disabled state when
-  whole is off) + Jalali deadline + publish. After publish: deadline/toggles freely editable; content
-  edits behind an AlertDialog re-grade warning.
+- **Teacher authoring (current shipped shape):** one-step intake card, not a multi-step wizard. The
+  teacher gives title + deadline mode + late policy + assistant default + teacher note + all source files
+  up front; each file has optional hints (`role`, `writingMode`, `answerLayout`) with `auto` defaults.
+  CTA = `ساخت پیش‌نویس تمرین`. Extraction, OCR, question build, and answer-sheet matching run async on
+  the backend; the teacher sees a **durable** stage/progress bar on the exercise card (`queued` →
+  `reading_sources` → `ocr_and_transcription` → `extracting_questions` → `matching_reference_answers` →
+  `building_review_draft` → `ready_for_review`) and can leave/re-enter safely. After review-ready, the
+  teacher receives one SMS + one in-app teacher notification and then opens the normal accordion editor
+  to review, patch references/points, add/delete manual questions, set per-section assistant toggles, and
+  publish. The old separate reference-ingest sheet remains only as a fallback correction tool (`افزودن منبع تکمیلی`).
 - **Student solver:** sticky header (title, deadline badge with <24h countdown, draft-saved indicator);
   mobile = horizontal section chips (fade edge on the LEFT for RTL), desktop = side section list;
   per-question text/photo tabs (camera `capture` on mobile, client-side compression); autosave; sticky
@@ -358,10 +372,10 @@ stored `per_question` (zero tokens), **no pregeneration** (nothing to pre-build)
   (`hsl(var(--destructive))`) — **verify `--chart-*` tokens exist in BOTH `:root` and `.dark` before
   build** (the `--primary-rgb` phantom-token lesson); status badges امروز/گذشته/آینده + «انجام نشد»;
   event modal CTA deep-links to the exercise/result.
-- **Microcopy table (key strings):** empty.teacher «هنوز تمرینی برای این کلاس نساخته‌اید. اولین تمرین را با
-  بارگذاری PDF یا عکس بسازید.» · empty.student «فعلاً تمرینی برای این کلاس ثبت نشده است.» ·
-  extract.processing «در حال استخراج سوال‌ها از فایل شما… این کار ممکن است چند دقیقه طول بکشد.» ·
-  extract.error «استخراج سوال‌ها ناتمام ماند. دوباره تلاش کنید یا سوال‌ها را دستی وارد کنید.» ·
+- **Microcopy table (key strings):** empty.teacher «هنوز تمرینی برای این کلاس نساخته‌اید. فایل‌ها را یک‌بار
+  بارگذاری کنید تا پیش‌نویس تمرین برای بازبینی آماده شود.» · empty.student «فعلاً تمرینی برای این کلاس ثبت نشده است.» ·
+  extract.processing «پیش‌نویس تمرین در صف ساخت قرار گرفت. پس از آماده‌شدن برای بازبینی به شما اطلاع می‌دهیم.» ·
+  extract.error «ساخت پیش‌نویس تمرین کامل نشد. دوباره تلاش کنید یا منبع تکمیلی بدهید.» ·
   assistant.off.section «دستیار برای این بخش غیرفعال است» · assistant.off.all «دستیار هوشمند برای این
   تمرین در دسترس نیست» · deadline.badge «مهلت ارسال: ۱۵ تیر، ساعت ۲۳:۵۹» · deadline.passed «مهلت ارسال
   این تمرین گذشته است» · submit.confirm.body «پس از ارسال، امکان ویرایش پاسخ‌ها را نخواهید داشت. مطمئن
@@ -385,13 +399,13 @@ stored `per_question` (zero tokens), **no pregeneration** (nothing to pre-build)
 | **E1** | backend (+database-engineer review) | 5 models + migration `0024` (pure DDL) + constraint/FK-behavior tests | migrations apply on fresh Postgres & sqlite; uniq/index/CASCADE tests green |
 | **E2** | ai-engineer | `services/exercise_ingest.py` + `PROMPTS["exercise_structure"]` + Pydantic schemas + contract-test update | ✅ DONE — `structure_exercise_markdown` + `exercise_structure` prompt + `ExerciseStructureOutput` + 5 Feature enums (`commons/0006`) + contract test; 13 ingest tests + 60 contract green |
 | **E3** | backend | `extract_exercise_content` task (pipeline queue) + state machine + `cache.add` idempotency | ✅ DONE — task + OCR (`ocr_assets_to_markdown`) + `persist_exercise_structure`; 7 eager tests (transitions/double-dispatch/FAILED/re-run/task-id) green |
-| **E4** | backend | teacher endpoints (CRUD/extract/publish/toggles) in `views_exercises.py` | ✅ DONE — `views_exercises.py` + `serializers_exercises.py` + routes; create/list/detail/patch/delete(+S3 GC)/extract/publish/section-toggle/question-CRUD; 17 api tests (owner-404 + role + publish-gate) green |
+| **E4** | backend | teacher endpoints (CRUD/extract/publish/toggles) in `views_exercises.py` | ✅ DONE — extended on 2026-07-08 to the one-step intake flow: create now captures deadline/settings + per-file metadata, stores `intake_config`, returns durable workflow fields, and auto-dispatches extraction on commit; manual `/extract/` remains retry/rerun-only. |
 | **E5** | backend (**security-auditor gate**) | student endpoints (list/detail/draft/submit/image) + deadline guard + no-leak serializers | ✅ DONE — 7 endpoints + `_reveal_open` + finished-answers browse + `DRAFT` status (mig 0025); 22 api tests; security gate PASSED (Low-1 fixed proactively, Low-2→E6) |
 | **E6** | ai-engineer + backend | grading service+task (`exercise_grading`, batch env, deterministic MCQ/fill-blank, retry idempotent, kill-switch) | ✅ DONE — `exercise_grading.py` + `grade_exercise_submission` task + dispatch wired; deterministic MCQ + LLM batch + sum + kill-switch; E5 Low-1/Low-2 closed; 13 tests + contract green |
-| **E7** | backend | result + report cards (per-exercise/per-course/overall) + teacher submissions list + override + allow-redo + in-app notifications (publish/graded) | ✅ DONE — gradebook (list/detail/override/allow-redo) + student course/overall report cards; override keeps `llm_score`, recomputes effective; 12 tests. **In-app notifications deferred to E7b** (recorded) |
+| **E7** | backend | result + report cards (per-exercise/per-course/overall) + teacher submissions list + override + allow-redo + in-app notifications (publish/graded) | ✅ DONE — gradebook (list/detail/override/allow-redo) + student course/overall report cards; override keeps `llm_score`, recomputes effective; 12 tests. **Teacher review-ready notifications are now shipped** (2026-07-08, SMS + virtual teacher feed); publish/graded notifications remain deferred to E7b. |
 | **E8** | ai-engineer (**security-auditor gate**) | assistant endpoint + two-level server guard + context builder (structural strip of reference answers) + `exercise_assistant_chat` | ✅ DONE — assistant chat + `build_question_context(reveal)` + two-level 403 toggle; security gate PASSED (Low-1 fixed); 15 tests + contract green |
 | **E9** | backend (+database-engineer) | migration `0026` (`scheduled_at`) + `GET student/calendar/` aggregate | ✅ DONE — nullable `scheduled_at` (db-eng approved) + calendar endpoint (both kinds, Tehran-tz, isCompleted, from/to); 9 tests green. **Backend complete.** |
-| **E10** | frontend-engineer | teacher UI: service + wizard + gradebook + override + toggles | ✅ DONE — exercises-service.ts + exercise-manager (create/extract-poll/edit/publish) + gradebook-table (override/allow-redo) + route page; tsc clean (baseline unchanged) |
+| **E10** | frontend-engineer | teacher UI: service + wizard + gradebook + override + toggles | ✅ DONE — evolved on 2026-07-08 from the earlier split flow into a single intake card: title + deadline/settings + teacher note + source files + per-file hints up front, then a single `ساخت پیش‌نویس تمرین` action and persistent workflow/progress cards until `بازبینی و انتشار`; the old reference-ingest panel remains as `افزودن منبع تکمیلی`. |
 | **E11** | frontend-engineer | student UI: exercises hub + solver (text/photo) + assistant widget + report cards | ✅ DONE — service (student endpoints) + hub/solver/result/answers pages + assistant/report-card; disabled-assistant chip; solver never fetches reference; tsc clean |
 | **E12** | frontend-engineer | calendar: remove mock, wire service + Jalali conversion + exam-prep events | ✅ DONE — `getCalendarEvents` → real `getStudentCalendar` (E9); `toCalendarEvent` maps Tehran-tz ISO → Jalali `YYYY-MM-DD`+`HH:MM` (`Intl` persian/Asia-Tehran/latn) + kind→type/priority + isCompleted; mock + fake delay deleted; tsc clean; conversion Node-verified. **E1–E12 foundation complete; V1 continued with E13/E14 hardening.** |
 | **E13** | ai-engineer | handwriting-photo grading slice (audit gap: `answers[qid].images` never reached the LLM — photo-only answers silently scored 0) | ✅ DONE — vision-extract step in `exercise_grading.py` (`exercise_handwriting_vision` prompt + `HandwritingTranscriptionOutput`; standard `image_url` shape; `is_real_image` sniff wired at grading **and** upload; `EXERCISE_MAX_IMAGES_PER_QUESTION=3`; fail-open per question; reference-answer leak guard test-locked); 6 new grading tests + 1 upload negative + contract — all green, 0 tokens |

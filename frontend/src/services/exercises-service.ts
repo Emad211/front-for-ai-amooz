@@ -10,6 +10,18 @@ const API_URL = RAW_API_URL.endsWith('/api') ? RAW_API_URL : `${RAW_API_URL}/api
 export type ExerciseStatus = 'draft' | 'extracting' | 'extracted' | 'published' | 'failed';
 export type SubmissionStatus = 'draft' | 'submitted' | 'grading' | 'graded' | 'grading_failed';
 export type QuestionType = 'descriptive' | 'multiple_choice' | 'fill_blank';
+export type ExerciseWorkflowStage =
+  | 'queued'
+  | 'reading_sources'
+  | 'ocr_and_transcription'
+  | 'extracting_questions'
+  | 'matching_reference_answers'
+  | 'building_review_draft'
+  | 'ready_for_review'
+  | 'failed';
+export type ExerciseSourceRole = 'auto' | 'question_only' | 'question_and_answer' | 'answer_only';
+export type ExerciseWritingMode = 'auto' | 'typed' | 'handwritten' | 'mixed';
+export type ExerciseAnswerLayout = 'auto' | 'inline' | 'end' | 'separate';
 
 export type ExerciseListItem = {
   id: number;
@@ -21,6 +33,12 @@ export type ExerciseListItem = {
   allowLate: boolean;
   createdAt: string;
   updatedAt: string;
+  workflowStage: ExerciseWorkflowStage;
+  workflowMessage: string;
+  progressPercent: number;
+  workflowWarnings: string[];
+  readyForReview: boolean;
+  reviewReadyNotifiedAt: string | null;
 };
 
 export type ExerciseQuestion = {
@@ -224,12 +242,33 @@ export async function listExercises(sessionId: number): Promise<ExerciseListItem
 
 export async function createExercise(
   sessionId: number,
-  data: { title: string; description?: string; files?: File[] }
+  data: {
+    title: string;
+    no_deadline: boolean;
+    deadline?: string | null;
+    allow_late: boolean;
+    assistant_enabled: boolean;
+    teacher_note?: string;
+    files: Array<{ clientFileKey: string; file: File }>;
+    sources: Array<{
+      clientFileKey: string;
+      role: ExerciseSourceRole;
+      writingMode: ExerciseWritingMode;
+      answerLayout: ExerciseAnswerLayout;
+    }>;
+  }
 ): Promise<ExerciseDetail> {
   const form = new FormData();
   form.append('title', data.title);
-  if (data.description) form.append('description', data.description);
-  (data.files ?? []).forEach((f) => form.append('files', f));
+  form.append('no_deadline', String(data.no_deadline));
+  form.append('allow_late', String(data.allow_late));
+  form.append('assistant_enabled', String(data.assistant_enabled));
+  if (data.deadline) form.append('deadline', data.deadline);
+  if (data.teacher_note) form.append('teacher_note', data.teacher_note);
+  form.append('sources', JSON.stringify(data.sources));
+  data.files.forEach(({ clientFileKey, file }) => {
+    form.append(`file_${clientFileKey}`, file);
+  });
   // Note: no Content-Type header — the browser sets the multipart boundary.
   return requestJson(`${API_URL}/classes/creation-sessions/${sessionId}/exercises/`, {
     method: 'POST',

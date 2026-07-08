@@ -5,10 +5,13 @@ Design + permission matrix: docs/features/exercise-hub.md.
 """
 from __future__ import annotations
 
+import json
+from io import BytesIO
 import pytest
 from decimal import Decimal
 from django.core.files.uploadedfile import SimpleUploadedFile
 from model_bakery import baker
+from PIL import Image
 from rest_framework.test import APIClient
 from rest_framework_simplejwt.tokens import RefreshToken
 
@@ -24,6 +27,12 @@ from apps.classes.models import (
 pytestmark = [pytest.mark.django_db, pytest.mark.api]
 
 Status = ClassExercise.Status
+
+
+def _png_1x1() -> bytes:
+    buf = BytesIO()
+    Image.new('RGB', (1, 1), color='white').save(buf, format='PNG')
+    return buf.getvalue()
 
 
 def _auth(user):
@@ -44,6 +53,40 @@ def _exercise(owner, **kw):
     return baker.make(ClassExercise, session=_session(owner), **kw)
 
 
+def _create_payload(
+    title='تمرین ۱',
+    *,
+    no_deadline=True,
+    teacher_note='',
+    files=None,
+):
+    uploads = files or [
+        ('src-1', SimpleUploadedFile('exercise.png', _png_1x1(), content_type='image/png')),
+    ]
+    sources = [
+        {
+            'clientFileKey': key,
+            'role': 'question_only',
+            'writingMode': 'typed',
+            'answerLayout': 'auto',
+        }
+        for key, _uploaded in uploads
+    ]
+    payload = {
+        'title': title,
+        'no_deadline': 'true' if no_deadline else 'false',
+        'allow_late': 'false',
+        'assistant_enabled': 'true',
+        'teacher_note': teacher_note,
+        'sources': json.dumps(sources, ensure_ascii=False),
+    }
+    if not no_deadline:
+        payload['deadline'] = '2026-07-31T09:30:00Z'
+    for key, uploaded in uploads:
+        payload[f'file_{key}'] = uploaded
+    return payload
+
+
 LIST = '/api/classes/creation-sessions/{}/exercises/'
 DETAIL = '/api/classes/exercises/{}/'
 EXTRACT = '/api/classes/exercises/{}/extract/'
@@ -53,20 +96,28 @@ REF_APPLY = '/api/classes/exercises/{}/reference-ingest/apply/'
 
 
 class TestCreateAndList:
-    def test_teacher_creates_and_lists_exercise(self):
+    def test_teacher_creates_and_lists_exercise_and_queues_extraction(self, monkeypatch):
+        from apps.classes import views_exercises as vx
+
+        called = {}
+        monkeypatch.setattr(vx.extract_exercise_content, 'delay', lambda eid: called.setdefault('id', eid))
+        monkeypatch.setattr(vx.transaction, 'on_commit', lambda fn: fn())
         owner = _teacher()
         session = _session(owner)
-        res = _auth(owner).post(LIST.format(session.id), {'title': 'تمرین ۱'}, format='multipart')
+        res = _auth(owner).post(LIST.format(session.id), _create_payload(), format='multipart')
         assert res.status_code == 201, res.content
         assert res.data['title'] == 'تمرین ۱'
         assert res.data['status'] == Status.DRAFT
+        assert res.data['workflowStage'] == 'queued'
+        assert res.data['readyForReview'] is False
+        assert called['id'] == res.data['id']
         lst = _auth(owner).get(LIST.format(session.id))
         assert lst.status_code == 200 and len(lst.data) == 1
 
     def test_create_on_other_teacher_session_is_404(self):
         owner, other = _teacher(), _teacher()
         session = _session(owner)
-        res = _auth(other).post(LIST.format(session.id), {'title': 'x'}, format='multipart')
+        res = _auth(other).post(LIST.format(session.id), _create_payload(title='x'), format='multipart')
         assert res.status_code == 404
 
     def test_anonymous_denied(self):
@@ -84,7 +135,7 @@ class TestCreateAndList:
         bad = SimpleUploadedFile('bad.png', b'not-an-image', content_type='image/png')
         res = _auth(owner).post(
             LIST.format(session.id),
-            {'title': 'تمرین خراب', 'files': [bad]},
+            _create_payload(title='تمرین خراب', files=[('src-bad', bad)]),
             format='multipart',
         )
         assert res.status_code == 400
@@ -96,7 +147,7 @@ class TestCreateAndList:
         bad = SimpleUploadedFile('bad.pdf', b'not-a-pdf', content_type='application/pdf')
         res = _auth(owner).post(
             LIST.format(session.id),
-            {'title': 'تمرین PDF خراب', 'files': [bad]},
+            _create_payload(title='تمرین PDF خراب', files=[('src-bad', bad)]),
             format='multipart',
         )
         assert res.status_code == 400
@@ -104,22 +155,28 @@ class TestCreateAndList:
         assert ClassExerciseAsset.objects.count() == 0
 
     def test_create_rejects_too_many_assets_before_creating_exercise(self, monkeypatch):
-        from apps.classes import views_exercises as vx
-
         owner = _teacher()
         session = _session(owner)
-        monkeypatch.setattr(vx, '_MAX_SOURCE_FILES', 1)
+        monkeypatch.setattr('apps.classes.views_exercises._MAX_SOURCE_FILES', 1)
         files = [
-            SimpleUploadedFile('a.pdf', b'not-even-validated', content_type='application/pdf'),
-            SimpleUploadedFile('b.pdf', b'not-even-validated', content_type='application/pdf'),
+            ('src-1', SimpleUploadedFile('a.png', _png_1x1(), content_type='image/png')),
+            ('src-2', SimpleUploadedFile('b.png', _png_1x1(), content_type='image/png')),
         ]
         res = _auth(owner).post(
             LIST.format(session.id),
-            {'title': 'تمرین فایل زیاد', 'files': files},
+            _create_payload(title='تمرین فایل زیاد', files=files),
             format='multipart',
         )
         assert res.status_code == 400
         assert not ClassExercise.objects.filter(title='تمرین فایل زیاد').exists()
+
+    def test_create_requires_valid_deadline_mode(self):
+        owner = _teacher()
+        session = _session(owner)
+        payload = _create_payload()
+        payload.pop('no_deadline')
+        res = _auth(owner).post(LIST.format(session.id), payload, format='multipart')
+        assert res.status_code == 400
 
 
 class TestDetailUpdateDelete:
