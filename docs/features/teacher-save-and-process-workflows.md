@@ -121,8 +121,12 @@ The shared Jalali picker now:
 
 ### CTA placement
 
-`ذخیره و پردازش` was moved below the optional embedded exercise block so the primary CTA appears
-after all blocking teacher inputs.
+`ذخیره و پردازش` is the single final action at the bottom of the whole authoring surface, after
+all blocking teacher inputs. The intermediate "ثبت نهایی" card is explanatory only and does not
+render its own submit button.
+
+When processing is active, the same bottom action slot becomes `لغو پردازش`; there is no separate
+bottom `انصراف` button competing with the final workflow action.
 
 `بازبینی و انتشار` is intentionally not rendered on the create-class/create-exam page. After
 processing, the teacher returns through the class or exam list and publishes from the draft detail

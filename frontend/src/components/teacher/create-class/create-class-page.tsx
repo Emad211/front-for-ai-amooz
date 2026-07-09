@@ -871,80 +871,8 @@ export function CreateClassPage() {
         <div className="space-y-1">
           <p className="text-sm font-semibold">ثبت نهایی و شروع پردازش</p>
           <p className="text-xs leading-6 text-muted-foreground">
-            بعد از زدن این دکمه، پردازش در پس‌زمینه انجام می‌شود. لازم نیست روی صفحه بمانید؛ بعد از آماده‌شدن، برای بازبینی به شما خبر می‌دهیم.
+            با دکمه نهایی پایین صفحه، پردازش در پس‌زمینه شروع می‌شود. لازم نیست روی صفحه بمانید؛ بعد از آماده‌شدن، برای بازبینی به شما خبر می‌دهیم.
           </p>
-        </div>
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-end">
-          {canCancelPipeline && (
-            <AlertDialog
-              open={cancelDialogOpen}
-              onOpenChange={(open) => {
-                if (!isCancelling) setCancelDialogOpen(open);
-              }}
-            >
-              <AlertDialogTrigger asChild>
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="rounded-xl h-10 px-4 border-destructive/40 text-destructive hover:bg-destructive/10 hover:text-destructive"
-                  title="لغو پردازش پایپ‌لاین"
-                >
-                  <Ban className="h-4 w-4" />
-                  <span className="ms-1.5">لغو پردازش</span>
-                </Button>
-              </AlertDialogTrigger>
-              <AlertDialogContent
-                dir="rtl"
-                onEscapeKeyDown={(e) => {
-                  if (isCancelling) e.preventDefault();
-                }}
-              >
-                <AlertDialogHeader>
-                  <AlertDialogTitle>لغو پردازش پایپ‌لاین؟</AlertDialogTitle>
-                  <AlertDialogDescription>
-                    با لغو، پردازش جاری بلافاصله متوقف می‌شود و این جلسه دیگر قابل ادامه نیست.
-                    برای تولید دوباره باید فایل را آپلود کرده و پردازش را از ابتدا شروع کنید.
-                    این عمل قابل بازگشت نیست.
-                  </AlertDialogDescription>
-                </AlertDialogHeader>
-                <AlertDialogFooter>
-                  <AlertDialogCancel disabled={isCancelling}>انصراف</AlertDialogCancel>
-                  <AlertDialogAction
-                    disabled={isCancelling}
-                    onClick={async (e) => {
-                      e.preventDefault();
-                      try {
-                        await cancelPipeline();
-                        setCancelDialogOpen(false);
-                      } catch {
-                        // toast already shown; keep the dialog open to retry.
-                      }
-                    }}
-                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                  >
-                    {isCancelling ? (
-                      <>
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                        <span className="ms-1.5">در حال لغو…</span>
-                      </>
-                    ) : (
-                      'بله، لغو کن'
-                    )}
-                  </AlertDialogAction>
-                </AlertDialogFooter>
-              </AlertDialogContent>
-            </AlertDialog>
-          )}
-          <Button
-            type="button"
-            className="rounded-xl h-10 px-5"
-            disabled={!currentCanStartPipeline}
-            onClick={startFullPipeline}
-          >
-            {currentIsPipelineStarting || currentIsPipelineRunning
-              ? 'در حال پردازش…'
-              : 'ذخیره و پردازش'}
-          </Button>
         </div>
       </Card>
 
@@ -1009,9 +937,77 @@ export function CreateClassPage() {
         <p className="text-xs leading-6 text-muted-foreground">
           انتشار از این صفحه انجام نمی‌شود؛ بعد از آماده‌شدن، از صفحه کلاس‌ها یا آمادگی آزمون وارد پیش‌نویس شوید و همان‌جا بازبینی و منتشر کنید.
         </p>
-        <Button variant="outline" className="w-full sm:w-auto rounded-xl h-11 px-6">
-          انصراف
-        </Button>
+        {canCancelPipeline ? (
+          <AlertDialog
+            open={cancelDialogOpen}
+            onOpenChange={(open) => {
+              if (!isCancelling) setCancelDialogOpen(open);
+            }}
+          >
+            <AlertDialogTrigger asChild>
+              <Button
+                type="button"
+                variant="outline"
+                className="h-11 w-full rounded-xl border-destructive/40 px-6 text-destructive hover:bg-destructive/10 hover:text-destructive sm:w-auto"
+                title="لغو پردازش پایپ‌لاین"
+              >
+                <Ban className="h-4 w-4" />
+                <span className="ms-1.5">لغو پردازش</span>
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent
+              dir="rtl"
+              onEscapeKeyDown={(e) => {
+                if (isCancelling) e.preventDefault();
+              }}
+            >
+              <AlertDialogHeader>
+                <AlertDialogTitle>لغو پردازش پایپ‌لاین؟</AlertDialogTitle>
+                <AlertDialogDescription>
+                  با لغو، پردازش جاری بلافاصله متوقف می‌شود و این جلسه دیگر قابل ادامه نیست.
+                  برای تولید دوباره باید فایل را آپلود کرده و پردازش را از ابتدا شروع کنید.
+                  این عمل قابل بازگشت نیست.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel disabled={isCancelling}>انصراف</AlertDialogCancel>
+                <AlertDialogAction
+                  disabled={isCancelling}
+                  onClick={async (e) => {
+                    e.preventDefault();
+                    try {
+                      await cancelPipeline();
+                      setCancelDialogOpen(false);
+                    } catch {
+                      // toast already shown; keep the dialog open to retry.
+                    }
+                  }}
+                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                >
+                  {isCancelling ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      <span className="ms-1.5">در حال لغو…</span>
+                    </>
+                  ) : (
+                    'بله، لغو کن'
+                  )}
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        ) : (
+          <Button
+            type="button"
+            className="h-11 w-full rounded-xl px-6 sm:w-auto"
+            disabled={!currentCanStartPipeline}
+            onClick={startFullPipeline}
+          >
+            {currentIsPipelineStarting || currentIsPipelineRunning
+              ? 'در حال پردازش…'
+              : 'ذخیره و پردازش'}
+          </Button>
+        )}
       </div>
     </div>
   );
