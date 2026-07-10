@@ -40,9 +40,10 @@ interface StudentInviteSectionProps {
   onToggle: () => void;
   sessionId: number | null;
   pipelineType?: PipelineType;
+  stepLabel?: string;
 }
 
-export function StudentInviteSection({ isExpanded, onToggle, sessionId, pipelineType = 'class' }: StudentInviteSectionProps) {
+export function StudentInviteSection({ isExpanded, onToggle, sessionId, pipelineType = 'class', stepLabel = '۳.' }: StudentInviteSectionProps) {
   const [invitedStudents, setInvitedStudents] = useState<Student[]>([]);
   const [teacherStudents, setTeacherStudents] = useState<TeacherStudent[]>([]);
   const [newPhone, setNewPhone] = useState('');
@@ -161,7 +162,7 @@ export function StudentInviteSection({ isExpanded, onToggle, sessionId, pipeline
               <Users className="h-5 w-5 text-primary" />
             </div>
             <div>
-              <CardTitle className="text-lg">۳. دعوت دانش‌آموزان</CardTitle>
+              <CardTitle className="text-lg">{stepLabel} دعوت دانش‌آموزان</CardTitle>
               <p className="text-xs text-muted-foreground mt-0.5">
                 {invitedStudents.length} نفر اضافه شده
               </p>

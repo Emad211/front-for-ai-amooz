@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { ClassInfoForm } from './class-info-form';
 import { FileUploadSection } from './file-upload-section';
 import { StudentInviteSection } from './student-invite-section';
-import { Card } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -40,7 +40,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
-import { Ban, Loader2 } from 'lucide-react';
+import { Ban, ChevronDown, Loader2, NotebookPen } from 'lucide-react';
 import { ExerciseIntakeForm, buildEmptyExerciseIntakeDraft, type ExerciseIntakeDraft } from '@/components/teacher/exercises/exercise-intake-form';
 import {
   ACTIVE_EXERCISE_WORKFLOW_STAGES,
@@ -438,6 +438,13 @@ export function CreateClassPage() {
     setExpandedSections((prev) =>
       prev.includes(section) ? prev.filter((s) => s !== section) : [...prev, section]
     );
+  };
+
+  const setEmbeddedExercisesEnabled = (checked: boolean) => {
+    setIncludeExercises(checked);
+    if (checked) {
+      setExpandedSections((prev) => (prev.includes('exercises') ? prev : [...prev, 'exercises']));
+    }
   };
 
   const updatePendingExercise = (clientExerciseKey: string, next: ExerciseIntakeDraft) => {
@@ -864,119 +871,150 @@ export function CreateClassPage() {
       </FileUploadSection>
 
       {pipelineType === 'class' ? (
-        <Card className="space-y-4 rounded-3xl border-border/40 p-4 sm:p-5" dir="rtl">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-            <div className="space-y-1.5">
-              <div className="flex items-center gap-2">
+        <Card className="overflow-hidden rounded-2xl border-border/40 bg-card/70 backdrop-blur" dir="rtl">
+          <CardHeader
+            className="cursor-pointer transition-colors hover:bg-primary/5"
+            onClick={() => toggleSection('exercises')}
+          >
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex min-w-0 items-center gap-3">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10">
+                  <NotebookPen className="h-5 w-5 text-primary" />
+                </div>
+                <div className="min-w-0 space-y-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <CardTitle className="text-lg">۳. تمرین‌های کلاس</CardTitle>
+                    <Badge variant={includeExercises ? 'default' : 'outline'} className="rounded-full px-2.5 py-0.5">
+                      {includeExercises ? `${pendingExercises.length} تمرین` : 'اختیاری'}
+                    </Badge>
+                  </div>
+                  <p className="text-xs leading-6 text-muted-foreground">
+                    {includeExercises
+                      ? 'پیش‌نویس تمرین‌ها بعد از آماده‌شدن کلاس ساخته و برای بازبینی آماده می‌شوند.'
+                      : 'در صورت نیاز، تمرین را همین‌جا همراه کلاس بسازید.'}
+                  </p>
+                </div>
+              </div>
+              <ChevronDown
+                className={cn(
+                  'h-5 w-5 shrink-0 text-muted-foreground transition-transform duration-200',
+                  expandedSections.includes('exercises') && 'rotate-180',
+                )}
+              />
+            </div>
+          </CardHeader>
+
+          {expandedSections.includes('exercises') ? (
+            <CardContent className="space-y-4 pt-0 text-start">
+              <div className="flex flex-col gap-3 rounded-2xl border border-border/60 bg-background/40 p-4 sm:flex-row sm:items-center sm:justify-between">
+                <div className="space-y-1">
+                  <Label htmlFor="include-embedded-exercises" className="text-sm font-semibold">
+                    برای این کلاس تمرین هم می‌سازم
+                  </Label>
+                  <p className="text-xs leading-6 text-muted-foreground">
+                    همه اطلاعات تمرین را یک‌بار می‌گیرید؛ بعد از آماده‌شدن کلاس، ساخت تمرین خودکار شروع می‌شود.
+                  </p>
+                </div>
                 <Checkbox
                   id="include-embedded-exercises"
                   checked={includeExercises}
-                  onCheckedChange={(checked) => setIncludeExercises(Boolean(checked))}
+                  onCheckedChange={(checked) => setEmbeddedExercisesEnabled(Boolean(checked))}
+                  className="h-5 w-5 shrink-0"
                 />
-                <Label htmlFor="include-embedded-exercises" className="text-sm font-semibold">
-                  برای این کلاس تمرین هم می‌سازم
-                </Label>
               </div>
-              <p className="text-xs leading-6 text-muted-foreground">
-                اگر این گزینه را روشن کنید، همین حالا همه اطلاعات تمرین را هم می‌گیرید. بعد از آماده‌شدن کلاس،
-                پیش‌نویس تمرین‌ها خودکار ساخته می‌شوند و برای بازبینی به شما خبر می‌دهیم.
-              </p>
-            </div>
-            <Badge variant={includeExercises ? 'default' : 'outline'} className="self-start rounded-full px-3 py-1">
-              {includeExercises ? `${pendingExercises.length} تمرین آماده ثبت` : 'اختیاری'}
-            </Badge>
-          </div>
 
-          {includeExercises ? (
-            <div className="space-y-4">
-              {(sessionDetail?.pendingExercises ?? []).length > 0 ? (
-                <div className="space-y-2 rounded-2xl border border-border/70 bg-muted/20 p-3">
-                  <p className="text-sm font-medium">وضعیت تمرین‌های ثبت‌شده برای این کلاس</p>
-                  <div className="space-y-3">
-                    {(sessionDetail?.pendingExercises ?? []).map((exercise) => (
-                      <div key={`${exercise.clientExerciseKey}-${exercise.exerciseId ?? 'pending'}`} className="space-y-3 rounded-xl border border-border/60 bg-background/70 px-3 py-3">
-                        <div className="flex items-center justify-between gap-3">
-                          <span className="text-sm font-medium">{exercise.title}</span>
-                          <Badge
-                            variant={
-                              exercise.status === 'failed' || exercise.exerciseStatus === 'failed'
-                                ? 'destructive'
-                                : exercise.readyForReview || exercise.workflowStage === 'ready_for_review'
-                                  ? 'default'
-                                  : exercise.exerciseId
-                                    ? 'secondary'
-                                    : 'outline'
-                            }
-                          >
-                            {exercise.status === 'failed' || exercise.exerciseStatus === 'failed'
-                              ? 'خطا در ساخت'
-                              : exercise.readyForReview || exercise.workflowStage === 'ready_for_review'
-                                ? 'آماده بازبینی'
-                                : exercise.workflowStage
-                                  ? 'در حال ساخت'
-                                  : exercise.exerciseId
-                                    ? 'در صف استخراج'
-                                : 'در انتظار آماده‌شدن کلاس'}
-                          </Badge>
+              {includeExercises ? (
+                <div className="space-y-4">
+                  {(sessionDetail?.pendingExercises ?? []).length > 0 ? (
+                    <div className="space-y-2 rounded-2xl border border-border/70 bg-muted/20 p-3">
+                      <p className="text-sm font-medium">وضعیت تمرین‌های ثبت‌شده برای این کلاس</p>
+                      <div className="space-y-3">
+                        {(sessionDetail?.pendingExercises ?? []).map((exercise) => (
+                          <div key={`${exercise.clientExerciseKey}-${exercise.exerciseId ?? 'pending'}`} className="space-y-3 rounded-xl border border-border/60 bg-background/70 px-3 py-3">
+                            <div className="flex items-center justify-between gap-3">
+                              <span className="text-sm font-medium">{exercise.title}</span>
+                              <Badge
+                                variant={
+                                  exercise.status === 'failed' || exercise.exerciseStatus === 'failed'
+                                    ? 'destructive'
+                                    : exercise.readyForReview || exercise.workflowStage === 'ready_for_review'
+                                      ? 'default'
+                                      : exercise.exerciseId
+                                        ? 'secondary'
+                                        : 'outline'
+                                }
+                              >
+                                {exercise.status === 'failed' || exercise.exerciseStatus === 'failed'
+                                  ? 'خطا در ساخت'
+                                  : exercise.readyForReview || exercise.workflowStage === 'ready_for_review'
+                                    ? 'آماده بازبینی'
+                                    : exercise.workflowStage
+                                      ? 'در حال ساخت'
+                                      : exercise.exerciseId
+                                        ? 'در صف استخراج'
+                                    : 'در انتظار آماده‌شدن کلاس'}
+                              </Badge>
+                            </div>
+                            {exercise.workflowStage ? (
+                              <ExerciseWorkflowTracker
+                                compact
+                                workflowStage={exercise.workflowStage}
+                                workflowMessage={exercise.workflowMessage ?? exercise.message}
+                                progressPercent={exercise.progressPercent}
+                                workflowWarnings={exercise.workflowWarnings ?? []}
+                                readyForReview={exercise.readyForReview}
+                                exerciseStatus={exercise.exerciseStatus}
+                              />
+                            ) : exercise.message ? (
+                              <p className="mt-1 text-xs text-muted-foreground">{exercise.message}</p>
+                            ) : null}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {pendingExercises.map((exercise, index) => (
+                    <div key={exercise.clientExerciseKey} className="rounded-2xl border border-border/60 bg-background/30 p-4">
+                      <div className="mb-4 flex items-center justify-between gap-3">
+                        <div className="space-y-1">
+                          <p className="text-sm font-semibold">تمرین {index + 1}</p>
+                          <p className="text-xs text-muted-foreground">
+                            این تمرین بعد از کامل‌شدن پردازش کلاس، خودکار ساخته و استخراج می‌شود.
+                          </p>
                         </div>
-                        {exercise.workflowStage ? (
-                          <ExerciseWorkflowTracker
-                            compact
-                            workflowStage={exercise.workflowStage}
-                            workflowMessage={exercise.workflowMessage ?? exercise.message}
-                            progressPercent={exercise.progressPercent}
-                            workflowWarnings={exercise.workflowWarnings ?? []}
-                            readyForReview={exercise.readyForReview}
-                            exerciseStatus={exercise.exerciseStatus}
-                          />
-                        ) : exercise.message ? (
-                          <p className="mt-1 text-xs text-muted-foreground">{exercise.message}</p>
+                        {pendingExercises.length > 1 ? (
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => removePendingExercise(exercise.clientExerciseKey)}
+                          >
+                            حذف
+                          </Button>
                         ) : null}
                       </div>
-                    ))}
+                      <ExerciseIntakeForm
+                        value={exercise}
+                        compact
+                        onChange={(next) => updatePendingExercise(exercise.clientExerciseKey, next)}
+                      />
+                    </div>
+                  ))}
+
+                  <div className="flex justify-end">
+                    <Button type="button" variant="outline" onClick={addPendingExercise}>
+                      افزودن تمرین دیگر
+                    </Button>
                   </div>
                 </div>
-              ) : null}
-
-              {pendingExercises.map((exercise, index) => (
-                <Card key={exercise.clientExerciseKey} className="rounded-2xl border-border/60 p-4">
-                  <div className="mb-4 flex items-center justify-between gap-3">
-                    <div className="space-y-1">
-                      <p className="text-sm font-semibold">تمرین {index + 1}</p>
-                      <p className="text-xs text-muted-foreground">
-                        این تمرین بعد از کامل‌شدن پردازش کلاس، خودکار ساخته و استخراج می‌شود.
-                      </p>
-                    </div>
-                    {pendingExercises.length > 1 ? (
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => removePendingExercise(exercise.clientExerciseKey)}
-                      >
-                        حذف
-                      </Button>
-                    ) : null}
-                  </div>
-                  <ExerciseIntakeForm
-                    value={exercise}
-                    compact
-                    onChange={(next) => updatePendingExercise(exercise.clientExerciseKey, next)}
-                  />
-                </Card>
-              ))}
-
-              <div className="flex justify-end">
-                <Button type="button" variant="outline" onClick={addPendingExercise}>
-                  افزودن تمرین دیگر
-                </Button>
-              </div>
-            </div>
-          ) : (
-            <div className="rounded-2xl border border-dashed border-border px-4 py-5 text-sm text-muted-foreground">
-              اگر تمرین را همین حالا ثبت نکنید، بعداً هم از صفحه تمرین‌های کلاس می‌توانید آن را اضافه کنید.
-            </div>
-          )}
+              ) : (
+                <div className="rounded-2xl border border-dashed border-border/70 bg-background/30 px-4 py-4 text-sm leading-7 text-muted-foreground">
+                  تمرین اختیاری است. اگر الان فعالش نکنید، بعداً از صفحه تمرین‌های همین کلاس می‌توانید تمرین اضافه کنید.
+                </div>
+              )}
+            </CardContent>
+          ) : null}
         </Card>
       ) : null}
 
@@ -1002,6 +1040,7 @@ export function CreateClassPage() {
           onToggle={() => toggleSection('students')}
           sessionId={currentSessionId}
           pipelineType={pipelineType}
+          stepLabel={pipelineType === 'class' ? '۴.' : '۳.'}
         />
       )}
 

@@ -272,6 +272,10 @@ exceptions, student receives safe feedback and later the answer key.
   `انتشار کلاس` action in the header. The button appears only for unpublished, fully recapped classes
   with structured content, opens a confirmation dialog, calls the existing publish endpoint, and syncs
   the page state after success. It is intentionally not duplicated in the workspace tabs or edit page.
+- [x] **2026-07-10 — embedded exercise intake as a class-creation step:** the optional exercise block on
+  the class-creation page now uses the same collapsible section pattern as the rest of the form, with a
+  stage icon, chevron, optional badge, compact enable control, and no wide empty standalone card. When
+  present in the class flow, student invites shift to step `۴.` so the form hierarchy remains coherent.
 
 **Definition of done (every step):** GREEN on the sqlite fast lane (Postgres = CI truth); new code documented
 in `exercise-hub.md` (docs law); auth/permission changes carry negative tests; commit `feat(exercise): E# …`
