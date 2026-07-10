@@ -112,7 +112,7 @@ export function JalaliDateTimePicker({
         align="end"
         sideOffset={10}
         collisionPadding={12}
-        className="w-[min(28rem,calc(100vw-1rem))] overflow-visible rounded-2xl border-border bg-card p-0 shadow-2xl"
+        className="w-[min(24rem,calc(100vw-1rem))] overflow-visible rounded-2xl border-border bg-card p-0 shadow-2xl"
         dir="rtl"
       >
         <div className="space-y-4 p-4">
@@ -134,6 +134,7 @@ export function JalaliDateTimePicker({
               fixedWeeks
               className="p-0"
               classNames={{
+                root: 'w-full',
                 months: 'flex w-full flex-col',
                 month: 'w-full space-y-3',
                 caption: 'relative flex min-h-10 items-center justify-center px-12 py-1',
@@ -144,17 +145,17 @@ export function JalaliDateTimePicker({
                 button_next:
                   'absolute left-1 top-1/2 inline-flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full border border-border bg-card text-muted-foreground transition hover:bg-muted hover:text-foreground',
                 month_caption: 'flex justify-center',
-                table: 'w-full border-collapse',
+                month_grid: 'w-full table-fixed border-separate border-spacing-1',
                 weekdays: 'grid w-full grid-cols-7 gap-1',
                 weekday:
-                  'flex h-9 items-center justify-center rounded-lg text-sm font-medium text-muted-foreground',
+                  'flex h-10 items-center justify-center rounded-lg text-base font-medium tabular-nums text-muted-foreground',
                 weeks: 'grid w-full gap-1',
                 week: 'grid w-full grid-cols-7 gap-1',
                 day: cn(
                   buttonVariants({ variant: 'ghost' }),
-                  'h-10 w-full min-w-0 rounded-xl p-0 text-sm font-medium text-foreground hover:bg-muted aria-selected:opacity-100',
+                  'h-11 w-full min-w-0 rounded-xl p-0 text-base font-semibold tabular-nums leading-none text-foreground hover:bg-muted aria-selected:opacity-100',
                 ),
-                day_button: 'h-10 w-full text-center',
+                day_button: 'h-11 w-full text-center tabular-nums',
                 selected:
                   'bg-primary text-primary-foreground hover:bg-primary hover:text-primary-foreground',
                 today: 'border border-primary/50 bg-primary/10 text-primary',

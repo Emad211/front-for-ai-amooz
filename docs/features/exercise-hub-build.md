@@ -288,6 +288,10 @@ exceptions, student receives safe feedback and later the answer key.
 - [x] **2026-07-10 — deadline switch polarity fix:** the exercise intake deadline toggle is now phrased as
   a positive `با مهلت` control, where enabled means the exercise has a deadline and disabled means
   `بدون مهلت`, without changing the underlying payload contract.
+- [x] **2026-07-10 — Jalali picker sizing fix:** the exercise deadline picker now styles the v9
+  `react-day-picker` month grid through `month_grid` instead of the older `table` hook, reduces the
+  oversized popover width, and enlarges weekday/day cells with `tabular-nums` so the calendar grid and
+  Persian digits scale coherently.
 
 **Definition of done (every step):** GREEN on the sqlite fast lane (Postgres = CI truth); new code documented
 in `exercise-hub.md` (docs law); auth/permission changes carry negative tests; commit `feat(exercise): E# …`
