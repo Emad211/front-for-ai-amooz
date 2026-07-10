@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import type { ReactNode } from 'react';
 import { ArrowRight, Users, Edit } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -13,6 +14,7 @@ interface ClassDetailHeaderProps {
   level?: string;
   category?: string;
   basePath?: string;
+  actions?: ReactNode;
 }
 
 const statusConfig: Record<string, { label: string; color: string }> = {
@@ -29,9 +31,26 @@ export function ClassDetailHeader({
   level, 
   category,
   basePath = '/admin',
+  actions,
 }: ClassDetailHeaderProps) {
   const router = useRouter();
   const showHeaderActions = basePath !== '/teacher';
+  const renderedActions = actions ?? (showHeaderActions ? (
+    <>
+      <Button variant="outline" size="sm" className="sm:size-default" asChild>
+        <Link href={`${basePath}/my-classes/${classId}/students`} aria-label="مدیریت دانش‌آموزان">
+          <Users className="h-4 w-4 sm:ml-2" />
+          <span className="hidden sm:inline">مدیریت دانش‌آموزان</span>
+        </Link>
+      </Button>
+      <Button size="sm" className="sm:size-default" asChild>
+        <Link href={`${basePath}/my-classes/${classId}/edit`} aria-label="ویرایش محتوا">
+          <Edit className="h-4 w-4 sm:ml-2" />
+          <span className="hidden sm:inline">ویرایش محتوا</span>
+        </Link>
+      </Button>
+    </>
+  ) : null);
   
   return (
     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 sm:gap-4">
@@ -50,20 +69,9 @@ export function ClassDetailHeader({
           <h1 className="text-xl sm:text-2xl font-bold truncate">{title}</h1>
         </div>
       </div>
-      {showHeaderActions && (
+      {renderedActions && (
         <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" className="sm:size-default" asChild>
-            <Link href={`${basePath}/my-classes/${classId}/students`} aria-label="مدیریت دانش‌آموزان">
-              <Users className="h-4 w-4 sm:ml-2" />
-              <span className="hidden sm:inline">مدیریت دانش‌آموزان</span>
-            </Link>
-          </Button>
-          <Button size="sm" className="sm:size-default" asChild>
-            <Link href={`${basePath}/my-classes/${classId}/edit`} aria-label="ویرایش محتوا">
-              <Edit className="h-4 w-4 sm:ml-2" />
-              <span className="hidden sm:inline">ویرایش محتوا</span>
-            </Link>
-          </Button>
+          {renderedActions}
         </div>
       )}
     </div>

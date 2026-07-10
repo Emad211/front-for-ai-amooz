@@ -364,6 +364,8 @@ export interface ClassDetail extends Course {
   transcriptMarkdown?: string;
   structureJson?: string;
   pipelineErrorDetail?: string;
+  isPublished?: boolean;
+  publishedAt?: string | null;
 }
 
 // ============================================================================

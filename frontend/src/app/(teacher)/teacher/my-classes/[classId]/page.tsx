@@ -1,7 +1,8 @@
 'use client';
 
 import { use, useEffect, useRef, useState } from 'react';
-import { Loader2 } from 'lucide-react';
+import { CheckCircle, Loader2 } from 'lucide-react';
+import { toast } from 'sonner';
 import { useTeacherClassDetail } from '@/hooks/use-teacher-class-detail';
 import {
   ClassDetailHeader,
@@ -19,10 +20,23 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/
 import {
   getClassCreationSessionDetail,
   listClassPrerequisites,
+  publishClassCreationSession,
   type ClassCreationSessionDetail,
   type ClassPrerequisite,
 } from '@/services/classes-service';
 import { StructuredContentView } from '@/components/teacher/class-detail/structured-content-view';
+import { Button } from '@/components/ui/button';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
 
 interface PageProps {
   params: Promise<{ classId: string }>;
@@ -30,12 +44,14 @@ interface PageProps {
 
 export default function TeacherClassDetailPage({ params }: PageProps) {
   const { classId } = use(params);
-  const { detail, students, isLoading, error } = useTeacherClassDetail(classId);
+  const { detail, students, isLoading, error, reload } = useTeacherClassDetail(classId);
 
   const [sessionDetail, setSessionDetail] = useState<ClassCreationSessionDetail | null>(null);
   const [prereqs, setPrereqs] = useState<ClassPrerequisite[] | null>(null);
   const pollTimer = useRef<number | null>(null);
   const [isInviteExpanded, setIsInviteExpanded] = useState(false);
+  const [publishDialogOpen, setPublishDialogOpen] = useState(false);
+  const [isPublishing, setIsPublishing] = useState(false);
 
   useEffect(() => {
     if (!detail) return;
@@ -137,6 +153,28 @@ export default function TeacherClassDetailPage({ params }: PageProps) {
       : sortedPrereqs.length
         ? sortedPrereqs.map((p) => `- ${p.order}. ${p.name}`).join('\n')
         : '—';
+  const sessionId = Number(classId);
+  const isPublished = Boolean(sessionDetail?.is_published ?? detail.isPublished);
+  const pipelineStatus = sessionDetail?.status || detail.pipelineStatus || '';
+  const hasStructure = Boolean((sessionDetail?.structure_json || detail.structureJson || '').trim());
+  const canPublishClass = Number.isFinite(sessionId) && !isPublished && pipelineStatus === 'recapped' && hasStructure;
+
+  const handlePublish = async () => {
+    if (!canPublishClass) return;
+
+    setIsPublishing(true);
+    try {
+      const updated = await publishClassCreationSession(sessionId);
+      setSessionDetail(updated);
+      setPublishDialogOpen(false);
+      toast.success('کلاس منتشر شد و برای دانش‌آموزان در دسترس قرار گرفت.');
+      await reload();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'خطا در انتشار کلاس');
+    } finally {
+      setIsPublishing(false);
+    }
+  };
 
   return (
     <div className="space-y-3 md:space-y-4 lg:space-y-6">
@@ -145,8 +183,52 @@ export default function TeacherClassDetailPage({ params }: PageProps) {
         title={detail.title}
         category={detail.category}
         level={detail.level}
-        status={detail.status}
+        status={isPublished ? 'active' : detail.status}
         basePath="/teacher"
+        actions={
+          canPublishClass ? (
+            <AlertDialog
+              open={publishDialogOpen}
+              onOpenChange={(open) => {
+                if (!isPublishing) setPublishDialogOpen(open);
+              }}
+            >
+              <AlertDialogTrigger asChild>
+                <Button size="sm" className="min-h-11 sm:size-default">
+                  <CheckCircle className="h-4 w-4 sm:ml-2" />
+                  <span>انتشار کلاس</span>
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent dir="rtl">
+                <AlertDialogHeader>
+                  <AlertDialogTitle>انتشار کلاس؟</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    بعد از انتشار، دانش‌آموزان این کلاس را می‌بینند و پیامک اطلاع‌رسانی ارسال می‌شود.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel disabled={isPublishing}>انصراف</AlertDialogCancel>
+                  <AlertDialogAction
+                    disabled={isPublishing}
+                    onClick={(event) => {
+                      event.preventDefault();
+                      void handlePublish();
+                    }}
+                  >
+                    {isPublishing ? (
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        <span className="ms-1.5">در حال انتشار…</span>
+                      </>
+                    ) : (
+                      'انتشار کلاس'
+                    )}
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          ) : null
+        }
       />
       <ClassWorkspaceNav classId={classId} basePath="/teacher" />
 

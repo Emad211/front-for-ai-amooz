@@ -268,6 +268,10 @@ exceptions, student receives safe feedback and later the answer key.
   `failed`, or `cancelled`), the footer CTA changes from `ذخیره و پردازش` to `ساخت کلاس جدید` /
   `ساخت آمادگی آزمون جدید` plus a link to the review list. The action clears only frontend form/session
   state and local resume keys; it does not delete or mutate the created backend draft.
+- [x] **2026-07-10 — class publish CTA in class overview:** teacher class overview now owns the class-level
+  `انتشار کلاس` action in the header. The button appears only for unpublished, fully recapped classes
+  with structured content, opens a confirmation dialog, calls the existing publish endpoint, and syncs
+  the page state after success. It is intentionally not duplicated in the workspace tabs or edit page.
 
 **Definition of done (every step):** GREEN on the sqlite fast lane (Postgres = CI truth); new code documented
 in `exercise-hub.md` (docs law); auth/permission changes carry negative tests; commit `feat(exercise): E# …`

@@ -357,6 +357,8 @@ export const TeacherService = {
       description: session.description,
       tags: [],
       status: isPublished ? 'active' : 'draft',
+      isPublished,
+      publishedAt: session.published_at ?? null,
       createdAt: session.created_at,
       lastActivity: session.updated_at,
       level: session.level || undefined,
