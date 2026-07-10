@@ -153,12 +153,16 @@ export function ExerciseIntakeForm({
         <div className="grid gap-4 lg:grid-cols-2">
           <div className="flex items-center justify-between rounded-xl border border-border bg-background/70 px-3 py-2.5">
             <div>
-              <p className="text-sm font-medium">بدون مهلت</p>
+              <p className="text-sm font-medium">با مهلت</p>
               <p className="text-xs text-muted-foreground">
-                اگر خاموش باشد، تمرین با تاریخ و ساعت مشخص ساخته می‌شود.
+                اگر روشن باشد، تمرین با تاریخ و ساعت مشخص ساخته می‌شود.
               </p>
             </div>
-            <Switch checked={value.noDeadline} disabled={disabled} onCheckedChange={(checked) => setField('noDeadline', checked)} />
+            <Switch
+              checked={!value.noDeadline}
+              disabled={disabled}
+              onCheckedChange={(checked) => setField('noDeadline', !checked)}
+            />
           </div>
           <div className="flex items-center justify-between rounded-xl border border-border bg-background/70 px-3 py-2.5">
             <div>

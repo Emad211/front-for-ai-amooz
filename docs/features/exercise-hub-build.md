@@ -285,6 +285,9 @@ exceptions, student receives safe feedback and later the answer key.
 - [x] **2026-07-10 — exercise source dropzone polish:** exercise intake source upload now uses a large
   dashed dropzone matching the lesson-file upload affordance, with click-to-select, drag/drop handling,
   central icon/copy, and the selected source list preserved below it.
+- [x] **2026-07-10 — deadline switch polarity fix:** the exercise intake deadline toggle is now phrased as
+  a positive `با مهلت` control, where enabled means the exercise has a deadline and disabled means
+  `بدون مهلت`, without changing the underlying payload contract.
 
 **Definition of done (every step):** GREEN on the sqlite fast lane (Postgres = CI truth); new code documented
 in `exercise-hub.md` (docs law); auth/permission changes carry negative tests; commit `feat(exercise): E# …`
