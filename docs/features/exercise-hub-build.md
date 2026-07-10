@@ -263,6 +263,11 @@ exceptions, student receives safe feedback and later the answer key.
   `ExerciseWorkflowTracker` used by both the standalone exercise manager and the class-creation embedded
   exercise section; class polling now continues after `recapped` while embedded exercises are still
   materializing/extracting and stops only when all embedded exercises are terminal.
+- [x] **2026-07-10 — new-draft CTA after class/exam processing:** when the create-class page reaches a
+  terminal class/exam-prep session (`recapped` with embedded exercises terminal, `exam_structured`,
+  `failed`, or `cancelled`), the footer CTA changes from `ذخیره و پردازش` to `ساخت کلاس جدید` /
+  `ساخت آمادگی آزمون جدید` plus a link to the review list. The action clears only frontend form/session
+  state and local resume keys; it does not delete or mutate the created backend draft.
 
 **Definition of done (every step):** GREEN on the sqlite fast lane (Postgres = CI truth); new code documented
 in `exercise-hub.md` (docs law); auth/permission changes carry negative tests; commit `feat(exercise): E# …`

@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import Link from 'next/link';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -456,6 +457,51 @@ export function CreateClassPage() {
     });
   };
 
+  const startNewDraft = () => {
+    stopPolling();
+    pollFailures.current = 0;
+
+    setExpandedSections(['info', 'files', 'students']);
+    setTitle('');
+    setDescription('');
+    setLevel('');
+    setDuration('');
+    setLessonFile(null);
+    setIncludeExercises(false);
+    setPendingExercises([buildEmptyExerciseIntakeDraft()]);
+    setStep1ClientRequestId(null);
+    setSelectedStudyGroupId('none');
+
+    setActiveSessionId(null);
+    setSessionDetail(null);
+    setOptimisticStatus(null);
+    setPipelineError(null);
+    setIsPipelineStarting(false);
+
+    setActiveExamPrepSessionId(null);
+    setExamPrepSessionDetail(null);
+    setExamPrepOptimisticStatus(null);
+    setExamPrepPipelineError(null);
+    setIsExamPrepPipelineStarting(false);
+
+    setIsCancelling(false);
+    setCancelDialogOpen(false);
+    setUploadProgress(null);
+
+    try {
+      window.localStorage.removeItem(ACTIVE_SESSION_STORAGE_KEY);
+      window.localStorage.removeItem(CREATE_CLASS_DRAFT_STORAGE_KEY);
+      window.localStorage.removeItem(CREATE_CLASS_LAST_STATUS_STORAGE_KEY);
+      window.localStorage.removeItem(ACTIVE_EXAM_PREP_SESSION_STORAGE_KEY);
+      window.localStorage.removeItem(CREATE_EXAM_PREP_DRAFT_STORAGE_KEY);
+      window.localStorage.removeItem(CREATE_EXAM_PREP_LAST_STATUS_STORAGE_KEY);
+    } catch {
+      // ignore
+    }
+
+    toast.success(pipelineType === 'class' ? 'فرم برای ساخت کلاس جدید آماده شد.' : 'فرم برای ساخت آمادگی آزمون جدید آماده شد.');
+  };
+
   // Class Pipeline computed values
   const sessionIdForActions = sessionDetail?.id ?? activeSessionId ?? null;
   const status = sessionDetail?.status ?? optimisticStatus ?? null;
@@ -484,6 +530,23 @@ export function CreateClassPage() {
   const currentReadyForReview = pipelineType === 'class' ? sessionDetail?.readyForReview ?? false : examPrepSessionDetail?.readyForReview ?? false;
   const currentStartedAt = pipelineType === 'class' ? sessionDetail?.created_at ?? null : examPrepSessionDetail?.created_at ?? null;
   const currentIsPipelineCancelled = currentStatus === 'cancelled';
+  const currentHasActiveEmbeddedExercises = pipelineType === 'class' && status === 'recapped' && hasActiveEmbeddedExercises(sessionDetail);
+  const currentIsTerminalSession = Boolean(currentSessionId) && (
+    pipelineType === 'class'
+      ? currentStatus === 'failed' || currentStatus === 'cancelled' || (currentStatus === 'recapped' && !currentHasActiveEmbeddedExercises)
+      : currentStatus === 'failed' || currentStatus === 'cancelled' || currentStatus === 'exam_structured'
+  );
+  const currentCanSubmitNewPipeline = currentCanStartPipeline && !currentSessionId;
+  const destinationHref = pipelineType === 'class' ? '/teacher/my-classes' : '/teacher/my-exams';
+  const newDraftLabel = pipelineType === 'class' ? 'ساخت کلاس جدید' : 'ساخت آمادگی آزمون جدید';
+  const destinationLabel = pipelineType === 'class' ? 'رفتن به کلاس‌ها' : 'رفتن به آمادگی آزمون‌ها';
+  const terminalActionCopy = currentStatus === 'failed'
+    ? 'پردازش این مورد با خطا متوقف شده است. می‌توانید فرم را برای ساخت مورد جدید خالی کنید.'
+    : currentStatus === 'cancelled'
+      ? 'پردازش این مورد لغو شده است. برای شروع دوباره، فرم را از نو بسازید.'
+      : pipelineType === 'class'
+        ? 'پیش‌نویس این کلاس آماده است و از صفحه کلاس‌ها قابل بازبینی و انتشار است.'
+        : 'پیش‌نویس آمادگی آزمون آماده است و از صفحه آمادگی آزمون‌ها قابل بازبینی و انتشار است.';
   // A running pipeline with a known session id is the only thing we can revoke.
   const canCancelPipeline = currentIsPipelineRunning && Boolean(currentSessionId);
 
@@ -976,7 +1039,9 @@ export function CreateClassPage() {
 
       <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-4">
         <p className="text-xs leading-6 text-muted-foreground">
-          انتشار از این صفحه انجام نمی‌شود؛ بعد از آماده‌شدن، از صفحه کلاس‌ها یا آمادگی آزمون وارد پیش‌نویس شوید و همان‌جا بازبینی و منتشر کنید.
+          {currentIsTerminalSession
+            ? terminalActionCopy
+            : 'انتشار از این صفحه انجام نمی‌شود؛ بعد از آماده‌شدن، از صفحه کلاس‌ها یا آمادگی آزمون وارد پیش‌نویس شوید و همان‌جا بازبینی و منتشر کنید.'}
         </p>
         {canCancelPipeline ? (
           <AlertDialog
@@ -1037,14 +1102,34 @@ export function CreateClassPage() {
               </AlertDialogFooter>
             </AlertDialogContent>
           </AlertDialog>
+        ) : currentIsTerminalSession ? (
+          <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
+            <Button
+              type="button"
+              className="h-11 w-full rounded-xl px-6 sm:w-auto"
+              onClick={startNewDraft}
+            >
+              {newDraftLabel}
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              className="h-11 w-full rounded-xl px-6 sm:w-auto"
+              asChild
+            >
+              <Link href={destinationHref}>{destinationLabel}</Link>
+            </Button>
+          </div>
         ) : (
           <Button
             type="button"
             className="h-11 w-full rounded-xl px-6 sm:w-auto"
-            disabled={!currentCanStartPipeline}
+            disabled={!currentCanSubmitNewPipeline}
             onClick={startFullPipeline}
           >
-            {currentIsPipelineStarting || currentIsPipelineRunning
+            {currentHasActiveEmbeddedExercises
+              ? 'در حال ساخت تمرین‌ها…'
+              : currentIsPipelineStarting || currentIsPipelineRunning
               ? 'در حال پردازش…'
               : 'ذخیره و پردازش'}
           </Button>
