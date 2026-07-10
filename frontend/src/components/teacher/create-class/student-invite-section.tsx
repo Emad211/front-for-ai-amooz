@@ -40,10 +40,9 @@ interface StudentInviteSectionProps {
   onToggle: () => void;
   sessionId: number | null;
   pipelineType?: PipelineType;
-  stepLabel?: string;
 }
 
-export function StudentInviteSection({ isExpanded, onToggle, sessionId, pipelineType = 'class', stepLabel = '۳.' }: StudentInviteSectionProps) {
+export function StudentInviteSection({ isExpanded, onToggle, sessionId, pipelineType = 'class' }: StudentInviteSectionProps) {
   const [invitedStudents, setInvitedStudents] = useState<Student[]>([]);
   const [teacherStudents, setTeacherStudents] = useState<TeacherStudent[]>([]);
   const [newPhone, setNewPhone] = useState('');
@@ -97,8 +96,8 @@ export function StudentInviteSection({ isExpanded, onToggle, sessionId, pipeline
   const handleAddStudent = async () => {
     if (!sessionId) {
       setErrorMessage(pipelineType === 'exam_prep' 
-        ? 'ابتدا مرحله ۱ را انجام دهید تا «جلسه آمادگی آزمون» ایجاد شود.'
-        : 'ابتدا مرحله ۱ را انجام دهید تا «جلسه ساخت کلاس» ایجاد شود.');
+        ? 'ابتدا آمادگی آزمون را ذخیره کنید تا بتوانید دانش‌آموز اضافه کنید.'
+        : 'ابتدا کلاس را ذخیره کنید تا بتوانید دانش‌آموز اضافه کنید.');
       return;
     }
 
@@ -162,7 +161,7 @@ export function StudentInviteSection({ isExpanded, onToggle, sessionId, pipeline
               <Users className="h-5 w-5 text-primary" />
             </div>
             <div>
-              <CardTitle className="text-lg">{stepLabel} دعوت دانش‌آموزان</CardTitle>
+              <CardTitle className="text-lg">دعوت دانش‌آموزان</CardTitle>
               <p className="text-xs text-muted-foreground mt-0.5">
                 {invitedStudents.length} نفر اضافه شده
               </p>

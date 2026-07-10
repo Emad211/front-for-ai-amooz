@@ -274,8 +274,10 @@ exceptions, student receives safe feedback and later the answer key.
   the page state after success. It is intentionally not duplicated in the workspace tabs or edit page.
 - [x] **2026-07-10 — embedded exercise intake as a class-creation step:** the optional exercise block on
   the class-creation page now uses the same collapsible section pattern as the rest of the form, with a
-  stage icon, chevron, optional badge, compact enable control, and no wide empty standalone card. When
-  present in the class flow, student invites shift to step `۴.` so the form hierarchy remains coherent.
+  stage icon, chevron, optional badge, compact enable control, and no wide empty standalone card.
+- [x] **2026-07-10 — create-class numbering cleanup:** visible class/exam creation section labels and
+  top status chips no longer use numeric prefixes; the embedded exercise enable checkbox now sits beside
+  its label on the RTL/right side so the teacher does not cross the full card just to enable it.
 
 **Definition of done (every step):** GREEN on the sqlite fast lane (Postgres = CI truth); new code documented
 in `exercise-hub.md` (docs law); auth/permission changes carry negative tests; commit `feat(exercise): E# …`

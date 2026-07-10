@@ -728,15 +728,15 @@ export function CreateClassPage() {
           </div>
           {pipelineType === 'class' ? (
             <div className="flex flex-wrap gap-2 text-xs md:text-sm text-muted-foreground">
-              <span className={cn("px-3 py-1 rounded-full", !status ? "bg-primary/10 text-primary" : "bg-muted")}>۱. ثبت اطلاعات</span>
-              <span className={cn("px-3 py-1 rounded-full", (status && status !== 'recapped') ? "bg-primary/10 text-primary" : "bg-muted")}>۲. پردازش خودکار</span>
-              <span className={cn("px-3 py-1 rounded-full", status === 'recapped' ? "bg-primary/10 text-primary" : "bg-muted")}>۳. بازبینی در کلاس‌ها</span>
+              <span className={cn("px-3 py-1 rounded-full", !status ? "bg-primary/10 text-primary" : "bg-muted")}>ثبت اطلاعات</span>
+              <span className={cn("px-3 py-1 rounded-full", (status && status !== 'recapped') ? "bg-primary/10 text-primary" : "bg-muted")}>پردازش خودکار</span>
+              <span className={cn("px-3 py-1 rounded-full", status === 'recapped' ? "bg-primary/10 text-primary" : "bg-muted")}>بازبینی در کلاس‌ها</span>
             </div>
           ) : (
             <div className="flex flex-wrap gap-2 text-xs md:text-sm text-muted-foreground">
-              <span className={cn("px-3 py-1 rounded-full", (!examPrepStatus || examPrepStatus.includes('trans')) ? "bg-primary/10 text-primary" : "bg-muted")}>۱. ثبت اطلاعات</span>
-              <span className={cn("px-3 py-1 rounded-full", examPrepStatus === 'exam_structuring' ? "bg-primary/10 text-primary" : "bg-muted")}>۲. پردازش خودکار</span>
-              <span className={cn("px-3 py-1 rounded-full", examPrepStatus === 'exam_structured' ? "bg-primary/10 text-primary" : "bg-muted")}>۳. بازبینی در آزمون‌ها</span>
+              <span className={cn("px-3 py-1 rounded-full", (!examPrepStatus || examPrepStatus.includes('trans')) ? "bg-primary/10 text-primary" : "bg-muted")}>ثبت اطلاعات</span>
+              <span className={cn("px-3 py-1 rounded-full", examPrepStatus === 'exam_structuring' ? "bg-primary/10 text-primary" : "bg-muted")}>پردازش خودکار</span>
+              <span className={cn("px-3 py-1 rounded-full", examPrepStatus === 'exam_structured' ? "bg-primary/10 text-primary" : "bg-muted")}>بازبینی در آزمون‌ها</span>
             </div>
           )}
         </div>
@@ -883,7 +883,7 @@ export function CreateClassPage() {
                 </div>
                 <div className="min-w-0 space-y-1">
                   <div className="flex flex-wrap items-center gap-2">
-                    <CardTitle className="text-lg">۳. تمرین‌های کلاس</CardTitle>
+                    <CardTitle className="text-lg">تمرین‌های کلاس</CardTitle>
                     <Badge variant={includeExercises ? 'default' : 'outline'} className="rounded-full px-2.5 py-0.5">
                       {includeExercises ? `${pendingExercises.length} تمرین` : 'اختیاری'}
                     </Badge>
@@ -906,21 +906,23 @@ export function CreateClassPage() {
 
           {expandedSections.includes('exercises') ? (
             <CardContent className="space-y-4 pt-0 text-start">
-              <div className="flex flex-col gap-3 rounded-2xl border border-border/60 bg-background/40 p-4 sm:flex-row sm:items-center sm:justify-between">
-                <div className="space-y-1">
-                  <Label htmlFor="include-embedded-exercises" className="text-sm font-semibold">
-                    برای این کلاس تمرین هم می‌سازم
-                  </Label>
-                  <p className="text-xs leading-6 text-muted-foreground">
-                    همه اطلاعات تمرین را یک‌بار می‌گیرید؛ بعد از آماده‌شدن کلاس، ساخت تمرین خودکار شروع می‌شود.
-                  </p>
+              <div className="rounded-2xl border border-border/60 bg-background/40 p-4">
+                <div className="flex items-start justify-start gap-3">
+                  <Checkbox
+                    id="include-embedded-exercises"
+                    checked={includeExercises}
+                    onCheckedChange={(checked) => setEmbeddedExercisesEnabled(Boolean(checked))}
+                    className="mt-1 h-5 w-5 shrink-0"
+                  />
+                  <div className="space-y-1">
+                    <Label htmlFor="include-embedded-exercises" className="cursor-pointer text-sm font-semibold">
+                      برای این کلاس تمرین هم می‌سازم
+                    </Label>
+                    <p className="text-xs leading-6 text-muted-foreground">
+                      همه اطلاعات تمرین را یک‌بار می‌گیرید؛ بعد از آماده‌شدن کلاس، ساخت تمرین خودکار شروع می‌شود.
+                    </p>
+                  </div>
                 </div>
-                <Checkbox
-                  id="include-embedded-exercises"
-                  checked={includeExercises}
-                  onCheckedChange={(checked) => setEmbeddedExercisesEnabled(Boolean(checked))}
-                  className="h-5 w-5 shrink-0"
-                />
               </div>
 
               {includeExercises ? (
@@ -1040,7 +1042,6 @@ export function CreateClassPage() {
           onToggle={() => toggleSection('students')}
           sessionId={currentSessionId}
           pipelineType={pipelineType}
-          stepLabel={pipelineType === 'class' ? '۴.' : '۳.'}
         />
       )}
 
