@@ -1,6 +1,7 @@
 'use client';
 
-import { Trash2, Upload } from 'lucide-react';
+import { useState } from 'react';
+import { FileText, Trash2 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -8,6 +9,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { JalaliDateTimePicker } from '@/components/ui/jalali-date-time-picker';
+import { cn } from '@/lib/utils';
 import {
   Select,
   SelectContent,
@@ -94,6 +96,8 @@ export function ExerciseIntakeForm({
   submitting = false,
   onSubmit,
 }: ExerciseIntakeFormProps) {
+  const [isDraggingFiles, setIsDraggingFiles] = useState(false);
+
   const setField = <K extends keyof ExerciseIntakeDraft>(field: K, fieldValue: ExerciseIntakeDraft[K]) => {
     onChange({ ...value, [field]: fieldValue });
   };
@@ -210,25 +214,60 @@ export function ExerciseIntakeForm({
               PDF یا عکس را یک‌جا بدهید. اگر لازم باشد، برای هر فایل فقط نقش و نوع آن را اصلاح می‌کنید.
             </p>
           </div>
-          <label className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-border px-3 py-2 text-sm hover:bg-muted">
-            <Upload className="h-4 w-4" />
-            <span>افزودن فایل</span>
-            <input
-              type="file"
-              multiple
-              accept="application/pdf,image/*"
-              className="hidden"
-              disabled={disabled}
-              onChange={(event) => {
-                addFiles(Array.from(event.target.files ?? []));
-                event.currentTarget.value = '';
-              }}
-            />
-          </label>
         </div>
 
+        <label
+          htmlFor={`exercise-sources-${value.clientExerciseKey}`}
+          className={cn(
+            'flex min-h-40 w-full cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed border-primary/30 bg-primary/5 px-4 py-8 text-center transition-colors hover:bg-primary/10',
+            isDraggingFiles && 'border-primary bg-primary/15',
+            disabled && 'cursor-not-allowed opacity-60 hover:bg-primary/5',
+          )}
+          onDragEnter={(event) => {
+            event.preventDefault();
+            if (!disabled) setIsDraggingFiles(true);
+          }}
+          onDragOver={(event) => {
+            event.preventDefault();
+          }}
+          onDragLeave={(event) => {
+            event.preventDefault();
+            setIsDraggingFiles(false);
+          }}
+          onDrop={(event) => {
+            event.preventDefault();
+            setIsDraggingFiles(false);
+            if (disabled) return;
+            addFiles(Array.from(event.dataTransfer.files ?? []));
+          }}
+        >
+          <div className="flex flex-col items-center gap-2">
+            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/10">
+              <FileText className="h-6 w-6 text-primary" />
+            </div>
+            <p className="text-xs text-muted-foreground sm:text-sm">
+              فایل‌ها را بکشید و رها کنید یا <span className="font-medium text-primary">کلیک کنید</span>
+            </p>
+            <p className="text-[10px] text-muted-foreground sm:text-xs">
+              PDF / عکس تمرین / پاسخ‌نامه
+            </p>
+          </div>
+          <input
+            id={`exercise-sources-${value.clientExerciseKey}`}
+            type="file"
+            multiple
+            accept="application/pdf,image/*"
+            className="hidden"
+            disabled={disabled}
+            onChange={(event) => {
+              addFiles(Array.from(event.target.files ?? []));
+              event.currentTarget.value = '';
+            }}
+          />
+        </label>
+
         {value.sources.length === 0 ? (
-          <p className="rounded-xl bg-muted/40 px-3 py-4 text-sm text-muted-foreground">
+          <p className="rounded-xl bg-muted/40 px-3 py-3 text-sm text-muted-foreground">
             هنوز فایلی انتخاب نشده است.
           </p>
         ) : (

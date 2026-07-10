@@ -282,6 +282,9 @@ exceptions, student receives safe feedback and later the answer key.
   student phone invites before the backend session exists. Draft invite phones stay in local component
   state, then sync to the existing invite endpoint immediately after `ذخیره و پردازش` creates the session;
   failed invite sync warns without breaking the class/exam processing job.
+- [x] **2026-07-10 — exercise source dropzone polish:** exercise intake source upload now uses a large
+  dashed dropzone matching the lesson-file upload affordance, with click-to-select, drag/drop handling,
+  central icon/copy, and the selected source list preserved below it.
 
 **Definition of done (every step):** GREEN on the sqlite fast lane (Postgres = CI truth); new code documented
 in `exercise-hub.md` (docs law); auth/permission changes carry negative tests; commit `feat(exercise): E# …`
