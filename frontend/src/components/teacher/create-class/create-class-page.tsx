@@ -867,15 +867,6 @@ export function CreateClassPage() {
         </Card>
       ) : null}
 
-      <Card className="space-y-3 rounded-3xl border-border/40 p-4 sm:p-5" dir="rtl">
-        <div className="space-y-1">
-          <p className="text-sm font-semibold">ثبت نهایی و شروع پردازش</p>
-          <p className="text-xs leading-6 text-muted-foreground">
-            با دکمه نهایی پایین صفحه، پردازش در پس‌زمینه شروع می‌شود. لازم نیست روی صفحه بمانید؛ بعد از آماده‌شدن، برای بازبینی به شما خبر می‌دهیم.
-          </p>
-        </div>
-      </Card>
-
       {/* Student roster:
           - org class → managed by the org via the study group (no manual invites)
           - personal class → the teacher invites students by phone */}
