@@ -40,9 +40,27 @@ interface StudentInviteSectionProps {
   onToggle: () => void;
   sessionId: number | null;
   pipelineType?: PipelineType;
+  draftPhones?: string[];
+  onDraftPhonesChange?: (phones: string[]) => void;
 }
 
-export function StudentInviteSection({ isExpanded, onToggle, sessionId, pipelineType = 'class' }: StudentInviteSectionProps) {
+function toDraftStudents(phones: string[]): Student[] {
+  return phones.map((phone, index) => ({
+    id: -(index + 1),
+    phone,
+    avatar: `https://picsum.photos/seed/${phone}/40/40`,
+    inviteCode: 'بعد از ذخیره ساخته می‌شود',
+  }));
+}
+
+export function StudentInviteSection({
+  isExpanded,
+  onToggle,
+  sessionId,
+  pipelineType = 'class',
+  draftPhones = [],
+  onDraftPhonesChange,
+}: StudentInviteSectionProps) {
   const [invitedStudents, setInvitedStudents] = useState<Student[]>([]);
   const [teacherStudents, setTeacherStudents] = useState<TeacherStudent[]>([]);
   const [newPhone, setNewPhone] = useState('');
@@ -77,12 +95,15 @@ export function StudentInviteSection({ isExpanded, onToggle, sessionId, pipeline
   };
 
   useEffect(() => {
-    if (!sessionId) return;
+    if (!sessionId) {
+      setInvitedStudents(toDraftStudents(draftPhones));
+      return;
+    }
     loadInvites(sessionId).catch(() => {
       // keep silent; UI can still work locally
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionId]);
+  }, [sessionId, draftPhones.join('|')]);
 
   useEffect(() => {
     // Best-effort: load teacher students so the teacher can pick quickly.
@@ -94,13 +115,6 @@ export function StudentInviteSection({ isExpanded, onToggle, sessionId, pipeline
   }, []);
 
   const handleAddStudent = async () => {
-    if (!sessionId) {
-      setErrorMessage(pipelineType === 'exam_prep' 
-        ? 'ابتدا آمادگی آزمون را ذخیره کنید تا بتوانید دانش‌آموز اضافه کنید.'
-        : 'ابتدا کلاس را ذخیره کنید تا بتوانید دانش‌آموز اضافه کنید.');
-      return;
-    }
-
     const normalized = normalizePhone(newPhone.trim());
 
     if (!isValidPhone(normalized)) {
@@ -110,6 +124,16 @@ export function StudentInviteSection({ isExpanded, onToggle, sessionId, pipeline
 
     if (invitedStudents.find(s => s.phone === normalized)) {
       setErrorMessage('برای این شماره قبلاً کد دعوت ثبت شده است.');
+      return;
+    }
+
+    if (!sessionId) {
+      const nextPhones = [...invitedStudents.map((student) => student.phone), normalized];
+      setInvitedStudents(toDraftStudents(nextPhones));
+      onDraftPhonesChange?.(nextPhones);
+      setNewPhone('');
+      setSelectedStudentPhone('');
+      setErrorMessage(null);
       return;
     }
 
@@ -132,7 +156,9 @@ export function StudentInviteSection({ isExpanded, onToggle, sessionId, pipeline
 
   const handleRemoveStudent = async (student: Student) => {
     if (!sessionId) {
-      setInvitedStudents(invitedStudents.filter(s => s.phone !== student.phone));
+      const nextPhones = invitedStudents.filter(s => s.phone !== student.phone).map((s) => s.phone);
+      setInvitedStudents(toDraftStudents(nextPhones));
+      onDraftPhonesChange?.(nextPhones);
       return;
     }
     try {
@@ -257,18 +283,20 @@ export function StudentInviteSection({ isExpanded, onToggle, sessionId, pipeline
                           <code className="px-2 py-1 rounded-md bg-background border border-border/50 font-mono tracking-tight break-all text-[10px] sm:text-xs">
                             {student.inviteCode}
                           </code>
-                          <Button 
-                            variant="ghost" 
-                            size="icon" 
-                            className="h-8 w-8 text-muted-foreground hover:text-foreground"
-                            onClick={() => handleCopyCode(student.inviteCode)}
-                          >
-                            {copiedCode === student.inviteCode ? (
-                              <Check className="h-4 w-4 text-green-500" />
-                            ) : (
-                              <Copy className="h-4 w-4" />
-                            )}
-                          </Button>
+                          {student.id > 0 ? (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                              onClick={() => handleCopyCode(student.inviteCode)}
+                            >
+                              {copiedCode === student.inviteCode ? (
+                                <Check className="h-4 w-4 text-green-500" />
+                              ) : (
+                                <Copy className="h-4 w-4" />
+                              )}
+                            </Button>
+                          ) : null}
                         </div>
                       </div>
                     </div>

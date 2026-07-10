@@ -278,6 +278,10 @@ exceptions, student receives safe feedback and later the answer key.
 - [x] **2026-07-10 — create-class numbering cleanup:** visible class/exam creation section labels and
   top status chips no longer use numeric prefixes; the embedded exercise enable checkbox now sits beside
   its label on the RTL/right side so the teacher does not cross the full card just to enable it.
+- [x] **2026-07-10 — draft invites before save/process:** the create-class/exam form now lets teachers add
+  student phone invites before the backend session exists. Draft invite phones stay in local component
+  state, then sync to the existing invite endpoint immediately after `ذخیره و پردازش` creates the session;
+  failed invite sync warns without breaking the class/exam processing job.
 
 **Definition of done (every step):** GREEN on the sqlite fast lane (Postgres = CI truth); new code documented
 in `exercise-hub.md` (docs law); auth/permission changes carry negative tests; commit `feat(exercise): E# …`

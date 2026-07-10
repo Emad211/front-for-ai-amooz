@@ -18,6 +18,8 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import {
   getClassCreationSessionDetail,
   type ClassCreationSessionDetail,
+  addClassInvites,
+  addExamPrepInvites,
   cancelClassCreationSession,
   transcribeClassCreationStep1,
   // Exam Prep imports
@@ -166,6 +168,7 @@ export function CreateClassPage() {
   const [lessonFile, setLessonFile] = useState<File | null>(null);
   const [includeExercises, setIncludeExercises] = useState(false);
   const [pendingExercises, setPendingExercises] = useState<ExerciseIntakeDraft[]>([buildEmptyExerciseIntakeDraft()]);
+  const [draftInvitePhones, setDraftInvitePhones] = useState<string[]>([]);
   const [step1ClientRequestId, setStep1ClientRequestId] = useState<string | null>(null);
   // Class pipeline state
   const [activeSessionId, setActiveSessionId] = useState<number | null>(null);
@@ -476,6 +479,7 @@ export function CreateClassPage() {
     setLessonFile(null);
     setIncludeExercises(false);
     setPendingExercises([buildEmptyExerciseIntakeDraft()]);
+    setDraftInvitePhones([]);
     setStep1ClientRequestId(null);
     setSelectedStudyGroupId('none');
 
@@ -617,6 +621,13 @@ export function CreateClassPage() {
         setActiveSessionId(result.id);
         window.localStorage.setItem(ACTIVE_SESSION_STORAGE_KEY, String(result.id));
         persistLastStatus({ sessionId: result.id, status: result.status });
+        if (draftInvitePhones.length > 0) {
+          addClassInvites(result.id, draftInvitePhones)
+            .then(() => setDraftInvitePhones([]))
+            .catch(() => {
+              toast.warning('کلاس ذخیره شد، اما دعوت دانش‌آموزان ثبت نشد. بعداً از همین بخش دوباره اضافه کنید.');
+            });
+        }
         startPolling(result.id);
       } catch (error) {
         const msg = error instanceof Error ? error.message : 'خطا در ارتباط با سرور';
@@ -653,6 +664,13 @@ export function CreateClassPage() {
         setExamPrepOptimisticStatus(result.status);
         setActiveExamPrepSessionId(result.id);
         window.localStorage.setItem(ACTIVE_EXAM_PREP_SESSION_STORAGE_KEY, String(result.id));
+        if (draftInvitePhones.length > 0) {
+          addExamPrepInvites(result.id, draftInvitePhones)
+            .then(() => setDraftInvitePhones([]))
+            .catch(() => {
+              toast.warning('آمادگی آزمون ذخیره شد، اما دعوت دانش‌آموزان ثبت نشد. بعداً از همین بخش دوباره اضافه کنید.');
+            });
+        }
         try {
           window.localStorage.setItem(CREATE_EXAM_PREP_LAST_STATUS_STORAGE_KEY, JSON.stringify({ sessionId: result.id, status: result.status }));
         } catch { /* ignore */ }
@@ -1042,6 +1060,8 @@ export function CreateClassPage() {
           onToggle={() => toggleSection('students')}
           sessionId={currentSessionId}
           pipelineType={pipelineType}
+          draftPhones={draftInvitePhones}
+          onDraftPhonesChange={setDraftInvitePhones}
         />
       )}
 
