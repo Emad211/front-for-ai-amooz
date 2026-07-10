@@ -16,7 +16,6 @@ import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
-import { Progress } from '@/components/ui/progress';
 import { JalaliDateTimePicker } from '@/components/ui/jalali-date-time-picker';
 import {
   Select,
@@ -49,6 +48,10 @@ import {
   type ExerciseIntakeDraft,
 } from '@/components/teacher/exercises/exercise-intake-form';
 import { ReferenceIngestPanel } from '@/components/teacher/exercises/reference-ingest-panel';
+import {
+  ACTIVE_EXERCISE_WORKFLOW_STAGES,
+  ExerciseWorkflowTracker,
+} from '@/components/teacher/exercises/exercise-workflow-tracker';
 import { MathText } from '@/components/content/math-text';
 import { formatPersianDateTime, toLocalDateTimeValue } from '@/lib/date-utils';
 import {
@@ -87,43 +90,6 @@ const STATUS_VARIANT: Record<ExerciseStatus, 'default' | 'secondary' | 'destruct
   failed: 'destructive',
 };
 
-const ACTIVE_WORKFLOW_STAGES = new Set([
-  'queued',
-  'reading_sources',
-  'ocr_and_transcription',
-  'extracting_questions',
-  'matching_reference_answers',
-  'building_review_draft',
-]);
-
-const RAW_WORKFLOW_WARNING_RE = /(answer for q|traceback|exception|runtimeerror|http\s*\d{3}|\\[a-z]+|\$[A-Za-z\\])/i;
-
-function sanitizeWorkflowWarningsForCard(warnings: string[]): string[] {
-  const out: string[] = [];
-  let genericNeeded = false;
-
-  for (const warning of warnings) {
-    const text = warning.replace(/\s+/g, ' ').trim();
-    if (!text) {
-      continue;
-    }
-    const asciiLetters = [...text].filter((ch) => /[A-Za-z]/.test(ch)).length;
-    if (text.length > 180 || asciiLetters >= 18 || RAW_WORKFLOW_WARNING_RE.test(text)) {
-      genericNeeded = true;
-      continue;
-    }
-    if (!out.includes(text)) {
-      out.push(text);
-    }
-  }
-
-  if (genericNeeded) {
-    out.unshift('برخی موارد این پیش‌نویس برای بازبینی دستی علامت‌گذاری شده‌اند.');
-  }
-
-  return out.slice(0, 3);
-}
-
 export function ExerciseManager({ sessionId }: { sessionId: number }) {
   const [exercises, setExercises] = useState<ExerciseListItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -145,7 +111,7 @@ export function ExerciseManager({ sessionId }: { sessionId: number }) {
   }, [refresh]);
 
   const anyProcessing = useMemo(
-    () => exercises.some((e) => ACTIVE_WORKFLOW_STAGES.has(e.workflowStage)),
+    () => exercises.some((e) => ACTIVE_EXERCISE_WORKFLOW_STAGES.has(e.workflowStage)),
     [exercises]
   );
 
@@ -250,11 +216,6 @@ function ExerciseCard({
   const [busy, setBusy] = useState(false);
   const [showGradebook, setShowGradebook] = useState(false);
   const loadedFor = useRef<ExerciseStatus | null>(null);
-  const cardWarnings = useMemo(
-    () => sanitizeWorkflowWarningsForCard(summary.workflowWarnings),
-    [summary.workflowWarnings]
-  );
-
   const loadDetail = useCallback(async () => {
     try {
       setDetail(await getExercise(summary.id));
@@ -331,7 +292,7 @@ function ExerciseCard({
           <Badge variant={STATUS_VARIANT[summary.status]}>{STATUS_LABEL[summary.status]}</Badge>
         </div>
         <div className="flex items-center gap-2">
-          {ACTIVE_WORKFLOW_STAGES.has(summary.workflowStage) && (
+          {ACTIVE_EXERCISE_WORKFLOW_STAGES.has(summary.workflowStage) && (
             <Button size="sm" variant="outline" onClick={doCancel} disabled={busy}>
               {busy ? <Loader2 className="ms-2 h-4 w-4 animate-spin" /> : <Ban className="ms-2 h-4 w-4" />}
               لغو استخراج
@@ -380,25 +341,20 @@ function ExerciseCard({
 
       <CardContent className="space-y-3 pt-0">
         <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-          <span>آخرین وضعیت: {summary.workflowMessage}</span>
           {summary.deadline ? (
             <Badge variant="outline">مهلت: {formatPersianDateTime(summary.deadline)}</Badge>
           ) : (
             <Badge variant="outline">بدون مهلت</Badge>
           )}
         </div>
-        <Progress value={summary.progressPercent} className="h-2" />
-        {cardWarnings.length > 0 && (
-          <div className="rounded-md border border-amber-300/40 bg-amber-500/5 p-3 text-xs leading-6 text-amber-800 dark:text-amber-200">
-            <ul className="space-y-1">
-              {cardWarnings.map((warning) => (
-                <li key={warning} className="list-inside list-disc">
-                  {warning}
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
+        <ExerciseWorkflowTracker
+          workflowStage={summary.workflowStage}
+          workflowMessage={summary.workflowMessage}
+          progressPercent={summary.progressPercent}
+          workflowWarnings={summary.workflowWarnings}
+          readyForReview={summary.readyForReview}
+          exerciseStatus={summary.status}
+        />
       </CardContent>
 
       {open && detail && (

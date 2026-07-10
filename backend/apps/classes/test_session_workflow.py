@@ -12,6 +12,8 @@ from model_bakery import baker
 from rest_framework.test import APIClient
 
 from apps.classes.models import ClassCreationSession, ClassExercise, ClassExerciseAsset
+from apps.classes.services.exercise_workflow import build_workflow_state
+from apps.classes.services.session_workflow import serialize_session_workflow_fields
 from apps.classes.tasks import _make_step1_heartbeat, _mark_session_ready_for_review
 
 
@@ -70,6 +72,10 @@ def test_mark_session_ready_for_review_materializes_pending_exercises_and_notifi
     extract_calls: list[int] = []
     sms_calls: list[int] = []
 
+    before = serialize_session_workflow_fields(session)
+    assert before['pendingExercises'][0]['status'] == 'pending'
+    assert 'workflowStage' not in before['pendingExercises'][0]
+
     monkeypatch.setattr(
         'apps.classes.tasks.extract_exercise_content.delay',
         lambda exercise_id: extract_calls.append(exercise_id),
@@ -96,6 +102,12 @@ def test_mark_session_ready_for_review_materializes_pending_exercises_and_notifi
     assert session.workflow_state['readyForReview'] is True
     assert session.pending_exercises[0]['exerciseId'] == exercise.id
     assert session.pending_exercises[0]['status'] == 'queued'
+    enriched = serialize_session_workflow_fields(session)['pendingExercises'][0]
+    assert enriched['exerciseId'] == exercise.id
+    assert enriched['exerciseStatus'] == ClassExercise.Status.DRAFT
+    assert enriched['workflowStage'] == 'queued'
+    assert enriched['progressPercent'] == 5
+    assert enriched['readyForReview'] is False
     assert extract_calls == [exercise.id]
     assert sms_calls == [session.id]
 
@@ -105,6 +117,52 @@ def test_mark_session_ready_for_review_materializes_pending_exercises_and_notifi
     assert ClassExercise.objects.filter(session=session).count() == 1
     assert extract_calls == [exercise.id]
     assert sms_calls == [session.id]
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    ('exercise_status', 'stage', 'ready'),
+    [
+        (ClassExercise.Status.EXTRACTED, 'ready_for_review', True),
+        (ClassExercise.Status.FAILED, 'failed', False),
+        (ClassExercise.Status.CANCELLED, 'cancelled', False),
+    ],
+)
+def test_pending_exercise_snapshot_uses_live_exercise_workflow_terminal_states(exercise_status, stage, ready):
+    teacher = baker.make(User, role=User.Role.TEACHER)
+    session = baker.make(
+        ClassCreationSession,
+        teacher=teacher,
+        pipeline_type=ClassCreationSession.PipelineType.CLASS,
+        status=ClassCreationSession.Status.RECAPPED,
+        workflow_state={},
+    )
+    exercise = baker.make(
+        ClassExercise,
+        session=session,
+        title='تمرین پیگیری',
+        status=exercise_status,
+        workflow_state=build_workflow_state(stage, ready_for_review=ready),
+    )
+    session.workflow_state = {
+        'stage': 'ready_for_review',
+        'pendingExercises': [
+            {
+                'clientExerciseKey': 'exercise-live',
+                'title': exercise.title,
+                'exerciseId': exercise.id,
+                'status': 'queued',
+                'sources': [],
+            }
+        ],
+    }
+    session.save(update_fields=['workflow_state', 'updated_at'])
+
+    item = serialize_session_workflow_fields(session)['pendingExercises'][0]
+
+    assert item['exerciseStatus'] == exercise_status
+    assert item['workflowStage'] == stage
+    assert item['readyForReview'] is ready
 
 
 @pytest.mark.django_db

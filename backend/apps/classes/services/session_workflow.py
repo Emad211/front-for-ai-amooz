@@ -116,6 +116,9 @@ def update_session_workflow_state(
 def serialize_session_workflow_fields(session) -> dict[str, Any]:
     state = normalize_session_workflow_state(getattr(session, 'workflow_state', None))
     notified_at = getattr(session, 'review_ready_notified_at', None)
+    pending_exercises = state['pendingExercises'] or _clean_pending_exercises(
+        getattr(session, 'pending_exercises', None)
+    )
     return {
         'workflowStage': state['stage'],
         'workflowMessage': state['message'],
@@ -123,5 +126,64 @@ def serialize_session_workflow_fields(session) -> dict[str, Any]:
         'workflowWarnings': state['warnings'],
         'readyForReview': state['readyForReview'],
         'reviewReadyNotifiedAt': notified_at.isoformat() if notified_at else None,
-        'pendingExercises': state['pendingExercises'],
+        'pendingExercises': _enrich_pending_exercises(session, pending_exercises),
     }
+
+
+def _enrich_pending_exercises(session, pending: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Attach live ``ClassExercise`` workflow fields to embedded exercise snapshots.
+
+    The session workflow stores only the original intake snapshot plus the created
+    ``exerciseId``. The actual progress source of truth lives on ``ClassExercise``.
+    Fetch all referenced exercises in one batch; never fail the class serializer
+    if an old snapshot points at a deleted exercise.
+    """
+    ids: list[int] = []
+    for item in pending:
+        try:
+            exercise_id = int(item.get('exerciseId'))
+        except (TypeError, ValueError):
+            continue
+        if exercise_id > 0 and exercise_id not in ids:
+            ids.append(exercise_id)
+
+    if not ids:
+        return pending
+
+    from .exercise_workflow import serialize_workflow_fields
+    from ..models import ClassExercise
+
+    exercises = {
+        ex.id: ex
+        for ex in ClassExercise.objects.filter(
+            id__in=ids,
+            session_id=getattr(session, 'id', None),
+        ).only('id', 'status', 'workflow_state', 'review_ready_notified_at')
+    }
+
+    out: list[dict[str, Any]] = []
+    for item in pending:
+        next_item = dict(item)
+        try:
+            exercise_id = int(next_item.get('exerciseId'))
+        except (TypeError, ValueError):
+            out.append(next_item)
+            continue
+
+        exercise = exercises.get(exercise_id)
+        if exercise is None:
+            out.append(next_item)
+            continue
+
+        workflow = serialize_workflow_fields(exercise)
+        next_item.update({
+            'exerciseStatus': exercise.status,
+            'workflowStage': workflow['workflowStage'],
+            'workflowMessage': workflow['workflowMessage'],
+            'progressPercent': workflow['progressPercent'],
+            'workflowWarnings': workflow['workflowWarnings'],
+            'readyForReview': workflow['readyForReview'],
+            'reviewReadyNotifiedAt': workflow['reviewReadyNotifiedAt'],
+        })
+        out.append(next_item)
+    return out

@@ -41,6 +41,10 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Ban, Loader2 } from 'lucide-react';
 import { ExerciseIntakeForm, buildEmptyExerciseIntakeDraft, type ExerciseIntakeDraft } from '@/components/teacher/exercises/exercise-intake-form';
+import {
+  ACTIVE_EXERCISE_WORKFLOW_STAGES,
+  ExerciseWorkflowTracker,
+} from '@/components/teacher/exercises/exercise-workflow-tracker';
 import { useWorkspace } from '@/hooks/use-workspace';
 import { OrganizationService } from '@/services/organization-service';
 import type { StudyGroup } from '@/types';
@@ -128,6 +132,24 @@ function getExamPrepPipelineMessage(status?: string | null) {
     default:
       return { message: 'در حال پردازش…', isDone: false, isFailed: false } as const;
   }
+}
+
+function hasActiveEmbeddedExercises(detail: ClassCreationSessionDetail | null): boolean {
+  const rows = detail?.pendingExercises ?? [];
+  if (rows.length === 0) return false;
+
+  return rows.some((exercise) => {
+    if (exercise.status === 'failed' || exercise.exerciseStatus === 'failed') return false;
+    if (exercise.exerciseStatus === 'cancelled' || exercise.workflowStage === 'cancelled') return false;
+    if (exercise.readyForReview || exercise.workflowStage === 'ready_for_review') return false;
+
+    // After the class is ready, the exercise may still be materializing into a
+    // real ClassExercise row. Keep polling until the exerciseId/workflow arrives.
+    if (!exercise.exerciseId) return true;
+    if (!exercise.workflowStage) return true;
+
+    return ACTIVE_EXERCISE_WORKFLOW_STAGES.has(exercise.workflowStage);
+  });
 }
 
 export function CreateClassPage() {
@@ -232,7 +254,7 @@ export function CreateClassPage() {
           return;
         }
 
-        if (detail.status === 'recapped') {
+        if (detail.status === 'recapped' && !hasActiveEmbeddedExercises(detail)) {
           stopPolling();
           return;
         }
@@ -265,7 +287,11 @@ export function CreateClassPage() {
       setLevel(String((detail as any).level || '').trim());
       setDuration(String((detail as any).duration || '').trim());
 
-      if (detail.status !== 'failed' && detail.status !== 'cancelled' && detail.status !== 'recapped') {
+      if (
+        detail.status !== 'failed' &&
+        detail.status !== 'cancelled' &&
+        (detail.status !== 'recapped' || hasActiveEmbeddedExercises(detail))
+      ) {
         startPolling(sessionId);
       }
     } catch {
@@ -803,20 +829,44 @@ export function CreateClassPage() {
               {(sessionDetail?.pendingExercises ?? []).length > 0 ? (
                 <div className="space-y-2 rounded-2xl border border-border/70 bg-muted/20 p-3">
                   <p className="text-sm font-medium">وضعیت تمرین‌های ثبت‌شده برای این کلاس</p>
-                  <div className="space-y-2">
+                  <div className="space-y-3">
                     {(sessionDetail?.pendingExercises ?? []).map((exercise) => (
-                      <div key={`${exercise.clientExerciseKey}-${exercise.exerciseId ?? 'pending'}`} className="rounded-xl border border-border/60 bg-background/70 px-3 py-2">
+                      <div key={`${exercise.clientExerciseKey}-${exercise.exerciseId ?? 'pending'}`} className="space-y-3 rounded-xl border border-border/60 bg-background/70 px-3 py-3">
                         <div className="flex items-center justify-between gap-3">
                           <span className="text-sm font-medium">{exercise.title}</span>
-                          <Badge variant={exercise.status === 'failed' ? 'destructive' : exercise.exerciseId ? 'secondary' : 'outline'}>
-                            {exercise.status === 'failed'
+                          <Badge
+                            variant={
+                              exercise.status === 'failed' || exercise.exerciseStatus === 'failed'
+                                ? 'destructive'
+                                : exercise.readyForReview || exercise.workflowStage === 'ready_for_review'
+                                  ? 'default'
+                                  : exercise.exerciseId
+                                    ? 'secondary'
+                                    : 'outline'
+                            }
+                          >
+                            {exercise.status === 'failed' || exercise.exerciseStatus === 'failed'
                               ? 'خطا در ساخت'
-                              : exercise.exerciseId
-                                ? 'در صف استخراج'
+                              : exercise.readyForReview || exercise.workflowStage === 'ready_for_review'
+                                ? 'آماده بازبینی'
+                                : exercise.workflowStage
+                                  ? 'در حال ساخت'
+                                  : exercise.exerciseId
+                                    ? 'در صف استخراج'
                                 : 'در انتظار آماده‌شدن کلاس'}
                           </Badge>
                         </div>
-                        {exercise.message ? (
+                        {exercise.workflowStage ? (
+                          <ExerciseWorkflowTracker
+                            compact
+                            workflowStage={exercise.workflowStage}
+                            workflowMessage={exercise.workflowMessage ?? exercise.message}
+                            progressPercent={exercise.progressPercent}
+                            workflowWarnings={exercise.workflowWarnings ?? []}
+                            readyForReview={exercise.readyForReview}
+                            exerciseStatus={exercise.exerciseStatus}
+                          />
+                        ) : exercise.message ? (
                           <p className="mt-1 text-xs text-muted-foreground">{exercise.message}</p>
                         ) : null}
                       </div>

@@ -84,6 +84,22 @@ export type PendingExerciseSnapshot = {
   status?: 'pending' | 'queued' | 'failed';
   message?: string;
   exerciseId?: number;
+  exerciseStatus?: 'draft' | 'extracting' | 'extracted' | 'published' | 'cancelled' | 'failed';
+  workflowStage?:
+    | 'queued'
+    | 'reading_sources'
+    | 'ocr_and_transcription'
+    | 'extracting_questions'
+    | 'matching_reference_answers'
+    | 'building_review_draft'
+    | 'ready_for_review'
+    | 'cancelled'
+    | 'failed';
+  workflowMessage?: string;
+  progressPercent?: number;
+  workflowWarnings?: string[];
+  readyForReview?: boolean;
+  reviewReadyNotifiedAt?: string | null;
   sources: PendingExerciseSourceSnapshot[];
 };
 

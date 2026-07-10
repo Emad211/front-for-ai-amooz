@@ -256,6 +256,13 @@ exceptions, student receives safe feedback and later the answer key.
   Celery beat process, and prod compose Redis uses `noeviction` rather than broker-key LRU eviction.
   Tests: 63 targeted sqlite-fast-lane tests passed across LLM classifier, extraction task, grading task,
   and Celery/deploy settings.
+- [x] **2026-07-10 — embedded exercise progress inside class creation:** pending exercises registered
+  from the class-creation page now reuse the real `ClassExercise.workflow_state` instead of showing a
+  static badge. `serialize_session_workflow_fields` enriches `pendingExercises` in a single batch query
+  when `exerciseId` exists, preserving old snapshots if the row is not found. Frontend added a shared
+  `ExerciseWorkflowTracker` used by both the standalone exercise manager and the class-creation embedded
+  exercise section; class polling now continues after `recapped` while embedded exercises are still
+  materializing/extracting and stops only when all embedded exercises are terminal.
 
 **Definition of done (every step):** GREEN on the sqlite fast lane (Postgres = CI truth); new code documented
 in `exercise-hub.md` (docs law); auth/permission changes carry negative tests; commit `feat(exercise): E# …`

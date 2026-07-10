@@ -218,6 +218,12 @@ database-engineer).
   response already includes the durable workflow fields:
   `{workflowStage, workflowMessage, progressPercent, workflowWarnings, readyForReview, reviewReadyNotifiedAt}`.
   `GET exercises/` and `GET exercises/<eid>/` return the same workflow contract for polling/re-entry.
+- `GET creation-sessions/<sid>/` / class session detail returns `pendingExercises` for exercises embedded
+  in the class-creation flow. Once a pending row has `exerciseId`, the serializer enriches that snapshot
+  from the live `ClassExercise.workflow_state` in one batch query, adding `exerciseStatus`,
+  `workflowStage`, `workflowMessage`, `progressPercent`, `workflowWarnings`, `readyForReview`, and
+  `reviewReadyNotifiedAt`. The frontend must use this enriched session payload as the source of truth
+  instead of separately joining against `GET exercises/`.
 - `POST exercises/<eid>/extract/` (manual retry/rerun only; 409 while EXTRACTING and for PUBLISHED) ·
   `POST exercises/<eid>/publish/` (400 if any
   question lacks reference answer/points; 409 wrong status)
@@ -362,7 +368,10 @@ stored `per_question` (zero tokens), **no pregeneration** (nothing to pre-build)
   `building_review_draft` → `ready_for_review`) and can leave/re-enter safely. After review-ready, the
   teacher receives one SMS + one in-app teacher notification and then opens the normal accordion editor
   to review, patch references/points, add/delete manual questions, set per-section assistant toggles, and
-  publish. The old separate reference-ingest sheet remains only as a fallback correction tool (`افزودن منبع تکمیلی`).
+  publish. When an exercise is registered from the class-creation page, the class page shows the same
+  stage/progress tracker from the enriched `pendingExercises` snapshot and keeps polling after the class
+  reaches `recapped` until every embedded exercise is `ready_for_review`, `failed`, or `cancelled`. The
+  old separate reference-ingest sheet remains only as a fallback correction tool (`افزودن منبع تکمیلی`).
 - **Student solver:** sticky header (title, deadline badge with <24h countdown, draft-saved indicator);
   mobile = horizontal section chips (fade edge on the LEFT for RTL), desktop = side section list;
   per-question text/photo tabs (camera `capture` on mobile, client-side compression); autosave; sticky
