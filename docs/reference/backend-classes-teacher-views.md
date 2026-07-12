@@ -1,6 +1,6 @@
 # Reference — `apps/classes` teacher views (pipeline control + roster + analytics)
 
-- **Status:** Verified · **Created:** 2026-07-02 · **Last-verified:** 2026-07-02 (commit `a89344c`)
+- **Status:** Verified · **Created:** 2026-07-02 · **Last-verified:** 2026-07-12 (working tree)
 - **Owner (doc):** technical-writer · **Spec source:** `docs/reference/ROADMAP.md` step B5
 - **Layer:** backend-app (teacher-facing slice of the classes god view)
 
@@ -44,8 +44,13 @@ model shapes → B4.
    (sets `cancel_requested` + hard-revokes `celery_task_id`; the cooperative side is L4).
 3. **Publish** (`:1095`): flips `is_published`, which unlocks student invite-login and dispatches
    `send_publish_sms_task` / `send_new_invites_sms_task` on the `default` queue.
-4. **Roster** (`ClassSessionStudents:1244`): unlike raw `invites/`, resolves actual enrolled students +
-   their progress/score/status (joins Enrollment + StudentUnitProgress).
+4. **Roster** (`ClassSessionStudents`): unlike raw `invites/`, resolves actual enrolled students +
+   their progress/score/status (joins Enrollment + StudentUnitProgress). A student is a distinct invited
+   phone; the teacher's own phone is excluded consistently from class counts and teacher-wide rosters.
+5. **Analytics:** the dashboard total is the all-time teacher-wide distinct roster. The activity chart
+   counts a phone only on its first invitation, while the class distribution is class-only and counts
+   distinct invited phones per class. Therefore the total roster and any one class roster have different
+   scopes, but every surface for the same class uses the same count.
 
 ## Data & invariants
 - Every teacher endpoint is `[IsAuthenticated, IsTeacherUser]`; owner-scoping is done in the queryset
@@ -53,6 +58,8 @@ model shapes → B4.
 - Cancel is owner-only and returns 404 (not 403) for a non-owner (avoids leaking existence).
 - The view layer only DISPATCHES pipeline work; it must not inline LLM calls (services/tasks own those).
 - Analytics buckets are **Asia/Tehran** (the analytics rule — B9/memory `admin-analytics`).
+- A student added to multiple classes is still one teacher-wide student and one chart event; it appears
+  once in each relevant class roster.
 - SMS goes on the `default` queue; publish/invite are the dispatch points.
 
 ## Gotchas
@@ -69,6 +76,10 @@ memory: `pipeline-cancellation`, `admin-analytics`, `chunked-transcription-500mb
 
 ## Verified-by
 - Read (2026-07-02): `urls.py` (128), `views.py:1065-1093` (cancel — owner scoping + 404/409).
+- Re-verified (2026-07-12): `views.py` teacher roster/analytics queries and
+  `serializers.py` `invites_count` fallbacks; regression coverage in
+  `test_teacher_students.py` covers own-phone exclusion, class/list/detail agreement, first-invite
+  charting, and class-only distribution.
 - `rg "^class …View" + -A3 views.py` → confirmed the teacher view classes + their
   `[IsAuthenticated, IsTeacherUser]` permission and line numbers cited above.
 - NOT read whole: `views.py` (5199 lines — only the teacher slice + cancel body). NOT verified live:

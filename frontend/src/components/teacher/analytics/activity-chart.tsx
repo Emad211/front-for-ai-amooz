@@ -48,8 +48,10 @@ export function ActivityChart({ data, days = 7 }: ActivityChartProps) {
         <CardHeader className="pb-2">
           <div className="flex items-center justify-between">
             <div>
-              <CardTitle className="text-xl font-black text-foreground">روند ثبت‌نام دانش‌آموزان</CardTitle>
-              <CardDescription className="text-xs font-medium mt-1">تعداد ثبت‌نام‌های جدید در {days} روز گذشته</CardDescription>
+              <CardTitle className="text-xl font-black text-foreground">روند اضافه‌شدن دانش‌آموزان</CardTitle>
+              <CardDescription className="text-xs font-medium mt-1">
+                دانش‌آموزان یکتایی که برای نخستین‌بار در {days} روز گذشته دعوت شده‌اند
+              </CardDescription>
             </div>
             <div className="h-2 w-24 bg-primary/10 rounded-full overflow-hidden">
               <motion.div 

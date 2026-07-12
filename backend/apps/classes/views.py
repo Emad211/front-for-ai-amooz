@@ -17,7 +17,7 @@ from django.utils import timezone
 
 logger = logging.getLogger(__name__)
 from django.http import HttpResponse
-from django.db.models import Count, Max, Min, Q
+from django.db.models import Count, F, Max, Min, Q
 
 from rest_framework import status
 from rest_framework import serializers
@@ -121,6 +121,13 @@ from .tasks import (
     send_publish_sms_task,
     send_new_invites_sms_task,
 )
+
+
+def _teacher_student_invites(teacher):
+    """Return the teacher's student invitations, excluding the teacher's own phone."""
+    invites = ClassInvitation.objects.filter(session__teacher=teacher)
+    teacher_phone = (getattr(teacher, 'phone', '') or '').strip()
+    return invites.exclude(phone=teacher_phone) if teacher_phone else invites
 
 
 def _dispatch_pipeline_task(session, task) -> None:
@@ -1134,7 +1141,11 @@ class ClassCreationSessionListView(APIView):
         # If no param given, return all classes (backward compatible)
 
         qs = qs.annotate(
-            _invites_count=Count('invites', distinct=True),
+            _invites_count=Count(
+                'invites__phone',
+                distinct=True,
+                filter=~Q(invites__phone=F('teacher__phone')),
+            ),
             _lessons_count=Count('units', distinct=True),
         ).order_by('-created_at')
         return Response(ClassCreationSessionListSerializer(qs, many=True).data)
@@ -1622,26 +1633,13 @@ class TeacherAnalyticsStatsView(APIView):
         responses={200: TeacherAnalyticsStatSerializer(many=True)},
     )
     def get(self, request):
-        try:
-            days = int(request.query_params.get('days', 0))
-        except (TypeError, ValueError):
-            days = 0
-        days = max(0, min(days, 365))
         qs = ClassCreationSession.objects.filter(teacher=request.user)
         total_classes = qs.filter(pipeline_type='class').count()
         total_exams = qs.filter(pipeline_type='exam_prep').count()
         
-        # Exclude teacher's own phone from student count to match the list view
-        teacher_phone = (getattr(request.user, 'phone', '') or '').strip()
-        invites_qs = ClassInvitation.objects.filter(session__teacher=request.user)
-        if days > 0:
-            start_date = timezone.localdate() - timedelta(days=days-1)
-            invites_qs = invites_qs.filter(created_at__date__gte=start_date)
-            
-        if teacher_phone:
-            invites_qs = invites_qs.exclude(phone=teacher_phone)
-
-        students_count = invites_qs.values('phone').distinct().count()
+        # This is an all-time roster total. The selected chart window must not
+        # make the dashboard's "total students" disagree with /teacher/students.
+        students_count = _teacher_student_invites(request.user).values('phone').distinct().count()
 
         return Response(
             [
@@ -1671,10 +1669,7 @@ class TeacherStudentsListView(APIView):
             units_per_session,
         )
 
-        base_qs = ClassInvitation.objects.filter(session__teacher=request.user)
-        teacher_phone = (getattr(request.user, 'phone', '') or '').strip()
-        if teacher_phone:
-            base_qs = base_qs.exclude(phone=teacher_phone)
+        base_qs = _teacher_student_invites(request.user)
 
         rows = (
             base_qs.values('phone')
@@ -1807,22 +1802,21 @@ class TeacherAnalyticsChartView(APIView):
         today = timezone.localdate()
         start_date = today - timedelta(days=days-1)
         
-        # Aggregate invitations by date
-        from django.db.models.functions import TruncDate
-        from django.db.models import Count
-        
-        counts = (
-            ClassInvitation.objects.filter(
-                session__teacher=request.user,
-                created_at__date__gte=start_date
-            )
-            .annotate(date=TruncDate('created_at'))
-            .values('date')
-            .annotate(count=Count('id'))
-            .order_by('date')
+        # A student may be invited to multiple classes. The chart represents
+        # unique students, so each phone contributes only on its first invite.
+        count_map: dict = {}
+        first_invites = (
+            _teacher_student_invites(request.user)
+            .values('phone')
+            .annotate(first_invited_at=Min('created_at'))
         )
-        
-        count_map = {item['date']: item['count'] for item in counts}
+        for item in first_invites:
+            first_invited_at = item['first_invited_at']
+            if first_invited_at is None:
+                continue
+            invite_date = timezone.localtime(first_invited_at).date()
+            if start_date <= invite_date <= today:
+                count_map[invite_date] = count_map.get(invite_date, 0) + 1
         
         data = []
         for i in range(days - 1, -1, -1):
@@ -1906,10 +1900,20 @@ class TeacherAnalyticsDistributionView(APIView):
     def get(self, request):
         from django.db.models import Count
         
-        # Get top 5 sessions by number of invites
+        # This panel is class-only and uses the same unique-student definition
+        # as the class roster and class cards.
         sessions = (
-            ClassCreationSession.objects.filter(teacher=request.user)
-            .annotate(invites_count=Count('invites'))
+            ClassCreationSession.objects.filter(
+                teacher=request.user,
+                pipeline_type=ClassCreationSession.PipelineType.CLASS,
+            )
+            .annotate(
+                invites_count=Count(
+                    'invites__phone',
+                    distinct=True,
+                    filter=~Q(invites__phone=F('teacher__phone')),
+                )
+            )
             .filter(invites_count__gt=0)
             .order_by('-invites_count')[:5]
         )
@@ -1937,7 +1941,7 @@ class TeacherAnalyticsActivitiesView(APIView):
     def get(self, request):
         # Combine recent sessions and recent invites for a better activity feed
         sessions = ClassCreationSession.objects.filter(teacher=request.user).order_by('-created_at')[:5]
-        invites = ClassInvitation.objects.filter(session__teacher=request.user).select_related('session').order_by('-created_at')[:5]
+        invites = _teacher_student_invites(request.user).select_related('session').order_by('-created_at')[:5]
         
         items = []
         for s in sessions:
@@ -1958,7 +1962,7 @@ class TeacherAnalyticsActivitiesView(APIView):
                 'id': f"invite-{inv.id}",
                 'type': 'enrollment',
                 'user': inv.phone,
-                'action': f"دانش‌آموز با شماره {inv.phone} به «{inv.session.title}» اضافه شد.",
+                'action': f"دانش‌آموز با شماره {inv.phone} به «{inv.session.title}» دعوت شد.",
                 'time': inv.created_at.isoformat(),
                 'icon': 'users',
                 'color': 'text-blue-500',
@@ -1994,7 +1998,11 @@ class StudentCourseListView(APIView):
             .select_related('teacher')
             .prefetch_related('sections__units', 'invites')
             .annotate(
-                _invites_count=Count('invites', distinct=True),
+                _invites_count=Count(
+                    'invites__phone',
+                    distinct=True,
+                    filter=~Q(invites__phone=F('teacher__phone')),
+                ),
             )
             .distinct()
             .order_by('-published_at', '-updated_at')
@@ -3932,7 +3940,11 @@ class ExamPrepSessionListView(APIView):
             sessions = sessions.filter(organization_id=int(org_param))
 
         sessions = sessions.annotate(
-            _invites_count=Count('invites', distinct=True),
+            _invites_count=Count(
+                'invites__phone',
+                distinct=True,
+                filter=~Q(invites__phone=F('teacher__phone')),
+            ),
         ).order_by('-created_at')
 
         return Response(ExamPrepSessionDetailSerializer(sessions, many=True).data)

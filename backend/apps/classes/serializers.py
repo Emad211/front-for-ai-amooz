@@ -337,7 +337,9 @@ class ClassCreationSessionDetailSerializer(serializers.ModelSerializer):
         # Prefer the annotation if available (from list views), otherwise fall back.
         if hasattr(obj, '_invites_count'):
             return obj._invites_count
-        return obj.invites.count()
+        teacher_phone = (getattr(obj.teacher, 'phone', '') or '').strip()
+        invites = obj.invites.exclude(phone=teacher_phone) if teacher_phone else obj.invites
+        return invites.values('phone').distinct().count()
 
     def _wf(self, obj):
         return serialize_session_workflow_fields(obj)
@@ -792,7 +794,9 @@ class ExamPrepSessionDetailSerializer(serializers.ModelSerializer):
     def get_invites_count(self, obj: ClassCreationSession) -> int:
         if hasattr(obj, '_invites_count'):
             return obj._invites_count
-        return obj.invites.count()
+        teacher_phone = (getattr(obj.teacher, 'phone', '') or '').strip()
+        invites = obj.invites.exclude(phone=teacher_phone) if teacher_phone else obj.invites
+        return invites.values('phone').distinct().count()
 
     def _wf(self, obj):
         return serialize_session_workflow_fields(obj)
