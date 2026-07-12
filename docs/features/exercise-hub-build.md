@@ -1,5 +1,11 @@
 # Exercise Hub — build progress (loop control file)
 
+- [x] **2026-07-12 — flat questions + one assistant policy:** ADR-0005 supersedes the visible
+  section model and two-level assistant rule. Extraction now requests top-level `questions[]`, stores
+  one private compatibility section, exposes ordered top-level questions while retaining the legacy
+  response for one release, and uses only the intake-time exercise assistant flag. Teacher/student
+  question surfaces are flat and the solver assistant follows the selected question.
+
 Governed by **ADR-0004** + the spec [`exercise-hub.md`](exercise-hub.md). One step per `/loop` iteration:
 take the lowest unchecked `[ ]`, implement per the spec, test GREEN, tick here, commit `feat(exercise): E# …`,
 push. Reuse existing machinery; new views ONLY in `views_exercises.py` (never `views.py`). Mandatory

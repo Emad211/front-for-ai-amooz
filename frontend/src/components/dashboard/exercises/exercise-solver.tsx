@@ -1,15 +1,15 @@
 'use client';
 
 /**
- * Student exercise solver: per-section text/image answers with draft autosave,
- * a section-aware assistant widget, and a final submit. The solving view never
+ * Student exercise solver: flat text/image answers with draft autosave,
+ * a question-aware assistant widget, and a final submit. The solving view never
  * receives the reference answer (the server withholds it until reveal).
  * Design: docs/features/exercise-hub.md.
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
-import { Loader2, Send, Lock } from 'lucide-react';
+import { Loader2, Send, Lock, MessageCircle } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -52,7 +52,7 @@ export function ExerciseSolver({
   const [answers, setAnswers] = useState<StudentAnswers>({});
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
-  const [activeSection, setActiveSection] = useState(0);
+  const [activeQuestionId, setActiveQuestionId] = useState<number | null>(null);
   const dirty = useRef(false);
 
   useEffect(() => {
@@ -60,6 +60,7 @@ export function ExerciseSolver({
       .then((d) => {
         setDetail(d);
         setAnswers(d.myAnswers ?? {});
+        setActiveQuestionId(d.questions[0]?.id ?? null);
       })
       .catch((err) => toast.error(err instanceof Error ? err.message : 'خطا در بارگذاری تمرین'))
       .finally(() => setLoading(false));
@@ -120,8 +121,6 @@ export function ExerciseSolver({
     }
   };
 
-  const section = useMemo(() => detail?.sections[activeSection], [detail, activeSection]);
-
   if (loading) {
     return (
       <div className="flex justify-center py-16">
@@ -165,34 +164,28 @@ export function ExerciseSolver({
         </p>
       )}
 
-      {/* Section chips */}
-      {detail.sections.length > 1 && (
-        <div className="flex gap-2 overflow-x-auto pb-1">
-          {detail.sections.map((s, i) => (
-            <button
-              key={s.id}
-              type="button"
-              onClick={() => setActiveSection(i)}
-              className={`shrink-0 rounded-full px-3 py-1 text-sm transition-colors ${
-                i === activeSection
-                  ? 'bg-primary text-primary-foreground'
-                  : 'bg-muted text-muted-foreground'
-              }`}
-            >
-              <MathText text={s.title || `بخش ${i + 1}`} />
-            </button>
-          ))}
-        </div>
-      )}
-
       <div className="grid gap-4 lg:grid-cols-[1fr_320px]">
         <div className="space-y-4">
-          {section?.questions.map((q) => (
+          {detail.questions.map((q, index) => (
             <Card key={q.id}>
               <CardHeader>
-                <CardTitle className="text-base font-normal">
+                <CardTitle className="space-y-3 text-base font-normal">
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-sm font-semibold text-muted-foreground">سوال {index + 1}</span>
+                    {detail.assistantEnabled && (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant={activeQuestionId === q.id ? 'secondary' : 'outline'}
+                        onClick={() => setActiveQuestionId(q.id)}
+                      >
+                        <MessageCircle className="ms-2 h-4 w-4" />
+                        دستیار این سوال
+                      </Button>
+                    )}
+                  </div>
                   <MarkdownWithMath markdown={q.questionMarkdown} />
-                  <span className="mt-1 block text-xs text-muted-foreground">{q.maxPoints} نمره</span>
+                  <span className="block text-xs text-muted-foreground">{q.maxPoints} نمره</span>
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-2">
@@ -232,17 +225,18 @@ export function ExerciseSolver({
 
         {/* Assistant */}
         <div className="lg:sticky lg:top-4 lg:self-start">
-          {section && detail.assistantEnabled && section.assistantEnabled ? (
+          {detail.assistantEnabled && activeQuestionId ? (
             <ExerciseAssistant
+              key={activeQuestionId}
               sessionId={sessionId}
               exerciseId={exerciseId}
-              questionId={section.questions[0]?.id ?? 0}
+              questionId={activeQuestionId}
             />
           ) : (
             <Card>
               <CardContent className="flex items-center gap-2 py-6 text-sm text-muted-foreground">
                 <Lock className="h-4 w-4" />
-                دستیار برای این بخش غیرفعال است
+                دستیار این تمرین غیرفعال است
               </CardContent>
             </Card>
           )}

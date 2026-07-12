@@ -276,7 +276,7 @@ class ExerciseListCreateView(APIView):
 
 
 class ExerciseDetailView(APIView):
-    """Get / update (title, deadline, allow_late, assistant_enabled) / delete."""
+    """Get / update mutable exercise settings / delete."""
 
     permission_classes = [IsAuthenticated, IsTeacherUser]
 
@@ -297,7 +297,7 @@ class ExerciseDetailView(APIView):
         )
         serializer.is_valid(raise_exception=True)
         fields: list[str] = []
-        for key in ('title', 'deadline', 'allow_late', 'assistant_enabled'):
+        for key in ('title', 'deadline', 'allow_late'):
             if key in serializer.validated_data:
                 setattr(exercise, key, serializer.validated_data[key])
                 fields.append(key)
@@ -457,7 +457,7 @@ class ExercisePublishView(APIView):
 
 
 class ExerciseSectionDetailView(APIView):
-    """Toggle a section's assistant (and edit its title)."""
+    """Deprecated compatibility endpoint for editing a legacy section title."""
 
     permission_classes = [IsAuthenticated, IsTeacherUser]
 
@@ -470,7 +470,7 @@ class ExerciseSectionDetailView(APIView):
         serializer = SectionUpdateSerializer(data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
         fields: list[str] = []
-        for key in ('assistant_enabled', 'title'):
+        for key in ('title',):
             if key in serializer.validated_data:
                 setattr(section, key, serializer.validated_data[key])
                 fields.append(key)
@@ -481,7 +481,7 @@ class ExerciseSectionDetailView(APIView):
 
 
 class ExerciseQuestionListCreateView(APIView):
-    """Add a question to a section of an owned exercise."""
+    """Add a question to an exercise's private compatibility section."""
 
     permission_classes = [IsAuthenticated, IsTeacherUser]
 
@@ -491,12 +491,24 @@ class ExerciseQuestionListCreateView(APIView):
             return Response(_NOT_FOUND, status=status.HTTP_404_NOT_FOUND)
         serializer = QuestionWriteSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        section = ClassExerciseSection.objects.filter(
-            id=serializer.validated_data.get('section_id'), exercise=exercise,
-        ).first()
+        section_id = serializer.validated_data.get('section_id')
+        section = None
+        if section_id is not None:
+            section = ClassExerciseSection.objects.filter(
+                id=section_id, exercise=exercise,
+            ).first()
+            if section is None:
+                return Response(
+                    {'detail': 'بخش داخلی تمرین پیدا نشد.'}, status=status.HTTP_400_BAD_REQUEST,
+                )
         if section is None:
-            return Response(
-                {'detail': 'بخش این تمرین پیدا نشد.'}, status=status.HTTP_400_BAD_REQUEST,
+            section = exercise.sections.order_by('order', 'id').first()
+        if section is None:
+            section = ClassExerciseSection.objects.create(
+                exercise=exercise,
+                order=0,
+                title='',
+                assistant_enabled=exercise.assistant_enabled,
             )
         next_order = section.questions.count()
         q = ClassExerciseQuestion.objects.create(
@@ -977,6 +989,11 @@ def _q_with_answer(q) -> dict:
 
 def _serialize_exercise(exercise, *, reveal: bool) -> dict:
     q_fn = _q_with_answer if reveal else _q_for_solving
+    questions = [
+        q_fn(question)
+        for section in exercise.sections.all()
+        for question in section.questions.all()
+    ]
     return {
         'id': exercise.id,
         'title': exercise.title,
@@ -984,6 +1001,8 @@ def _serialize_exercise(exercise, *, reveal: bool) -> dict:
         'status': exercise.status,
         'deadline': exercise.deadline.isoformat() if exercise.deadline else None,
         'assistantEnabled': exercise.assistant_enabled,
+        'questions': questions,
+        # Deprecated compatibility shape. New clients consume top-level questions.
         'sections': [
             {
                 'id': s.id, 'order': s.order, 'title': s.title,
@@ -1617,10 +1636,9 @@ class StudentExerciseAssistantView(APIView):
         if question is None:
             return Response({'detail': 'سوال پیدا نشد.'}, status=status.HTTP_404_NOT_FOUND)
 
-        # Two-level assistant toggle — server-side, deny-by-default.
-        if not (exercise.assistant_enabled and question.section.assistant_enabled):
+        if not exercise.assistant_enabled:
             return Response(
-                {'detail': 'دستیار برای این بخش غیرفعال است.', 'code': 'assistant_disabled'},
+                {'detail': 'دستیار این تمرین غیرفعال است.', 'code': 'assistant_disabled'},
                 status=status.HTTP_403_FORBIDDEN,
             )
 

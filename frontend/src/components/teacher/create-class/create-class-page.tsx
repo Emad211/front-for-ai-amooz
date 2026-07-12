@@ -1004,7 +1004,7 @@ export function CreateClassPage() {
                                 {exercise.status === 'failed' || exercise.exerciseStatus === 'failed'
                                   ? 'خطا در ساخت'
                                   : exercise.readyForReview || exercise.workflowStage === 'ready_for_review'
-                                    ? 'آماده بازبینی'
+                                    ? 'کامل شد'
                                     : exercise.workflowStage
                                       ? 'در حال ساخت'
                                       : exercise.exerciseId

@@ -36,8 +36,8 @@ export default function StudentExerciseResultPage({ params }: PageProps) {
   }, [sessionId, exerciseId]);
 
   const questionById = new Map<string, StudentQuestion>();
-  result?.exercise?.sections.forEach((s) =>
-    s.questions.forEach((q) => questionById.set(String(q.id), q))
+  result?.exercise?.questions.forEach((question) =>
+    questionById.set(String(question.id), question)
   );
 
   return (

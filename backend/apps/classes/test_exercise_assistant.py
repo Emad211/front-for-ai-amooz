@@ -86,12 +86,12 @@ class TestToggleGuard:
         assert res.status_code == 403
         assert res.data['code'] == 'assistant_disabled'
 
-    def test_section_assistant_off_403(self, mock_llm):
+    def test_legacy_section_assistant_flag_no_longer_blocks(self, mock_llm):
         session, ex, sec, q = _setup(sec_assistant=False)
         res = _auth(_student()).post(_url(session.id, ex.id),
                                      {'question_id': q.id, 'message': 'کمک'}, format='json')
-        assert res.status_code == 403
-        assert res.data['code'] == 'assistant_disabled'
+        assert res.status_code == 200
+        assert res.data['content']
 
     def test_both_on_allows(self, mock_llm):
         session, ex, sec, q = _setup()

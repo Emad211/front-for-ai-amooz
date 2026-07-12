@@ -2,7 +2,7 @@
 
 The OCR step (PDF/photo → Markdown) is fully reused from ``pdf_extraction.py`` (a
 photo is treated as a page); this module owns only the *structure* step: turn that
-Markdown into ``{exercise_title, sections[{questions[...]}]}`` validated against the
+Markdown into ``{exercise_title, questions[...]}`` validated against the
 ``ExerciseStructureOutput`` Pydantic schema via ``generate_structured`` (JSON-mode +
 one repair round-trip + **raise**, never a silent ``{}``).
 
@@ -549,34 +549,43 @@ def _coerce_points(value: Any) -> Decimal:
 
 
 def persist_exercise_structure(exercise, structure: dict) -> tuple[int, int]:
-    """Replace the exercise's sections/questions from a validated structure dict.
+    """Persist a flat question list inside one private compatibility section.
 
-    Idempotent for re-runs: existing sections are cleared first (CASCADE drops
-    their questions). Returns ``(section_count, question_count)``.
+    New structure output uses top-level ``questions``. During the compatibility
+    window, legacy ``sections[].questions`` is flattened in source order.
     """
     from ..models import ClassExerciseSection, ClassExerciseQuestion
 
     exercise.sections.all().delete()  # cascades questions
-    n_sections = n_questions = 0
-    for s_idx, section in enumerate(structure.get("sections") or []):
-        if not isinstance(section, dict):
+    questions = structure.get("questions")
+    if not isinstance(questions, list) or not questions:
+        questions = [
+            question
+            for section in (structure.get("sections") or [])
+            if isinstance(section, dict)
+            for question in (section.get("questions") or [])
+            if isinstance(question, dict)
+        ]
+
+    section = ClassExerciseSection.objects.create(
+        exercise=exercise,
+        order=0,
+        title="",
+        assistant_enabled=exercise.assistant_enabled,
+    )
+    n_questions = 0
+    for q_idx, question in enumerate(questions):
+        if not isinstance(question, dict):
             continue
-        sec = ClassExerciseSection.objects.create(
-            exercise=exercise, order=s_idx,
-            title=str(section.get("title") or "")[:255],
+        options = question.get("options")
+        ClassExerciseQuestion.objects.create(
+            section=section,
+            order=q_idx,
+            question_markdown=str(question.get("question_text_markdown") or ""),
+            question_type=_coerce_question_type(question.get("question_type")),
+            options=options if isinstance(options, list) else [],
+            reference_answer_markdown=str(question.get("reference_answer_markdown") or ""),
+            max_points=_coerce_points(question.get("points")),
         )
-        n_sections += 1
-        for q_idx, q in enumerate(section.get("questions") or []):
-            if not isinstance(q, dict):
-                continue
-            options = q.get("options")
-            ClassExerciseQuestion.objects.create(
-                section=sec, order=q_idx,
-                question_markdown=str(q.get("question_text_markdown") or ""),
-                question_type=_coerce_question_type(q.get("question_type")),
-                options=options if isinstance(options, list) else [],
-                reference_answer_markdown=str(q.get("reference_answer_markdown") or ""),
-                max_points=_coerce_points(q.get("points")),
-            )
-            n_questions += 1
-    return n_sections, n_questions
+        n_questions += 1
+    return 1, n_questions

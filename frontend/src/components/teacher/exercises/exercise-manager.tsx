@@ -14,7 +14,6 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
-import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { JalaliDateTimePicker } from '@/components/ui/jalali-date-time-picker';
 import {
@@ -24,12 +23,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import {
-  Accordion,
-  AccordionContent,
-  AccordionItem,
-  AccordionTrigger,
-} from '@/components/ui/accordion';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -66,7 +59,6 @@ import {
   publishExercise,
   deleteExercise,
   updateExercise,
-  updateSection,
   updateQuestion,
   createQuestion,
   deleteQuestion,
@@ -406,23 +398,16 @@ function ExerciseEditor({
   detail: ExerciseDetail;
   onSaved: () => Promise<void>;
 }) {
-  const [assistant, setAssistant] = useState(detail.assistantEnabled);
   const [deadline, setDeadline] = useState(toLocalDateTimeValue(detail.deadline));
-  const allQuestions = useMemo(
-    () =>
-      detail.sections.flatMap((section) =>
-        section.questions.map((question, index) => ({
-          ...question,
-          label: `${section.title || 'بخش بدون عنوان'} - سوال ${index + 1}`,
-        }))
-      ),
-    [detail.sections]
-  );
+  const [adding, setAdding] = useState(false);
+  const allQuestions = detail.questions.map((question, index) => ({
+    ...question,
+    label: `سوال ${index + 1}`,
+  }));
 
   const saveSettings = async () => {
     try {
       await updateExercise(detail.id, {
-        assistant_enabled: assistant,
         deadline: deadline ? new Date(deadline).toISOString() : null,
       });
       toast.success('تنظیمات ذخیره شد.');
@@ -432,13 +417,25 @@ function ExerciseEditor({
     }
   };
 
+  const addQuestion = async () => {
+    setAdding(true);
+    try {
+      await createQuestion(detail.id, {
+        question_markdown: 'متن سوال جدید را اینجا بنویسید.',
+        max_points: 1,
+      });
+      toast.success('سوال جدید اضافه شد. متن، پاسخ مرجع و بارم آن را تکمیل کنید.');
+      await onSaved();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'افزودن سوال ناموفق بود.');
+    } finally {
+      setAdding(false);
+    }
+  };
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-end gap-4 rounded-md bg-muted/40 p-3">
-        <div className="flex items-center gap-2">
-          <Switch checked={assistant} onCheckedChange={setAssistant} id={`asst-${detail.id}`} />
-          <Label htmlFor={`asst-${detail.id}`}>دستیار هوشمند فعال باشد</Label>
-        </div>
         <div className="flex flex-col gap-1">
           <Label htmlFor={`dl-${detail.id}`}>مهلت ارسال</Label>
           <JalaliDateTimePicker
@@ -459,80 +456,12 @@ function ExerciseEditor({
         onApplied={onSaved}
       />
 
-      <Accordion type="multiple" className="w-full">
-        {detail.sections.map((section) => (
-          <SectionEditor
-            key={section.id}
-            exerciseId={detail.id}
-            section={section}
-            onChanged={onSaved}
-          />
-        ))}
-      </Accordion>
-    </div>
-  );
-}
-
-function SectionEditor({
-  exerciseId,
-  section,
-  onChanged,
-}: {
-  exerciseId: number;
-  section: ExerciseDetail['sections'][number];
-  onChanged: () => Promise<void>;
-}) {
-  const [assistant, setAssistant] = useState(section.assistantEnabled);
-  const [adding, setAdding] = useState(false);
-
-  // Per-section assistant switch — AND-ed with the exercise-level flag server-side.
-  const toggleAssistant = async (value: boolean) => {
-    setAssistant(value);
-    try {
-      await updateSection(section.id, { assistant_enabled: value });
-      toast.success(
-        value ? 'دستیار برای این بخش فعال شد.' : 'دستیار برای این بخش غیرفعال شد.'
-      );
-    } catch (err) {
-      setAssistant(!value); // revert optimistic update
-      toast.error(err instanceof Error ? err.message : 'ذخیرهٔ تنظیم بخش ناموفق بود.');
-    }
-  };
-
-  // Manual question entry — the fallback when extraction misses a question.
-  const addQuestion = async () => {
-    setAdding(true);
-    try {
-      await createQuestion(exerciseId, {
-        section_id: section.id,
-        question_markdown: 'متن سوال جدید را اینجا بنویسید.',
-        max_points: 1,
-      });
-      toast.success('سوال جدید اضافه شد. متن، پاسخ مرجع و بارم آن را تکمیل کنید.');
-      await onChanged();
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'افزودن سوال ناموفق بود.');
-    } finally {
-      setAdding(false);
-    }
-  };
-
-  return (
-    <AccordionItem value={`s-${section.id}`}>
-      <AccordionTrigger>
-        <MathText text={section.title || 'بخش بدون عنوان'} />
-      </AccordionTrigger>
-      <AccordionContent className="space-y-4">
-        <div className="flex items-center gap-2 rounded-md bg-muted/40 p-2">
-          <Switch
-            checked={assistant}
-            onCheckedChange={toggleAssistant}
-            id={`sec-asst-${section.id}`}
-          />
-          <Label htmlFor={`sec-asst-${section.id}`}>دستیار هوشمند برای این بخش</Label>
-        </div>
-        {section.questions.map((q) => (
-          <QuestionEditor key={q.id} question={q} onChanged={onChanged} />
+      <div className="space-y-4">
+        {detail.questions.map((question, index) => (
+          <div key={question.id} className="space-y-2">
+            <p className="text-sm font-semibold text-muted-foreground">سوال {index + 1}</p>
+            <QuestionEditor question={question} onChanged={onSaved} />
+          </div>
         ))}
         <Button size="sm" variant="outline" onClick={addQuestion} disabled={adding}>
           {adding ? (
@@ -542,8 +471,8 @@ function SectionEditor({
           )}
           افزودن سوال
         </Button>
-      </AccordionContent>
-    </AccordionItem>
+      </div>
+    </div>
   );
 }
 
@@ -551,7 +480,7 @@ function QuestionEditor({
   question,
   onChanged,
 }: {
-  question: ExerciseDetail['sections'][number]['questions'][number];
+  question: ExerciseDetail['questions'][number];
   onChanged: () => Promise<void>;
 }) {
   const [text, setText] = useState(question.questionMarkdown);

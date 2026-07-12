@@ -65,8 +65,8 @@ class StructureOutput(BaseModel):
 # ---------------------------------------------------------------------------
 # Exercise Hub — exercise structure extraction (services/exercise_ingest.py).
 # Contract source of truth: ``PROMPTS['exercise_structure']['default']``.
-# Load-bearing invariant: ``sections`` is a list of sections, each with a
-# ``questions`` list — exactly what the ingest task iterates to build rows.
+# Load-bearing invariant: ``questions`` is one ordered list. Legacy
+# ``sections[].questions`` remains accepted only during the compatibility window.
 # ---------------------------------------------------------------------------
 
 
@@ -90,12 +90,13 @@ class ExerciseSectionOut(BaseModel):
 
 
 class ExerciseStructureOutput(BaseModel):
-    """Top-level shape of the exercise-structure JSON: ``exercise_title`` +
-    ``sections`` (each a list of questions)."""
+    """Flat exercise structure with a temporary legacy-sections fallback."""
 
     model_config = ConfigDict(extra="allow")
 
     exercise_title: Optional[str] = None
+    questions: List[ExerciseQuestionOut] = Field(default_factory=list)
+    # Compatibility only: old workers/mocks may still return section-shaped JSON.
     sections: List[ExerciseSectionOut] = Field(default_factory=list)
 
 

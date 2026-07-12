@@ -106,10 +106,17 @@ class ExerciseListSerializer(serializers.ModelSerializer):
 
 class ExerciseDetailSerializer(ExerciseListSerializer):
     sections = ExerciseSectionSerializer(many=True, read_only=True)
+    questions = serializers.SerializerMethodField()
     assets = ExerciseAssetSerializer(many=True, read_only=True)
 
+    def get_questions(self, obj):
+        questions = ClassExerciseQuestion.objects.filter(
+            section__exercise=obj,
+        ).order_by('section__order', 'order', 'id')
+        return ExerciseQuestionSerializer(questions, many=True).data
+
     class Meta(ExerciseListSerializer.Meta):
-        fields = ExerciseListSerializer.Meta.fields + ['sections', 'assets']
+        fields = ExerciseListSerializer.Meta.fields + ['questions', 'sections', 'assets']
 
 
 class ExerciseCreateSerializer(serializers.Serializer):
@@ -176,9 +183,12 @@ class ExerciseUpdateSerializer(serializers.Serializer):
     title = serializers.CharField(max_length=255, required=False)
     deadline = serializers.DateTimeField(required=False, allow_null=True)
     allow_late = serializers.BooleanField(required=False)
-    assistant_enabled = serializers.BooleanField(required=False)
 
     def validate(self, attrs):
+        if 'assistant_enabled' in self.initial_data:
+            raise serializers.ValidationError({
+                'assistant_enabled': 'وضعیت دستیار فقط هنگام ساخت تمرین تعیین می‌شود.',
+            })
         exercise = self.context.get('exercise')
         current_deadline = getattr(exercise, 'deadline', None)
         deadline = attrs.get('deadline', current_deadline)
@@ -193,8 +203,14 @@ class ExerciseUpdateSerializer(serializers.Serializer):
 
 
 class SectionUpdateSerializer(serializers.Serializer):
-    assistant_enabled = serializers.BooleanField(required=False)
     title = serializers.CharField(max_length=255, required=False, allow_blank=True)
+
+    def validate(self, attrs):
+        if 'assistant_enabled' in self.initial_data:
+            raise serializers.ValidationError({
+                'assistant_enabled': 'دستیار فقط در سطح تمرین و هنگام ساخت آن تنظیم می‌شود.',
+            })
+        return attrs
 
 
 class QuestionWriteSerializer(serializers.Serializer):

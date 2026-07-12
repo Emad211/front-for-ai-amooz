@@ -69,6 +69,8 @@ export type ExerciseAsset = {
 };
 
 export type ExerciseDetail = ExerciseListItem & {
+  questions: ExerciseQuestion[];
+  /** @deprecated Compatibility shape; use top-level questions. */
   sections: ExerciseSection[];
   assets: ExerciseAsset[];
 };
@@ -287,7 +289,7 @@ export async function getExercise(exerciseId: number): Promise<ExerciseDetail> {
 
 export async function updateExercise(
   exerciseId: number,
-  data: { title?: string; deadline?: string | null; allow_late?: boolean; assistant_enabled?: boolean }
+  data: { title?: string; deadline?: string | null; allow_late?: boolean }
 ): Promise<ExerciseDetail> {
   return requestJson(`${API_URL}/classes/exercises/${exerciseId}/`, {
     method: 'PATCH',
@@ -324,17 +326,6 @@ export async function publishExercise(exerciseId: number): Promise<ExerciseDetai
   });
 }
 
-export async function updateSection(
-  sectionId: number,
-  data: { assistant_enabled?: boolean; title?: string }
-): Promise<{ id: number; assistantEnabled: boolean; title: string }> {
-  return requestJson(`${API_URL}/classes/exercises/sections/${sectionId}/`, {
-    method: 'PATCH',
-    headers: jsonHeaders(),
-    body: JSON.stringify(data),
-  });
-}
-
 export async function updateQuestion(
   questionId: number,
   data: {
@@ -356,7 +347,7 @@ export async function updateQuestion(
 export async function createQuestion(
   exerciseId: number,
   data: {
-    section_id: number;
+    section_id?: number;
     question_markdown: string;
     question_type?: QuestionType;
     options?: unknown[];
@@ -482,6 +473,8 @@ export type StudentExerciseDetail = {
   status: ExerciseStatus;
   deadline: string | null;
   assistantEnabled: boolean;
+  questions: StudentQuestion[];
+  /** @deprecated Compatibility shape; use top-level questions. */
   sections: StudentSection[];
   myAnswers: Record<string, { text?: string; images?: string[] }>;
   submissionStatus: SubmissionStatus | null;
@@ -499,6 +492,8 @@ export type ExerciseResult = {
   exercise?: {
     id: number;
     title: string;
+    questions: StudentQuestion[];
+    /** @deprecated Compatibility shape; use top-level questions. */
     sections: StudentSection[];
   };
 };
@@ -519,6 +514,8 @@ export type FinishedAnswer = {
   sessionId: number;
   courseTitle: string;
   title: string;
+  questions: StudentQuestion[];
+  /** @deprecated Compatibility shape; use top-level questions. */
   sections: StudentSection[];
 };
 

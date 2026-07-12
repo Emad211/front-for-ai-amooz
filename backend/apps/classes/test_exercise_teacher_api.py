@@ -193,15 +193,28 @@ class TestCreateAndList:
 
 
 class TestDetailUpdateDelete:
-    def test_owner_patches_toggle_and_deadline(self):
+    def test_detail_exposes_legacy_sections_as_one_ordered_question_list(self):
+        owner = _teacher()
+        ex = _exercise(owner)
+        second = baker.make(ClassExerciseSection, exercise=ex, order=1, title='دوم')
+        first = baker.make(ClassExerciseSection, exercise=ex, order=0, title='اول')
+        q2 = baker.make(ClassExerciseQuestion, section=second, order=0, question_markdown='سوال ۲')
+        q1 = baker.make(ClassExerciseQuestion, section=first, order=0, question_markdown='سوال ۱')
+
+        res = _auth(owner).get(DETAIL.format(ex.id))
+
+        assert res.status_code == 200
+        assert [question['id'] for question in res.data['questions']] == [q1.id, q2.id]
+
+    def test_owner_cannot_change_assistant_after_creation(self):
         owner = _teacher()
         ex = _exercise(owner, deadline='2026-07-31T09:30:00Z')
         res = _auth(owner).patch(
             DETAIL.format(ex.id), {'assistant_enabled': False, 'allow_late': True}, format='json',
         )
-        assert res.status_code == 200
+        assert res.status_code == 400
         ex.refresh_from_db()
-        assert ex.assistant_enabled is False and ex.allow_late is True
+        assert ex.assistant_enabled is True and ex.allow_late is False
 
     def test_owner_cannot_enable_late_submission_without_deadline(self):
         owner = _teacher()
@@ -373,14 +386,16 @@ class TestPublishGate:
 
 
 class TestSectionAndQuestionOwnership:
-    def test_section_toggle_owner_only(self):
+    def test_section_assistant_toggle_is_rejected(self):
         owner, other = _teacher(), _teacher()
         ex = _exercise(owner)
         sec = baker.make(ClassExerciseSection, exercise=ex, order=0)
         url = f'/api/classes/exercises/sections/{sec.id}/'
         assert _auth(other).patch(url, {'assistant_enabled': False}, format='json').status_code == 404
         ok = _auth(owner).patch(url, {'assistant_enabled': False}, format='json')
-        assert ok.status_code == 200 and ok.data['assistantEnabled'] is False
+        assert ok.status_code == 400
+        sec.refresh_from_db()
+        assert sec.assistant_enabled is True
 
     def test_question_edit_owner_only(self):
         owner, other = _teacher(), _teacher()
@@ -393,6 +408,21 @@ class TestSectionAndQuestionOwnership:
         assert ok.status_code == 200
         q.refresh_from_db()
         assert q.reference_answer_markdown == 'پاسخ'
+
+    def test_question_create_without_section_uses_private_container(self):
+        owner = _teacher()
+        ex = _exercise(owner)
+
+        res = _auth(owner).post(
+            f'/api/classes/exercises/{ex.id}/questions/',
+            {'question_markdown': 'سوال دستی'},
+            format='json',
+        )
+
+        assert res.status_code == 201
+        question = ClassExerciseQuestion.objects.get(id=res.data['id'])
+        assert question.section.exercise_id == ex.id
+        assert question.section.title == ''
 
 
 class TestReferenceIngest:

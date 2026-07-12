@@ -162,7 +162,7 @@ OUTPUT_KEYS = {
         "teacher_solution_markdown", "final_answer_markdown",
     ],
     ("exercise_structure", "default"): [
-        "exercise_title", "sections", "questions", "question_id",
+        "exercise_title", "questions", "question_id",
         "question_text_markdown", "question_type", "options", "points",
         "reference_answer_markdown",
     ],
@@ -246,6 +246,12 @@ def test_required_output_keys_present(loc, keys):
     text = _text(key, sub)
     for k in keys:
         assert k in text, f"output JSON key {k!r} missing from {key}.{sub}"
+
+
+def test_exercise_structure_contract_is_flat():
+    text = _text("exercise_structure", "default")
+    assert '"sections"' not in text
+    assert '"section_id"' not in text
 
 
 def test_no_hardcoded_k12_in_live_prompts():

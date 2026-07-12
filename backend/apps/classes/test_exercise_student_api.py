@@ -91,6 +91,7 @@ class TestReferenceAnswerLeakGuard:
         session, ex = _published_exercise(deadline=timezone.now() - timedelta(days=1))
         res = _auth(_student()).get(_url(session.id, ex.id))
         assert res.status_code == 200
+        assert len(res.data['questions']) == 1
         assert REF not in json.dumps(res.data, ensure_ascii=False)
 
     def test_list_never_leaks_reference_answer(self):

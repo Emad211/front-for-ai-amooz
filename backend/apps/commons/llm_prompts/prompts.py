@@ -651,44 +651,38 @@ The next user message contains EXERCISE_SOURCE_MARKDOWN (the Markdown of a teach
 """
 
 ### Goal
-Convert the source into STRICT, machine-readable JSON: the exercise's sections and, inside each section, its questions — each captured VERY accurately.
+Convert the source into STRICT, machine-readable JSON containing one ordered, flat list of questions — each captured VERY accurately.
 
 ### Critical rules (must follow)
 - Keep the SAME language as the source. Do NOT translate.
-- Do NOT invent questions, sections, options, answers, or points.
+- Do NOT invent questions, options, answers, or points.
 - Copy each `question_text_markdown` as close to verbatim as possible.
 - ASSET PRESERVATION (MANDATORY): if a question contains a Markdown image (`![caption](url)`) or a Markdown table (lines starting with `|`), copy it VERBATIM into `question_text_markdown`. Never drop or alter image URLs or table cells.
 - Classify each question's `question_type` as EXACTLY one of: "descriptive", "multiple_choice", or "fill_blank".
 - If the question is multiple_choice, put its choices in `options` (a list of strings); otherwise set `options` to null.
 - `points` and `reference_answer_markdown` are OPTIONAL: extract them ONLY if the source explicitly states them (a printed answer key, or a "۲ نمره" style marking); otherwise set them to null. NEVER guess a grade or an answer — the teacher fills those in.
-- If the source has no explicit sections, emit a SINGLE section that holds all questions.
+- Preserve the source order of every question. Do not group or categorize questions into sections.
 - Preserve math using LaTeX exactly as instructed below.
 - The output must be valid JSON (no trailing commas, no comments).
 
 ### Required JSON schema
 {
     "exercise_title": "<short title inferred from the source, same language>",
-    "sections": [
+    "questions": [
         {
-            "section_id": "s1",
-            "title": "<section title or empty string>",
-            "questions": [
-                {
-                    "question_id": "s1q1",
-                    "question_text_markdown": "<verbatim question statement>",
-                    "question_type": "<descriptive|multiple_choice|fill_blank>",
-                    "options": null,
-                    "points": null,
-                    "reference_answer_markdown": null
-                }
-            ]
+            "question_id": "q1",
+            "question_text_markdown": "<verbatim question statement>",
+            "question_type": "<descriptive|multiple_choice|fill_blank>",
+            "options": null,
+            "points": null,
+            "reference_answer_markdown": null
         }
     ]
 }
 
 ### Important constraints
 - Do not include any extra top-level keys.
-- Every section MUST carry a `questions` list (never omit it).
+- Always include the top-level `questions` list, even when no question can be extracted.
 
 """).strip()
                 + "\n\n"

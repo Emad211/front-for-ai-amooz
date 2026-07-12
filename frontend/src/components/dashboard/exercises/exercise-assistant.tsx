@@ -1,6 +1,6 @@
 'use client';
 
-/** Section-aware exercise assistant chat widget. */
+/** Question-aware exercise assistant chat widget. */
 import { useState } from 'react';
 import { toast } from 'sonner';
 import { Loader2, Send } from 'lucide-react';
@@ -50,7 +50,7 @@ export function ExerciseAssistant({
       <CardContent className="flex flex-1 flex-col gap-2 overflow-hidden">
         <div className="flex-1 space-y-2 overflow-y-auto text-sm">
           {turns.length === 0 && (
-            <p className="text-muted-foreground">برای راهنمایی در حلِ این بخش، سؤالت را بپرس.</p>
+            <p className="text-muted-foreground">برای راهنمایی در حل این سؤال، سؤالت را بپرس.</p>
           )}
           {turns.map((t, i) => (
             <div

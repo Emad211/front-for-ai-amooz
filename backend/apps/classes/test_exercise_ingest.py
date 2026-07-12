@@ -20,12 +20,10 @@ pytestmark = [pytest.mark.unit, pytest.mark.service]
 
 VALID = json.dumps({
     "exercise_title": "تمرین فصل ۲",
-    "sections": [
-        {"section_id": "s1", "title": "بخش اول", "questions": [
-            {"question_id": "s1q1", "question_text_markdown": "۲+۲ چند است؟",
-             "question_type": "descriptive", "options": None,
-             "points": None, "reference_answer_markdown": None},
-        ]},
+    "questions": [
+        {"question_id": "q1", "question_text_markdown": "۲+۲ چند است؟",
+         "question_type": "descriptive", "options": None,
+         "points": None, "reference_answer_markdown": None},
     ],
 })
 
@@ -71,7 +69,7 @@ class TestStructureExerciseMarkdown:
 
         obj, provider, model = ing.structure_exercise_markdown(ingest_markdown="# src")
         assert obj["exercise_title"] == "تمرین فصل ۲"
-        assert obj["sections"][0]["questions"][0]["question_id"] == "s1q1"
+        assert obj["questions"][0]["question_id"] == "q1"
         assert model == "test-model"
 
     def test_repair_round_trip_recovers(self, monkeypatch):
@@ -79,7 +77,7 @@ class TestStructureExerciseMarkdown:
         calls = _patch_llm(monkeypatch, _resp("sorry, prose not json"), _resp(VALID))
 
         obj, _p, _m = ing.structure_exercise_markdown(ingest_markdown="x")
-        assert obj["sections"][0]["title"] == "بخش اول"
+        assert obj["questions"][0]["question_text_markdown"] == "۲+۲ چند است؟"
         assert len(calls) == 2  # primary + one repair
 
     def test_raises_when_still_malformed_not_silent(self, monkeypatch):
@@ -107,18 +105,24 @@ class TestStructureExerciseMarkdown:
 class TestExerciseStructureSchema:
     def test_valid_structure_validates(self):
         obj = ExerciseStructureOutput.model_validate(json.loads(VALID))
-        assert obj.sections[0].questions[0].question_id == "s1q1"
+        assert obj.questions[0].question_id == "q1"
 
-    def test_sections_default_empty(self):
+    def test_questions_default_empty(self):
         obj = ExerciseStructureOutput.model_validate({"exercise_title": "T"})
-        assert obj.sections == []
+        assert obj.questions == []
 
-    def test_sections_must_be_a_list(self):
+    def test_questions_must_be_a_list(self):
         with pytest.raises(ValidationError):
-            ExerciseStructureOutput.model_validate({"sections": {"not": "a list"}})
+            ExerciseStructureOutput.model_validate({"questions": {"not": "a list"}})
+
+    def test_legacy_sections_remain_valid_during_compatibility_window(self):
+        obj = ExerciseStructureOutput.model_validate({
+            "sections": [{"title": "قدیمی", "questions": [{"question_id": "old-q"}]}],
+        })
+        assert obj.sections[0].questions[0].question_id == "old-q"
 
     def test_extra_keys_allowed(self):
-        obj = ExerciseStructureOutput.model_validate({"sections": [], "brand_new": 1})
+        obj = ExerciseStructureOutput.model_validate({"questions": [], "brand_new": 1})
         assert obj.model_dump().get("brand_new") == 1
 
 

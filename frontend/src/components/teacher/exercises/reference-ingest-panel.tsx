@@ -35,7 +35,7 @@ import {
   type ReferenceIngestPreviewItem,
 } from '@/services/exercises-service';
 
-type ReferenceIngestQuestion = ExerciseDetail['sections'][number]['questions'][number] & {
+type ReferenceIngestQuestion = ExerciseDetail['questions'][number] & {
   label: string;
 };
 

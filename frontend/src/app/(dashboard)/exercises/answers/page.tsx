@@ -5,12 +5,6 @@ import { useEffect, useState } from 'react';
 import { Loader2 } from 'lucide-react';
 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import {
-  Accordion,
-  AccordionContent,
-  AccordionItem,
-  AccordionTrigger,
-} from '@/components/ui/accordion';
 import { MarkdownWithMath } from '@/components/content/markdown-with-math';
 import { MathText } from '@/components/content/math-text';
 import { type FinishedAnswer, getFinishedAnswers } from '@/services/exercises-service';
@@ -50,29 +44,19 @@ export default function FinishedAnswersPage() {
                   />
                 </CardTitle>
               </CardHeader>
-              <CardContent>
-                <Accordion type="multiple" className="w-full">
-                  {ex.sections.map((s) => (
-                    <AccordionItem key={s.id} value={`s-${s.id}`}>
-                      <AccordionTrigger>
-                        <MathText text={s.title || 'بخش'} />
-                      </AccordionTrigger>
-                      <AccordionContent className="space-y-3">
-                        {s.questions.map((q) => (
-                          <div key={q.id} className="space-y-1 rounded-md border border-border p-3">
-                            <MarkdownWithMath markdown={q.questionMarkdown} />
-                            {q.referenceAnswerMarkdown && (
-                              <div className="rounded-md bg-muted p-2 text-sm">
-                                <p className="mb-1 font-medium text-muted-foreground">پاسخ مرجع:</p>
-                                <MarkdownWithMath markdown={q.referenceAnswerMarkdown} />
-                              </div>
-                            )}
-                          </div>
-                        ))}
-                      </AccordionContent>
-                    </AccordionItem>
-                  ))}
-                </Accordion>
+              <CardContent className="space-y-3">
+                {ex.questions.map((question, index) => (
+                  <div key={question.id} className="space-y-2 rounded-md border border-border p-3">
+                    <p className="text-sm font-semibold text-muted-foreground">سوال {index + 1}</p>
+                    <MarkdownWithMath markdown={question.questionMarkdown} />
+                    {question.referenceAnswerMarkdown && (
+                      <div className="rounded-md bg-muted p-2 text-sm">
+                        <p className="mb-1 font-medium text-muted-foreground">پاسخ مرجع:</p>
+                        <MarkdownWithMath markdown={question.referenceAnswerMarkdown} />
+                      </div>
+                    )}
+                  </div>
+                ))}
               </CardContent>
             </Card>
           ))}

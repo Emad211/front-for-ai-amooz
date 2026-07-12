@@ -26,15 +26,13 @@ Status = ClassExercise.Status
 
 STRUCTURE = {
     "exercise_title": "T",
-    "sections": [
-        {"section_id": "s1", "title": "بخش ۱", "questions": [
-            {"question_id": "s1q1", "question_text_markdown": "سؤال ۱",
-             "question_type": "descriptive", "options": None,
-             "points": 2, "reference_answer_markdown": None},
-            {"question_id": "s1q2", "question_text_markdown": "سؤال ۲",
-             "question_type": "multiple_choice", "options": ["الف", "ب"],
-             "points": None, "reference_answer_markdown": None},
-        ]},
+    "questions": [
+        {"question_id": "q1", "question_text_markdown": "سؤال ۱",
+         "question_type": "descriptive", "options": None,
+         "points": 2, "reference_answer_markdown": None},
+        {"question_id": "q2", "question_text_markdown": "سؤال ۲",
+         "question_type": "multiple_choice", "options": ["الف", "ب"],
+         "points": None, "reference_answer_markdown": None},
     ],
 }
 
@@ -71,12 +69,33 @@ def test_happy_extraction_builds_rows_and_reaches_extracted(monkeypatch):
     assert ex.workflow_state['readyForReview'] is True
     assert ex.review_ready_notified_at is not None
     secs = list(ClassExerciseSection.objects.filter(exercise=ex).order_by("order"))
-    assert len(secs) == 1 and secs[0].title == "بخش ۱"
+    assert len(secs) == 1 and secs[0].title == ""
     qs = list(ClassExerciseQuestion.objects.filter(section=secs[0]).order_by("order"))
     assert [q.question_type for q in qs] == ["descriptive", "multiple_choice"]
     assert str(qs[0].max_points) == "2.00"          # points extracted
     assert str(qs[1].max_points) == "1.00"          # null points -> default 1
     assert qs[1].options == ["الف", "ب"]
+
+
+def test_legacy_sections_are_flattened_into_one_internal_section(monkeypatch):
+    legacy = {
+        "sections": [
+            {"title": "الف", "questions": [{"question_text_markdown": "سؤال ۱"}]},
+            {"title": "ب", "questions": [{"question_text_markdown": "سؤال ۲"}]},
+        ],
+    }
+    _mock_pipeline(monkeypatch, structure=legacy)
+    monkeypatch.setattr(tasks.send_exercise_review_ready_sms_task, 'delay', lambda _eid: None)
+    ex = baker.make(ClassExercise, status=Status.DRAFT)
+
+    result = _run(ex.id)
+
+    assert result["sections"] == 1 and result["questions"] == 2
+    section = ClassExerciseSection.objects.get(exercise=ex)
+    assert section.title == ""
+    assert list(section.questions.order_by('order').values_list('question_markdown', flat=True)) == [
+        "سؤال ۱", "سؤال ۲",
+    ]
 
 
 def test_status_guard_skips_non_runnable(monkeypatch):
@@ -152,7 +171,7 @@ def test_rerun_from_failed_clears_old_rows(monkeypatch):
     result = _run(ex.id)
     assert result["status"] == "extracted"
     titles = list(ClassExerciseSection.objects.filter(exercise=ex).values_list("title", flat=True))
-    assert titles == ["بخش ۱"]  # stale section replaced
+    assert titles == [""]  # stale section replaced by the private flat container
 
 
 def test_missing_exercise_is_safe(monkeypatch):
