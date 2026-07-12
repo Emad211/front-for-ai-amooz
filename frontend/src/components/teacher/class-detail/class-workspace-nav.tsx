@@ -11,11 +11,13 @@ import {
   listExercises,
   type ExerciseListItem,
 } from '@/services/exercises-service';
+import type { ClassPendingExerciseSnapshot } from '@/types';
 
 interface ClassWorkspaceNavProps {
   classId: string;
   basePath?: string;
   className?: string;
+  pendingExercises?: ClassPendingExerciseSnapshot[];
 }
 
 type WorkspaceNavItem = {
@@ -26,9 +28,7 @@ type WorkspaceNavItem = {
   showExerciseSummary?: boolean;
 };
 
-function summarizeExercises(exercises: ExerciseListItem[]): string {
-  if (exercises.length === 0) return 'بدون تمرین';
-
+function summarizeExerciseState(exercises: ExerciseListItem[]): string {
   const state = exercises.some((exercise) => exercise.status === 'extracting')
     ? 'در حال استخراج'
     : exercises.some((exercise) => exercise.status === 'failed')
@@ -42,14 +42,30 @@ function summarizeExercises(exercises: ExerciseListItem[]): string {
   return `${toPersianDigits(exercises.length)} · ${state}`;
 }
 
+function summarizePendingExercises(pendingExercises: ClassPendingExerciseSnapshot[]): string | null {
+  if (pendingExercises.length === 0) return null;
+
+  const state = pendingExercises.some((exercise) => exercise.workflowStage === 'failed' || exercise.exerciseStatus === 'failed' || exercise.status === 'failed')
+    ? 'نیازمند بررسی'
+    : pendingExercises.some((exercise) => exercise.readyForReview || exercise.workflowStage === 'ready_for_review' || exercise.exerciseStatus === 'extracted')
+      ? 'آماده بازبینی'
+      : pendingExercises.some((exercise) => exercise.exerciseId || exercise.status === 'queued' || exercise.exerciseStatus === 'extracting')
+        ? 'در حال ساخت'
+        : 'در صف ساخت';
+
+  return `${toPersianDigits(pendingExercises.length)} · ${state}`;
+}
+
 export function ClassWorkspaceNav({
   classId,
   basePath = '/teacher',
   className,
+  pendingExercises = [],
 }: ClassWorkspaceNavProps) {
   const pathname = usePathname();
   const rootPath = `${basePath}/my-classes/${classId}`;
   const [exerciseSummary, setExerciseSummary] = useState<string | null>(null);
+  const pendingSummary = useMemo(() => summarizePendingExercises(pendingExercises), [pendingExercises]);
 
   useEffect(() => {
     if (basePath !== '/teacher') return;
@@ -60,7 +76,8 @@ export function ClassWorkspaceNav({
     let mounted = true;
     listExercises(sessionId)
       .then((exercises) => {
-        if (mounted) setExerciseSummary(summarizeExercises(exercises));
+        if (!mounted) return;
+        setExerciseSummary(exercises.length > 0 ? summarizeExerciseState(exercises) : null);
       })
       .catch(() => {
         if (mounted) setExerciseSummary(null);
@@ -135,7 +152,7 @@ export function ClassWorkspaceNav({
               >
                 <Icon className="h-4 w-4" aria-hidden="true" />
                 <span>{item.label}</span>
-                {item.showExerciseSummary && exerciseSummary && (
+                {item.showExerciseSummary && (exerciseSummary || pendingSummary || 'بدون تمرین') && (
                   <span
                     className={cn(
                       'rounded-full border px-2 py-0.5 text-[11px] leading-none',
@@ -144,7 +161,7 @@ export function ClassWorkspaceNav({
                         : 'border-border bg-muted text-muted-foreground'
                     )}
                   >
-                    {exerciseSummary}
+                    {exerciseSummary || pendingSummary || 'بدون تمرین'}
                   </span>
                 )}
               </Link>

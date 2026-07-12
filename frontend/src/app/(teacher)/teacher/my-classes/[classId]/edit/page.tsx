@@ -81,7 +81,7 @@ export default function TeacherClassEditPage({ params }: PageProps) {
   return (
     <div className="space-y-6">
       <ClassEditHeader classId={classId} title={detail.title} status={detail.status} basePath="/teacher" />
-      <ClassWorkspaceNav classId={classId} basePath="/teacher" />
+      <ClassWorkspaceNav classId={classId} basePath="/teacher" pendingExercises={detail.pendingExercises} />
 
       <div className="space-y-6">
         <ClassEditForm classDetail={detail} onSave={handleSave} isSaving={isSaving} />

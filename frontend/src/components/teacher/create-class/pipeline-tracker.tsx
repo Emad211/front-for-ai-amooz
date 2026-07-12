@@ -111,6 +111,8 @@ export function PipelineTracker({
   const cleanedWarnings = workflowWarnings.filter(Boolean).slice(0, 3);
   const hasTracker = Boolean(stage || isUploading || errorMessage || readyForReview);
   const warningIdRef = useRef(`pipeline-warnings-${Math.random().toString(36).slice(2)}`);
+  const reviewDestination = pipelineType === 'class' ? 'صفحه کلاس‌ها' : 'صفحه آمادگی آزمون‌ها';
+  const readyMessage = `پیش‌نویس آماده است؛ برای بررسی نهایی و انتشار، از ${reviewDestination} وارد آن شوید.`;
 
   return (
     <div className="mt-4 space-y-4">
@@ -156,7 +158,7 @@ export function PipelineTracker({
                 </h4>
               </div>
               <p className="text-xs leading-6 text-muted-foreground">
-                {workflowMessage || (readyForReview ? 'پیش‌نویس شما آماده بازبینی و انتشار است.' : 'وضعیت پردازش در حال به‌روزرسانی است.')}
+                {workflowMessage || (readyForReview ? readyMessage : 'وضعیت پردازش در حال به‌روزرسانی است.')}
               </p>
             </div>
             {isPipelineActive && startedAt ? (
@@ -237,7 +239,7 @@ export function PipelineTracker({
         <div className="rounded-2xl border border-green-500/30 bg-green-500/5 p-4 animate-in fade-in slide-in-from-top-2 duration-300">
           <div className="flex items-center gap-2">
             <span className="text-lg text-green-600">✅</span>
-            <p className="text-sm font-medium text-green-700 dark:text-green-400">پیش‌نویس آماده است و می‌توانید برای بازبینی و انتشار برگردید.</p>
+            <p className="text-sm font-medium text-green-700 dark:text-green-400">{readyMessage}</p>
           </div>
         </div>
       ) : null}

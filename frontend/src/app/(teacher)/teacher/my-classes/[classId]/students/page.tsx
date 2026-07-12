@@ -56,7 +56,7 @@ export default function TeacherClassStudentsPage({ params }: PageProps) {
         studentsCount={students.length}
         canManageRoster={!isOrgClass}
       />
-      <ClassWorkspaceNav classId={classId} basePath="/teacher" />
+      <ClassWorkspaceNav classId={classId} basePath="/teacher" pendingExercises={detail.pendingExercises} />
 
       {isOrgClass && (
         <div

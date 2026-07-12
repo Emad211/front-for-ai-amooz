@@ -1,12 +1,16 @@
 'use client';
 
-import { use } from 'react';
+import { use, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { ArrowRight } from 'lucide-react';
 
 import { ClassWorkspaceNav } from '@/components/teacher/class-detail';
 import { ExerciseManager } from '@/components/teacher/exercises/exercise-manager';
 import { Button } from '@/components/ui/button';
+import {
+  getClassCreationSessionDetail,
+  type PendingExerciseSnapshot,
+} from '@/services/classes-service';
 
 interface PageProps {
   params: Promise<{ classId: string }>;
@@ -15,6 +19,24 @@ interface PageProps {
 export default function TeacherClassExercisesPage({ params }: PageProps) {
   const { classId } = use(params);
   const sessionId = Number(classId);
+  const [pendingExercises, setPendingExercises] = useState<PendingExerciseSnapshot[]>([]);
+
+  useEffect(() => {
+    if (!Number.isFinite(sessionId)) return;
+
+    let mounted = true;
+    getClassCreationSessionDetail(sessionId)
+      .then((detail) => {
+        if (mounted) setPendingExercises(detail.pendingExercises ?? []);
+      })
+      .catch(() => {
+        if (mounted) setPendingExercises([]);
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, [sessionId]);
 
   return (
     <main dir="rtl" className="container mx-auto max-w-5xl px-4 py-6 md:py-8">
@@ -27,7 +49,12 @@ export default function TeacherClassExercisesPage({ params }: PageProps) {
           </Link>
         </Button>
       </div>
-      <ClassWorkspaceNav classId={classId} basePath="/teacher" className="mb-6" />
+      <ClassWorkspaceNav
+        classId={classId}
+        basePath="/teacher"
+        className="mb-6"
+        pendingExercises={pendingExercises}
+      />
       {Number.isFinite(sessionId) ? (
         <ExerciseManager sessionId={sessionId} />
       ) : (

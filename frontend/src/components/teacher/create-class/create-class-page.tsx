@@ -192,6 +192,7 @@ export function CreateClassPage() {
 
   const pollTimer = useRef<number | null>(null);
   const pollFailures = useRef<number>(0);
+  const pipelineSectionRef = useRef<HTMLDivElement | null>(null);
 
   const loadDraft = () => {
     try {
@@ -450,6 +451,16 @@ export function CreateClassPage() {
     }
   };
 
+  const revealPipelineProgress = (message: string) => {
+    setExpandedSections((prev) => (prev.includes('files') ? prev : [...prev, 'files']));
+    toast.success(message, {
+      description: 'وضعیت پردازش در بخش بارگذاری فایل نمایش داده می‌شود.',
+    });
+    window.setTimeout(() => {
+      pipelineSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 80);
+  };
+
   const updatePendingExercise = (clientExerciseKey: string, next: ExerciseIntakeDraft) => {
     setPendingExercises((prev) =>
       prev.map((exercise) => (exercise.clientExerciseKey === clientExerciseKey ? next : exercise)),
@@ -629,6 +640,7 @@ export function CreateClassPage() {
             });
         }
         startPolling(result.id);
+        revealPipelineProgress('پردازش کلاس شروع شد.');
       } catch (error) {
         const msg = error instanceof Error ? error.message : 'خطا در ارتباط با سرور';
         setPipelineError(msg);
@@ -675,6 +687,7 @@ export function CreateClassPage() {
           window.localStorage.setItem(CREATE_EXAM_PREP_LAST_STATUS_STORAGE_KEY, JSON.stringify({ sessionId: result.id, status: result.status }));
         } catch { /* ignore */ }
         startExamPrepPolling(result.id);
+        revealPipelineProgress('پردازش آمادگی آزمون شروع شد.');
       } catch (error) {
         const msg = error instanceof Error ? error.message : 'خطا در ارتباط با سرور';
         setExamPrepPipelineError(msg);
@@ -832,35 +845,36 @@ export function CreateClassPage() {
         onDescriptionChange={setDescription}
       />
 
-      <FileUploadSection
-        title={pipelineType === 'class' ? 'بارگذاری فایل درسی' : 'بارگذاری فایل حل تست'}
-        isExpanded={expandedSections.includes('files')}
-        onToggle={() => toggleSection('files')}
-        accept="audio/*,video/*,application/pdf,.pdf"
-        multiple={false}
-        onFilesSelected={(files) => {
-          const file = files && files.length ? files[0] : null;
-          setLessonFile(file);
-          setStep1ClientRequestId(null);
-          if (pipelineType === 'class') {
-            setPipelineError(null);
-            stopPolling();
-            setSessionDetail(null);
-            setActiveSessionId(null);
-            window.localStorage.removeItem(ACTIVE_SESSION_STORAGE_KEY);
-          } else {
-            setExamPrepPipelineError(null);
-            stopPolling();
-            setExamPrepSessionDetail(null);
-            setActiveExamPrepSessionId(null);
-            window.localStorage.removeItem(ACTIVE_EXAM_PREP_SESSION_STORAGE_KEY);
-          }
-        }}
-      >
+      <div ref={pipelineSectionRef} className="scroll-mt-6">
+        <FileUploadSection
+          title={pipelineType === 'class' ? 'بارگذاری فایل درسی' : 'بارگذاری فایل حل تست'}
+          isExpanded={expandedSections.includes('files')}
+          onToggle={() => toggleSection('files')}
+          accept="audio/*,video/*,application/pdf,.pdf"
+          multiple={false}
+          onFilesSelected={(files) => {
+            const file = files && files.length ? files[0] : null;
+            setLessonFile(file);
+            setStep1ClientRequestId(null);
+            if (pipelineType === 'class') {
+              setPipelineError(null);
+              stopPolling();
+              setSessionDetail(null);
+              setActiveSessionId(null);
+              window.localStorage.removeItem(ACTIVE_SESSION_STORAGE_KEY);
+            } else {
+              setExamPrepPipelineError(null);
+              stopPolling();
+              setExamPrepSessionDetail(null);
+              setActiveExamPrepSessionId(null);
+              window.localStorage.removeItem(ACTIVE_EXAM_PREP_SESSION_STORAGE_KEY);
+            }
+          }}
+        >
           <div className="mt-4 space-y-3">
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
               <div className="text-xs text-muted-foreground">
-                {lessonFile ? `فایل انتخاب‌شده: ${lessonFile.name}` : 'یک فایل صوتی یا ویدیویی انتخاب کنید.'}
+                {lessonFile ? `فایل انتخاب‌شده: ${lessonFile.name}` : 'یک فایل صوتی، ویدیویی یا PDF انتخاب کنید.'}
               </div>
             </div>
 
@@ -886,7 +900,8 @@ export function CreateClassPage() {
             startedAt={currentStartedAt}
           />
         </div>
-      </FileUploadSection>
+        </FileUploadSection>
+      </div>
 
       {pipelineType === 'class' ? (
         <Card className="overflow-hidden rounded-2xl border-border/40 bg-card/70 backdrop-blur" dir="rtl">
@@ -1113,8 +1128,8 @@ export function CreateClassPage() {
             <AlertDialogTrigger asChild>
               <Button
                 type="button"
-                variant="outline"
-                className="h-11 w-full rounded-xl border-destructive/40 px-6 text-destructive hover:bg-destructive/10 hover:text-destructive sm:w-auto"
+                variant="destructive"
+                className="h-11 w-full rounded-xl border border-red-400/70 bg-red-600 px-6 text-white shadow-sm shadow-red-950/40 hover:bg-red-500 focus-visible:ring-red-400 sm:w-auto"
                 title="لغو پردازش پایپ‌لاین"
               >
                 <Ban className="h-4 w-4" />

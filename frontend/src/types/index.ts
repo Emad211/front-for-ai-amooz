@@ -347,6 +347,19 @@ export interface ClassChapter {
   lessons: ClassLesson[];
 }
 
+export interface ClassPendingExerciseSnapshot {
+  clientExerciseKey?: string;
+  title?: string;
+  status?: string;
+  message?: string;
+  exerciseId?: number;
+  exerciseStatus?: string;
+  workflowStage?: string;
+  workflowMessage?: string;
+  progressPercent?: number;
+  readyForReview?: boolean;
+}
+
 export interface ClassDetail extends Course {
   // Set when the class belongs to an organization → its roster is managed by the
   // org via study groups (the teacher can't hand-add/remove students).
@@ -366,6 +379,7 @@ export interface ClassDetail extends Course {
   pipelineErrorDetail?: string;
   isPublished?: boolean;
   publishedAt?: string | null;
+  pendingExercises?: ClassPendingExerciseSnapshot[];
 }
 
 // ============================================================================

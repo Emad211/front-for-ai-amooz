@@ -230,7 +230,11 @@ export default function TeacherClassDetailPage({ params }: PageProps) {
           ) : null
         }
       />
-      <ClassWorkspaceNav classId={classId} basePath="/teacher" />
+      <ClassWorkspaceNav
+        classId={classId}
+        basePath="/teacher"
+        pendingExercises={sessionDetail?.pendingExercises ?? detail.pendingExercises}
+      />
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6">
         <div className="md:col-span-2 space-y-6">
