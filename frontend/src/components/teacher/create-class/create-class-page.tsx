@@ -158,6 +158,10 @@ function hasActiveEmbeddedExercises(detail: ClassCreationSessionDetail | null): 
   });
 }
 
+function hasPersistedEmbeddedExercises(detail: ClassCreationSessionDetail | null): boolean {
+  return Boolean(detail?.pendingExercises?.length);
+}
+
 export function CreateClassPage() {
   const { activeWorkspace } = useWorkspace();
   const [studyGroups, setStudyGroups] = useState<StudyGroup[]>([]);
@@ -196,6 +200,12 @@ export function CreateClassPage() {
   const pollTimer = useRef<number | null>(null);
   const pollFailures = useRef<number>(0);
   const pipelineSectionRef = useRef<HTMLDivElement | null>(null);
+
+  const syncEmbeddedExercisesFromSession = (detail: ClassCreationSessionDetail) => {
+    if (hasPersistedEmbeddedExercises(detail)) {
+      setIncludeExercises(true);
+    }
+  };
 
   const loadDraft = () => {
     try {
@@ -243,6 +253,7 @@ export function CreateClassPage() {
         setOptimisticStatus(null);
         setSessionDetail(detail);
         setActiveSessionId(detail.id);
+        syncEmbeddedExercisesFromSession(detail);
 
         if (detail?.status) {
           persistLastStatus({ sessionId: detail.id, status: detail.status });
@@ -292,6 +303,7 @@ export function CreateClassPage() {
       setOptimisticStatus(null);
       setSessionDetail(detail);
       setActiveSessionId(detail.id);
+      syncEmbeddedExercisesFromSession(detail);
       setTitle(detail.title);
       setDescription(clampDescription(detail.description));
       setLevel(String((detail as any).level || '').trim());
@@ -558,6 +570,10 @@ export function CreateClassPage() {
   const currentStartedAt = pipelineType === 'class' ? sessionDetail?.created_at ?? null : examPrepSessionDetail?.created_at ?? null;
   const currentIsPipelineCancelled = currentStatus === 'cancelled';
   const currentHasActiveEmbeddedExercises = pipelineType === 'class' && status === 'recapped' && hasActiveEmbeddedExercises(sessionDetail);
+  const persistedEmbeddedExercises = pipelineType === 'class' ? (sessionDetail?.pendingExercises ?? []) : [];
+  const hasSubmittedEmbeddedExercises = persistedEmbeddedExercises.length > 0;
+  const effectiveIncludeExercises = includeExercises || hasSubmittedEmbeddedExercises;
+  const embeddedExerciseCount = hasSubmittedEmbeddedExercises ? persistedEmbeddedExercises.length : pendingExercises.length;
   const currentIsTerminalSession = Boolean(currentSessionId) && (
     pipelineType === 'class'
       ? currentStatus === 'failed' || currentStatus === 'cancelled' || (currentStatus === 'recapped' && !currentHasActiveEmbeddedExercises)
@@ -922,12 +938,12 @@ export function CreateClassPage() {
                 <div className="min-w-0 space-y-1">
                   <div className="flex flex-wrap items-center gap-2">
                     <CardTitle className="text-lg">تمرین‌های کلاس</CardTitle>
-                    <Badge variant={includeExercises ? 'default' : 'outline'} className="rounded-full px-2.5 py-0.5">
-                      {includeExercises ? `${pendingExercises.length} تمرین` : 'اختیاری'}
+                    <Badge variant={effectiveIncludeExercises ? 'default' : 'outline'} className="rounded-full px-2.5 py-0.5">
+                      {effectiveIncludeExercises ? `${embeddedExerciseCount} تمرین` : 'اختیاری'}
                     </Badge>
                   </div>
                   <p className="text-xs leading-6 text-muted-foreground">
-                    {includeExercises
+                    {effectiveIncludeExercises
                       ? 'پیش‌نویس تمرین‌ها بعد از آماده‌شدن کلاس ساخته و برای بازبینی آماده می‌شوند.'
                       : 'در صورت نیاز، تمرین را همین‌جا همراه کلاس بسازید.'}
                   </p>
@@ -948,7 +964,8 @@ export function CreateClassPage() {
                 <div className="flex items-start justify-start gap-3">
                   <Checkbox
                     id="include-embedded-exercises"
-                    checked={includeExercises}
+                    checked={effectiveIncludeExercises}
+                    disabled={Boolean(currentSessionId)}
                     onCheckedChange={(checked) => setEmbeddedExercisesEnabled(Boolean(checked))}
                     className="mt-1 h-5 w-5 shrink-0"
                   />
@@ -963,13 +980,13 @@ export function CreateClassPage() {
                 </div>
               </div>
 
-              {includeExercises ? (
+              {effectiveIncludeExercises ? (
                 <div className="space-y-4">
-                  {(sessionDetail?.pendingExercises ?? []).length > 0 ? (
+                  {hasSubmittedEmbeddedExercises ? (
                     <div className="space-y-2 rounded-2xl border border-border/70 bg-muted/20 p-3">
                       <p className="text-sm font-medium">وضعیت تمرین‌های ثبت‌شده برای این کلاس</p>
                       <div className="space-y-3">
-                        {(sessionDetail?.pendingExercises ?? []).map((exercise) => (
+                        {persistedEmbeddedExercises.map((exercise) => (
                           <div key={`${exercise.clientExerciseKey}-${exercise.exerciseId ?? 'pending'}`} className="space-y-3 rounded-xl border border-border/60 bg-background/70 px-3 py-3">
                             <div className="flex items-center justify-between gap-3">
                               <span className="text-sm font-medium">{exercise.title}</span>
@@ -1014,39 +1031,43 @@ export function CreateClassPage() {
                     </div>
                   ) : null}
 
-                  {pendingExercises.map((exercise, index) => (
-                    <div key={exercise.clientExerciseKey} className="rounded-2xl border border-border/60 bg-background/30 p-4">
-                      <div className="mb-4 flex items-center justify-between gap-3">
-                        <div className="space-y-1">
-                          <p className="text-sm font-semibold">تمرین {index + 1}</p>
-                          <p className="text-xs text-muted-foreground">
-                            این تمرین بعد از کامل‌شدن پردازش کلاس، خودکار ساخته و استخراج می‌شود.
-                          </p>
+                  {!currentSessionId ? (
+                    <>
+                      {pendingExercises.map((exercise, index) => (
+                        <div key={exercise.clientExerciseKey} className="rounded-2xl border border-border/60 bg-background/30 p-4">
+                          <div className="mb-4 flex items-center justify-between gap-3">
+                            <div className="space-y-1">
+                              <p className="text-sm font-semibold">تمرین {index + 1}</p>
+                              <p className="text-xs text-muted-foreground">
+                                این تمرین بعد از کامل‌شدن پردازش کلاس، خودکار ساخته و استخراج می‌شود.
+                              </p>
+                            </div>
+                            {pendingExercises.length > 1 ? (
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => removePendingExercise(exercise.clientExerciseKey)}
+                              >
+                                حذف
+                              </Button>
+                            ) : null}
+                          </div>
+                          <ExerciseIntakeForm
+                            value={exercise}
+                            compact
+                            onChange={(next) => updatePendingExercise(exercise.clientExerciseKey, next)}
+                          />
                         </div>
-                        {pendingExercises.length > 1 ? (
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => removePendingExercise(exercise.clientExerciseKey)}
-                          >
-                            حذف
-                          </Button>
-                        ) : null}
-                      </div>
-                      <ExerciseIntakeForm
-                        value={exercise}
-                        compact
-                        onChange={(next) => updatePendingExercise(exercise.clientExerciseKey, next)}
-                      />
-                    </div>
-                  ))}
+                      ))}
 
-                  <div className="flex justify-end">
-                    <Button type="button" variant="outline" onClick={addPendingExercise}>
-                      افزودن تمرین دیگر
-                    </Button>
-                  </div>
+                      <div className="flex justify-end">
+                        <Button type="button" variant="outline" onClick={addPendingExercise}>
+                          افزودن تمرین دیگر
+                        </Button>
+                      </div>
+                    </>
+                  ) : null}
                 </div>
               ) : (
                 <div className="rounded-2xl border border-dashed border-border/70 bg-background/30 px-4 py-4 text-sm leading-7 text-muted-foreground">
