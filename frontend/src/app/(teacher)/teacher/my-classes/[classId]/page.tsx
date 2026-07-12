@@ -157,7 +157,11 @@ export default function TeacherClassDetailPage({ params }: PageProps) {
   const isPublished = Boolean(sessionDetail?.is_published ?? detail.isPublished);
   const pipelineStatus = sessionDetail?.status || detail.pipelineStatus || '';
   const hasStructure = Boolean((sessionDetail?.structure_json || detail.structureJson || '').trim());
+  const showPublishClass = Number.isFinite(sessionId) && !isPublished;
   const canPublishClass = Number.isFinite(sessionId) && !isPublished && pipelineStatus === 'recapped' && hasStructure;
+  const publishClassDisabledReason = !hasStructure || pipelineStatus !== 'recapped'
+    ? 'پردازش کلاس هنوز کامل نشده است.'
+    : undefined;
 
   const handlePublish = async () => {
     if (!canPublishClass) return;
@@ -186,15 +190,20 @@ export default function TeacherClassDetailPage({ params }: PageProps) {
         status={isPublished ? 'active' : detail.status}
         basePath="/teacher"
         actions={
-          canPublishClass ? (
+          showPublishClass ? (
             <AlertDialog
               open={publishDialogOpen}
               onOpenChange={(open) => {
-                if (!isPublishing) setPublishDialogOpen(open);
+                if (!isPublishing && canPublishClass) setPublishDialogOpen(open);
               }}
             >
               <AlertDialogTrigger asChild>
-                <Button size="sm" className="min-h-11 sm:size-default">
+                <Button
+                  size="sm"
+                  className="min-h-11 sm:size-default"
+                  disabled={!canPublishClass || isPublishing}
+                  title={publishClassDisabledReason}
+                >
                   <CheckCircle className="h-4 w-4 sm:ml-2" />
                   <span>انتشار کلاس</span>
                 </Button>

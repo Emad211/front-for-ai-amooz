@@ -311,8 +311,11 @@ class TestExtract:
 
 
 class TestPublishGate:
-    def _exercise_with_question(self, owner, **qkw):
+    def _exercise_with_question(self, owner, *, session_published=True, **qkw):
         ex = _exercise(owner, status=Status.EXTRACTED)
+        if session_published:
+            ex.session.is_published = True
+            ex.session.save(update_fields=['is_published'])
         sec = baker.make(ClassExerciseSection, exercise=ex, order=0)
         baker.make(ClassExerciseQuestion, section=sec, order=0, **qkw)
         return ex
@@ -335,7 +338,23 @@ class TestPublishGate:
     def test_publish_blocked_when_no_questions(self):
         owner = _teacher()
         ex = _exercise(owner, status=Status.EXTRACTED)
+        ex.session.is_published = True
+        ex.session.save(update_fields=['is_published'])
         assert _auth(owner).post(PUBLISH.format(ex.id)).status_code == 400
+
+    def test_publish_blocked_until_class_is_published(self):
+        owner = _teacher()
+        ex = self._exercise_with_question(
+            owner,
+            session_published=False,
+            reference_answer_markdown='پاسخ',
+            max_points=Decimal('2'),
+        )
+        res = _auth(owner).post(PUBLISH.format(ex.id))
+        assert res.status_code == 409
+        assert 'ابتدا خود کلاس را منتشر کنید' in res.data['detail']
+        ex.refresh_from_db()
+        assert ex.status == Status.EXTRACTED
 
     def test_publish_succeeds_when_complete(self):
         owner = _teacher()

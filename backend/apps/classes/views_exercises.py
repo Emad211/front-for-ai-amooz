@@ -427,6 +427,11 @@ class ExercisePublishView(APIView):
                 {'detail': 'ابتدا باید سوال‌های تمرین استخراج شوند.'},
                 status=status.HTTP_409_CONFLICT,
             )
+        if not exercise.session.is_published:
+            return Response(
+                {'detail': 'ابتدا خود کلاس را منتشر کنید؛ سپس تمرین را منتشر کنید.'},
+                status=status.HTTP_409_CONFLICT,
+            )
         questions = ClassExerciseQuestion.objects.filter(section__exercise=exercise)
         if not questions.exists():
             return Response(

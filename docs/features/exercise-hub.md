@@ -226,7 +226,9 @@ database-engineer).
   instead of separately joining against `GET exercises/`.
 - `POST exercises/<eid>/extract/` (manual retry/rerun only; 409 while EXTRACTING and for PUBLISHED) ·
   `POST exercises/<eid>/publish/` (400 if any
-  question lacks reference answer/points; 409 wrong status)
+  question lacks reference answer/points; 409 wrong status or when the parent class is not published yet).
+  The class publish action itself is visible in the teacher class header while draft, but remains disabled
+  until the class pipeline reaches `recapped` with structured content.
 - `POST exercises/<eid>/reference-ingest/preview/` (multipart: `source_text`, `files[]`, `mode_hint`,
   optional `target_question_id`) → review-only `{modeDetected, items, warnings, counts}`; owner-scoped,
   status-gated, no DB write. `POST exercises/<eid>/reference-ingest/apply/` → transactional update of

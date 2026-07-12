@@ -38,8 +38,9 @@ class TestPublishRaceCondition:
             ClassCreationSession,
             teacher=teacher,
             pipeline_type='class',
-            status='structured',
+            status='recapped',
             structure_json='{"sections": []}',
+            recap_markdown='# recap',
             is_published=False,
         )
 

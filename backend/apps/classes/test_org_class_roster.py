@@ -72,8 +72,9 @@ class TestOrgClassRoster:
             teacher=teacher, title='c', description='',
             source_file=SimpleUploadedFile('a.ogg', b'x', content_type='audio/ogg'),
             source_mime_type='audio/ogg', source_original_name='a.ogg',
-            status=ClassCreationSession.Status.STRUCTURED,
+            status=ClassCreationSession.Status.RECAPPED,
             structure_json=STRUCT,
+            recap_markdown='# recap',
             pipeline_type=ClassCreationSession.PipelineType.CLASS,
             organization=org, study_group=group,
         )

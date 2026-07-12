@@ -20,6 +20,7 @@ export default function TeacherClassExercisesPage({ params }: PageProps) {
   const { classId } = use(params);
   const sessionId = Number(classId);
   const [pendingExercises, setPendingExercises] = useState<PendingExerciseSnapshot[]>([]);
+  const [classIsPublished, setClassIsPublished] = useState(false);
 
   useEffect(() => {
     if (!Number.isFinite(sessionId)) return;
@@ -27,10 +28,14 @@ export default function TeacherClassExercisesPage({ params }: PageProps) {
     let mounted = true;
     getClassCreationSessionDetail(sessionId)
       .then((detail) => {
-        if (mounted) setPendingExercises(detail.pendingExercises ?? []);
+        if (!mounted) return;
+        setPendingExercises(detail.pendingExercises ?? []);
+        setClassIsPublished(Boolean(detail.is_published));
       })
       .catch(() => {
-        if (mounted) setPendingExercises([]);
+        if (!mounted) return;
+        setPendingExercises([]);
+        setClassIsPublished(false);
       });
 
     return () => {
@@ -56,7 +61,7 @@ export default function TeacherClassExercisesPage({ params }: PageProps) {
         pendingExercises={pendingExercises}
       />
       {Number.isFinite(sessionId) ? (
-        <ExerciseManager sessionId={sessionId} />
+        <ExerciseManager sessionId={sessionId} classIsPublished={classIsPublished} />
       ) : (
         <p className="text-muted-foreground">شناسهٔ کلاس نامعتبر است.</p>
       )}

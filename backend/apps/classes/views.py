@@ -1301,34 +1301,39 @@ class ClassCreationSessionPublishView(GenericAPIView):
         if session is None:
             return Response({'detail': 'جلسه پیدا نشد.'}, status=status.HTTP_404_NOT_FOUND)
 
+        if session.is_published:
+            return Response(ClassCreationSessionDetailSerializer(session).data)
+
         if session.status == ClassCreationSession.Status.FAILED:
             return Response({'detail': 'این جلسه با خطا متوقف شده است.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        if session.status != ClassCreationSession.Status.RECAPPED:
+            return Response({'detail': 'برای انتشار، ابتدا پردازش کلاس را کامل کنید.'}, status=status.HTTP_409_CONFLICT)
 
         if not (session.structure_json or '').strip():
             return Response({'detail': 'برای انتشار، ابتدا ساختاردهی را کامل کنید.'}, status=status.HTTP_400_BAD_REQUEST)
 
-        if not session.is_published:
-            # Atomic update to prevent double publish from concurrent requests.
-            now = timezone.now()
-            updated = ClassCreationSession.objects.filter(
-                id=session.id, is_published=False,
-            ).update(is_published=True, published_at=now, updated_at=now)
+        # Atomic update to prevent double publish from concurrent requests.
+        now = timezone.now()
+        updated = ClassCreationSession.objects.filter(
+            id=session.id, is_published=False,
+        ).update(is_published=True, published_at=now, updated_at=now)
 
-            if updated:
-                session.is_published = True
-                session.published_at = now
-                # Org class → its roster is the linked study group. Enroll the
-                # group's active students now (idempotent) so they see the class
-                # on publish; manual invites are blocked for org classes.
-                try:
-                    from .services.org_roster import sync_org_class_roster
-                    sync_org_class_roster(session)
-                except Exception:
-                    logger.warning('org roster sync on publish failed session=%s', session.id, exc_info=True)
-                def _dispatch_publish_sms():
-                    logger.info('[SMS] Dispatching send_publish_sms_task for session=%s', session.id)
-                    send_publish_sms_task.delay(session.id)
-                transaction.on_commit(_dispatch_publish_sms)
+        if updated:
+            session.is_published = True
+            session.published_at = now
+            # Org class → its roster is the linked study group. Enroll the
+            # group's active students now (idempotent) so they see the class
+            # on publish; manual invites are blocked for org classes.
+            try:
+                from .services.org_roster import sync_org_class_roster
+                sync_org_class_roster(session)
+            except Exception:
+                logger.warning('org roster sync on publish failed session=%s', session.id, exc_info=True)
+            def _dispatch_publish_sms():
+                logger.info('[SMS] Dispatching send_publish_sms_task for session=%s', session.id)
+                send_publish_sms_task.delay(session.id)
+            transaction.on_commit(_dispatch_publish_sms)
 
         return Response(ClassCreationSessionDetailSerializer(session).data)
 

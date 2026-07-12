@@ -90,7 +90,13 @@ const STATUS_VARIANT: Record<ExerciseStatus, 'default' | 'secondary' | 'destruct
   failed: 'destructive',
 };
 
-export function ExerciseManager({ sessionId }: { sessionId: number }) {
+export function ExerciseManager({
+  sessionId,
+  classIsPublished,
+}: {
+  sessionId: number;
+  classIsPublished: boolean;
+}) {
   const [exercises, setExercises] = useState<ExerciseListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
@@ -196,7 +202,12 @@ export function ExerciseManager({ sessionId }: { sessionId: number }) {
       ) : (
         <div className="space-y-4">
           {exercises.map((ex) => (
-            <ExerciseCard key={ex.id} summary={ex} onChanged={refresh} />
+            <ExerciseCard
+              key={ex.id}
+              summary={ex}
+              classIsPublished={classIsPublished}
+              onChanged={refresh}
+            />
           ))}
         </div>
       )}
@@ -206,9 +217,11 @@ export function ExerciseManager({ sessionId }: { sessionId: number }) {
 
 function ExerciseCard({
   summary,
+  classIsPublished,
   onChanged,
 }: {
   summary: ExerciseListItem;
+  classIsPublished: boolean;
   onChanged: () => Promise<void>;
 }) {
   const [detail, setDetail] = useState<ExerciseDetail | null>(null);
@@ -245,6 +258,10 @@ function ExerciseCard({
   };
 
   const doPublish = async () => {
+    if (!classIsPublished) {
+      toast.error('ابتدا خود کلاس را منتشر کنید؛ بعد از آن می‌توانید تمرین را منتشر کنید.');
+      return;
+    }
     setBusy(true);
     try {
       await publishExercise(summary.id);
@@ -361,7 +378,11 @@ function ExerciseCard({
         <CardContent className="space-y-4">
           <ExerciseEditor detail={detail} onSaved={loadDetail} />
           <div className="flex items-center justify-end gap-2 border-t border-border pt-3">
-            <Button onClick={doPublish} disabled={busy}>
+            <Button
+              onClick={doPublish}
+              disabled={busy || !classIsPublished}
+              title={!classIsPublished ? 'ابتدا خود کلاس را منتشر کنید.' : undefined}
+            >
               {busy ? <Loader2 className="ms-2 h-4 w-4 animate-spin" /> : <CheckCircle2 className="ms-2 h-4 w-4" />}
               انتشار تمرین
             </Button>

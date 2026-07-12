@@ -29,13 +29,32 @@ class TestClassCreationSessionPublishAndInvites:
             source_file=SimpleUploadedFile('audio.ogg', b'fake-audio', content_type='audio/ogg'),
             source_mime_type='audio/ogg',
             source_original_name='audio.ogg',
-            status=ClassCreationSession.Status.TRANSCRIBED,
+            status=ClassCreationSession.Status.RECAPPED,
             transcript_markdown='hello',
             structure_json='',
         )
 
         res = client.post(f'/api/classes/creation-sessions/{session.id}/publish/')
         assert res.status_code == 400
+
+    def test_publish_requires_completed_processing(self):
+        client, teacher = self._auth_client('TEACHER')
+
+        session = ClassCreationSession.objects.create(
+            teacher=teacher,
+            title='t',
+            description='',
+            source_file=SimpleUploadedFile('audio.ogg', b'fake-audio', content_type='audio/ogg'),
+            source_mime_type='audio/ogg',
+            source_original_name='audio.ogg',
+            status=ClassCreationSession.Status.STRUCTURED,
+            transcript_markdown='hello',
+            structure_json='{"root_object": {"title": "x"}, "outline": []}',
+        )
+
+        res = client.post(f'/api/classes/creation-sessions/{session.id}/publish/')
+        assert res.status_code == 409
+        assert 'پردازش کلاس را کامل کنید' in res.data['detail']
 
     def test_publish_allows_recapped(self):
         client, teacher = self._auth_client('TEACHER')
@@ -78,9 +97,10 @@ class TestClassCreationSessionPublishAndInvites:
             source_file=SimpleUploadedFile('audio.ogg', b'fake-audio', content_type='audio/ogg'),
             source_mime_type='audio/ogg',
             source_original_name='audio.ogg',
-            status=ClassCreationSession.Status.STRUCTURED,
+            status=ClassCreationSession.Status.RECAPPED,
             transcript_markdown='hello',
             structure_json='{"root_object": {"title": "x"}, "outline": []}',
+            recap_markdown='# recap',
         )
 
         res = client.post(f'/api/classes/creation-sessions/{session.id}/publish/')

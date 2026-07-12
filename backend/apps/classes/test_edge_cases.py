@@ -44,6 +44,7 @@ class TestSessionCRUDEdgeCases:
             ClassCreationSession,
             teacher=teacher,
             pipeline_type='class',
+            status=ClassCreationSession.Status.RECAPPED,
             structure_json='',
             is_published=False,
         )
