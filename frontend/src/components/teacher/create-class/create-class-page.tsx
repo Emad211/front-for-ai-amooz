@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import Image from 'next/image';
 import Link from 'next/link';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
@@ -761,9 +762,20 @@ export function CreateClassPage() {
 
   return (
     <div className="space-y-8" dir="rtl">
-      <Card className="relative overflow-hidden border-border/40 bg-gradient-to-l from-primary/10 via-background to-background rounded-3xl shadow-xl shadow-primary/5">
-        <div className="absolute inset-y-0 left-0 w-32 sm:w-40 bg-primary/10 blur-3xl" />
-        <div className="relative p-6 sm:p-8 flex flex-col gap-3">
+      <Card className="relative min-h-[230px] overflow-hidden rounded-3xl border-border/40 bg-gradient-to-l from-primary/10 via-background to-background shadow-xl shadow-primary/5 sm:min-h-[256px]">
+        <Image
+          src={pipelineType === 'class'
+            ? '/teacher/create-class/classroom-illustration.png'
+            : '/teacher/create-class/exam-prep-illustration.png'}
+          alt=""
+          width={768}
+          height={256}
+          priority
+          aria-hidden="true"
+          className="pointer-events-none absolute -left-[14%] bottom-0 h-full w-[78%] object-contain opacity-20 sm:-left-[10%] sm:w-[66%] sm:opacity-70 lg:w-[58%]"
+        />
+        <div className="pointer-events-none absolute inset-0 bg-gradient-to-l from-background/15 via-background/60 to-background/20 sm:via-background/35" />
+        <div className="relative z-10 flex flex-col gap-3 p-6 sm:max-w-[68%] sm:p-8 lg:max-w-[62%]">
           <div className="flex items-center gap-3 text-primary">
             <span className="h-10 w-10 rounded-2xl bg-primary/10 flex items-center justify-center font-black text-lg">+</span>
             <p className="text-sm text-primary">{pipelineType === 'class' ? 'مسیر ساخت کلاس' : 'مسیر آمادگی آزمون'}</p>
