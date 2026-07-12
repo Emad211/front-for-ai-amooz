@@ -199,6 +199,8 @@ def _materialize_pending_exercises(session) -> list[str]:
         if item.get('exerciseId'):
             continue
         title = str(item.get('title') or '').strip() or 'تمرین بدون عنوان'
+        no_deadline = bool(item.get('noDeadline')) or not item.get('deadline')
+        allow_late = bool(item.get('allowLate')) and not no_deadline
         try:
             with transaction.atomic():
                 exercise = ClassExercise.objects.create(
@@ -206,16 +208,16 @@ def _materialize_pending_exercises(session) -> list[str]:
                     title=title,
                     description=str(item.get('teacherNote') or '').strip(),
                     deadline=item.get('deadline'),
-                    allow_late=bool(item.get('allowLate')),
+                    allow_late=allow_late,
                     assistant_enabled=bool(item.get('assistantEnabled', True)),
                     workflow_state=build_workflow_state('queued'),
                     intake_config={
                         'v': 1,
                         'mode': 'embedded_class_create',
                         'autoExtract': True,
-                        'noDeadline': bool(item.get('noDeadline')),
+                        'noDeadline': no_deadline,
                         'deadline': item.get('deadline').isoformat() if getattr(item.get('deadline'), 'isoformat', None) else item.get('deadline'),
-                        'allowLate': bool(item.get('allowLate')),
+                        'allowLate': allow_late,
                         'assistantEnabled': bool(item.get('assistantEnabled', True)),
                         'teacherNote': str(item.get('teacherNote') or '').strip(),
                         'sources': item.get('sources') if isinstance(item.get('sources'), list) else [],

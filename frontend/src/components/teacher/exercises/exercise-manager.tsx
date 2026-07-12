@@ -141,7 +141,7 @@ export function ExerciseManager({ sessionId }: { sessionId: number }) {
         title: draft.title.trim(),
         no_deadline: draft.noDeadline,
         deadline: draft.noDeadline ? null : new Date(draft.deadline).toISOString(),
-        allow_late: draft.allowLate,
+        allow_late: !draft.noDeadline && draft.allowLate,
         assistant_enabled: draft.assistantEnabled,
         teacher_note: draft.teacherNote.trim(),
         files: draft.sources.map((item) => ({

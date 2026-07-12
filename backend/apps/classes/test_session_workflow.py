@@ -9,9 +9,11 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.db import transaction
 from django.test import override_settings
 from model_bakery import baker
+from rest_framework.serializers import ValidationError
 from rest_framework.test import APIClient
 
 from apps.classes.models import ClassCreationSession, ClassExercise, ClassExerciseAsset
+from apps.classes.serializers import Step1TranscribeRequestSerializer
 from apps.classes.services.exercise_workflow import build_workflow_state
 from apps.classes.services.session_workflow import serialize_session_workflow_fields
 from apps.classes.tasks import _make_step1_heartbeat, _mark_session_ready_for_review
@@ -21,6 +23,27 @@ User = get_user_model()
 
 
 _STEP1_URL = "/api/classes/creation-sessions/step-1/"
+
+
+def test_embedded_exercise_rejects_late_submission_without_deadline():
+    pending = [{
+        'clientExerciseKey': 'exercise-invalid-policy',
+        'title': 'تمرین بدون مهلت',
+        'noDeadline': True,
+        'deadline': None,
+        'allowLate': True,
+        'sources': [{
+            'clientFileKey': 'source-1',
+            'role': 'question_only',
+            'writingMode': 'typed',
+            'answerLayout': 'auto',
+        }],
+    }]
+
+    with pytest.raises(ValidationError, match='ارسال دیرهنگام'):
+        Step1TranscribeRequestSerializer().validate_pending_exercises(
+            json.dumps(pending, ensure_ascii=False),
+        )
 
 
 def _filesystem_storages():
@@ -47,7 +70,7 @@ def test_mark_session_ready_for_review_materializes_pending_exercises_and_notifi
                 'title': 'تمرین فصل اول',
                 'noDeadline': True,
                 'deadline': None,
-                'allowLate': False,
+                'allowLate': True,
                 'assistantEnabled': True,
                 'teacherNote': 'یادداشت',
                 'status': 'pending',
@@ -96,6 +119,8 @@ def test_mark_session_ready_for_review_materializes_pending_exercises_and_notifi
 
     assert exercise.title == 'تمرین فصل اول'
     assert exercise.workflow_state['stage'] == 'queued'
+    assert exercise.allow_late is False
+    assert exercise.intake_config['allowLate'] is False
     assert ClassExerciseAsset.objects.filter(exercise=exercise, order=0, kind='pdf').count() == 1
     assert session.review_ready_notified_at is not None
     assert session.workflow_state['stage'] == 'ready_for_review'

@@ -290,7 +290,11 @@ class ExerciseDetailView(APIView):
         exercise = _owned_exercise(request, exercise_id)
         if exercise is None:
             return Response(_NOT_FOUND, status=status.HTTP_404_NOT_FOUND)
-        serializer = ExerciseUpdateSerializer(data=request.data, partial=True)
+        serializer = ExerciseUpdateSerializer(
+            data=request.data,
+            partial=True,
+            context={'exercise': exercise},
+        )
         serializer.is_valid(raise_exception=True)
         fields: list[str] = []
         for key in ('title', 'deadline', 'allow_late', 'assistant_enabled'):

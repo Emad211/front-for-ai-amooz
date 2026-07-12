@@ -607,7 +607,7 @@ export function CreateClassPage() {
                   title: exercise.title.trim(),
                   noDeadline: exercise.noDeadline,
                   deadline: exercise.noDeadline ? null : new Date(exercise.deadline).toISOString(),
-                  allowLate: exercise.allowLate,
+                  allowLate: !exercise.noDeadline && exercise.allowLate,
                   assistantEnabled: exercise.assistantEnabled,
                   teacherNote: exercise.teacherNote.trim(),
                   sources: exercise.sources,

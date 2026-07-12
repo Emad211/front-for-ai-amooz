@@ -102,6 +102,15 @@ export function ExerciseIntakeForm({
     onChange({ ...value, [field]: fieldValue });
   };
 
+  const setHasDeadline = (hasDeadline: boolean) => {
+    onChange({
+      ...value,
+      noDeadline: !hasDeadline,
+      deadline: hasDeadline ? value.deadline : '',
+      allowLate: hasDeadline ? value.allowLate : false,
+    });
+  };
+
   const addFiles = (nextFiles: File[]) => {
     const sources = [
       ...value.sources,
@@ -161,17 +170,23 @@ export function ExerciseIntakeForm({
             <Switch
               checked={!value.noDeadline}
               disabled={disabled}
-              onCheckedChange={(checked) => setField('noDeadline', !checked)}
+              onCheckedChange={setHasDeadline}
             />
           </div>
           <div className="flex items-center justify-between rounded-xl border border-border bg-background/70 px-3 py-2.5">
             <div>
               <p className="text-sm font-medium">اجازهٔ ارسال دیرهنگام</p>
               <p className="text-xs text-muted-foreground">
-                پاسخ‌های بعد از مهلت را نگه می‌داریم و با برچسب دیرهنگام مشخص می‌کنیم.
+                {value.noDeadline
+                  ? 'برای فعال‌کردن ارسال دیرهنگام، ابتدا برای تمرین مهلت تعیین کنید.'
+                  : 'پاسخ‌های بعد از مهلت را نگه می‌داریم و با برچسب دیرهنگام مشخص می‌کنیم.'}
               </p>
             </div>
-            <Switch checked={value.allowLate} disabled={disabled} onCheckedChange={(checked) => setField('allowLate', checked)} />
+            <Switch
+              checked={!value.noDeadline && value.allowLate}
+              disabled={disabled || value.noDeadline}
+              onCheckedChange={(checked) => setField('allowLate', checked)}
+            />
           </div>
         </div>
 

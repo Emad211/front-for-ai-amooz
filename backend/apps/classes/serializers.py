@@ -86,6 +86,11 @@ class Step1TranscribeRequestSerializer(serializers.Serializer):
             deadline = item.get('deadline')
             if not no_deadline and not deadline:
                 raise serializers.ValidationError(f'مهلت تمرین شمارهٔ {ex_idx} مشخص نشده است.')
+            allow_late = bool(item.get('allowLate', item.get('allow_late', False)))
+            if no_deadline and allow_late:
+                raise serializers.ValidationError(
+                    f'ارسال دیرهنگام برای تمرین بدون مهلت شمارهٔ {ex_idx} قابل فعال‌سازی نیست.'
+                )
             normalized_deadline = None
             if deadline:
                 normalized_deadline = parse_datetime(str(deadline))
@@ -125,7 +130,7 @@ class Step1TranscribeRequestSerializer(serializers.Serializer):
                 'title': title,
                 'noDeadline': no_deadline,
                 'deadline': normalized_deadline.isoformat() if normalized_deadline else None,
-                'allowLate': bool(item.get('allowLate', item.get('allow_late', False))),
+                'allowLate': allow_late,
                 'assistantEnabled': bool(item.get('assistantEnabled', item.get('assistant_enabled', True))),
                 'teacherNote': str(item.get('teacherNote', item.get('teacher_note', '')) or '').strip(),
                 'sources': norm_sources,

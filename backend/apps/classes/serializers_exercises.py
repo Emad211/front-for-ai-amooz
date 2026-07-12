@@ -162,6 +162,10 @@ class ExerciseCreateSerializer(serializers.Serializer):
         no_deadline = attrs.get('no_deadline')
         deadline = attrs.get('deadline')
         if no_deadline:
+            if attrs.get('allow_late'):
+                raise serializers.ValidationError({
+                    'allow_late': 'ارسال دیرهنگام فقط برای تمرین دارای مهلت قابل فعال‌سازی است.',
+                })
             attrs['deadline'] = None
         elif deadline is None:
             raise serializers.ValidationError({'deadline': 'برای این تمرین باید مهلت ارسال تعیین شود.'})
@@ -173,6 +177,19 @@ class ExerciseUpdateSerializer(serializers.Serializer):
     deadline = serializers.DateTimeField(required=False, allow_null=True)
     allow_late = serializers.BooleanField(required=False)
     assistant_enabled = serializers.BooleanField(required=False)
+
+    def validate(self, attrs):
+        exercise = self.context.get('exercise')
+        current_deadline = getattr(exercise, 'deadline', None)
+        deadline = attrs.get('deadline', current_deadline)
+        allow_late = attrs.get('allow_late', getattr(exercise, 'allow_late', False))
+        if deadline is None and attrs.get('allow_late') is True:
+            raise serializers.ValidationError({
+                'allow_late': 'ارسال دیرهنگام فقط برای تمرین دارای مهلت قابل فعال‌سازی است.',
+            })
+        if 'deadline' in attrs and deadline is None and allow_late:
+            attrs['allow_late'] = False
+        return attrs
 
 
 class SectionUpdateSerializer(serializers.Serializer):

@@ -179,17 +179,54 @@ class TestCreateAndList:
         res = _auth(owner).post(LIST.format(session.id), payload, format='multipart')
         assert res.status_code == 400
 
+    def test_create_rejects_late_submission_without_deadline(self):
+        owner = _teacher()
+        session = _session(owner)
+        payload = _create_payload(no_deadline=True)
+        payload['allow_late'] = 'true'
+
+        res = _auth(owner).post(LIST.format(session.id), payload, format='multipart')
+
+        assert res.status_code == 400
+        assert 'allow_late' in res.data['errors']
+        assert not ClassExercise.objects.filter(session=session).exists()
+
 
 class TestDetailUpdateDelete:
     def test_owner_patches_toggle_and_deadline(self):
         owner = _teacher()
-        ex = _exercise(owner)
+        ex = _exercise(owner, deadline='2026-07-31T09:30:00Z')
         res = _auth(owner).patch(
             DETAIL.format(ex.id), {'assistant_enabled': False, 'allow_late': True}, format='json',
         )
         assert res.status_code == 200
         ex.refresh_from_db()
         assert ex.assistant_enabled is False and ex.allow_late is True
+
+    def test_owner_cannot_enable_late_submission_without_deadline(self):
+        owner = _teacher()
+        ex = _exercise(owner, deadline=None, allow_late=False)
+
+        res = _auth(owner).patch(
+            DETAIL.format(ex.id), {'allow_late': True}, format='json',
+        )
+
+        assert res.status_code == 400
+        ex.refresh_from_db()
+        assert ex.allow_late is False
+
+    def test_removing_deadline_also_disables_late_submission(self):
+        owner = _teacher()
+        ex = _exercise(owner, deadline='2026-07-31T09:30:00Z', allow_late=True)
+
+        res = _auth(owner).patch(
+            DETAIL.format(ex.id), {'deadline': None}, format='json',
+        )
+
+        assert res.status_code == 200
+        ex.refresh_from_db()
+        assert ex.deadline is None
+        assert ex.allow_late is False
 
     def test_non_owner_cannot_view_or_patch_or_delete(self):
         owner, other = _teacher(), _teacher()

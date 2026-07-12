@@ -292,6 +292,10 @@ exceptions, student receives safe feedback and later the answer key.
   `react-day-picker` month grid through `month_grid` instead of the older `table` hook, reduces the
   oversized popover width, and enlarges weekday/day cells with `tabular-nums` so the calendar grid and
   Persian digits scale coherently.
+- [x] **2026-07-12 — deadline/late-submission invariant:** the shared standalone and embedded exercise
+  intake now disables and clears `allowLate` whenever `با مهلت` is off. Both submit paths normalize the
+  payload, create/update serializers reject impossible combinations, removing an existing deadline
+  clears its late policy, and legacy embedded snapshots are normalized before materialization.
 
 **Definition of done (every step):** GREEN on the sqlite fast lane (Postgres = CI truth); new code documented
 in `exercise-hub.md` (docs law); auth/permission changes carry negative tests; commit `feat(exercise): E# …`
