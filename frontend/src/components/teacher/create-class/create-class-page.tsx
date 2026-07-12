@@ -51,8 +51,11 @@ import {
 import { useWorkspace } from '@/hooks/use-workspace';
 import { OrganizationService } from '@/services/organization-service';
 import type { StudyGroup } from '@/types';
+import { CLASS_DESCRIPTION_MAX_LENGTH } from '@/constants/teacher-limits';
 
 type PipelineType = 'class' | 'exam_prep';
+
+const clampDescription = (value: string) => value.slice(0, CLASS_DESCRIPTION_MAX_LENGTH);
 
 const ACTIVE_SESSION_STORAGE_KEY = 'ai_amooz_active_class_creation_session_id';
 const CREATE_CLASS_DRAFT_STORAGE_KEY = 'ai_amooz_create_class_draft_v1';
@@ -200,7 +203,9 @@ export function CreateClassPage() {
       if (!raw) return;
       const parsed = JSON.parse(raw) as { title?: string; description?: string };
       if (typeof parsed.title === 'string' && parsed.title) setTitle((prev) => prev || (parsed.title as string));
-      if (typeof parsed.description === 'string' && parsed.description) setDescription((prev) => prev || (parsed.description as string));
+      if (typeof parsed.description === 'string' && parsed.description) {
+        setDescription((prev) => prev || clampDescription(parsed.description as string));
+      }
     } catch {
       // ignore
     }
@@ -244,7 +249,7 @@ export function CreateClassPage() {
         }
 
         setTitle((prev) => prev || detail.title);
-        setDescription((prev) => prev || detail.description);
+        setDescription((prev) => prev || clampDescription(detail.description));
         setLevel((prev) => prev || String((detail as any).level || '').trim());
         setDuration((prev) => prev || String((detail as any).duration || '').trim());
 
@@ -288,7 +293,7 @@ export function CreateClassPage() {
       setSessionDetail(detail);
       setActiveSessionId(detail.id);
       setTitle(detail.title);
-      setDescription(detail.description);
+      setDescription(clampDescription(detail.description));
       setLevel(String((detail as any).level || '').trim());
       setDuration(String((detail as any).duration || '').trim());
 
@@ -320,7 +325,7 @@ export function CreateClassPage() {
         } catch { /* ignore */ }
 
         setTitle((prev) => prev || detail.title);
-        setDescription((prev) => prev || detail.description);
+        setDescription((prev) => prev || clampDescription(detail.description));
 
         if (detail.status === 'failed') {
           stopPolling();
@@ -361,7 +366,7 @@ export function CreateClassPage() {
       setExamPrepSessionDetail(detail);
       setActiveExamPrepSessionId(detail.id);
       setTitle(detail.title);
-      setDescription(detail.description);
+      setDescription(clampDescription(detail.description));
 
       if (detail.status !== 'failed' && detail.status !== 'cancelled' && detail.status !== 'exam_structured') {
         startExamPrepPolling(sessionId);
@@ -435,7 +440,7 @@ export function CreateClassPage() {
   }, []);
 
   useEffect(() => {
-    persistDraft({ title, description });
+    persistDraft({ title, description: clampDescription(description) });
   }, [title, description]);
 
   const toggleSection = (section: string) => {
@@ -606,7 +611,7 @@ export function CreateClassPage() {
         const result = await transcribeClassCreationStep1(
           {
             title: title.trim(),
-            description,
+            description: clampDescription(description),
             file: lessonFile,
             clientRequestId: clientRequestId ?? undefined,
             runFullPipeline: true,
@@ -663,7 +668,7 @@ export function CreateClassPage() {
         const result = await transcribeExamPrepStep1(
           {
             title: title.trim(),
-            description,
+            description: clampDescription(description),
             file: lessonFile,
             clientRequestId: clientRequestId ?? undefined,
             runFullPipeline: true,
@@ -842,7 +847,7 @@ export function CreateClassPage() {
         title={title}
         description={description}
         onTitleChange={setTitle}
-        onDescriptionChange={setDescription}
+        onDescriptionChange={(value) => setDescription(clampDescription(value))}
       />
 
       <div ref={pipelineSectionRef} className="scroll-mt-6">

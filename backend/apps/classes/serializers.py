@@ -17,6 +17,9 @@ from .services.exercise_workflow import (
 from .services.session_workflow import serialize_session_workflow_fields
 
 
+CLASS_DESCRIPTION_MAX_LENGTH = 500
+
+
 def is_pdf_upload(value) -> bool:
     """True when an uploaded file is a PDF (by MIME or .pdf extension)."""
     content_type = (getattr(value, 'content_type', '') or '').lower()
@@ -50,7 +53,7 @@ def validate_step1_upload(value):
 
 class Step1TranscribeRequestSerializer(serializers.Serializer):
     title = serializers.CharField(max_length=255)
-    description = serializers.CharField(required=False, allow_blank=True)
+    description = serializers.CharField(required=False, allow_blank=True, max_length=CLASS_DESCRIPTION_MAX_LENGTH)
     file = serializers.FileField()
     client_request_id = serializers.UUIDField(required=False)
     run_full_pipeline = serializers.BooleanField(required=False, default=False)
@@ -414,7 +417,7 @@ class ClassAnnouncementUpdateSerializer(serializers.Serializer):
 
 class ClassCreationSessionUpdateSerializer(serializers.Serializer):
     title = serializers.CharField(max_length=255, required=False)
-    description = serializers.CharField(required=False, allow_blank=True)
+    description = serializers.CharField(required=False, allow_blank=True, max_length=CLASS_DESCRIPTION_MAX_LENGTH)
     level = serializers.CharField(required=False, allow_blank=True, max_length=64)
     duration = serializers.CharField(required=False, allow_blank=True, max_length=64)
     structure_json = serializers.JSONField(required=False)
@@ -676,7 +679,7 @@ class InviteCodeVerifyResponseSerializer(serializers.Serializer):
 class ExamPrepStep1TranscribeRequestSerializer(serializers.Serializer):
     """Request serializer for Exam Prep Step 1: Transcription."""
     title = serializers.CharField(max_length=255)
-    description = serializers.CharField(required=False, allow_blank=True)
+    description = serializers.CharField(required=False, allow_blank=True, max_length=CLASS_DESCRIPTION_MAX_LENGTH)
     file = serializers.FileField()
     client_request_id = serializers.UUIDField(required=False)
     run_full_pipeline = serializers.BooleanField(required=False, default=False)
@@ -856,7 +859,7 @@ class ExamPrepSessionDetailSerializer(serializers.ModelSerializer):
 
 class ExamPrepSessionUpdateSerializer(serializers.Serializer):
     title = serializers.CharField(max_length=255, required=False)
-    description = serializers.CharField(required=False, allow_blank=True)
+    description = serializers.CharField(required=False, allow_blank=True, max_length=CLASS_DESCRIPTION_MAX_LENGTH)
     level = serializers.CharField(required=False, allow_blank=True)
     duration = serializers.CharField(required=False, allow_blank=True)
     exam_prep_json = serializers.JSONField(required=False)

@@ -13,7 +13,13 @@ from rest_framework.serializers import ValidationError
 from rest_framework.test import APIClient
 
 from apps.classes.models import ClassCreationSession, ClassExercise, ClassExerciseAsset
-from apps.classes.serializers import Step1TranscribeRequestSerializer
+from apps.classes.serializers import (
+    CLASS_DESCRIPTION_MAX_LENGTH,
+    ClassCreationSessionUpdateSerializer,
+    ExamPrepSessionUpdateSerializer,
+    ExamPrepStep1TranscribeRequestSerializer,
+    Step1TranscribeRequestSerializer,
+)
 from apps.classes.services.exercise_workflow import build_workflow_state
 from apps.classes.services.session_workflow import serialize_session_workflow_fields
 from apps.classes.tasks import _make_step1_heartbeat, _mark_session_ready_for_review
@@ -23,6 +29,29 @@ User = get_user_model()
 
 
 _STEP1_URL = "/api/classes/creation-sessions/step-1/"
+
+
+@pytest.mark.parametrize(
+    'serializer_cls',
+    [
+        Step1TranscribeRequestSerializer,
+        ClassCreationSessionUpdateSerializer,
+        ExamPrepStep1TranscribeRequestSerializer,
+        ExamPrepSessionUpdateSerializer,
+    ],
+)
+def test_session_description_is_length_limited(serializer_cls):
+    data = {
+        'title': 'کلاس',
+        'description': 'x' * (CLASS_DESCRIPTION_MAX_LENGTH + 1),
+    }
+    if serializer_cls in (Step1TranscribeRequestSerializer, ExamPrepStep1TranscribeRequestSerializer):
+        data['file'] = SimpleUploadedFile('lesson.mp4', b'fake-media-bytes', content_type='video/mp4')
+
+    serializer = serializer_cls(data=data, partial=True)
+
+    assert not serializer.is_valid()
+    assert 'description' in serializer.errors
 
 
 def test_embedded_exercise_rejects_late_submission_without_deadline():

@@ -2,6 +2,7 @@
 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { CLASS_DESCRIPTION_MAX_LENGTH } from '@/constants/teacher-limits';
 
 interface ClassInfoCardProps {
   description: string;
@@ -10,13 +11,21 @@ interface ClassInfoCardProps {
 }
 
 export function ClassInfoCard({ description, tags, objectives }: ClassInfoCardProps) {
+  const normalizedDescription = (description || '').trim();
+  const visibleDescription =
+    normalizedDescription.length > CLASS_DESCRIPTION_MAX_LENGTH
+      ? `${normalizedDescription.slice(0, CLASS_DESCRIPTION_MAX_LENGTH)}...`
+      : normalizedDescription;
+
   return (
     <Card>
       <CardHeader>
         <CardTitle className="text-lg">درباره کلاس</CardTitle>
       </CardHeader>
       <CardContent>
-        <p className="text-muted-foreground leading-relaxed">{description}</p>
+        <p className="max-w-full whitespace-pre-wrap break-words text-muted-foreground leading-relaxed [overflow-wrap:anywhere]">
+          {visibleDescription || 'توضیحی برای این کلاس ثبت نشده است.'}
+        </p>
 
         {Array.isArray(objectives) && objectives.length > 0 && (
           <div className="mt-4 space-y-2">

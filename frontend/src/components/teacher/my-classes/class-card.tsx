@@ -120,7 +120,7 @@ export function ClassCard({ cls, basePath = '/admin', onDelete }: ClassCardProps
             <CardTitle className="text-base sm:text-lg font-bold text-foreground group-hover:text-primary transition-colors line-clamp-1">
               {cls.title}
             </CardTitle>
-            <p className="text-xs text-muted-foreground line-clamp-2 leading-relaxed h-9">
+            <p className="h-9 max-w-full break-words text-xs text-muted-foreground line-clamp-2 leading-relaxed [overflow-wrap:anywhere]">
               {cls.description}
             </p>
           </div>

@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { CLASS_DESCRIPTION_MAX_LENGTH } from '@/constants/teacher-limits';
 import {
   Select,
   SelectContent,
@@ -38,7 +39,7 @@ const statusOptions = [
 export function ClassEditForm({ classDetail, onSave, isSaving }: ClassEditFormProps) {
   const [formData, setFormData] = useState({
     title: classDetail.title,
-    description: classDetail.description,
+    description: classDetail.description.slice(0, CLASS_DESCRIPTION_MAX_LENGTH),
     category: classDetail.category || '',
     level: classDetail.level || 'مبتدی' as const,
     duration: (classDetail as any).duration || '',
@@ -52,7 +53,7 @@ export function ClassEditForm({ classDetail, onSave, isSaving }: ClassEditFormPr
     e.preventDefault();
     await onSave({
       title: formData.title,
-      description: formData.description,
+      description: formData.description.slice(0, CLASS_DESCRIPTION_MAX_LENGTH),
       category: formData.category,
       level: formData.level,
       duration: formData.duration,
@@ -160,10 +161,15 @@ export function ClassEditForm({ classDetail, onSave, isSaving }: ClassEditFormPr
             <Textarea
               id="description"
               value={formData.description}
-              onChange={e => setFormData(prev => ({ ...prev, description: e.target.value }))}
+              maxLength={CLASS_DESCRIPTION_MAX_LENGTH}
+              onChange={e => setFormData(prev => ({ ...prev, description: e.target.value.slice(0, CLASS_DESCRIPTION_MAX_LENGTH) }))}
               placeholder="توضیحات کلاس را وارد کنید"
               rows={4}
             />
+            <div className="flex justify-between text-xs text-muted-foreground">
+              <span>حداکثر {CLASS_DESCRIPTION_MAX_LENGTH} کاراکتر</span>
+              <span dir="ltr">{formData.description.length}/{CLASS_DESCRIPTION_MAX_LENGTH}</span>
+            </div>
           </div>
 
           {Array.isArray(classDetail.objectives) && classDetail.objectives.length > 0 && (

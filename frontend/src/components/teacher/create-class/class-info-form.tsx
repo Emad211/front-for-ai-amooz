@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
+import { CLASS_DESCRIPTION_MAX_LENGTH } from '@/constants/teacher-limits';
 
 interface ClassInfoFormProps {
   isExpanded: boolean;
@@ -24,6 +25,8 @@ export function ClassInfoForm({
   onTitleChange,
   onDescriptionChange,
 }: ClassInfoFormProps) {
+  const descriptionLength = description.length;
+
   return (
     <Card className="border-border/40 rounded-2xl overflow-hidden bg-card/70 backdrop-blur">
       <CardHeader 
@@ -65,8 +68,13 @@ export function ClassInfoForm({
               placeholder="توضیحات مختصری درباره کلاس بنویسید..." 
               className="min-h-[110px] bg-background/80 rounded-xl resize-none text-start border-border/60" 
               value={description}
-              onChange={(e) => onDescriptionChange(e.target.value)}
+              maxLength={CLASS_DESCRIPTION_MAX_LENGTH}
+              onChange={(e) => onDescriptionChange(e.target.value.slice(0, CLASS_DESCRIPTION_MAX_LENGTH))}
             />
+            <div className="flex justify-between text-xs text-muted-foreground">
+              <span>حداکثر {CLASS_DESCRIPTION_MAX_LENGTH} کاراکتر</span>
+              <span dir="ltr">{descriptionLength}/{CLASS_DESCRIPTION_MAX_LENGTH}</span>
+            </div>
           </div>
         </CardContent>
       )}
