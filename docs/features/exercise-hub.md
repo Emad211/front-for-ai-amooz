@@ -382,7 +382,11 @@ stored `per_question` (zero tokens), **no pregeneration** (nothing to pre-build)
   blocks choose direction per paragraph: Persian/mixed prose stays RTL while Latin-only, numeric, and
   math-only solutions are LTR, including standalone negative numbers. The keyboard uses Persian-labeled
   category tabs, adds common advanced structures, and detects whether the cursor is already inside math
-  delimiters so subsequent keys insert valid LaTeX without nesting `$...$` wrappers.
+  delimiters so subsequent keys insert valid LaTeX without nesting `$...$` wrappers. Display-math
+  solutions are physically left-aligned (overriding KaTeX's centered default), and fenced/inline code is
+  restored from escaped placeholders so renderer-owned `<code>` markup never appears as answer text.
+  The standalone `ایجاد تمرین جدید` intake is collapsed by default, preserves an unfinished draft when
+  toggled, and collapses again after successful submission.
 - **Student solver:** sticky header (title, deadline badge with <24h countdown, draft-saved indicator);
   one ordered question list on every viewport; per-question text/photo inputs (camera `capture` on
   mobile, client-side compression); autosave; sticky

@@ -7,7 +7,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
-import { Loader2, Upload, Trash2, CheckCircle2, FileText, Plus, Ban, Save, Settings2 } from 'lucide-react';
+import { Loader2, Upload, Trash2, CheckCircle2, FileText, Plus, Ban, Save, Settings2, ChevronDown, NotebookPen } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -93,6 +93,7 @@ export function ExerciseManager({
   const [exercises, setExercises] = useState<ExerciseListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
+  const [createOpen, setCreateOpen] = useState(false);
   const [draft, setDraft] = useState<ExerciseIntakeDraft>(buildEmptyExerciseIntakeDraft);
 
   const refresh = useCallback(async () => {
@@ -155,6 +156,7 @@ export function ExerciseManager({
         })),
       });
       setDraft(buildEmptyExerciseIntakeDraft());
+      setCreateOpen(false);
       toast.success('پیش‌نویس تمرین در صف ساخت قرار گرفت. پس از آماده‌شدن برای بازبینی به شما اطلاع می‌دهیم.');
       await refresh();
     } catch (err) {
@@ -167,11 +169,36 @@ export function ExerciseManager({
   return (
     <div dir="rtl" className="space-y-6">
       {/* Create */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-lg">ایجاد تمرین جدید</CardTitle>
+      <Card className="overflow-hidden border-border/60 bg-card/70">
+        <CardHeader className="p-0">
+          <button
+            type="button"
+            className="flex w-full items-center justify-between gap-3 px-6 py-5 text-start transition-colors hover:bg-primary/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+            aria-expanded={createOpen}
+            aria-controls="create-exercise-content"
+            onClick={() => setCreateOpen((current) => !current)}
+          >
+            <span className="flex min-w-0 items-center gap-3">
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                <NotebookPen className="h-5 w-5" />
+              </span>
+              <span className="min-w-0 space-y-1">
+                <span className="block text-base font-semibold leading-none tracking-tight sm:text-lg">ایجاد تمرین جدید</span>
+                <span className="block text-xs font-normal leading-5 text-muted-foreground">
+                  فایل‌ها و تنظیمات تمرین را یک‌بار ثبت کنید؛ ساخت پیش‌نویس در پس‌زمینه انجام می‌شود.
+                </span>
+              </span>
+            </span>
+            <ChevronDown
+              className={`h-5 w-5 shrink-0 text-muted-foreground transition-transform duration-200 ${createOpen ? 'rotate-180' : ''}`}
+            />
+          </button>
         </CardHeader>
-        <CardContent className="space-y-5">
+        <CardContent
+          id="create-exercise-content"
+          hidden={!createOpen}
+          className="space-y-5 border-t border-border/50 pt-5"
+        >
           <ExerciseIntakeForm
             value={draft}
             onChange={setDraft}

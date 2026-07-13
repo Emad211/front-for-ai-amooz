@@ -147,6 +147,9 @@ function formatMarkdown(md: string, allowImages = true): string {
 	html = protectTables(html, tableBlocks);
 
 	// ============ STEP 2: Code blocks ============
+	const codeBlocks: string[] = [];
+	const codeInlines: string[] = [];
+
 	function looksLikeLatex(s: string): boolean {
 		if (!s) return false;
 		return /\\/.test(s) || /[{}]/.test(s) || /\^|_/.test(s) || /\\?frac|\\?begin|\\?alpha|\\?beta/.test(s);
@@ -159,7 +162,8 @@ function formatMarkdown(md: string, allowImages = true): string {
 			latexBlocks.push(raw.trim());
 			return `%%LATEXBLOCK${latexBlocks.length - 1}%%`;
 		}
-		return `<pre class="md-pre"><code>${escapeHtml(raw)}</code></pre>`;
+		codeBlocks.push(raw);
+		return `%%CODEBLOCK${codeBlocks.length - 1}%%`;
 	});
 
 	// Inline code: if it contains LaTeX, treat as inline math so KaTeX will render it
@@ -169,7 +173,8 @@ function formatMarkdown(md: string, allowImages = true): string {
 			latexInlines.push(raw.trim());
 			return `%%LATEXINLINE${latexInlines.length - 1}%%`;
 		}
-		return `<code class="inline-code">${escapeHtml(raw)}</code>`;
+		codeInlines.push(raw);
+		return `%%CODEINLINE${codeInlines.length - 1}%%`;
 	});
 
 	// Escape HTML in the remainder to avoid script injection.
@@ -212,6 +217,18 @@ function formatMarkdown(md: string, allowImages = true): string {
 		const safeHref = sanitizeMarkdownUrl(href);
 		if (!safeHref) return String(label);
 		return `<a href="${escapeHtml(safeHref)}" target="_blank" rel="noreferrer" class="md-link">${label}</a>`;
+	});
+
+	// Restore code only after the full source has been escaped. Generated tags
+	// stay active while user/LLM-provided code remains text, so snippets never
+	// leak literal `<code class=...>` markup into the rendered answer.
+	html = html.replace(/%%CODEBLOCK(\d+)%%/g, (_match, idx) => {
+		const n = Number.parseInt(String(idx), 10);
+		return `<pre class="md-pre" dir="ltr"><code>${escapeHtml(codeBlocks[n] ?? '')}</code></pre>`;
+	});
+	html = html.replace(/%%CODEINLINE(\d+)%%/g, (_match, idx) => {
+		const n = Number.parseInt(String(idx), 10);
+		return `<code class="inline-code" dir="ltr">${escapeHtml(codeInlines[n] ?? '')}</code>`;
 	});
 
 	// ============ STEP 8: Paragraphs ============

@@ -145,6 +145,10 @@
   .math-block {
     @apply my-3;
   }
+
+  .math-block .katex-display {
+    text-align: left;
+  }
 }
 
 @layer base {
