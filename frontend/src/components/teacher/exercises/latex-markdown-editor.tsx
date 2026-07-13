@@ -7,6 +7,7 @@ import { MarkdownWithMath } from '@/components/content/markdown-with-math';
 import { MathText } from '@/components/content/math-text';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
 
@@ -34,15 +35,30 @@ const SHORTCUT_GROUPS: Array<{ title: string; shortcuts: LatexShortcut[] }> = [
     shortcuts: [
       { label: '$+$', accessibleLabel: 'جمع', template: '$+$' },
       { label: '$-$', accessibleLabel: 'تفریق', template: '$-$' },
+      { label: '$-x$', accessibleLabel: 'عدد منفی', template: '$-◉$', cursorMarker: '◉' },
       { label: '$\\times$', accessibleLabel: 'ضرب', template: '$\\times$' },
       { label: '$\\div$', accessibleLabel: 'تقسیم', template: '$\\div$' },
       { label: '$=$', accessibleLabel: 'مساوی', template: '$=$' },
       { label: '$\\neq$', accessibleLabel: 'نامساوی', template: '$\\neq$' },
+      { label: '$(x)$', accessibleLabel: 'پرانتز', template: '$(◉)$', cursorMarker: '◉' },
+      { label: '$[x]$', accessibleLabel: 'کروشه', template: '$[◉]$', cursorMarker: '◉' },
     ],
   },
   {
     title: 'ساختار',
     shortcuts: [
+      {
+        label: '$x+1$',
+        accessibleLabel: 'فرمول داخل جمله',
+        template: '$◉$',
+        cursorMarker: '◉',
+      },
+      {
+        label: '$$x+1=2$$',
+        accessibleLabel: 'فرمول در سطر جدا',
+        template: '$$\n◉\n$$',
+        cursorMarker: '◉',
+      },
       {
         label: '$\\frac{a}{b}$',
         accessibleLabel: 'کسر',
@@ -85,6 +101,18 @@ const SHORTCUT_GROUPS: Array<{ title: string; shortcuts: LatexShortcut[] }> = [
         cursorMarker: '◉',
         selectedTemplate: '$|◆|$◉',
       },
+      {
+        label: '$x\\%$',
+        accessibleLabel: 'درصد',
+        template: '$◉\\%$',
+        cursorMarker: '◉',
+      },
+      {
+        label: '$n!$',
+        accessibleLabel: 'فاکتوریل',
+        template: '$◉!$',
+        cursorMarker: '◉',
+      },
     ],
   },
   {
@@ -100,6 +128,8 @@ const SHORTCUT_GROUPS: Array<{ title: string; shortcuts: LatexShortcut[] }> = [
       { label: '$\\cap$', accessibleLabel: 'اشتراک', template: '$\\cap$' },
       { label: '$\\subset$', accessibleLabel: 'زیرمجموعه', template: '$\\subset$' },
       { label: '$\\emptyset$', accessibleLabel: 'مجموعه تهی', template: '$\\emptyset$' },
+      { label: '$\\Rightarrow$', accessibleLabel: 'نتیجه می‌دهد', template: '$\\Rightarrow$' },
+      { label: '$\\Leftrightarrow$', accessibleLabel: 'اگر و تنها اگر', template: '$\\Leftrightarrow$' },
     ],
   },
   {
@@ -127,7 +157,87 @@ const SHORTCUT_GROUPS: Array<{ title: string; shortcuts: LatexShortcut[] }> = [
       { label: '$\\infty$', accessibleLabel: 'بی‌نهایت', template: '$\\infty$' },
     ],
   },
+  {
+    title: 'پیشرفته',
+    shortcuts: [
+      {
+        label: '$\\lim_{x \\to a} f(x)$',
+        accessibleLabel: 'حد',
+        template: '$\\lim_{x \\to ◉} f(x)$',
+        cursorMarker: '◉',
+      },
+      {
+        label: '$\\int_a^b f(x)dx$',
+        accessibleLabel: 'انتگرال',
+        template: '$\\int_{◉}^{ } f(x)\\,dx$',
+        cursorMarker: '◉',
+      },
+      {
+        label: '$\\frac{d}{dx}f(x)$',
+        accessibleLabel: 'مشتق',
+        template: '$\\frac{d}{dx}\\left(◉\\right)$',
+        cursorMarker: '◉',
+      },
+      {
+        label: '$\\vec{v}$',
+        accessibleLabel: 'بردار',
+        template: '$\\vec{◉}$',
+        cursorMarker: '◉',
+        selectedTemplate: '$\\vec{◆}$◉',
+      },
+      { label: '$\\angle ABC$', accessibleLabel: 'زاویه', template: '$\\angle ABC$' },
+      { label: '$90^\\circ$', accessibleLabel: 'درجه', template: '$◉^\\circ$', cursorMarker: '◉' },
+      { label: '$\\parallel$', accessibleLabel: 'موازی', template: '$\\parallel$' },
+      { label: '$\\perp$', accessibleLabel: 'عمود', template: '$\\perp$' },
+      {
+        label: '$\\begin{bmatrix}a&b\\\\c&d\\end{bmatrix}$',
+        accessibleLabel: 'ماتریس دو در دو',
+        template: '$$\\begin{bmatrix}◉ & 0 \\\\ 0 & 0\\end{bmatrix}$$',
+        cursorMarker: '◉',
+      },
+      {
+        label: '$\\begin{cases}x=1\\\\y=2\\end{cases}$',
+        accessibleLabel: 'دستگاه معادلات',
+        template: '$$\\begin{cases}◉ \\\\ {}\\end{cases}$$',
+        cursorMarker: '◉',
+      },
+    ],
+  },
 ];
+
+function mathModeAt(text: string, cursor: number): '$' | '$$' | '\\(' | '\\[' | null {
+  const tokenPattern = /(?<!\\)(\$\$|\$)|\\\(|\\\)|\\\[|\\\]/g;
+  let mode: '$' | '$$' | '\\(' | '\\[' | null = null;
+  let openingIndex = -1;
+  for (const match of text.matchAll(tokenPattern)) {
+    const token = match[0];
+    const tokenIndex = match.index;
+    if (!mode && (token === '$' || token === '$$' || token === '\\(' || token === '\\[')) {
+      mode = token;
+      openingIndex = tokenIndex;
+    } else if (
+      (mode === '$' && token === '$') ||
+      (mode === '$$' && token === '$$') ||
+      (mode === '\\(' && token === '\\)') ||
+      (mode === '\\[' && token === '\\]')
+    ) {
+      if (openingIndex < cursor && cursor <= tokenIndex) return mode;
+      mode = null;
+      openingIndex = -1;
+    }
+  }
+  return null;
+}
+
+function removeOuterMathDelimiters(template: string): string {
+  const cursorSuffix = template.endsWith('◉') ? '◉' : '';
+  const core = cursorSuffix ? template.slice(0, -1) : template;
+  if (core.startsWith('$$') && core.endsWith('$$')) return core.slice(2, -2) + cursorSuffix;
+  if (core.startsWith('$') && core.endsWith('$')) return core.slice(1, -1) + cursorSuffix;
+  if (core.startsWith('\\(') && core.endsWith('\\)')) return core.slice(2, -2) + cursorSuffix;
+  if (core.startsWith('\\[') && core.endsWith('\\]')) return core.slice(2, -2) + cursorSuffix;
+  return template;
+}
 
 export function LatexMarkdownEditor({
   label,
@@ -153,6 +263,9 @@ export function LatexMarkdownEditor({
       template = shortcut.selectedTemplate.replace('◆', selectedText);
     } else if (marker && selectedText) {
       template = shortcut.template.replace(marker, `${selectedText}${marker}`);
+    }
+    if (mathModeAt(value, selectionStart)) {
+      template = removeOuterMathDelimiters(template);
     }
     const cleanTemplate = marker ? template.replace(marker, '') : template;
     const markerIndex = marker ? template.indexOf(marker) : -1;
@@ -203,32 +316,42 @@ export function LatexMarkdownEditor({
 
         {keyboardOpen && (
           <div id={`${id}-keyboard`} className="space-y-3 rounded-md border border-border/60 bg-muted/20 p-3">
-            <p className="text-xs leading-5 text-muted-foreground">
-              نشانگر را در محل دلخواه بگذارید و نماد را انتخاب کنید. برای کسر، ریشه و توان، نشانگر داخل فرمول قرار می‌گیرد.
-            </p>
-            <div className="grid gap-3 lg:grid-cols-2">
-              {SHORTCUT_GROUPS.map((group) => (
-                <div key={group.title} className="space-y-2">
-                  <p className="text-xs font-medium text-muted-foreground">{group.title}</p>
-                  <div className="flex flex-wrap justify-end gap-1.5" dir="ltr">
+            <div className="flex flex-col gap-1 rounded-md bg-primary/5 px-3 py-2 text-xs leading-5 text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
+              <span>برای ساخت معادله کامل، از «فرمول داخل جمله» یا «فرمول در سطر جدا» شروع کنید.</span>
+              <span className="font-medium text-primary">متن انتخاب‌شده داخل قالب قرار می‌گیرد.</span>
+            </div>
+            <Tabs defaultValue="0" dir="rtl" className="space-y-3">
+              <TabsList className="grid h-auto w-full grid-cols-3 gap-1 bg-background/70 p-1 sm:grid-cols-5">
+                {SHORTCUT_GROUPS.map((group, index) => (
+                  <TabsTrigger key={group.title} value={String(index)} className="min-h-9 text-xs">
+                    {group.title}
+                  </TabsTrigger>
+                ))}
+              </TabsList>
+              {SHORTCUT_GROUPS.map((group, index) => (
+                <TabsContent key={group.title} value={String(index)} className="mt-0">
+                  <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 lg:grid-cols-5" dir="ltr">
                     {group.shortcuts.map((shortcut) => (
                       <Button
                         key={shortcut.accessibleLabel}
                         type="button"
                         variant="outline"
                         size="sm"
-                        className="h-9 min-w-10 bg-background px-2"
+                        className="h-14 min-w-0 flex-col gap-0.5 bg-background px-1.5 py-1"
                         aria-label={`افزودن ${shortcut.accessibleLabel}`}
                         title={shortcut.accessibleLabel}
                         onClick={() => insertShortcut(shortcut)}
                       >
-                        <MathText text={shortcut.label} />
+                        <MathText text={shortcut.label} className="max-w-full overflow-hidden text-sm" />
+                        <span className="max-w-full truncate text-[10px] text-muted-foreground" dir="rtl">
+                          {shortcut.accessibleLabel}
+                        </span>
                       </Button>
                     ))}
                   </div>
-                </div>
+                </TabsContent>
               ))}
-            </div>
+            </Tabs>
           </div>
         )}
 

@@ -244,6 +244,18 @@ function formatMarkdown(md: string, allowImages = true): string {
 		return `<span class="math-inline" dir="ltr">$${escapeHtml(latexInlines[n] ?? '')}$</span>`;
 	});
 
+	// Direction belongs to each content block, not the whole Persian page. Pure
+	// Latin/number/math paragraphs must be LTR (notably a standalone "-5"),
+	// while any paragraph containing Persian remains RTL even when it also has
+	// inline equations.
+	html = html.replace(/<p class="md-p">([\s\S]*?)<\/p>/g, (_match, body) => {
+		const plainText = String(body).replace(/<[^>]*>/g, '');
+		const isRtl = /[\u0600-\u06ff]/.test(plainText);
+		const direction = isRtl ? 'rtl' : 'ltr';
+		const alignment = isRtl ? 'text-right' : 'text-left';
+		return `<p class="md-p ${alignment}" dir="${direction}">${body}</p>`;
+	});
+
 	return html;
 }
 

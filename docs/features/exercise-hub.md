@@ -378,7 +378,11 @@ stored `per_question` (zero tokens), **no pregeneration** (nothing to pre-build)
   standalone card between settings and questions. Every question and reference-answer editor now
   includes a live KaTeX preview plus an optional visual math keyboard. The keyboard inserts standard
   Markdown/LaTeX at the textarea cursor (fractions, roots, powers, sets, Greek letters, and common
-  operators), so storage and all student/grading render paths keep the existing text contract.
+  operators), so storage and all student/grading render paths keep the existing text contract. Preview
+  blocks choose direction per paragraph: Persian/mixed prose stays RTL while Latin-only, numeric, and
+  math-only solutions are LTR, including standalone negative numbers. The keyboard uses Persian-labeled
+  category tabs, adds common advanced structures, and detects whether the cursor is already inside math
+  delimiters so subsequent keys insert valid LaTeX without nesting `$...$` wrappers.
 - **Student solver:** sticky header (title, deadline badge with <24h countdown, draft-saved indicator);
   one ordered question list on every viewport; per-question text/photo inputs (camera `capture` on
   mobile, client-side compression); autosave; sticky
