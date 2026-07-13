@@ -1,8 +1,8 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState, type FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
-import { useForm, Controller } from 'react-hook-form';
+import { useForm, Controller, type FieldErrors } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Loader2, ArrowLeft, ArrowRight, Check, UserRound, KeyRound, GraduationCap } from 'lucide-react';
 import { toast } from 'sonner';
@@ -59,7 +59,10 @@ const FIELD_MAP: Record<string, keyof OnboardingFormValues> = {
 export default function OnboardingPage() {
   const router = useRouter();
   const [step, setStep] = useState(0);
+  const [advancing, setAdvancing] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const advancingRef = useRef(false);
+  const submittingRef = useRef(false);
 
   const me = useMemo(() => getStoredUser(), []);
   const role = (me?.role || 'student').toLowerCase();
@@ -82,11 +85,28 @@ export default function OnboardingPage() {
   });
 
   const goNext = async () => {
-    const ok = await trigger(ONBOARDING_STEP_FIELDS[step]);
-    if (ok) setStep((s) => Math.min(s + 1, STEP_META.length - 1));
+    if (advancingRef.current || submittingRef.current) return;
+    advancingRef.current = true;
+    setAdvancing(true);
+    const currentStep = step;
+    try {
+      const ok = await trigger(ONBOARDING_STEP_FIELDS[currentStep]);
+      if (ok) {
+        setStep((visibleStep) => (
+          visibleStep === currentStep
+            ? Math.min(visibleStep + 1, STEP_META.length - 1)
+            : visibleStep
+        ));
+      }
+    } finally {
+      advancingRef.current = false;
+      setAdvancing(false);
+    }
   };
 
   const onSubmit = async (values: OnboardingFormValues) => {
+    if (submittingRef.current) return;
+    submittingRef.current = true;
     setSubmitting(true);
     const payload: CompleteOnboardingPayload = {
       username: values.username,
@@ -117,8 +137,29 @@ export default function OnboardingPage() {
         }
       });
       toast.error(n.message || 'تکمیل اطلاعات ناموفق بود.');
+      submittingRef.current = false;
       setSubmitting(false);
     }
+  };
+
+  const handleInvalidSubmit = (fieldErrors: FieldErrors<OnboardingFormValues>) => {
+    const invalidStep = ONBOARDING_STEP_FIELDS.findIndex((fields) => (
+      fields.some((field) => Boolean(fieldErrors[field]))
+    ));
+    if (invalidStep >= 0) setStep(invalidStep);
+  };
+
+  const handleWizardSubmit = (event: FormEvent<HTMLFormElement>) => {
+    if (step < STEP_META.length - 1) {
+      event.preventDefault();
+      void goNext();
+      return;
+    }
+    if (submittingRef.current) {
+      event.preventDefault();
+      return;
+    }
+    void handleSubmit(onSubmit, handleInvalidSubmit)(event);
   };
 
   const Meta = STEP_META[step];
@@ -141,7 +182,7 @@ export default function OnboardingPage() {
       </CardHeader>
 
       <CardContent>
-        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4" noValidate>
+        <form onSubmit={handleWizardSubmit} className="space-y-4" noValidate>
           {/* Step 1 — credentials */}
           {step === 0 && (
             <div className="space-y-4">
@@ -214,14 +255,16 @@ export default function OnboardingPage() {
           {/* Nav */}
           <div className="flex items-center justify-between gap-3 pt-2">
             {step > 0 ? (
-              <Button type="button" variant="ghost" onClick={() => setStep((s) => s - 1)} disabled={submitting}>
+              <Button type="button" variant="ghost" onClick={() => setStep((s) => s - 1)} disabled={advancing || submitting}>
                 <ArrowRight className="ms-1 h-4 w-4" /> قبلی
               </Button>
             ) : <span />}
 
             {step < STEP_META.length - 1 ? (
-              <Button type="button" onClick={goNext}>
-                بعدی <ArrowLeft className="me-1 h-4 w-4" />
+              <Button type="button" onClick={goNext} disabled={advancing}>
+                {advancing
+                  ? <><Loader2 className="ms-1 h-4 w-4 animate-spin" /> در حال بررسی…</>
+                  : <>بعدی <ArrowLeft className="me-1 h-4 w-4" /></>}
               </Button>
             ) : (
               <Button type="submit" disabled={submitting}>
