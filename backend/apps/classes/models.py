@@ -244,6 +244,35 @@ class Enrollment(models.Model):
         ]
 
 
+class TeacherStudentAccess(models.Model):
+    """Teacher-scoped access state without disabling the platform account."""
+
+    teacher = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='managed_student_access',
+    )
+    student = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='teacher_access_states',
+    )
+    is_suspended = models.BooleanField(default=False)
+    suspended_at = models.DateTimeField(null=True, blank=True)
+    reason = models.CharField(max_length=240, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            UniqueConstraint(fields=['teacher', 'student'], name='uniq_teacher_student_access'),
+        ]
+        indexes = [models.Index(fields=['teacher', 'is_suspended'], name='classes_tea_teacher_38d252_idx')]
+
+    def __str__(self) -> str:
+        return f"{self.teacher_id}:{self.student_id}:{'suspended' if self.is_suspended else 'active'}"
+
+
 class StudentUnitProgress(models.Model):
     """Per-unit completion for a student inside a class session.
 

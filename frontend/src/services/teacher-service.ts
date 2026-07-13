@@ -11,6 +11,8 @@ import type {
   Student,
   Notification,
   MessageRecipient,
+  PendingStudentInvitation,
+  TeacherStudentProfile,
 } from '@/types';
 
 export type TeacherBroadcastResult = {
@@ -58,6 +60,7 @@ type ClassCreationSessionListItem = {
   source_type?: string;
   is_published?: boolean;
   invites_count?: number;
+  students_count?: number;
   lessons_count?: number;
   organization_id?: number | null;
   created_at: string;
@@ -199,6 +202,35 @@ export const TeacherService = {
     return requestJson<Student[]>('/classes/teacher/students/', { method: 'GET' });
   },
 
+  getPendingStudentInvitations: async () =>
+    requestJson<PendingStudentInvitation[]>('/classes/teacher/student-invitations/', { method: 'GET' }),
+
+  inviteStudentsToClasses: async (phones: string[], sessionIds: number[]) =>
+    requestJson<{ createdCount: number; existingCount: number }>('/classes/teacher/student-invitations/', {
+      method: 'POST',
+      body: JSON.stringify({ phones, sessionIds }),
+    }),
+
+  cancelStudentInvitation: async (invitationId: number) =>
+    requestJson<void>(`/classes/teacher/student-invitations/${invitationId}/`, { method: 'DELETE' }),
+
+  getStudentProfile: async (studentId: string) =>
+    requestJson<TeacherStudentProfile>(`/classes/teacher/students/${studentId}/`, { method: 'GET' }),
+
+  setStudentAccess: async (studentId: string, nextStatus: 'active' | 'suspended', reason = '') =>
+    requestJson<{ status: 'active' | 'suspended' }>(`/classes/teacher/students/${studentId}/access/`, {
+      method: 'PATCH',
+      body: JSON.stringify({ status: nextStatus, reason }),
+    }),
+
+  removeStudentRelationship: async (studentId: string) =>
+    requestJson<void>(`/classes/teacher/students/${studentId}/relationship/`, { method: 'DELETE' }),
+
+  getClassSummary: async (organizationId?: number | null) => {
+    const query = organizationId ? `?organization=${organizationId}` : '?organization=personal';
+    return requestJson<{ totalStudents: number }>(`/classes/teacher/classes/summary/${query}`, { method: 'GET' });
+  },
+
   getCourses: async (organizationId?: number | null) => {
     const orgParam = organizationId ? `?organization=${organizationId}` : '?organization=personal';
     const sessions = await requestJson<ClassCreationSessionListItem[]>(`/classes/creation-sessions/${orgParam}`, { method: 'GET' });
@@ -210,7 +242,7 @@ export const TeacherService = {
       status: s.is_published ? 'active' : 'draft',
       createdAt: s.created_at,
       lastActivity: s.updated_at,
-      studentsCount: Number(s.invites_count ?? 0) || 0,
+      studentsCount: Number(s.students_count ?? s.invites_count ?? 0) || 0,
       lessonsCount: Number(s.lessons_count ?? 0) || 0,
       level: (s.level as any) || undefined,
       duration: s.duration || undefined,
@@ -370,7 +402,7 @@ export const TeacherService = {
       pendingExercises: Array.isArray(session.pendingExercises) ? session.pendingExercises : [],
       organizationId: session.organization_id ?? null,
       objectives,
-      studentsCount: Number(session.invites_count ?? 0) || 0,
+      studentsCount: Number(session.students_count ?? session.invites_count ?? 0) || 0,
       lessonsCount: chapters.reduce((acc, ch) => acc + ch.lessons.length, 0),
       chapters,
       enrolledStudents: [],

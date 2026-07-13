@@ -6,6 +6,7 @@ import { useMountedRef } from '@/hooks/use-mounted-ref';
 
 type CoursesService = {
   getCourses: (organizationId?: number | null) => Promise<Course[]>;
+  getClassSummary?: (organizationId?: number | null) => Promise<{ totalStudents: number }>;
 };
 
 export function useAdminCourses(service: CoursesService, organizationId?: number | null) {
@@ -15,13 +16,17 @@ export function useAdminCourses(service: CoursesService, organizationId?: number
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('all');
+  const [uniqueStudents, setUniqueStudents] = useState(0);
 
   const reload = useCallback(async () => {
     try {
       setError(null);
       setIsLoading(true);
-      const data = await service.getCourses(organizationId);
-      if (mountedRef.current) setCourses(data);
+      const [data, summary] = await Promise.all([
+        service.getCourses(organizationId),
+        service.getClassSummary?.(organizationId) ?? Promise.resolve({ totalStudents: 0 }),
+      ]);
+      if (mountedRef.current) { setCourses(data); setUniqueStudents(summary.totalStudents); }
     } catch (err) {
       console.error(err);
       if (mountedRef.current) setError('خطا در دریافت اطلاعات کلاس‌ها');
@@ -55,10 +60,10 @@ export function useAdminCourses(service: CoursesService, organizationId?: number
     return {
       totalClasses: courses.length,
       activeClasses: courses.filter(cls => cls.status === 'active').length,
-      totalStudents: courses.reduce((sum, cls) => sum + (cls.studentsCount || 0), 0),
+      totalStudents: uniqueStudents,
       averageRating: (courses.reduce((sum, cls) => sum + (cls.rating || 0), 0) / courses.length).toFixed(1),
     };
-  }, [courses]);
+  }, [courses, uniqueStudents]);
 
   return {
     courses: filteredCourses,

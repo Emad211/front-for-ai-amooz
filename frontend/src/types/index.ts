@@ -119,7 +119,7 @@ export interface Student {
   completedLessons: number;
   totalLessons: number;
   averageScore: number;
-  status: 'active' | 'inactive';
+  status: 'active' | 'inactive' | 'suspended';
   joinDate: string;
   lastActivity: string;
   performance: 'excellent' | 'good' | 'needs-improvement';
@@ -345,6 +345,28 @@ export interface ClassChapter {
   title: string;
   order: number;
   lessons: ClassLesson[];
+}
+
+export interface PendingStudentInvitation {
+  id: number;
+  phone: string;
+  classId: number;
+  classTitle: string;
+  createdAt: string;
+}
+
+export interface TeacherStudentProfile extends Pick<Student, 'id' | 'name' | 'email' | 'phone'> {
+  grade: string;
+  major: string;
+  isSuspended: boolean;
+  classes: Array<{
+    id: number;
+    title: string;
+    progress: number;
+    averageScore: number;
+    lastActivity: string | null;
+    isOrganizationClass: boolean;
+  }>;
 }
 
 export interface ClassPendingExerciseSnapshot {

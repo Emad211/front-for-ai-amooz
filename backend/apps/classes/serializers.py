@@ -267,6 +267,7 @@ class Step5RecapResponseSerializer(serializers.ModelSerializer):
 
 class ClassCreationSessionListSerializer(serializers.ModelSerializer):
     invites_count = serializers.IntegerField(read_only=True, source='_invites_count')
+    students_count = serializers.IntegerField(read_only=True, source='_students_count')
     lessons_count = serializers.IntegerField(read_only=True, source='_lessons_count')
     organization_id = serializers.IntegerField(read_only=True, allow_null=True)
     workflowStage = serializers.SerializerMethodField()
@@ -312,6 +313,7 @@ class ClassCreationSessionListSerializer(serializers.ModelSerializer):
             'is_published',
             'published_at',
             'invites_count',
+            'students_count',
             'lessons_count',
             'organization_id',
             'created_at',
@@ -328,6 +330,7 @@ class ClassCreationSessionListSerializer(serializers.ModelSerializer):
 
 class ClassCreationSessionDetailSerializer(serializers.ModelSerializer):
     invites_count = serializers.SerializerMethodField()
+    students_count = serializers.SerializerMethodField()
     workflowStage = serializers.SerializerMethodField()
     workflowMessage = serializers.SerializerMethodField()
     progressPercent = serializers.SerializerMethodField()
@@ -337,12 +340,12 @@ class ClassCreationSessionDetailSerializer(serializers.ModelSerializer):
     pendingExercises = serializers.SerializerMethodField()
 
     def get_invites_count(self, obj: ClassCreationSession) -> int:
-        # Prefer the annotation if available (from list views), otherwise fall back.
-        if hasattr(obj, '_invites_count'):
-            return obj._invites_count
-        teacher_phone = (getattr(obj.teacher, 'phone', '') or '').strip()
-        invites = obj.invites.exclude(phone=teacher_phone) if teacher_phone else obj.invites
-        return invites.values('phone').distinct().count()
+        return self.get_students_count(obj)
+
+    def get_students_count(self, obj: ClassCreationSession) -> int:
+        if hasattr(obj, '_students_count'):
+            return obj._students_count
+        return obj.enrollments.values('student_id').distinct().count()
 
     def _wf(self, obj):
         return serialize_session_workflow_fields(obj)
@@ -388,6 +391,7 @@ class ClassCreationSessionDetailSerializer(serializers.ModelSerializer):
             'is_published',
             'published_at',
             'invites_count',
+            'students_count',
             'created_at',
             'updated_at',
             'workflowStage',

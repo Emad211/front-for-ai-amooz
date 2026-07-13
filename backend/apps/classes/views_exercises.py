@@ -1462,8 +1462,11 @@ class TeacherSubmissionAllowRedoView(APIView):
 
 def _course_report(student, session_id=None):
     """Build the student's graded-exercise percentages (optionally one course)."""
+    phone = (getattr(student, 'phone', '') or '').strip()
     qs = StudentExerciseSubmission.objects.filter(
         student=student, status=StudentExerciseSubmission.Status.GRADED,
+        exercise__session__is_published=True,
+        exercise__session__invites__phone=phone,
     ).select_related('exercise')
     if session_id is not None:
         qs = qs.filter(exercise__session_id=session_id)

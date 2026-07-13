@@ -42,6 +42,11 @@ def _graded_submission(owner, *, student=None, score='7', mx='10', per_question=
                          is_published=True)
     ex = baker.make(ClassExercise, session=session, status=ClassExercise.Status.PUBLISHED)
     student = student or baker.make(User, role=User.Role.STUDENT, phone=PHONE)
+    ClassInvitation.objects.get_or_create(
+        session=session,
+        phone=student.phone,
+        defaults={'invite_code': f'RC-{session.id}'},
+    )
     sub = baker.make(
         StudentExerciseSubmission, exercise=ex, student=student, status=SubStatus.GRADED,
         score_points=Decimal(score), max_points=Decimal(mx),
@@ -127,7 +132,6 @@ class TestReportCard:
         owner = _teacher()
         student = baker.make(User, role=User.Role.STUDENT, phone=PHONE)
         session, ex, _st, sub = _graded_submission(owner, student=student, score='8', mx='10')
-        ClassInvitation.objects.create(session=session, phone=PHONE, invite_code='INV')
         res = _auth(student).get(f'/api/classes/student/courses/{session.id}/report-card/')
         assert res.status_code == 200
         assert res.data['average'] == 80.0

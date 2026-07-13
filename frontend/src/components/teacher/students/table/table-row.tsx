@@ -7,23 +7,9 @@ import { StudentStatusBadge } from './status-badge';
 import { StudentPerformanceBadge } from './performance-badge';
 import { StudentTableActions } from './table-actions';
 import { formatPersianDate, formatPersianDateTime } from '@/lib/date-utils';
+import type { Student } from '@/types';
 
-interface Student {
-  id: string;
-  name: string;
-  email: string;
-  phone: string;
-  inviteCode?: string;
-  avatar: string;
-  enrolledClasses: number;
-  averageScore: number;
-  status: string;
-  joinDate: string;
-  lastActivity: string;
-  performance: string;
-}
-
-export function StudentTableRow({ student }: { student: Student }) {
+export function StudentTableRow({ student, onChanged }: { student: Student; onChanged?: () => void }) {
   return (
     <TableRow className="hover:bg-muted/50">
       <TableCell>
@@ -82,7 +68,7 @@ export function StudentTableRow({ student }: { student: Student }) {
         </div>
       </TableCell>
       <TableCell>
-        <StudentTableActions studentId={student.id} />
+        <StudentTableActions student={student} onChanged={onChanged} />
       </TableCell>
     </TableRow>
   );

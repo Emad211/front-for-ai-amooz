@@ -5,7 +5,7 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.utils import timezone
 from rest_framework.test import APIClient
 
-from apps.classes.models import ClassCreationSession, ClassExercise, ClassInvitation
+from apps.classes.models import ClassCreationSession, ClassExercise, ClassInvitation, Enrollment
 from apps.notification.models import (
     TeacherNotification,
     TeacherNotificationRecipient,
@@ -37,6 +37,9 @@ def _session_with_invite(teacher, phone, *, published=True):
         is_published=published,
     )
     ClassInvitation.objects.create(session=session, phone=phone, invite_code=f'INV-{phone}')
+    student = User.objects.filter(phone=phone, role=User.Role.STUDENT).first()
+    if student is not None:
+        Enrollment.objects.get_or_create(session=session, student=student)
     return session
 
 

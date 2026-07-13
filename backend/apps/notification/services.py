@@ -8,20 +8,30 @@ their own students.
 from __future__ import annotations
 
 from apps.accounts.models import User
-from apps.classes.models import ClassInvitation
+from apps.classes.models import Enrollment, TeacherStudentAccess
 
 
 def teacher_student_phones(*, teacher) -> set[str]:
     """Set of distinct student phone numbers across the teacher's sessions."""
-    teacher_phone = (getattr(teacher, 'phone', '') or '').strip()
+    suspended_ids = TeacherStudentAccess.objects.filter(
+        teacher=teacher, is_suspended=True,
+    ).values('student_id')
+    personal = Enrollment.objects.filter(
+        session__teacher=teacher,
+        session__organization__isnull=True,
+    ).exclude(student_id__in=suspended_ids)
+    organization = Enrollment.objects.filter(
+        session__teacher=teacher,
+        session__organization__isnull=False,
+    )
     phones = set()
     for p in (
-        ClassInvitation.objects.filter(session__teacher=teacher)
-        .values_list('phone', flat=True)
+        (personal | organization)
+        .values_list('student__phone', flat=True)
         .distinct()
     ):
         norm = (p or '').strip()
-        if norm and norm != teacher_phone:
+        if norm:
             phones.add(norm)
     return phones
 

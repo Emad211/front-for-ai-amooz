@@ -27,6 +27,14 @@ from .views_exercises import (
     StudentExerciseAssistantView,
     StudentCalendarView,
 )
+from .views_students import (
+    TeacherClassSummaryView,
+    TeacherStudentAccessView,
+    TeacherStudentDetailView,
+    TeacherStudentInvitationDetailView,
+    TeacherStudentInvitationsView,
+    TeacherStudentRelationshipView,
+)
 from .views import (
     ClassPrerequisiteListView,
     ClassCreationSessionPublishView,
@@ -171,6 +179,12 @@ urlpatterns = [
 
     # Teacher Students
     path('teacher/students/', TeacherStudentsListView.as_view(), name='teacher_students_list'),
+    path('teacher/classes/summary/', TeacherClassSummaryView.as_view(), name='teacher_classes_summary'),
+    path('teacher/student-invitations/', TeacherStudentInvitationsView.as_view(), name='teacher_student_invitations'),
+    path('teacher/student-invitations/<int:invitation_id>/', TeacherStudentInvitationDetailView.as_view(), name='teacher_student_invitation_detail'),
+    path('teacher/students/<int:student_id>/', TeacherStudentDetailView.as_view(), name='teacher_student_detail'),
+    path('teacher/students/<int:student_id>/access/', TeacherStudentAccessView.as_view(), name='teacher_student_access'),
+    path('teacher/students/<int:student_id>/relationship/', TeacherStudentRelationshipView.as_view(), name='teacher_student_relationship'),
 
     # Student endpoints
     path('student/courses/', StudentCourseListView.as_view(), name='student_courses_list'),

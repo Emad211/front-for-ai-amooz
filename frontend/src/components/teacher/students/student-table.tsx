@@ -13,27 +13,14 @@ import { StudentTableRow } from './table/table-row';
 import { StudentTableActions } from './table/table-actions';
 import { StudentPerformanceBadge } from './table/performance-badge';
 import { StudentStatusBadge } from './table/status-badge';
-
-interface Student {
-  id: string;
-  name: string;
-  email: string;
-  phone: string;
-  inviteCode?: string;
-  avatar: string;
-  enrolledClasses: number;
-  averageScore: number;
-  status: string;
-  joinDate: string;
-  lastActivity: string;
-  performance: string;
-}
+import type { Student } from '@/types';
 
 interface StudentTableProps {
   students: Student[];
+  onChanged?: () => void;
 }
 
-export function StudentTable({ students }: StudentTableProps) {
+export function StudentTable({ students, onChanged }: StudentTableProps) {
   return (
     <Card>
       <CardHeader className="text-start">
@@ -62,7 +49,7 @@ export function StudentTable({ students }: StudentTableProps) {
             </TableHeader>
             <TableBody>
               {students.map((student) => (
-                <StudentTableRow key={student.id} student={student} />
+                <StudentTableRow key={student.id} student={student} onChanged={onChanged} />
               ))}
               {students.length === 0 && (
                 <TableRow>
@@ -89,7 +76,7 @@ export function StudentTable({ students }: StudentTableProps) {
                     <p className="text-xs text-muted-foreground">{student.email}</p>
                   </div>
                 </div>
-                <StudentTableActions studentId={student.id} />
+                <StudentTableActions student={student} onChanged={onChanged} />
               </div>
 
               <div className="grid grid-cols-3 gap-2 sm:gap-3">

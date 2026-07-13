@@ -33,7 +33,7 @@ from drf_spectacular.types import OpenApiTypes
 from .models import ClassAnnouncement, ClassCreationSession, ClassInvitation, ClassPrerequisite
 from .models import ClassSection, ClassSectionQuiz, ClassSectionQuizAttempt
 from .models import ClassFinalExam, ClassFinalExamAttempt
-from .models import StudentInviteCode
+from .models import Enrollment, StudentInviteCode
 from apps.notification.models import AdminNotification
 from .permissions import IsTeacherUser, IsStudentUser
 from .serializers import (
@@ -1141,11 +1141,8 @@ class ClassCreationSessionListView(APIView):
         # If no param given, return all classes (backward compatible)
 
         qs = qs.annotate(
-            _invites_count=Count(
-                'invites__phone',
-                distinct=True,
-                filter=~Q(invites__phone=F('teacher__phone')),
-            ),
+            _students_count=Count('enrollments__student_id', distinct=True),
+            _invites_count=Count('enrollments__student_id', distinct=True),
             _lessons_count=Count('units', distinct=True),
         ).order_by('-created_at')
         return Response(ClassCreationSessionListSerializer(qs, many=True).data)
@@ -1442,8 +1439,8 @@ class ClassInvitationDetailView(APIView):
 class ClassSessionStudentsView(APIView):
     """Real per-session student roster for the teacher (name, progress, score, status).
 
-    Unlike ``.../invites/`` (raw invite rows), this resolves the actual student
-    User behind each invited phone and reports real per-session progress
+    Unlike ``.../invites/`` (pending invite rows), this starts from Enrollment
+    and reports real per-session progress
     (completed units), average quiz/exam score, and active/inactive status.
     """
 
@@ -1460,82 +1457,9 @@ class ClassSessionStudentsView(APIView):
         if session is None:
             return Response({'detail': 'جلسه پیدا نشد.'}, status=status.HTTP_404_NOT_FOUND)
 
-        from django.contrib.auth import get_user_model
-
-        from .services.progress import activity_status, session_roster_stats
-
-        User = get_user_model()
-
-        invites = list(
-            ClassInvitation.objects.filter(session=session).order_by('-created_at').values(
-                'phone', 'invite_code', 'created_at'
-            )
-        )
-        teacher_phone = (getattr(request.user, 'phone', '') or '').strip()
-        phones = [i['phone'] for i in invites if (i['phone'] or '').strip() != teacher_phone]
-
-        users_by_phone: dict[str, object] = {}
-        if phones:
-            for u in User.objects.filter(phone__in=phones).only(
-                'id', 'first_name', 'last_name', 'username', 'email', 'phone'
-            ):
-                p = (getattr(u, 'phone', None) or '').strip()
-                if p:
-                    users_by_phone[p] = u
-
-        user_ids = [u.id for u in users_by_phone.values()]
-        roster = session_roster_stats(session=session, user_ids=user_ids)
-        total = roster.get(user_ids[0], {}).get('totalLessons', 0) if user_ids else 0
-        if not total:
-            from .services.progress import total_units
-            total = total_units(session=session)
-
-        out: list[dict] = []
-        for inv in invites:
-            phone = (inv['phone'] or '').strip()
-            if phone == teacher_phone:
-                continue
-            user = users_by_phone.get(phone)
-            name = phone
-            email = ''
-            completed = 0
-            average = None
-            progress = 0
-            last_dt = None
-            if user is not None:
-                first = (getattr(user, 'first_name', '') or '').strip()
-                last = (getattr(user, 'last_name', '') or '').strip()
-                name = f"{first} {last}".strip() or (getattr(user, 'username', '') or '').strip() or phone
-                email = (getattr(user, 'email', '') or '').strip()
-                ustats = roster.get(user.id) or {}
-                completed = int(ustats.get('completedLessons') or 0)
-                average = ustats.get('averageScore')
-                progress = int(ustats.get('progress') or 0)
-                last_dt = ustats.get('lastActivity')
-
-            join_dt = inv['created_at']
-            join_date = join_dt.date().isoformat() if join_dt else timezone.localdate().isoformat()
-            last_activity = last_dt.date().isoformat() if last_dt else join_date
-
-            out.append(
-                {
-                    'id': phone,
-                    'name': name,
-                    'email': email,
-                    'phone': phone,
-                    'inviteCode': inv['invite_code'] or '',
-                    'avatar': '',
-                    'progress': progress,
-                    'completedLessons': completed,
-                    'totalLessons': total,
-                    'averageScore': int(average) if average is not None else 0,
-                    'status': activity_status(last_dt),
-                    'joinDate': join_date,
-                    'lastActivity': last_activity,
-                }
-            )
-
-        return Response(ClassSessionStudentSerializer(out, many=True).data, status=status.HTTP_200_OK)
+        from .services.teacher_students import serialize_session_students
+        rows = serialize_session_students(session=session)
+        return Response(ClassSessionStudentSerializer(rows, many=True).data, status=status.HTTP_200_OK)
 
 
 class ClassAnnouncementListCreateView(APIView):
@@ -1644,7 +1568,10 @@ class TeacherAnalyticsStatsView(APIView):
         
         # This is an all-time roster total. The selected chart window must not
         # make the dashboard's "total students" disagree with /teacher/students.
-        students_count = _teacher_student_invites(request.user).values('phone').distinct().count()
+        students_count = Enrollment.objects.filter(
+            session__teacher=request.user,
+            session__pipeline_type=ClassCreationSession.PipelineType.CLASS,
+        ).values('student_id').distinct().count()
 
         return Response(
             [
@@ -1665,127 +1592,9 @@ class TeacherStudentsListView(APIView):
         responses={200: TeacherStudentSerializer(many=True)},
     )
     def get(self, request):
-        # "Students" are unique invited phone numbers across the teacher's sessions.
-        # Real per-student progress/score/activity now comes from the Enrollment +
-        # StudentUnitProgress + quiz/exam tables (see services.progress).
-        from .services.progress import (
-            activity_status,
-            teacher_roster_stats,
-            units_per_session,
-        )
+        from .services.teacher_students import serialize_teacher_students
 
-        base_qs = _teacher_student_invites(request.user)
-
-        rows = (
-            base_qs.values('phone')
-            .annotate(
-                enrolled_classes=Count('session', filter=Q(session__is_published=True), distinct=True),
-                join_date=Min('created_at'),
-            )
-            .order_by('phone')
-        )
-
-        # Resolve known users by phone (best-effort). We only expose minimal info.
-        from django.contrib.auth import get_user_model
-
-        User = get_user_model()
-        phones = [r['phone'] for r in rows]
-        users_by_phone: dict[str, object] = {}
-        if phones:
-            user_qs = User.objects.filter(phone__in=phones).only('id', 'first_name', 'last_name', 'username', 'email', 'phone')
-            for u in user_qs:
-                p = (getattr(u, 'phone', None) or '').strip()
-                if p:
-                    users_by_phone[p] = u
-
-        invite_codes_by_phone: dict[str, str] = {}
-        if phones:
-            for obj in StudentInviteCode.objects.filter(phone__in=phones).only('phone', 'code'):
-                invite_codes_by_phone[obj.phone] = obj.code
-
-        for phone in phones:
-            normalized = (phone or '').strip()
-            if not normalized:
-                continue
-            if normalized in invite_codes_by_phone:
-                continue
-            invite_codes_by_phone[normalized] = get_or_create_invite_code_for_phone(normalized)
-
-        # --- Real aggregates (batched) ---
-        # Per-user progress/score/activity across all of the teacher's sessions.
-        user_ids = [u.id for u in users_by_phone.values()]
-        roster = teacher_roster_stats(teacher=request.user, user_ids=user_ids)
-        # totalLessons = sum of units across the published sessions each phone is in.
-        units_map = units_per_session(teacher=request.user)
-        published_sessions_by_phone: dict[str, set[int]] = {}
-        for pair in base_qs.filter(session__is_published=True).values('phone', 'session_id'):
-            published_sessions_by_phone.setdefault(pair['phone'], set()).add(pair['session_id'])
-
-        out: list[dict] = []
-        for r in rows:
-            phone = (r.get('phone') or '').strip()
-            user = users_by_phone.get(phone)
-
-            name = phone
-            email = ''
-            avatar = ''
-
-            completed_lessons = 0
-            average_score: int | None = None
-            last_activity_dt = None
-            if user is not None:
-                first = (getattr(user, 'first_name', '') or '').strip()
-                last = (getattr(user, 'last_name', '') or '').strip()
-                full = f"{first} {last}".strip()
-                name = full or (getattr(user, 'username', '') or '').strip() or phone
-                email = (getattr(user, 'email', '') or '').strip()
-                ustats = roster.get(user.id) or {}
-                completed_lessons = int(ustats.get('completedLessons') or 0)
-                average_score = ustats.get('averageScore')
-                last_activity_dt = ustats.get('lastActivity')
-
-            enrolled_classes = int(r.get('enrolled_classes') or 0)
-            total_lessons = sum(
-                units_map.get(sid, 0) for sid in published_sessions_by_phone.get(phone, set())
-            )
-            completed_lessons = min(completed_lessons, total_lessons) if total_lessons else completed_lessons
-
-            join_dt = r.get('join_date')
-            join_date = (join_dt.date().isoformat() if join_dt else timezone.localdate().isoformat())
-            last_activity = (
-                last_activity_dt.date().isoformat() if last_activity_dt else join_date
-            )
-            status_value = activity_status(last_activity_dt)
-
-            score_for_perf = average_score if average_score is not None else 0
-            if average_score is None:
-                performance = 'needs-improvement'
-            elif score_for_perf >= 85:
-                performance = 'excellent'
-            elif score_for_perf >= 70:
-                performance = 'good'
-            else:
-                performance = 'needs-improvement'
-
-            out.append(
-                {
-                    'id': f"phone:{phone}",
-                    'name': name,
-                    'email': email,
-                    'phone': phone,
-                    'inviteCode': invite_codes_by_phone.get(phone, ''),
-                    'avatar': avatar,
-                    'enrolledClasses': enrolled_classes,
-                    'completedLessons': completed_lessons,
-                    'totalLessons': total_lessons,
-                    'averageScore': int(score_for_perf),
-                    'status': status_value,
-                    'joinDate': join_date,
-                    'lastActivity': last_activity,
-                    'performance': performance,
-                }
-            )
-
+        out = serialize_teacher_students(teacher=request.user)
         return Response(TeacherStudentSerializer(out, many=True).data, status=status.HTTP_200_OK)
 
 
@@ -1807,21 +1616,22 @@ class TeacherAnalyticsChartView(APIView):
         today = timezone.localdate()
         start_date = today - timedelta(days=days-1)
         
-        # A student may be invited to multiple classes. The chart represents
-        # unique students, so each phone contributes only on its first invite.
         count_map: dict = {}
-        first_invites = (
-            _teacher_student_invites(request.user)
-            .values('phone')
-            .annotate(first_invited_at=Min('created_at'))
+        first_enrollments = (
+            Enrollment.objects.filter(
+                session__teacher=request.user,
+                session__pipeline_type=ClassCreationSession.PipelineType.CLASS,
+            )
+            .values('student_id')
+            .annotate(first_joined_at=Min('joined_at'))
         )
-        for item in first_invites:
-            first_invited_at = item['first_invited_at']
-            if first_invited_at is None:
+        for item in first_enrollments:
+            first_joined_at = item['first_joined_at']
+            if first_joined_at is None:
                 continue
-            invite_date = timezone.localtime(first_invited_at).date()
-            if start_date <= invite_date <= today:
-                count_map[invite_date] = count_map.get(invite_date, 0) + 1
+            joined_date = timezone.localtime(first_joined_at).date()
+            if start_date <= joined_date <= today:
+                count_map[joined_date] = count_map.get(joined_date, 0) + 1
         
         data = []
         for i in range(days - 1, -1, -1):
@@ -1860,11 +1670,10 @@ class TeacherAnalyticsExportCSVView(APIView):
         total_classes = qs.filter(pipeline_type='class').count()
         total_exams = qs.filter(pipeline_type='exam_prep').count()
         
-        invites_qs = ClassInvitation.objects.filter(session__teacher=request.user)
-        teacher_phone = (getattr(request.user, 'phone', '') or '').strip()
-        if teacher_phone:
-            invites_qs = invites_qs.exclude(phone=teacher_phone)
-        students_count = invites_qs.values('phone').distinct().count()
+        students_count = Enrollment.objects.filter(
+            session__teacher=request.user,
+            session__pipeline_type=ClassCreationSession.PipelineType.CLASS,
+        ).values('student_id').distinct().count()
         
         writer.writerow(['کل کلاس‌های ساخته شده', total_classes])
         writer.writerow(['آمادگی آزمون‌های فعال', total_exams])
@@ -1878,13 +1687,14 @@ class TeacherAnalyticsExportCSVView(APIView):
         from django.db.models.functions import TruncDate
         start_date = timezone.localdate() - timedelta(days=29)
         chart_counts = (
-            ClassInvitation.objects.filter(
+            Enrollment.objects.filter(
                 session__teacher=request.user,
-                created_at__date__gte=start_date
+                session__pipeline_type=ClassCreationSession.PipelineType.CLASS,
+                joined_at__date__gte=start_date,
             )
-            .annotate(date=TruncDate('created_at'))
+            .annotate(date=TruncDate('joined_at'))
             .values('date')
-            .annotate(count=Count('id'))
+            .annotate(count=Count('student_id', distinct=True))
             .order_by('date')
         )
         for c in chart_counts:
@@ -1913,19 +1723,15 @@ class TeacherAnalyticsDistributionView(APIView):
                 pipeline_type=ClassCreationSession.PipelineType.CLASS,
             )
             .annotate(
-                invites_count=Count(
-                    'invites__phone',
-                    distinct=True,
-                    filter=~Q(invites__phone=F('teacher__phone')),
-                )
+                students_count=Count('enrollments__student_id', distinct=True)
             )
-            .filter(invites_count__gt=0)
-            .order_by('-invites_count')[:5]
+            .filter(students_count__gt=0)
+            .order_by('-students_count')[:5]
         )
         
         data = []
         for s in sessions:
-            data.append({'name': s.title, 'value': s.invites_count})
+            data.append({'name': s.title, 'value': s.students_count})
             
         if not data:
             # Fallback for empty state to avoid empty chart display issues if any
@@ -2003,11 +1809,7 @@ class StudentCourseListView(APIView):
             .select_related('teacher')
             .prefetch_related('sections__units', 'invites')
             .annotate(
-                _invites_count=Count(
-                    'invites__phone',
-                    distinct=True,
-                    filter=~Q(invites__phone=F('teacher__phone')),
-                ),
+                _students_count=Count('enrollments__student_id', distinct=True),
             )
             .distinct()
             .order_by('-published_at', '-updated_at')
@@ -2035,7 +1837,7 @@ class StudentCourseListView(APIView):
                     'tags': [],
                     'instructor': instructor,
                     'progress': _compute_student_course_progress(session=session, student=user),
-                    'studentsCount': session._invites_count,
+                    'studentsCount': session._students_count,
                     'lessonsCount': lessons_count,
                     'status': 'active',
                     'createdAt': (session.published_at or session.created_at).date().isoformat(),

@@ -55,6 +55,7 @@ export function StudentFilters({
                 <SelectItem value="all">همه وضعیت‌ها</SelectItem>
                 <SelectItem value="active">فعال</SelectItem>
                 <SelectItem value="inactive">غیرفعال</SelectItem>
+                <SelectItem value="suspended">تعلیق‌شده</SelectItem>
               </SelectContent>
             </Select>
 
