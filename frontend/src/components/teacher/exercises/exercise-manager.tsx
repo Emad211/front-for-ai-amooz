@@ -12,7 +12,6 @@ import { Loader2, Upload, Trash2, CheckCircle2, FileText, Plus, Ban, Save, Setti
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
@@ -42,6 +41,7 @@ import {
   type ExerciseIntakeDraft,
 } from '@/components/teacher/exercises/exercise-intake-form';
 import { ReferenceIngestPanel } from '@/components/teacher/exercises/reference-ingest-panel';
+import { LatexMarkdownEditor } from '@/components/teacher/exercises/latex-markdown-editor';
 import {
   ACTIVE_EXERCISE_WORKFLOW_STAGES,
   ExerciseWorkflowTracker,
@@ -577,12 +577,14 @@ function QuestionEditor({
   return (
     <div className="space-y-2 rounded-md border border-border p-3">
       <div className="flex items-start gap-2">
-        <Textarea
-          placeholder="متن سوال"
+        <LatexMarkdownEditor
+          label="متن سوال"
+          previewLabel="پیش‌نمایش سوال"
+          placeholder="متن سوال را بنویسید یا با کیبورد ریاضی فرمول اضافه کنید."
           value={text}
-          onChange={(e) => setText(e.target.value)}
-          rows={2}
-          className="text-sm font-medium"
+          onChange={setText}
+          rows={3}
+          className="min-w-0 flex-1"
         />
         <AlertDialog>
           <AlertDialogTrigger asChild>
@@ -604,11 +606,13 @@ function QuestionEditor({
           </AlertDialogContent>
         </AlertDialog>
       </div>
-      <Textarea
-        placeholder="پاسخ مرجع (مبنای نمره‌دهی)"
+      <LatexMarkdownEditor
+        label="پاسخ مرجع"
+        previewLabel="پیش‌نمایش پاسخ مرجع"
+        placeholder="پاسخ مرجع را بنویسید؛ این پاسخ مبنای نمره‌دهی است."
         value={reference}
-        onChange={(e) => setReference(e.target.value)}
-        rows={3}
+        onChange={setReference}
+        rows={4}
       />
       <div className="flex items-center gap-2">
         <Label className="text-sm">بارم</Label>

@@ -8,6 +8,7 @@ type MarkdownWithMathProps = {
 	className?: string;
 	renderKey?: string | number; // Force re-render when this changes
 	as?: 'div' | 'span';
+	allowImages?: boolean;
 };
 
 function escapeHtml(text: string): string {
@@ -101,7 +102,7 @@ function protectTables(src: string, store: string[]): string {
 
 // Ported from transcripter-main/static/js/learn.js (formatMarkdown + tryRenderMath)
 // with one safety tweak: we escape HTML outside of LaTeX/code to avoid injection.
-function formatMarkdown(md: string): string {
+function formatMarkdown(md: string, allowImages = true): string {
 	if (!md) return '';
 
 	let html = String(md)
@@ -200,6 +201,7 @@ function formatMarkdown(md: string): string {
 	// ============ STEP 6b: Images (MUST run before links) ============
 	// ![alt](src) → <img>. Relative /media/... srcs resolve to the backend.
 	html = html.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (_m, alt, src) => {
+		if (!allowImages) return String(alt);
 		const safeSrc = resolveImgSrc(src);
 		if (!safeSrc) return '';
 		return `<img src="${escapeHtml(safeSrc)}" alt="${escapeHtml(String(alt))}" class="md-img" loading="lazy" />`;
@@ -234,22 +236,22 @@ function formatMarkdown(md: string): string {
 	// ============ STEP 9b: Restore LaTeX ============
 	html = html.replace(/%%LATEXBLOCK(\d+)%%/g, (_match, idx) => {
 		const n = Number.parseInt(String(idx), 10);
-		return `<div class="math-block" dir="ltr">$$${latexBlocks[n] ?? ''}$$</div>`;
+		return `<div class="math-block" dir="ltr">$$${escapeHtml(latexBlocks[n] ?? '')}$$</div>`;
 	});
 
 	html = html.replace(/%%LATEXINLINE(\d+)%%/g, (_match, idx) => {
 		const n = Number.parseInt(String(idx), 10);
-		return `<span class="math-inline" dir="ltr">$${latexInlines[n] ?? ''}$</span>`;
+		return `<span class="math-inline" dir="ltr">$${escapeHtml(latexInlines[n] ?? '')}$</span>`;
 	});
 
 	return html;
 }
 
-function MarkdownWithMathImpl({ markdown, className, renderKey, as }: MarkdownWithMathProps) {
+function MarkdownWithMathImpl({ markdown, className, renderKey, as, allowImages = true }: MarkdownWithMathProps) {
 	const containerRef = useRef<HTMLElement | null>(null);
 	const uniqueId = useId();
 
-	const html = useMemo(() => formatMarkdown(markdown || ''), [markdown]);
+	const html = useMemo(() => formatMarkdown(markdown || '', allowImages), [markdown, allowImages]);
 
 	// Run KaTeX render after DOM update
 	useEffect(() => {
@@ -298,7 +300,8 @@ export const MarkdownWithMath = memo(
 		prev.markdown === next.markdown &&
 		prev.className === next.className &&
 		prev.renderKey === next.renderKey &&
-		prev.as === next.as
+		prev.as === next.as &&
+		prev.allowImages === next.allowImages
 );
 
 MarkdownWithMath.displayName = 'MarkdownWithMath';

@@ -375,7 +375,10 @@ stored `per_question` (zero tokens), **no pregeneration** (nothing to pre-build)
   reaches `recapped` until every embedded exercise is `ready_for_review`, `failed`, or `cancelled`. The
   reference ingest remains only as the secondary `اصلاح گروهی از روی منبع` action beside the
   question/reference-answer review list; its workflow opens in a sheet and no longer occupies a
-  standalone card between settings and questions.
+  standalone card between settings and questions. Every question and reference-answer editor now
+  includes a live KaTeX preview plus an optional visual math keyboard. The keyboard inserts standard
+  Markdown/LaTeX at the textarea cursor (fractions, roots, powers, sets, Greek letters, and common
+  operators), so storage and all student/grading render paths keep the existing text contract.
 - **Student solver:** sticky header (title, deadline badge with <24h countdown, draft-saved indicator);
   one ordered question list on every viewport; per-question text/photo inputs (camera `capture` on
   mobile, client-side compression); autosave; sticky
