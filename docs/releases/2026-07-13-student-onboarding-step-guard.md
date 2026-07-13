@@ -29,6 +29,7 @@ Commit: `fix(onboarding): prevent early wizard completion` · Scope: frontend
 ## Verification
 
 - `npx tsc --noEmit --pretty false`: existing baseline recorded separately; zero errors in the changed file.
+- `pytest backend/apps/accounts/test_onboarding.py --no-migrations`: 7 passed on the SQLite fast lane.
 - `git diff --check`.
 
 ## Rollback
