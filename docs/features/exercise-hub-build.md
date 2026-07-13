@@ -1,5 +1,9 @@
 # Exercise Hub — build progress (loop control file)
 
+- [x] **2026-07-13 — mutable exercise settings:** ADR-0006 keeps one exercise-level assistant policy
+  but makes it editable beside the deadline in the teacher's «تنظیمات قابل تغییر» panel. Section-level
+  controls remain removed and ignored.
+
 - [x] **2026-07-12 — flat questions + one assistant policy:** ADR-0005 supersedes the visible
   section model and two-level assistant rule. Extraction now requests top-level `questions[]`, stores
   one private compatibility section, exposes ordered top-level questions while retaining the legacy

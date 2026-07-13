@@ -99,8 +99,8 @@ here, deliberately.
 
 ## Scope
 - **In (V1 shipped through E14):** create/extract/edit/publish flow (PDF + photos); reference answers (extracted-if-present,
-  teacher-edited, mandatory); deadlines; **one assistant toggle at exercise intake** (ADR-0005
-  ruling — explicit owner requirement; PM's defer-to-phase-2 dissent recorded); text + handwriting-photo
+  teacher-edited, mandatory); deadlines; **one exercise-level assistant toggle, initialized at intake
+  and mutable from the owner-scoped settings panel** (ADR-0006); text + handwriting-photo
   submissions; async LLM grading with teacher rubric + deterministic grading for MCQ/fill-blank; teacher
   override with audit; per-exercise + per-class report cards (simple average); teacher gradebook matrix;
   real calendar endpoint + frontend wiring; handwriting-photo grading; teacher reference-ingest preview/apply.
@@ -185,8 +185,8 @@ here, deliberately.
   context at all** (server strips it) — a model that never saw the answer cannot leak it under
   injection. After grading (`{phase}=graded`) reference+feedback enter the context so the assistant can
   teach the solution (adaptive-loop reveal precedent).
-- **Toggle semantics:** effective = `exercise.assistant_enabled`; it is captured during initial intake
-  and is immutable afterward. The legacy section flag is ignored (ADR-0005).
+- **Toggle semantics:** effective = `exercise.assistant_enabled`; it is initialized during intake and
+  remains editable by the teacher from «تنظیمات قابل تغییر» (ADR-0006). The legacy section flag is ignored.
 
 ## Data
 | Model | Key fields | Constraints |
@@ -234,7 +234,7 @@ database-engineer).
   status-gated, no DB write. `POST exercises/<eid>/reference-ingest/apply/` → transactional update of
   selected existing questions only; no new question creation and no overwrite of existing reference
   answers unless `replaceExisting=true`.
-- `PATCH exercises/<eid>/` (title/deadline/allow_late; assistant is intake-only) ·
+- `PATCH exercises/<eid>/` (title/deadline/allow_late/assistant_enabled) ·
   deprecated `PATCH exercises/sections/<id>/` (legacy title compatibility only) · CRUD `exercises/<eid>/questions/`
   (content edits after PUBLISHED trigger the re-grade warning flow)
 - `GET exercises/<eid>/submissions/` · `GET submissions/<id>/` · `PATCH submissions/<id>/override/`
@@ -420,7 +420,7 @@ stored `per_question` (zero tokens), **no pregeneration** (nothing to pre-build)
 | **E5** | backend (**security-auditor gate**) | student endpoints (list/detail/draft/submit/image) + deadline guard + no-leak serializers | ✅ DONE — 7 endpoints + `_reveal_open` + finished-answers browse + `DRAFT` status (mig 0025); 22 api tests; security gate PASSED (Low-1 fixed proactively, Low-2→E6) |
 | **E6** | ai-engineer + backend | grading service+task (`exercise_grading`, batch env, deterministic MCQ/fill-blank, retry idempotent, kill-switch) | ✅ DONE — `exercise_grading.py` + `grade_exercise_submission` task + dispatch wired; deterministic MCQ + LLM batch + sum + kill-switch; E5 Low-1/Low-2 closed; 13 tests + contract green |
 | **E7** | backend | result + report cards (per-exercise/per-course/overall) + teacher submissions list + override + allow-redo + in-app notifications (publish/graded) | ✅ DONE — gradebook (list/detail/override/allow-redo) + student course/overall report cards; override keeps `llm_score`, recomputes effective; 12 tests. **Teacher review-ready notifications are now shipped** (2026-07-08, SMS + virtual teacher feed); publish/graded notifications remain deferred to E7b. |
-| **E8** | ai-engineer (**security-auditor gate**) | assistant endpoint + server guard + context builder (structural strip of reference answers) + `exercise_assistant_chat` | ✅ DONE — originally shipped with two-level toggle; ADR-0005 later replaced it with the intake-time exercise-level guard. |
+| **E8** | ai-engineer (**security-auditor gate**) | assistant endpoint + server guard + context builder (structural strip of reference answers) + `exercise_assistant_chat` | ✅ DONE — originally shipped with two-level toggle; ADR-0005 removed section enforcement and ADR-0006 made the owner-scoped exercise-level setting mutable. |
 | **E9** | backend (+database-engineer) | migration `0026` (`scheduled_at`) + `GET student/calendar/` aggregate | ✅ DONE — nullable `scheduled_at` (db-eng approved) + calendar endpoint (both kinds, Tehran-tz, isCompleted, from/to); 9 tests green. **Backend complete.** |
 | **E10** | frontend-engineer | teacher UI: service + wizard + gradebook + override + toggles | ✅ DONE — evolved on 2026-07-08 from the earlier split flow into a single intake card: title + deadline/settings + teacher note + source files + per-file hints up front, then a single `ساخت پیش‌نویس تمرین` action and persistent workflow/progress cards until `بازبینی و انتشار`; 2026-07-08 follow-up added a site-native **Jalali deadline picker** for both intake and post-extraction settings, replaced the browser-native Gregorian control, tightened the popover footprint/anchoring, made the shared `Switch` RTL-safe, and added a teacher-side `لغو استخراج` action on active exercise cards. The old reference-ingest panel remains as `افزودن منبع تکمیلی`. |
 | **E11** | frontend-engineer | student UI: exercises hub + solver (text/photo) + assistant widget + report cards | ✅ DONE — service (student endpoints) + hub/solver/result/answers pages + assistant/report-card; disabled-assistant chip; solver never fetches reference; tsc clean |
@@ -493,7 +493,7 @@ feeds answer images to the LLM. **E6 pre-condition:** the grader must NOT write
 **E8 assistant security-auditor gate (2026-07-05): PASSED, cleared.** Verified: the
 reference answer reaches the model ONLY via `build_question_context(reveal=True)`
 (structural guard — pre-reveal the model never sees it, so no jailbreak can extract
-it); ADR-0005 now enforces the intake-time exercise toggle (`exercise.assistant_enabled` → 403
+it); ADR-0006 enforces the mutable exercise-level toggle (`exercise.assistant_enabled` → 403
 `assistant_disabled`, deny-by-default); cross-exercise question smuggling blocked by
 `section__exercise` scoping (404); phone-scope + per-student memory thread (no
 cross-student bleed); `SAFETY_PREAMBLE` + DATA-fenced `user_message`/`student_work`;

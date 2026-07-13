@@ -289,7 +289,7 @@ export async function getExercise(exerciseId: number): Promise<ExerciseDetail> {
 
 export async function updateExercise(
   exerciseId: number,
-  data: { title?: string; deadline?: string | null; allow_late?: boolean }
+  data: { title?: string; deadline?: string | null; allow_late?: boolean; assistant_enabled?: boolean }
 ): Promise<ExerciseDetail> {
   return requestJson(`${API_URL}/classes/exercises/${exerciseId}/`, {
     method: 'PATCH',

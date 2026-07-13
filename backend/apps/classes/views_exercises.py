@@ -297,7 +297,7 @@ class ExerciseDetailView(APIView):
         )
         serializer.is_valid(raise_exception=True)
         fields: list[str] = []
-        for key in ('title', 'deadline', 'allow_late'):
+        for key in ('title', 'deadline', 'allow_late', 'assistant_enabled'):
             if key in serializer.validated_data:
                 setattr(exercise, key, serializer.validated_data[key])
                 fields.append(key)
@@ -1615,9 +1615,11 @@ class StudentCalendarView(APIView):
 
 
 class StudentExerciseAssistantView(APIView):
-    """In-exercise assistant chat. Two-level server-side toggle guard (exercise
-    AND section) -> 403 `assistant_disabled`. Reference answers enter the model
-    context only after reveal (structural leak guard in the service)."""
+    """In-exercise assistant chat with an exercise-level server guard.
+
+    Disabled exercises return 403 `assistant_disabled`. Reference answers enter
+    the model context only after reveal (structural leak guard in the service).
+    """
 
     permission_classes = [IsAuthenticated, IsStudentUser]
 

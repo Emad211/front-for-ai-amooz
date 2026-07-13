@@ -7,13 +7,14 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
-import { Loader2, Upload, Trash2, CheckCircle2, FileText, Plus, Ban } from 'lucide-react';
+import { Loader2, Upload, Trash2, CheckCircle2, FileText, Plus, Ban, Save, Settings2 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
+import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { JalaliDateTimePicker } from '@/components/ui/jalali-date-time-picker';
 import {
@@ -399,6 +400,8 @@ function ExerciseEditor({
   onSaved: () => Promise<void>;
 }) {
   const [deadline, setDeadline] = useState(toLocalDateTimeValue(detail.deadline));
+  const [assistantEnabled, setAssistantEnabled] = useState(detail.assistantEnabled);
+  const [savingSettings, setSavingSettings] = useState(false);
   const [adding, setAdding] = useState(false);
   const allQuestions = detail.questions.map((question, index) => ({
     ...question,
@@ -406,14 +409,18 @@ function ExerciseEditor({
   }));
 
   const saveSettings = async () => {
+    setSavingSettings(true);
     try {
       await updateExercise(detail.id, {
         deadline: deadline ? new Date(deadline).toISOString() : null,
+        assistant_enabled: assistantEnabled,
       });
       toast.success('تنظیمات ذخیره شد.');
       await onSaved();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'ذخیرهٔ تنظیمات ناموفق بود.');
+    } finally {
+      setSavingSettings(false);
     }
   };
 
@@ -435,20 +442,65 @@ function ExerciseEditor({
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-end gap-4 rounded-md bg-muted/40 p-3">
-        <div className="flex flex-col gap-1">
-          <Label htmlFor={`dl-${detail.id}`}>مهلت ارسال</Label>
-          <JalaliDateTimePicker
-            id={`dl-${detail.id}`}
-            value={deadline}
-            onChange={setDeadline}
-            className="w-56"
-          />
+      <section className="overflow-hidden rounded-xl border border-border/70 bg-muted/20">
+        <div className="flex items-center gap-3 border-b border-border/60 px-4 py-3">
+          <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary">
+            <Settings2 className="h-4 w-4" />
+          </span>
+          <div>
+            <h3 className="text-sm font-semibold">تنظیمات قابل تغییر</h3>
+            <p className="text-xs leading-5 text-muted-foreground">
+              زمان تحویل و دستیار حل تمرین را هر زمان لازم بود تغییر دهید.
+            </p>
+          </div>
         </div>
-        <Button variant="secondary" size="sm" onClick={saveSettings}>
-          ذخیرهٔ تنظیمات
-        </Button>
-      </div>
+
+        <div className="grid gap-3 p-4 lg:grid-cols-2">
+          <div className="flex min-h-20 items-center justify-between gap-4 rounded-lg border border-border/60 bg-background/70 px-4 py-3">
+            <div className="space-y-1">
+              <Label htmlFor={`asst-${detail.id}`} className="text-sm font-medium">
+                دستیار حل تمرین
+              </Label>
+              <p className="text-xs leading-5 text-muted-foreground">
+                دانش‌آموز می‌تواند هنگام حل سؤال‌ها از دستیار هوشمند راهنمایی بگیرد.
+              </p>
+            </div>
+            <Switch
+              id={`asst-${detail.id}`}
+              checked={assistantEnabled}
+              onCheckedChange={setAssistantEnabled}
+              disabled={savingSettings}
+              aria-label="فعال یا غیرفعال کردن دستیار حل تمرین"
+            />
+          </div>
+
+          <div className="min-h-20 space-y-2 rounded-lg border border-border/60 bg-background/70 px-4 py-3">
+            <div className="space-y-1">
+              <p className="text-sm font-medium">زمان تحویل تمرین</p>
+              <p className="text-xs leading-5 text-muted-foreground">
+                تاریخ و ساعت پایان دریافت پاسخ‌ها را مشخص کنید.
+              </p>
+            </div>
+            <JalaliDateTimePicker
+              id={`dl-${detail.id}`}
+              value={deadline}
+              onChange={setDeadline}
+              className="w-full"
+            />
+          </div>
+        </div>
+
+        <div className="flex justify-end border-t border-border/60 px-4 py-3">
+          <Button size="sm" onClick={saveSettings} disabled={savingSettings}>
+            {savingSettings ? (
+              <Loader2 className="ms-2 h-4 w-4 animate-spin" />
+            ) : (
+              <Save className="ms-2 h-4 w-4" />
+            )}
+            ذخیره تنظیمات
+          </Button>
+        </div>
+      </section>
 
       <ReferenceIngestPanel
         exerciseId={detail.id}

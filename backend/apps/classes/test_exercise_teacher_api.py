@@ -206,15 +206,15 @@ class TestDetailUpdateDelete:
         assert res.status_code == 200
         assert [question['id'] for question in res.data['questions']] == [q1.id, q2.id]
 
-    def test_owner_cannot_change_assistant_after_creation(self):
+    def test_owner_can_change_exercise_assistant_after_creation(self):
         owner = _teacher()
         ex = _exercise(owner, deadline='2026-07-31T09:30:00Z')
         res = _auth(owner).patch(
             DETAIL.format(ex.id), {'assistant_enabled': False, 'allow_late': True}, format='json',
         )
-        assert res.status_code == 400
+        assert res.status_code == 200
         ex.refresh_from_db()
-        assert ex.assistant_enabled is True and ex.allow_late is False
+        assert ex.assistant_enabled is False and ex.allow_late is True
 
     def test_owner_cannot_enable_late_submission_without_deadline(self):
         owner = _teacher()
