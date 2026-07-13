@@ -131,31 +131,22 @@ export function ReferenceIngestPanel({
   };
 
   return (
-    <div className="rounded-md border border-border bg-background p-3">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="space-y-1">
-          <h3 className="text-sm font-semibold">اصلاح از روی منبع تکمیلی</h3>
-          <p className="max-w-3xl text-xs leading-6 text-muted-foreground">
-            اگر پیش‌نویس آماده شد اما بخشی از پاسخ‌نامه یا بارم دقیق درنیامد، اینجا منبع تکمیلی می‌دهید
-            و قبل از اعمال، همه‌چیز را بازبینی می‌کنید.
-          </p>
-        </div>
-        <Sheet open={open} onOpenChange={setOpen}>
-          <SheetTrigger asChild>
-            <Button variant="outline" size="sm">
-              <Wand2 className="ms-2 h-4 w-4" />
-              افزودن منبع تکمیلی
-            </Button>
-          </SheetTrigger>
-          <SheetContent side="left" dir="rtl" className="flex h-full w-full flex-col overflow-y-auto sm:max-w-2xl">
-            <SheetHeader>
-              <SheetTitle>اصلاح پاسخ‌های مرجع از روی منبع تکمیلی</SheetTitle>
-              <SheetDescription>
-                این مسیر تکمیلی است. منبع را وارد کنید؛ خروجی فقط پس از تایید شما روی سوال‌های تمرین اعمال می‌شود.
-              </SheetDescription>
-            </SheetHeader>
+    <Sheet open={open} onOpenChange={setOpen}>
+      <SheetTrigger asChild>
+        <Button variant="outline" size="sm" className="w-full sm:w-auto">
+          <Wand2 className="ms-2 h-4 w-4" />
+          اصلاح گروهی از روی منبع
+        </Button>
+      </SheetTrigger>
+      <SheetContent side="left" dir="rtl" className="flex h-full w-full flex-col overflow-y-auto sm:max-w-2xl">
+        <SheetHeader>
+          <SheetTitle>اصلاح گروهی پاسخ‌های مرجع</SheetTitle>
+          <SheetDescription>
+            متن یا فایل تکمیلی را وارد کنید. هیچ تغییری پیش از بازبینی و تایید شما اعمال نمی‌شود.
+          </SheetDescription>
+        </SheetHeader>
 
-            <div className="space-y-4 py-4">
+        <div className="space-y-4 py-4">
               <div className="grid gap-3 md:grid-cols-2">
                 <div className="space-y-1">
                   <Label>نوع ورودی</Label>
@@ -244,18 +235,16 @@ export function ReferenceIngestPanel({
                   onReplaceChange={(id, value) => setReplaceExisting((prev) => ({ ...prev, [id]: value }))}
                 />
               )}
-            </div>
+        </div>
 
-            <SheetFooter className="sticky bottom-0 mt-auto border-t border-border bg-background pt-3">
-              <Button onClick={applySelected} disabled={busy || !preview}>
-                {busy ? <Loader2 className="ms-2 h-4 w-4 animate-spin" /> : <CheckCircle2 className="ms-2 h-4 w-4" />}
-                اعمال موارد تاییدشده
-              </Button>
-            </SheetFooter>
-          </SheetContent>
-        </Sheet>
-      </div>
-    </div>
+        <SheetFooter className="sticky bottom-0 mt-auto border-t border-border bg-background pt-3">
+          <Button onClick={applySelected} disabled={busy || !preview}>
+            {busy ? <Loader2 className="ms-2 h-4 w-4 animate-spin" /> : <CheckCircle2 className="ms-2 h-4 w-4" />}
+            اعمال موارد تاییدشده
+          </Button>
+        </SheetFooter>
+      </SheetContent>
+    </Sheet>
   );
 }
 

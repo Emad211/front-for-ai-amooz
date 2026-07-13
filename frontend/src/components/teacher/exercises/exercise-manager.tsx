@@ -502,13 +502,21 @@ function ExerciseEditor({
         </div>
       </section>
 
-      <ReferenceIngestPanel
-        exerciseId={detail.id}
-        questions={allQuestions}
-        onApplied={onSaved}
-      />
+      <section className="space-y-4">
+        <div className="flex flex-col gap-3 border-b border-border/60 pb-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="space-y-1">
+            <h3 className="text-sm font-semibold">سوال‌ها و پاسخ‌های مرجع</h3>
+            <p className="text-xs leading-5 text-muted-foreground">
+              متن سوال، پاسخ مرجع و بارم هر سوال را بازبینی و ویرایش کنید.
+            </p>
+          </div>
+          <ReferenceIngestPanel
+            exerciseId={detail.id}
+            questions={allQuestions}
+            onApplied={onSaved}
+          />
+        </div>
 
-      <div className="space-y-4">
         {detail.questions.map((question, index) => (
           <div key={question.id} className="space-y-2">
             <p className="text-sm font-semibold text-muted-foreground">سوال {index + 1}</p>
@@ -523,7 +531,7 @@ function ExerciseEditor({
           )}
           افزودن سوال
         </Button>
-      </div>
+      </section>
     </div>
   );
 }
