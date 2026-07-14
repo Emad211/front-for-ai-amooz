@@ -1,6 +1,6 @@
 # Teacher Save-and-Process Workflows
 
-Last updated: 2026-07-08
+Last updated: 2026-07-14
 
 ## Scope
 
@@ -12,6 +12,20 @@ flows to durable background processing for:
 - optional embedded exercise intake during class creation
 
 Publish remains explicit and manual.
+
+## Prerequisite Language Consistency
+
+Class pipeline steps 3 and 4 preserve the dominant natural language of the uploaded lesson:
+
+- `prerequisites_prompt.default` detects language from transcript prose while ignoring code,
+  formulas, identifiers, product names, and isolated foreign technical terms.
+- `prerequisite_teaching.default` uses a bounded `SOURCE_LANGUAGE_CONTEXT` sample as its authoritative
+  language signal. A technical name such as `Python` no longer causes English teaching notes when the
+  surrounding lesson is Persian.
+- The source sample is capped at 600 characters across beginning, middle, and end. With the standard
+  10 prerequisites, the maximum repeated context is 6,000 characters for the complete step.
+- Output contracts and model-selection environment variables are unchanged:
+  `PREREQUISITES_MODEL` / `PREREQ_TEACHING_MODEL` → `STRUCTURE_MODEL` → `REWRITE_MODEL` → `MODEL_NAME`.
 
 ## What Changed
 

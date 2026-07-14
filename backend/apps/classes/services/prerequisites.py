@@ -13,6 +13,7 @@ from apps.classes.services.json_utils import extract_json_object
 logger = logging.getLogger(__name__)
 
 _LLM_TIMEOUT_SECONDS = int(os.getenv("LLM_TIMEOUT_SECONDS", "600"))
+_LANGUAGE_CONTEXT_MAX_CHARS = 600
 
 
 # ---------------------------------------------------------------------
@@ -71,6 +72,22 @@ def _safe_json_from_llm(text: str) -> dict[str, Any]:
         return obj
 
     return {"prerequisites": obj}
+
+
+def _build_language_context(source_markdown: str, *, fallback: str = '') -> str:
+    """Return a bounded sample that represents the source's dominant language."""
+    source = (source_markdown or "").strip() or (fallback or "").strip()
+    if len(source) <= _LANGUAGE_CONTEXT_MAX_CHARS:
+        return source
+
+    separator = "\n\n[...]\n\n"
+    segment_size = (_LANGUAGE_CONTEXT_MAX_CHARS - (2 * len(separator))) // 3
+    middle_start = max(0, (len(source) - segment_size) // 2)
+    return separator.join((
+        source[:segment_size],
+        source[middle_start:middle_start + segment_size],
+        source[-segment_size:],
+    ))
 
 
 def _call_llm(
@@ -144,7 +161,7 @@ FULL_TRANSCRIPT_MARKDOWN:
 
 
 def generate_prerequisite_teaching(
-    *, prerequisite_name: str
+    *, prerequisite_name: str, source_markdown: str
 ) -> tuple[str, str, str]:
     """
     Generate structured teaching content for a prerequisite.
@@ -163,6 +180,9 @@ def generate_prerequisite_teaching(
     user_content = f"""
 PREREQUISITE_NAME:
 {prerequisite_name}
+
+SOURCE_LANGUAGE_CONTEXT:
+{_build_language_context(source_markdown, fallback=prerequisite_name)}
 """.strip()
 
     try:

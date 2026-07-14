@@ -11,9 +11,25 @@ from apps.classes.models import (
     ClassSection,
     ClassUnit,
 )
+from apps.classes.services.prerequisites import _build_language_context
+from apps.classes.tasks import process_class_step4_prereq_teaching
 
 
 User = get_user_model()
+
+
+def test_prerequisite_language_context_is_bounded_and_representative():
+    source = ('ابتدا ' * 700) + ('میانه ' * 700) + ('پایان ' * 700)
+    context = _build_language_context(source)
+
+    assert len(context) <= 600
+    assert context.startswith('ابتدا')
+    assert 'میانه' in context
+    assert context.endswith('پایان')
+
+
+def test_prerequisite_language_context_falls_back_when_source_is_empty():
+    assert _build_language_context('', fallback='مجموعه‌ها') == 'مجموعه‌ها'
 
 
 @pytest.mark.django_db
@@ -59,7 +75,7 @@ class TestClassCreationStep3AndStep4Prerequisites:
             source_mime_type='audio/ogg',
             source_original_name='audio.ogg',
             status=ClassCreationSession.Status.PREREQ_EXTRACTED,
-            transcript_markdown='## transcript\nhello',
+            transcript_markdown='## متن درس\nاین دوره درباره برنامه‌نویسی و Python است.',
             structure_json='{}',
         )
 
@@ -110,13 +126,14 @@ class TestClassCreationStep3AndStep4Prerequisites:
             source_mime_type='audio/ogg',
             source_original_name='audio.ogg',
             status=ClassCreationSession.Status.PREREQ_EXTRACTED,
-            transcript_markdown='## transcript\nhello',
+            transcript_markdown='## متن درس\nاین دوره درباره برنامه‌نویسی و Python است.',
         )
 
         ClassPrerequisite.objects.create(session=session, order=1, name='P1')
         ClassPrerequisite.objects.create(session=session, order=2, name='P2')
 
-        def _fake_generate_prerequisite_teaching(*, prerequisite_name: str):
+        def _fake_generate_prerequisite_teaching(*, prerequisite_name: str, source_markdown: str):
+            assert 'این دوره' in source_markdown
             return (f'# {prerequisite_name}\ntext', 'gemini', 'models/gemini-2.5-flash')
 
         monkeypatch.setattr('apps.classes.views.generate_prerequisite_teaching', _fake_generate_prerequisite_teaching)
@@ -130,6 +147,35 @@ class TestClassCreationStep3AndStep4Prerequisites:
         rows = list(ClassPrerequisite.objects.filter(session=session).order_by('order'))
         assert rows[0].teaching_text.startswith('# P1')
         assert rows[1].teaching_text.startswith('# P2')
+
+    def test_celery_step4_passes_source_language_context(self, monkeypatch):
+        teacher = User.objects.create_user(username='t_pr_task', password='pass', role=User.Role.TEACHER)
+        session = ClassCreationSession.objects.create(
+            teacher=teacher,
+            title='t',
+            description='',
+            source_file=SimpleUploadedFile('audio.ogg', b'fake-audio', content_type='audio/ogg'),
+            source_mime_type='audio/ogg',
+            source_original_name='audio.ogg',
+            status=ClassCreationSession.Status.PREREQ_TEACHING,
+            transcript_markdown='این متن فارسی منبع اصلی درس است.',
+        )
+        ClassPrerequisite.objects.create(session=session, order=1, name='Python')
+
+        def _fake_generate(*, prerequisite_name: str, source_markdown: str):
+            assert prerequisite_name == 'Python'
+            assert source_markdown == session.transcript_markdown
+            return ('آموزش فارسی', 'gemini', 'test-model')
+
+        monkeypatch.setattr(
+            'apps.classes.services.prerequisites.generate_prerequisite_teaching',
+            _fake_generate,
+        )
+
+        result = process_class_step4_prereq_teaching.run(session.id)
+
+        assert result['status'] == 'success'
+        assert ClassPrerequisite.objects.get(session=session).teaching_text == 'آموزش فارسی'
 
 
 @pytest.mark.django_db

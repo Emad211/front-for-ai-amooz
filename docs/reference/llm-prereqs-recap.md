@@ -1,6 +1,6 @@
 # Reference — Stages: prerequisites, prereq-teaching, recap (steps 3-5)
 
-- **Status:** Verified · **Created:** 2026-07-02 · **Last-verified:** 2026-07-02 (commit `d52fb1b`)
+- **Status:** Verified · **Created:** 2026-07-02 · **Last-verified:** 2026-07-14
 - **Owner (doc):** technical-writer · **Spec source:** `docs/reference/ROADMAP.md` step L7
 - **Layer:** llm (pipeline stages — steps 3, 4, 5)
 
@@ -22,8 +22,10 @@ progression.
 - **`extract_prerequisites(*, transcript_markdown) -> (dict, str, str)`** (`prerequisites.py:104`) —
   prompt `prerequisites_prompt.default`; output key `prerequisites`. Model via env
   `PREREQUISITES_MODEL` → `STRUCTURE_MODEL` → `REWRITE_MODEL` (`_select_model:112`).
-- **`generate_prerequisite_teaching(...)`** (`prerequisites.py:146`) — prompt
-  `prerequisite_teaching.default`.
+- **`generate_prerequisite_teaching(*, prerequisite_name, source_markdown)`** (`prerequisites.py`) —
+  prompt `prerequisite_teaching.default`. A bounded 600-character beginning/middle/end sample of the original source
+  is passed as `SOURCE_LANGUAGE_CONTEXT`; it is the authoritative language signal, so an English
+  technical prerequisite name inside a Persian course does not switch the teaching output to English.
 - **`generate_recap_from_structure(*, structure_json) -> (dict, str, str)`** (`recap.py:76`) — prompt
   `recap_and_notes.default`; output tree `recap`/`overview_markdown`/`key_notes_markdown`/`by_unit`
   (with `unit_recap_markdown`, `unit_key_points_markdown`, `common_mistakes_markdown`,
@@ -33,8 +35,9 @@ progression.
 ## Key flows
 1. **Step 3 (prereqs):** transcript → `PROMPTS["prerequisites_prompt"]["default"]` → `_call_llm` →
    `_safe_json_from_llm` → `{prerequisites: [...]}`; status PREREQ_EXTRACTING → PREREQ_EXTRACTED.
-2. **Step 4 (teaching):** the extracted prerequisites → `prerequisite_teaching.default` → teaching
-   material per prerequisite; status PREREQ_TEACHING → PREREQ_TAUGHT. (The task takes an optional
+2. **Step 4 (teaching):** the extracted prerequisites + bounded source-language context →
+   `prerequisite_teaching.default` → teaching material per prerequisite in the source language; status
+   PREREQ_TEACHING → PREREQ_TAUGHT. (The task takes an optional
    `prerequisite_name` to teach a single one — L4 `process_class_step4_prereq_teaching`.)
 3. **Step 5 (recap):** the structure JSON → `recap_and_notes.default` → the recap tree; status
    RECAPPING → RECAPPED (pipeline terminal). `recap_json_to_markdown` turns it into rendered markdown.
@@ -52,6 +55,9 @@ progression.
 ## Gotchas
 - Step 4 can teach a single named prerequisite (`prerequisite_name` arg) or all — don't assume it's
   always the full set.
+- The 600-character language sample is intentionally repeated for each prerequisite generation. At
+  the standard 10 prerequisites this adds at most 6,000 source characters across the step, trading a
+  small bounded token increase for reliable language selection.
 - `_safe_json_from_llm` here is the local safe-parse; the project convention (L2 `generate_structured`)
   is stricter — when this stage is migrated, the silent-fallback behavior changes to raise.
 - Recap is the pipeline's terminal stage (RECAPPED) — nothing runs after it in the class pipeline.

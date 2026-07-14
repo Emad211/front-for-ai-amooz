@@ -254,6 +254,17 @@ def test_exercise_structure_contract_is_flat():
     assert '"section_id"' not in text
 
 
+def test_prerequisite_teaching_language_comes_from_source_context():
+    text = _text("prerequisite_teaching", "default")
+    assert "SOURCE_LANGUAGE_CONTEXT" in text
+    assert "authoritative language signal" in text
+    assert "MUST NOT determine the output language by itself" in text
+
+    extraction_text = _text("prerequisites_prompt", "default")
+    assert "dominant natural language of the transcript" in extraction_text
+    assert "isolated foreign technical terms" in extraction_text
+
+
 def test_no_hardcoded_k12_in_live_prompts():
     """The platform serves any level; the old hardcoded 'K-12' framing is gone."""
     for key, subs in LIVE_KEYS.items():

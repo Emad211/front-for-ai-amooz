@@ -476,7 +476,10 @@ def _process_step4_prereq_teaching(session_id: int, prerequisite_name: str | Non
         provider: str = ''
         model_name: str = ''
         for prereq in qs:
-            teaching, provider, model_name = generate_prerequisite_teaching(prerequisite_name=prereq.name)
+            teaching, provider, model_name = generate_prerequisite_teaching(
+                prerequisite_name=prereq.name,
+                source_markdown=session.transcript_markdown,
+            )
             prereq.teaching_text = teaching
             prereq.save(update_fields=['teaching_text'])
 
