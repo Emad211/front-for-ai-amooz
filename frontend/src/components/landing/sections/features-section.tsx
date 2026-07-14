@@ -2,158 +2,121 @@
 
 import Image from 'next/image';
 import { motion } from 'framer-motion';
-import { Bot, Brain, Settings } from 'lucide-react';
+import { Settings } from 'lucide-react';
 
-const cardBase =
-  'group relative overflow-hidden rounded-3xl border border-white/10 text-white shadow-xl transition-all duration-500 hover:shadow-2xl';
+const baseCard =
+  'relative overflow-hidden rounded-[1.25rem] text-white shadow-xl ring-1 ring-white/10';
 
-/**
- * Features bento — Figma "1920w dark redesign" (همه چیز در یک مکان).
- * Card gradients and the real dark UI screenshots come straight from the design:
- * purple tall (smart assistant phone), rose wide (AI exam builder), and a
- * half-width bottom row — green (Konkur simulator) + orange (learning stages),
- * side by side even on mobile.
- */
 export const FeaturesSection = () => {
   return (
-    <section id="features" className="relative overflow-hidden py-20 md:py-28">
-      <div className="pointer-events-none absolute inset-0 -z-10">
-        <div className="absolute left-1/2 top-0 h-80 w-[40rem] -translate-x-1/2 rounded-full bg-primary/10 blur-[120px]" />
-      </div>
-
-      <div className="container mx-auto px-4">
-        {/* Header */}
+    <section id="features" className="landing-section-shell px-2 py-10 sm:px-4 lg:px-8">
+      <div className="landing-panel mx-auto w-full max-w-[1856px] overflow-hidden px-4 py-10 sm:px-8 lg:px-24">
         <motion.div
-          initial={{ opacity: 0, y: 20 }}
+          initial={{ opacity: 0, y: 18 }}
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true }}
-          transition={{ duration: 0.6 }}
-          className="mx-auto mb-12 max-w-3xl text-center md:mb-16"
+          className="text-center"
         >
-          <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-primary/40 bg-primary/10 px-4 py-1.5 text-sm font-medium text-primary">
-            <Settings className="h-4 w-4" />
+          <div className="inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/10 px-[17px] py-[9px] text-sm font-medium text-primary">
             ویژگی‌ها
+            <Settings className="h-4 w-4" />
           </div>
-          <h2 className="mb-4 text-3xl font-black text-foreground md:text-5xl">
+          <h2 className="landing-display mt-8 text-3xl font-black text-foreground sm:text-4xl lg:text-5xl">
             همه چیز در یک مکان
           </h2>
-          <p className="text-base text-muted-foreground md:text-lg">
-            همه چیزی که از یک ابزار یادگیری نیاز دارید، یکجا و هوشمند
+          <p className="mx-auto mt-6 max-w-3xl text-base font-medium text-muted-foreground sm:text-lg lg:text-xl">
+            همه چیزی که از یک ابزار یادگیری نیاز دارید؛ یکجا، منظم و هوشمند
           </p>
         </motion.div>
 
-        {/* Bento grid */}
         <div
           dir="ltr"
-          className="mx-auto grid max-w-6xl grid-cols-2 gap-4 md:gap-5 lg:grid-cols-3 lg:grid-rows-2"
+          className="mt-12 grid min-h-[43rem] grid-cols-2 gap-3 sm:gap-5 lg:grid-cols-[458px_1fr_1fr] lg:grid-rows-[336px_304px] lg:gap-8"
         >
-          {/* A — Smart assistant (purple, tall) */}
-          <motion.div
+          <motion.article
             dir="rtl"
-            initial={{ opacity: 0, y: 30 }}
+            initial={{ opacity: 0, y: 26 }}
             whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true, margin: '-50px' }}
-            transition={{ duration: 0.5 }}
-            className={`${cardBase} col-span-2 flex flex-col bg-gradient-to-br from-violet-600 to-purple-700 p-6 md:p-8 lg:col-span-1 lg:col-start-1 lg:row-span-2 lg:row-start-1`}
+            viewport={{ once: true, margin: '-60px' }}
+            className={`${baseCard} col-span-2 min-h-[32rem] bg-gradient-to-br from-violet-600 to-purple-700 lg:col-span-1 lg:row-span-2 lg:min-h-0`}
           >
-            <div className="mb-4 inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-white/15">
-              <Bot className="h-6 w-6" />
-            </div>
-            <h3 className="mb-2 text-xl font-bold md:text-2xl">دستیار هوشمند</h3>
-            <p className="mb-6 text-sm leading-7 text-white/75">
-              هر لحظه که سوالی داشتی، کنارت است؛ رفع اشکال، توضیح گام‌به‌گام و راه‌حل‌های جایگزین.
-            </p>
-            <div className="relative mx-auto mt-auto w-40 sm:w-48">
+            <div aria-hidden className="absolute -bottom-24 -right-24 h-72 w-72 rounded-full bg-white/10 blur-3xl" />
+            <h3 className="relative pt-14 text-center text-3xl font-black">دستیار هوشمند</h3>
+            <div className="absolute inset-x-0 bottom-0 flex justify-center">
               <Image
                 src="/landing/iphone-chat-dark.png"
                 alt="دستیار هوشمند AI-Amooz"
                 width={243}
-                height={525}
-                className="h-auto w-full drop-shadow-2xl"
+                height={578}
+                className="h-auto w-[15rem] max-w-[66%] drop-shadow-2xl lg:w-[15.2rem]"
               />
             </div>
-            <div className="absolute -bottom-16 -left-10 h-44 w-44 rounded-full bg-white/10 blur-2xl transition-opacity duration-500 group-hover:opacity-80" />
-          </motion.div>
+          </motion.article>
 
-          {/* B — AI online exams (rose, wide top) */}
-          <motion.div
+          <motion.article
             dir="rtl"
-            initial={{ opacity: 0, y: 30 }}
+            initial={{ opacity: 0, y: 26 }}
             whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true, margin: '-50px' }}
-            transition={{ duration: 0.5, delay: 0.1 }}
-            className={`${cardBase} col-span-2 flex flex-col gap-6 bg-gradient-to-br from-rose-600 to-pink-700 p-6 md:p-8 lg:col-span-2 lg:col-start-2 lg:row-start-1 lg:flex-row-reverse lg:items-center`}
+            viewport={{ once: true, margin: '-60px' }}
+            transition={{ delay: 0.08 }}
+            className={`${baseCard} col-span-2 min-h-[20rem] bg-gradient-to-br from-rose-600 to-pink-700 lg:col-span-2 lg:min-h-0`}
           >
-            <div className="flex-none text-center lg:w-56 lg:text-right">
-              <div className="mb-4 inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-white/15">
-                <Brain className="h-6 w-6" />
-              </div>
-              <h3 className="text-xl font-bold leading-relaxed md:text-2xl">
-                آزمون آنلاین طراحی‌شده توسط هوش مصنوعی
-              </h3>
-            </div>
-            {/* Screenshot deliberately dominates the card (bigger than the text) */}
-            <div className="w-full flex-1 self-center">
-              <Image
-                src="/landing/exam-builder-dark.png"
-                alt="آزمون آنلاین هوش مصنوعی"
-                width={583}
-                height={304}
-                unoptimized
-                className="h-auto w-full rounded-xl border border-white/10 shadow-2xl"
-              />
-            </div>
-            <div className="absolute -top-16 -right-10 h-44 w-44 rounded-full bg-white/10 blur-2xl" />
-          </motion.div>
-
-          {/* C — Learning stages (orange, half-width on mobile, left) */}
-          <motion.div
-            dir="rtl"
-            initial={{ opacity: 0, y: 30 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true, margin: '-50px' }}
-            transition={{ duration: 0.5, delay: 0.3 }}
-            className={`${cardBase} col-span-1 flex flex-col bg-gradient-to-br from-amber-500 to-orange-600 p-5 md:p-8 lg:col-start-3 lg:row-start-2`}
-          >
-            <h3 className="mb-4 text-base font-bold sm:text-xl md:text-2xl">
-              دسته‌بندی مراحل یادگیری
+            <div aria-hidden className="absolute -bottom-32 left-8 h-[31rem] w-[31rem] rounded-full bg-white/35 blur-[75px]" />
+            <h3 className="absolute right-6 top-12 z-10 max-w-[24rem] text-right text-2xl font-black leading-[1.4] sm:right-10 sm:text-3xl lg:right-8 lg:top-1/2 lg:-translate-y-1/2 lg:text-4xl">
+              آزمون آنلاین طراحی‌شده توسط هوش مصنوعی
             </h3>
-            <div className="relative mt-auto -mb-5 flex justify-center md:-mb-8">
-              <Image
-                src="/landing/phone-stages-dark.png"
-                alt="دسته‌بندی مراحل یادگیری"
-                width={236}
-                height={288}
-                unoptimized
-                className="h-auto w-36 rounded-t-2xl border border-b-0 border-white/10 shadow-2xl sm:w-44"
-              />
-            </div>
-            <div className="absolute -bottom-14 -left-8 h-40 w-40 rounded-full bg-white/10 blur-2xl" />
-          </motion.div>
+            <Image
+              src="/landing/exam-builder-dark.png"
+              alt="سازنده آزمون هوشمند"
+              width={583}
+              height={376}
+              unoptimized
+              className="absolute -bottom-6 -left-10 h-auto w-[72%] max-w-[37rem] -skew-x-1 rounded-2xl border border-white/10 object-cover shadow-2xl sm:-left-4 lg:left-5 lg:top-8 lg:w-[50%]"
+            />
+          </motion.article>
 
-          {/* D — Konkur simulator (green, half-width on mobile, right) */}
-          <motion.div
+          <motion.article
             dir="rtl"
-            initial={{ opacity: 0, y: 30 }}
+            initial={{ opacity: 0, y: 26 }}
             whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true, margin: '-50px' }}
-            transition={{ duration: 0.5, delay: 0.2 }}
-            className={`${cardBase} col-span-1 flex flex-col bg-gradient-to-br from-emerald-600 to-teal-700 p-5 md:p-8 lg:col-start-2 lg:row-start-2`}
+            viewport={{ once: true, margin: '-60px' }}
+            transition={{ delay: 0.14 }}
+            className={`${baseCard} col-span-1 min-h-64 bg-gradient-to-br from-emerald-600 to-teal-700 lg:min-h-0`}
           >
-            <h3 className="mb-4 text-base font-bold sm:text-xl md:text-2xl">
+            <div aria-hidden className="absolute -bottom-80 -right-60 select-none text-[45rem] font-black leading-none text-white/10">*</div>
+            <h3 className="relative px-3 pt-10 text-center text-lg font-black leading-8 sm:text-2xl lg:text-3xl">
               شبیه‌ساز آزمون کنکور
             </h3>
-            <div className="mt-auto">
-              <Image
-                src="/landing/quiz-sim-dark.png"
-                alt="شبیه‌ساز آزمون کنکور"
-                width={428}
-                height={187}
-                unoptimized
-                className="h-auto w-full rounded-xl border border-white/10 shadow-2xl"
-              />
-            </div>
-          </motion.div>
+            <Image
+              src="/landing/quiz-sim-dark.png"
+              alt="شبیه‌ساز آزمون کنکور"
+              width={428}
+              height={221}
+              unoptimized
+              className="absolute -bottom-5 left-1/2 h-auto w-[82%] -translate-x-1/2 rounded-xl border border-white/10 shadow-2xl"
+            />
+          </motion.article>
+
+          <motion.article
+            dir="rtl"
+            initial={{ opacity: 0, y: 26 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true, margin: '-60px' }}
+            transition={{ delay: 0.2 }}
+            className={`${baseCard} col-span-1 min-h-64 bg-gradient-to-br from-amber-500 to-orange-600 lg:min-h-0`}
+          >
+            <h3 className="relative z-10 px-3 pt-10 text-center text-lg font-black leading-8 sm:text-2xl lg:absolute lg:right-7 lg:top-1/2 lg:max-w-[19rem] lg:-translate-y-1/2 lg:text-right lg:text-3xl">
+              دسته‌بندی مراحل یادگیری
+            </h3>
+            <Image
+              src="/landing/phone-stages-dark.png"
+              alt="مراحل یادگیری"
+              width={299}
+              height={646}
+              unoptimized
+              className="absolute -bottom-36 -left-8 h-auto w-[55%] max-w-[15rem] drop-shadow-2xl sm:-bottom-44 lg:-bottom-80 lg:-left-16 lg:w-[52%]"
+            />
+          </motion.article>
         </div>
       </div>
     </section>
