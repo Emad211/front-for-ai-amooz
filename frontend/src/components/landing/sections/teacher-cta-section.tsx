@@ -74,7 +74,7 @@ export const TeacherCtaSection = () => {
             <div className="absolute -bottom-[45rem] -right-[25rem] select-none text-[92rem] font-black leading-none text-white/[0.045]">*</div>
           </div>
 
-          <div className="relative grid items-center gap-8 lg:min-h-[42rem] lg:grid-cols-[1.08fr_.92fr] lg:gap-16">
+          <div dir="ltr" className="relative grid items-center gap-8 lg:min-h-[42rem] lg:grid-cols-[1.08fr_.92fr] lg:gap-16">
             <motion.div
               initial={{ opacity: 0, x: -24 }}
               whileInView={{ opacity: 1, x: 0 }}
@@ -113,7 +113,7 @@ export const TeacherCtaSection = () => {
                 </AnimatePresence>
               </div>
 
-              <div className="mt-7 min-h-24 text-center lg:hidden">
+              <div dir="rtl" className="mt-7 min-h-24 text-center lg:hidden">
                 <AnimatePresence mode="wait">
                   <motion.div
                     key={activeFeature.title}
@@ -132,6 +132,7 @@ export const TeacherCtaSection = () => {
             </motion.div>
 
             <motion.div
+              dir="rtl"
               initial={{ opacity: 0, x: 24 }}
               whileInView={{ opacity: 1, x: 0 }}
               viewport={{ once: true, margin: '-100px' }}
