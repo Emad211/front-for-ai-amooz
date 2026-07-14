@@ -30,7 +30,7 @@ export const LandingHeader = () => {
       <div
         className={`mx-auto flex h-14 w-full max-w-[1792px] items-center justify-between rounded-2xl px-3 transition-all duration-300 sm:px-4 lg:h-16 lg:px-0 ${
           isScrolled
-            ? 'border border-border/60 bg-background/88 shadow-lg backdrop-blur-xl lg:px-5'
+            ? 'border border-border/60 bg-background/[.88] shadow-lg backdrop-blur-xl lg:px-5'
             : 'border border-transparent bg-transparent'
         }`}
       >
