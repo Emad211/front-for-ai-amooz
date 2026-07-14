@@ -34,8 +34,9 @@ Branch: `feature/figma-landing-rebuild` · Scope: frontend-only
 ## Verification
 
 - Code is isolated on `feature/figma-landing-rebuild`; PR #1 remains draft during CI and visual verification.
-- Required CI gates: `npm run typecheck`, `npm run lint`, and visual checks at 440px and 1920px in both themes.
-- The first PR run reached the existing TypeScript baseline before lint; subsequent runs classify and repair any landing-introduced error separately.
+- `npm run typecheck`: the compiler reports only the 13 pre-existing errors in admin tickets, notification service typing, exam edit, and mock message recipients; no changed Landing file appears in the error output.
+- `npm run lint`: blocked before file analysis by the existing circular ESLint configuration in `frontend/.eslintrc.json` (`next lint` / React plugin serialization); no Landing lint finding was produced.
+- Remaining release gate: visual checks at 440px and 1920px in both themes.
 
 ## Rollback
 
