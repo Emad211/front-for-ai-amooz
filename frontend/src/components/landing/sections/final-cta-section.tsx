@@ -7,40 +7,41 @@ import { Button } from '@/components/ui/button';
 
 export const FinalCTASection = () => {
   return (
-    <section className="landing-section-shell relative min-h-[32rem] overflow-hidden px-0 py-20 sm:px-4 lg:min-h-[48rem] lg:px-8 lg:py-36">
-      <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden">
-        <div className="landing-dot-pattern absolute inset-0 opacity-60 [mask-image:radial-gradient(ellipse_at_center,black_10%,transparent_72%)]" />
-        <div className="absolute -bottom-24 left-1/2 h-[30rem] w-[48rem] -translate-x-1/2 rounded-full bg-primary/15 blur-[130px]" />
-        <div className="absolute -left-36 top-1/2 h-72 w-72 -translate-y-1/2 rounded-full bg-primary/20 blur-[100px]" />
-        <div className="absolute -right-36 top-1/2 h-72 w-72 -translate-y-1/2 rounded-full bg-primary/20 blur-[100px]" />
-      </div>
-
-      <motion.div
-        initial={{ opacity: 0, y: 28 }}
-        whileInView={{ opacity: 1, y: 0 }}
-        viewport={{ once: true, margin: '-80px' }}
-        transition={{ duration: 0.65 }}
-        className="relative mx-auto flex max-w-3xl flex-col items-center px-4 text-center"
-      >
-        <div className="inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/10 px-[17px] py-[9px] text-sm font-medium text-primary">
-          همین حالا شروع کن
-          <Rocket className="h-4 w-4" />
+    <section className="landing-section-shell h-[552px] pt-10 lg:h-[768px] lg:p-0">
+      <div className="relative mx-auto flex h-[512px] w-full max-w-[440px] items-center justify-center overflow-hidden lg:h-[768px] lg:max-w-[1920px]">
+        <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden">
+          <div className="landing-dot-pattern absolute inset-0 opacity-55 [mask-image:radial-gradient(ellipse_at_center,black_12%,transparent_76%)]" />
+          <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,hsl(var(--primary)/.08),transparent_62%)]" />
+          <div className="absolute -left-44 top-1/2 h-[302px] w-[347px] -translate-y-1/2 rounded-full bg-primary/25 blur-[81px]" />
+          <div className="absolute -right-44 top-1/2 h-[302px] w-[347px] -translate-y-1/2 rounded-full bg-primary/25 blur-[81px]" />
+          <div className="absolute bottom-[-16rem] left-1/2 h-[34rem] w-[34rem] -translate-x-1/2 rotate-45 rounded-[5rem] bg-primary/10 blur-[115px]" />
         </div>
-        <h2 className="landing-display mt-8 max-w-[36rem] text-4xl font-black leading-[1.2] text-foreground sm:text-5xl lg:text-6xl">
-          مسیر یادگیری‌ات رو شروع کن
-        </h2>
-        <div className="mt-10">
+
+        <motion.div
+          initial={{ opacity: 0, y: 24 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true, margin: '-80px' }}
+          transition={{ duration: 0.62 }}
+          className="relative flex flex-col items-center px-4 text-center"
+        >
+          <div className="flex h-[38px] items-center gap-2 rounded-full border border-primary/20 bg-primary/10 px-[17px] text-sm font-medium text-primary backdrop-blur-xl">
+            همین حالا شروع کن
+            <Rocket className="h-4 w-4" />
+          </div>
+          <h2 className="landing-display mt-8 max-w-[558px] text-[40px] font-black leading-[1.2] text-foreground lg:text-[64px]">
+            مسیر یادگیری‌ات رو شروع کن
+          </h2>
           <Button
             asChild
-            className="group h-16 rounded-[10px] bg-gradient-to-l from-primary to-primary/90 px-10 text-lg text-white shadow-[0_25px_50px_-12px_hsl(var(--primary)/.3)]"
+            className="group mt-10 h-16 rounded-[10px] bg-gradient-to-l from-primary to-primary/90 px-10 text-xl text-white shadow-[0_25px_50px_-12px_hsl(var(--primary)/.3)]"
           >
             <Link href="/start">
               شروع سفر
               <ArrowLeft className="h-5 w-5 transition-transform group-hover:-translate-x-1" />
             </Link>
           </Button>
-        </div>
-      </motion.div>
+        </motion.div>
+      </div>
     </section>
   );
 };
