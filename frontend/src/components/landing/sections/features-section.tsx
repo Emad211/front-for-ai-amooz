@@ -9,8 +9,8 @@ const baseCard =
 
 export const FeaturesSection = () => {
   return (
-    <section id="features" className="landing-section-shell px-2 py-10 sm:px-4 lg:px-8">
-      <div className="landing-panel mx-auto w-full max-w-[1856px] overflow-hidden px-4 pb-2 pt-10 sm:px-8 lg:px-24 lg:pb-10">
+    <section id="features" className="landing-section-shell h-[1443px] overflow-hidden px-2 py-10 sm:px-4 lg:h-[1149px] lg:px-8">
+      <div className="landing-panel mx-auto h-[1363px] w-full max-w-[1856px] overflow-hidden px-4 pb-2 pt-10 sm:px-8 lg:h-[1069px] lg:px-24 lg:pb-10">
         <motion.div
           initial={{ opacity: 0, y: 18 }}
           whileInView={{ opacity: 1, y: 0 }}
@@ -24,7 +24,7 @@ export const FeaturesSection = () => {
           <h2 className="landing-display mt-8 text-3xl font-black leading-[45px] text-foreground sm:text-4xl lg:text-5xl lg:leading-[67px]">
             همه‌چیز در یک مکان
           </h2>
-          <p className="mx-auto mt-8 max-w-3xl text-base font-medium leading-7 text-muted-foreground sm:text-lg lg:text-xl">
+          <p className="mx-auto mt-8 max-w-3xl whitespace-nowrap text-sm font-medium leading-7 text-muted-foreground sm:text-lg lg:text-xl">
             همه چیزی که از یک ابزار یادگیری نیاز دارید؛ یکجا، منظم و هوشمند
           </p>
         </motion.div>
