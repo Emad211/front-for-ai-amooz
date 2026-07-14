@@ -15,12 +15,12 @@ import {
 import { LANDING_NAV_LINKS } from '@/constants/navigation';
 
 /**
- * Figma header: desktop 1792×40 at x=64/y=40; mobile 376×40 at x=24/y=24.
- * It intentionally lives inside the hero stage instead of floating over the page.
+ * Figma header: desktop 1792×40 at x=64/y=40; mobile 376×40 at x=32/y=32
+ * after the artboard's 8px outer inset. The header belongs to the hero stage.
  */
 export const LandingHeader = () => {
   return (
-    <header className="absolute inset-x-0 top-0 z-50 px-6 pt-6 lg:px-16 lg:pt-10">
+    <header className="absolute inset-x-0 top-0 z-50 px-8 pt-8 lg:px-16 lg:pt-10">
       <div dir="ltr" className="mx-auto flex h-10 w-full max-w-[1792px] items-center justify-between">
         <div className="hidden h-10 items-center gap-3 lg:flex">
           <div className="flex items-center gap-2">
