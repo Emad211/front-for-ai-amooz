@@ -38,8 +38,8 @@ const FAQS = [
 
 export const FAQSection = () => {
   return (
-    <section id="faq" className="landing-section-shell px-2 pb-10 pt-0 sm:px-4 sm:py-10 lg:px-8">
-      <div className="landing-panel mx-auto flex min-h-[703px] w-full max-w-[1856px] flex-col items-center px-4 py-10 sm:px-8 lg:min-h-[725px]">
+    <section id="faq" className="landing-section-shell h-[743px] overflow-hidden px-2 pb-10 pt-0 sm:px-4 sm:py-10 lg:h-[805px] lg:px-8">
+      <div className="landing-panel mx-auto flex h-[703px] w-full max-w-[1856px] flex-col items-center overflow-hidden px-4 py-10 sm:px-8 lg:h-[725px]">
         <motion.div
           initial={{ opacity: 0, y: 18 }}
           whileInView={{ opacity: 1, y: 0 }}
@@ -63,7 +63,7 @@ export const FAQSection = () => {
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true }}
           transition={{ delay: 0.12 }}
-          className="mt-12 w-full max-w-3xl"
+          className="mt-10 w-full max-w-3xl"
         >
           <Accordion type="single" collapsible className="space-y-4">
             {FAQS.map((faq) => (
