@@ -1,0 +1,19 @@
+
+> nextn@0.1.0 lint
+> next lint
+
+`next lint` is deprecated and will be removed in Next.js 16.
+For new projects, use create-next-app to choose your preferred linter.
+For existing projects, migrate to the ESLint CLI:
+npx @next/codemod@canary next-lint-to-eslint-cli .
+
+Converting circular structure to JSON
+    --> starting at object with constructor 'Object'
+    |     property 'configs' -> object with constructor 'Object'
+    |     property 'flat' -> object with constructor 'Object'
+    |     ...
+    |     property 'plugins' -> object with constructor 'Object'
+    --- property 'react' closes the circle
+Referenced from: /home/runner/work/front-for-ai-amooz/front-for-ai-amooz/frontend/.eslintrc.json
+
+LINT_EXIT_CODE=1
