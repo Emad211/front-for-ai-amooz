@@ -15,8 +15,8 @@ interface HeroSectionProps {
 
 export const HeroSection = ({ heroImage }: HeroSectionProps) => {
   return (
-    <section className="landing-section-shell px-2 pb-10 pt-24 sm:px-4 lg:px-8 lg:pb-10 lg:pt-28">
-      <div className="relative mx-auto flex min-h-[52rem] w-full max-w-[1856px] items-center overflow-hidden rounded-[1.25rem] border border-border/55 bg-[hsl(var(--landing-hero))] px-5 py-14 shadow-[0_0_4px_hsl(var(--foreground)/.24)] sm:px-9 lg:min-h-[65.5rem] lg:px-24 lg:py-16">
+    <section className="landing-section-shell px-2 pb-10 pt-2 sm:px-4 sm:pt-24 lg:px-8 lg:pt-28">
+      <div className="relative mx-auto flex min-h-[956px] w-full max-w-[1856px] items-center overflow-hidden rounded-[1.25rem] border border-border/55 bg-[hsl(var(--landing-hero))] px-5 pb-8 pt-24 shadow-[0_0_4px_hsl(var(--foreground)/.24)] sm:min-h-[52rem] sm:px-9 sm:py-14 lg:min-h-[65.5rem] lg:px-24 lg:py-16">
         <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden">
           <div className="landing-dot-pattern absolute inset-0 opacity-70 [mask-image:radial-gradient(ellipse_at_center,black_10%,transparent_78%)]" />
           <div className="absolute -left-[20rem] -top-[20rem] h-[60rem] w-[60rem] rounded-full bg-primary/20 opacity-40 blur-[150px]" />
@@ -24,7 +24,7 @@ export const HeroSection = ({ heroImage }: HeroSectionProps) => {
           <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,transparent_35%,hsl(var(--landing-hero))_90%)]" />
         </div>
 
-        <div className="relative grid w-full items-center gap-12 lg:grid-cols-[1.05fr_.95fr] lg:gap-16">
+        <div className="relative grid w-full items-center gap-6 sm:gap-12 lg:grid-cols-[1.05fr_.95fr] lg:gap-16">
           <motion.div
             initial={{ opacity: 0, scale: 0.96, x: -20 }}
             animate={{ opacity: 1, scale: 1, x: 0 }}
@@ -34,11 +34,13 @@ export const HeroSection = ({ heroImage }: HeroSectionProps) => {
             <div className="relative hidden min-h-[38rem] items-end justify-center lg:flex">
               <div className="absolute bottom-3 left-1/2 h-16 w-[78%] -translate-x-1/2 rounded-full bg-black/45 blur-2xl" />
               <Image
-                src="/landing/mac-studio-dark.png"
+                src={heroImage.imageUrl}
                 alt={heroImage.description}
                 width={792}
                 height={609}
                 priority
+                quality={90}
+                sizes="(min-width: 1024px) 50vw, 0px"
                 className="relative h-auto w-full object-contain drop-shadow-[0_30px_48px_rgba(0,0,0,.48)]"
               />
               <motion.div
@@ -52,12 +54,14 @@ export const HeroSection = ({ heroImage }: HeroSectionProps) => {
                   alt="نمای موبایل AI-Amooz"
                   width={129}
                   height={277}
+                  quality={90}
+                  sizes="128px"
                   className="h-auto w-full drop-shadow-2xl"
                 />
               </motion.div>
             </div>
 
-            <div className="relative mx-auto flex h-[27rem] max-w-[22rem] items-end justify-center lg:hidden">
+            <div className="relative mx-auto flex h-[21rem] max-w-[22rem] items-end justify-center sm:h-[27rem] lg:hidden">
               <div className="absolute inset-x-2 bottom-6 h-20 rounded-full bg-primary/25 blur-3xl" />
               <Image
                 src="/landing/iphone-chat-dark.png"
@@ -65,6 +69,8 @@ export const HeroSection = ({ heroImage }: HeroSectionProps) => {
                 width={243}
                 height={525}
                 priority
+                quality={90}
+                sizes="(max-width: 639px) 220px, 243px"
                 className="relative h-full w-auto object-contain drop-shadow-[0_28px_44px_rgba(0,0,0,.5)]"
               />
             </div>
