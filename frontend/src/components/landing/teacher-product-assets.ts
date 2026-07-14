@@ -1,29 +1,39 @@
 export const TEACHER_PRODUCT_ASSETS = {
   classOverview: {
-    src: '/landing/laptop-teacher-dark.png',
-    replacement: 'teacher-class-overview.png',
+    src: '/landing/teacher-class-overview.png',
     alt: 'نمای کلی کلاس و مراحل تولید محتوای آموزشی',
+    width: 1157,
+    height: 802,
+    mobileSrc: '/landing/teacher-create-class-mobile.png',
+    mobileWidth: 390,
+    mobileHeight: 705,
   },
   examPrep: {
-    src: '/landing/exam-builder-dark.png',
-    replacement: 'teacher-exam-prep.png',
+    src: '/landing/teacher-exam-prep.png',
     alt: 'ساخت آمادگی آزمون با هوش مصنوعی',
+    width: 1095,
+    height: 619,
+    mobileSrc: '/landing/teacher-exam-prep-mobile.png',
+    mobileWidth: 390,
+    mobileHeight: 705,
   },
   exercise: {
-    src: '/landing/quiz-sim-dark.png',
-    replacement: 'teacher-exercise-creation.png',
+    src: '/landing/teacher-exercise-creation.png',
     alt: 'ساخت تمرین و تنظیم دستیار هوشمند',
+    width: 1085,
+    height: 820,
   },
   analytics: {
-    src: '/landing/mac-studio-dark.png',
-    replacement: 'teacher-analytics.png',
+    src: '/landing/teacher-analytics.png',
     alt: 'داشبورد آمار و تحلیل معلم',
+    width: 1167,
+    height: 656,
   },
 } as const;
 
 /**
- * `src` values are stable repository fallbacks. The supplied real teacher
- * screenshots replace them under the `replacement` filenames after the final
- * non-generative crop/export pass. Keeping the mapping centralized prevents
- * temporary Adobe URLs or duplicated asset decisions from leaking into UI code.
+ * Production-safe local captures exported from the supplied teacher screens.
+ * Personal header details, browser scrollbars, and the teacher sidebar were
+ * excluded in the verified crop pass. Decorative glow and framing remain CSS
+ * concerns so the same captures stay crisp across light/dark landing themes.
  */
