@@ -1,0 +1,117 @@
+name: landing visual QA
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  capture:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install application dependencies
+        run: npm ci
+
+      - name: Install visual test browser
+        run: |
+          npm install --no-save --package-lock=false playwright@1.55.0
+          npx playwright install --with-deps chromium
+
+      - name: Build landing preview
+        run: npm run build
+
+      - name: Start local production server
+        shell: bash
+        run: |
+          npm run start > /tmp/ai-amooz-landing.log 2>&1 &
+          echo $! > /tmp/ai-amooz-landing.pid
+          for attempt in {1..60}; do
+            if curl --fail --silent http://127.0.0.1:3000/ > /dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          cat /tmp/ai-amooz-landing.log
+          exit 1
+
+      - name: Capture Figma reference viewports
+        shell: bash
+        run: |
+          mkdir -p visual-artifacts
+          cat > visual-artifacts/capture.mjs <<'EOF'
+          import { chromium } from 'playwright';
+
+          const cases = [
+            { name: 'desktop-dark', width: 1920, height: 1080, theme: 'dark' },
+            { name: 'desktop-light', width: 1920, height: 1080, theme: 'light' },
+            { name: 'mobile-dark', width: 440, height: 956, theme: 'dark' },
+            { name: 'mobile-light', width: 440, height: 956, theme: 'light' },
+          ];
+
+          const browser = await chromium.launch({ headless: true });
+          for (const item of cases) {
+            const context = await browser.newContext({
+              viewport: { width: item.width, height: item.height },
+              colorScheme: item.theme,
+              reducedMotion: 'reduce',
+              deviceScaleFactor: 1,
+            });
+            const page = await context.newPage();
+            await page.addInitScript((theme) => localStorage.setItem('theme', theme), item.theme);
+            await page.goto('http://127.0.0.1:3000/', { waitUntil: 'networkidle' });
+            await page.addStyleTag({
+              content: `html { scroll-behavior: auto !important; }
+                *, *::before, *::after {
+                  animation-duration: 0.001ms !important;
+                  animation-delay: 0ms !important;
+                  transition-duration: 0.001ms !important;
+                }`,
+            });
+
+            const scrollHeight = await page.evaluate(() => document.documentElement.scrollHeight);
+            for (let y = 0; y < scrollHeight; y += Math.max(320, Math.floor(item.height * 0.7))) {
+              await page.evaluate((nextY) => window.scrollTo(0, nextY), y);
+              await page.waitForTimeout(60);
+            }
+            await page.evaluate(() => window.scrollTo(0, 0));
+            await page.waitForTimeout(250);
+            await page.screenshot({
+              path: `visual-artifacts/${item.name}.png`,
+              fullPage: true,
+              animations: 'disabled',
+            });
+            await context.close();
+          }
+          await browser.close();
+          EOF
+          node visual-artifacts/capture.mjs
+          rm visual-artifacts/capture.mjs
+
+      - name: Upload visual QA artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: landing-visual-qa
+          path: frontend/visual-artifacts/*.png
+          if-no-files-found: error
+          retention-days: 3
+
+      - name: Stop local server
+        if: always()
+        shell: bash
+        run: |
+          if [ -f /tmp/ai-amooz-landing.pid ]; then
+            kill "$(cat /tmp/ai-amooz-landing.pid)" || true
+          fi
