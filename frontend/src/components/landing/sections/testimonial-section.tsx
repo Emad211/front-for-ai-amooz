@@ -3,36 +3,32 @@
 import { useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { ChevronLeft, ChevronRight, MessageCircle, Quote } from 'lucide-react';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 
 const TESTIMONIALS = [
   {
     content:
-      'با AI-Amooz تونستم مفاهیم پیچیده ریاضی رو به سادگی یاد بگیرم. دستیار هوشمندش همیشه برای رفع اشکال کنارم بود و باعث شد با اعتماد به نفس بیشتری برای کنکور آماده بشم.',
-    name: 'آرش راد',
-    role: 'دانش‌آموز پایه دوازدهم • رتبه ۱۲۳ کنکور',
-    image: '',
+      'وقتی در یک مبحث گیر می‌کنم، دستیار هوشمند همان موضوع را مرحله‌به‌مرحله توضیح می‌دهد و کمک می‌کند بدون رهاکردن مسیر، تمرین را ادامه بدهم.',
+    name: 'دانش‌آموز دوازدهم',
+    role: 'سناریوی نمونهٔ استفاده',
   },
   {
     content:
-      'مسیر یادگیری شخصی دقیقاً از همان نقطه‌ای شروع کرد که من مشکل داشتم. درس‌ها مرحله‌به‌مرحله جلو رفتند و بالاخره توانستم با ریاضی ارتباط بگیرم.',
-    name: 'ستایش کریمی',
-    role: 'دانش‌آموز پایه یازدهم • رشته ریاضی',
-    image: '',
+      'مسیر یادگیری از همان نقطه‌ای شروع می‌شود که مشکل دارم؛ درس‌ها منظم‌تر جلو می‌روند و می‌توانم پیشرفت خودم را در طول دوره ببینم.',
+    name: 'دانش‌آموز یازدهم',
+    role: 'سناریوی نمونهٔ استفاده',
   },
   {
     content:
-      'ساخت آزمون و بررسی روند پیشرفت کلاس خیلی منظم‌تر شده است. زمان بیشتری برای رفع اشکال واقعی دانش‌آموزان دارم و وضعیت کلاس را یکجا می‌بینم.',
-    name: 'مریم موسوی',
-    role: 'دبیر زیست‌شناسی',
-    image: '',
+      'ساخت تمرین و بررسی وضعیت کلاس در یک فضای واحد، زمان کارهای تکراری را کمتر می‌کند و فرصت بیشتری برای بازخورد مستقیم به دانش‌آموزان می‌دهد.',
+    name: 'دبیر زیست‌شناسی',
+    role: 'سناریوی نمونهٔ استفاده',
   },
-];
+] as const;
 
-export const TestimonialSection = ({ testimonialImage }: { testimonialImage?: { imageUrl?: string } }) => {
+export const TestimonialSection = () => {
   const [index, setIndex] = useState(0);
-  const active = TESTIMONIALS[index];
-  const avatarSrc = (index === 0 && testimonialImage?.imageUrl) || active.image || undefined;
+  const active = TESTIMONIALS[index] ?? TESTIMONIALS[0];
   const go = (direction: number) =>
     setIndex((current) => (current + direction + TESTIMONIALS.length) % TESTIMONIALS.length);
 
@@ -44,7 +40,7 @@ export const TestimonialSection = ({ testimonialImage }: { testimonialImage?: { 
 
       <div className="relative mx-auto flex w-full max-w-[1664px] flex-col items-center">
         <div className="inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/10 px-[17px] py-[9px] text-sm font-medium text-primary">
-          نظرات
+          تجربهٔ استفاده
           <MessageCircle className="h-5 w-5" />
         </div>
 
@@ -69,7 +65,6 @@ export const TestimonialSection = ({ testimonialImage }: { testimonialImage?: { 
 
           <div className="mt-8 flex flex-col items-center gap-2">
             <Avatar className="h-16 w-16 border-2 border-primary/30">
-              <AvatarImage src={avatarSrc} alt={active.name} />
               <AvatarFallback className="bg-primary/15 text-lg font-bold text-primary">
                 {active.name.slice(0, 1)}
               </AvatarFallback>
@@ -82,8 +77,8 @@ export const TestimonialSection = ({ testimonialImage }: { testimonialImage?: { 
             <button
               type="button"
               onClick={() => go(-1)}
-              aria-label="نظر قبلی"
-              className="flex h-10 w-10 items-center justify-center rounded-full text-muted-foreground transition-colors hover:text-primary"
+              aria-label="تجربه قبلی"
+              className="flex h-10 w-10 items-center justify-center rounded-full text-muted-foreground transition-colors hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
             >
               <ChevronRight className="h-5 w-5" />
             </button>
@@ -93,8 +88,8 @@ export const TestimonialSection = ({ testimonialImage }: { testimonialImage?: { 
                   key={itemIndex}
                   type="button"
                   onClick={() => setIndex(itemIndex)}
-                  aria-label={`نظر ${itemIndex + 1}`}
-                  className={`h-2 rounded-full transition-all ${
+                  aria-label={`تجربه ${itemIndex + 1}`}
+                  className={`h-2 rounded-full transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
                     itemIndex === index ? 'w-5 bg-primary' : 'w-2 bg-border'
                   }`}
                 />
@@ -103,8 +98,8 @@ export const TestimonialSection = ({ testimonialImage }: { testimonialImage?: { 
             <button
               type="button"
               onClick={() => go(1)}
-              aria-label="نظر بعدی"
-              className="flex h-10 w-10 items-center justify-center rounded-full text-muted-foreground transition-colors hover:text-primary"
+              aria-label="تجربه بعدی"
+              className="flex h-10 w-10 items-center justify-center rounded-full text-muted-foreground transition-colors hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
             >
               <ChevronLeft className="h-5 w-5" />
             </button>
