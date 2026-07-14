@@ -2,37 +2,29 @@
 
 import { useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { Quote, MessageCircle, ChevronLeft, ChevronRight } from 'lucide-react';
+import { ChevronLeft, ChevronRight, MessageCircle, Quote } from 'lucide-react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 
-/** Figma "testimonials" (node 277:521) — single centered quote with a slider. */
 const TESTIMONIALS = [
   {
     content:
-      'شب‌های امتحان همیشه یک سوال بی‌جواب داشتم و کسی نبود که ازش بپرسم. الان ساعت ۱۱ شب هم که روی یک مسئله گیر می‌کنم، دستیار هوشمند با چند روش مختلف برام حلش می‌کنه. ترازم تو چهار ماه از ۵۴۰۰ رسید به ۶۲۰۰ و روزی که کارنامه اومد، رتبه ۱۲۳ منطقه شدم.',
+      'با AI-Amooz تونستم مفاهیم پیچیده ریاضی رو به سادگی یاد بگیرم. دستیار هوشمندش همیشه برای رفع اشکال کنارم بود و باعث شد با اعتماد به نفس بیشتری برای کنکور آماده بشم.',
     name: 'آرش راد',
-    role: 'رتبه ۱۲۳ کنکور ریاضی • دانش‌آموز سال گذشته',
+    role: 'دانش‌آموز پایه دوازدهم • رتبه ۱۲۳ کنکور',
     image: '',
   },
   {
     content:
-      'من همیشه از ریاضی فراری بودم؛ کلاس جلو می‌رفت و من جا می‌موندم. مسیر یادگیری شخصی دقیقاً از همون نقطه‌ای شروع کرد که من رها کرده بودم، نه جلوتر و نه عقب‌تر. بعد از یک ترم، برای اولین بار تو زندگیم نمره‌ی ریاضی‌م بالای ۱۸ شد.',
+      'مسیر یادگیری شخصی دقیقاً از همان نقطه‌ای شروع کرد که من مشکل داشتم. درس‌ها مرحله‌به‌مرحله جلو رفتند و بالاخره توانستم با ریاضی ارتباط بگیرم.',
     name: 'ستایش کریمی',
     role: 'دانش‌آموز پایه یازدهم • رشته ریاضی',
     image: '',
   },
   {
     content:
-      'هر هفته شش ساعت فقط صرف طراحی سوال و تصحیح برگه می‌کردم. الان آزمون رو هوش مصنوعی از روی جزوه‌ی خودم می‌سازه، تصحیح و بازخوردش هم خودکاره. اون شش ساعت رو حالا می‌ذارم برای رفع اشکال تک‌تک بچه‌ها؛ و نمودار پیشرفت کلاس همیشه جلوی چشممه.',
+      'ساخت آزمون و بررسی روند پیشرفت کلاس خیلی منظم‌تر شده است. زمان بیشتری برای رفع اشکال واقعی دانش‌آموزان دارم و وضعیت کلاس را یکجا می‌بینم.',
     name: 'مریم موسوی',
-    role: 'دبیر زیست‌شناسی • ۱۴ سال سابقه تدریس',
-    image: '',
-  },
-  {
-    content:
-      'برای کلاس جبرانی و رفع اشکال خصوصی هزینه‌ی زیادی می‌دادیم و باز هم نتیجه نمی‌گرفتیم. سه ماهه که پسرم با AI-Amooz درس می‌خونه؛ خودش برنامه‌شو دنبال می‌کنه، آزمون می‌ده و من هر هفته گزارش پیشرفتش رو می‌بینم. معدلش از ۱۴ رسید به ۱۷/۵.',
-    name: 'حمید عظیمی',
-    role: 'پدر دانش‌آموز پایه دهم',
+    role: 'دبیر زیست‌شناسی',
     image: '',
   },
 ];
@@ -40,102 +32,79 @@ const TESTIMONIALS = [
 export const TestimonialSection = ({ testimonialImage }: { testimonialImage?: { imageUrl?: string } }) => {
   const [index, setIndex] = useState(0);
   const active = TESTIMONIALS[index];
-  const avatarSrc =
-    (index === 0 && testimonialImage?.imageUrl ? testimonialImage.imageUrl : active.image) || undefined;
-
-  const go = (dir: number) =>
-    setIndex((i) => (i + dir + TESTIMONIALS.length) % TESTIMONIALS.length);
+  const avatarSrc = (index === 0 && testimonialImage?.imageUrl) || active.image || undefined;
+  const go = (direction: number) =>
+    setIndex((current) => (current + direction + TESTIMONIALS.length) % TESTIMONIALS.length);
 
   return (
-    <section className="relative overflow-hidden py-20 md:py-28">
-      <div className="pointer-events-none absolute inset-0 -z-10">
-        <div className="absolute bottom-0 left-1/2 h-72 w-[36rem] -translate-x-1/2 rounded-full bg-primary/10 blur-[120px]" />
+    <section className="landing-section-shell relative min-h-[46rem] px-4 py-20 lg:min-h-[48rem] lg:px-8 lg:py-40">
+      <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden">
+        <div className="absolute bottom-0 left-1/2 h-72 w-[40rem] -translate-x-1/2 rounded-full bg-primary/10 blur-[130px]" />
       </div>
 
-      <div className="container mx-auto px-4">
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true }}
-          transition={{ duration: 0.6 }}
-          className="mb-12 text-center"
-        >
-          <div className="inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/10 px-4 py-1.5 text-sm font-medium text-primary">
-            <MessageCircle className="h-4 w-4" />
-            نظرات
-          </div>
-        </motion.div>
+      <div className="relative mx-auto flex w-full max-w-[1664px] flex-col items-center">
+        <div className="inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/10 px-[17px] py-[9px] text-sm font-medium text-primary">
+          نظرات
+          <MessageCircle className="h-5 w-5" />
+        </div>
 
-        <div className="relative mx-auto max-w-4xl text-center">
-          {/* Decorative quote glyphs flanking the quote (per Figma) */}
-          <Quote
-            aria-hidden
-            className="pointer-events-none absolute -top-4 right-0 h-9 w-9 rotate-180 fill-current text-primary/30 md:-right-10"
-          />
-          <Quote
-            aria-hidden
-            className="pointer-events-none absolute bottom-24 left-0 h-14 w-14 fill-current text-primary/30 md:-left-10"
-          />
+        <div className="relative mt-8 flex w-full max-w-[62rem] flex-col items-center text-center">
+          <Quote aria-hidden className="absolute -right-2 -top-3 h-9 w-9 rotate-180 fill-current text-primary/20 sm:-right-10" />
+          <Quote aria-hidden className="absolute -bottom-6 -left-2 h-14 w-14 fill-current text-primary/20 sm:-left-10" />
 
-          <div className="min-h-[18rem] sm:min-h-[14rem] md:min-h-[12rem]">
+          <div className="flex min-h-[14rem] items-center justify-center sm:min-h-[12rem]">
             <AnimatePresence mode="wait">
-              <motion.p
+              <motion.blockquote
                 key={index}
-                initial={{ opacity: 0, y: 12 }}
+                initial={{ opacity: 0, y: 14 }}
                 animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -12 }}
-                transition={{ duration: 0.35 }}
-                className="text-xl font-medium leading-9 text-foreground md:text-2xl md:leading-10"
+                exit={{ opacity: 0, y: -14 }}
+                transition={{ duration: 0.32 }}
+                className="text-xl font-medium leading-[2.15] text-foreground sm:text-2xl lg:text-3xl"
               >
                 {active.content}
-              </motion.p>
+              </motion.blockquote>
             </AnimatePresence>
           </div>
 
-          {/* Author */}
-          <div className="mt-10 flex flex-col items-center gap-3">
+          <div className="mt-8 flex flex-col items-center gap-2">
             <Avatar className="h-16 w-16 border-2 border-primary/30">
               <AvatarImage src={avatarSrc} alt={active.name} />
-              <AvatarFallback className="bg-primary/20 text-lg font-bold text-primary">
-                {active.name[0]}
+              <AvatarFallback className="bg-primary/15 text-lg font-bold text-primary">
+                {active.name.slice(0, 1)}
               </AvatarFallback>
             </Avatar>
-            <div>
-              <div className="text-lg font-bold text-foreground">{active.name}</div>
-              <div className="text-sm text-muted-foreground">{active.role}</div>
-            </div>
+            <strong className="mt-1 text-lg text-foreground">{active.name}</strong>
+            <span className="text-sm text-muted-foreground">{active.role}</span>
           </div>
 
-          {/* Slider controls */}
-          <div className="mt-10 flex items-center justify-center gap-6">
+          <div className="mt-14 flex items-center justify-center gap-6">
             <button
               type="button"
               onClick={() => go(-1)}
               aria-label="نظر قبلی"
-              className="flex h-10 w-10 items-center justify-center rounded-full border border-border/60 text-muted-foreground transition-colors hover:border-primary/50 hover:text-primary"
+              className="flex h-10 w-10 items-center justify-center rounded-full text-muted-foreground transition-colors hover:text-primary"
             >
               <ChevronRight className="h-5 w-5" />
             </button>
-
-            <div className="flex items-center gap-2">
-              {TESTIMONIALS.map((_, i) => (
+            <div className="flex items-center gap-3">
+              {TESTIMONIALS.map((_, itemIndex) => (
                 <button
-                  key={i}
+                  key={itemIndex}
                   type="button"
-                  onClick={() => setIndex(i)}
-                  aria-label={`نظر ${i + 1}`}
+                  onClick={() => setIndex(itemIndex)}
+                  aria-label={`نظر ${itemIndex + 1}`}
                   className={`h-2 rounded-full transition-all ${
-                    i === index ? 'w-6 bg-primary' : 'w-2 bg-border'
+                    itemIndex === index ? 'w-5 bg-primary' : 'w-2 bg-border'
                   }`}
                 />
               ))}
             </div>
-
             <button
               type="button"
               onClick={() => go(1)}
               aria-label="نظر بعدی"
-              className="flex h-10 w-10 items-center justify-center rounded-full border border-border/60 text-muted-foreground transition-colors hover:border-primary/50 hover:text-primary"
+              className="flex h-10 w-10 items-center justify-center rounded-full text-muted-foreground transition-colors hover:text-primary"
             >
               <ChevronLeft className="h-5 w-5" />
             </button>
