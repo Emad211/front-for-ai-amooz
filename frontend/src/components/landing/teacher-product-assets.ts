@@ -31,9 +31,4 @@ export const TEACHER_PRODUCT_ASSETS = {
   },
 } as const;
 
-/**
- * Production-safe local captures exported from the supplied teacher screens.
- * Personal header details, browser scrollbars, and the teacher sidebar were
- * excluded in the verified crop pass. Decorative glow and framing remain CSS
- * concerns so the same captures stay crisp across light/dark landing themes.
- */
+/** Production-safe local captures supplied by the product owner. */
