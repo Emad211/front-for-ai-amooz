@@ -32,7 +32,7 @@ export function LandingFooter() {
               <Link
                 key={link.href}
                 href={link.href}
-                className="text-lg font-bold text-muted-foreground transition-colors hover:text-primary lg:text-2xl"
+                className="text-lg font-bold text-muted-foreground transition-colors hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary lg:text-2xl"
               >
                 {link.label}
               </Link>
@@ -40,16 +40,33 @@ export function LandingFooter() {
           </nav>
 
           <div className="mt-10 flex items-center gap-4 sm:gap-8">
-            {socials.map((social) => (
-              <a
-                key={social.label}
-                href={social.href}
-                aria-label={social.label}
-                className="flex h-11 w-11 items-center justify-center rounded-xl border border-border/60 bg-card/60 text-muted-foreground transition-all hover:border-primary/50 hover:text-primary"
-              >
-                <social.icon className="h-5 w-5" />
-              </a>
-            ))}
+            {socials.map((social) => {
+              const isAvailable = Boolean(social.href && social.href !== '#');
+              const Icon = social.icon;
+              const className =
+                'flex h-11 w-11 items-center justify-center rounded-xl border border-border/60 bg-card/60 text-muted-foreground transition-all';
+
+              return isAvailable ? (
+                <a
+                  key={social.label}
+                  href={social.href}
+                  aria-label={social.label}
+                  className={`${className} hover:border-primary/50 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary`}
+                >
+                  <Icon className="h-5 w-5" />
+                </a>
+              ) : (
+                <span
+                  key={social.label}
+                  aria-label={`${social.label}؛ به‌زودی`}
+                  aria-disabled="true"
+                  title={`${social.label}؛ به‌زودی`}
+                  className={`${className} cursor-not-allowed opacity-45`}
+                >
+                  <Icon className="h-5 w-5" />
+                </span>
+              );
+            })}
           </div>
         </div>
 
@@ -65,8 +82,8 @@ export function LandingFooter() {
               >
                 <ArrowUp className="h-4 w-4" />
               </Button>
-              <Link href="#" className="text-sm text-muted-foreground hover:text-primary">قوانین استفاده</Link>
-              <Link href="#" className="text-sm text-muted-foreground hover:text-primary">حریم خصوصی</Link>
+              <span title="به‌زودی" className="cursor-default text-sm text-muted-foreground/70">قوانین استفاده</span>
+              <span title="به‌زودی" className="cursor-default text-sm text-muted-foreground/70">حریم خصوصی</span>
             </div>
 
             <div className="flex items-center gap-4 text-sm text-muted-foreground">
@@ -80,8 +97,8 @@ export function LandingFooter() {
 
           <div className="flex flex-col items-center gap-7 text-center md:hidden">
             <div className="flex items-center justify-center gap-8 text-sm">
-              <Link href="#" className="text-muted-foreground hover:text-primary">قوانین استفاده</Link>
-              <Link href="#" className="text-muted-foreground hover:text-primary">حریم خصوصی</Link>
+              <span title="به‌زودی" className="cursor-default text-muted-foreground/70">قوانین استفاده</span>
+              <span title="به‌زودی" className="cursor-default text-muted-foreground/70">حریم خصوصی</span>
             </div>
             <span className="flex items-center gap-1 text-sm text-muted-foreground">
               ساخته شده با <Heart className="h-3.5 w-3.5 fill-red-500 text-red-500" /> در ایران
