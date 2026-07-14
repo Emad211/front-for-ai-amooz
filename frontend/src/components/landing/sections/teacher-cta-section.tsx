@@ -96,7 +96,7 @@ export const TeacherCtaSection = () => {
                     className="relative w-full"
                   >
                     <div className="overflow-hidden rounded-[1.15rem] border border-white/20 bg-[#030711] p-1.5 shadow-[0_30px_65px_rgba(3,7,17,.5)] sm:p-2">
-                      <div className="relative aspect-[16/9] overflow-hidden rounded-[.85rem] bg-[#030711] lg:aspect-[1.48/1]">
+                      <div className="relative aspect-video overflow-hidden rounded-[.85rem] bg-[#030711]">
                         <Image
                           src={activeFeature.image.src}
                           alt={activeFeature.image.alt}
