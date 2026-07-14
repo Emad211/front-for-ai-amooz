@@ -1,4 +1,6 @@
 import * as z from "zod";
+import { isValidIranPhone, normalizeIranPhone } from '@/lib/iran-phone';
+import { strongPasswordSchema } from './password';
 
 /**
  * Forced post-login onboarding (3 steps). Every code-logged-in user sets the
@@ -6,23 +8,14 @@ import * as z from "zod";
  * a few light, role-specific profile fields.
  */
 
-const password = z
-  .string()
-  .min(8, { message: "رمز عبور باید حداقل ۸ کاراکتر باشد" })
-  .max(128, { message: "رمز عبور نمی‌تواند بیشتر از ۱۲۸ کاراکتر باشد" })
-  .refine((v) => !/^\d+$/.test(v), { message: "رمز عبور نمی‌تواند فقط عدد باشد" });
+const password = strongPasswordSchema;
 
 const phone = z
   .string()
   .min(6, { message: "شماره موبایل معتبر نیست" })
-  .max(32, { message: "شماره موبایل معتبر نیست" })
-  .transform((raw) => {
-    const digits = String(raw ?? "").replace(/\D/g, "");
-    if (digits.startsWith("98") && digits.length === 12) return `0${digits.slice(2)}`;
-    if (digits.length === 10 && digits.startsWith("9")) return `0${digits}`;
-    return digits;
-  })
-  .refine((d) => d.startsWith("09") && d.length === 11, { message: "شماره موبایل معتبر نیست" });
+  .max(20, { message: "شماره موبایل معتبر نیست" })
+  .transform(normalizeIranPhone)
+  .refine(isValidIranPhone, { message: "شماره موبایل معتبر نیست" });
 
 export const onboardingSchema = z
   .object({

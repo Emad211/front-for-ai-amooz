@@ -99,6 +99,11 @@ export function NotificationPopover() {
                           {notification.time}
                         </span>
                       </div>
+                      {notification.senderName ? (
+                        <p className="text-[11px] font-medium text-foreground/80">
+                          از طرف {notification.senderName}
+                        </p>
+                      ) : null}
                       <p className="text-xs text-muted-foreground line-clamp-2 leading-relaxed font-medium">
                         {notification.message}
                       </p>

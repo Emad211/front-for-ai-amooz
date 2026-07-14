@@ -116,7 +116,9 @@ here, deliberately.
 
 ## Policies (product — decided in council)
 - **Late submissions:** closed at deadline by default; per-exercise toggle «پذیرش ارسال با تأخیر» →
-  allowed but flagged «ارسال با تأخیر» on both sides. Auto-penalty = phase 2.
+  allowed but flagged «ارسال با تأخیر» on both sides. Auto-penalty = phase 2. A newly supplied deadline
+  must be in the future in both standalone and embedded class creation; editing another setting on an
+  old exercise whose deadline has already passed remains valid.
 - **Resubmission:** one final submission; drafts editable until final submit; after grading only the
   teacher can grant a redo (exam-prep reset pattern). Free resubmit = LLM cost × gaming.
 - **Partial answers:** allowed with warning; unanswered questions score 0 for that question only.

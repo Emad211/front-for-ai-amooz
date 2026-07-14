@@ -59,6 +59,11 @@ export function NotificationItem({ notification, onMarkAsRead }: NotificationIte
             <span className="w-2 h-2 rounded-full bg-primary shrink-0" />
           )}
         </div>
+        {notification.senderName ? (
+          <p className="mb-1 text-xs font-medium text-foreground/80">
+            از طرف {notification.senderName}
+          </p>
+        ) : null}
         <p className="text-xs sm:text-sm text-muted-foreground line-clamp-2">
           {notification.message}
         </p>

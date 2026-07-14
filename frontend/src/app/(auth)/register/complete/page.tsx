@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { PasswordInput } from "@/components/auth/password-input";
+import { PASSWORD_GUIDANCE } from '@/lib/validations/password';
 
 import {
   completeRegistrationSchema,
@@ -133,7 +134,7 @@ function CompleteRegistrationInner() {
             {...register("password")}
           />
           {errors.password && <p className="text-xs text-destructive">{errors.password.message}</p>}
-          <p className="text-xs text-muted-foreground">حداقل ۸ کاراکتر و بهتر است فقط عدد نباشد.</p>
+          <p className="text-xs text-muted-foreground">{PASSWORD_GUIDANCE}</p>
         </div>
 
         <div className="space-y-2">

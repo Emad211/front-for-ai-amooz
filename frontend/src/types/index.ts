@@ -196,6 +196,7 @@ export interface Notification {
   createdAt: string;
   time?: string;
   link?: string;
+  senderName?: string;
 }
 
 export interface DashboardStats {

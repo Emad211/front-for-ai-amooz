@@ -135,6 +135,10 @@ export function ExerciseManager({
       toast.error('برای این تمرین باید مهلت ارسال را تعیین کنید.');
       return;
     }
+    if (!draft.noDeadline && new Date(draft.deadline).getTime() <= Date.now()) {
+      toast.error('مهلت ارسال باید زمانی در آینده باشد.');
+      return;
+    }
     setCreating(true);
     try {
       await createExercise(sessionId, {
@@ -438,10 +442,13 @@ function ExerciseEditor({
   const saveSettings = async () => {
     setSavingSettings(true);
     try {
-      await updateExercise(detail.id, {
-        deadline: deadline ? new Date(deadline).toISOString() : null,
+      const payload: Parameters<typeof updateExercise>[1] = {
         assistant_enabled: assistantEnabled,
-      });
+      };
+      if (deadline !== toLocalDateTimeValue(detail.deadline)) {
+        payload.deadline = deadline ? new Date(deadline).toISOString() : null;
+      }
+      await updateExercise(detail.id, payload);
       toast.success('تنظیمات ذخیره شد.');
       await onSaved();
     } catch (err) {

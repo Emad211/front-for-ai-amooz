@@ -143,6 +143,7 @@ def send_teacher_message_sms(notification_id: int) -> None:
 
     notif = (
         TeacherNotification.objects.filter(id=notification_id)
+        .select_related('teacher')
         .prefetch_related('recipients')
         .first()
     )
@@ -157,7 +158,9 @@ def send_teacher_message_sms(notification_id: int) -> None:
 
     title = (notif.title or '').strip()
     body = (notif.message or '').strip()
-    text = f'AI_AMOOZ\n{title}\n{body}' if title else f'AI_AMOOZ\n{body}'
+    sender_name = notif.teacher.get_full_name().strip() or notif.teacher.username
+    title_line = f'{title}\n' if title else ''
+    text = f'AI_AMOOZ\nفرستنده: {sender_name}\n{title_line}{body}'
 
     sms_requests = [
         {

@@ -1,4 +1,6 @@
 import * as z from "zod";
+import { isValidIranPhone, normalizeIranPhone } from '@/lib/iran-phone';
+import { strongPasswordSchema } from './password';
 
 /**
  * Helpers
@@ -25,30 +27,14 @@ const usernameOrEmailSchema = z
     }
   });
 
-const passwordSchema = z
-  .string()
-  .min(8, { message: "رمز عبور باید حداقل ۸ کاراکتر باشد" })
-  .max(128, { message: "رمز عبور نمی‌تواند بیشتر از ۱۲۸ کاراکتر باشد" })
-  .refine((v) => !/^\d+$/.test(v), {
-    message: "رمز عبور نمی‌تواند فقط عدد باشد",
-  });
+const passwordSchema = strongPasswordSchema;
 
 const iranMobileSchema = z
   .string()
   .min(6, { message: "شماره تماس معتبر نیست" })
-  .max(32, { message: "شماره تماس معتبر نیست" })
-  .transform((raw) => {
-    const digits = String(raw ?? "").replace(/\D/g, "");
-
-    // +98xxxxxxxxxx  -> 0xxxxxxxxxx
-    if (digits.startsWith("98") && digits.length === 12) return `0${digits.slice(2)}`;
-
-    // 9xxxxxxxxx -> 09xxxxxxxxx
-    if (digits.length === 10 && digits.startsWith("9")) return `0${digits}`;
-
-    return digits;
-  })
-  .refine((digits) => digits.startsWith("09") && digits.length === 11, {
+  .max(20, { message: "شماره تماس معتبر نیست" })
+  .transform(normalizeIranPhone)
+  .refine(isValidIranPhone, {
     message: "شماره تماس معتبر نیست",
   });
 
@@ -68,7 +54,7 @@ export const joinCodeSchema = z.object({
     .string()
     .trim()
     .min(6, { message: "کد دعوت باید حداقل ۶ کاراکتر باشد" })
-    .max(20, { message: "کد دعوت نمی‌تواند بیشتر از ۲۰ کاراکتر باشد" }),
+    .max(64, { message: "کد دعوت نمی‌تواند بیشتر از ۶۴ کاراکتر باشد" }),
   phone: iranMobileSchema,
 });
 

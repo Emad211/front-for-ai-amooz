@@ -19,7 +19,12 @@ from model_bakery import baker
 from rest_framework.test import APIClient
 
 from apps.classes.models import ClassCreationSession, ClassExercise
-from apps.notification.models import AdminNotification, NotificationReadReceipt
+from apps.notification.models import (
+    AdminNotification,
+    NotificationReadReceipt,
+    TeacherNotification,
+    TeacherNotificationRecipient,
+)
 
 pytestmark = [pytest.mark.django_db]
 
@@ -84,6 +89,52 @@ class TestMarkReadIdempotent:
 
 @pytest.mark.permission
 class TestReadStateIsPerUser:
+    def test_read_all_ignores_teacher_message_without_enrollment(
+        self, student_client, student_user,
+    ):
+        teacher = baker.make('accounts.User', role='TEACHER')
+        notification = baker.make(TeacherNotification, teacher=teacher)
+        baker.make(
+            TeacherNotificationRecipient,
+            notification=notification,
+            phone=student_user.phone,
+        )
+
+        assert student_client.post(READ_ALL).status_code == 200
+        assert not NotificationReadReceipt.objects.filter(
+            user=student_user,
+            notification_id=f'teacher-{notification.id}',
+        ).exists()
+
+    def test_read_all_ignores_personal_teacher_message_while_suspended(
+        self, student_client, student_user,
+    ):
+        teacher = baker.make('accounts.User', role='TEACHER')
+        session = baker.make(
+            'classes.ClassCreationSession',
+            teacher=teacher,
+            organization=None,
+        )
+        baker.make('classes.Enrollment', session=session, student=student_user)
+        baker.make(
+            'classes.TeacherStudentAccess',
+            teacher=teacher,
+            student=student_user,
+            is_suspended=True,
+        )
+        notification = baker.make(TeacherNotification, teacher=teacher)
+        baker.make(
+            TeacherNotificationRecipient,
+            notification=notification,
+            phone=student_user.phone,
+        )
+
+        assert student_client.post(READ_ALL).status_code == 200
+        assert not NotificationReadReceipt.objects.filter(
+            user=student_user,
+            notification_id=f'teacher-{notification.id}',
+        ).exists()
+
     def test_one_teacher_marking_read_does_not_affect_another(
         self, teacher_client, other_teacher_client,
     ):

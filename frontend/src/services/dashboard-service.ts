@@ -3,6 +3,7 @@ import type {
   Course,
   CourseContent,
   DashboardEvent,
+  Notification,
   Ticket,
   UserProfile,
 } from '@/types';

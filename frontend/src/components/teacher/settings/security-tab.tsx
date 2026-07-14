@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react';
 import { Shield, Key, Smartphone, LogOut, CheckCircle2, Lock, Save } from 'lucide-react';
+import { getPasswordPolicyError } from '@/lib/validations/password';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -36,8 +37,9 @@ if (passwordState.new !== passwordState.confirm) {
 toast.error('رمز عبور جدید و تکرار آن یکسان نیستند');
 return;
 }
-if (passwordState.new.length < 8) {
-toast.error('رمز عبور جدید باید حداقل ۸ کاراکتر باشد');
+const passwordPolicyError = getPasswordPolicyError(passwordState.new);
+if (passwordPolicyError) {
+toast.error(passwordPolicyError);
 return;
 }
 
@@ -81,7 +83,7 @@ dir="ltr"
 />
 </div>
 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-<div className="space-y-2.5">
+<div className="space-y-2.5 md:col-start-2 md:row-start-1">
 <Label htmlFor="new-password" className="pb-1 text-sm font-semibold flex items-center gap-2 px-1 justify-end">
 رمز عبور جدید
 <Key className="w-4 h-4 text-primary" />
@@ -95,7 +97,7 @@ className="bg-background/50 border-border/50 h-12 rounded-xl focus:ring-primary/
 dir="ltr"
 />
 </div>
-<div className="space-y-2.5">
+<div className="space-y-2.5 md:col-start-1 md:row-start-1">
 <Label htmlFor="confirm-password" className="pb-1 text-sm font-semibold flex items-center gap-2 px-1 justify-end">
 تکرار رمز عبور جدید
 <Key className="w-4 h-4 text-primary" />

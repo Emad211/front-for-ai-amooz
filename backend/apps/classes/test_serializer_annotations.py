@@ -9,7 +9,7 @@ import pytest
 from django.db.models import Count
 from model_bakery import baker
 
-from apps.classes.models import ClassCreationSession, ClassInvitation
+from apps.classes.models import ClassCreationSession, ClassInvitation, Enrollment
 from apps.classes.serializers import (
     ClassCreationSessionDetailSerializer,
     ClassCreationSessionListSerializer,
@@ -28,7 +28,9 @@ class TestClassCreationSessionListSerializer:
             teacher=teacher,
             pipeline_type='class',
         )
-        baker.make('classes.ClassInvitation', session=session, _quantity=3)
+        students = baker.make('accounts.User', role='student', _quantity=3)
+        for student in students:
+            baker.make('classes.Enrollment', session=session, student=student)
         section = baker.make(
             'classes.ClassSection', session=session, order=1,
         )
@@ -38,12 +40,14 @@ class TestClassCreationSessionListSerializer:
 
         # Annotate as the view does.
         qs = ClassCreationSession.objects.filter(id=session.id).annotate(
-            _invites_count=Count('invites', distinct=True),
+            _invites_count=Count('enrollments__student_id', distinct=True),
+            _students_count=Count('enrollments__student_id', distinct=True),
             _lessons_count=Count('units', distinct=True),
         )
         data = ClassCreationSessionListSerializer(qs.first()).data
 
         assert data['invites_count'] == 3
+        assert data['students_count'] == 3
         assert data['lessons_count'] == 5
 
     def test_output_shape(self):
@@ -54,7 +58,8 @@ class TestClassCreationSessionListSerializer:
             pipeline_type='class',
         )
         qs = ClassCreationSession.objects.filter(id=session.id).annotate(
-            _invites_count=Count('invites', distinct=True),
+            _invites_count=Count('enrollments__student_id', distinct=True),
+            _students_count=Count('enrollments__student_id', distinct=True),
             _lessons_count=Count('units', distinct=True),
         )
         data = ClassCreationSessionListSerializer(qs.first()).data
@@ -74,23 +79,38 @@ class TestClassCreationSessionDetailSerializer:
 
     def test_uses_annotation_when_available(self):
         session = baker.make('classes.ClassCreationSession')
-        baker.make('classes.ClassInvitation', session=session, _quantity=4)
+        students = baker.make('accounts.User', role='student', _quantity=4)
+        for student in students:
+            baker.make('classes.Enrollment', session=session, student=student)
 
         qs = ClassCreationSession.objects.filter(id=session.id).annotate(
-            _invites_count=Count('invites'),
+            _students_count=Count('enrollments__student_id', distinct=True),
         )
         data = ClassCreationSessionDetailSerializer(qs.first()).data
 
         assert data['invites_count'] == 4
+        assert data['students_count'] == 4
 
     def test_falls_back_to_count_without_annotation(self):
         session = baker.make('classes.ClassCreationSession')
-        baker.make('classes.ClassInvitation', session=session, _quantity=2)
+        students = baker.make('accounts.User', role='student', _quantity=2)
+        for student in students:
+            baker.make('classes.Enrollment', session=session, student=student)
 
         # No annotation — will fall back to .count().
         data = ClassCreationSessionDetailSerializer(session).data
 
         assert data['invites_count'] == 2
+        assert data['students_count'] == 2
+
+    def test_invitation_without_enrollment_is_not_counted(self):
+        session = baker.make('classes.ClassCreationSession')
+        baker.make('classes.ClassInvitation', session=session)
+
+        data = ClassCreationSessionDetailSerializer(session).data
+
+        assert data['students_count'] == 0
+        assert data['invites_count'] == 0
 
 
 @pytest.mark.django_db

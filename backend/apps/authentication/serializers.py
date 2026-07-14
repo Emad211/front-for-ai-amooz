@@ -185,7 +185,7 @@ class PasswordResetConfirmSerializer(serializers.Serializer):
 
 class InviteCodeLoginSerializer(serializers.Serializer):
     code = serializers.CharField(max_length=64)
-    phone = serializers.CharField(max_length=32)
+    phone = serializers.CharField(max_length=20)
 
     def validate_code(self, value: str) -> str:
         s = (value or '').strip()

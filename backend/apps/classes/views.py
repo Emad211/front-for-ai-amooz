@@ -3257,9 +3257,14 @@ class StudentNotificationListView(APIView):
         # Teacher messages addressed to this student.
         if phone:
             from apps.notification.models import TeacherNotification
+            from apps.notification.services import student_teacher_ids
 
             teacher_msgs = (
-                TeacherNotification.objects.filter(recipients__phone=phone)
+                TeacherNotification.objects.filter(
+                    recipients__phone=phone,
+                    teacher_id__in=student_teacher_ids(student=user),
+                )
+                .select_related('teacher')
                 .distinct()
                 .order_by('-created_at')
             )
@@ -3274,6 +3279,7 @@ class StudentNotificationListView(APIView):
                         'isRead': item_id in read_ids,
                         'createdAt': msg.created_at.isoformat(),
                         'link': '/notifications',
+                        'senderName': msg.teacher.get_full_name().strip() or msg.teacher.username,
                     }
                 )
 

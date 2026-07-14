@@ -1,6 +1,6 @@
 # Reference — Frontend auth screens ((auth) + start/join/onboarding)
 
-- **Status:** Verified · **Created:** 2026-07-02 · **Last-verified:** 2026-07-02 (commit `2525bba`)
+- **Status:** Verified · **Created:** 2026-07-02 · **Last-verified:** 2026-07-14
 - **Owner (doc):** technical-writer · **Spec source:** `docs/reference/ROADMAP.md` step F5
 - **Layer:** frontend-route-group ((auth) + top-level entry routes)
 
@@ -48,6 +48,11 @@ F4 guard/routing flow and F3 services.
 - All screens are Persian + RTL (F2); copy is natural (the «کد سازمان آموزشیِ مدرسه» lesson — grammar in context).
 - These screens implement the phone-identity + forced-onboarding model (B1/B2) on the client; the server
   is authoritative (completed accounts blocked from code re-entry → the screen shows the server message).
+- Invite-code inputs are capped at 64 characters. Phone input accepts common Iranian forms and Persian
+  digits but is normalized to exactly `09XXXXXXXXX` before submission.
+- Every new-password screen shares the backend policy: 8–128 printable ASCII characters with at least
+  one uppercase English letter, one lowercase English letter, and one digit. Login itself deliberately
+  does not enforce this policy so existing users can authenticate with their current password.
 
 ## Gotchas
 - `register/complete` is the TEACHER token path (B3b); org managers register by redeeming the admin code

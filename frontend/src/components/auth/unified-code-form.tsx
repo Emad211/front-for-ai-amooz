@@ -30,6 +30,7 @@ import {
 } from '@/services/auth-service';
 import { WORKSPACE_STORAGE_KEY } from '@/hooks/use-workspace';
 import type { ValidateCodeResult } from '@/types';
+import { isValidIranPhone, normalizeIranPhone, sanitizeIranPhoneInput } from '@/lib/iran-phone';
 
 /**
  * Unified "join / sign-in with a code" form.
@@ -52,18 +53,6 @@ const ROLE_INFO: Record<string, { label: string; icon: typeof ShieldCheck; color
   teacher: { label: 'معلم', icon: BookOpen, color: 'text-blue-500' },
   student: { label: 'دانش‌آموز', icon: GraduationCap, color: 'text-emerald-500' },
 };
-
-/** Mirror of the zod iranMobile transform so org + class phones normalize alike. */
-function normalizeIranPhone(raw: string): string {
-  const digits = String(raw ?? '').replace(/\D/g, '');
-  if (digits.startsWith('98') && digits.length === 12) return `0${digits.slice(2)}`;
-  if (digits.length === 10 && digits.startsWith('9')) return `0${digits}`;
-  return digits;
-}
-
-function isValidIranPhone(normalized: string): boolean {
-  return normalized.startsWith('09') && normalized.length === 11;
-}
 
 export function UnifiedCodeForm() {
   const router = useRouter();
@@ -275,7 +264,8 @@ export function UnifiedCodeForm() {
               <Input
                 id="code"
                 value={code}
-                onChange={(e) => setCode(e.target.value.toUpperCase())}
+                onChange={(e) => setCode(e.target.value.toUpperCase().slice(0, 64))}
+                maxLength={64}
                 placeholder="مثلاً: SCHOOL2026"
                 dir="ltr"
                 className="pr-10 h-12 text-center text-lg font-mono tracking-widest rounded-xl"
@@ -320,7 +310,9 @@ export function UnifiedCodeForm() {
             <Input
               type="tel"
               value={phone}
-              onChange={(e) => setPhone(e.target.value)}
+              onChange={(e) => setPhone(sanitizeIranPhoneInput(e.target.value))}
+              maxLength={12}
+              inputMode="numeric"
               placeholder="09123456789"
               dir="ltr"
               className="rounded-xl text-center text-lg tracking-widest"
@@ -345,7 +337,9 @@ export function UnifiedCodeForm() {
             <Input
               type="tel"
               value={phone}
-              onChange={(e) => setPhone(e.target.value)}
+              onChange={(e) => setPhone(sanitizeIranPhoneInput(e.target.value))}
+              maxLength={12}
+              inputMode="numeric"
               placeholder="09123456789"
               dir="ltr"
               className="rounded-xl text-center text-lg tracking-widest"

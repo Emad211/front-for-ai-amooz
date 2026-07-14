@@ -4,6 +4,7 @@ from django.core.files.base import ContentFile
 from django.db import IntegrityError, transaction
 from rest_framework import serializers
 import base64
+import binascii
 import uuid
 
 from drf_spectacular.utils import extend_schema_field
@@ -88,7 +89,7 @@ class MeUpdateSerializer(serializers.Serializer):
     last_name = serializers.CharField(required=False, allow_blank=True, max_length=150)
     email = serializers.EmailField(required=False, allow_blank=True)
     phone = serializers.CharField(required=False, allow_blank=True, max_length=15)
-    avatar = serializers.CharField(required=False, allow_null=True)
+    avatar = serializers.CharField(required=False, allow_blank=True, allow_null=True)
 
     bio = serializers.CharField(required=False, allow_blank=True, allow_null=True)
     location = serializers.CharField(required=False, allow_blank=True, allow_null=True)
@@ -180,10 +181,15 @@ class MeUpdateSerializer(serializers.Serializer):
                 setattr(instance, field, value)
                 user_update_fields.append(field)
 
-        # Handle avatar base64 upload
-        avatar_data = validated_data.get('avatar')
-        if avatar_data:
-            if avatar_data.startswith('data:image'):
+        # Handle avatar upload/clear only when the client explicitly sent it.
+        if 'avatar' in validated_data:
+            avatar_data = validated_data.get('avatar')
+            if not avatar_data:
+                if instance.avatar:
+                    instance.avatar.delete(save=False)
+                instance.avatar = None
+                user_update_fields.append('avatar')
+            elif avatar_data.startswith('data:image'):
                 try:
                     format, imgstr = avatar_data.split(';base64,')
                     ext = format.split('/')[-1]
@@ -196,11 +202,8 @@ class MeUpdateSerializer(serializers.Serializer):
                     )
                     instance.avatar = data
                     user_update_fields.append('avatar')
-                except Exception as e:
-                    print(f"Error decoding avatar: {e}")
-            elif avatar_data == '': # Clear avatar
-                instance.avatar = None
-                user_update_fields.append('avatar')
+                except (ValueError, TypeError, binascii.Error) as exc:
+                    raise serializers.ValidationError({'avatar': 'تصویر پروفایل نامعتبر است.'}) from exc
 
         if user_update_fields:
             instance.save(update_fields=user_update_fields)

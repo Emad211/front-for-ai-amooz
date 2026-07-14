@@ -1,6 +1,7 @@
 import json
 
 from django.conf import settings
+from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 from rest_framework import serializers
 
@@ -99,6 +100,12 @@ class Step1TranscribeRequestSerializer(serializers.Serializer):
                 normalized_deadline = parse_datetime(str(deadline))
                 if normalized_deadline is None:
                     raise serializers.ValidationError(f'مهلت تمرین شمارهٔ {ex_idx} نامعتبر است.')
+                if timezone.is_naive(normalized_deadline):
+                    normalized_deadline = timezone.make_aware(normalized_deadline)
+                if normalized_deadline <= timezone.now():
+                    raise serializers.ValidationError(
+                        f'مهلت تمرین شمارهٔ {ex_idx} باید زمانی در آینده باشد.'
+                    )
             sources = item.get('sources')
             if not isinstance(sources, list) or not sources:
                 raise serializers.ValidationError(f'حداقل یک منبع برای تمرین شمارهٔ {ex_idx} لازم است.')
@@ -602,6 +609,7 @@ class StudentNotificationSerializer(serializers.Serializer):
     isRead = serializers.BooleanField()
     createdAt = serializers.CharField()
     link = serializers.CharField(required=False, allow_blank=True)
+    senderName = serializers.CharField(required=False, allow_blank=True)
 
 
 class StudentChapterQuizResponseSerializer(serializers.Serializer):

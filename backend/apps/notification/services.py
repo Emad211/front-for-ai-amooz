@@ -11,6 +11,27 @@ from apps.accounts.models import User
 from apps.classes.models import Enrollment, TeacherStudentAccess
 
 
+def student_teacher_ids(*, student) -> set[int]:
+    """Teachers who currently have a real enrollment relationship with a student."""
+    suspended_teacher_ids = TeacherStudentAccess.objects.filter(
+        student=student,
+        is_suspended=True,
+    ).values('teacher_id')
+    personal = Enrollment.objects.filter(
+        student=student,
+        session__organization__isnull=True,
+    ).exclude(session__teacher_id__in=suspended_teacher_ids)
+    organization = Enrollment.objects.filter(
+        student=student,
+        session__organization__isnull=False,
+    )
+    return set(
+        (personal | organization)
+        .values_list('session__teacher_id', flat=True)
+        .distinct()
+    )
+
+
 def teacher_student_phones(*, teacher) -> set[str]:
     """Set of distinct student phone numbers across the teacher's sessions."""
     suspended_ids = TeacherStudentAccess.objects.filter(

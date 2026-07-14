@@ -6,10 +6,12 @@ Design + permission matrix: docs/features/exercise-hub.md.
 from __future__ import annotations
 
 import json
+from datetime import timedelta
 from io import BytesIO
 import pytest
 from decimal import Decimal
 from django.core.files.uploadedfile import SimpleUploadedFile
+from django.utils import timezone
 from model_bakery import baker
 from PIL import Image
 from rest_framework.test import APIClient
@@ -81,7 +83,7 @@ def _create_payload(
         'sources': json.dumps(sources, ensure_ascii=False),
     }
     if not no_deadline:
-        payload['deadline'] = '2026-07-31T09:30:00Z'
+        payload['deadline'] = (timezone.now() + timedelta(days=7)).isoformat()
     for key, uploaded in uploads:
         payload[f'file_{key}'] = uploaded
     return payload
@@ -191,6 +193,18 @@ class TestCreateAndList:
         assert 'allow_late' in res.data['errors']
         assert not ClassExercise.objects.filter(session=session).exists()
 
+    def test_create_rejects_past_deadline(self):
+        owner = _teacher()
+        session = _session(owner)
+        payload = _create_payload(no_deadline=False)
+        payload['deadline'] = (timezone.now() - timedelta(minutes=1)).isoformat()
+
+        res = _auth(owner).post(LIST.format(session.id), payload, format='multipart')
+
+        assert res.status_code == 400
+        assert 'deadline' in res.data['errors']
+        assert not ClassExercise.objects.filter(session=session).exists()
+
 
 class TestDetailUpdateDelete:
     def test_detail_exposes_legacy_sections_as_one_ordered_question_list(self):
@@ -208,7 +222,7 @@ class TestDetailUpdateDelete:
 
     def test_owner_can_change_exercise_assistant_after_creation(self):
         owner = _teacher()
-        ex = _exercise(owner, deadline='2026-07-31T09:30:00Z')
+        ex = _exercise(owner, deadline=timezone.now() + timedelta(days=7))
         res = _auth(owner).patch(
             DETAIL.format(ex.id), {'assistant_enabled': False, 'allow_late': True}, format='json',
         )
@@ -230,7 +244,7 @@ class TestDetailUpdateDelete:
 
     def test_removing_deadline_also_disables_late_submission(self):
         owner = _teacher()
-        ex = _exercise(owner, deadline='2026-07-31T09:30:00Z', allow_late=True)
+        ex = _exercise(owner, deadline=timezone.now() + timedelta(days=7), allow_late=True)
 
         res = _auth(owner).patch(
             DETAIL.format(ex.id), {'deadline': None}, format='json',
@@ -240,6 +254,33 @@ class TestDetailUpdateDelete:
         ex.refresh_from_db()
         assert ex.deadline is None
         assert ex.allow_late is False
+
+    def test_owner_cannot_replace_deadline_with_past_value(self):
+        owner = _teacher()
+        ex = _exercise(owner, deadline=timezone.now() + timedelta(days=7))
+
+        res = _auth(owner).patch(
+            DETAIL.format(ex.id),
+            {'deadline': (timezone.now() - timedelta(minutes=1)).isoformat()},
+            format='json',
+        )
+
+        assert res.status_code == 400
+        assert 'deadline' in res.data['errors']
+
+    def test_old_exercise_with_past_deadline_can_update_other_settings(self):
+        owner = _teacher()
+        old_deadline = timezone.now() - timedelta(days=1)
+        ex = _exercise(owner, deadline=old_deadline, assistant_enabled=True)
+
+        res = _auth(owner).patch(
+            DETAIL.format(ex.id), {'assistant_enabled': False}, format='json',
+        )
+
+        assert res.status_code == 200
+        ex.refresh_from_db()
+        assert ex.deadline == old_deadline
+        assert ex.assistant_enabled is False
 
     def test_non_owner_cannot_view_or_patch_or_delete(self):
         owner, other = _teacher(), _teacher()

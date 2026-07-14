@@ -1,6 +1,7 @@
 import json
 import tempfile
 import uuid
+from datetime import timedelta
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -8,6 +9,7 @@ from django.contrib.auth import get_user_model
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.db import transaction
 from django.test import override_settings
+from django.utils import timezone
 from model_bakery import baker
 from rest_framework.serializers import ValidationError
 from rest_framework.test import APIClient
@@ -70,6 +72,48 @@ def test_embedded_exercise_rejects_late_submission_without_deadline():
     }]
 
     with pytest.raises(ValidationError, match='ارسال دیرهنگام'):
+        Step1TranscribeRequestSerializer().validate_pending_exercises(
+            json.dumps(pending, ensure_ascii=False),
+        )
+
+
+def test_embedded_exercise_rejects_past_deadline():
+    pending = [{
+        'clientExerciseKey': 'exercise-past-deadline',
+        'title': 'تمرین با مهلت گذشته',
+        'noDeadline': False,
+        'deadline': (timezone.now() - timedelta(minutes=1)).isoformat(),
+        'allowLate': False,
+        'sources': [{
+            'clientFileKey': 'source-1',
+            'role': 'question_only',
+            'writingMode': 'typed',
+            'answerLayout': 'auto',
+        }],
+    }]
+
+    with pytest.raises(ValidationError, match='آینده'):
+        Step1TranscribeRequestSerializer().validate_pending_exercises(
+            json.dumps(pending, ensure_ascii=False),
+        )
+
+
+def test_embedded_exercise_rejects_naive_past_deadline_without_server_error():
+    pending = [{
+        'clientExerciseKey': 'exercise-naive-past-deadline',
+        'title': 'تمرین قدیمی',
+        'noDeadline': False,
+        'deadline': '2020-01-01T10:00:00',
+        'allowLate': False,
+        'sources': [{
+            'clientFileKey': 'source-1',
+            'role': 'question_only',
+            'writingMode': 'typed',
+            'answerLayout': 'auto',
+        }],
+    }]
+
+    with pytest.raises(ValidationError, match='آینده'):
         Step1TranscribeRequestSerializer().validate_pending_exercises(
             json.dumps(pending, ensure_ascii=False),
         )

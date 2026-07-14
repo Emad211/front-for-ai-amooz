@@ -140,6 +140,9 @@ DATABASES['default']['CONN_HEALTH_CHECKS'] = True  # verify stale connections be
 
 AUTH_PASSWORD_VALIDATORS = [
     {
+        'NAME': 'apps.accounts.password_validation.AsciiComplexityPasswordValidator',
+    },
+    {
         'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator',
     },
     {

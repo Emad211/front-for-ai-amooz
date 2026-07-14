@@ -33,22 +33,10 @@ import {
 
 import {
   clearAuthStorage,
+  persistUser,
   refreshAccessToken,
+  type AuthMeResponse,
 } from '@/services/auth-service';
-
-type AuthMeResponse = {
-  id: number;
-  username: string;
-  first_name?: string;
-  last_name?: string;
-  email: string;
-  phone?: string | null;
-  avatar?: string | null;
-  role: string;
-  is_profile_completed: boolean;
-  bio?: string | null;
-  location?: string | null;
-};
 
 type ClassCreationSessionListItem = {
   id: number;
@@ -341,12 +329,12 @@ export const TeacherService = {
     if (typeof data.bio === 'string') payload.bio = data.bio;
     if (typeof data.location === 'string') payload.location = data.location;
 
-    await requestJson<AuthMeResponse>('/accounts/me/', {
+    const updated = await requestJson<AuthMeResponse>('/accounts/me/', {
       method: 'PATCH',
       body: JSON.stringify(payload),
     });
-
-    return { success: true };
+    persistUser(updated);
+    return { success: true, data: updated };
   },
 
   updateSecuritySettings: async (data: Partial<AdminSecuritySettings>) => {

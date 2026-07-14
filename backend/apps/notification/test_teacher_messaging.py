@@ -3,6 +3,7 @@ import pytest
 from django.contrib.auth import get_user_model
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.utils import timezone
+from model_bakery import baker
 from rest_framework.test import APIClient
 
 from apps.classes.models import ClassCreationSession, ClassExercise, ClassInvitation, Enrollment
@@ -144,6 +145,9 @@ def test_broadcast_requires_teacher_role():
 
 def test_broadcast_appears_in_student_feed():
     teacher = _teacher()
+    teacher.first_name = 'علی'
+    teacher.last_name = 'احمدی'
+    teacher.save(update_fields=['first_name', 'last_name'])
     student = _student()
     _session_with_invite(teacher, student.phone)
 
@@ -161,6 +165,90 @@ def test_broadcast_appears_in_student_feed():
     assert res.status_code == 200
     titles = {n['title'] for n in res.data}
     assert 'اعلان معلم' in titles
+    item = next(n for n in res.data if n['title'] == 'اعلان معلم')
+    assert item['senderName'] == 'علی احمدی'
+
+
+def test_teacher_message_sms_includes_sender_name(monkeypatch):
+    from apps.classes.services import mediana_sms
+
+    teacher = _teacher()
+    teacher.first_name = 'علی'
+    teacher.last_name = 'احمدی'
+    teacher.save(update_fields=['first_name', 'last_name'])
+    student = _student()
+    notification = TeacherNotification.objects.create(
+        teacher=teacher,
+        title='یادآوری',
+        message='تمرین را ارسال کنید.',
+    )
+    TeacherNotificationRecipient.objects.create(
+        notification=notification,
+        phone=student.phone,
+    )
+    captured = {}
+    monkeypatch.setenv('MEDIANA_API_KEY', 'test-key')
+    monkeypatch.setattr(
+        mediana_sms,
+        'send_peer_to_peer_sms',
+        lambda **kwargs: captured.update(kwargs) or {'meta': {}},
+    )
+
+    mediana_sms.send_teacher_message_sms(notification.id)
+
+    message = captured['requests'][0]['TextMessage']
+    assert 'فرستنده: علی احمدی' in message
+    assert 'یادآوری' in message
+    assert 'تمرین را ارسال کنید.' in message
+
+
+def test_student_feed_hides_teacher_message_without_enrollment_relationship():
+    teacher = _teacher()
+    student = _student()
+    notification = TeacherNotification.objects.create(
+        teacher=teacher,
+        title='پیام نامعتبر',
+        message='نباید دیده شود',
+    )
+    TeacherNotificationRecipient.objects.create(
+        notification=notification,
+        phone=student.phone,
+    )
+
+    client = APIClient()
+    client.force_authenticate(user=student)
+    response = client.get('/api/classes/student/notifications/')
+
+    assert response.status_code == 200
+    assert f'teacher-{notification.id}' not in {item['id'] for item in response.data}
+
+
+def test_student_feed_hides_personal_teacher_message_while_suspended():
+    teacher = _teacher()
+    student = _student()
+    _session_with_invite(teacher, student.phone)
+    baker.make(
+        'classes.TeacherStudentAccess',
+        teacher=teacher,
+        student=student,
+        is_suspended=True,
+    )
+    notification = TeacherNotification.objects.create(
+        teacher=teacher,
+        title='پیام تعلیق‌شده',
+        message='نباید دیده شود',
+    )
+    TeacherNotificationRecipient.objects.create(
+        notification=notification,
+        phone=student.phone,
+    )
+
+    client = APIClient()
+    client.force_authenticate(user=student)
+    response = client.get('/api/classes/student/notifications/')
+
+    assert response.status_code == 200
+    assert f'teacher-{notification.id}' not in {item['id'] for item in response.data}
 
 
 def test_broadcast_sms_flag_queues_without_crashing(monkeypatch):

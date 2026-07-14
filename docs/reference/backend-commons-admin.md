@@ -49,7 +49,8 @@ frontend → F9; admin user-management frontend → F9.
    grant, memory `manager-role-on-main`).
 5. **Notifications:** admin/teacher broadcast to recipient sets → `NotificationReadReceipt` /
    `TeacherNotificationRecipient`; per-user `UserNotificationPreference`; SMS dispatch on the `default`
-   queue (B8).
+   queue (B8). Teacher-originated student feed items expose `senderName`, and the SMS body includes the
+   same resolved teacher name (full name with username fallback).
 
 ## Data & invariants
 - **Deny-by-default + admin permission:** every admin endpoint is `[IsAdminUser]` (`IsPlatformAdmin` =

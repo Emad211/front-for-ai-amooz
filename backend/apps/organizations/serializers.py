@@ -189,7 +189,7 @@ class RedeemInvitationSerializer(serializers.Serializer):
     code = serializers.CharField(max_length=64)
 
     # Phone is the account identity for every anonymous redemption.
-    phone = serializers.CharField(max_length=32, required=False, allow_blank=True)
+    phone = serializers.CharField(max_length=20, required=False, allow_blank=True)
 
     # Optional display name captured at the code step (also editable in onboarding).
     first_name = serializers.CharField(max_length=150, required=False, allow_blank=True)

@@ -607,6 +607,13 @@ export function CreateClassPage() {
         toast.error('بخش تمرین را کامل کنید: عنوان، منبع و وضعیت مهلت هر تمرین باید مشخص باشد.');
         return;
       }
+      const pastDeadline = pendingExercises.find(
+        (exercise) => !exercise.noDeadline && new Date(exercise.deadline).getTime() <= Date.now(),
+      );
+      if (pastDeadline) {
+        toast.error('مهلت ارسال تمرین باید زمانی در آینده باشد.');
+        return;
+      }
     }
 
     const clientRequestId = step1ClientRequestId ?? (globalThis.crypto?.randomUUID?.() ?? null);

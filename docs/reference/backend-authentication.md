@@ -1,6 +1,6 @@
 # Reference — `apps/authentication` (JWT / OTP / login layer)
 
-- **Status:** Verified · **Created:** 2026-07-02 · **Last-verified:** 2026-07-02 (commit `28baf8c`)
+- **Status:** Verified · **Created:** 2026-07-02 · **Last-verified:** 2026-07-14
 - **Owner (doc):** technical-writer · **Spec source:** `docs/reference/ROADMAP.md` step B2
 - **Layer:** backend-app (0 migrations — operates on `accounts` models)
 
@@ -50,6 +50,12 @@ B1 (`apps/accounts`); this app only authenticates it.
    body still carries the refresh for backward compat; master switch `AUTH_REFRESH_COOKIE`.
 5. **last_login:** custom paths call `_safe_update_last_login` (`views.py:41-50`, never fails the
    flow); `/api/token/` gets it via `SIMPLE_JWT.UPDATE_LAST_LOGIN` (obtain only, not refresh).
+6. **Password policy:** every path that sets a new password delegates to Django's shared validators.
+   New passwords are 8–128 printable ASCII characters and must include an English uppercase letter,
+   an English lowercase letter, and a digit. Existing passwords remain valid for login until changed.
+7. **Anonymous auth requests:** login and password-reset calls do not attach a cached access token and
+   do not run the authenticated refresh flow. Wrong credentials therefore remain a credential error,
+   never a misleading expired-session error.
 
 ## Data & invariants
 - No models/migrations here. State touched: `accounts.User`, SimpleJWT outstanding/blacklist tables,
@@ -66,6 +72,8 @@ B1 (`apps/accounts`); this app only authenticates it.
   "invalid code" after a cache clear).
 - Email delivery is disabled platform-wide — SMS is the only OTP channel; without `MEDIANA_API_KEY`
   the request still returns generic 200 but nothing is sent (logged).
+- Invite codes are capped at 64 characters. Anonymous phone inputs are capped before normalization and
+  accept `09…`, `9…`, `98…`, `+98…`, and Persian/Arabic digits only when they normalize to `09XXXXXXXXX`.
 
 ## Cross-links
 [backend-accounts.md](backend-accounts.md) (the factory + onboarding these flows feed) ·

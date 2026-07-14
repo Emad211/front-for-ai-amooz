@@ -32,6 +32,8 @@ export type AuthMeResponse = {
   email: string;
   phone?: string | null;
   avatar?: string | null;
+  bio?: string | null;
+  location?: string | null;
   role: string;
   is_profile_completed: boolean;
   // Platform-admin flags (sent by MeSerializer). Optional: may be absent on
@@ -238,7 +240,12 @@ function extractError(payload: unknown): string {
   return message;
 }
 
-async function baseRequest<T>(path: string, options: RequestInit = {}, retry = true): Promise<T> {
+async function baseRequest<T>(
+  path: string,
+  options: RequestInit = {},
+  retry = true,
+  authenticated = true,
+): Promise<T> {
   const headers = new Headers(options.headers);
 
   // اگر FormData بود Content-Type را دست نزن (مرورگر boundary را ست می‌کند)
@@ -250,7 +257,7 @@ async function baseRequest<T>(path: string, options: RequestInit = {}, retry = t
 
   const tokens = getStoredTokens();
 
-  if (tokens?.access && !headers.has("Authorization")) {
+  if (authenticated && tokens?.access && !headers.has("Authorization")) {
     headers.set("Authorization", `Bearer ${tokens.access}`);
   }
 
@@ -266,11 +273,11 @@ async function baseRequest<T>(path: string, options: RequestInit = {}, retry = t
   }
 
   // Refresh flow
-  if (res.status === 401 && retry) {
+  if (authenticated && res.status === 401 && retry) {
     try {
       const newAccess = await refreshAccessToken();
       headers.set("Authorization", `Bearer ${newAccess}`);
-      return baseRequest(path, { ...options, headers }, false);
+      return baseRequest(path, { ...options, headers }, false, true);
     } catch {
       clearAuthStorage();
       throw new Error("جلسه شما منقضی شده است");
@@ -344,28 +351,28 @@ export async function login(payload: LoginPayload): Promise<TokenResponse> {
   return baseRequest("/token/", {
     method: "POST",
     body: JSON.stringify(payload),
-  });
+  }, false, false);
 }
 
 export async function register(payload: RegisterPayload): Promise<RegisterResponse> {
   return baseRequest("/auth/register/", {
     method: "POST",
     body: JSON.stringify(payload),
-  });
+  }, false, false);
 }
 
 export async function inviteLogin(payload: InviteLoginPayload): Promise<RegisterResponse> {
   return baseRequest("/auth/invite-login/", {
     method: "POST",
     body: JSON.stringify(payload),
-  });
+  }, false, false);
 }
 
 export async function requestPasswordReset(identifier: string): Promise<{ detail: string }> {
   return baseRequest("/auth/password-reset/request/", {
     method: "POST",
     body: JSON.stringify({ identifier }),
-  });
+  }, false, false);
 }
 
 export type PasswordResetConfirmPayload = {
@@ -380,7 +387,7 @@ export async function confirmPasswordReset(
   return baseRequest("/auth/password-reset/confirm/", {
     method: "POST",
     body: JSON.stringify(payload),
-  });
+  }, false, false);
 }
 
 export async function fetchMe(): Promise<AuthMeResponse> {

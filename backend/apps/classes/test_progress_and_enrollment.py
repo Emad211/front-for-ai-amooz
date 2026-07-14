@@ -216,6 +216,7 @@ def test_session_students_roster_endpoint():
     student = _student()
     session = _make_published_class(teacher, n_sections=1, units_per_section=4)
     ClassInvitation.objects.create(session=session, phone=student.phone, invite_code='X5')
+    Enrollment.objects.create(session=session, student=student)
     StudentUnitProgress.objects.create(session=session, student=student, unit_external_id='sec-1-u-1')
 
     client = APIClient()

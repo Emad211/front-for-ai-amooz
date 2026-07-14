@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 
+from django.utils import timezone
 from rest_framework import serializers
 
 from .models import (
@@ -176,6 +177,8 @@ class ExerciseCreateSerializer(serializers.Serializer):
             attrs['deadline'] = None
         elif deadline is None:
             raise serializers.ValidationError({'deadline': 'برای این تمرین باید مهلت ارسال تعیین شود.'})
+        elif deadline <= timezone.now():
+            raise serializers.ValidationError({'deadline': 'مهلت ارسال باید زمانی در آینده باشد.'})
         return attrs
 
 
@@ -196,6 +199,13 @@ class ExerciseUpdateSerializer(serializers.Serializer):
             })
         if 'deadline' in attrs and deadline is None and allow_late:
             attrs['allow_late'] = False
+        if (
+            'deadline' in attrs
+            and deadline is not None
+            and deadline <= timezone.now()
+            and (current_deadline is None or deadline != current_deadline)
+        ):
+            raise serializers.ValidationError({'deadline': 'مهلت ارسال باید زمانی در آینده باشد.'})
         return attrs
 
 

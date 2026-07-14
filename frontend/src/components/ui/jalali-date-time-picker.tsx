@@ -63,6 +63,7 @@ export function JalaliDateTimePicker({
   const [open, setOpen] = useState(false);
   const [hour, setHour] = useState('23');
   const [minute, setMinute] = useState('59');
+  const [validationError, setValidationError] = useState('');
 
   useEffect(() => {
     if (!selected) return;
@@ -71,7 +72,13 @@ export function JalaliDateTimePicker({
   }, [selected]);
 
   const commitDate = (date: Date) => {
-    onChange(formatLocalDateTimeValue(applyTime(date, hour, minute)));
+    const next = applyTime(date, hour, minute);
+    if (next.getTime() <= Date.now()) {
+      setValidationError('مهلت ارسال باید زمانی در آینده باشد.');
+      return;
+    }
+    setValidationError('');
+    onChange(formatLocalDateTimeValue(next));
   };
 
   const handleSelect = (date: Date | undefined) => {
@@ -84,7 +91,13 @@ export function JalaliDateTimePicker({
     setMinute(nextMinute);
 
     if (!selected) return;
-    onChange(formatLocalDateTimeValue(applyTime(selected, nextHour, nextMinute)));
+    const next = applyTime(selected, nextHour, nextMinute);
+    if (next.getTime() <= Date.now()) {
+      setValidationError('مهلت ارسال باید زمانی در آینده باشد.');
+      return;
+    }
+    setValidationError('');
+    onChange(formatLocalDateTimeValue(next));
   };
 
   const triggerLabel = selected ? formatPersianDateTime(selected) : placeholder;
@@ -128,6 +141,7 @@ export function JalaliDateTimePicker({
               mode="single"
               selected={selected ?? undefined}
               onSelect={handleSelect}
+              disabled={{ before: new Date(new Date().setHours(0, 0, 0, 0)) }}
               dir="rtl"
               numerals="arabext"
               showOutsideDays
@@ -172,6 +186,10 @@ export function JalaliDateTimePicker({
               }}
             />
           </div>
+
+          {validationError ? (
+            <p className="text-xs font-medium text-destructive">{validationError}</p>
+          ) : null}
 
           <div className="space-y-2 rounded-2xl border border-border/80 bg-background/70 p-3">
             <div className="flex items-center gap-2 text-sm font-medium text-foreground">
@@ -228,7 +246,7 @@ export function JalaliDateTimePicker({
                 className="px-2 text-muted-foreground hover:text-foreground"
                 onClick={() => {
                   const now = new Date();
-                  onChange(formatLocalDateTimeValue(applyTime(now, hour, minute)));
+                  commitDate(now);
                 }}
               >
                 امروز
@@ -264,7 +282,7 @@ export function JalaliDateTimePicker({
                 type="button"
                 size="sm"
                 onClick={() => setOpen(false)}
-                disabled={!selected}
+                disabled={!selected || selected.getTime() <= Date.now()}
               >
                 تایید
               </Button>

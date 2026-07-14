@@ -1,6 +1,6 @@
 # 2026-07-14 — Prerequisite language consistency
 
-Commits: pending  ·  Scope: backend
+Commits: `defcf50`  ·  Scope: backend
 
 ## Changes
 
@@ -23,7 +23,7 @@ Commits: pending  ·  Scope: backend
 
 - `backend/.venv/Scripts/python.exe -m pytest backend/apps/classes/test_prompts_contract.py backend/apps/classes/test_step3_prerequisites.py backend/apps/classes/test_pipeline_chaining.py --no-migrations -p no:cacheprovider -q`: `71 passed`.
 - Explicit prompt contract gate: `61 passed`.
-- Full backend suite: `1270 passed, 4 skipped, 3 failed`. The three failures are pre-existing Enrollment-roster test expectations in `test_progress_and_enrollment.py` and `test_serializer_annotations.py`; none exercises prerequisite or prompt behavior.
+- Full backend suite after repairing the stale Enrollment-roster fixtures: `1296 passed, 4 skipped`.
 - Django system check: `System check identified no issues (0 silenced).`
 - Migration check: `No changes detected`.
 - `git diff --check`: clean.

@@ -27,7 +27,7 @@ from .serializers import (
     TeacherMessageRecipientSerializer,
     UserRecipientSerializer,
 )
-from .services import teacher_student_phones, teacher_student_recipients
+from .services import student_teacher_ids, teacher_student_phones, teacher_student_recipients
 
 
 class AdminNotificationBroadcastView(APIView):
@@ -386,7 +386,10 @@ class MarkAllNotificationsReadView(APIView):
                 ids_to_mark.extend([f'announcement-{a.id}' for a in announcements])
 
                 teacher_notif_ids = (
-                    TeacherNotification.objects.filter(recipients__phone=phone)
+                    TeacherNotification.objects.filter(
+                        recipients__phone=phone,
+                        teacher_id__in=student_teacher_ids(student=user),
+                    )
                     .values_list('id', flat=True)
                     .distinct()
                 )
