@@ -27,7 +27,6 @@
     --text-light: #111827;
     --text-muted: #6b7280;
 
-    /* Landing-only semantic tokens, mirrored in dark mode. */
     --landing-page: 0 0% 100%;
     --landing-panel: 0 0% 96%;
     --landing-panel-strong: 0 0% 100%;
@@ -58,6 +57,7 @@
     --ring: 160 60% 50%;
     --text-light: #f9fafb;
     --text-muted: #9ca3af;
+
     --landing-page: 223 70% 4%;
     --landing-panel: 224 50% 5%;
     --landing-panel-strong: 224 42% 7%;
@@ -97,12 +97,13 @@
   }
 
   .landing-display {
-    font-family: Vazirmatn, sans-serif;
-    letter-spacing: -0.035em;
+    font-family: Peyda, Vazirmatn, sans-serif;
+    font-feature-settings: 'ss01' 1;
+    letter-spacing: -0.04em;
   }
 
   .landing-panel {
-    @apply rounded-[1.25rem] border border-[hsl(var(--landing-border)/.55)] bg-[hsl(var(--landing-panel))];
+    @apply rounded-[20px] border border-[hsl(var(--landing-border)/.55)] bg-[hsl(var(--landing-panel))];
     box-shadow: 0 0 4px hsl(var(--foreground) / 0.18);
   }
 
@@ -114,7 +115,8 @@
 
 @layer base {
   * { @apply border-border; }
-  body { @apply bg-background text-foreground font-sans; }
+  html { scroll-behavior: smooth; }
+  body { @apply bg-background text-foreground font-sans; overflow-x: hidden; }
   [dir='rtl'] input,
   [dir='rtl'] textarea,
   [dir='rtl'] select { text-align: right; }
@@ -149,6 +151,7 @@
 .animate-fade-in { animation: fade-in 0.5s ease-out forwards; }
 
 @media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
   .animate-float,
   .animate-float-delayed,
   .animate-pulse-glow,
