@@ -10,7 +10,7 @@ const baseCard =
 export const FeaturesSection = () => {
   return (
     <section id="features" className="landing-section-shell px-2 py-10 sm:px-4 lg:px-8">
-      <div className="landing-panel mx-auto w-full max-w-[1856px] overflow-hidden px-4 py-10 sm:px-8 lg:px-24">
+      <div className="landing-panel mx-auto w-full max-w-[1856px] overflow-hidden px-4 pb-2 pt-10 sm:px-8 lg:px-24 lg:pb-10">
         <motion.div
           initial={{ opacity: 0, y: 18 }}
           whileInView={{ opacity: 1, y: 0 }}
@@ -21,17 +21,17 @@ export const FeaturesSection = () => {
             ویژگی‌ها
             <Settings className="h-4 w-4" />
           </div>
-          <h2 className="landing-display mt-8 text-3xl font-black text-foreground sm:text-4xl lg:text-5xl">
-            همه چیز در یک مکان
+          <h2 className="landing-display mt-8 text-3xl font-black leading-[45px] text-foreground sm:text-4xl lg:text-5xl lg:leading-[67px]">
+            همه‌چیز در یک مکان
           </h2>
-          <p className="mx-auto mt-6 max-w-3xl text-base font-medium text-muted-foreground sm:text-lg lg:text-xl">
+          <p className="mx-auto mt-8 max-w-3xl text-base font-medium leading-7 text-muted-foreground sm:text-lg lg:text-xl">
             همه چیزی که از یک ابزار یادگیری نیاز دارید؛ یکجا، منظم و هوشمند
           </p>
         </motion.div>
 
         <div
           dir="ltr"
-          className="mt-12 grid min-h-[43rem] grid-cols-2 gap-3 sm:gap-5 lg:grid-cols-[458px_1fr_1fr] lg:grid-rows-[336px_304px] lg:gap-8"
+          className="mt-8 grid h-[1108px] grid-cols-2 gap-[10px] sm:gap-5 lg:h-[760px] lg:grid-cols-[458px_1fr_1fr] lg:grid-rows-[336px_304px] lg:gap-8 lg:py-11"
         >
           <motion.article
             dir="rtl"
