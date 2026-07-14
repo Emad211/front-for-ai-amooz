@@ -2,17 +2,16 @@
 
 import { motion } from 'framer-motion';
 import {
-  Route,
-  ClipboardCheck,
-  Bot,
-  MessagesSquare,
-  LayoutGrid,
   BarChart3,
-  HelpCircle,
+  Bot,
+  ClipboardCheck,
+  LayoutGrid,
+  MessageSquareText,
+  Route,
+  Sparkles,
   type LucideIcon,
 } from 'lucide-react';
 
-/** Figma "why us?" (node 303:206) — six value props in a 3×2 grid. */
 const REASONS: { icon: LucideIcon; title: string; description: string }[] = [
   {
     icon: Route,
@@ -32,7 +31,7 @@ const REASONS: { icon: LucideIcon; title: string; description: string }[] = [
       'در هر لحظه سوالات درسی بپرسید، راه‌حل‌های مختلف را بررسی کنید و اشکالات خود را رفع کنید.',
   },
   {
-    icon: MessagesSquare,
+    icon: MessageSquareText,
     title: 'پیام به دانش‌آموز',
     description:
       'در لحظه با دانش‌آموزان خود در ارتباط باشید؛ بازخورد بدهید، به سوالات پاسخ دهید و انگیزه‌ی یادگیری را زنده نگه دارید.',
@@ -53,44 +52,53 @@ const REASONS: { icon: LucideIcon; title: string; description: string }[] = [
 
 export const WhyUsSection = () => {
   return (
-    <section id="why-us" className="relative overflow-hidden py-20 md:py-28">
-      <div className="container mx-auto px-4">
+    <section id="why-us" className="landing-section-shell px-2 py-10 sm:px-4 lg:px-8">
+      <div className="mx-auto flex w-full max-w-[1664px] flex-col items-center">
         <motion.div
-          initial={{ opacity: 0, y: 20 }}
+          initial={{ opacity: 0, y: 18 }}
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true }}
-          transition={{ duration: 0.6 }}
-          className="mx-auto mb-14 max-w-3xl text-center"
+          className="inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/10 px-[17px] py-[9px] text-sm font-medium text-primary"
         >
-          <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-primary/40 bg-primary/10 px-4 py-1.5 text-sm font-medium text-primary">
-            <HelpCircle className="h-4 w-4" />
-            چرا ما
-          </div>
-          <h2 className="text-3xl font-black text-foreground md:text-5xl">
-            چرا باید همسفر ما بشید؟
-          </h2>
+          چرا ما
+          <Sparkles className="h-4 w-4" />
         </motion.div>
 
-        <div className="mx-auto grid max-w-6xl grid-cols-1 gap-y-10 sm:grid-cols-2 lg:grid-cols-3">
-          {REASONS.map((reason, index) => (
-            <motion.div
-              key={reason.title}
-              initial={{ opacity: 0, y: 24 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true, margin: '-50px' }}
-              transition={{ duration: 0.45, delay: (index % 3) * 0.1 }}
-              className={`px-6 text-center lg:px-8 ${
-                index % 3 !== 0 ? 'lg:border-r lg:border-border/40' : ''
-              }`}
-            >
-              {/* Bare mint icon — the Figma design uses no box around why-us icons */}
-              <div className="mx-auto mb-5 flex h-10 w-10 items-center justify-center text-primary">
-                <reason.icon className="h-10 w-10" strokeWidth={1.75} />
-              </div>
-              <h3 className="mb-2 text-xl font-bold text-foreground">{reason.title}</h3>
-              <p className="text-sm leading-7 text-muted-foreground">{reason.description}</p>
-            </motion.div>
-          ))}
+        <motion.h2
+          initial={{ opacity: 0, y: 18 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true }}
+          transition={{ delay: 0.08 }}
+          className="landing-display mt-8 text-center text-3xl font-black text-foreground sm:text-4xl lg:text-5xl"
+        >
+          چرا باید همسفر ما بشید؟
+        </motion.h2>
+
+        <div className="mt-11 grid w-full grid-cols-1 lg:grid-cols-3">
+          {REASONS.map((reason, index) => {
+            const isDesktopDivider = index % 3 !== 0;
+            const hasMobileDivider = index !== REASONS.length - 1;
+            return (
+              <motion.article
+                key={reason.title}
+                initial={{ opacity: 0, y: 22 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true, margin: '-50px' }}
+                transition={{ duration: 0.45, delay: (index % 3) * 0.07 }}
+                className={`relative flex min-h-52 flex-col items-center justify-center px-4 py-8 text-center sm:px-8 lg:min-h-52 lg:py-5 ${
+                  isDesktopDivider ? 'lg:border-r lg:border-border/50' : ''
+                } ${hasMobileDivider ? 'border-b border-border/50 lg:border-b-0' : ''}`}
+              >
+                <div className="mb-3 flex h-9 w-9 items-center justify-center text-primary">
+                  <reason.icon className="h-7 w-7" strokeWidth={1.65} />
+                </div>
+                <h3 className="text-2xl font-bold leading-10 text-foreground">{reason.title}</h3>
+                <p className="mt-2 max-w-[29rem] text-base leading-6 text-muted-foreground">
+                  {reason.description}
+                </p>
+              </motion.article>
+            );
+          })}
         </div>
       </div>
     </section>
