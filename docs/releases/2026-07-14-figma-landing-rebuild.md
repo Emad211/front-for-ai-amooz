@@ -9,12 +9,15 @@ Branch: `feature/figma-landing-rebuild` · Scope: frontend-only
 - Rebuilt the six-item why-us grid with desktop and mobile divider behavior from Figma.
 - Rebuilt the feature bento grid with the Figma desktop and mobile proportions.
 - Rebuilt the teacher showcase as an interactive four-state product panel.
+- Replaced placeholder teacher visuals with real class-overview, exam-prep, exercise, and analytics captures supplied by the product owner.
 - Refined testimonial, FAQ, final CTA, and footer hierarchy and spacing.
-- Uploaded the supplied teacher screenshots to the connected Adobe workspace for non-destructive preparation. Temporary Adobe URLs are not used in production code.
 
 ## Product imagery
 
-The current branch keeps stable repository assets in the teacher showcase so no expiring external URL enters the application. The supplied real teacher screenshots are the approved replacement set for class overview, exam-prep creation, exercise creation, and teacher analytics. Their intended local filenames are centralized in `frontend/src/components/landing/teacher-product-assets.ts`.
+- The teacher captures were cropped non-generatively in Adobe and committed as local PNG assets under `frontend/public/landing/`; no expiring Adobe URL is used at runtime.
+- Personal header details, browser scrollbars, and the teacher navigation sidebar are outside the final visible crops.
+- The asset contract is centralized in `frontend/src/components/landing/teacher-product-assets.ts`.
+- Decorative frame, glow, border, and responsive cropping remain CSS concerns so the original Persian UI text stays unchanged.
 
 ## Migrations
 
@@ -30,9 +33,9 @@ The current branch keeps stable repository assets in the teacher showcase so no 
 
 ## Verification
 
-- Code is isolated on `feature/figma-landing-rebuild`; PR #1 remains draft during visual and asset verification.
+- Code is isolated on `feature/figma-landing-rebuild`; PR #1 remains draft during CI and visual verification.
 - Required CI gates: `npm run typecheck`, `npm run lint`, and visual checks at 440px and 1920px in both themes.
-- Existing repository lint/typecheck baseline must be reported separately; no clean result is claimed before CI completes.
+- The first PR run reached the existing TypeScript baseline before lint; subsequent runs classify and repair any landing-introduced error separately.
 
 ## Rollback
 
