@@ -13,142 +13,97 @@ interface HeroSectionProps {
   };
 }
 
-/**
- * Hero — Figma "1920w dark redesign" hero.
- * RTL two-column: headline + dual CTA on the right, Mac Studio + phone mockups
- * on the left (desktop only). Mobile shows a glowing brand mark instead of the
- * devices. Theme-aware via semantic tokens; mint = `primary`.
- */
 export const HeroSection = ({ heroImage }: HeroSectionProps) => {
   return (
-    <section className="relative overflow-hidden pt-32 pb-20 md:pt-40 md:pb-28">
-      {/* Ambient glows — mint top-left (devices side), purple bottom-right (per Figma) */}
-      <div className="pointer-events-none absolute inset-0 -z-10 overflow-hidden">
-        {/* Dot-grid texture — DARK only, faded toward the edges. Shows on both
-            mobile and desktop. (Swap to a /public PNG via backgroundImage for the
-            exact scattered texture.) */}
-        <div
-          className="absolute inset-0 hidden dark:block"
-          style={{
-            backgroundImage:
-              'radial-gradient(hsl(var(--foreground) / 0.10) 1px, transparent 1.5px)',
-            backgroundSize: '24px 24px',
-            maskImage:
-              'radial-gradient(ellipse at center, black 25%, transparent 80%)',
-            WebkitMaskImage:
-              'radial-gradient(ellipse at center, black 25%, transparent 80%)',
-            opacity: 0.55,
-          }}
-        />
-        {/* Faint green halo ring — really only reads in DARK; makes the hero pop. */}
-        <div
-          className="absolute left-1/2 top-[42%] hidden h-[34rem] w-[34rem] -translate-x-1/2 -translate-y-1/2 rounded-full border border-primary/20 dark:block md:h-[52rem] md:w-[52rem]"
-          style={{
-            background:
-              'radial-gradient(circle, hsl(var(--primary) / 0.10), transparent 62%)',
-          }}
-        />
+    <section className="landing-section-shell px-2 pb-10 pt-24 sm:px-4 lg:px-8 lg:pb-10 lg:pt-28">
+      <div className="relative mx-auto flex min-h-[52rem] w-full max-w-[1856px] items-center overflow-hidden rounded-[1.25rem] border border-border/55 bg-[hsl(var(--landing-hero))] px-5 py-14 shadow-[0_0_4px_hsl(var(--foreground)/.24)] sm:px-9 lg:min-h-[65.5rem] lg:px-24 lg:py-16">
+        <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden">
+          <div className="landing-dot-pattern absolute inset-0 opacity-70 [mask-image:radial-gradient(ellipse_at_center,black_10%,transparent_78%)]" />
+          <div className="absolute -left-[20rem] -top-[20rem] h-[60rem] w-[60rem] rounded-full bg-primary/20 opacity-40 blur-[150px]" />
+          <div className="absolute -bottom-20 -right-16 h-[28rem] w-[28rem] rounded-full bg-purple-500/10 blur-[70px]" />
+          <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,transparent_35%,hsl(var(--landing-hero))_90%)]" />
+        </div>
 
-        <div className="absolute -left-80 -top-80 h-[60rem] w-[60rem] rounded-full bg-primary/20 opacity-40 blur-[150px] animate-pulse-glow" />
-        <div className="absolute -bottom-12 -right-12 h-[28rem] w-[28rem] rounded-full bg-purple-500/10 opacity-40 blur-[60px]" />
-        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,transparent_45%,hsl(var(--background)))]" />
-      </div>
-
-      <div className="container mx-auto px-4">
-        <div className="grid items-center gap-12 lg:grid-cols-2 lg:gap-8">
-          {/* Text block (right in RTL) */}
+        <div className="relative grid w-full items-center gap-12 lg:grid-cols-[1.05fr_.95fr] lg:gap-16">
           <motion.div
-            initial={{ opacity: 0, y: 24 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.6 }}
-            className="text-center lg:text-right"
+            initial={{ opacity: 0, scale: 0.96, x: -20 }}
+            animate={{ opacity: 1, scale: 1, x: 0 }}
+            transition={{ duration: 0.75, delay: 0.12 }}
+            className="order-2 mx-auto w-full max-w-[49.5rem] lg:order-1"
           >
-            {/* Mobile brand mark (Figma mobile hero shows the glowing logo, no devices) */}
-            <div className="mb-8 flex justify-center lg:hidden">
-              <div className="relative">
-                <div className="absolute inset-0 -z-10 rounded-3xl bg-primary/30 blur-2xl" />
-                <div className="flex h-24 w-24 items-center justify-center overflow-hidden rounded-3xl border border-primary/20 bg-card/60 backdrop-blur">
-                  <Image
-                    src="/logo.png"
-                    alt="AI-Amooz"
-                    width={96}
-                    height={96}
-                    className="h-full w-full scale-[1.9] object-contain"
-                  />
-                </div>
-              </div>
+            <div className="relative hidden min-h-[38rem] items-end justify-center lg:flex">
+              <div className="absolute bottom-3 left-1/2 h-16 w-[78%] -translate-x-1/2 rounded-full bg-black/45 blur-2xl" />
+              <Image
+                src="/landing/mac-studio-dark.png"
+                alt={heroImage.description}
+                width={792}
+                height={609}
+                priority
+                className="relative h-auto w-full object-contain drop-shadow-[0_30px_48px_rgba(0,0,0,.48)]"
+              />
+              <motion.div
+                initial={{ opacity: 0, y: 24 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.6, delay: 0.45 }}
+                className="absolute bottom-0 right-0 w-[8rem]"
+              >
+                <Image
+                  src="/landing/phone-toc-dark.png"
+                  alt="نمای موبایل AI-Amooz"
+                  width={129}
+                  height={277}
+                  className="h-auto w-full drop-shadow-2xl"
+                />
+              </motion.div>
             </div>
 
-            <h1 className="text-4xl font-black leading-[1.25] tracking-tight text-foreground sm:text-5xl lg:text-6xl">
-              آینده‌ی یادگیری را با{' '}
-              <span className="bg-gradient-to-l from-primary to-emerald-400 bg-clip-text text-transparent dark:from-foreground dark:to-foreground">
-                هوش مصنوعی
-              </span>{' '}
-              ما کامل کنید!
-            </h1>
+            <div className="relative mx-auto flex h-[27rem] max-w-[22rem] items-end justify-center lg:hidden">
+              <div className="absolute inset-x-2 bottom-6 h-20 rounded-full bg-primary/25 blur-3xl" />
+              <Image
+                src="/landing/iphone-chat-dark.png"
+                alt="دستیار هوشمند AI-Amooz در موبایل"
+                width={243}
+                height={525}
+                priority
+                className="relative h-full w-auto object-contain drop-shadow-[0_28px_44px_rgba(0,0,0,.5)]"
+              />
+            </div>
+          </motion.div>
 
-            <p className="mx-auto mt-6 max-w-xl text-base font-medium leading-8 text-muted-foreground md:text-lg lg:mx-0">
-              یادگیری یک سفر است و ما همسفر توایم؛ مسیرت را شخصی‌سازی می‌کنیم،
-              نقاط ضعف را پوشش می‌دهیم و همیشه کنارت می‌مانیم تا هرگز به بن‌بست نرسی.
+          <motion.div
+            initial={{ opacity: 0, y: 28 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.65 }}
+            className="order-1 text-center lg:order-2 lg:text-right"
+          >
+            <h1 className="landing-display text-[2.65rem] font-black leading-[1.25] text-foreground sm:text-6xl lg:text-[4rem]">
+              آینده‌ی یادگیری را با هوش مصنوعی ما کامل کنید!
+            </h1>
+            <p className="mx-auto mt-7 max-w-[48rem] text-base font-medium leading-8 text-muted-foreground sm:text-lg lg:mx-0 lg:text-xl">
+              یادگیری یک سفر است و ما همسفر توایم؛ پا‌به‌پای تو محتوا را شخصی‌سازی می‌کنیم، نقاط ضعفت را پوشش می‌دهیم و مسئله حل می‌کنیم تا هرگز به بن‌بست نرسی.
             </p>
 
-            <div className="mt-8 flex flex-col items-center gap-4 sm:flex-row sm:justify-center lg:justify-start">
-              <Button
-                asChild
-                size="lg"
-                className="group h-14 w-full rounded-[10px] px-10 text-lg shadow-[0_25px_50px_-12px_hsl(var(--primary)/0.3)] dark:bg-gradient-to-l dark:from-primary dark:to-primary/90 dark:text-white sm:w-auto md:h-16"
-              >
-                <Link href="/start">
-                  شروع سفر
-                  <ArrowLeft className="h-5 w-5 transition-transform group-hover:-translate-x-1" />
-                </Link>
-              </Button>
+            <div className="mt-9 flex flex-col-reverse items-stretch justify-center gap-4 sm:flex-row lg:justify-start">
               <Button
                 asChild
                 variant="outline"
-                size="lg"
-                className="h-14 w-full rounded-[10px] border-2 border-border/60 px-10 text-lg backdrop-blur-sm hover:border-primary/50 hover:bg-card/60 dark:border-[#253141]/50 dark:bg-transparent sm:w-auto md:h-16"
+                className="h-16 rounded-[10px] border-2 border-border/60 bg-transparent px-10 text-lg backdrop-blur-sm hover:bg-card/60"
               >
                 <Link href="#features">
                   <Play className="h-4 w-4 fill-current" />
                   بیشتر بدانید
                 </Link>
               </Button>
+              <Button
+                asChild
+                className="group h-16 rounded-[10px] bg-gradient-to-l from-primary to-primary/90 px-10 text-lg text-white shadow-[0_25px_50px_-12px_hsl(var(--primary)/.3)]"
+              >
+                <Link href="/start">
+                  شروع سفر
+                  <ArrowLeft className="h-5 w-5 transition-transform group-hover:-translate-x-1" />
+                </Link>
+              </Button>
             </div>
-          </motion.div>
-
-          {/* Device mockups (left in RTL) — Figma assets, desktop only */}
-          <motion.div
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ duration: 0.7, delay: 0.15 }}
-            className="relative mx-auto hidden w-full max-w-xl lg:mx-0 lg:block"
-          >
-            {/* Mac Studio display with the dark class UI */}
-            <Image
-              src="/landing/mac-studio-dark.png"
-              alt={heroImage.description}
-              width={792}
-              height={609}
-              priority
-              className="h-auto w-full drop-shadow-2xl"
-            />
-
-            {/* Floating phone overlapping the monitor's right edge (per Figma) */}
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.6, delay: 0.4 }}
-              className="absolute -right-2 bottom-0 w-24 sm:w-28"
-            >
-              <Image
-                src="/landing/phone-toc-dark.png"
-                alt="AI-Amooz mobile preview"
-                width={129}
-                height={277}
-                className="h-auto w-full drop-shadow-2xl"
-              />
-            </motion.div>
           </motion.div>
         </div>
       </div>
