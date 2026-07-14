@@ -90,12 +90,13 @@ export const WhyUsSection = () => {
           چرا باید همسفر ما بشید؟
         </motion.h2>
 
-        <div className="mt-11 grid w-full grid-cols-1 lg:mt-8 lg:grid-cols-3 lg:grid-rows-[176px_176px] lg:gap-y-8">
+        <div dir="ltr" className="mt-11 grid w-full grid-cols-1 lg:mt-8 lg:grid-cols-3 lg:grid-rows-[176px_176px] lg:gap-y-8">
           {REASONS.map((reason, index) => {
-            const isDesktopDivider = index % 3 !== 0;
+            const isDesktopDivider = index % 3 !== 2;
             const hasMobileDivider = index !== REASONS.length - 1;
             return (
               <motion.article
+                dir="rtl"
                 key={reason.title}
                 initial={{ opacity: 0, y: 22 }}
                 whileInView={{ opacity: 1, y: 0 }}
