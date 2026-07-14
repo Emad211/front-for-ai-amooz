@@ -1,0 +1,65 @@
+name: Import landing assets
+
+on:
+  push:
+    branches:
+      - feature/figma-landing-rebuild
+
+permissions:
+  contents: write
+
+concurrency:
+  group: import-landing-assets
+  cancel-in-progress: false
+
+jobs:
+  import-assets:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/figma-landing-rebuild
+          fetch-depth: 0
+
+      - name: Download verified Adobe crops
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p frontend/public/landing
+          curl --fail --location --retry 3 --retry-all-errors -o frontend/public/landing/teacher-class-overview.png "https://photoshop-api.adobe.io/v2/short-url/urn:aaid:ps:US:ad2e8a42-69c3-448d-8bf5-70d17d62ebe6"
+          curl --fail --location --retry 3 --retry-all-errors -o frontend/public/landing/teacher-analytics.png "https://photoshop-api.adobe.io/v2/short-url/urn:aaid:ps:US:bf35a224-76c1-43aa-8287-e9a46819c1ef"
+          curl --fail --location --retry 3 --retry-all-errors -o frontend/public/landing/teacher-exam-prep.png "https://photoshop-api.adobe.io/v2/short-url/urn:aaid:ps:US:15e15b4d-ae53-4583-b324-aa73ecee8f2b"
+          curl --fail --location --retry 3 --retry-all-errors -o frontend/public/landing/teacher-exercise-creation.png "https://photoshop-api.adobe.io/v2/short-url/urn:aaid:ps:US:d3b0dce8-80e4-42e8-87c1-376d9a65aaf3"
+          curl --fail --location --retry 3 --retry-all-errors -o frontend/public/landing/teacher-create-class-mobile.png "https://photoshop-api.adobe.io/v2/short-url/urn:aaid:ps:US:5eaba287-b2e8-4227-a354-b67d7ffbdc80"
+          curl --fail --location --retry 3 --retry-all-errors -o frontend/public/landing/teacher-exam-prep-mobile.png "https://photoshop-api.adobe.io/v2/short-url/urn:aaid:ps:US:daa7b3a6-c63f-4dca-8d4a-86dd4d3f9649"
+
+      - name: Validate PNG files
+        shell: python
+        run: |
+          from pathlib import Path
+          files = sorted(Path('frontend/public/landing').glob('teacher-*.png'))
+          expected = 6
+          if len(files) < expected:
+              raise SystemExit(f'Expected at least {expected} teacher PNGs, found {len(files)}')
+          for path in files:
+              data = path.read_bytes()
+              if not data.startswith(b'\x89PNG\r\n\x1a\n'):
+                  raise SystemExit(f'{path} is not a PNG')
+              if len(data) < 20_000:
+                  raise SystemExit(f'{path} is unexpectedly small: {len(data)} bytes')
+              print(path, len(data))
+
+      - name: Commit local production assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add frontend/public/landing/teacher-*.png
+          if git diff --cached --quiet; then
+            echo "Assets already committed"
+            exit 0
+          fi
+          git commit -m "feat(landing): add verified teacher product captures"
+          git push origin HEAD:feature/figma-landing-rebuild
