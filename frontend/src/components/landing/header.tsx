@@ -1,7 +1,6 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useState } from 'react';
 import { Menu } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Logo } from '@/components/ui/logo';
@@ -15,30 +14,27 @@ import {
 } from '@/components/ui/sheet';
 import { LANDING_NAV_LINKS } from '@/constants/navigation';
 
+/**
+ * Figma header: desktop 1792×40 at x=64/y=40; mobile 376×40 at x=24/y=24.
+ * It intentionally lives inside the hero stage instead of floating over the page.
+ */
 export const LandingHeader = () => {
-  const [isScrolled, setIsScrolled] = useState(false);
-
-  useEffect(() => {
-    const onScroll = () => setIsScrolled(window.scrollY > 24);
-    onScroll();
-    window.addEventListener('scroll', onScroll, { passive: true });
-    return () => window.removeEventListener('scroll', onScroll);
-  }, []);
-
   return (
-    <header className="fixed inset-x-0 top-0 z-50 px-2 pt-6 sm:px-4 lg:px-8 lg:pt-10">
-      <div
-        className={`mx-auto flex h-10 w-full max-w-[1792px] items-center justify-between rounded-2xl px-6 transition-all duration-300 lg:px-0 ${
-          isScrolled
-            ? 'border border-border/60 bg-background/[.88] shadow-lg backdrop-blur-xl lg:px-5'
-            : 'border border-transparent bg-transparent'
-        }`}
-      >
-        <Link href="/" aria-label="AI-Amooz" className="order-1 shrink-0">
-          <Logo imageSize="md" />
-        </Link>
+    <header className="absolute inset-x-0 top-0 z-50 px-6 pt-6 lg:px-16 lg:pt-10">
+      <div dir="ltr" className="mx-auto flex h-10 w-full max-w-[1792px] items-center justify-between">
+        <div className="hidden h-10 items-center gap-3 lg:flex">
+          <div className="flex items-center gap-2">
+            <Button asChild size="sm" className="h-9 rounded-[10px] px-3 text-sm shadow-sm">
+              <Link href="/start">شروع رایگان</Link>
+            </Button>
+            <Button asChild variant="ghost" size="sm" className="h-9 rounded-[10px] px-3 text-sm text-muted-foreground">
+              <Link href="/login">ورود</Link>
+            </Button>
+          </div>
+          <ThemeToggle />
+        </div>
 
-        <nav className="order-2 hidden items-center gap-8 lg:flex">
+        <nav dir="rtl" className="hidden items-center gap-8 lg:flex">
           {LANDING_NAV_LINKS.map((link) => (
             <Link
               key={link.href}
@@ -50,19 +46,7 @@ export const LandingHeader = () => {
           ))}
         </nav>
 
-        <div className="order-3 flex items-center gap-2">
-          <div className="hidden lg:block">
-            <ThemeToggle />
-          </div>
-          <div className="hidden items-center gap-2 sm:flex">
-            <Button asChild variant="ghost" size="sm" className="h-9 rounded-[10px] text-muted-foreground">
-              <Link href="/login">ورود</Link>
-            </Button>
-            <Button asChild size="sm" className="h-9 rounded-[10px] shadow-sm">
-              <Link href="/start">شروع رایگان</Link>
-            </Button>
-          </div>
-
+        <div className="flex w-full items-center justify-between lg:w-auto lg:justify-end">
           <Sheet>
             <SheetTrigger asChild>
               <Button variant="ghost" size="icon" className="h-10 w-10 rounded-xl lg:hidden" aria-label="بازکردن منو">
@@ -73,12 +57,12 @@ export const LandingHeader = () => {
               <SheetHeader className="mb-10 text-right">
                 <SheetTitle><Logo /></SheetTitle>
               </SheetHeader>
-              <nav className="flex flex-col gap-2">
+              <nav dir="rtl" className="flex flex-col gap-2 text-right">
                 {LANDING_NAV_LINKS.map((link) => (
                   <Link
                     key={link.href}
                     href={link.href}
-                    className="rounded-xl px-4 py-3 text-lg font-semibold transition-colors hover:bg-muted hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                    className="rounded-xl px-4 py-3 text-lg font-semibold transition-colors hover:bg-muted hover:text-primary"
                   >
                     {link.label}
                   </Link>
@@ -97,6 +81,10 @@ export const LandingHeader = () => {
               </nav>
             </SheetContent>
           </Sheet>
+
+          <Link href="/" aria-label="AI-Amooz" className="shrink-0">
+            <Logo imageSize="md" />
+          </Link>
         </div>
       </div>
     </header>
