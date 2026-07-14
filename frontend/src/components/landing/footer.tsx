@@ -16,7 +16,7 @@ export function LandingFooter() {
   ];
 
   return (
-    <footer className="landing-section-shell px-2 pb-10 sm:px-4 lg:px-8">
+    <footer className="landing-section-shell px-2 py-10 sm:px-4 lg:px-8">
       <div className="landing-panel landing-dot-pattern mx-auto w-full max-w-[1856px] overflow-hidden px-5 py-10 sm:px-10 lg:px-24">
         <div className="relative flex flex-col items-center">
           <Link
