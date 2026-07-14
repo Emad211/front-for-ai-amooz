@@ -33,7 +33,7 @@ export const TestimonialSection = () => {
     setIndex((current) => (current + direction + TESTIMONIALS.length) % TESTIMONIALS.length);
 
   return (
-    <section className="landing-section-shell relative min-h-[732px] px-2 py-20 sm:px-4 lg:min-h-[768px] lg:px-8 lg:py-40">
+    <section className="landing-section-shell relative h-[772px] overflow-hidden px-2 pb-10 pt-20 sm:px-4 lg:flex lg:h-[768px] lg:items-center lg:px-8 lg:py-0">
       <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden">
         <div className="absolute bottom-0 left-1/2 h-72 w-[40rem] -translate-x-1/2 rounded-full bg-primary/10 blur-[130px]" />
       </div>
@@ -56,7 +56,7 @@ export const TestimonialSection = () => {
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -14 }}
                 transition={{ duration: 0.32 }}
-                className="text-xl font-medium leading-[2.15] text-foreground sm:text-2xl lg:text-3xl"
+                className="text-xl font-medium leading-[2.15] text-foreground sm:text-2xl lg:text-3xl lg:leading-[1.8]"
               >
                 {active.content}
               </motion.blockquote>
@@ -73,7 +73,7 @@ export const TestimonialSection = () => {
             <span className="text-sm text-muted-foreground">{active.role}</span>
           </div>
 
-          <div className="mt-14 flex items-center justify-center gap-6">
+          <div className="mt-10 flex items-center justify-center gap-6 lg:mt-12">
             <button
               type="button"
               onClick={() => go(-1)}
