@@ -1,183 +1,129 @@
-
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 @layer base {
   :root {
-    --background: 0 0% 100%; /* Light Background */
-    --foreground: 222 47% 11%; /* Dark Text */
-
-    --card: 0 0% 96%; /* Light Card */
+    --background: 0 0% 100%;
+    --foreground: 222 47% 11%;
+    --card: 0 0% 96%;
     --card-foreground: 222 47% 11%;
-
     --popover: 0 0% 100%;
     --popover-foreground: 222 47% 11%;
-    
-    --primary: 160 60% 40%; /* Darker Mint for contrast on light bg */
+    --primary: 160 60% 40%;
     --primary-foreground: 210 40% 98%;
-
     --secondary: 0 0% 94%;
     --secondary-foreground: 222 47% 11%;
-
     --muted: 0 0% 94%;
     --muted-foreground: 215 20% 45%;
-
     --accent: 0 0% 94%;
     --accent-foreground: 222 47% 11%;
-
     --destructive: 0 84% 60%;
     --destructive-foreground: 0 0% 98%;
-    
     --border: 0 0% 89%;
     --input: 0 0% 92%;
     --ring: 160 60% 40%;
-    
     --radius: 0.75rem;
+    --text-light: #111827;
+    --text-muted: #6b7280;
 
-    /* Custom Palette */
-    --text-light: #111827; /* Dark text for light theme */
-    --text-muted: #6B7280;   /* Gray text for light theme */
+    /* Landing-only semantic tokens, mirrored in dark mode. */
+    --landing-page: 0 0% 100%;
+    --landing-panel: 0 0% 96%;
+    --landing-panel-strong: 0 0% 100%;
+    --landing-border: 215 20% 82%;
+    --landing-dot: 222 47% 11%;
+    --landing-hero: 0 0% 97%;
   }
 
   .dark {
-    --background: 223 70% 4%; /* #030711 — Figma dark redesign page bg */
+    --background: 223 70% 4%;
     --foreground: 210 40% 98%;
-
-    --card: 224 33% 12%; /* #141B2D */
+    --card: 224 33% 12%;
     --card-foreground: 210 40% 98%;
-
     --popover: 224 71% 4%;
     --popover-foreground: 210 40% 98%;
-    
-    --primary: 160 60% 50%; /* Mint Green */
+    --primary: 160 60% 50%;
     --primary-foreground: 222 47% 11%;
-
     --secondary: 215 28% 17%;
     --secondary-foreground: 210 40% 98%;
-
     --muted: 215 28% 17%;
-    --muted-foreground: 215 20% 65%; /* #94a3b8 */
-
+    --muted-foreground: 215 20% 65%;
     --accent: 215 28% 17%;
     --accent-foreground: 210 40% 98%;
-
     --destructive: 0 62.8% 30.6%;
     --destructive-foreground: 0 0% 98%;
-    
-    --border: 215 28% 20%; /* #293548 */
+    --border: 215 28% 20%;
     --input: 215 28% 17%;
     --ring: 160 60% 50%;
-
-    /* Custom Palette for dark theme */
-    --text-light: #F9FAFB;
-    --text-muted: #9CA3AF;
+    --text-light: #f9fafb;
+    --text-muted: #9ca3af;
+    --landing-page: 223 70% 4%;
+    --landing-panel: 224 50% 5%;
+    --landing-panel-strong: 224 42% 7%;
+    --landing-border: 215 28% 20%;
+    --landing-dot: 210 40% 98%;
+    --landing-hero: 224 50% 5%;
   }
 }
 
 @layer components {
-  .md-p {
-    @apply text-sm leading-7 text-foreground;
+  .md-p { @apply text-sm leading-7 text-foreground; }
+  .md-h2 { @apply mt-3 mb-2 text-lg font-black md:text-xl; }
+  .md-h3 { @apply mt-3 mb-2 text-base font-bold md:text-lg; }
+  .md-h4 { @apply mt-3 mb-2 text-sm font-bold md:text-base; }
+  .md-h5 { @apply mt-2 mb-1 text-sm font-semibold; }
+  .md-ul { @apply list-disc space-y-1 pr-6; }
+  .md-ol { @apply list-decimal space-y-1 pr-6; }
+  .md-li, .md-li-num { @apply text-sm leading-7; }
+  .md-pre { @apply overflow-auto rounded-xl border border-border/60 bg-background/80 p-3; }
+  .inline-code { @apply rounded-md border border-border/60 bg-muted/30 px-1 py-0.5 text-[0.85em]; }
+  .md-hr { @apply my-3 border-border/60; }
+  .md-link { @apply text-primary underline underline-offset-4; }
+  .md-img { @apply mx-auto my-3 block h-auto max-w-full rounded-xl border border-border/60; }
+  .md-table { @apply my-3 w-full border-collapse overflow-hidden rounded-xl border border-border/60 text-sm; }
+  .md-table th, .md-table td { @apply border border-border/60 px-3 py-2 text-right align-top; }
+  .md-table thead th { @apply bg-muted/40 font-bold; }
+  .math-block { @apply my-3; }
+  .math-block .katex-display { text-align: left; }
+
+  .landing-wide-container {
+    @apply mx-auto w-full px-2 sm:px-4 lg:px-8;
+    max-width: 1920px;
   }
 
-  .md-h2 {
-    @apply text-lg md:text-xl font-black mt-3 mb-2;
+  .landing-section-shell {
+    @apply relative overflow-hidden bg-[hsl(var(--landing-page))];
   }
 
-  .md-h3 {
-    @apply text-base md:text-lg font-bold mt-3 mb-2;
+  .landing-display {
+    font-family: Vazirmatn, sans-serif;
+    letter-spacing: -0.035em;
   }
 
-  .md-h4 {
-    @apply text-sm md:text-base font-bold mt-3 mb-2;
+  .landing-panel {
+    @apply rounded-[1.25rem] border border-[hsl(var(--landing-border)/.55)] bg-[hsl(var(--landing-panel))];
+    box-shadow: 0 0 4px hsl(var(--foreground) / 0.18);
   }
 
-  .md-h5 {
-    @apply text-sm font-semibold mt-2 mb-1;
-  }
-
-  .md-ul {
-    @apply list-disc pr-6 space-y-1;
-  }
-
-  .md-ol {
-    @apply list-decimal pr-6 space-y-1;
-  }
-
-  .md-li,
-  .md-li-num {
-    @apply text-sm leading-7;
-  }
-
-  .md-pre {
-    @apply rounded-xl border border-border/60 bg-background/80 p-3 overflow-auto;
-  }
-
-  .inline-code {
-    @apply rounded-md border border-border/60 bg-muted/30 px-1 py-0.5 text-[0.85em];
-  }
-
-  .md-hr {
-    @apply my-3 border-border/60;
-  }
-
-  .md-link {
-    @apply underline underline-offset-4 text-primary;
-  }
-
-  .md-img {
-    @apply my-3 max-w-full h-auto rounded-xl border border-border/60 mx-auto block;
-  }
-
-  .md-table {
-    @apply my-3 w-full border-collapse overflow-hidden rounded-xl border border-border/60 text-sm;
-  }
-
-  .md-table th,
-  .md-table td {
-    @apply border border-border/60 px-3 py-2 text-right align-top;
-  }
-
-  .md-table thead th {
-    @apply bg-muted/40 font-bold;
-  }
-
-  .math-block {
-    @apply my-3;
-  }
-
-  .math-block .katex-display {
-    text-align: left;
+  .landing-dot-pattern {
+    background-image: radial-gradient(hsl(var(--landing-dot) / 0.055) 1px, transparent 1px);
+    background-size: 22px 22px;
   }
 }
 
 @layer base {
-  * {
-    @apply border-border;
-  }
-  body {
-    @apply bg-background text-foreground font-sans;
-  }
-  
-  /* RTL Support */
-  [dir="rtl"] input,
-  [dir="rtl"] textarea,
-  [dir="rtl"] select {
-    text-align: right;
-  }
-  
-  [dir="rtl"] .text-start {
-    text-align: right;
-  }
-  
-  [dir="rtl"] .text-end {
-    text-align: left;
-  }
+  * { @apply border-border; }
+  body { @apply bg-background text-foreground font-sans; }
+  [dir='rtl'] input,
+  [dir='rtl'] textarea,
+  [dir='rtl'] select { text-align: right; }
+  [dir='rtl'] .text-start { text-align: right; }
+  [dir='rtl'] .text-end { text-align: left; }
 }
 
-/* Animations */
 @keyframes float {
-  0%, 100% { transform: translateY(0px); }
+  0%, 100% { transform: translateY(0); }
   50% { transform: translateY(-20px); }
 }
 
@@ -196,23 +142,18 @@
   100% { opacity: 1; }
 }
 
-.animate-float {
-  animation: float 6s ease-in-out infinite;
-}
+.animate-float { animation: float 6s ease-in-out infinite; }
+.animate-float-delayed { animation: float 6s ease-in-out infinite; animation-delay: 2s; }
+.animate-pulse-glow { animation: pulse-glow 4s ease-in-out infinite; }
+.animate-slide-up { animation: slide-up 0.6s ease-out forwards; }
+.animate-fade-in { animation: fade-in 0.5s ease-out forwards; }
 
-.animate-float-delayed {
-  animation: float 6s ease-in-out infinite;
-  animation-delay: 2s;
-}
-
-.animate-pulse-glow {
-  animation: pulse-glow 4s ease-in-out infinite;
-}
-
-.animate-slide-up {
-  animation: slide-up 0.6s ease-out forwards;
-}
-
-.animate-fade-in {
-  animation: fade-in 0.5s ease-out forwards;
+@media (prefers-reduced-motion: reduce) {
+  .animate-float,
+  .animate-float-delayed,
+  .animate-pulse-glow,
+  .animate-slide-up,
+  .animate-fade-in {
+    animation: none !important;
+  }
 }
