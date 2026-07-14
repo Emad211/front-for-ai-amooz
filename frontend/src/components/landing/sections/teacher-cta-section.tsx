@@ -67,7 +67,7 @@ export const TeacherCtaSection = () => {
   return (
     <section id="teacher-tools" className="landing-section-shell py-10 sm:py-14 lg:py-10">
       <div className="landing-wide-container">
-        <div className="relative overflow-hidden rounded-[1.25rem] bg-gradient-to-br from-emerald-600 to-teal-700 px-4 py-10 text-white shadow-[0_0_4px_hsl(var(--foreground)/.25)] sm:px-8 lg:min-h-[48rem] lg:px-24 lg:py-10">
+        <div className="relative min-h-[787px] overflow-hidden rounded-[1.25rem] bg-gradient-to-br from-emerald-600 to-teal-700 px-4 py-10 text-white shadow-[0_0_4px_hsl(var(--foreground)/.25)] sm:px-8 lg:min-h-[48rem] lg:px-24 lg:py-10">
           <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden">
             <div className="absolute -bottom-48 -left-48 h-[40rem] w-[40rem] rounded-full bg-white/35 blur-[130px]" />
             <div className="absolute -right-40 -top-40 h-[32rem] w-[32rem] rounded-full bg-emerald-200/10 blur-[110px]" />
