@@ -1,0 +1,28 @@
+
+> nextn@0.1.0 typecheck
+> tsc --noEmit
+
+src/app/(admin)/admin/tickets/page.tsx(60,21): error TS2339: Property 'id' does not exist on type '{}'.
+src/app/(admin)/admin/tickets/page.tsx(63,28): error TS2339: Property 'createdAt' does not exist on type '{}'.
+src/components/dashboard/notification-popover.tsx(25,104): error TS2345: Argument of type '{ getStats: () => Promise<{ activeCourses: number; totalCourses: number; completionPercent: number; averageScore: number; studyHours: string; studyMinutes: string; }>; getActivities: () => Promise<...>; ... 31 more ...; updateUserProfile: (data: Partial<...>) => Promise<...>; } | { ...; }' is not assignable to parameter of type 'NotificationsService | undefined'.
+  Type '{ getStats: () => Promise<{ activeCourses: number; totalCourses: number; completionPercent: number; averageScore: number; studyHours: string; studyMinutes: string; }>; getActivities: () => Promise<...>; ... 31 more ...; updateUserProfile: (data: Partial<UserProfile>) => Promise<...>; }' is not assignable to type 'NotificationsService'.
+    The types returned by 'getNotifications()' are incompatible between these types.
+      Type 'Promise<Notification[]>' is not assignable to type 'Promise<import("/home/runner/work/front-for-ai-amooz/front-for-ai-amooz/frontend/src/types/index").Notification[]>'.
+        Type 'Notification[]' is not assignable to type 'import("/home/runner/work/front-for-ai-amooz/front-for-ai-amooz/frontend/src/types/index").Notification[]'.
+          Type 'Notification' is missing the following properties from type 'Notification': id, message, type, isRead, createdAt
+src/components/teacher/exam-edit/exam-edit-form.tsx(52,7): error TS2322: Type 'ExamPrepData' is not assignable to type 'string'.
+src/constants/mock/messages-data.ts(38,86): error TS2353: Object literal may only specify known properties, and 'role' does not exist in type 'MessageRecipient'.
+src/constants/mock/messages-data.ts(39,88): error TS2353: Object literal may only specify known properties, and 'role' does not exist in type 'MessageRecipient'.
+src/constants/mock/messages-data.ts(40,87): error TS2353: Object literal may only specify known properties, and 'role' does not exist in type 'MessageRecipient'.
+src/constants/mock/messages-data.ts(41,90): error TS2353: Object literal may only specify known properties, and 'role' does not exist in type 'MessageRecipient'.
+src/constants/mock/messages-data.ts(42,88): error TS2353: Object literal may only specify known properties, and 'role' does not exist in type 'MessageRecipient'.
+src/constants/mock/messages-data.ts(43,88): error TS2353: Object literal may only specify known properties, and 'role' does not exist in type 'MessageRecipient'.
+src/constants/mock/messages-data.ts(44,92): error TS2353: Object literal may only specify known properties, and 'role' does not exist in type 'MessageRecipient'.
+src/constants/mock/messages-data.ts(45,92): error TS2353: Object literal may only specify known properties, and 'role' does not exist in type 'MessageRecipient'.
+src/hooks/use-notifications.ts(14,34): error TS2322: Type '{ getStats: () => Promise<{ activeCourses: number; totalCourses: number; completionPercent: number; averageScore: number; studyHours: string; studyMinutes: string; }>; getActivities: () => Promise<...>; ... 31 more ...; updateUserProfile: (data: Partial<UserProfile>) => Promise<...>; }' is not assignable to type 'NotificationsService'.
+  The types returned by 'getNotifications()' are incompatible between these types.
+    Type 'Promise<Notification[]>' is not assignable to type 'Promise<import("/home/runner/work/front-for-ai-amooz/front-for-ai-amooz/frontend/src/types/index").Notification[]>'.
+      Type 'Notification[]' is not assignable to type 'import("/home/runner/work/front-for-ai-amooz/front-for-ai-amooz/frontend/src/types/index").Notification[]'.
+        Type 'Notification' is missing the following properties from type 'Notification': id, message, type, isRead, createdAt
+
+TYPECHECK_EXIT_CODE=2
