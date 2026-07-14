@@ -26,9 +26,9 @@ export const LandingHeader = () => {
   }, []);
 
   return (
-    <header className="fixed inset-x-0 top-0 z-50 px-2 pt-3 sm:px-4 lg:px-8 lg:pt-6">
+    <header className="fixed inset-x-0 top-0 z-50 px-2 pt-6 sm:px-4 lg:px-8 lg:pt-10">
       <div
-        className={`mx-auto flex h-14 w-full max-w-[1792px] items-center justify-between rounded-2xl px-3 transition-all duration-300 sm:px-4 lg:h-16 lg:px-0 ${
+        className={`mx-auto flex h-10 w-full max-w-[1792px] items-center justify-between rounded-2xl px-6 transition-all duration-300 lg:px-0 ${
           isScrolled
             ? 'border border-border/60 bg-background/[.88] shadow-lg backdrop-blur-xl lg:px-5'
             : 'border border-transparent bg-transparent'
@@ -43,7 +43,7 @@ export const LandingHeader = () => {
             <Link
               key={link.href}
               href={link.href}
-              className="text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
+              className="text-sm font-medium text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
             >
               {link.label}
             </Link>
@@ -55,17 +55,17 @@ export const LandingHeader = () => {
             <ThemeToggle />
           </div>
           <div className="hidden items-center gap-2 sm:flex">
-            <Button asChild variant="ghost" size="sm" className="rounded-[10px] text-muted-foreground">
+            <Button asChild variant="ghost" size="sm" className="h-9 rounded-[10px] text-muted-foreground">
               <Link href="/login">ورود</Link>
             </Button>
-            <Button asChild size="sm" className="rounded-[10px] shadow-sm">
+            <Button asChild size="sm" className="h-9 rounded-[10px] shadow-sm">
               <Link href="/start">شروع رایگان</Link>
             </Button>
           </div>
 
           <Sheet>
             <SheetTrigger asChild>
-              <Button variant="ghost" size="icon" className="rounded-xl lg:hidden" aria-label="بازکردن منو">
+              <Button variant="ghost" size="icon" className="h-10 w-10 rounded-xl lg:hidden" aria-label="بازکردن منو">
                 <Menu className="h-6 w-6" />
               </Button>
             </SheetTrigger>
@@ -78,7 +78,7 @@ export const LandingHeader = () => {
                   <Link
                     key={link.href}
                     href={link.href}
-                    className="rounded-xl px-4 py-3 text-lg font-semibold transition-colors hover:bg-muted hover:text-primary"
+                    className="rounded-xl px-4 py-3 text-lg font-semibold transition-colors hover:bg-muted hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
                   >
                     {link.label}
                   </Link>
