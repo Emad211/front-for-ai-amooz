@@ -1,174 +1,146 @@
 'use client';
 
-import { useState } from 'react';
 import Image from 'next/image';
 import { AnimatePresence, motion } from 'framer-motion';
+import { useState } from 'react';
 import {
-  Users,
-  Wand2,
-  PenLine,
-  LineChart,
+  BarChart3,
+  ClipboardCheck,
+  Sparkles,
+  UsersRound,
   type LucideIcon,
 } from 'lucide-react';
 
-/**
- * Teacher CTA — Figma "1920w dark redesign" (تدریست رو با هوش مصنوعی متحول کن).
- * The four feature rows are interactive tabs: selecting one crossfades the
- * device screenshot on the other side and expands a short description under
- * the row. Mobile (per the Figma mobile design) shows the four features as a
- * row of icon tiles above the image, with the active feature's text below it.
- */
-type Feature = {
+type TeacherFeature = {
   icon: LucideIcon;
   title: string;
   description: string;
   image: string;
-  imageWidth: number;
-  imageHeight: number;
-  /** true when the asset is a bare UI panel that needs its own frame */
-  panel?: boolean;
+  width: number;
+  height: number;
+  imageClassName?: string;
 };
 
-const FEATURES: Feature[] = [
+const TEACHER_FEATURES: TeacherFeature[] = [
   {
-    icon: Users,
+    icon: UsersRound,
     title: 'مدیریت کلاس و دانش‌آموزان',
     description:
-      'همه‌ی کلاس‌ها و دانش‌آموزانت را در یک پنل منظم ببین؛ دعوت با کد کلاس، دسته‌بندی دوره‌ها و پیگیری لحظه‌ای فعالیت‌ها.',
+      'کلاس‌ها، محتوای منتشرشده و وضعیت دانش‌آموزان را از یک فضای منظم مدیریت کنید.',
     image: '/landing/laptop-teacher-dark.png',
-    imageWidth: 888,
-    imageHeight: 641,
+    width: 888,
+    height: 641,
+    imageClassName: 'max-w-[47rem]',
   },
   {
-    icon: Wand2,
+    icon: Sparkles,
     title: 'ساخت آزمون با هوش مصنوعی',
     description:
-      'از روی جزوه و محتوای خودِ کلاس، در چند دقیقه آزمون استاندارد بساز؛ چندگزینه‌ای، جای خالی و تشریحی با سطح‌بندی دلخواه.',
+      'از روی محتوای آموزشی خود، آزمون و آمادگی آزمون بسازید و پیش‌نویس را پیش از انتشار بازبینی کنید.',
     image: '/landing/exam-builder-dark.png',
-    imageWidth: 583,
-    imageHeight: 304,
-    panel: true,
+    width: 583,
+    height: 304,
+    imageClassName: 'max-w-[36rem] rounded-xl border border-white/10',
   },
   {
-    icon: PenLine,
-    title: 'تصحیح و نمره‌دهی خودکار',
+    icon: ClipboardCheck,
+    title: 'تصحیح و نمره‌دهی هوشمند',
     description:
-      'پاسخ‌ها را هوش مصنوعی تصحیح می‌کند و برای هر دانش‌آموز بازخورد جداگانه می‌نویسد؛ بدون یک برگه تصحیح دستی.',
+      'پاسخ‌ها با معیارهای معلم بررسی می‌شوند و برای هر دانش‌آموز بازخورد قابل بازبینی تولید می‌شود.',
     image: '/landing/quiz-sim-dark.png',
-    imageWidth: 428,
-    imageHeight: 187,
-    panel: true,
+    width: 428,
+    height: 221,
+    imageClassName: 'max-w-[34rem] rounded-xl border border-white/10',
   },
   {
-    icon: LineChart,
+    icon: BarChart3,
     title: 'داشبورد تحلیل پیشرفت',
     description:
-      'روند پیشرفت هر دانش‌آموز و میانگین کلاس را با نمودارهای دقیق دنبال کن و نقاط ضعف مشترک را زود تشخیص بده.',
+      'روند فعالیت، پیشرفت و نقاط نیازمند توجه را با نمودارها و شاخص‌های روشن دنبال کنید.',
     image: '/landing/mac-studio-dark.png',
-    imageWidth: 792,
-    imageHeight: 609,
+    width: 792,
+    height: 609,
+    imageClassName: 'max-w-[44rem]',
   },
 ];
 
 export const TeacherCtaSection = () => {
-  const [activeIndex, setActiveIndex] = useState(0);
-  const active = FEATURES[activeIndex];
-
-  const screenshot = (
-    <AnimatePresence mode="wait">
-      <motion.div
-        key={activeIndex}
-        initial={{ opacity: 0, x: -24, scale: 0.97 }}
-        animate={{ opacity: 1, x: 0, scale: 1 }}
-        exit={{ opacity: 0, x: 24, scale: 0.97 }}
-        transition={{ duration: 0.3, ease: 'easeOut' }}
-        className="flex w-full items-center justify-center"
-      >
-        <Image
-          src={active.image}
-          alt={active.title}
-          width={active.imageWidth}
-          height={active.imageHeight}
-          unoptimized
-          className={`h-auto w-full drop-shadow-2xl ${
-            active.panel
-              ? 'max-w-md rounded-2xl border border-white/10 bg-[#030711]/40 shadow-2xl'
-              : 'max-w-lg'
-          }`}
-        />
-      </motion.div>
-    </AnimatePresence>
-  );
+  const [activeIndex, setActiveIndex] = useState(2);
+  const activeFeature = TEACHER_FEATURES[activeIndex];
 
   return (
-    <section className="relative overflow-hidden py-20 md:py-28">
-      <div className="sm:container sm:mx-auto sm:px-4">
-        <div className="relative overflow-hidden bg-gradient-to-br from-emerald-600 to-teal-700 p-6 py-12 shadow-2xl sm:rounded-3xl md:p-12">
-          {/* Ambient glow */}
-          <div className="pointer-events-none absolute -right-20 -top-24 h-72 w-72 rounded-full bg-emerald-300/20 blur-[100px]" />
-          <div className="pointer-events-none absolute -bottom-24 -left-20 h-72 w-72 rounded-full bg-teal-200/10 blur-[100px]" />
+    <section id="teacher-tools" className="landing-section-shell py-10 sm:py-14 lg:py-10">
+      <div className="landing-wide-container">
+        <div className="relative min-h-[48rem] overflow-hidden rounded-[1.25rem] bg-gradient-to-br from-emerald-600 to-teal-700 px-4 py-10 text-white shadow-[0_0_4px_hsl(var(--foreground)/.25)] sm:px-8 lg:min-h-[48rem] lg:px-24 lg:py-10">
+          <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden">
+            <div className="absolute -bottom-48 -left-48 h-[40rem] w-[40rem] rounded-full bg-white/35 blur-[130px]" />
+            <div className="absolute -right-40 -top-40 h-[32rem] w-[32rem] rounded-full bg-emerald-200/10 blur-[110px]" />
+            <div className="absolute -bottom-[45rem] -right-[25rem] select-none text-[92rem] font-black leading-none text-white/[0.045]">*</div>
+          </div>
 
-          <div className="relative grid items-center gap-10 lg:grid-cols-2">
-            {/* Screenshot (left in RTL) */}
+          <div className="relative grid min-h-[42rem] items-center gap-10 lg:grid-cols-[1.08fr_.92fr] lg:gap-16">
             <motion.div
-              initial={{ opacity: 0, x: -30 }}
+              initial={{ opacity: 0, x: -24 }}
               whileInView={{ opacity: 1, x: 0 }}
-              viewport={{ once: true, margin: '-80px' }}
+              viewport={{ once: true, margin: '-100px' }}
               transition={{ duration: 0.6 }}
-              className="order-last lg:order-first"
+              className="order-2 flex min-w-0 items-center justify-center lg:order-1"
             >
-              <div className="mx-auto flex min-h-[16rem] w-full max-w-lg items-center justify-center md:min-h-[22rem]">
-                {screenshot}
-              </div>
-
-              {/* Mobile: active feature text under the image (per Figma mobile) */}
-              <div className="mt-8 text-center text-white lg:hidden">
+              <div className="relative flex min-h-[21rem] w-full items-center justify-center lg:min-h-[38rem]">
+                <div className="absolute inset-x-8 bottom-8 h-16 rounded-full bg-white/30 blur-3xl" />
                 <AnimatePresence mode="wait">
                   <motion.div
-                    key={activeIndex}
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -10 }}
-                    transition={{ duration: 0.25 }}
+                    key={activeFeature.title}
+                    initial={{ opacity: 0, x: -22, scale: 0.975 }}
+                    animate={{ opacity: 1, x: 0, scale: 1 }}
+                    exit={{ opacity: 0, x: 22, scale: 0.975 }}
+                    transition={{ duration: 0.3, ease: 'easeOut' }}
+                    className="relative flex w-full items-center justify-center"
                   >
-                    <h3 className="text-xl font-black">{active.title}</h3>
-                    <p className="mx-auto mt-3 max-w-sm text-sm leading-7 text-white/80">
-                      {active.description}
-                    </p>
+                    <Image
+                      src={activeFeature.image}
+                      alt={activeFeature.title}
+                      width={activeFeature.width}
+                      height={activeFeature.height}
+                      unoptimized
+                      className={`h-auto w-full object-contain drop-shadow-[0_28px_45px_rgba(3,7,17,.45)] ${activeFeature.imageClassName ?? ''}`}
+                    />
                   </motion.div>
                 </AnimatePresence>
               </div>
             </motion.div>
 
-            {/* Text + interactive feature list (right in RTL) */}
             <motion.div
-              initial={{ opacity: 0, x: 30 }}
+              initial={{ opacity: 0, x: 24 }}
               whileInView={{ opacity: 1, x: 0 }}
-              viewport={{ once: true, margin: '-80px' }}
+              viewport={{ once: true, margin: '-100px' }}
               transition={{ duration: 0.6 }}
-              className="text-center text-white lg:text-right"
+              className="order-1 text-center lg:order-2 lg:text-right"
             >
-              <h2 className="text-3xl font-black leading-snug md:text-4xl">
+              <div className="mb-6 inline-flex items-center gap-2 rounded-full bg-[#030711] px-4 py-2 text-sm font-medium text-white">
+                <span>مخصوص دبیران</span>
+                <Sparkles className="h-5 w-5" />
+              </div>
+
+              <h2 className="landing-display text-4xl font-black leading-[1.25] sm:text-5xl lg:text-6xl">
                 تدریست رو با هوش مصنوعی متحول کن
               </h2>
-              <p className="mt-4 text-sm leading-7 text-white/80 md:text-base">
-                همون موتور هوشمندی که کنار دانش‌آموزهاست، حالا ابزارهای حرفه‌ای رو هم در اختیار
-                معلم‌ها می‌ذاره؛ از ساخت آزمون و تصحیح خودکار تا تحلیل دقیق پیشرفت کلاس.
+              <p className="mt-6 text-base font-medium leading-8 text-white/85 sm:text-lg lg:max-w-3xl lg:text-xl">
+                همان موتور هوشمندی که کنار دانش‌آموزهاست، ابزارهای حرفه‌ای ساخت محتوا، تمرین، آزمون و تحلیل کلاس را هم در اختیار معلم قرار می‌دهد.
               </p>
 
-              {/* Mobile: four icon tiles in a row (per Figma mobile) */}
-              <div className="mt-8 flex justify-center gap-3 lg:hidden">
-                {FEATURES.map((feature, index) => (
+              <div className="mt-8 grid grid-cols-4 gap-2 lg:hidden">
+                {TEACHER_FEATURES.map((feature, index) => (
                   <button
                     key={feature.title}
                     type="button"
-                    aria-pressed={index === activeIndex}
                     aria-label={feature.title}
+                    aria-pressed={index === activeIndex}
                     onClick={() => setActiveIndex(index)}
-                    className={`flex h-14 w-14 items-center justify-center rounded-2xl transition-all duration-300 ${
+                    className={`flex aspect-square items-center justify-center rounded-2xl border transition-all ${
                       index === activeIndex
-                        ? 'scale-110 bg-white/25 shadow-lg shadow-emerald-900/40'
-                        : 'bg-[#030711]/15 hover:bg-[#030711]/25'
+                        ? 'scale-[1.04] border-white/30 bg-white/20 shadow-lg'
+                        : 'border-transparent bg-[#030711]/15 text-white/75'
                     }`}
                   >
                     <feature.icon className="h-6 w-6" />
@@ -176,56 +148,61 @@ export const TeacherCtaSection = () => {
                 ))}
               </div>
 
-              {/* Desktop: clickable feature rows — active one expands + swaps the screenshot */}
-              <ul className="mt-8 hidden space-y-3 lg:block">
-                {FEATURES.map((feature, index) => {
+              <div className="mt-8 hidden flex-col lg:flex">
+                {TEACHER_FEATURES.map((feature, index) => {
                   const isActive = index === activeIndex;
                   return (
-                    <motion.li
+                    <button
                       key={feature.title}
-                      initial={{ opacity: 0, y: 16 }}
-                      whileInView={{ opacity: 1, y: 0 }}
-                      viewport={{ once: true }}
-                      transition={{ duration: 0.4, delay: index * 0.08 }}
+                      type="button"
+                      aria-pressed={isActive}
+                      onMouseEnter={() => setActiveIndex(index)}
+                      onFocus={() => setActiveIndex(index)}
+                      onClick={() => setActiveIndex(index)}
+                      className={`group w-full rounded-2xl p-4 text-right transition-all duration-300 ${
+                        isActive
+                          ? 'border-2 border-white/20 bg-white/15 shadow-[0_5px_14px_rgba(0,0,0,.10)] backdrop-blur-xl'
+                          : 'border-2 border-transparent hover:bg-[#030711]/10'
+                      }`}
                     >
-                      <button
-                        type="button"
-                        aria-pressed={isActive}
-                        onClick={() => setActiveIndex(index)}
-                        className={`w-full rounded-2xl p-4 text-right transition-colors duration-300 ${
-                          isActive
-                            ? 'bg-white/15 shadow-lg shadow-emerald-900/30'
-                            : 'bg-[#030711]/15 hover:bg-[#030711]/25'
-                        }`}
-                      >
-                        <div className="flex items-center gap-3">
-                          <span
-                            className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl transition-colors duration-300 ${
-                              isActive ? 'bg-white/20' : 'bg-white/10'
-                            } text-white`}
+                      <span className="flex items-center gap-6">
+                        <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-[#030711]/15">
+                          <feature.icon className="h-6 w-6" />
+                        </span>
+                        <span className="text-2xl font-bold">{feature.title}</span>
+                      </span>
+                      <AnimatePresence initial={false}>
+                        {isActive && (
+                          <motion.span
+                            initial={{ height: 0, opacity: 0 }}
+                            animate={{ height: 'auto', opacity: 1 }}
+                            exit={{ height: 0, opacity: 0 }}
+                            className="block overflow-hidden pe-[4.5rem]"
                           >
-                            <feature.icon className="h-5 w-5" />
-                          </span>
-                          <span className="font-semibold">{feature.title}</span>
-                        </div>
-                        <AnimatePresence initial={false}>
-                          {isActive && (
-                            <motion.p
-                              initial={{ height: 0, opacity: 0 }}
-                              animate={{ height: 'auto', opacity: 1 }}
-                              exit={{ height: 0, opacity: 0 }}
-                              transition={{ duration: 0.3, ease: 'easeOut' }}
-                              className="overflow-hidden pr-[3.25rem] text-sm leading-6 text-white/75"
-                            >
-                              <span className="block pt-2">{feature.description}</span>
-                            </motion.p>
-                          )}
-                        </AnimatePresence>
-                      </button>
-                    </motion.li>
+                            <span className="block pt-4 text-base leading-7 text-white/90">
+                              {feature.description}
+                            </span>
+                          </motion.span>
+                        )}
+                      </AnimatePresence>
+                    </button>
                   );
                 })}
-              </ul>
+              </div>
+
+              <div className="mt-7 min-h-24 text-center lg:hidden">
+                <AnimatePresence mode="wait">
+                  <motion.div
+                    key={activeFeature.title}
+                    initial={{ opacity: 0, y: 8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -8 }}
+                  >
+                    <h3 className="text-2xl font-black">{activeFeature.title}</h3>
+                    <p className="mt-3 text-sm leading-7 text-white/85">{activeFeature.description}</p>
+                  </motion.div>
+                </AnimatePresence>
+              </div>
             </motion.div>
           </div>
         </div>
