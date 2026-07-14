@@ -38,7 +38,7 @@ const FAQS = [
 
 export const FAQSection = () => {
   return (
-    <section id="faq" className="landing-section-shell px-2 py-10 sm:px-4 lg:px-8">
+    <section id="faq" className="landing-section-shell px-2 pb-10 pt-0 sm:px-4 sm:py-10 lg:px-8">
       <div className="landing-panel mx-auto flex min-h-[703px] w-full max-w-[1856px] flex-col items-center px-4 py-10 sm:px-8 lg:min-h-[725px]">
         <motion.div
           initial={{ opacity: 0, y: 18 }}
