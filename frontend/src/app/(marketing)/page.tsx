@@ -14,7 +14,7 @@ import {
 
 export default function LandingPage() {
   return (
-    <div className="min-h-screen bg-[hsl(var(--landing-page))] text-foreground">
+    <div className="relative min-h-screen bg-[hsl(var(--landing-page))] text-foreground">
       <LandingHeader />
       <main>
         <HeroSection
