@@ -48,6 +48,8 @@ export const FeaturesSection = () => {
                 alt="دستیار هوشمند AI-Amooz"
                 width={243}
                 height={578}
+                quality={90}
+                sizes="(max-width: 1023px) 66vw, 243px"
                 className="h-auto w-[15rem] max-w-[66%] drop-shadow-2xl lg:w-[15.2rem]"
               />
             </div>
@@ -70,7 +72,8 @@ export const FeaturesSection = () => {
               alt="سازنده آزمون هوشمند"
               width={583}
               height={376}
-              unoptimized
+              quality={90}
+              sizes="(max-width: 1023px) 72vw, 583px"
               className="absolute -bottom-6 -left-10 h-auto w-[72%] max-w-[37rem] -skew-x-1 rounded-2xl border border-white/10 object-cover shadow-2xl sm:-left-4 lg:left-5 lg:top-8 lg:w-[50%]"
             />
           </motion.article>
@@ -92,7 +95,8 @@ export const FeaturesSection = () => {
               alt="شبیه‌ساز آزمون کنکور"
               width={428}
               height={221}
-              unoptimized
+              quality={90}
+              sizes="(max-width: 1023px) 41vw, 428px"
               className="absolute -bottom-5 left-1/2 h-auto w-[82%] -translate-x-1/2 rounded-xl border border-white/10 shadow-2xl"
             />
           </motion.article>
@@ -113,7 +117,8 @@ export const FeaturesSection = () => {
               alt="مراحل یادگیری"
               width={299}
               height={646}
-              unoptimized
+              quality={90}
+              sizes="(max-width: 1023px) 28vw, 299px"
               className="absolute -bottom-36 -left-8 h-auto w-[55%] max-w-[15rem] drop-shadow-2xl sm:-bottom-44 lg:-bottom-80 lg:-left-16 lg:w-[52%]"
             />
           </motion.article>
