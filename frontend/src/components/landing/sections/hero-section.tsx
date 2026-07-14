@@ -24,7 +24,7 @@ export const HeroSection = ({ heroImage }: HeroSectionProps) => {
           <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,transparent_35%,hsl(var(--landing-hero))_90%)]" />
         </div>
 
-        <div className="relative grid w-full items-center gap-6 sm:gap-12 lg:grid-cols-[1.05fr_.95fr] lg:gap-16">
+        <div dir="ltr" className="relative grid w-full items-center gap-6 sm:gap-12 lg:grid-cols-[1.05fr_.95fr] lg:gap-16">
           <motion.div
             initial={{ opacity: 0, scale: 0.96, x: -20 }}
             animate={{ opacity: 1, scale: 1, x: 0 }}
@@ -77,6 +77,7 @@ export const HeroSection = ({ heroImage }: HeroSectionProps) => {
           </motion.div>
 
           <motion.div
+            dir="rtl"
             initial={{ opacity: 0, y: 28 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.65 }}
