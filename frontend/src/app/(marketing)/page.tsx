@@ -11,11 +11,8 @@ import {
   TestimonialSection,
   WhyUsSection,
 } from '@/components/landing/sections';
-import { MOCK_PLACEHOLDER_IMAGES } from '@/constants/mock';
 
 export default function LandingPage() {
-  const testimonialImage = MOCK_PLACEHOLDER_IMAGES.find((image) => image.id === 'testimonial-avatar');
-
   return (
     <div className="min-h-screen bg-[hsl(var(--landing-page))] text-foreground">
       <LandingHeader />
@@ -28,7 +25,7 @@ export default function LandingPage() {
         />
         <WhyUsSection />
         <FeaturesSection />
-        <TestimonialSection testimonialImage={testimonialImage} />
+        <TestimonialSection />
         <TeacherCtaSection />
         <FAQSection />
         <FinalCTASection />
