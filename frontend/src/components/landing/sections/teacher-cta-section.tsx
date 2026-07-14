@@ -102,8 +102,8 @@ export const TeacherCtaSection = () => {
                           alt={activeFeature.image.alt}
                           fill
                           sizes="(max-width: 1023px) 92vw, 52vw"
+                          quality={90}
                           priority={activeIndex === 2}
-                          unoptimized
                           className={`object-cover ${activeFeature.imageClassName ?? ''}`}
                         />
                         <div className="pointer-events-none absolute inset-0 ring-1 ring-inset ring-white/5" />
