@@ -65,9 +65,9 @@ export const TeacherCtaSection = () => {
   const activeFeature = TEACHER_FEATURES[activeIndex] ?? TEACHER_FEATURES[0]!;
 
   return (
-    <section id="teacher-tools" className="landing-section-shell py-10 sm:py-14 lg:py-10">
+    <section id="teacher-tools" className="landing-section-shell pb-10 pt-0 sm:py-14 lg:h-[848px] lg:py-10">
       <div className="landing-wide-container">
-        <div className="relative min-h-[787px] overflow-hidden rounded-[1.25rem] bg-gradient-to-br from-emerald-600 to-teal-700 px-4 py-10 text-white shadow-[0_0_4px_hsl(var(--foreground)/.25)] sm:px-8 lg:min-h-[48rem] lg:px-24 lg:py-10">
+        <div className="relative h-[787px] overflow-hidden rounded-[1.25rem] bg-gradient-to-br from-emerald-600 to-teal-700 px-4 py-10 text-white shadow-[0_0_4px_hsl(var(--foreground)/.25)] sm:px-8 lg:h-[768px] lg:px-24 lg:py-10">
           <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden">
             <div className="absolute -bottom-48 -left-48 h-[40rem] w-[40rem] rounded-full bg-white/35 blur-[130px]" />
             <div className="absolute -right-40 -top-40 h-[32rem] w-[32rem] rounded-full bg-emerald-200/10 blur-[110px]" />
@@ -95,6 +95,10 @@ export const TeacherCtaSection = () => {
                     transition={{ duration: 0.3, ease: 'easeOut' }}
                     className="relative w-full"
                   >
+                    <div className="absolute left-1/2 top-0 z-20 flex -translate-x-1/2 -translate-y-1/2 items-center gap-1 rounded-t-xl bg-[#030711] px-3 py-1 text-[10px] font-medium text-white shadow-lg lg:gap-2 lg:px-4 lg:py-2 lg:text-sm">
+                      <span>مخصوص دبیران</span>
+                      <Sparkles className="h-3 w-3 lg:h-5 lg:w-5" />
+                    </div>
                     <div className="overflow-hidden rounded-[1.15rem] border border-white/20 bg-[#030711] p-1.5 shadow-[0_30px_65px_rgba(3,7,17,.5)] sm:p-2">
                       <div className="relative aspect-video overflow-hidden rounded-[.85rem] bg-[#030711]">
                         <Image
@@ -139,11 +143,6 @@ export const TeacherCtaSection = () => {
               transition={{ duration: 0.6 }}
               className="order-1 text-center lg:order-2 lg:text-right"
             >
-              <div className="mb-6 inline-flex items-center gap-2 rounded-full bg-[#030711] px-4 py-2 text-sm font-medium text-white">
-                <span>مخصوص دبیران</span>
-                <Sparkles className="h-5 w-5" />
-              </div>
-
               <h2 className="landing-display text-4xl font-black leading-[1.25] sm:text-5xl lg:text-6xl">
                 تدریست رو با هوش مصنوعی متحول کن
               </h2>
