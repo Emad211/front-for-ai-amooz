@@ -28,12 +28,12 @@ const TESTIMONIALS = [
 
 export const TestimonialSection = () => {
   const [index, setIndex] = useState(0);
-  const active = TESTIMONIALS[index] ?? TESTIMONIALS[0];
+  const active = TESTIMONIALS[index] ?? TESTIMONIALS[0]!;
   const go = (direction: number) =>
     setIndex((current) => (current + direction + TESTIMONIALS.length) % TESTIMONIALS.length);
 
   return (
-    <section className="landing-section-shell relative min-h-[46rem] px-4 py-20 lg:min-h-[48rem] lg:px-8 lg:py-40">
+    <section className="landing-section-shell relative min-h-[732px] px-2 py-20 sm:px-4 lg:min-h-[768px] lg:px-8 lg:py-40">
       <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden">
         <div className="absolute bottom-0 left-1/2 h-72 w-[40rem] -translate-x-1/2 rounded-full bg-primary/10 blur-[130px]" />
       </div>
