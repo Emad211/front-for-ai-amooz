@@ -58,6 +58,7 @@ jobs:
           mkdir -p visual-artifacts
           cat > visual-artifacts/capture.mjs <<'EOF'
           import { chromium } from 'playwright';
+          import { writeFile } from 'node:fs/promises';
 
           const cases = [
             { name: 'desktop-dark', width: 1920, height: 1080, theme: 'dark' },
@@ -86,13 +87,41 @@ jobs:
                 }`,
             });
 
-            const scrollHeight = await page.evaluate(() => document.documentElement.scrollHeight);
-            for (let y = 0; y < scrollHeight; y += Math.max(320, Math.floor(item.height * 0.7))) {
+            const initialHeight = await page.evaluate(() => document.documentElement.scrollHeight);
+            for (let y = 0; y < initialHeight; y += Math.max(320, Math.floor(item.height * 0.7))) {
               await page.evaluate((nextY) => window.scrollTo(0, nextY), y);
               await page.waitForTimeout(60);
             }
             await page.evaluate(() => window.scrollTo(0, 0));
             await page.waitForTimeout(300);
+
+            const metrics = await page.evaluate(() => {
+              const rect = (element) => {
+                const box = element.getBoundingClientRect();
+                return {
+                  tag: element.tagName.toLowerCase(),
+                  id: element.id || null,
+                  className: typeof element.className === 'string' ? element.className : null,
+                  top: Math.round(box.top + window.scrollY),
+                  bottom: Math.round(box.bottom + window.scrollY),
+                  height: Math.round(box.height),
+                };
+              };
+              const main = document.querySelector('main');
+              const footer = document.querySelector('footer');
+              return {
+                viewport: { width: window.innerWidth, height: window.innerHeight },
+                scrollHeight: document.documentElement.scrollHeight,
+                mainChildren: main ? Array.from(main.children).map(rect) : [],
+                footer: footer ? rect(footer) : null,
+              };
+            });
+
+            await writeFile(
+              `visual-artifacts/${item.name}-layout.json`,
+              `${JSON.stringify(metrics, null, 2)}\n`,
+              'utf8',
+            );
             await page.screenshot({
               path: `visual-artifacts/${item.name}.png`,
               fullPage: true,
@@ -109,7 +138,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: landing-visual-qa-final
-          path: frontend/visual-artifacts/*.png
+          path: |
+            frontend/visual-artifacts/*.png
+            frontend/visual-artifacts/*.json
           if-no-files-found: error
           retention-days: 3
 
