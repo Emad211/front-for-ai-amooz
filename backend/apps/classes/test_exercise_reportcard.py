@@ -116,6 +116,33 @@ class TestOverride:
         assert sub.score_points == Decimal('7')
         assert all(item['teacher_score'] is None for item in sub.result['per_question'])
 
+    def test_null_teacher_score_removes_override_and_restores_ai_score(self):
+        owner = _teacher()
+        _s, _ex, _st, sub = _graded_submission(owner, score='7', mx='10')
+        endpoint = f'/api/classes/exercises/submissions/{sub.id}/override/'
+
+        applied = _auth(owner).patch(
+            endpoint,
+            {'overrides': [{'question_id': 'q1', 'teacher_score': 4}]},
+            format='json',
+        )
+        assert applied.status_code == 200
+
+        cleared = _auth(owner).patch(
+            endpoint,
+            {'overrides': [{'question_id': 'q1', 'teacher_score': None}]},
+            format='json',
+        )
+
+        assert cleared.status_code == 200
+        sub.refresh_from_db()
+        first = sub.result['per_question'][0]
+        assert first['teacher_score'] is None
+        assert first['llm_score'] == 3.0
+        assert first['score_points'] == 3.0
+        assert sub.score_points == Decimal('7.00')
+        assert sub.overridden_at is None
+
     def test_score_cleanup_migration_clamps_existing_invalid_override(self):
         owner = _teacher()
         _s, _ex, _st, sub = _graded_submission(owner, score='7', mx='10')

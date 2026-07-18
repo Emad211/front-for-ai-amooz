@@ -1462,13 +1462,20 @@ class TeacherSubmissionOverrideView(APIView):
             o = overrides.get(question_id)
             if not o:
                 continue
-            if 'teacher_score' in o and o['teacher_score'] is not None:
-                pq['teacher_score'] = validated_scores[question_id]  # llm_score untouched
+            if 'teacher_score' in o:
+                pq['teacher_score'] = (
+                    None if o['teacher_score'] is None else validated_scores[question_id]
+                )  # llm_score untouched
             if 'teacher_feedback' in o:
                 pq['teacher_feedback'] = str(o['teacher_feedback'] or '')
         submission.result = {'per_question': per_q}
         _recompute_submission_score(submission)
-        submission.overridden_at = timezone.now()
+        has_teacher_override = any(
+            isinstance(pq, dict)
+            and (pq.get('teacher_score') is not None or bool(pq.get('teacher_feedback')))
+            for pq in per_q
+        )
+        submission.overridden_at = timezone.now() if has_teacher_override else None
         submission.save(update_fields=['result', 'score_points', 'overridden_at', 'updated_at'])
         return Response({
             'id': submission.id,

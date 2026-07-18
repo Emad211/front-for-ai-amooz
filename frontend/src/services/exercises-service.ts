@@ -113,7 +113,7 @@ export type SubmissionDetail = {
 
 export type QuestionOverride = {
   question_id: string;
-  teacher_score?: number;
+  teacher_score?: number | null;
   teacher_feedback?: string;
 };
 

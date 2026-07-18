@@ -291,8 +291,10 @@ function GradingDialog({
                       className="w-24"
                       defaultValue={pq.teacher_score ?? undefined}
                       aria-invalid={scoreInvalid}
+                      aria-label="نمره دستی؛ برای بازگشت به نمره هوشمند خالی بگذارید"
+                      title="برای بازگشت به نمره هوشمند، این کادر را خالی کنید."
                       onChange={(e) => setOverride(qid, {
-                        teacher_score: e.target.value === '' ? undefined : e.target.valueAsNumber,
+                        teacher_score: e.target.value === '' ? null : e.target.valueAsNumber,
                       })}
                     />
                     <Textarea
@@ -304,6 +306,11 @@ function GradingDialog({
                     {scoreInvalid && (
                       <p className="min-w-full text-xs text-destructive">
                         نمره باید بین صفر و {pq.max_points ?? 0} باشد.
+                      </p>
+                    )}
+                    {teacherScore != null && !scoreInvalid && (
+                      <p className="min-w-full text-xs text-muted-foreground">
+                        برای بازگشت به نمره هوشمند، کادر نمره دستی را خالی کنید.
                       </p>
                     )}
                   </div>
