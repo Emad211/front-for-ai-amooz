@@ -85,7 +85,9 @@ export function ActivityChart({ data, days = 7 }: ActivityChartProps) {
                 <YAxis 
                   axisLine={false} 
                   tickLine={false} 
+                  allowDecimals={false}
                   tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 11, fontWeight: 600 }}
+                  tickFormatter={(value: number) => toPersianDigits(value)}
                 />
                 <Tooltip content={<CustomTooltip />} cursor={{ stroke: 'hsl(var(--primary))', strokeWidth: 2, strokeDasharray: '5 5' }} />
                 <Area 
