@@ -554,11 +554,17 @@ export async function getStudentExercise(
 export async function saveExerciseDraft(
   sessionId: number,
   exerciseId: number,
-  answers: StudentAnswers
+  answers: StudentAnswers,
+  options: Pick<RequestInit, 'keepalive' | 'signal'> = {}
 ): Promise<{ status: SubmissionStatus; saved: boolean }> {
   return requestJson(
     `${API_URL}/classes/student/courses/${sessionId}/exercises/${exerciseId}/draft/`,
-    { method: 'PUT', headers: jsonHeaders(), body: JSON.stringify({ answers }) }
+    {
+      method: 'PUT',
+      headers: jsonHeaders(),
+      body: JSON.stringify({ answers }),
+      ...options,
+    }
   );
 }
 

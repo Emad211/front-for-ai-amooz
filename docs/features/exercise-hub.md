@@ -394,7 +394,10 @@ stored `per_question` (zero tokens), **no pregeneration** (nothing to pre-build)
   mobile, client-side compression); autosave; sticky
   submit bar + confirm dialog; assistant = side panel (desktop) / bottom Sheet (mobile); assistant-off →
   informative lock chip («دستیار این تمرین غیرفعال است»), never silently hidden; past-deadline →
-  read-only + banner.
+  read-only + banner. Pending text is synchronously mirrored to a student/exercise-scoped local backup
+  until the backend confirms it. Blur, tab hiding, page exit, and component unmount flush immediately
+  with a keepalive request; a newer save aborts an older in-flight request. The local backup is restored
+  after an interrupted visit and cleared only after confirmed autosave or final submission.
 - **Report cards:** student per-exercise result (summary card + per-question own answer/reference/score/
   feedback, green/red start-bars from tokens); overall trend chart (recharts, Persian digits, Jalali);
   teacher gradebook matrix (row=student, column=exercise, **sticky name column on the RIGHT** —

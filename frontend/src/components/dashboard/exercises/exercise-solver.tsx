@@ -6,7 +6,7 @@
  * receives the reference answer (the server withholds it until reveal).
  * Design: docs/features/exercise-hub.md.
  */
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { Loader2, Send, Lock, MessageCircle } from 'lucide-react';
@@ -31,6 +31,7 @@ import { MarkdownWithMath } from '@/components/content/markdown-with-math';
 import { MathText } from '@/components/content/math-text';
 import { ExerciseAssistant } from '@/components/dashboard/exercises/exercise-assistant';
 import { formatPersianDateTime } from '@/lib/date-utils';
+import { getStoredUser } from '@/services/auth-service';
 import {
   type StudentExerciseDetail,
   type StudentAnswers,
@@ -39,6 +40,53 @@ import {
   uploadAnswerImage,
   submitExercise,
 } from '@/services/exercises-service';
+
+type DraftSaveState = 'idle' | 'pending' | 'saving' | 'saved' | 'error';
+
+function readDraftBackup(key: string | null): StudentAnswers | null {
+  if (!key) return null;
+  try {
+    const value = JSON.parse(window.localStorage.getItem(key) ?? 'null') as unknown;
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+    const answers = (value as { answers?: unknown }).answers;
+    return answers && typeof answers === 'object' && !Array.isArray(answers)
+      ? (answers as StudentAnswers)
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeDraftBackup(key: string | null, answers: StudentAnswers) {
+  if (!key) return;
+  try {
+    window.localStorage.setItem(key, JSON.stringify({ answers }));
+  } catch {
+    // Server autosave remains the primary persistence path if storage is unavailable.
+  }
+}
+
+function clearDraftBackup(key: string | null) {
+  if (!key) return;
+  try {
+    window.localStorage.removeItem(key);
+  } catch {
+    // Nothing else is required: the server copy is already authoritative.
+  }
+}
+
+function mergeDraftAnswers(server: StudentAnswers, local: StudentAnswers): StudentAnswers {
+  const merged = { ...server };
+  for (const [questionId, localEntry] of Object.entries(local)) {
+    const serverEntry = server[questionId] ?? {};
+    merged[questionId] = {
+      ...serverEntry,
+      ...localEntry,
+      images: serverEntry.images ?? localEntry.images,
+    };
+  }
+  return merged;
+}
 
 export function ExerciseSolver({
   sessionId,
@@ -53,55 +101,149 @@ export function ExerciseSolver({
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [activeQuestionId, setActiveQuestionId] = useState<number | null>(null);
+  const [draftSaveState, setDraftSaveState] = useState<DraftSaveState>('idle');
   const dirty = useRef(false);
+  const answersRef = useRef<StudentAnswers>({});
+  const revisionRef = useRef(0);
+  const saveAbortRef = useRef<AbortController | null>(null);
+  const saveTimerRef = useRef<number | null>(null);
+  const mountedRef = useRef(true);
+  const finalizingRef = useRef(false);
+  const submittedRef = useRef(false);
+  const draftBackupKey = useMemo(() => {
+    const studentId = getStoredUser()?.id;
+    return studentId
+      ? `ai_amooz_exercise_draft_${studentId}_${sessionId}_${exerciseId}`
+      : null;
+  }, [sessionId, exerciseId]);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     getStudentExercise(sessionId, exerciseId)
       .then((d) => {
+        const serverAnswers = d.myAnswers ?? {};
+        const backup = d.submissionStatus == null || d.submissionStatus === 'draft'
+          ? readDraftBackup(draftBackupKey)
+          : null;
+        if (d.submissionStatus != null && d.submissionStatus !== 'draft') {
+          clearDraftBackup(draftBackupKey);
+        }
+        const restoredAnswers = backup ? mergeDraftAnswers(serverAnswers, backup) : serverAnswers;
         setDetail(d);
-        setAnswers(d.myAnswers ?? {});
+        setAnswers(restoredAnswers);
+        answersRef.current = restoredAnswers;
+        dirty.current = backup != null;
+        setDraftSaveState(backup ? 'pending' : 'idle');
         setActiveQuestionId(d.questions[0]?.id ?? null);
       })
       .catch((err) => toast.error(err instanceof Error ? err.message : 'خطا در بارگذاری تمرین'))
       .finally(() => setLoading(false));
-  }, [sessionId, exerciseId]);
+  }, [sessionId, exerciseId, draftBackupKey]);
 
   const alreadySubmitted =
     detail?.submissionStatus != null && detail.submissionStatus !== 'draft';
 
-  // Debounced autosave (+ a small saved indicator).
-  const [draftSaved, setDraftSaved] = useState(false);
+  useEffect(() => {
+    submittedRef.current = alreadySubmitted;
+  }, [alreadySubmitted]);
+
   const persistDraft = useCallback(
-    (next: StudentAnswers) => {
-      if (alreadySubmitted) return;
-      saveExerciseDraft(sessionId, exerciseId, next)
-        .then(() => setDraftSaved(true))
-        .catch(() => {
-          /* best-effort autosave */
+    async (next: StudentAnswers, revision: number, keepalive = false) => {
+      if (submittedRef.current || finalizingRef.current || !dirty.current) return;
+
+      saveAbortRef.current?.abort();
+      const controller = new AbortController();
+      saveAbortRef.current = controller;
+      if (mountedRef.current && revision === revisionRef.current) setDraftSaveState('saving');
+
+      try {
+        await saveExerciseDraft(sessionId, exerciseId, next, {
+          keepalive,
+          signal: controller.signal,
         });
+        if (revision !== revisionRef.current || finalizingRef.current) return;
+        dirty.current = false;
+        clearDraftBackup(draftBackupKey);
+        if (mountedRef.current) setDraftSaveState('saved');
+      } catch (error) {
+        if (error instanceof DOMException && error.name === 'AbortError') return;
+        if (revision !== revisionRef.current || finalizingRef.current) return;
+        writeDraftBackup(draftBackupKey, next);
+        if (mountedRef.current) setDraftSaveState('error');
+      } finally {
+        if (saveAbortRef.current === controller) saveAbortRef.current = null;
+      }
     },
-    [sessionId, exerciseId, alreadySubmitted]
+    [sessionId, exerciseId, draftBackupKey]
   );
 
   useEffect(() => {
-    if (!dirty.current) return;
-    const t = window.setTimeout(() => persistDraft(answers), 1200);
-    return () => window.clearTimeout(t);
+    if (!dirty.current || alreadySubmitted) return;
+    if (saveTimerRef.current != null) window.clearTimeout(saveTimerRef.current);
+    const revision = revisionRef.current;
+    saveTimerRef.current = window.setTimeout(() => {
+      saveTimerRef.current = null;
+      void persistDraft(answers, revision);
+    }, 1200);
+    return () => {
+      if (saveTimerRef.current != null) window.clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = null;
+    };
   }, [answers, persistDraft]);
 
+  const flushDraft = useCallback((keepalive = false) => {
+    if (saveTimerRef.current != null) {
+      window.clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = null;
+    }
+    if (!dirty.current || submittedRef.current || finalizingRef.current) return;
+    void persistDraft(answersRef.current, revisionRef.current, keepalive);
+  }, [persistDraft]);
+
+  useEffect(() => {
+    const handlePageHide = () => flushDraft(true);
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') flushDraft(true);
+    };
+    window.addEventListener('pagehide', handlePageHide);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      window.removeEventListener('pagehide', handlePageHide);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      flushDraft(true);
+    };
+  }, [flushDraft]);
+
   const setText = (qid: number, text: string) => {
+    const next = {
+      ...answersRef.current,
+      [qid]: { ...answersRef.current[String(qid)], text },
+    };
+    revisionRef.current += 1;
     dirty.current = true;
-    setDraftSaved(false);
-    setAnswers((prev) => ({ ...prev, [qid]: { ...prev[String(qid)], text } }));
+    answersRef.current = next;
+    writeDraftBackup(draftBackupKey, next);
+    setDraftSaveState('pending');
+    setAnswers(next);
   };
 
   const addImage = async (qid: number, file: File) => {
     try {
       const { path } = await uploadAnswerImage(sessionId, exerciseId, qid, file);
-      setAnswers((prev) => {
-        const entry = prev[String(qid)] ?? {};
-        return { ...prev, [qid]: { ...entry, images: [...(entry.images ?? []), path] } };
-      });
+      const entry = answersRef.current[String(qid)] ?? {};
+      const next = {
+        ...answersRef.current,
+        [qid]: { ...entry, images: [...(entry.images ?? []), path] },
+      };
+      answersRef.current = next;
+      setAnswers(next);
+      if (dirty.current) writeDraftBackup(draftBackupKey, next);
       toast.success('تصویر پاسخ بارگذاری شد.');
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'بارگذاری تصویر ناموفق بود.');
@@ -109,12 +251,22 @@ export function ExerciseSolver({
   };
 
   const doSubmit = async () => {
+    finalizingRef.current = true;
+    if (saveTimerRef.current != null) window.clearTimeout(saveTimerRef.current);
+    saveAbortRef.current?.abort();
     setSubmitting(true);
     try {
-      await submitExercise(sessionId, exerciseId, answers);
+      await submitExercise(sessionId, exerciseId, answersRef.current);
+      submittedRef.current = true;
+      dirty.current = false;
+      clearDraftBackup(draftBackupKey);
       toast.success('پاسخ شما ارسال شد. نتیجه پس از نمره‌دهی نمایش داده می‌شود.');
       router.push(`/exercises/${exerciseId}/result?session=${sessionId}`);
     } catch (err) {
+      finalizingRef.current = false;
+      dirty.current = true;
+      writeDraftBackup(draftBackupKey, answersRef.current);
+      setDraftSaveState('error');
       toast.error(err instanceof Error ? err.message : 'ارسال ناموفق بود.');
     } finally {
       setSubmitting(false);
@@ -144,8 +296,27 @@ export function ExerciseSolver({
           <MathText text={detail.title} />
         </h1>
         <div className="flex flex-wrap items-center gap-2">
-          {draftSaved && !alreadySubmitted && (
+          {!alreadySubmitted && draftSaveState === 'pending' && (
+            <span className="text-xs text-muted-foreground">در انتظار ذخیره…</span>
+          )}
+          {!alreadySubmitted && draftSaveState === 'saving' && (
+            <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+              <Loader2 className="h-3 w-3 animate-spin" /> در حال ذخیره…
+            </span>
+          )}
+          {!alreadySubmitted && draftSaveState === 'saved' && (
             <span className="text-xs text-muted-foreground">پیش‌نویس ذخیره شد ✓</span>
+          )}
+          {!alreadySubmitted && draftSaveState === 'error' && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-7 text-destructive"
+              onClick={() => flushDraft()}
+            >
+              ذخیره نشد؛ تلاش دوباره
+            </Button>
           )}
           {detail.deadline && !deadlinePassed && (
             <Badge variant={deadlineSoon ? 'destructive' : 'outline'}>
@@ -193,6 +364,7 @@ export function ExerciseSolver({
                   placeholder="پاسخ خود را بنویسید…"
                   value={answers[String(q.id)]?.text ?? ''}
                   onChange={(e) => setText(q.id, e.target.value)}
+                  onBlur={() => flushDraft()}
                   disabled={alreadySubmitted}
                   rows={4}
                 />
