@@ -171,6 +171,21 @@ function GradingDialog({
       onClose();
       return;
     }
+    const invalidScore = (detail?.result.per_question ?? []).find((question) => {
+      const score = overrides[question.question_id]?.teacher_score;
+      const maxPoints = question.max_points;
+      return score != null && (
+        !Number.isFinite(score)
+        || maxPoints == null
+        || !Number.isFinite(maxPoints)
+        || score < 0
+        || score > maxPoints
+      );
+    });
+    if (invalidScore) {
+      toast.error(`نمره دستی باید بین صفر و ${invalidScore.max_points ?? 0} باشد.`);
+      return;
+    }
     setSaving(true);
     try {
       await overrideSubmission(submissionId, list);
@@ -210,6 +225,16 @@ function GradingDialog({
             {(detail.result.per_question ?? []).map((pq) => {
               const qid = pq.question_id;
               const answer = detail.answers[qid];
+              const teacherScore = Object.prototype.hasOwnProperty.call(
+                overrides[qid] ?? {},
+                'teacher_score'
+              ) ? overrides[qid]?.teacher_score : pq.teacher_score;
+              const scoreInvalid = teacherScore != null && (
+                !Number.isFinite(teacherScore)
+                || pq.max_points == null
+                || teacherScore < 0
+                || teacherScore > pq.max_points
+              );
               return (
                 <div key={qid} className="space-y-2 rounded-md border border-border p-3">
                   {answer?.text ? (
@@ -261,10 +286,14 @@ function GradingDialog({
                     <Input
                       type="number"
                       min={0}
+                      max={pq.max_points ?? undefined}
                       step="0.25"
                       className="w-24"
                       defaultValue={pq.teacher_score ?? undefined}
-                      onChange={(e) => setOverride(qid, { teacher_score: Number(e.target.value) })}
+                      aria-invalid={scoreInvalid}
+                      onChange={(e) => setOverride(qid, {
+                        teacher_score: e.target.value === '' ? undefined : e.target.valueAsNumber,
+                      })}
                     />
                     <Textarea
                       placeholder="بازخورد معلم (اختیاری)"
@@ -272,6 +301,11 @@ function GradingDialog({
                       rows={2}
                       onChange={(e) => setOverride(qid, { teacher_feedback: e.target.value })}
                     />
+                    {scoreInvalid && (
+                      <p className="min-w-full text-xs text-destructive">
+                        نمره باید بین صفر و {pq.max_points ?? 0} باشد.
+                      </p>
+                    )}
                   </div>
                 </div>
               );

@@ -1319,7 +1319,7 @@ class StudentFinishedAnswersView(APIView):
 # percentages (past-deadline no-submission exercises are excluded, not zeroed).
 # ═══════════════════════════════════════════════════════════════════════════
 
-from decimal import Decimal as _Decimal  # noqa: E402
+from decimal import Decimal as _Decimal, InvalidOperation as _InvalidOperation  # noqa: E402
 
 
 def _owned_submission(request, submission_id):
@@ -1330,12 +1330,17 @@ def _owned_submission(request, submission_id):
 
 def _effective(pq: dict):
     ts = pq.get('teacher_score')
-    if ts is not None:
-        return float(ts)
-    llm = pq.get('llm_score')
-    if llm is not None:
-        return float(llm)
-    return float(pq.get('score_points') or 0)
+    raw_score = ts if ts is not None else pq.get('llm_score')
+    if raw_score is None:
+        raw_score = pq.get('score_points') or 0
+    try:
+        score = _Decimal(str(raw_score))
+        max_points = _Decimal(str(pq.get('max_points')))
+    except (_InvalidOperation, TypeError, ValueError):
+        return 0.0
+    if not score.is_finite() or not max_points.is_finite() or max_points < 0:
+        return 0.0
+    return float(min(max(score, _Decimal('0')), max_points))
 
 
 def _recompute_submission_score(submission) -> None:
@@ -1416,14 +1421,49 @@ class TeacherSubmissionOverrideView(APIView):
                     overrides[str(o['question_id'])] = o
         result = submission.result if isinstance(submission.result, dict) else {}
         per_q = result.get('per_question') if isinstance(result.get('per_question'), list) else []
+
+        validated_scores = {}
         for pq in per_q:
             if not isinstance(pq, dict):
                 continue
-            o = overrides.get(str(pq.get('question_id')))
+            question_id = str(pq.get('question_id'))
+            override = overrides.get(question_id)
+            if not override or override.get('teacher_score') is None:
+                continue
+            try:
+                teacher_score = _Decimal(str(override['teacher_score']))
+                max_points = _Decimal(str(pq.get('max_points')))
+            except (_InvalidOperation, TypeError, ValueError):
+                return Response(
+                    {'detail': 'نمره واردشده معتبر نیست.'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            if (
+                not teacher_score.is_finite()
+                or not max_points.is_finite()
+                or max_points < 0
+                or teacher_score < 0
+                or teacher_score > max_points
+            ):
+                return Response(
+                    {
+                        'detail': f'نمره این سؤال باید بین صفر و {max_points} باشد.',
+                        'questionId': question_id,
+                        'maxPoints': str(max_points),
+                    },
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            validated_scores[question_id] = float(teacher_score)
+
+        for pq in per_q:
+            if not isinstance(pq, dict):
+                continue
+            question_id = str(pq.get('question_id'))
+            o = overrides.get(question_id)
             if not o:
                 continue
             if 'teacher_score' in o and o['teacher_score'] is not None:
-                pq['teacher_score'] = float(o['teacher_score'])  # llm_score untouched
+                pq['teacher_score'] = validated_scores[question_id]  # llm_score untouched
             if 'teacher_feedback' in o:
                 pq['teacher_feedback'] = str(o['teacher_feedback'] or '')
         submission.result = {'per_question': per_q}

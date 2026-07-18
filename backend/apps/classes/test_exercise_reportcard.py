@@ -7,8 +7,10 @@ score; report-card average = mean of the student's GRADED exercise percentages.
 from __future__ import annotations
 
 from decimal import Decimal
+from importlib import import_module
 
 import pytest
+from django.apps import apps as django_apps
 from model_bakery import baker
 from rest_framework.test import APIClient
 from rest_framework_simplejwt.tokens import RefreshToken
@@ -78,6 +80,61 @@ class TestOverride:
         # total recomputed: q1 effective 4 + q2 effective 4 = 8
         assert str(sub.score_points) == '8.00'
         assert sub.overridden_at is not None
+
+    @pytest.mark.parametrize('teacher_score', [4.01, -0.01, 'not-a-number', 'NaN', 'Infinity'])
+    def test_override_rejects_score_outside_question_range(self, teacher_score):
+        owner = _teacher()
+        _s, _ex, _st, sub = _graded_submission(owner, score='7', mx='10')
+
+        res = _auth(owner).patch(
+            f'/api/classes/exercises/submissions/{sub.id}/override/',
+            {'overrides': [{'question_id': 'q1', 'teacher_score': teacher_score}]},
+            format='json',
+        )
+
+        assert res.status_code == 400
+        sub.refresh_from_db()
+        assert sub.score_points == Decimal('7')
+        assert sub.overridden_at is None
+        assert sub.result['per_question'][0]['teacher_score'] is None
+
+    def test_override_validation_is_atomic(self):
+        owner = _teacher()
+        _s, _ex, _st, sub = _graded_submission(owner, score='7', mx='10')
+
+        res = _auth(owner).patch(
+            f'/api/classes/exercises/submissions/{sub.id}/override/',
+            {'overrides': [
+                {'question_id': 'q1', 'teacher_score': 3.5},
+                {'question_id': 'q2', 'teacher_score': 6.25},
+            ]},
+            format='json',
+        )
+
+        assert res.status_code == 400
+        sub.refresh_from_db()
+        assert sub.score_points == Decimal('7')
+        assert all(item['teacher_score'] is None for item in sub.result['per_question'])
+
+    def test_score_cleanup_migration_clamps_existing_invalid_override(self):
+        owner = _teacher()
+        _s, _ex, _st, sub = _graded_submission(owner, score='7', mx='10')
+        result = sub.result
+        result['per_question'][0]['teacher_score'] = 5.75
+        result['per_question'][0]['score_points'] = 5.75
+        sub.result = result
+        sub.score_points = Decimal('8.75')
+        sub.save(update_fields=['result', 'score_points'])
+
+        migration = import_module(
+            'apps.classes.migrations.0031_clamp_exercise_teacher_scores'
+        )
+        migration.clamp_exercise_teacher_scores(django_apps, None)
+
+        sub.refresh_from_db()
+        assert sub.result['per_question'][0]['teacher_score'] == 4.0
+        assert sub.result['per_question'][0]['score_points'] == 4.0
+        assert sub.score_points == Decimal('8.00')
 
     def test_override_cross_teacher_404(self):
         owner, other = _teacher(), _teacher()

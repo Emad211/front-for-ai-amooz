@@ -182,7 +182,10 @@ here, deliberately.
   text — never `reference_answer_markdown`/`grading_notes` (test-locked). The same `is_real_image`
   sniff also rejects fake-image bytes at upload time (`StudentExerciseImageView`, 400).
 - **Override:** `teacher_score`/`teacher_feedback` written alongside `llm_score` inside
-  `result['per_question']`; `llm_score` never overwritten; final `score_points` recomputed.
+  `result['per_question']`; `llm_score` never overwritten. A manual score must be finite and within
+  `0..max_points` for its question; the API validates the whole override batch before writing, and
+  effective per-question/final scores are defensively bounded to the same range. Migration `0031`
+  repairs historical out-of-range overrides and recomputes their totals.
 - **Assistant leak guard is structural:** before grading the reference answer is **not in the model's
   context at all** (server strips it) — a model that never saw the answer cannot leak it under
   injection. After grading (`{phase}=graded`) reference+feedback enter the context so the assistant can
