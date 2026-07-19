@@ -301,6 +301,8 @@ function GradingDialog({
                       placeholder="بازخورد معلم (اختیاری)"
                       className="min-w-full"
                       rows={2}
+                      defaultValue={pq.teacher_feedback ?? ''}
+                      aria-label="بازخورد معلم"
                       onChange={(e) => setOverride(qid, { teacher_feedback: e.target.value })}
                     />
                     {scoreInvalid && (

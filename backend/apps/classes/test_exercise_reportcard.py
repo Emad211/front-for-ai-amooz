@@ -76,10 +76,22 @@ class TestOverride:
         pq1 = next(p for p in sub.result['per_question'] if p['question_id'] == 'q1')
         assert pq1['llm_score'] == 3.0          # IMMUTABLE audit value
         assert pq1['teacher_score'] == 4.0
+        assert pq1['teacher_feedback'] == 'عالی'
         assert pq1['score_points'] == 4.0        # effective = teacher_score
         # total recomputed: q1 effective 4 + q2 effective 4 = 8
         assert str(sub.score_points) == '8.00'
         assert sub.overridden_at is not None
+
+        detail = _auth(owner).get(
+            f'/api/classes/exercises/submissions/{sub.id}/'
+        )
+        assert detail.status_code == 200
+        returned_q1 = next(
+            item
+            for item in detail.data['result']['per_question']
+            if item['question_id'] == 'q1'
+        )
+        assert returned_q1['teacher_feedback'] == 'عالی'
 
     @pytest.mark.parametrize('teacher_score', [4.01, -0.01, 'not-a-number', 'NaN', 'Infinity'])
     def test_override_rejects_score_outside_question_range(self, teacher_score):

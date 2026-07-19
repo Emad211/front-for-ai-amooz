@@ -187,7 +187,9 @@ here, deliberately.
   effective per-question/final scores are defensively bounded to the same range. Migration `0031`
   repairs historical out-of-range overrides and recomputes their totals. Sending an explicit
   `teacher_score: null` removes the manual score and restores the immutable AI score as the effective
-  score; omitting `teacher_score` leaves the current score unchanged.
+  score; omitting `teacher_score` leaves the current score unchanged. Saved `teacher_feedback` is
+  returned by submission detail and hydrated into the teacher's gradebook editor, so reopening a
+  submission never presents persisted feedback as an empty field.
 - **Assistant leak guard is structural:** before grading the reference answer is **not in the model's
   context at all** (server strips it) — a model that never saw the answer cannot leak it under
   injection. After grading (`{phase}=graded`) reference+feedback enter the context so the assistant can
