@@ -328,6 +328,29 @@ class TestRedeemCode:
             user=new_user, organization=org,
         ).exists()
 
+    def test_anonymous_redeem_rejects_overlong_phone(self, anon_client, org):
+        code = InvitationCode.objects.create(
+            organization=org, target_role='student', max_uses=10,
+        )
+
+        resp = anon_client.post(
+            reverse('organizations:redeem-code'),
+            {'code': code.code, 'phone': '09' + ('1' * 30)},
+            format='json',
+        )
+
+        assert resp.status_code == status.HTTP_400_BAD_REQUEST
+        assert not OrganizationMembership.objects.filter(organization=org).exists()
+
+    def test_redeem_rejects_overlong_code(self, anon_client):
+        resp = anon_client.post(
+            reverse('organizations:redeem-code'),
+            {'code': 'X' * 65, 'phone': '09121234567'},
+            format='json',
+        )
+
+        assert resp.status_code == status.HTTP_400_BAD_REQUEST
+
     def test_redeem_invalid_code(self, teacher_client):
         resp = teacher_client.post(
             reverse('organizations:redeem-code'),
@@ -414,6 +437,15 @@ class TestValidateCode:
     def test_empty_code(self, anon_client):
         resp = anon_client.get(reverse('organizations:validate-code'))
         assert resp.status_code == status.HTTP_400_BAD_REQUEST
+
+    def test_overlong_code_is_rejected_before_lookup(self, anon_client, django_assert_num_queries):
+        with django_assert_num_queries(0):
+            resp = anon_client.get(
+                reverse('organizations:validate-code') + f'?code={"X" * 65}',
+            )
+
+        assert resp.status_code == status.HTTP_400_BAD_REQUEST
+        assert resp.data['valid'] is False
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

@@ -311,7 +311,7 @@ export function UnifiedCodeForm() {
               type="tel"
               value={phone}
               onChange={(e) => setPhone(sanitizeIranPhoneInput(e.target.value))}
-              maxLength={12}
+              maxLength={20}
               inputMode="numeric"
               placeholder="09123456789"
               dir="ltr"
@@ -338,7 +338,7 @@ export function UnifiedCodeForm() {
               type="tel"
               value={phone}
               onChange={(e) => setPhone(sanitizeIranPhoneInput(e.target.value))}
-              maxLength={12}
+              maxLength={20}
               inputMode="numeric"
               placeholder="09123456789"
               dir="ltr"

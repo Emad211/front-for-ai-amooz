@@ -556,6 +556,12 @@ class ValidateInvitationView(APIView):
                 {'valid': False, 'detail': 'کد وارد نشده است.'},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+        max_code_length = InvitationCode._meta.get_field('code').max_length
+        if len(code_value) > max_code_length:
+            return Response(
+                {'valid': False, 'detail': 'کد دعوت نمی‌تواند بیشتر از ۶۴ کاراکتر باشد.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         try:
             invite = InvitationCode.objects.select_related('organization').get(

@@ -5,7 +5,11 @@ Commits: this commit (`fix(auth): harden account and notification inputs`) · Sc
 ## Changes
 
 - Unified new-password validation across registration, onboarding, reset, and password change.
-- Bounded and normalized invite-code/mobile input in frontend and backend.
+- Bounded and normalized invite-code/mobile input in frontend and backend. The public organization-code
+  preflight endpoint also rejects codes beyond the model's 64-character contract before querying the
+  database, so direct API calls cannot bypass the browser limit. Phone inputs accept the backend's
+  bounded raw formats (including a pasted `+98` number), then immediately normalize their controlled
+  display to at most 11 domestic digits or 12 digits while an international prefix is being entered.
 - Anonymous login no longer refreshes stale credentials, preserving the correct wrong-password error.
 - Clearing a profile image removes the stored avatar and immediately refreshes cached user data.
 - New standalone, embedded, and edited exercise deadlines must be in the future.
