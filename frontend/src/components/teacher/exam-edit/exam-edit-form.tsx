@@ -14,6 +14,7 @@ import {
 } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
+import { CLASS_TITLE_MAX_LENGTH } from '@/constants/teacher-limits';
 import type { ExamPrepSessionDetail, ExamPrepData, ExamPrepQuestion } from '@/services/classes-service';
 
 interface ExamEditFormProps {
@@ -148,9 +149,17 @@ export function ExamEditForm({ examDetail, onSave, isSaving }: ExamEditFormProps
                 <Input
                   id="title"
                   value={formData.title}
-                  onChange={(e) => setFormData((prev) => ({ ...prev, title: e.target.value }))}
+                  maxLength={CLASS_TITLE_MAX_LENGTH}
+                  onChange={(e) => setFormData((prev) => ({
+                    ...prev,
+                    title: e.target.value.slice(0, CLASS_TITLE_MAX_LENGTH),
+                  }))}
                   placeholder="عنوان آزمون را وارد کنید"
                 />
+                <div className="flex justify-between text-xs text-muted-foreground">
+                  <span>حداکثر {CLASS_TITLE_MAX_LENGTH} کاراکتر</span>
+                  <span dir="ltr">{formData.title.length}/{CLASS_TITLE_MAX_LENGTH}</span>
+                </div>
               </div>
 
               <div className="space-y-2">

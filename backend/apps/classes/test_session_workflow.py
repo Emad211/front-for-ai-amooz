@@ -17,6 +17,7 @@ from rest_framework.test import APIClient
 from apps.classes.models import ClassCreationSession, ClassExercise, ClassExerciseAsset
 from apps.classes.serializers import (
     CLASS_DESCRIPTION_MAX_LENGTH,
+    CLASS_TITLE_MAX_LENGTH,
     ClassCreationSessionUpdateSerializer,
     ExamPrepSessionUpdateSerializer,
     ExamPrepStep1TranscribeRequestSerializer,
@@ -54,6 +55,36 @@ def test_session_description_is_length_limited(serializer_cls):
 
     assert not serializer.is_valid()
     assert 'description' in serializer.errors
+
+
+@pytest.mark.parametrize(
+    'serializer_cls',
+    [
+        Step1TranscribeRequestSerializer,
+        ClassCreationSessionUpdateSerializer,
+        ExamPrepStep1TranscribeRequestSerializer,
+        ExamPrepSessionUpdateSerializer,
+    ],
+)
+def test_session_title_is_length_limited(serializer_cls):
+    def make_data(title):
+        data = {'title': title}
+        if serializer_cls in (Step1TranscribeRequestSerializer, ExamPrepStep1TranscribeRequestSerializer):
+            data['file'] = SimpleUploadedFile(
+                'lesson.mp4', b'fake-media-bytes', content_type='video/mp4',
+            )
+        return data
+
+    valid = serializer_cls(data=make_data('x' * CLASS_TITLE_MAX_LENGTH), partial=True)
+    assert valid.is_valid(), valid.errors
+
+    data = make_data('x' * (CLASS_TITLE_MAX_LENGTH + 1))
+
+    serializer = serializer_cls(data=data, partial=True)
+
+    assert not serializer.is_valid()
+    assert 'title' in serializer.errors
+    assert '۱۲۰' in str(serializer.errors['title'][0])
 
 
 def test_embedded_exercise_rejects_late_submission_without_deadline():

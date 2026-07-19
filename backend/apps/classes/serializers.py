@@ -18,7 +18,11 @@ from .services.exercise_workflow import (
 from .services.session_workflow import serialize_session_workflow_fields
 
 
+CLASS_TITLE_MAX_LENGTH = 120
 CLASS_DESCRIPTION_MAX_LENGTH = 500
+CLASS_TITLE_ERROR_MESSAGES = {
+    'max_length': 'عنوان نمی‌تواند بیشتر از ۱۲۰ کاراکتر باشد.',
+}
 
 
 def is_pdf_upload(value) -> bool:
@@ -53,7 +57,9 @@ def validate_step1_upload(value):
 
 
 class Step1TranscribeRequestSerializer(serializers.Serializer):
-    title = serializers.CharField(max_length=255)
+    title = serializers.CharField(
+        max_length=CLASS_TITLE_MAX_LENGTH, error_messages=CLASS_TITLE_ERROR_MESSAGES,
+    )
     description = serializers.CharField(required=False, allow_blank=True, max_length=CLASS_DESCRIPTION_MAX_LENGTH)
     file = serializers.FileField()
     client_request_id = serializers.UUIDField(required=False)
@@ -427,7 +433,11 @@ class ClassAnnouncementUpdateSerializer(serializers.Serializer):
 
 
 class ClassCreationSessionUpdateSerializer(serializers.Serializer):
-    title = serializers.CharField(max_length=255, required=False)
+    title = serializers.CharField(
+        max_length=CLASS_TITLE_MAX_LENGTH,
+        required=False,
+        error_messages=CLASS_TITLE_ERROR_MESSAGES,
+    )
     description = serializers.CharField(required=False, allow_blank=True, max_length=CLASS_DESCRIPTION_MAX_LENGTH)
     level = serializers.CharField(required=False, allow_blank=True, max_length=64)
     duration = serializers.CharField(required=False, allow_blank=True, max_length=64)
@@ -690,7 +700,9 @@ class InviteCodeVerifyResponseSerializer(serializers.Serializer):
 
 class ExamPrepStep1TranscribeRequestSerializer(serializers.Serializer):
     """Request serializer for Exam Prep Step 1: Transcription."""
-    title = serializers.CharField(max_length=255)
+    title = serializers.CharField(
+        max_length=CLASS_TITLE_MAX_LENGTH, error_messages=CLASS_TITLE_ERROR_MESSAGES,
+    )
     description = serializers.CharField(required=False, allow_blank=True, max_length=CLASS_DESCRIPTION_MAX_LENGTH)
     file = serializers.FileField()
     client_request_id = serializers.UUIDField(required=False)
@@ -870,7 +882,11 @@ class ExamPrepSessionDetailSerializer(serializers.ModelSerializer):
 
 
 class ExamPrepSessionUpdateSerializer(serializers.Serializer):
-    title = serializers.CharField(max_length=255, required=False)
+    title = serializers.CharField(
+        max_length=CLASS_TITLE_MAX_LENGTH,
+        required=False,
+        error_messages=CLASS_TITLE_ERROR_MESSAGES,
+    )
     description = serializers.CharField(required=False, allow_blank=True, max_length=CLASS_DESCRIPTION_MAX_LENGTH)
     level = serializers.CharField(required=False, allow_blank=True)
     duration = serializers.CharField(required=False, allow_blank=True)

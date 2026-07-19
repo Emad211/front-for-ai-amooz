@@ -1,1 +1,2 @@
+export const CLASS_TITLE_MAX_LENGTH = 120;
 export const CLASS_DESCRIPTION_MAX_LENGTH = 500;

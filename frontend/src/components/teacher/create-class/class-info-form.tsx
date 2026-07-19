@@ -6,9 +6,10 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
-import { CLASS_DESCRIPTION_MAX_LENGTH } from '@/constants/teacher-limits';
+import { CLASS_DESCRIPTION_MAX_LENGTH, CLASS_TITLE_MAX_LENGTH } from '@/constants/teacher-limits';
 
 interface ClassInfoFormProps {
+  pipelineType: 'class' | 'exam_prep';
   isExpanded: boolean;
   onToggle: () => void;
   title: string;
@@ -18,6 +19,7 @@ interface ClassInfoFormProps {
 }
 
 export function ClassInfoForm({
+  pipelineType,
   isExpanded,
   onToggle,
   title,
@@ -25,6 +27,8 @@ export function ClassInfoForm({
   onTitleChange,
   onDescriptionChange,
 }: ClassInfoFormProps) {
+  const isExamPrep = pipelineType === 'exam_prep';
+  const titleLength = title.length;
   const descriptionLength = description.length;
 
   return (
@@ -39,8 +43,14 @@ export function ClassInfoForm({
               <BookOpen className="h-5 w-5 text-primary" />
             </div>
             <div className="flex flex-col">
-              <CardTitle className="text-lg">اطلاعات کلاس</CardTitle>
-              <span className="text-xs text-muted-foreground">عنوان و توضیحات کلاس را وارد کنید</span>
+              <CardTitle className="text-lg">
+                {isExamPrep ? 'اطلاعات آمادگی آزمون' : 'اطلاعات کلاس'}
+              </CardTitle>
+              <span className="text-xs text-muted-foreground">
+                {isExamPrep
+                  ? 'عنوان و توضیحات آمادگی آزمون را وارد کنید'
+                  : 'عنوان و توضیحات کلاس را وارد کنید'}
+              </span>
             </div>
           </div>
           <ChevronDown className={cn(
@@ -52,14 +62,21 @@ export function ClassInfoForm({
       {isExpanded && (
         <CardContent className="pt-0 space-y-5 text-start">
           <div className="space-y-2">
-            <Label htmlFor="class-title">عنوان کلاس</Label>
+            <Label htmlFor="class-title">
+              {isExamPrep ? 'عنوان آمادگی آزمون' : 'عنوان کلاس'}
+            </Label>
             <Input 
               id="class-title" 
-              placeholder="مثال: آموزش برنامه‌نویسی پایتون" 
+              placeholder={isExamPrep ? 'مثال: آمادگی آزمون ریاضی' : 'مثال: آموزش برنامه‌نویسی پایتون'}
               className="h-12 bg-background/80 rounded-xl text-start border-border/60"
               value={title}
-              onChange={(e) => onTitleChange(e.target.value)}
+              maxLength={CLASS_TITLE_MAX_LENGTH}
+              onChange={(e) => onTitleChange(e.target.value.slice(0, CLASS_TITLE_MAX_LENGTH))}
             />
+            <div className="flex justify-between text-xs text-muted-foreground">
+              <span>حداکثر {CLASS_TITLE_MAX_LENGTH} کاراکتر</span>
+              <span dir="ltr">{titleLength}/{CLASS_TITLE_MAX_LENGTH}</span>
+            </div>
           </div>
           <div className="space-y-2">
             <Label htmlFor="class-description">توضیحات</Label>

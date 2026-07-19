@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { CLASS_DESCRIPTION_MAX_LENGTH } from '@/constants/teacher-limits';
+import { CLASS_DESCRIPTION_MAX_LENGTH, CLASS_TITLE_MAX_LENGTH } from '@/constants/teacher-limits';
 import {
   Select,
   SelectContent,
@@ -78,9 +78,17 @@ export function ClassEditForm({ classDetail, onSave, isSaving }: ClassEditFormPr
               <Input
                 id="title"
                 value={formData.title}
-                onChange={e => setFormData(prev => ({ ...prev, title: e.target.value }))}
+                maxLength={CLASS_TITLE_MAX_LENGTH}
+                onChange={e => setFormData(prev => ({
+                  ...prev,
+                  title: e.target.value.slice(0, CLASS_TITLE_MAX_LENGTH),
+                }))}
                 placeholder="عنوان کلاس را وارد کنید"
               />
+              <div className="flex justify-between text-xs text-muted-foreground">
+                <span>حداکثر {CLASS_TITLE_MAX_LENGTH} کاراکتر</span>
+                <span dir="ltr">{formData.title.length}/{CLASS_TITLE_MAX_LENGTH}</span>
+              </div>
             </div>
 
             <div className="space-y-2">
