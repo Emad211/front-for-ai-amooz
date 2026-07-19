@@ -207,6 +207,12 @@ here, deliberately.
 | `StudentExerciseSubmission` | exercise FK · student FK · mutable draft/current projection · Status{DRAFT,SUBMITTED,GRADING,GRADED,GRADING_FAILED} · `answers` JSON · latest `result`/score metadata · nullable `current_attempt` | **uniq (exercise, student)** |
 | `StudentExerciseAttempt` | submission FK · immutable `attempt_number` · answer/question/rubric snapshots · per-question fingerprints/OCR · result and score snapshot · model/prompt metadata · grading status/timestamps | **uniq (submission, attempt_number)** · index (status, updated_at) |
 
+Attempt grading is finalized atomically with the current Submission projection. Fingerprints include
+only inputs that can affect a question's grade (including OCR versioning only for photo answers), and
+temporary object-storage read failures are retried rather than persisted as empty answer evidence.
+After `allow-redo`, the latest graded Attempt remains available as read-only history while no Attempt
+is considered current/editable until the student submits the new draft.
+
 Migrations keep DDL and DML separate. The original exercise schema uses `classes/0024_exercises`
 (CreateModel + constraints), `classes/0025_exercise_submission_draft` (adds `DRAFT` to the submission
 status — no-op AlterField), and `classes/0026_session_scheduled_at` (adds nullable `scheduled_at` to

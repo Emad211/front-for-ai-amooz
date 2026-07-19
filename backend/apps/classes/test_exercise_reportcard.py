@@ -387,6 +387,11 @@ class TestAllowRedo:
             f'/api/classes/exercises/submissions/{sub.id}/allow-redo/'
         ).status_code == 200
 
+        detail = client.get(f'/api/classes/exercises/submissions/{sub.id}/')
+        assert detail.status_code == 200
+        assert detail.data['isLatestAttempt'] is True
+        assert detail.data['isCurrentAttempt'] is False
+
         response = client.patch(
             f'/api/classes/exercises/submissions/{sub.id}/override/',
             {'overrides': [{'question_id': 'q1', 'teacher_score': 4}]},

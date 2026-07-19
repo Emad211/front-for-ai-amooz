@@ -124,6 +124,7 @@ export type SubmissionDetail = {
   attemptId: number | null;
   attemptNumber: number;
   isLatestAttempt: boolean;
+  isCurrentAttempt: boolean;
 };
 
 export type QuestionOverride = {

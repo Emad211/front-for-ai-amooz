@@ -9,6 +9,8 @@ from decimal import Decimal
 
 import pytest
 from celery.exceptions import Retry as CeleryRetry
+from django.db import transaction
+from django.utils import timezone
 from model_bakery import baker
 
 from apps.chatbot.services.llm_client import ProviderTransientError
@@ -369,6 +371,66 @@ class TestStableResubmissionGrading:
         assert submission.status == SubStatus.DRAFT
         assert submission.current_attempt_id is None
 
+    @pytest.mark.django_db(transaction=True)
+    def test_override_after_attempt_grade_is_not_lost_by_projection(self, monkeypatch):
+        _ex, q1, _q2, submission, _calls = _submission_with_questions(monkeypatch)
+        original_save = StudentExerciseAttempt.save
+        scheduled = {'done': False}
+
+        def apply_teacher_override(attempt_id):
+            attempt = StudentExerciseAttempt.objects.get(id=attempt_id)
+            result = attempt.result
+            row = next(
+                item for item in result['per_question']
+                if item['question_id'] == str(q1.id)
+            )
+            row['teacher_score'] = 4.0
+            row['teacher_feedback'] = 'اصلاح هم‌زمان معلم'
+            row['score_points'] = 4.0
+            overridden_at = timezone.now()
+            attempt.result = result
+            attempt.score_points = Decimal('6')
+            attempt.overridden_at = overridden_at
+            original_save(
+                attempt,
+                update_fields=['result', 'score_points', 'overridden_at', 'updated_at'],
+            )
+
+            projected = StudentExerciseSubmission.objects.get(id=submission.id)
+            projected.result = result
+            projected.score_points = Decimal('6')
+            projected.overridden_at = overridden_at
+            projected.save(update_fields=[
+                'result', 'score_points', 'overridden_at', 'updated_at',
+            ])
+
+        def save_and_schedule_override(instance, *args, **kwargs):
+            saved = original_save(instance, *args, **kwargs)
+            if (
+                instance.status == StudentExerciseAttempt.Status.GRADED
+                and not scheduled['done']
+            ):
+                scheduled['done'] = True
+                transaction.on_commit(lambda: apply_teacher_override(instance.id))
+            return saved
+
+        monkeypatch.setattr(StudentExerciseAttempt, 'save', save_and_schedule_override)
+
+        assert _run(submission.id)['status'] == 'graded'
+        submission.refresh_from_db()
+        attempt = submission.current_attempt
+        attempt.refresh_from_db()
+
+        assert submission.score_points == Decimal('6.00')
+        assert submission.overridden_at is not None
+        assert submission.result == attempt.result
+        overridden = next(
+            item for item in submission.result['per_question']
+            if item['question_id'] == str(q1.id)
+        )
+        assert overridden['teacher_score'] == 4.0
+        assert overridden['teacher_feedback'] == 'اصلاح هم‌زمان معلم'
+
     def test_grading_uses_question_snapshot_not_later_edits(self, monkeypatch):
         ex, question, _q2, submission, _calls = _submission_with_questions(monkeypatch)
         captured = {}
@@ -456,6 +518,20 @@ class TestQuestionFingerprint:
         assert model_changed != before
         assert prompt_changed != model_changed
 
+    def test_vision_model_change_does_not_invalidate_text_only_answer(self, monkeypatch):
+        _ex, question, _q2, submission, _calls = _submission_with_questions(monkeypatch)
+        monkeypatch.setenv('EXERCISE_GRADING_MODEL', 'grader-stable')
+        monkeypatch.setenv('EXERCISE_VISION_MODEL', 'vision-a')
+        before = grading._question_fingerprint(
+            question, submission.answers, student_id=submission.student_id,
+        )
+        monkeypatch.setenv('EXERCISE_VISION_MODEL', 'vision-b')
+        after = grading._question_fingerprint(
+            question, submission.answers, student_id=submission.student_id,
+        )
+
+        assert after == before
+
     def test_image_content_change_under_same_path_invalidates_fingerprint(self, monkeypatch):
         _ex, question, submission = _photo_submission(images=['answer.png'])
         content = {'value': b'first-image-content'}
@@ -471,6 +547,23 @@ class TestQuestionFingerprint:
             student_id=submission.student_id,
         )
         content['value'] = b'replaced-image-content'
+        after = grading._question_fingerprint(
+            question,
+            submission.answers,
+            student_id=submission.student_id,
+        )
+
+        assert after != before
+
+    def test_ocr_algorithm_change_invalidates_photo_fingerprint(self, monkeypatch):
+        _ex, question, submission = _photo_submission(images=['answer.png'])
+        monkeypatch.setattr(grading, '_read_answer_image', lambda _path: _png_bytes())
+        before = grading._question_fingerprint(
+            question,
+            submission.answers,
+            student_id=submission.student_id,
+        )
+        monkeypatch.setattr(grading, '_OCR_ALGORITHM_VERSION', 'exercise-ocr-v-next')
         after = grading._question_fingerprint(
             question,
             submission.answers,
@@ -689,6 +782,33 @@ class TestHandwritingVision:
         attempt.refresh_from_db()
         assert sub.status == SubStatus.GRADING
         assert attempt.status == StudentExerciseAttempt.Status.GRADING
+        assert attempt.ocr_text == {}
+
+    def test_transient_storage_failure_retries_without_caching_unreadable_image(
+        self, monkeypatch,
+    ):
+        _ex, _q, sub = _photo_submission(images=['answer.png'])
+        monkeypatch.setattr(
+            grading,
+            '_read_answer_image',
+            lambda _path: (_ for _ in ()).throw(TimeoutError('object storage timeout')),
+        )
+
+        def fake_retry(*, exc=None, countdown=None):
+            raise CeleryRetry(exc=exc, when=countdown)
+
+        monkeypatch.setattr(tasks.grade_exercise_submission.request, 'id', 'storage-retry', raising=False)
+        monkeypatch.setattr(tasks.grade_exercise_submission, 'retry', fake_retry)
+
+        with pytest.raises(CeleryRetry):
+            tasks.grade_exercise_submission.run(sub.id)
+
+        sub.refresh_from_db()
+        attempt = sub.current_attempt
+        attempt.refresh_from_db()
+        assert sub.status == SubStatus.GRADING
+        assert attempt.status == StudentExerciseAttempt.Status.GRADING
+        assert attempt.question_fingerprints == {}
         assert attempt.ocr_text == {}
 
     def test_missing_vision_model_fails_grading_instead_of_silent_zero(self, monkeypatch):

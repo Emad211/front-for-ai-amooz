@@ -31,6 +31,15 @@
   private reference answers or grading notes from leaking through feedback fields.
 - Backfill is repeat-safe, and teacher overrides read/merge result JSON only while holding the
   Submission/Attempt row locks.
+- Attempt finalization and Submission projection now commit in one transaction. A teacher override
+  cannot land between those writes and then be replaced by an older AI result; duplicate delivery
+  projects only the already-persisted Attempt result.
+- Fingerprints contain only configuration that can affect that question: text-only answers ignore
+  vision-model changes, while photo answers include the OCR algorithm/prompt/model versions.
+- Temporary object-storage read failures retry the grading task instead of being cached as an
+  unreadable image and a reusable empty answer.
+- Teacher grading distinguishes the latest historical Attempt from the current editable Attempt, so
+  opening a redo draft cannot leave stale override controls enabled.
 
 ## Deploy order
 
@@ -65,10 +74,12 @@ variable is required.
 - Mandatory reviews completed on the final diff: database-engineer, AI engineer, security auditor, and
   code reviewer all approved after their findings were resolved. The release-manager gate identified
   and required the documentation corrections recorded in this note.
-- Exercise/LLM regression suite on SQLite without migrations: `301 passed, 1 skipped, 127 warnings`.
-  The skipped test is PostgreSQL-only concurrency coverage.
+- Exercise/LLM regression suite on SQLite without migrations after the verification fixes:
+  `305 passed, 1 skipped, 127 warnings`. The skipped test is PostgreSQL-only concurrency coverage.
 - Fresh PostgreSQL 16 migration through `classes/0033`: passed.
-- PostgreSQL override row-lock race plus repeat-safe backfill test: `2 passed`.
+- Full Exercise/LLM regression suite on PostgreSQL 16 with real migrations: `306 passed`.
+- Focused finalization/override, fingerprint, storage-retry, and current-Attempt regressions passed on
+  both SQLite and PostgreSQL (`5 passed` on each focused run).
 - Focused final grading suite after image-identity hardening: `37 passed`.
 - Prompt contract is included in the 301-test run and passed.
 - `python manage.py check`: `System check identified no issues (0 silenced)`.
@@ -78,10 +89,12 @@ variable is required.
 - `git diff --check`: passed; Git reported line-ending conversion warnings only.
 - `npm run typecheck`: 11 existing errors in unchanged admin/exam/mock-message files; no error in a
   changed Exercise Hub file.
+- `npm run build`: production build compiled successfully and generated all 55 routes.
 - `npm run lint`: the pre-existing ESLint configuration crashes before linting files with
   `Converting circular structure to JSON`; no lint result is claimed for this release.
-- The full repository pytest suite was not rerun to completion after the final patch; the complete
-  feature-relevant Exercise Hub/LLM suite above is the release gate used here.
+- Full backend regression suite on SQLite after the verification fixes: `1349 passed, 5 skipped`.
+  The skips are two PostgreSQL-only auth races, two opt-in real-LLM PDF benchmarks, and one
+  PostgreSQL-only row-lock test. PostgreSQL-specific Exercise Hub coverage was run separately above.
 
 ## Rollback
 

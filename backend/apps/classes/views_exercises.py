@@ -1541,6 +1541,11 @@ class TeacherSubmissionDetailView(APIView):
             return Response({'detail': 'ارسال پیدا نشد.'}, status=status.HTTP_404_NOT_FOUND)
         selected = attempt or submission
         latest_id = attempts[-1].id if attempts else None
+        is_current_attempt = (
+            submission.current_attempt_id == attempt.id
+            if attempt is not None
+            else not attempts
+        )
         return Response({
             'id': submission.id,
             'studentId': submission.student_id,
@@ -1556,6 +1561,7 @@ class TeacherSubmissionDetailView(APIView):
             'attemptId': attempt.id if attempt else None,
             'attemptNumber': attempt.attempt_number if attempt else 1,
             'isLatestAttempt': attempt is None or attempt.id == latest_id,
+            'isCurrentAttempt': is_current_attempt,
         })
 
 

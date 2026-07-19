@@ -1762,20 +1762,51 @@ def grade_exercise_submission(self, submission_id: int, attempt_id: int | None =
             session_id=submission.exercise.session_id,
         ):
             result = grade_attempt(attempt)
-        apply_grading_result(attempt, result)
-        attempt.status = StudentExerciseAttempt.Status.GRADED
-        attempt.save(update_fields=[
-            'status', 'result', 'score_points', 'max_points', 'graded_at', 'updated_at',
-        ])
         with transaction.atomic():
             locked_submission = StudentExerciseSubmission.objects.select_for_update().get(
                 id=submission_id,
             )
-            if locked_submission.current_attempt_id == attempt.id:
-                apply_grading_result(locked_submission, result)
+            locked_attempt = StudentExerciseAttempt.objects.select_for_update().get(
+                id=attempt.id,
+                submission_id=submission_id,
+            )
+            if locked_attempt.status == StudentExerciseAttempt.Status.GRADED:
+                # A duplicate redelivery finished after this worker started.
+                # Keep any teacher override committed after that completion.
+                attempt = locked_attempt
+                projection_result = {
+                    'per_question': locked_attempt.result.get('per_question', []),
+                    'score_points': locked_attempt.score_points,
+                    'max_points': locked_attempt.max_points,
+                }
+            elif (
+                locked_attempt.status == StudentExerciseAttempt.Status.GRADING
+                and locked_attempt.grading_task_id == task_id
+            ):
+                apply_grading_result(locked_attempt, result)
+                locked_attempt.status = StudentExerciseAttempt.Status.GRADED
+                locked_attempt.save(update_fields=[
+                    'status', 'result', 'score_points', 'max_points', 'graded_at',
+                    'updated_at',
+                ])
+                attempt = locked_attempt
+                projection_result = result
+            else:
+                return {
+                    'status': 'skipped',
+                    'reason': f'status={locked_attempt.status}',
+                    'submission_id': submission_id,
+                    'attempt_id': locked_attempt.id,
+                }
+
+            if (
+                locked_submission.current_attempt_id == attempt.id
+                and locked_submission.status == StudentExerciseSubmission.Status.GRADING
+            ):
+                apply_grading_result(locked_submission, projection_result)
                 locked_submission.status = StudentExerciseSubmission.Status.GRADED
                 locked_submission.grading_task_id = attempt.grading_task_id
-                locked_submission.overridden_at = None
+                locked_submission.overridden_at = attempt.overridden_at
                 locked_submission.save(update_fields=[
                     'status', 'result', 'score_points', 'max_points', 'graded_at',
                     'grading_task_id', 'overridden_at', 'updated_at',

@@ -253,7 +253,7 @@ function GradingDialog({
                 ))}
               </div>
             )}
-            {!detail.isLatestAttempt && (
+            {!detail.isCurrentAttempt && (
               <p className="rounded-md border border-border bg-muted/40 p-2 text-sm text-muted-foreground">
                 این ارسال برای مشاهده تاریخچه است و قابل ویرایش نیست.
               </p>
@@ -333,7 +333,7 @@ function GradingDialog({
                       aria-invalid={scoreInvalid}
                       aria-label="نمره دستی؛ برای بازگشت به نمره هوشمند خالی بگذارید"
                       title="برای بازگشت به نمره هوشمند، این کادر را خالی کنید."
-                      disabled={!detail.isLatestAttempt || detail.status !== 'graded'}
+                      disabled={!detail.isCurrentAttempt || detail.status !== 'graded'}
                       onChange={(e) => setOverride(qid, {
                         teacher_score: e.target.value === '' ? null : e.target.valueAsNumber,
                       })}
@@ -344,7 +344,7 @@ function GradingDialog({
                       rows={2}
                       defaultValue={pq.teacher_feedback ?? ''}
                       aria-label="بازخورد معلم"
-                      disabled={!detail.isLatestAttempt || detail.status !== 'graded'}
+                      disabled={!detail.isCurrentAttempt || detail.status !== 'graded'}
                       onChange={(e) => setOverride(qid, { teacher_feedback: e.target.value })}
                     />
                     {scoreInvalid && (
@@ -361,7 +361,7 @@ function GradingDialog({
                 </div>
               );
             })}
-            {detail.isLatestAttempt && ['graded', 'grading_failed'].includes(detail.status) && (
+            {detail.isCurrentAttempt && ['graded', 'grading_failed'].includes(detail.status) && (
               <div className="flex items-center justify-between gap-2 border-t border-border pt-3">
                 <Button variant="ghost" onClick={redo}>
                   <RotateCcw className="ms-2 h-4 w-4" />

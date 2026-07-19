@@ -31,7 +31,7 @@ from decimal import Decimal, InvalidOperation
 from types import SimpleNamespace
 from typing import Any
 
-from apps.chatbot.services.llm_client import is_transient_llm_error
+from apps.chatbot.services.llm_client import ProviderTransientError, is_transient_llm_error
 from apps.commons.llm_prompts import PROMPTS
 from apps.commons.models import LLMUsageLog
 from apps.commons.structured_llm import generate_structured
@@ -134,10 +134,14 @@ def _load_image_contents(
     for path in image_paths:
         try:
             data = _read_answer_image(path)
-        except Exception:
+        except FileNotFoundError:
             logger.warning("Answer image unreadable, skipping: %s", path)
             identities.append({"path": path, "unreadable": True})
             continue
+        except Exception as exc:
+            # Do not turn a temporary S3/MinIO outage into a reusable empty
+            # answer and a false zero. The task-level retry owns recovery.
+            raise ProviderTransientError("Answer image storage read failed.") from exc
         blobs[path] = data
         identities.append({
             "path": path,
@@ -284,12 +288,29 @@ def _configured_model(*names: str) -> str:
 def _question_fingerprint(question, answers: dict, *, student_id: int,
                           image_identities: list[dict[str, str | bool]] | None = None) -> str:
     """Hash all inputs that can legitimately change a question's AI grade."""
+    images = (
+        image_identities
+        if image_identities is not None
+        else _load_image_contents(_student_images(answers, question, student_id))[0]
+    )
+    uses_grading_llm = question.question_type not in _DETERMINISTIC_TYPES
+    uses_vision = bool(images)
     return _sha256_json({
         "algorithm": _GRADING_ALGORITHM_VERSION,
-        "grading_prompt": _prompt_version("exercise_grading"),
-        "vision_prompt": _prompt_version("exercise_handwriting_vision"),
-        "grading_model": _configured_model("EXERCISE_GRADING_MODEL"),
-        "vision_model": _configured_model("EXERCISE_VISION_MODEL", "IMAGE_MODEL"),
+        "grading_prompt": (
+            _prompt_version("exercise_grading") if uses_grading_llm else None
+        ),
+        "grading_model": (
+            _configured_model("EXERCISE_GRADING_MODEL") if uses_grading_llm else None
+        ),
+        "vision_algorithm": _OCR_ALGORITHM_VERSION if uses_vision else None,
+        "vision_prompt": (
+            _prompt_version("exercise_handwriting_vision") if uses_vision else None
+        ),
+        "vision_model": (
+            _configured_model("EXERCISE_VISION_MODEL", "IMAGE_MODEL")
+            if uses_vision else None
+        ),
         "question": {
             "id": str(question.id),
             "type": question.question_type,
@@ -301,11 +322,7 @@ def _question_fingerprint(question, answers: dict, *, student_id: int,
         },
         "answer": {
             "text": _student_text(answers, question.id),
-            "images": (
-                image_identities
-                if image_identities is not None
-                else _load_image_contents(_student_images(answers, question, student_id))[0]
-            ),
+            "images": images,
         },
     })
 
@@ -543,6 +560,7 @@ def grade_attempt(attempt) -> dict:
     )
     metadata.update({
         "algorithmVersion": _GRADING_ALGORITHM_VERSION,
+        "ocrAlgorithmVersion": _OCR_ALGORITHM_VERSION,
         "gradingPromptVersion": _prompt_version("exercise_grading"),
         "visionPromptVersion": _prompt_version("exercise_handwriting_vision"),
         "gradingModel": _configured_model("EXERCISE_GRADING_MODEL"),
