@@ -96,6 +96,17 @@ export type PerQuestionResult = {
   feedback?: string;
   teacher_feedback?: string | null;
   missing_points?: string[];
+  grading_source?: 'reused' | 'regraded';
+};
+
+export type ExerciseAttemptSummary = {
+  attemptId: number;
+  attemptNumber: number;
+  status: SubmissionStatus;
+  scorePoints: string | null;
+  maxPoints: string | null;
+  submittedAt: string | null;
+  gradedAt: string | null;
 };
 
 export type SubmissionDetail = {
@@ -109,6 +120,10 @@ export type SubmissionDetail = {
   scorePoints: string | null;
   maxPoints: string | null;
   overriddenAt: string | null;
+  attempts: ExerciseAttemptSummary[];
+  attemptId: number | null;
+  attemptNumber: number;
+  isLatestAttempt: boolean;
 };
 
 export type QuestionOverride = {
@@ -410,8 +425,12 @@ export async function listSubmissions(exerciseId: number): Promise<SubmissionLis
   });
 }
 
-export async function getSubmission(submissionId: number): Promise<SubmissionDetail> {
-  return requestJson(`${API_URL}/classes/exercises/submissions/${submissionId}/`, {
+export async function getSubmission(
+  submissionId: number,
+  attemptId?: number
+): Promise<SubmissionDetail> {
+  const query = attemptId != null ? `?attemptId=${attemptId}` : '';
+  return requestJson(`${API_URL}/classes/exercises/submissions/${submissionId}/${query}`, {
     method: 'GET',
     headers: authHeaders(),
   });
@@ -428,7 +447,9 @@ export async function overrideSubmission(
   });
 }
 
-export async function allowRedo(submissionId: number): Promise<{ status: SubmissionStatus }> {
+export async function allowRedo(
+  submissionId: number
+): Promise<{ status: SubmissionStatus; nextAttemptNumber: number }> {
   return requestJson(`${API_URL}/classes/exercises/submissions/${submissionId}/allow-redo/`, {
     method: 'POST',
     headers: authHeaders(),
@@ -478,6 +499,7 @@ export type StudentExerciseDetail = {
   sections: StudentSection[];
   myAnswers: Record<string, { text?: string; images?: string[] }>;
   submissionStatus: SubmissionStatus | null;
+  attemptCount: number;
 };
 
 export type StudentAnswers = Record<string, { text?: string; images?: string[] }>;
@@ -488,7 +510,11 @@ export type ExerciseResult = {
   scorePoints?: string | null;
   maxPoints?: string | null;
   result?: { per_question?: PerQuestionResult[] };
+  answers?: StudentAnswers;
   answersRevealed?: boolean;
+  attempts?: ExerciseAttemptSummary[];
+  attemptId?: number | null;
+  attemptNumber?: number;
   exercise?: {
     id: number;
     title: string;
@@ -586,7 +612,12 @@ export async function submitExercise(
   sessionId: number,
   exerciseId: number,
   answers: StudentAnswers
-): Promise<{ status: SubmissionStatus; isLate: boolean }> {
+): Promise<{
+  status: SubmissionStatus;
+  isLate: boolean;
+  attemptId: number;
+  attemptNumber: number;
+}> {
   return requestJson(
     `${API_URL}/classes/student/courses/${sessionId}/exercises/${exerciseId}/submit/`,
     { method: 'POST', headers: jsonHeaders(), body: JSON.stringify({ answers }) }
@@ -595,10 +626,12 @@ export async function submitExercise(
 
 export async function getExerciseResult(
   sessionId: number,
-  exerciseId: number
+  exerciseId: number,
+  attemptId?: number
 ): Promise<ExerciseResult> {
+  const query = attemptId != null ? `?attemptId=${attemptId}` : '';
   return requestJson(
-    `${API_URL}/classes/student/courses/${sessionId}/exercises/${exerciseId}/result/`,
+    `${API_URL}/classes/student/courses/${sessionId}/exercises/${exerciseId}/result/${query}`,
     { method: 'GET', headers: authHeaders() }
   );
 }

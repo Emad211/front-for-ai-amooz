@@ -88,6 +88,17 @@ function mergeDraftAnswers(server: StudentAnswers, local: StudentAnswers): Stude
   return merged;
 }
 
+function canonicalAnswers(answers: StudentAnswers): string {
+  return JSON.stringify(
+    Object.fromEntries(
+      Object.keys(answers).sort().map((questionId) => [questionId, {
+        text: answers[questionId]?.text ?? '',
+        images: answers[questionId]?.images ?? [],
+      }])
+    )
+  );
+}
+
 export function ExerciseSolver({
   sessionId,
   exerciseId,
@@ -110,6 +121,7 @@ export function ExerciseSolver({
   const mountedRef = useRef(true);
   const finalizingRef = useRef(false);
   const submittedRef = useRef(false);
+  const previousAnswersRef = useRef<StudentAnswers>({});
   const draftBackupKey = useMemo(() => {
     const studentId = getStoredUser()?.id;
     return studentId
@@ -135,6 +147,7 @@ export function ExerciseSolver({
           clearDraftBackup(draftBackupKey);
         }
         const restoredAnswers = backup ? mergeDraftAnswers(serverAnswers, backup) : serverAnswers;
+        previousAnswersRef.current = serverAnswers;
         setDetail(d);
         setAnswers(restoredAnswers);
         answersRef.current = restoredAnswers;
@@ -148,6 +161,10 @@ export function ExerciseSolver({
 
   const alreadySubmitted =
     detail?.submissionStatus != null && detail.submissionStatus !== 'draft';
+  const unchangedResubmission = Boolean(
+    detail?.attemptCount
+    && canonicalAnswers(answers) === canonicalAnswers(previousAnswersRef.current)
+  );
 
   useEffect(() => {
     submittedRef.current = alreadySubmitted;
@@ -428,7 +445,9 @@ export function ExerciseSolver({
               <AlertDialogHeader>
                 <AlertDialogTitle>ارسال نهایی پاسخ‌ها</AlertDialogTitle>
                 <AlertDialogDescription>
-                  پس از ارسال، امکان ویرایش پاسخ‌ها را نخواهید داشت. مطمئن هستید؟
+                  {unchangedResubmission
+                    ? 'پاسخ‌های شما نسبت به ارسال قبلی تغییری نکرده‌اند. در صورت ارسال، همان نتیجه قبلی مبنای نمره‌دهی خواهد بود.'
+                    : 'پس از ارسال، امکان ویرایش پاسخ‌ها را نخواهید داشت. مطمئن هستید؟'}
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>

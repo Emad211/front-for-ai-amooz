@@ -24,8 +24,10 @@ from apps.classes.models import (
     ClassExercise,
     ClassExerciseQuestion,
     ClassExerciseSection,
+    StudentExerciseAttempt,
     StudentExerciseSubmission,
 )
+from apps.classes.services.exercise_grading import build_question_snapshot
 
 pytestmark = [pytest.mark.django_db, pytest.mark.api]
 
@@ -152,12 +154,88 @@ class TestReferenceAnswerLeakGuard:
                 'question_id': 'q1', 'llm_score': 1,
                 'reference_answer': 'SECRET-IN-RESULT',
                 'grading_notes': 'SECRET-NOTES',
+                'feedback': 'SECRET-IN-RESULT',
+                'missing_points': ['SECRET-NOTES'],
+                'label': 'incorrect',
             }]},
         )
         res = _auth(student).get(_url(session.id, ex.id, 'result/'))
         assert res.data['answersRevealed'] is False
         assert 'SECRET-IN-RESULT' not in json.dumps(res.data, ensure_ascii=False)
         assert 'SECRET-NOTES' not in json.dumps(res.data, ensure_ascii=False)
+        assert res.data['result']['per_question'][0]['feedback'] == 'پاسخ شما نیاز به بازبینی دارد.'
+
+    def test_no_deadline_redo_hides_reference_from_historical_attempt(self):
+        session, ex = _published_exercise(deadline=None)
+        session.teacher.role = User.Role.TEACHER
+        session.teacher.save(update_fields=['role'])
+        student = _student()
+        submission = baker.make(
+            StudentExerciseSubmission,
+            exercise=ex,
+            student=student,
+            status=SubStatus.GRADED,
+            result={'per_question': []},
+        )
+        attempt = baker.make(
+            StudentExerciseAttempt,
+            submission=submission,
+            attempt_number=1,
+            status=StudentExerciseAttempt.Status.GRADED,
+            result=submission.result,
+        )
+        submission.current_attempt = attempt
+        submission.save(update_fields=['current_attempt'])
+        result_url = _url(session.id, ex.id, 'result/')
+
+        assert _auth(student).get(result_url).data['answersRevealed'] is True
+        redo = _auth(session.teacher).post(
+            f'/api/classes/exercises/submissions/{submission.id}/allow-redo/'
+        )
+        assert redo.status_code == 200
+
+        for url in (result_url, f'{result_url}?attemptId={attempt.id}'):
+            response = _auth(student).get(url)
+            assert response.status_code == 200
+            assert response.data['answersRevealed'] is False
+            assert REF not in json.dumps(response.data, ensure_ascii=False)
+
+    def test_historical_result_uses_attempt_question_snapshot(self):
+        session, ex = _published_exercise(deadline=timezone.now() - timedelta(minutes=1))
+        student = _student()
+        question = ClassExerciseQuestion.objects.get(section__exercise=ex)
+        snapshot = build_question_snapshot(ex)
+        submission = baker.make(
+            StudentExerciseSubmission,
+            exercise=ex,
+            student=student,
+            status=SubStatus.GRADED,
+            result={'per_question': []},
+        )
+        attempt = baker.make(
+            StudentExerciseAttempt,
+            submission=submission,
+            attempt_number=1,
+            status=StudentExerciseAttempt.Status.GRADED,
+            question_snapshot=snapshot,
+            result=submission.result,
+        )
+        submission.current_attempt = attempt
+        submission.save(update_fields=['current_attempt'])
+        question.question_markdown = 'سؤال جدید'
+        question.reference_answer_markdown = 'پاسخ جدید'
+        question.save(update_fields=['question_markdown', 'reference_answer_markdown'])
+
+        response = _auth(student).get(
+            f'{_url(session.id, ex.id, "result/")}?attemptId={attempt.id}'
+        )
+        payload = json.dumps(response.data, ensure_ascii=False)
+
+        assert response.status_code == 200
+        assert 'سؤال؟' in payload
+        assert REF in payload
+        assert 'سؤال جدید' not in payload
+        assert 'پاسخ جدید' not in payload
 
 
 class TestSubmit:

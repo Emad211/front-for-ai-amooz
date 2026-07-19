@@ -110,7 +110,7 @@ here, deliberately.
   policy is a real product decision; SMS deadline reminders (Mediana cost + Celery beat scheduling);
   per-student deadline extensions; per-exercise grade weights; teacher review-gate before grade release;
   report-card PDF export (WeasyPrint); auto late-penalty.
-- **Unresolved V2 contract gaps:** in-app notifications (E35), append-only grading audit (E22), private
+- **Unresolved V2 contract gaps:** in-app notifications (E35), the remaining actor/reason event log portion of E22, private
   answer media serving (E23), explicit no-deadline reveal policy (E21), confidence/review routing (E26),
   and post-publish regrade story (E36).
 
@@ -204,11 +204,12 @@ here, deliberately.
 | `ClassExerciseAsset` | exercise FK · kind{pdf,image} · file · order | — |
 | `ClassExerciseSection` | private compatibility container; new exercises receive exactly one untitled row. Not exposed as product grouping. | uniq (exercise, order) |
 | `ClassExerciseQuestion` | section FK · order · `question_markdown` · `question_type{descriptive,multiple_choice,fill_blank}` · `options` JSON null · `reference_answer_markdown` · `max_points` Decimal · `grading_notes` | uniq (section, order) |
-| `StudentExerciseSubmission` | exercise FK · student FK · Status{SUBMITTED,GRADING,GRADED,GRADING_FAILED} · `answers` JSON (text + image storage paths per question) · `result` JSON (`per_question`: llm_score/llm_feedback/teacher_score/teacher_feedback) · `score_points` · `max_points` snapshot · `is_late` · `grading_task_id` · `graded_at` · `overridden_at` | **uniq (exercise, student)** |
+| `StudentExerciseSubmission` | exercise FK · student FK · mutable draft/current projection · Status{DRAFT,SUBMITTED,GRADING,GRADED,GRADING_FAILED} · `answers` JSON · latest `result`/score metadata · nullable `current_attempt` | **uniq (exercise, student)** |
+| `StudentExerciseAttempt` | submission FK · immutable `attempt_number` · answer/question/rubric snapshots · per-question fingerprints/OCR · result and score snapshot · model/prompt metadata · grading status/timestamps | **uniq (submission, attempt_number)** · index (status, updated_at) |
 
-Migrations (all pure DDL, DML/DDL split respected, reversible with no backfill): `classes/0024_exercises`
+Migrations keep DDL and DML separate. The original exercise schema uses `classes/0024_exercises`
 (CreateModel + constraints), `classes/0025_exercise_submission_draft` (adds `DRAFT` to the submission
-status — no-op AlterField), `classes/0026_session_scheduled_at` (adds nullable `scheduled_at` to
+status — no-op AlterField), and `classes/0026_session_scheduled_at` (adds nullable `scheduled_at` to
 `ClassCreationSession` for timed exam-prep calendar events — **database-engineer approved**: metadata-only
 add on Postgres, no rewrite/long lock, no index needed since the calendar query is pre-filtered by
 `invites__phone` + indexed `pipeline_type`; rollback = `migrate classes 0025`). Feature-enum additions ride
@@ -216,7 +217,12 @@ add on Postgres, no rewrite/long lock, no index needed since the calendar query 
 `review_ready_notified_at` for the one-step async authoring flow) +
 `commons/0006` + `commons/0007_exercise_reference_ingest_feature` (no-op AlterField).
 `LLMUsageLog.Feature` choices additions generate a no-op AlterField migration (coordinate with
-database-engineer).
+database-engineer). Stable resubmission grading adds DDL migration
+`classes/0032_studentexerciseattempt`, followed by repeat-safe DML migration
+`classes/0033_backfill_exercise_attempts`, which snapshots existing finalized submissions as attempt 1
+without deleting or rewriting their submission projection. Reversing `0033` is intentionally a no-op;
+rolling back through `0032` drops attempt history and therefore requires a database backup/restore if
+that history must be retained.
 
 ## API (contract-first; teacher = `[IsAuthenticated, IsTeacherUser]` + `session__teacher=request.user` → non-owner **404**; student = `[IsAuthenticated, IsStudentUser]` + `session__is_published=True, session__invites__phone, exercise.status=PUBLISHED` → **404**, no-phone → **400**)
 
@@ -464,7 +470,7 @@ stored `per_question` (zero tokens), **no pregeneration** (nothing to pre-build)
 | **E19** | backend + database-engineer | True unset points + publish gate | `max_points` can distinguish unset from teacher-confirmed; extraction never silently turns missing points into `1`; publish gate tests lock it |
 | **E20** | backend + frontend + product-manager | Exercise modes | `practice/homework/assessment` policy exists; retry, grading visibility, reveal, assistant behavior, and UI labels derive from mode |
 | **E21** | backend + security-auditor | Explicit reveal policy | `answer_release_at` or manual release prevents no-deadline graded homework from leaking answers; no-deadline self-study is labeled as such |
-| **E22** | backend + security-auditor | Append-only grading audit trail | Override/regrade/redo records actor, reason, old/new values, timestamp; `llm_score` remains immutable |
+| **E22** | backend + security-auditor | Append-only grading audit trail | 🟡 Attempt history DONE (ADR-0008): immutable answer + question/rubric snapshots, stable fingerprint reuse, OCR cache, latest-attempt reports, teacher/student history. A separate actor/reason event log for each override remains. |
 | **E23** | backend + security-auditor | Private answer media serving | Student answer images and answer-key/reference assets are served through authorized endpoints or scoped signed URLs, not raw public paths |
 | **E24** | backend + ai-engineer | Exercise LLM reliability and cost attribution | Exercise extraction/grading tasks attribute usage to teacher/session, retry transient provider failures, and expose actionable failure states |
 | **E25** | ai-engineer + security-auditor | Student-safe pre-reveal feedback | Pre-deadline grading feedback cannot reveal canonical answer phrasing; deterministic leak/redaction tests cover feedback, `missing_points`, stored `result`, serializers, and result UI; full solution feedback unlocks only after reveal or teacher review |
@@ -542,10 +548,13 @@ failure rate · assistant messages per submission · grading token cost per clas
 features) · notification→submission conversion after E35.
 
 ## Rollout
-E1–E9 = backend image rebuild (migrations `0024`,`0025` auto-run in order on container start);
-E10–E12 = frontend rebuild. New env (all optional): `EXERCISE_LLM_GRADING` (+ model/batch knobs above).
-No domain/CORS changes. Kill-switch documented for the worker-down scenario: grading halts gracefully in
-SUBMITTED, exercises stay usable.
+Initial E1–E9 required the backend/worker image and migrations beginning at `0024`; E10–E12 required a
+frontend rebuild. For ADR-0008, drain and stop workers consuming `pipeline`, deploy one backend image to
+the web and worker services, apply DDL `0032` then DML `0033`, restart the worker from that same image,
+and only then deploy the frontend. Do not run old and new grading workers concurrently. No new env or
+domain/CORS changes are required. Existing optional grading controls, including
+`EXERCISE_LLM_GRADING`, remain supported. The kill-switch still leaves submissions recoverable when the
+worker is unavailable.
 
 ## Risks (accepted, monitored)
 1. `pipeline` queue congestion at deadlines (mass grading behind ingest) → monitor; dedicated `grading`

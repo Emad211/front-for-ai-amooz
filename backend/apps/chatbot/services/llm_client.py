@@ -232,6 +232,7 @@ def _call_gapgpt_with_messages(
     used_model: str,
     feature: str,
     timeout: Optional[float] = None,
+    temperature: Optional[float] = None,
     response_format: Optional[Dict[str, Any]] = None,
 ) -> LlmResult:
 
@@ -248,6 +249,8 @@ def _call_gapgpt_with_messages(
     }
     if response_format is not None:
         create_kwargs["response_format"] = response_format
+    if temperature is not None:
+        create_kwargs["temperature"] = temperature
 
     try:
         response = client.chat.completions.create(**create_kwargs)
@@ -292,6 +295,7 @@ def generate_text(
     model: Optional[str] = None,
     feature: Optional[str] = None,
     timeout: Optional[float] = None,
+    temperature: Optional[float] = None,
     response_format: Optional[Dict[str, Any]] = None,
     **kwargs,
 ) -> LlmResult:
@@ -319,6 +323,7 @@ def generate_text(
         used_model=used_model,
         feature=resolved_feature,
         timeout=timeout,
+        temperature=temperature,
         response_format=response_format,
     )
 

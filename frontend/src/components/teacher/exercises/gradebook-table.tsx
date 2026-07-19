@@ -5,7 +5,7 @@
  * (llm_score stays immutable; the effective score is recomputed server-side).
  * Design: docs/features/exercise-hub.md.
  */
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { Loader2, RotateCcw } from 'lucide-react';
 
@@ -152,14 +152,28 @@ function GradingDialog({
   const [detail, setDetail] = useState<SubmissionDetail | null>(null);
   const [overrides, setOverrides] = useState<Record<string, QuestionOverride>>({});
   const [saving, setSaving] = useState(false);
+  const [detailLoading, setDetailLoading] = useState(true);
+  const requestIdRef = useRef(0);
+
+  const loadDetail = useCallback(async (attemptId?: number) => {
+    const requestId = ++requestIdRef.current;
+    setDetailLoading(true);
+    try {
+      const nextDetail = await getSubmission(submissionId, attemptId);
+      if (requestId !== requestIdRef.current) return;
+      setDetail(nextDetail);
+      setOverrides({});
+    } catch (err) {
+      if (requestId !== requestIdRef.current) return;
+      toast.error(err instanceof Error ? err.message : 'خطا در بارگذاری پاسخ');
+    } finally {
+      if (requestId === requestIdRef.current) setDetailLoading(false);
+    }
+  }, [submissionId]);
 
   useEffect(() => {
-    getSubmission(submissionId)
-      .then(setDetail)
-      .catch((err) =>
-        toast.error(err instanceof Error ? err.message : 'خطا در بارگذاری پاسخ')
-      );
-  }, [submissionId]);
+    loadDetail();
+  }, [loadDetail]);
 
   const setOverride = (qid: string, patch: Partial<QuestionOverride>) => {
     setOverrides((prev) => ({ ...prev, [qid]: { ...prev[qid], ...patch, question_id: qid } }));
@@ -222,6 +236,28 @@ function GradingDialog({
           </div>
         ) : (
           <div className="space-y-4">
+            {detail.attempts.length > 1 && (
+              <div className="flex flex-wrap items-center gap-2" aria-label="تاریخچه ارسال‌ها">
+                <span className="text-sm text-muted-foreground">نمایش ارسال:</span>
+                {detailLoading && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
+                {detail.attempts.map((attempt) => (
+                  <Button
+                    key={attempt.attemptId}
+                    type="button"
+                    size="sm"
+                    variant={attempt.attemptId === detail.attemptId ? 'secondary' : 'outline'}
+                    onClick={() => loadDetail(attempt.attemptId)}
+                  >
+                    ارسال {attempt.attemptNumber}
+                  </Button>
+                ))}
+              </div>
+            )}
+            {!detail.isLatestAttempt && (
+              <p className="rounded-md border border-border bg-muted/40 p-2 text-sm text-muted-foreground">
+                این ارسال برای مشاهده تاریخچه است و قابل ویرایش نیست.
+              </p>
+            )}
             {(detail.result.per_question ?? []).map((pq) => {
               const qid = pq.question_id;
               const answer = detail.answers[qid];
@@ -269,11 +305,15 @@ function GradingDialog({
                     </div>
                   )}
                   <p className="text-sm">
-                    {/* Deterministic (MCQ/fill-blank) rows have no llm_score — before an
-                        override, score_points still holds the automatic score. */}
                     نمرهٔ هوشمند:{' '}
                     {pq.llm_score ?? (pq.teacher_score == null ? pq.score_points ?? '—' : '—')} از{' '}
                     {pq.max_points ?? '—'}
+                    {pq.grading_source === 'reused' && (
+                      <Badge variant="outline" className="ms-2">نتیجه قبلی</Badge>
+                    )}
+                    {pq.grading_source === 'regraded' && detail.attemptNumber > 1 && (
+                      <Badge variant="secondary" className="ms-2">نمره‌دهی دوباره</Badge>
+                    )}
                   </p>
                   {pq.feedback && (
                     <div className="rounded-md bg-muted p-2 text-sm">
@@ -293,6 +333,7 @@ function GradingDialog({
                       aria-invalid={scoreInvalid}
                       aria-label="نمره دستی؛ برای بازگشت به نمره هوشمند خالی بگذارید"
                       title="برای بازگشت به نمره هوشمند، این کادر را خالی کنید."
+                      disabled={!detail.isLatestAttempt || detail.status !== 'graded'}
                       onChange={(e) => setOverride(qid, {
                         teacher_score: e.target.value === '' ? null : e.target.valueAsNumber,
                       })}
@@ -303,6 +344,7 @@ function GradingDialog({
                       rows={2}
                       defaultValue={pq.teacher_feedback ?? ''}
                       aria-label="بازخورد معلم"
+                      disabled={!detail.isLatestAttempt || detail.status !== 'graded'}
                       onChange={(e) => setOverride(qid, { teacher_feedback: e.target.value })}
                     />
                     {scoreInvalid && (
@@ -319,16 +361,20 @@ function GradingDialog({
                 </div>
               );
             })}
-            <div className="flex items-center justify-between gap-2 border-t border-border pt-3">
-              <Button variant="ghost" onClick={redo}>
-                <RotateCcw className="ms-2 h-4 w-4" />
-                اجازهٔ ارسال مجدد
-              </Button>
-              <Button onClick={save} disabled={saving}>
-                {saving ? <Loader2 className="ms-2 h-4 w-4 animate-spin" /> : null}
-                ثبت نمرهٔ دستی
-              </Button>
-            </div>
+            {detail.isLatestAttempt && ['graded', 'grading_failed'].includes(detail.status) && (
+              <div className="flex items-center justify-between gap-2 border-t border-border pt-3">
+                <Button variant="ghost" onClick={redo}>
+                  <RotateCcw className="ms-2 h-4 w-4" />
+                  اجازهٔ ارسال مجدد
+                </Button>
+                {detail.status === 'graded' && (
+                  <Button onClick={save} disabled={saving}>
+                    {saving ? <Loader2 className="ms-2 h-4 w-4 animate-spin" /> : null}
+                    ثبت نمرهٔ دستی
+                  </Button>
+                )}
+              </div>
+            )}
           </div>
         )}
       </DialogContent>

@@ -12,7 +12,7 @@ Source of truth for the contract: ``PROMPTS['structure_content']`` in
 """
 from __future__ import annotations
 
-from typing import Any, List, Optional
+from typing import Any, List, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -147,12 +147,12 @@ class ExerciseReferenceIngestOutput(BaseModel):
 class ExerciseGradedQuestion(BaseModel):
     model_config = ConfigDict(extra="allow")
 
-    question_id: Optional[str] = None
-    score_points: Optional[float] = None
-    max_points: Optional[float] = None
-    label: Optional[str] = None
-    feedback: Optional[str] = None
-    missing_points: List[str] = Field(default_factory=list)
+    question_id: str
+    score_points: float
+    max_points: float
+    label: Literal['correct', 'partially_correct', 'incorrect']
+    feedback: str
+    missing_points: List[str]
 
 
 class ExerciseGradingOutput(BaseModel):
@@ -161,7 +161,7 @@ class ExerciseGradingOutput(BaseModel):
 
     model_config = ConfigDict(extra="allow")
 
-    per_question: List[ExerciseGradedQuestion] = Field(default_factory=list)
+    per_question: List[ExerciseGradedQuestion]
 
 
 class HandwritingTranscriptionOutput(BaseModel):

@@ -66,6 +66,24 @@ def test_response_format_forwarded_only_when_set(mock_factory, _mock_track):
     assert fake.chat.completions.create.call_args.kwargs["response_format"] == {"type": "json_object"}
 
 
+@patch("apps.chatbot.services.llm_client.track_llm_usage")
+@patch("apps.chatbot.services.llm_client._get_gapgpt_client")
+def test_temperature_forwarded_only_when_set(mock_factory, _mock_track):
+    fake = _patched_client()
+    mock_factory.return_value = fake
+
+    llm.generate_text(messages=[{"role": "user", "content": "hi"}], model="m", feature="OTHER")
+    assert "temperature" not in fake.chat.completions.create.call_args.kwargs
+
+    llm.generate_text(
+        messages=[{"role": "user", "content": "hi"}],
+        model="m",
+        feature="OTHER",
+        temperature=0,
+    )
+    assert fake.chat.completions.create.call_args.kwargs["temperature"] == 0
+
+
 class _StatusError(Exception):
     def __init__(self, status_code):
         super().__init__(f"HTTP {status_code}")

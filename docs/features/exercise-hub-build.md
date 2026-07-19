@@ -128,6 +128,7 @@ Postgres/CI is migration-truth. LLM fully mocked (0 tokens).
   delete AlertDialog — the ADR-0004 OCR-fallback mitigation; zero-section FAILED case still retry-only);
   solver deadline UX (Jalali deadline badge, «کمتر از ۲۴ ساعت», past-deadline banner honoring allow-late
   wording, «پیش‌نویس ذخیره شد ✓» indicator); result page shows «نمره‌دهی هوشمند» badge when no teacher
+
   override. tsc at the 13-error baseline. **Verified END-TO-END on the real local Docker stack** (fresh
   backend image, migrations 0024–0026 applied on live Postgres): student login → hub (Jalali deadline,
   catalog) → solver (KaTeX, autosave) → submit → REAL Celery deterministic grading (2.00/5.00, one right
@@ -306,6 +307,17 @@ exceptions, student receives safe feedback and later the answer key.
   intake now disables and clears `allowLate` whenever `با مهلت` is off. Both submit paths normalize the
   payload, create/update serializers reject impossible combinations, removing an existing deadline
   clears its late policy, and legacy embedded snapshots are normalized before materialization.
+- [x] **2026-07-19 — stable resubmissions / ADR-0008:** final submits now create append-only
+  `StudentExerciseAttempt` snapshots. Identical per-question fingerprints reuse AI/OCR output exactly;
+  changed questions alone are regraded. Submission remains the current projection, report cards use
+  the latest graded attempt, and teacher/student result views expose owner-scoped history. Historical
+  attempts are read-only and manual overrides do not carry to a new attempt.
+  Security follow-up in the same change closes no-deadline answer reveal while redo is open, makes the
+  final grading projection row-locked, rejects overrides on historical attempts, and replaces
+  pre-reveal model feedback with fixed label-based messages. Each attempt also snapshots its exact
+  question/rubric contract; the backfill is repeat-safe and concurrent overrides merge under row lock.
+  Image cache identity includes byte hashes (new uploads use UUID keys), transient OCR failures retry
+  without caching empty text, and all grading usage is attributed to the owning teacher/session.
 
 **Definition of done (every step):** GREEN on the sqlite fast lane (Postgres = CI truth); new code documented
 in `exercise-hub.md` (docs law); auth/permission changes carry negative tests; commit `feat(exercise): E# …`

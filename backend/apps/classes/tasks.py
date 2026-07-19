@@ -1677,53 +1677,112 @@ def extract_exercise_content(self, exercise_id: int) -> dict:
     bind=True, max_retries=3, default_retry_delay=60, acks_late=True,
     soft_time_limit=PIPELINE_TASK_SOFT_TIME_LIMIT, time_limit=PIPELINE_TASK_TIME_LIMIT,
 )
-def grade_exercise_submission(self, submission_id: int) -> dict:
+def grade_exercise_submission(self, submission_id: int, attempt_id: int | None = None) -> dict:
     """Grade one exercise submission with the LLM (+ deterministic MCQ/fill-blank).
 
-    Guarded: only SUBMITTED is runnable; a `cache.add` lock rejects a concurrent
-    second dispatch; the EXERCISE_LLM_GRADING kill-switch leaves it SUBMITTED.
-    Idempotent re-run (deterministic overwrite of result/score).
+    Guarded per attempt. Partial OCR/grading progress is persisted, and a retry
+    resumes only unfinished questions. Old queued calls that only carry a
+    submission id remain supported during the coordinated rollout.
     """
     from django.core.cache import cache
-    from .models import StudentExerciseSubmission
+    from django.db import transaction
+    from apps.commons.token_tracker import llm_tracking_context
+    from .models import StudentExerciseAttempt, StudentExerciseSubmission
     from .services.exercise_grading import (
-        grade_submission, apply_grading_result, grading_enabled,
+        grade_attempt, apply_grading_result, build_question_snapshot, grading_enabled,
     )
 
     submission = StudentExerciseSubmission.objects.filter(id=submission_id).first()
     if submission is None:
         return {'status': 'skipped', 'reason': 'submission not found'}
 
+    with transaction.atomic():
+        submission = StudentExerciseSubmission.objects.select_for_update().get(id=submission_id)
+        attempt = None
+        if attempt_id is not None:
+            attempt = StudentExerciseAttempt.objects.filter(
+                id=attempt_id, submission=submission,
+            ).first()
+        elif submission.current_attempt_id:
+            attempt = StudentExerciseAttempt.objects.filter(
+                id=submission.current_attempt_id, submission=submission,
+            ).first()
+        elif submission.status in {
+            StudentExerciseSubmission.Status.SUBMITTED,
+            StudentExerciseSubmission.Status.GRADING,
+        }:
+            latest = submission.attempts.order_by('-attempt_number').first()
+            attempt = StudentExerciseAttempt.objects.create(
+                submission=submission,
+                attempt_number=(latest.attempt_number + 1) if latest else 1,
+                status=(
+                    StudentExerciseAttempt.Status.GRADING
+                    if submission.status == StudentExerciseSubmission.Status.GRADING
+                    else StudentExerciseAttempt.Status.SUBMITTED
+                ),
+                answers=submission.answers,
+                question_snapshot=build_question_snapshot(submission.exercise),
+                is_late=submission.is_late,
+                grading_task_id=submission.grading_task_id,
+            )
+            submission.current_attempt = attempt
+            submission.save(update_fields=['current_attempt', 'updated_at'])
+    if attempt is None:
+        return {'status': 'skipped', 'reason': 'attempt not found'}
+
     task_id = _current_task_id(self)
     is_same_retry = (
-        submission.status == StudentExerciseSubmission.Status.GRADING
-        and submission.grading_task_id
-        and submission.grading_task_id == task_id
+        attempt.status == StudentExerciseAttempt.Status.GRADING
+        and attempt.grading_task_id
+        and attempt.grading_task_id == task_id
     )
-    if submission.status != StudentExerciseSubmission.Status.SUBMITTED and not is_same_retry:
-        return {'status': 'skipped', 'reason': f'status={submission.status}'}
+    if attempt.status != StudentExerciseAttempt.Status.SUBMITTED and not is_same_retry:
+        return {'status': 'skipped', 'reason': f'status={attempt.status}'}
     if not grading_enabled():
         return {'status': 'skipped', 'reason': 'grading disabled'}
 
-    lock_key = f'exercise-grade:{submission_id}'
+    lock_key = f'exercise-grade-attempt:{attempt.id}'
     if not cache.add(lock_key, '1', timeout=PIPELINE_TASK_TIME_LIMIT):
         return {'status': 'skipped', 'reason': 'already dispatched'}
 
     try:
         if not is_same_retry:
-            submission.status = StudentExerciseSubmission.Status.GRADING
-            submission.grading_task_id = task_id
-            submission.save(update_fields=['status', 'grading_task_id', 'updated_at'])
+            attempt.status = StudentExerciseAttempt.Status.GRADING
+            attempt.grading_task_id = task_id
+            attempt.save(update_fields=['status', 'grading_task_id', 'updated_at'])
+            StudentExerciseSubmission.objects.filter(
+                id=submission_id, current_attempt_id=attempt.id,
+            ).update(
+                status=StudentExerciseSubmission.Status.GRADING,
+                grading_task_id=task_id,
+            )
 
-        result = grade_submission(submission)
-        apply_grading_result(submission, result)
-        submission.status = StudentExerciseSubmission.Status.GRADED
-        submission.save(update_fields=[
+        with llm_tracking_context(
+            user=submission.exercise.session.teacher,
+            session_id=submission.exercise.session_id,
+        ):
+            result = grade_attempt(attempt)
+        apply_grading_result(attempt, result)
+        attempt.status = StudentExerciseAttempt.Status.GRADED
+        attempt.save(update_fields=[
             'status', 'result', 'score_points', 'max_points', 'graded_at', 'updated_at',
         ])
+        with transaction.atomic():
+            locked_submission = StudentExerciseSubmission.objects.select_for_update().get(
+                id=submission_id,
+            )
+            if locked_submission.current_attempt_id == attempt.id:
+                apply_grading_result(locked_submission, result)
+                locked_submission.status = StudentExerciseSubmission.Status.GRADED
+                locked_submission.grading_task_id = attempt.grading_task_id
+                locked_submission.overridden_at = None
+                locked_submission.save(update_fields=[
+                    'status', 'result', 'score_points', 'max_points', 'graded_at',
+                    'grading_task_id', 'overridden_at', 'updated_at',
+                ])
         return {
-            'status': 'graded', 'submission_id': submission_id,
-            'score_points': str(submission.score_points),
+            'status': 'graded', 'submission_id': submission_id, 'attempt_id': attempt.id,
+            'score_points': str(attempt.score_points),
         }
     except Exception as exc:
         if is_transient_llm_error(exc) and self.request.retries < self.max_retries:
@@ -1737,9 +1796,17 @@ def grade_exercise_submission(self, submission_id: int) -> dict:
             raise self.retry(exc=exc, countdown=countdown)
 
         logger.exception('Exercise grading failed for %s', submission_id)
-        StudentExerciseSubmission.objects.filter(id=submission_id).update(
+        StudentExerciseAttempt.objects.filter(id=attempt.id).update(
+            status=StudentExerciseAttempt.Status.GRADING_FAILED,
+        )
+        StudentExerciseSubmission.objects.filter(
+            id=submission_id, current_attempt_id=attempt.id,
+        ).update(
             status=StudentExerciseSubmission.Status.GRADING_FAILED,
         )
-        return {'status': 'failed', 'submission_id': submission_id, 'reason': str(exc)}
+        return {
+            'status': 'failed', 'submission_id': submission_id,
+            'attempt_id': attempt.id, 'reason': str(exc),
+        }
     finally:
         cache.delete(lock_key)

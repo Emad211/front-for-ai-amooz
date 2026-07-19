@@ -803,6 +803,13 @@ class StudentExerciseSubmission(models.Model):
     grading_task_id = models.CharField(max_length=255, blank=True, default='')
     graded_at = models.DateTimeField(null=True, blank=True)
     overridden_at = models.DateTimeField(null=True, blank=True)
+    current_attempt = models.ForeignKey(
+        'StudentExerciseAttempt',
+        on_delete=models.SET_NULL,
+        related_name='+',
+        null=True,
+        blank=True,
+    )
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -821,3 +828,59 @@ class StudentExerciseSubmission(models.Model):
             models.Index(fields=['exercise', 'status']),
             models.Index(fields=['student', 'status']),
         ]
+
+
+class StudentExerciseAttempt(models.Model):
+    """Immutable snapshot of one finalized exercise submission attempt."""
+
+    class Status(models.TextChoices):
+        SUBMITTED = 'submitted', 'Submitted'
+        GRADING = 'grading', 'Grading'
+        GRADED = 'graded', 'Graded'
+        GRADING_FAILED = 'grading_failed', 'Grading Failed'
+
+    submission = models.ForeignKey(
+        StudentExerciseSubmission,
+        on_delete=models.CASCADE,
+        related_name='attempts',
+    )
+    attempt_number = models.PositiveIntegerField()
+    status = models.CharField(
+        max_length=16,
+        choices=Status.choices,
+        default=Status.SUBMITTED,
+        db_index=True,
+    )
+    answers = models.JSONField(default=dict, blank=True)
+    question_snapshot = models.JSONField(default=list, blank=True)
+    result = models.JSONField(default=dict, blank=True)
+    question_fingerprints = models.JSONField(default=dict, blank=True)
+    ocr_text = models.JSONField(default=dict, blank=True)
+    grader_metadata = models.JSONField(default=dict, blank=True)
+    score_points = models.DecimalField(max_digits=8, decimal_places=2, null=True, blank=True)
+    max_points = models.DecimalField(max_digits=8, decimal_places=2, null=True, blank=True)
+    is_late = models.BooleanField(default=False)
+    grading_task_id = models.CharField(max_length=255, blank=True, default='')
+    graded_at = models.DateTimeField(null=True, blank=True)
+    overridden_at = models.DateTimeField(null=True, blank=True)
+    submitted_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self) -> str:
+        return f"{self.submission_id}:attempt-{self.attempt_number}:{self.status}"
+
+    class Meta:
+        constraints = [
+            UniqueConstraint(
+                fields=['submission', 'attempt_number'],
+                name='uniq_exercise_submission_attempt_number',
+            ),
+            models.CheckConstraint(
+                condition=models.Q(attempt_number__gte=1),
+                name='exercise_attempt_number_gte_1',
+            ),
+        ]
+        indexes = [
+            models.Index(fields=['status', 'updated_at']),
+        ]
+        ordering = ['attempt_number']

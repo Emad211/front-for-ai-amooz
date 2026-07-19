@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import os
 import logging
+import uuid
 from io import BytesIO
 from decimal import Decimal, InvalidOperation
 
@@ -31,6 +32,7 @@ from .models import (
     ClassExerciseAsset,
     ClassExerciseQuestion,
     ClassExerciseSection,
+    StudentExerciseAttempt,
     StudentExerciseSubmission,
 )
 from .permissions import IsStudentUser, IsTeacherUser
@@ -46,6 +48,7 @@ from .services.exercise_workflow import (
     update_workflow_state,
 )
 from .services.file_validation import is_probably_pdf, is_real_image, uploaded_content_type, uploaded_name
+from .services.exercise_grading import build_question_snapshot, questions_from_snapshot
 from .serializers_exercises import (
     ExerciseCreateSerializer,
     ExerciseDetailSerializer,
@@ -949,6 +952,14 @@ def _reveal_open(exercise, submission) -> bool:
 # (security-auditor E5 Low-1).
 _REVEAL_ONLY_RESULT_KEYS = {
     'reference_answer', 'reference_answer_markdown', 'grading_notes',
+    'feedback', 'missing_points',
+}
+
+_SAFE_PRE_REVEAL_FEEDBACK = {
+    'correct': 'پاسخ شما صحیح ارزیابی شد.',
+    'partially_correct': 'پاسخ شما بخشی از معیارهای سؤال را پوشش می‌دهد.',
+    'incorrect': 'پاسخ شما نیاز به بازبینی دارد.',
+    'unanswered': 'برای این سؤال پاسخی ثبت نشده است.',
 }
 
 
@@ -960,12 +971,71 @@ def _result_for_student(result, *, reveal: bool):
     per_q = result.get('per_question')
     if not isinstance(per_q, list):
         return result
-    cleaned = [
-        {k: v for k, v in pq.items() if k not in _REVEAL_ONLY_RESULT_KEYS}
-        if isinstance(pq, dict) else pq
-        for pq in per_q
-    ]
+    cleaned = []
+    for pq in per_q:
+        if not isinstance(pq, dict):
+            cleaned.append(pq)
+            continue
+        item = {k: v for k, v in pq.items() if k not in _REVEAL_ONLY_RESULT_KEYS}
+        item['feedback'] = _SAFE_PRE_REVEAL_FEEDBACK.get(
+            str(pq.get('label')),
+            'نتیجه این سؤال ثبت شد.',
+        )
+        cleaned.append(item)
     return {**result, 'per_question': cleaned}
+
+
+def _attempt_summary(attempt) -> dict:
+    return {
+        'attemptId': attempt.id,
+        'attemptNumber': attempt.attempt_number,
+        'status': attempt.status,
+        'scorePoints': str(attempt.score_points) if attempt.score_points is not None else None,
+        'maxPoints': str(attempt.max_points) if attempt.max_points is not None else None,
+        'submittedAt': attempt.submitted_at.isoformat() if attempt.submitted_at else None,
+        'gradedAt': attempt.graded_at.isoformat() if attempt.graded_at else None,
+    }
+
+
+def _teacher_attempt_result(attempt):
+    result = attempt.result if isinstance(attempt.result, dict) else {}
+    question_meta = (
+        attempt.grader_metadata.get('questions', {})
+        if isinstance(attempt.grader_metadata, dict) else {}
+    )
+    rows = result.get('per_question')
+    if not isinstance(rows, list):
+        return result
+    return {
+        **result,
+        'per_question': [
+            {
+                **row,
+                'grading_source': (
+                    'reused'
+                    if isinstance(question_meta.get(str(row.get('question_id'))), dict)
+                    and question_meta[str(row.get('question_id'))].get('reused')
+                    else 'regraded'
+                ),
+            }
+            if isinstance(row, dict) else row
+            for row in rows
+        ],
+    }
+
+
+def _requested_attempt(request, submission):
+    attempts = list(submission.attempts.order_by('attempt_number'))
+    if not attempts:
+        return None, attempts
+    raw_id = request.query_params.get('attemptId')
+    if raw_id is None:
+        return attempts[-1], attempts
+    try:
+        attempt_id = int(raw_id)
+    except (TypeError, ValueError):
+        return False, attempts
+    return next((attempt for attempt in attempts if attempt.id == attempt_id), False), attempts
 
 
 def _q_for_solving(q) -> dict:
@@ -987,13 +1057,35 @@ def _q_with_answer(q) -> dict:
     return d
 
 
-def _serialize_exercise(exercise, *, reveal: bool) -> dict:
+def _serialize_exercise(exercise, *, reveal: bool, question_snapshot: list | None = None) -> dict:
     q_fn = _q_with_answer if reveal else _q_for_solving
-    questions = [
-        q_fn(question)
-        for section in exercise.sections.all()
-        for question in section.questions.all()
-    ]
+    if question_snapshot is not None:
+        snapshot_questions = questions_from_snapshot(
+            question_snapshot,
+            exercise_id=exercise.id,
+        )
+        questions = [q_fn(question) for question in snapshot_questions]
+        sections = [{
+            'id': None,
+            'order': 0,
+            'title': '',
+            'assistantEnabled': exercise.assistant_enabled,
+            'questions': questions,
+        }]
+    else:
+        questions = [
+            q_fn(question)
+            for section in exercise.sections.all()
+            for question in section.questions.all()
+        ]
+        sections = [
+            {
+                'id': s.id, 'order': s.order, 'title': s.title,
+                'assistantEnabled': s.assistant_enabled,
+                'questions': [q_fn(q) for q in s.questions.all()],
+            }
+            for s in exercise.sections.all()
+        ]
     return {
         'id': exercise.id,
         'title': exercise.title,
@@ -1003,14 +1095,7 @@ def _serialize_exercise(exercise, *, reveal: bool) -> dict:
         'assistantEnabled': exercise.assistant_enabled,
         'questions': questions,
         # Deprecated compatibility shape. New clients consume top-level questions.
-        'sections': [
-            {
-                'id': s.id, 'order': s.order, 'title': s.title,
-                'assistantEnabled': s.assistant_enabled,
-                'questions': [q_fn(q) for q in s.questions.all()],
-            }
-            for s in exercise.sections.all()
-        ],
+        'sections': sections,
     }
 
 
@@ -1073,6 +1158,7 @@ class StudentExerciseDetailView(APIView):
             if submission else {}
         )
         data['submissionStatus'] = submission.status if submission else None
+        data['attemptCount'] = submission.attempts.count() if submission else 0
         return Response(data)
 
 
@@ -1145,7 +1231,8 @@ class StudentExerciseImageView(APIView):
         # Low-2: content_type is client-controlled — sniff the actual bytes
         # (Pillow verify) before persisting anything the grader will later
         # feed to the vision model.
-        if not is_real_image(up.read()):
+        image_bytes = up.read()
+        if not is_real_image(image_bytes):
             return Response(
                 {'detail': 'فایل ارسالی تصویر معتبر نیست.'},
                 status=status.HTTP_400_BAD_REQUEST,
@@ -1168,8 +1255,12 @@ class StudentExerciseImageView(APIView):
                 {'detail': 'تعداد تصاویر این پاسخ بیش از حد مجاز است.'},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+        extension = os.path.splitext(up.name or '')[1].lower()
+        if not extension or len(extension) > 10:
+            extension = '.jpg'
         path = default_storage.save(
-            f'{_answer_image_prefix(exercise.id, request.user.id, question_id)}{up.name}',
+            f'{_answer_image_prefix(exercise.id, request.user.id, question_id)}'
+            f'{uuid.uuid4().hex}{extension}',
             up,
         )
         images.append(path)
@@ -1201,41 +1292,69 @@ class StudentExerciseSubmitView(APIView):
             )
 
         answers = request.data.get('answers') if isinstance(request.data, dict) else None
-        submission = StudentExerciseSubmission.objects.filter(
-            exercise=exercise, student=request.user,
-        ).first()
-        if submission and submission.status != StudentExerciseSubmission.Status.DRAFT:
-            return Response(
-                {'detail': 'شما قبلاً پاسخ این تمرین را ارسال کرده‌اید.'},
-                status=status.HTTP_409_CONFLICT,
-            )
-        if submission is None:
-            sanitized_answers = _sanitize_student_answers(exercise, request.user, answers)
-            try:
-                submission = StudentExerciseSubmission.objects.create(
+        from .tasks import grade_exercise_submission
+        try:
+            with transaction.atomic():
+                submission = StudentExerciseSubmission.objects.select_for_update().filter(
                     exercise=exercise, student=request.user,
-                    status=StudentExerciseSubmission.Status.SUBMITTED,
+                ).first()
+                if submission and submission.status != StudentExerciseSubmission.Status.DRAFT:
+                    return Response(
+                        {'detail': 'شما قبلاً پاسخ این تمرین را ارسال کرده‌اید.'},
+                        status=status.HTTP_409_CONFLICT,
+                    )
+                sanitized_answers = _sanitize_student_answers(
+                    exercise,
+                    request.user,
+                    answers,
+                    submission.answers if submission else None,
+                )
+                if submission is None:
+                    submission = StudentExerciseSubmission.objects.create(
+                        exercise=exercise,
+                        student=request.user,
+                        status=StudentExerciseSubmission.Status.DRAFT,
+                        answers=sanitized_answers,
+                    )
+                latest = submission.attempts.order_by('-attempt_number').first()
+                attempt = StudentExerciseAttempt.objects.create(
+                    submission=submission,
+                    attempt_number=(latest.attempt_number + 1) if latest else 1,
+                    status=StudentExerciseAttempt.Status.SUBMITTED,
                     answers=sanitized_answers,
+                    question_snapshot=build_question_snapshot(exercise),
                     is_late=bool(past_deadline),
                 )
-            except IntegrityError:
-                return Response(
-                    {'detail': 'شما قبلاً پاسخ این تمرین را ارسال کرده‌اید.'},
-                    status=status.HTTP_409_CONFLICT,
-                )
-        else:
-            submission.answers = _sanitize_student_answers(
-                exercise, request.user, answers, submission.answers,
+                submission.status = StudentExerciseSubmission.Status.SUBMITTED
+                submission.answers = sanitized_answers
+                submission.result = {}
+                submission.score_points = None
+                submission.max_points = None
+                submission.is_late = bool(past_deadline)
+                submission.grading_task_id = ''
+                submission.graded_at = None
+                submission.overridden_at = None
+                submission.current_attempt = attempt
+                submission.save(update_fields=[
+                    'status', 'answers', 'result', 'score_points', 'max_points',
+                    'is_late', 'grading_task_id', 'graded_at', 'overridden_at',
+                    'current_attempt', 'updated_at',
+                ])
+                sid = submission.id
+                aid = attempt.id
+                transaction.on_commit(lambda: grade_exercise_submission.delay(sid, aid))
+        except IntegrityError:
+            return Response(
+                {'detail': 'ارسال هم‌زمان دیگری ثبت شده است. صفحه را تازه‌سازی کنید.'},
+                status=status.HTTP_409_CONFLICT,
             )
-            submission.status = StudentExerciseSubmission.Status.SUBMITTED
-            submission.is_late = bool(past_deadline)
-            submission.save(update_fields=['answers', 'status', 'is_late', 'updated_at'])
-        # Dispatch async grading (the task no-ops if the kill-switch is off).
-        from .tasks import grade_exercise_submission
-        sid = submission.id
-        transaction.on_commit(lambda: grade_exercise_submission.delay(sid))
         return Response(
-            {'status': submission.status, 'isLate': submission.is_late},
+            {
+                'status': submission.status,
+                'isLate': submission.is_late,
+                'attemptId': attempt.id,
+                'attemptNumber': attempt.attempt_number,
+            },
             status=status.HTTP_201_CREATED,
         )
 
@@ -1256,24 +1375,45 @@ class StudentExerciseResultView(APIView):
         submission = StudentExerciseSubmission.objects.filter(
             exercise=exercise, student=request.user,
         ).first()
-        if submission is None or submission.status == StudentExerciseSubmission.Status.DRAFT:
+        if submission is None:
             return Response({'detail': 'هنوز پاسخی ارسال نکرده‌اید.'}, status=status.HTTP_404_NOT_FOUND)
-        if submission.status != StudentExerciseSubmission.Status.GRADED:
+        attempt, attempts = _requested_attempt(request, submission)
+        if attempt is False:
+            return Response({'detail': 'ارسال پیدا نشد.'}, status=status.HTTP_404_NOT_FOUND)
+        selected = attempt or submission
+        if selected.status != StudentExerciseSubmission.Status.GRADED:
             # Failure-specific copy — a generic "wait for grading" would contradict
             # the «خطا در نمره‌دهی» badge the hub shows for GRADING_FAILED.
-            if submission.status == StudentExerciseSubmission.Status.GRADING_FAILED:
+            if selected.status == StudentExerciseSubmission.Status.GRADING_FAILED:
                 detail = 'نمره‌دهی خودکار با خطا مواجه شد. پاسخ شما محفوظ است و پس از بررسی، نتیجه ثبت می‌شود.'
             else:
                 detail = 'پاسخ شما ارسال شد. نتیجه پس از نمره‌دهی نمایش داده می‌شود.'
-            return Response({'status': submission.status, 'detail': detail})
+            return Response({
+                'status': selected.status,
+                'detail': detail,
+                'attempts': [_attempt_summary(item) for item in attempts],
+                'attemptId': attempt.id if attempt else None,
+                'attemptNumber': attempt.attempt_number if attempt else 1,
+                'answers': selected.answers,
+            })
+        # Reveal follows the live submission state. A historical graded attempt
+        # must not expose the answer key while a teacher-authorized redo is open.
         reveal = _reveal_open(exercise, submission)
         return Response({
-            'status': submission.status,
-            'scorePoints': str(submission.score_points) if submission.score_points is not None else None,
-            'maxPoints': str(submission.max_points) if submission.max_points is not None else None,
-            'result': _result_for_student(submission.result, reveal=reveal),
+            'status': selected.status,
+            'scorePoints': str(selected.score_points) if selected.score_points is not None else None,
+            'maxPoints': str(selected.max_points) if selected.max_points is not None else None,
+            'result': _result_for_student(selected.result, reveal=reveal),
+            'answers': selected.answers,
             'answersRevealed': reveal,
-            'exercise': _serialize_exercise(exercise, reveal=reveal),
+            'exercise': _serialize_exercise(
+                exercise,
+                reveal=reveal,
+                question_snapshot=(attempt.question_snapshot or None) if attempt else None,
+            ),
+            'attempts': [_attempt_summary(item) for item in attempts],
+            'attemptId': attempt.id if attempt else None,
+            'attemptNumber': attempt.attempt_number if attempt else 1,
         })
 
 
@@ -1363,22 +1503,28 @@ class TeacherSubmissionListView(APIView):
         exercise = _owned_exercise(request, exercise_id)
         if exercise is None:
             return Response(_NOT_FOUND, status=status.HTTP_404_NOT_FOUND)
+        from django.db.models import Q
         subs = StudentExerciseSubmission.objects.filter(
             exercise=exercise,
-        ).exclude(status=StudentExerciseSubmission.Status.DRAFT).select_related('student')
-        return Response([
-            {
-                'id': s.id,
-                'studentId': s.student_id,
-                'studentName': (s.student.get_full_name() or s.student.username),
-                'status': s.status,
-                'isLate': s.is_late,
-                'scorePoints': str(s.score_points) if s.score_points is not None else None,
-                'maxPoints': str(s.max_points) if s.max_points is not None else None,
-                'overridden': s.overridden_at is not None,
-            }
-            for s in subs
-        ])
+        ).filter(
+            Q(attempts__isnull=False) | ~Q(status=StudentExerciseSubmission.Status.DRAFT),
+        ).select_related('student').prefetch_related('attempts').distinct()
+        rows = []
+        for submission in subs:
+            attempts = list(submission.attempts.all())
+            latest = attempts[-1] if attempts else submission
+            rows.append({
+                'id': submission.id,
+                'studentId': submission.student_id,
+                'studentName': (submission.student.get_full_name() or submission.student.username),
+                'status': submission.status,
+                'isLate': latest.is_late,
+                'scorePoints': str(latest.score_points) if latest.score_points is not None else None,
+                'maxPoints': str(latest.max_points) if latest.max_points is not None else None,
+                'overridden': latest.overridden_at is not None,
+                'attemptCount': len(attempts),
+            })
+        return Response(rows)
 
 
 class TeacherSubmissionDetailView(APIView):
@@ -1390,17 +1536,26 @@ class TeacherSubmissionDetailView(APIView):
         submission = _owned_submission(request, submission_id)
         if submission is None:
             return Response({'detail': 'ارسال پیدا نشد.'}, status=status.HTTP_404_NOT_FOUND)
+        attempt, attempts = _requested_attempt(request, submission)
+        if attempt is False:
+            return Response({'detail': 'ارسال پیدا نشد.'}, status=status.HTTP_404_NOT_FOUND)
+        selected = attempt or submission
+        latest_id = attempts[-1].id if attempts else None
         return Response({
             'id': submission.id,
             'studentId': submission.student_id,
             'studentName': (submission.student.get_full_name() or submission.student.username),
-            'status': submission.status,
-            'isLate': submission.is_late,
-            'answers': submission.answers,
-            'result': submission.result,
-            'scorePoints': str(submission.score_points) if submission.score_points is not None else None,
-            'maxPoints': str(submission.max_points) if submission.max_points is not None else None,
-            'overriddenAt': submission.overridden_at.isoformat() if submission.overridden_at else None,
+            'status': selected.status,
+            'isLate': selected.is_late,
+            'answers': selected.answers,
+            'result': _teacher_attempt_result(attempt) if attempt else selected.result,
+            'scorePoints': str(selected.score_points) if selected.score_points is not None else None,
+            'maxPoints': str(selected.max_points) if selected.max_points is not None else None,
+            'overriddenAt': selected.overridden_at.isoformat() if selected.overridden_at else None,
+            'attempts': [_attempt_summary(item) for item in attempts],
+            'attemptId': attempt.id if attempt else None,
+            'attemptNumber': attempt.attempt_number if attempt else 1,
+            'isLatestAttempt': attempt is None or attempt.id == latest_id,
         })
 
 
@@ -1419,64 +1574,90 @@ class TeacherSubmissionOverrideView(APIView):
             for o in raw:
                 if isinstance(o, dict) and o.get('question_id') is not None:
                     overrides[str(o['question_id'])] = o
-        result = submission.result if isinstance(submission.result, dict) else {}
-        per_q = result.get('per_question') if isinstance(result.get('per_question'), list) else []
-
-        validated_scores = {}
-        for pq in per_q:
-            if not isinstance(pq, dict):
-                continue
-            question_id = str(pq.get('question_id'))
-            override = overrides.get(question_id)
-            if not override or override.get('teacher_score') is None:
-                continue
-            try:
-                teacher_score = _Decimal(str(override['teacher_score']))
-                max_points = _Decimal(str(pq.get('max_points')))
-            except (_InvalidOperation, TypeError, ValueError):
-                return Response(
-                    {'detail': 'نمره واردشده معتبر نیست.'},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
+        with transaction.atomic():
+            locked_submission = StudentExerciseSubmission.objects.select_for_update().get(
+                id=submission.id,
+            )
+            locked_attempt = locked_submission.attempts.select_for_update().order_by(
+                '-attempt_number',
+            ).first()
             if (
-                not teacher_score.is_finite()
-                or not max_points.is_finite()
-                or max_points < 0
-                or teacher_score < 0
-                or teacher_score > max_points
+                locked_attempt is None
+                or locked_attempt.status != StudentExerciseAttempt.Status.GRADED
+                or locked_submission.status != StudentExerciseSubmission.Status.GRADED
+                or locked_submission.current_attempt_id != locked_attempt.id
             ):
                 return Response(
-                    {
-                        'detail': f'نمره این سؤال باید بین صفر و {max_points} باشد.',
-                        'questionId': question_id,
-                        'maxPoints': str(max_points),
-                    },
-                    status=status.HTTP_400_BAD_REQUEST,
+                    {'detail': 'این ارسال دیگر آخرین نتیجه قابل ویرایش نیست.'},
+                    status=status.HTTP_409_CONFLICT,
                 )
-            validated_scores[question_id] = float(teacher_score)
 
-        for pq in per_q:
-            if not isinstance(pq, dict):
-                continue
-            question_id = str(pq.get('question_id'))
-            o = overrides.get(question_id)
-            if not o:
-                continue
-            if 'teacher_score' in o:
-                pq['teacher_score'] = (
-                    None if o['teacher_score'] is None else validated_scores[question_id]
-                )  # llm_score untouched
-            if 'teacher_feedback' in o:
-                pq['teacher_feedback'] = str(o['teacher_feedback'] or '')
-        submission.result = {'per_question': per_q}
-        _recompute_submission_score(submission)
-        has_teacher_override = any(
-            isinstance(pq, dict)
-            and (pq.get('teacher_score') is not None or bool(pq.get('teacher_feedback')))
-            for pq in per_q
-        )
-        submission.overridden_at = timezone.now() if has_teacher_override else None
-        submission.save(update_fields=['result', 'score_points', 'overridden_at', 'updated_at'])
+            source_result = locked_attempt.result if isinstance(locked_attempt.result, dict) else {}
+            source_rows = source_result.get('per_question')
+            per_q = [dict(row) for row in source_rows if isinstance(row, dict)] \
+                if isinstance(source_rows, list) else []
+            validated_scores = {}
+            for pq in per_q:
+                question_id = str(pq.get('question_id'))
+                override = overrides.get(question_id)
+                if not override or override.get('teacher_score') is None:
+                    continue
+                try:
+                    teacher_score = _Decimal(str(override['teacher_score']))
+                    max_points = _Decimal(str(pq.get('max_points')))
+                except (_InvalidOperation, TypeError, ValueError):
+                    return Response(
+                        {'detail': 'نمره واردشده معتبر نیست.'},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+                if (
+                    not teacher_score.is_finite()
+                    or not max_points.is_finite()
+                    or max_points < 0
+                    or teacher_score < 0
+                    or teacher_score > max_points
+                ):
+                    return Response(
+                        {
+                            'detail': f'نمره این سؤال باید بین صفر و {max_points} باشد.',
+                            'questionId': question_id,
+                            'maxPoints': str(max_points),
+                        },
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+                validated_scores[question_id] = float(teacher_score)
+
+            for pq in per_q:
+                question_id = str(pq.get('question_id'))
+                override = overrides.get(question_id)
+                if not override:
+                    continue
+                if 'teacher_score' in override:
+                    pq['teacher_score'] = (
+                        None
+                        if override['teacher_score'] is None
+                        else validated_scores[question_id]
+                    )  # llm_score untouched
+                if 'teacher_feedback' in override:
+                    pq['teacher_feedback'] = str(override['teacher_feedback'] or '')
+
+            locked_submission.result = {'per_question': per_q}
+            _recompute_submission_score(locked_submission)
+            has_teacher_override = any(
+                pq.get('teacher_score') is not None or bool(pq.get('teacher_feedback'))
+                for pq in per_q
+            )
+            locked_submission.overridden_at = timezone.now() if has_teacher_override else None
+            locked_submission.save(update_fields=[
+                'result', 'score_points', 'overridden_at', 'updated_at',
+            ])
+            locked_attempt.result = locked_submission.result
+            locked_attempt.score_points = locked_submission.score_points
+            locked_attempt.overridden_at = locked_submission.overridden_at
+            locked_attempt.save(update_fields=[
+                'result', 'score_points', 'overridden_at', 'updated_at',
+            ])
+            submission = locked_submission
         return Response({
             'id': submission.id,
             'scorePoints': str(submission.score_points),
@@ -1485,45 +1666,79 @@ class TeacherSubmissionOverrideView(APIView):
 
 
 class TeacherSubmissionAllowRedoView(APIView):
-    """Grant a re-submission: reset the submission to DRAFT (keeps answers,
-    clears the grade so the student must retake — the exam-prep reset pattern)."""
+    """Open a new draft while preserving every finalized attempt."""
 
     permission_classes = [IsAuthenticated, IsTeacherUser]
 
     def post(self, request, submission_id: int):
+        redoable_statuses = {
+            StudentExerciseAttempt.Status.GRADED,
+            StudentExerciseAttempt.Status.GRADING_FAILED,
+        }
         submission = _owned_submission(request, submission_id)
         if submission is None:
             return Response({'detail': 'ارسال پیدا نشد.'}, status=status.HTTP_404_NOT_FOUND)
-        submission.status = StudentExerciseSubmission.Status.DRAFT
-        submission.result = {}
-        submission.score_points = None
-        submission.max_points = None
-        submission.graded_at = None
-        submission.overridden_at = None
-        submission.save(update_fields=[
-            'status', 'result', 'score_points', 'max_points',
-            'graded_at', 'overridden_at', 'updated_at',
-        ])
-        return Response({'status': submission.status})
+        if submission.status == StudentExerciseSubmission.Status.DRAFT:
+            return Response(
+                {'detail': 'اجازه ارسال مجدد قبلاً فعال شده است.'},
+                status=status.HTTP_409_CONFLICT,
+            )
+        latest_attempt = submission.attempts.order_by('-attempt_number').first()
+        if latest_attempt and latest_attempt.status not in redoable_statuses:
+            return Response(
+                {'detail': 'ارسال فعلی هنوز نمره‌دهی نشده است.'},
+                status=status.HTTP_409_CONFLICT,
+            )
+        with transaction.atomic():
+            submission = StudentExerciseSubmission.objects.select_for_update().get(
+                id=submission.id,
+            )
+            if submission.status == StudentExerciseSubmission.Status.DRAFT:
+                return Response(
+                    {'detail': 'اجازه ارسال مجدد قبلاً فعال شده است.'},
+                    status=status.HTTP_409_CONFLICT,
+                )
+            latest_attempt = submission.attempts.select_for_update().order_by(
+                '-attempt_number',
+            ).first()
+            if latest_attempt and latest_attempt.status not in redoable_statuses:
+                return Response(
+                    {'detail': 'ارسال فعلی هنوز نمره‌دهی نشده است.'},
+                    status=status.HTTP_409_CONFLICT,
+                )
+            submission.status = StudentExerciseSubmission.Status.DRAFT
+            submission.grading_task_id = ''
+            submission.current_attempt = None
+            submission.save(update_fields=[
+                'status', 'grading_task_id', 'current_attempt', 'updated_at',
+            ])
+            next_number = (latest_attempt.attempt_number + 1) if latest_attempt else 1
+        return Response({'status': submission.status, 'nextAttemptNumber': next_number})
 
 
 def _course_report(student, session_id=None):
     """Build the student's graded-exercise percentages (optionally one course)."""
     phone = (getattr(student, 'phone', '') or '').strip()
-    qs = StudentExerciseSubmission.objects.filter(
-        student=student, status=StudentExerciseSubmission.Status.GRADED,
-        exercise__session__is_published=True,
-        exercise__session__invites__phone=phone,
-    ).select_related('exercise')
+    from django.db.models import OuterRef, Subquery
+    latest_graded_id = StudentExerciseAttempt.objects.filter(
+        submission_id=OuterRef('submission_id'),
+        status=StudentExerciseAttempt.Status.GRADED,
+    ).order_by('-attempt_number').values('id')[:1]
+    qs = StudentExerciseAttempt.objects.filter(
+        id=Subquery(latest_graded_id),
+        submission__student=student,
+        submission__exercise__session__is_published=True,
+        submission__exercise__session__invites__phone=phone,
+    ).select_related('submission__exercise')
     if session_id is not None:
-        qs = qs.filter(exercise__session_id=session_id)
+        qs = qs.filter(submission__exercise__session_id=session_id)
     rows = []
     for s in qs:
         mx = float(s.max_points or 0)
         pct = round(float(s.score_points or 0) / mx * 100, 1) if mx > 0 else 0.0
         rows.append({
-            'exerciseId': s.exercise_id,
-            'exerciseTitle': s.exercise.title,
+            'exerciseId': s.submission.exercise_id,
+            'exerciseTitle': s.submission.exercise.title,
             'scorePoints': str(s.score_points) if s.score_points is not None else None,
             'maxPoints': str(s.max_points) if s.max_points is not None else None,
             'percent': pct,

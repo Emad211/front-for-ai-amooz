@@ -133,6 +133,7 @@ def generate_structured(
     model: Optional[str] = None,
     feature: Optional[str] = None,
     timeout: Optional[float] = None,
+    temperature: Optional[float] = None,
     max_repair: int = 1,
     json_object_mode: Optional[bool] = None,
 ) -> T:
@@ -154,6 +155,7 @@ def generate_structured(
             model=model,
             feature=feature,
             timeout=timeout,
+            temperature=temperature,
             response_format=response_format,
         ).text
 

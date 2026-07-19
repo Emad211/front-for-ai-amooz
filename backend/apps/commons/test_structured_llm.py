@@ -75,6 +75,15 @@ def test_generate_structured_happy_path():
     assert gt.call_args.kwargs.get("response_format") == {"type": "json_object"}
 
 
+def test_generate_structured_forwards_temperature_to_all_calls():
+    with patch("apps.chatbot.services.llm_client.generate_text") as gt:
+        gt.return_value = _result('{"name": "ok", "items": []}')
+        generate_structured(
+            schema=_Model, contents="make json", feature="OTHER", temperature=0,
+        )
+    assert gt.call_args.kwargs["temperature"] == 0
+
+
 def test_generate_structured_repairs_then_succeeds():
     calls = []
 
