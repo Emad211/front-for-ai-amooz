@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { CalendarIcon, ChevronLeft, ChevronRight, Clock3, X } from 'lucide-react';
 import { DayPicker } from 'react-day-picker/persian';
 
-import { Button, buttonVariants } from '@/components/ui/button';
+import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import {
   Select,
@@ -136,7 +136,7 @@ export function JalaliDateTimePicker({
             </p>
           </div>
 
-          <div className="overflow-hidden rounded-2xl border border-border/80 bg-background/70 p-3">
+          <div className="overflow-hidden rounded-2xl border border-border/80 bg-card p-3 text-card-foreground">
             <DayPicker
               mode="single"
               selected={selected ?? undefined}
@@ -150,31 +150,29 @@ export function JalaliDateTimePicker({
               classNames={{
                 root: 'w-full',
                 months: 'flex w-full flex-col',
-                month: 'w-full space-y-3',
-                caption: 'relative flex min-h-10 items-center justify-center px-12 py-1',
+                month: 'relative w-full space-y-3',
                 caption_label: 'text-base font-semibold text-foreground',
-                nav: 'flex items-center gap-1',
+                nav: 'absolute inset-x-0 top-0 z-10 flex h-10 items-center justify-between px-1',
                 button_previous:
-                  'absolute right-1 top-1/2 inline-flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full border border-border bg-card text-muted-foreground transition hover:bg-muted hover:text-foreground',
+                  'inline-flex h-8 w-8 items-center justify-center rounded-full border border-border bg-card text-muted-foreground transition-colors hover:bg-muted hover:text-foreground',
                 button_next:
-                  'absolute left-1 top-1/2 inline-flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full border border-border bg-card text-muted-foreground transition hover:bg-muted hover:text-foreground',
-                month_caption: 'flex justify-center',
-                month_grid: 'w-full table-fixed border-separate border-spacing-1',
-                weekdays: 'grid w-full grid-cols-7 gap-1',
+                  'inline-flex h-8 w-8 items-center justify-center rounded-full border border-border bg-card text-muted-foreground transition-colors hover:bg-muted hover:text-foreground',
+                month_caption: 'flex h-10 items-center justify-center px-12',
+                month_grid: 'w-full table-fixed border-separate border-spacing-1 bg-card',
+                weekdays: 'table-row',
                 weekday:
-                  'flex h-10 items-center justify-center rounded-lg text-base font-medium tabular-nums text-muted-foreground',
-                weeks: 'grid w-full gap-1',
-                week: 'grid w-full grid-cols-7 gap-1',
-                day: cn(
-                  buttonVariants({ variant: 'ghost' }),
-                  'h-11 w-full min-w-0 rounded-xl p-0 text-base font-semibold tabular-nums leading-none text-foreground hover:bg-muted aria-selected:opacity-100',
-                ),
-                day_button: 'h-11 w-full text-center tabular-nums',
+                  'h-10 w-[14.285%] p-0 text-center text-sm font-medium tabular-nums text-muted-foreground',
+                weeks: 'table-row-group',
+                week: 'table-row',
+                day: 'h-11 w-[14.285%] p-0 text-center align-middle',
+                day_button:
+                  'inline-flex h-10 w-full min-w-0 items-center justify-center rounded-xl bg-card p-0 text-base font-semibold leading-none tabular-nums text-card-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-card',
                 selected:
-                  'bg-primary text-primary-foreground hover:bg-primary hover:text-primary-foreground',
-                today: 'border border-primary/50 bg-primary/10 text-primary',
-                outside: 'text-muted-foreground/40',
-                disabled: 'opacity-40',
+                  '[&>button]:bg-primary [&>button]:text-primary-foreground [&>button]:hover:bg-primary/90',
+                today:
+                  '[&>button]:border [&>button]:border-primary/60 [&>button]:bg-primary/10 [&>button]:text-primary',
+                outside: '[&>button]:text-muted-foreground/40',
+                disabled: '[&>button]:cursor-not-allowed [&>button]:opacity-35',
               }}
               components={{
                 Chevron: ({ className, orientation }) =>
