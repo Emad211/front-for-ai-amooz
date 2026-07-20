@@ -9,7 +9,7 @@ docker compose up -d                                            # containers onl
 scripts\dev-down.ps1                                            # teardown
 ```
 Services: postgres:5432 · redis:6379 · minio:9000 (console :9001, minioadmin/minioadmin) · backend:8000 ·
-celery-worker (`-Q default,pipeline`) · front:3000. Frontend **dev** server runs separately: `cd frontend
+celery-worker (`-Q default,pipeline`) · celery-interactive-worker (`-Q interactive`) · front:3000. Frontend **dev** server runs separately: `cd frontend
 && npm run dev` → **http://localhost:9002**. Health: `http://localhost:8000/api/health/`.
 Requires `frontend/.env.local` with `NEXT_PUBLIC_API_URL=http://localhost:8000`.
 

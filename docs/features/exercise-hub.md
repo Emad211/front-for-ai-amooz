@@ -562,6 +562,26 @@ domain/CORS changes are required. Existing optional grading controls, including
 `EXERCISE_LLM_GRADING`, remain supported. The kill-switch still leaves submissions recoverable when the
 worker is unavailable.
 
+### Interactive student-answer OCR (ADR-0009)
+
+Student handwriting preview uses revisioned answer Sources and immutable
+Assets. Per-question photos are read together after a two-second settle window.
+A whole-exercise source accepts photos or PDF (defaults: 20 pages, 30 MB, four
+rendered pages per vision call), preserves page order, then maps the transcript
+to question IDs without sending reference answers or grading notes to OCR.
+
+The student reviews `MarkdownWithMath` output and uncertainty markers. Typed
+text is never overwritten. Whole-answer mappings require the explicit
+`اعمال پاسخ‌های بازبینی‌شده` action; final submit may explicitly freeze an
+unapplied mapping. Attempts freeze Source ID/revision, and grading reuses the
+confirmed text without a second vision call. Pending OCR does not block submit;
+grading wakes when the frozen Source becomes terminal. Failed image OCR moves
+the Attempt to `GRADING_FAILED` for manual review.
+
+Rollout order: migration `0034`, backend, dedicated `interactive` worker,
+frontend, then `EXERCISE_ANSWER_OCR_PREVIEW_ENABLED=True`. Keep the flag off if
+the interactive worker is absent.
+
 ## Risks (accepted, monitored)
 1. `pipeline` queue congestion at deadlines (mass grading behind ingest) → monitor; dedicated `grading`
    queue is the named phase-2 escape hatch; kill-switch works today.

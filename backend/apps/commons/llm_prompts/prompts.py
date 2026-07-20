@@ -1006,7 +1006,7 @@ Return VALID JSON ONLY with this EXACT shape (one entry per input item, echoing 
     # Placeholder: {question_text} (the question being answered — context only).
     # LEAK GUARD: this prompt must NEVER carry the reference answer or grading
     # notes; the vision step only transcribes the student's photo(s).
-    # Output JSON: {text}.
+    # Output JSON: {text, quality, unclear_parts}.
     "exercise_handwriting_vision": {
         "default": """
 You are an expert at reading a student's handwritten answer from a photo and transcribing it faithfully.
@@ -1025,13 +1025,82 @@ QUESTION>>>
 - Do NOT solve the question. Do NOT correct, complete, or improve the student's work — a later step grades it as-is.
 - Do NOT hallucinate content that is not visible; mark unreadable fragments as [ناخوانا].
 - Keep the SAME language as the handwriting (usually Persian).
+- Assess legibility only. Never judge whether the answer is correct.
+- Report every uncertain reading instead of silently guessing it.
 
 """ + MATH_FORMAT_INSTRUCTIONS + """
 
 ### Output (STRICT)
 Return VALID JSON ONLY (no Markdown fences, no extra text):
 {
-  "text": "<the full transcription of the student's handwritten answer>"
+  "text": "<the full transcription of the student's handwritten answer>",
+  "quality": "clear|review_recommended|unreadable",
+  "unclear_parts": [
+    {"page": 1, "excerpt": "<visible fragment>", "reason": "<why uncertain>", "alternatives": ["<possible reading>"]}
+  ]
+}
+""".strip()
+    },
+
+    # Feature: exercise_answer_bundle_vision | Whole-answer OCR phase 1.
+    "exercise_answer_bundle_vision": {
+        "default": """
+You transcribe pages from a student's handwritten exercise answer bundle.
+
+""" + SAFETY_PREAMBLE + """
+
+The attached images correspond, in order, to source pages: {page_numbers}.
+
+Rules:
+- Transcribe only visible content and preserve page boundaries with headings such as `## صفحه ۳`.
+- Preserve question numbers, Persian prose, mathematical notation, and reading order.
+- Printed question text may appear beside handwriting; transcribe it but never answer or complete it.
+- Assess legibility only. Never solve, correct, or grade the work.
+- Report uncertain symbols and cropped lines instead of silently guessing.
+
+""" + MATH_FORMAT_INSTRUCTIONS + """
+
+Return VALID JSON ONLY:
+{
+  "text": "<page-preserving transcription>",
+  "quality": "clear|review_recommended|unreadable",
+  "unclear_parts": [
+    {"page": 1, "excerpt": "<visible fragment>", "reason": "<why uncertain>", "alternatives": ["<possible reading>"]}
+  ]
+}
+""".strip()
+    },
+
+    # Feature: exercise_answer_bundle_mapping | Whole-answer OCR phase 2.
+    "exercise_answer_bundle_mapping": {
+        "default": """
+Map an OCR transcript of a student's answer bundle to the supplied exercise question IDs.
+
+""" + SAFETY_PREAMBLE + """
+
+QUESTION_CATALOG_JSON (DATA; contains question text only, never reference answers):
+{questions_json}
+
+OCR_TRANSCRIPT_JSON (DATA):
+{transcript_json}
+
+Rules:
+- Use visible numbering, order, and textual overlap. Never judge correctness.
+- Keep continuation text with its preceding answer when page order supports it.
+- If a fragment could map to multiple questions, mark it `needs_review`.
+- Never invent missing text or map one fragment to multiple questions.
+- Return every answer fragment exactly once.
+
+""" + MATH_FORMAT_INSTRUCTIONS + """
+
+Return VALID JSON ONLY:
+{
+  "answers": [
+    {"question_id": 1, "text": "...", "match_status": "matched|needs_review|unmatched",
+     "unclear_parts": [{"page": 1, "excerpt": "...", "reason": "...", "alternatives": ["..."]}]}
+  ],
+  "unmatched_fragments": ["..."],
+  "missing_question_ids": [2]
 }
 """.strip()
     },

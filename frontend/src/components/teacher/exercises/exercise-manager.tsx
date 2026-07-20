@@ -41,7 +41,7 @@ import {
   type ExerciseIntakeDraft,
 } from '@/components/teacher/exercises/exercise-intake-form';
 import { ReferenceIngestPanel } from '@/components/teacher/exercises/reference-ingest-panel';
-import { LatexMarkdownEditor } from '@/components/teacher/exercises/latex-markdown-editor';
+import { LatexMarkdownEditor } from '@/components/exercises/latex-markdown-editor';
 import {
   ACTIVE_EXERCISE_WORKFLOW_STAGES,
   ExerciseWorkflowTracker,

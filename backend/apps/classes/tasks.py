@@ -1669,6 +1669,57 @@ def extract_exercise_content(self, exercise_id: int) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Student answer OCR preview. Runs on the dedicated interactive queue.
+# ---------------------------------------------------------------------------
+
+@shared_task(bind=True, max_retries=3, default_retry_delay=15, acks_late=True,
+             soft_time_limit=20 * 60, time_limit=25 * 60)
+def process_student_answer_source(self, source_id: int, revision: int) -> dict:
+    """OCR one immutable source revision and discard stale task results."""
+    from apps.commons.token_tracker import llm_tracking_context
+    from .models import StudentExerciseAnswerSource
+    from .services.exercise_answer_ocr import (
+        StaleAnswerSource, mark_failed, process_source,
+    )
+
+    source = StudentExerciseAnswerSource.objects.select_related(
+        'submission__exercise__session', 'submission__student',
+    ).filter(id=source_id, revision=revision).first()
+    if source is None:
+        return {'status': 'stale', 'source_id': source_id, 'revision': revision}
+    task_id = _current_task_id(self)
+    StudentExerciseAnswerSource.objects.filter(id=source_id, revision=revision).update(
+        processing_task_id=task_id,
+    )
+    try:
+        with llm_tracking_context(
+            user=source.submission.student,
+            session_id=source.submission.exercise.session_id,
+        ):
+            result = process_source(source_id, revision)
+    except StaleAnswerSource:
+        return {'status': 'stale', 'source_id': source_id, 'revision': revision}
+    except Exception as exc:
+        if is_transient_llm_error(exc) and self.request.retries < self.max_retries:
+            raise self.retry(exc=exc, countdown=_retry_countdown(self, base=15, cap=120))
+        logger.exception('Student answer OCR failed for source %s revision %s', source_id, revision)
+        mark_failed(source_id, revision)
+        result = {'status': 'failed', 'source_id': source_id, 'revision': revision}
+
+    # A submission may have been finalized while OCR was running. Wake grading
+    # only after this frozen source reaches a terminal state; task guards keep
+    # redelivery idempotent.
+    source = StudentExerciseAnswerSource.objects.select_related('submission').filter(
+        id=source_id, revision=revision,
+    ).first()
+    if source and source.submission.current_attempt_id:
+        attempt = source.submission.current_attempt
+        if attempt and attempt.status == attempt.Status.SUBMITTED:
+            grade_exercise_submission.delay(source.submission_id, attempt.id)
+    return result
+
+
+# ---------------------------------------------------------------------------
 # Exercise Hub — async grading (SUBMITTED -> GRADING -> GRADED / GRADING_FAILED).
 # Runs on the `pipeline` queue. Design: docs/features/exercise-hub.md.
 # ---------------------------------------------------------------------------
@@ -1690,6 +1741,9 @@ def grade_exercise_submission(self, submission_id: int, attempt_id: int | None =
     from .models import StudentExerciseAttempt, StudentExerciseSubmission
     from .services.exercise_grading import (
         grade_attempt, apply_grading_result, build_question_snapshot, grading_enabled,
+    )
+    from .services.exercise_answer_ocr import (
+        AnswerSourceFailed, AnswerSourcePending, prepare_attempt_ocr,
     )
 
     submission = StudentExerciseSubmission.objects.filter(id=submission_id).first()
@@ -1746,6 +1800,25 @@ def grade_exercise_submission(self, submission_id: int, attempt_id: int | None =
         return {'status': 'skipped', 'reason': 'already dispatched'}
 
     try:
+        try:
+            prepare_attempt_ocr(attempt)
+        except AnswerSourcePending:
+            return {
+                'status': 'waiting_for_ocr', 'submission_id': submission_id,
+                'attempt_id': attempt.id,
+            }
+        except AnswerSourceFailed:
+            StudentExerciseAttempt.objects.filter(id=attempt.id).update(
+                status=StudentExerciseAttempt.Status.GRADING_FAILED,
+            )
+            StudentExerciseSubmission.objects.filter(
+                id=submission_id, current_attempt_id=attempt.id,
+            ).update(status=StudentExerciseSubmission.Status.GRADING_FAILED)
+            return {
+                'status': 'failed', 'reason': 'answer_ocr_failed',
+                'submission_id': submission_id, 'attempt_id': attempt.id,
+            }
+
         if not is_same_retry:
             attempt.status = StudentExerciseAttempt.Status.GRADING
             attempt.grading_task_id = task_id

@@ -12,6 +12,7 @@ from __future__ import annotations
 import os
 import logging
 import uuid
+import hashlib
 from io import BytesIO
 from decimal import Decimal, InvalidOperation
 
@@ -20,7 +21,7 @@ from django.db import IntegrityError, transaction
 from django.utils import timezone
 from pypdf import PdfReader
 from rest_framework import status
-from rest_framework.parsers import FormParser, MultiPartParser
+from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -33,6 +34,8 @@ from .models import (
     ClassExerciseQuestion,
     ClassExerciseSection,
     StudentExerciseAttempt,
+    StudentExerciseAnswerAsset,
+    StudentExerciseAnswerSource,
     StudentExerciseSubmission,
 )
 from .permissions import IsStudentUser, IsTeacherUser
@@ -49,6 +52,15 @@ from .services.exercise_workflow import (
 )
 from .services.file_validation import is_probably_pdf, is_real_image, uploaded_content_type, uploaded_name
 from .services.exercise_grading import build_question_snapshot, questions_from_snapshot
+from .services.exercise_answer_ocr import (
+    apply_source,
+    freeze_sources,
+    max_bytes as answer_ocr_max_bytes,
+    max_pages as answer_ocr_max_pages,
+    preview_enabled as answer_ocr_enabled,
+    serialize_source,
+    settle_seconds as answer_ocr_settle_seconds,
+)
 from .serializers_exercises import (
     ExerciseCreateSerializer,
     ExerciseDetailSerializer,
@@ -877,7 +889,9 @@ def _owned_answer_images(answers: dict, exercise_id: int, student_id: int, quest
     prefix = _answer_image_prefix(exercise_id, student_id, question_id)
     return [
         path for path in images
-        if isinstance(path, str) and path.startswith(prefix)
+        if isinstance(path, str) and (
+            path.startswith(prefix) or path.startswith('exercises/answers/sources/')
+        )
     ][:_MAX_IMAGES_PER_QUESTION]
 
 
@@ -905,6 +919,9 @@ def _sanitize_student_answers(exercise, student, incoming_answers, existing_answ
         images = _owned_answer_images(existing, exercise.id, student.id, qid)
         if images:
             entry['images'] = images
+        existing_entry = existing.get(str(qid)) if isinstance(existing.get(str(qid)), dict) else {}
+        if isinstance(existing_entry.get('ocr'), dict):
+            entry['ocr'] = existing_entry['ocr']
         if entry:
             sanitized[str(qid)] = entry
 
@@ -915,8 +932,14 @@ def _sanitize_student_answers(exercise, student, incoming_answers, existing_answ
         if key in sanitized:
             continue
         images = _owned_answer_images(existing, exercise.id, student.id, qid)
-        if images:
-            sanitized[key] = {'images': images}
+        existing_entry = existing.get(key) if isinstance(existing.get(key), dict) else {}
+        ocr = existing_entry.get('ocr') if isinstance(existing_entry.get('ocr'), dict) else None
+        if images or ocr:
+            sanitized[key] = {}
+            if images:
+                sanitized[key]['images'] = images
+            if ocr:
+                sanitized[key]['ocr'] = ocr
     return sanitized
 
 
@@ -1159,6 +1182,11 @@ class StudentExerciseDetailView(APIView):
         )
         data['submissionStatus'] = submission.status if submission else None
         data['attemptCount'] = submission.attempts.count() if submission else 0
+        data['answerOcrEnabled'] = answer_ocr_enabled()
+        data['answerSources'] = [
+            serialize_source(source)
+            for source in submission.answer_sources.prefetch_related('assets').order_by('id')
+        ] if submission else []
         return Response(data)
 
 
@@ -1246,6 +1274,92 @@ class StudentExerciseImageView(APIView):
             return Response(
                 {'detail': 'این تمرین قبلاً ارسال شده است.'}, status=status.HTTP_409_CONFLICT,
             )
+        if answer_ocr_enabled():
+            with transaction.atomic():
+                submission = StudentExerciseSubmission.objects.select_for_update().get(id=submission.id)
+                if submission.status != StudentExerciseSubmission.Status.DRAFT:
+                    return Response(
+                        {'detail': 'این تمرین قبلاً ارسال شده است.'},
+                        status=status.HTTP_409_CONFLICT,
+                    )
+                source, created = StudentExerciseAnswerSource.objects.select_for_update().get_or_create(
+                    submission=submission,
+                    scope=StudentExerciseAnswerSource.Scope.QUESTION,
+                    target_question=question,
+                    defaults={
+                        'revision': 1,
+                        'workflow_state': {
+                            'stage': 'queued', 'progressPercent': 5,
+                            'message': 'پاسخ در صف خواندن قرار گرفت',
+                        },
+                    },
+                )
+                duplicate = source.assets.filter(
+                    is_active=True, sha256=hashlib.sha256(image_bytes).hexdigest(),
+                ).first()
+                retry_failed_source = (
+                    duplicate is not None
+                    and source.status == StudentExerciseAnswerSource.Status.FAILED
+                )
+                if duplicate is not None and not retry_failed_source:
+                    return Response(
+                        {'path': duplicate.file.name, 'source': serialize_source(source)},
+                        status=status.HTTP_200_OK,
+                    )
+                if not created:
+                    source.revision += 1
+                    source.status = StudentExerciseAnswerSource.Status.QUEUED
+                    source.workflow_state = {
+                        'stage': 'queued', 'progressPercent': 5,
+                        'message': 'نسخه جدید پاسخ در صف خواندن قرار گرفت',
+                    }
+                    source.raw_result = {}
+                    source.reviewed_result = {}
+                    source.error_code = ''
+                    source.applied_at = None
+                    source.save(update_fields=[
+                        'revision', 'status', 'workflow_state', 'raw_result',
+                        'reviewed_result', 'error_code', 'applied_at', 'updated_at',
+                    ])
+                if retry_failed_source:
+                    asset = duplicate
+                else:
+                    active_count = source.assets.filter(is_active=True).count()
+                    if active_count >= _MAX_IMAGES_PER_QUESTION:
+                        return Response(
+                            {'detail': 'تعداد تصاویر این پاسخ بیش از حد مجاز است.'},
+                            status=status.HTTP_400_BAD_REQUEST,
+                        )
+                    last_order = source.assets.order_by('-order').values_list('order', flat=True).first()
+                    order = (last_order + 1) if last_order is not None else 0
+                    asset = StudentExerciseAnswerAsset.objects.create(
+                        source=source,
+                        file=up,
+                        order=order,
+                        content_type=content_type,
+                        byte_size=len(image_bytes),
+                        sha256=hashlib.sha256(image_bytes).hexdigest(),
+                    )
+                answers = submission.answers if isinstance(submission.answers, dict) else {}
+                qkey = str(question_id)
+                entry = dict(answers.get(qkey) or {})
+                images = list(entry.get('images') or [])
+                if asset.file.name not in images:
+                    images.append(asset.file.name)
+                entry['images'] = images[-_MAX_IMAGES_PER_QUESTION:]
+                entry.pop('ocr', None)
+                answers[qkey] = entry
+                submission.answers = answers
+                submission.save(update_fields=['answers', 'updated_at'])
+                source_id, revision = source.id, source.revision
+                from .tasks import process_student_answer_source
+                transaction.on_commit(lambda: process_student_answer_source.apply_async(
+                    args=[source_id, revision], countdown=answer_ocr_settle_seconds(),
+                ))
+            return Response(
+                {'path': asset.file.name, 'source': serialize_source(source)},
+                status=status.HTTP_201_CREATED,
+            )
         answers = submission.answers if isinstance(submission.answers, dict) else {}
         qkey = str(question_id)
         entry = answers.get(qkey) if isinstance(answers.get(qkey), dict) else {}
@@ -1271,6 +1385,396 @@ class StudentExerciseImageView(APIView):
         return Response({'path': path}, status=status.HTTP_201_CREATED)
 
 
+def _answer_source_context(request, session_id: int, exercise_id: int):
+    phone = _student_phone(request)
+    if not phone:
+        return None, None, Response(_NO_PHONE, status=status.HTTP_400_BAD_REQUEST)
+    exercise = _published_exercise_for_student(phone, session_id, exercise_id)
+    if exercise is None:
+        return None, None, Response(_EX_NOT_FOUND, status=status.HTTP_404_NOT_FOUND)
+    submission, _ = StudentExerciseSubmission.objects.get_or_create(
+        exercise=exercise,
+        student=request.user,
+        defaults={'status': StudentExerciseSubmission.Status.DRAFT},
+    )
+    if submission.status != StudentExerciseSubmission.Status.DRAFT:
+        return exercise, submission, Response(
+            {'detail': 'این تمرین قبلاً ارسال شده است.'}, status=status.HTTP_409_CONFLICT,
+        )
+    return exercise, submission, None
+
+
+def _validate_answer_source_uploads(files) -> tuple[list[tuple[object, bytes, str]], Response | None]:
+    if not files:
+        return [], Response({'detail': 'فایلی ارسال نشده است.'}, status=status.HTTP_400_BAD_REQUEST)
+    validated = []
+    total_bytes = 0
+    total_pages = 0
+    for uploaded in files:
+        data = uploaded.read()
+        uploaded.seek(0)
+        total_bytes += len(data)
+        if total_bytes > answer_ocr_max_bytes():
+            return [], Response(
+                {'detail': 'حجم مجموع فایل‌ها بیش از حد مجاز است.'},
+                status=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            )
+        content_type = uploaded_content_type(uploaded)
+        if is_probably_pdf(data):
+            try:
+                page_count = len(PdfReader(BytesIO(data)).pages)
+            except Exception:
+                return [], Response({'detail': 'فایل PDF معتبر نیست.'}, status=status.HTTP_400_BAD_REQUEST)
+            content_type = 'application/pdf'
+            total_pages += page_count
+        elif is_real_image(data):
+            content_type = content_type if content_type.startswith('image/') else 'image/jpeg'
+            total_pages += 1
+        else:
+            return [], Response(
+                {'detail': 'فقط تصویر یا PDF معتبر مجاز است.'}, status=status.HTTP_400_BAD_REQUEST,
+            )
+        if total_pages > answer_ocr_max_pages():
+            return [], Response(
+                {'detail': 'تعداد صفحات پاسخ‌نامه بیش از حد مجاز است.'},
+                status=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            )
+        validated.append((uploaded, data, content_type))
+    return validated, None
+
+
+def _clear_answer_source_projection(submission, source_id: int) -> None:
+    answers = dict(submission.answers or {})
+    changed = False
+    for key, value in list(answers.items()):
+        if not isinstance(value, dict):
+            continue
+        ocr = value.get('ocr') if isinstance(value.get('ocr'), dict) else None
+        if ocr and ocr.get('sourceId') == source_id:
+            entry = dict(value)
+            entry.pop('ocr', None)
+            changed = True
+            if entry:
+                answers[key] = entry
+            else:
+                answers.pop(key, None)
+    if changed:
+        submission.answers = answers
+        submission.save(update_fields=['answers', 'updated_at'])
+
+
+class StudentExerciseAnswerSourceView(APIView):
+    """Upload, inspect, and edit the whole-exercise OCR source."""
+
+    permission_classes = [IsAuthenticated, IsStudentUser]
+    parser_classes = [MultiPartParser, FormParser, JSONParser]
+
+    def get(self, request, session_id: int, exercise_id: int):
+        exercise, submission, error = _answer_source_context(request, session_id, exercise_id)
+        if error is not None and (submission is None or error.status_code != status.HTTP_409_CONFLICT):
+            return error
+        source = StudentExerciseAnswerSource.objects.filter(
+            submission=submission, scope=StudentExerciseAnswerSource.Scope.EXERCISE,
+        ).prefetch_related('assets').first()
+        if source is None:
+            return Response({'detail': 'پاسخ‌نامه‌ای بارگذاری نشده است.'}, status=status.HTTP_404_NOT_FOUND)
+        return Response(serialize_source(source))
+
+    def post(self, request, session_id: int, exercise_id: int):
+        if not answer_ocr_enabled():
+            return Response({'detail': 'این قابلیت فعلاً فعال نیست.'}, status=status.HTTP_404_NOT_FOUND)
+        _exercise, submission, error = _answer_source_context(request, session_id, exercise_id)
+        if error is not None:
+            return error
+        validated, validation_error = _validate_answer_source_uploads(request.FILES.getlist('files'))
+        if validation_error is not None:
+            return validation_error
+        with transaction.atomic():
+            submission = StudentExerciseSubmission.objects.select_for_update().get(id=submission.id)
+            if submission.status != StudentExerciseSubmission.Status.DRAFT:
+                return Response({'detail': 'این تمرین قبلاً ارسال شده است.'}, status=status.HTTP_409_CONFLICT)
+            source, created = StudentExerciseAnswerSource.objects.select_for_update().get_or_create(
+                submission=submission,
+                scope=StudentExerciseAnswerSource.Scope.EXERCISE,
+                defaults={
+                    'revision': 1,
+                    'workflow_state': {
+                        'stage': 'queued', 'progressPercent': 5,
+                        'message': 'پاسخ‌نامه در صف خواندن قرار گرفت',
+                    },
+                },
+            )
+            if not created:
+                existing_hashes = list(
+                    source.assets.filter(is_active=True).order_by('order', 'id')
+                    .values_list('sha256', flat=True)
+                )
+                incoming_hashes = [hashlib.sha256(data).hexdigest() for _up, data, _ct in validated]
+                if existing_hashes == incoming_hashes and source.raw_result:
+                    return Response(serialize_source(source), status=status.HTTP_200_OK)
+                _clear_answer_source_projection(submission, source.id)
+                source.assets.filter(is_active=True).update(is_active=False)
+                source.revision += 1
+                source.status = StudentExerciseAnswerSource.Status.QUEUED
+                source.workflow_state = {
+                    'stage': 'queued', 'progressPercent': 5,
+                    'message': 'نسخه جدید پاسخ‌نامه در صف خواندن قرار گرفت',
+                }
+                source.raw_result = {}
+                source.reviewed_result = {}
+                source.error_code = ''
+                source.applied_at = None
+                source.save(update_fields=[
+                    'revision', 'status', 'workflow_state', 'raw_result',
+                    'reviewed_result', 'error_code', 'applied_at', 'updated_at',
+                ])
+            last_order = source.assets.order_by('-order').values_list('order', flat=True).first()
+            start_order = (last_order + 1) if last_order is not None else 0
+            for index, (uploaded, data, content_type) in enumerate(validated):
+                StudentExerciseAnswerAsset.objects.create(
+                    source=source,
+                    file=uploaded,
+                    order=start_order + index,
+                    content_type=content_type,
+                    byte_size=len(data),
+                    sha256=hashlib.sha256(data).hexdigest(),
+                )
+            source_id, revision = source.id, source.revision
+            from .tasks import process_student_answer_source
+            transaction.on_commit(lambda: process_student_answer_source.apply_async(
+                args=[source_id, revision], countdown=answer_ocr_settle_seconds(),
+            ))
+        return Response(serialize_source(source), status=status.HTTP_201_CREATED)
+
+    def patch(self, request, session_id: int, exercise_id: int):
+        _exercise, submission, error = _answer_source_context(request, session_id, exercise_id)
+        if error is not None:
+            return error
+        return _update_answer_source(request, submission, StudentExerciseAnswerSource.Scope.EXERCISE)
+
+
+class StudentQuestionAnswerSourceView(APIView):
+    permission_classes = [IsAuthenticated, IsStudentUser]
+
+    def get(self, request, session_id: int, exercise_id: int, question_id: int):
+        exercise, submission, error = _answer_source_context(request, session_id, exercise_id)
+        if error is not None and (submission is None or error.status_code != status.HTTP_409_CONFLICT):
+            return error
+        source = StudentExerciseAnswerSource.objects.filter(
+            submission=submission,
+            scope=StudentExerciseAnswerSource.Scope.QUESTION,
+            target_question_id=question_id,
+            target_question__section__exercise=exercise,
+        ).prefetch_related('assets').first()
+        if source is None:
+            return Response({'detail': 'منبع پاسخ پیدا نشد.'}, status=status.HTTP_404_NOT_FOUND)
+        return Response(serialize_source(source))
+
+    def patch(self, request, session_id: int, exercise_id: int, question_id: int):
+        exercise, submission, error = _answer_source_context(request, session_id, exercise_id)
+        if error is not None:
+            return error
+        if not ClassExerciseQuestion.objects.filter(id=question_id, section__exercise=exercise).exists():
+            return Response({'detail': 'سوال پیدا نشد.'}, status=status.HTTP_404_NOT_FOUND)
+        return _update_answer_source(
+            request, submission, StudentExerciseAnswerSource.Scope.QUESTION,
+            question_id=question_id,
+        )
+
+
+def _update_answer_source(request, submission, scope: str, question_id: int | None = None):
+    try:
+        revision = int(request.data.get('revision'))
+    except (TypeError, ValueError):
+        return Response({'detail': 'revision الزامی است.'}, status=status.HTTP_400_BAD_REQUEST)
+    with transaction.atomic():
+        submission = StudentExerciseSubmission.objects.select_for_update().get(id=submission.id)
+        if submission.status != StudentExerciseSubmission.Status.DRAFT:
+            return Response({'detail': 'این تمرین قبلاً ارسال شده است.'}, status=status.HTTP_409_CONFLICT)
+        source = StudentExerciseAnswerSource.objects.select_for_update().filter(
+            submission=submission, scope=scope, target_question_id=question_id,
+        ).first()
+        if source is None:
+            return Response({'detail': 'منبع پاسخ پیدا نشد.'}, status=status.HTTP_404_NOT_FOUND)
+        if source.revision != revision:
+            return Response(
+                {'detail': 'نسخه جدیدتری از این خوانش وجود دارد.', 'revision': source.revision},
+                status=status.HTTP_409_CONFLICT,
+            )
+        incoming = request.data.get('answers')
+        if not isinstance(incoming, list) or len(incoming) > 200:
+            return Response({'detail': 'فهرست پاسخ‌ها معتبر نیست.'}, status=status.HTTP_400_BAD_REQUEST)
+        current_result = source.reviewed_result or source.raw_result or {}
+        current_candidates = list(current_result.get('answers') or [])
+        current_candidates.extend(
+            {
+                'question_id': None,
+                'text': str(fragment),
+                'match_status': 'unmatched',
+                'quality': 'review_recommended',
+                'unclear_parts': [],
+            }
+            for fragment in (current_result.get('unmatched_fragments') or [])
+        )
+        if len(incoming) != len(current_candidates):
+            return Response(
+                {'detail': 'فهرست پاسخ‌ها با نسخه خوانش مطابقت ندارد.'},
+                status=status.HTTP_409_CONFLICT,
+            )
+        valid_ids = set(ClassExerciseQuestion.objects.filter(
+            section__exercise=submission.exercise,
+        ).values_list('id', flat=True))
+        normalized = []
+        seen = set()
+        for index, item in enumerate(incoming):
+            if not isinstance(item, dict):
+                return Response({'detail': 'ساختار پاسخ معتبر نیست.'}, status=status.HTTP_400_BAD_REQUEST)
+            server_candidate = current_candidates[index]
+            qid = item.get('questionId', item.get('question_id'))
+            try:
+                qid = int(qid) if qid not in (None, '') else None
+            except (TypeError, ValueError):
+                qid = None
+            if scope == StudentExerciseAnswerSource.Scope.QUESTION:
+                qid = question_id
+            if qid is not None and (qid not in valid_ids or qid in seen):
+                return Response({'detail': 'سوال مقصد معتبر نیست یا تکراری است.'}, status=status.HTTP_400_BAD_REQUEST)
+            if qid is not None:
+                seen.add(qid)
+            text = str(item.get('text') or '')
+            if len(text) > 50_000:
+                return Response({'detail': 'متن استخراج‌شده بیش از حد مجاز است.'}, status=status.HTTP_400_BAD_REQUEST)
+            normalized.append({
+                'question_id': qid,
+                'text': text,
+                'match_status': 'matched' if qid is not None else 'unmatched',
+                'quality': server_candidate.get('quality', 'review_recommended'),
+                'unclear_parts': server_candidate.get('unclear_parts', []),
+            })
+        reviewed = dict(source.reviewed_result or source.raw_result or {})
+        reviewed['answers'] = normalized
+        reviewed['unmatched_fragments'] = []
+        reviewed['missing_question_ids'] = sorted(valid_ids - seen) if scope == source.Scope.EXERCISE else []
+        if scope == source.Scope.EXERCISE:
+            _clear_answer_source_projection(submission, source.id)
+        source.revision += 1
+        source.reviewed_result = reviewed
+        source.status = (
+            StudentExerciseAnswerSource.Status.NEEDS_REVIEW
+            if any(item['question_id'] is None or item['unclear_parts'] for item in normalized)
+            else StudentExerciseAnswerSource.Status.READY
+        )
+        source.workflow_state = {
+            'stage': source.status, 'progressPercent': 100,
+            'message': 'اصلاحات شما ذخیره شد',
+        }
+        source.applied_at = None
+        source.save(update_fields=[
+            'revision', 'reviewed_result', 'status', 'workflow_state',
+            'applied_at', 'updated_at',
+        ])
+    if scope == StudentExerciseAnswerSource.Scope.QUESTION:
+        apply_source(source)
+    return Response(serialize_source(source))
+
+
+class StudentExerciseAnswerSourceApplyView(APIView):
+    permission_classes = [IsAuthenticated, IsStudentUser]
+
+    def post(self, request, session_id: int, exercise_id: int):
+        _exercise, submission, error = _answer_source_context(request, session_id, exercise_id)
+        if error is not None:
+            return error
+        try:
+            revision = int(request.data.get('revision'))
+        except (TypeError, ValueError):
+            return Response({'detail': 'revision الزامی است.'}, status=status.HTTP_400_BAD_REQUEST)
+        source = StudentExerciseAnswerSource.objects.filter(
+            submission=submission,
+            scope=StudentExerciseAnswerSource.Scope.EXERCISE,
+            revision=revision,
+            status__in=[
+                StudentExerciseAnswerSource.Status.READY,
+                StudentExerciseAnswerSource.Status.NEEDS_REVIEW,
+            ],
+        ).first()
+        if source is None:
+            current = StudentExerciseAnswerSource.objects.filter(
+                submission=submission, scope=StudentExerciseAnswerSource.Scope.EXERCISE,
+            ).first()
+            if current and current.revision != revision:
+                return Response({'detail': 'نسخه جدیدتری وجود دارد.', 'revision': current.revision}, status=status.HTTP_409_CONFLICT)
+            return Response({'detail': 'خوانش هنوز آماده اعمال نیست.'}, status=status.HTTP_409_CONFLICT)
+        apply_source(source)
+        return Response(serialize_source(source))
+
+
+class StudentExerciseAnswerAssetView(APIView):
+    permission_classes = [IsAuthenticated, IsStudentUser]
+
+    def delete(self, request, session_id: int, exercise_id: int, asset_id: int):
+        _exercise, submission, error = _answer_source_context(request, session_id, exercise_id)
+        if error is not None:
+            return error
+        with transaction.atomic():
+            submission = StudentExerciseSubmission.objects.select_for_update().get(id=submission.id)
+            if submission.status != StudentExerciseSubmission.Status.DRAFT:
+                return Response({'detail': 'این تمرین قبلاً ارسال شده است.'}, status=status.HTTP_409_CONFLICT)
+            asset = StudentExerciseAnswerAsset.objects.select_related('source').select_for_update().filter(
+                id=asset_id, source__submission=submission, is_active=True,
+            ).first()
+            if asset is None:
+                return Response({'detail': 'فایل پیدا نشد.'}, status=status.HTTP_404_NOT_FOUND)
+            source = asset.source
+            asset_path = asset.file.name
+            asset.is_active = False
+            asset.save(update_fields=['is_active'])
+            source.revision += 1
+            source.raw_result = {}
+            source.reviewed_result = {}
+            source.applied_at = None
+            has_assets = source.assets.filter(is_active=True).exists()
+            source.status = (
+                StudentExerciseAnswerSource.Status.QUEUED
+                if has_assets else StudentExerciseAnswerSource.Status.SUPERSEDED
+            )
+            source.workflow_state = {
+                'stage': source.status,
+                'progressPercent': 5 if has_assets else 100,
+                'message': 'نسخه جدید در صف خواندن قرار گرفت' if has_assets else 'منبع پاسخ حذف شد',
+            }
+            source.save(update_fields=[
+                'revision', 'raw_result', 'reviewed_result', 'applied_at',
+                'status', 'workflow_state', 'updated_at',
+            ])
+            answers = dict(submission.answers or {})
+            for key, value in list(answers.items()):
+                if not isinstance(value, dict):
+                    continue
+                entry = dict(value)
+                images = [path for path in entry.get('images', []) if path != asset_path]
+                if images:
+                    entry['images'] = images
+                else:
+                    entry.pop('images', None)
+                ocr = entry.get('ocr') if isinstance(entry.get('ocr'), dict) else None
+                if ocr and ocr.get('sourceId') == source.id:
+                    entry.pop('ocr', None)
+                if entry:
+                    answers[key] = entry
+                else:
+                    answers.pop(key, None)
+            submission.answers = answers
+            submission.save(update_fields=['answers', 'updated_at'])
+            if has_assets:
+                source_id, revision = source.id, source.revision
+                from .tasks import process_student_answer_source
+                transaction.on_commit(lambda: process_student_answer_source.apply_async(
+                    args=[source_id, revision], countdown=answer_ocr_settle_seconds(),
+                ))
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
 class StudentExerciseSubmitView(APIView):
     """Finalize the submission. 409 after the deadline (unless allow_late) and on
     a duplicate final submission. (Grading dispatch is wired at E6.)"""
@@ -1292,6 +1796,10 @@ class StudentExerciseSubmitView(APIView):
             )
 
         answers = request.data.get('answers') if isinstance(request.data, dict) else None
+        include_unapplied_ocr = bool(
+            request.data.get('includeUnappliedOcr', False)
+            if isinstance(request.data, dict) else False
+        )
         from .tasks import grade_exercise_submission
         try:
             with transaction.atomic():
@@ -1317,6 +1825,9 @@ class StudentExerciseSubmitView(APIView):
                         answers=sanitized_answers,
                     )
                 latest = submission.attempts.order_by('-attempt_number').first()
+                answer_sources = freeze_sources(
+                    submission, include_unapplied=include_unapplied_ocr,
+                )
                 attempt = StudentExerciseAttempt.objects.create(
                     submission=submission,
                     attempt_number=(latest.attempt_number + 1) if latest else 1,
@@ -1324,6 +1835,7 @@ class StudentExerciseSubmitView(APIView):
                     answers=sanitized_answers,
                     question_snapshot=build_question_snapshot(exercise),
                     is_late=bool(past_deadline),
+                    grader_metadata={'answerSources': answer_sources},
                 )
                 submission.status = StudentExerciseSubmission.Status.SUBMITTED
                 submission.answers = sanitized_answers
@@ -1562,6 +2074,10 @@ class TeacherSubmissionDetailView(APIView):
             'attemptNumber': attempt.attempt_number if attempt else 1,
             'isLatestAttempt': attempt is None or attempt.id == latest_id,
             'isCurrentAttempt': is_current_attempt,
+            'answerSources': [
+                serialize_source(source, include_raw=True)
+                for source in submission.answer_sources.prefetch_related('assets').order_by('id')
+            ],
         })
 
 

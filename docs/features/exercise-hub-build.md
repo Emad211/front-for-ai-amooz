@@ -319,6 +319,15 @@ exceptions, student receives safe feedback and later the answer key.
   Image cache identity includes byte hashes (new uploads use UUID keys), transient OCR failures retry
   without caching empty text, and all grading usage is attributed to the owning teacher/session.
 
+- [x] **2026-07-20 — interactive handwriting OCR / ADR-0009:** question photos and
+  whole-exercise photo/PDF bundles now use revisioned server-owned Sources,
+  durable OCR progress, student review with the shared math editor, conservative
+  question mapping, and explicit bulk apply. Final Attempts freeze Source
+  revisions, reuse confirmed OCR without a second vision call, and fail to
+  manual review rather than recording a false zero when image OCR fails. The
+  feature ships behind an off-by-default flag and a dedicated `interactive`
+  worker deployment.
+
 **Definition of done (every step):** GREEN on the sqlite fast lane (Postgres = CI truth); new code documented
 in `exercise-hub.md` (docs law); auth/permission changes carry negative tests; commit `feat(exercise): E# …`
 + push; tick here + note in the roadmap table of `exercise-hub.md`.

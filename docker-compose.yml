@@ -144,6 +144,35 @@ services:
       retries: 3
       start_period: 30s
 
+  celery-interactive-worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: ai_amooz_celery_interactive_worker
+    restart: unless-stopped
+    command: celery -A core worker -Q interactive --loglevel=info --concurrency=2 --max-tasks-per-child=50
+    env_file:
+      - ./backend/.env
+    environment:
+      DATABASE_URL: postgresql://ai_amooz:ai_amooz_password@postgres:5432/ai_amooz
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/1
+      CHAT_REDIS_URL: redis://redis:6379/0
+      AWS_ACCESS_KEY_ID: minioadmin
+      AWS_SECRET_ACCESS_KEY: minioadmin
+      AWS_STORAGE_BUCKET_NAME: ai-amooz-media
+      AWS_S3_ENDPOINT_URL: http://minio:9000
+      AWS_QUERYSTRING_AUTH: "False"
+    volumes:
+      - ai_amooz_media:/app/media
+      - ai_amooz_static:/app/staticfiles
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
   front:
     build:
       context: ./frontend

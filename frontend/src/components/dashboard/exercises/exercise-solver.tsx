@@ -30,14 +30,25 @@ import {
 import { MarkdownWithMath } from '@/components/content/markdown-with-math';
 import { MathText } from '@/components/content/math-text';
 import { ExerciseAssistant } from '@/components/dashboard/exercises/exercise-assistant';
+import {
+  QuestionAnswerOcrPreview,
+  WholeAnswerOcrPanel,
+} from '@/components/dashboard/exercises/answer-ocr-panel';
 import { formatPersianDateTime } from '@/lib/date-utils';
 import { getStoredUser } from '@/services/auth-service';
 import {
   type StudentExerciseDetail,
   type StudentAnswers,
+  type AnswerOcrCandidate,
+  type AnswerOcrSource,
+  applyExerciseAnswerSource,
+  deleteExerciseAnswerAsset,
   getStudentExercise,
   saveExerciseDraft,
+  updateExerciseAnswerSource,
+  updateQuestionAnswerSource,
   uploadAnswerImage,
+  uploadExerciseAnswerSource,
   submitExercise,
 } from '@/services/exercises-service';
 
@@ -79,11 +90,14 @@ function mergeDraftAnswers(server: StudentAnswers, local: StudentAnswers): Stude
   const merged = { ...server };
   for (const [questionId, localEntry] of Object.entries(local)) {
     const serverEntry = server[questionId] ?? {};
-    merged[questionId] = {
+    const mergedEntry = {
       ...serverEntry,
       ...localEntry,
       images: serverEntry.images ?? localEntry.images,
     };
+    if (serverEntry.ocr) mergedEntry.ocr = serverEntry.ocr;
+    else delete mergedEntry.ocr;
+    merged[questionId] = mergedEntry;
   }
   return merged;
 }
@@ -94,6 +108,11 @@ function canonicalAnswers(answers: StudentAnswers): string {
       Object.keys(answers).sort().map((questionId) => [questionId, {
         text: answers[questionId]?.text ?? '',
         images: answers[questionId]?.images ?? [],
+        ocr: answers[questionId]?.ocr ? {
+          sourceId: answers[questionId]?.ocr?.sourceId,
+          revision: answers[questionId]?.ocr?.revision,
+          text: answers[questionId]?.ocr?.text,
+        } : null,
       }])
     )
   );
@@ -113,6 +132,7 @@ export function ExerciseSolver({
   const [submitting, setSubmitting] = useState(false);
   const [activeQuestionId, setActiveQuestionId] = useState<number | null>(null);
   const [draftSaveState, setDraftSaveState] = useState<DraftSaveState>('idle');
+  const [ocrBusy, setOcrBusy] = useState(false);
   const dirty = useRef(false);
   const answersRef = useRef<StudentAnswers>({});
   const revisionRef = useRef(0);
@@ -158,6 +178,41 @@ export function ExerciseSolver({
       .catch((err) => toast.error(err instanceof Error ? err.message : 'خطا در بارگذاری تمرین'))
       .finally(() => setLoading(false));
   }, [sessionId, exerciseId, draftBackupKey]);
+
+  const replaceSource = useCallback((source: AnswerOcrSource) => {
+    setDetail((current) => current ? {
+      ...current,
+      answerSources: [
+        ...(current.answerSources ?? []).filter((item) => item.id !== source.id),
+        source,
+      ],
+    } : current);
+  }, []);
+
+  const refreshExercise = useCallback(async () => {
+    const next = await getStudentExercise(sessionId, exerciseId);
+    setDetail(next);
+    // Draft answers are server-owned for image/OCR metadata. Preserve current
+    // typed text while refreshing those fields from the authoritative copy.
+    const merged = mergeDraftAnswers(next.myAnswers ?? {}, answersRef.current);
+    for (const [qid, serverEntry] of Object.entries(next.myAnswers ?? {})) {
+      merged[qid] = { ...merged[qid], images: serverEntry.images, ocr: serverEntry.ocr };
+    }
+    answersRef.current = merged;
+    setAnswers(merged);
+  }, [sessionId, exerciseId]);
+
+  useEffect(() => {
+    const active = detail?.answerSources?.some((source) => (
+      source.status === 'queued'
+      || source.status === 'reading'
+      || source.status === 'segmenting'
+      || source.status === 'matching'
+    ));
+    if (!active) return;
+    const timer = window.setInterval(() => void refreshExercise(), 2000);
+    return () => window.clearInterval(timer);
+  }, [detail?.answerSources, refreshExercise]);
 
   const alreadySubmitted =
     detail?.submissionStatus != null && detail.submissionStatus !== 'draft';
@@ -252,18 +307,85 @@ export function ExerciseSolver({
 
   const addImage = async (qid: number, file: File) => {
     try {
-      const { path } = await uploadAnswerImage(sessionId, exerciseId, qid, file);
+      const { path, source } = await uploadAnswerImage(sessionId, exerciseId, qid, file);
       const entry = answersRef.current[String(qid)] ?? {};
       const next = {
         ...answersRef.current,
-        [qid]: { ...entry, images: [...(entry.images ?? []), path] },
+        [qid]: { ...entry, images: Array.from(new Set([...(entry.images ?? []), path])) },
       };
       answersRef.current = next;
       setAnswers(next);
+      if (source) replaceSource(source);
       if (dirty.current) writeDraftBackup(draftBackupKey, next);
       toast.success('تصویر پاسخ بارگذاری شد.');
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'بارگذاری تصویر ناموفق بود.');
+    }
+  };
+
+  const uploadWholeAnswer = async (files: File[]) => {
+    setOcrBusy(true);
+    try {
+      const source = await uploadExerciseAnswerSource(sessionId, exerciseId, files);
+      replaceSource(source);
+      toast.success('پاسخ‌نامه بارگذاری شد و خواندن آن در پس‌زمینه آغاز شد.');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'بارگذاری پاسخ‌نامه ناموفق بود.');
+    } finally {
+      setOcrBusy(false);
+    }
+  };
+
+  const applyWholeAnswer = async (source: AnswerOcrSource, reviewed: AnswerOcrCandidate[]) => {
+    setOcrBusy(true);
+    try {
+      const updated = await updateExerciseAnswerSource(
+        sessionId, exerciseId, source.revision, reviewed,
+      );
+      const applied = await applyExerciseAnswerSource(
+        sessionId, exerciseId, updated.revision,
+      );
+      replaceSource(applied);
+      await refreshExercise();
+      toast.success('پاسخ‌های بازبینی‌شده اعمال شدند.');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'اعمال پاسخ‌ها ناموفق بود.');
+    } finally {
+      setOcrBusy(false);
+    }
+  };
+
+  const saveQuestionOcr = async (source: AnswerOcrSource, text: string) => {
+    if (!source.questionId) return;
+    setOcrBusy(true);
+    try {
+      const updated = await updateQuestionAnswerSource(
+        sessionId,
+        exerciseId,
+        source.questionId,
+        source.revision,
+        text,
+      );
+      replaceSource(updated);
+      await refreshExercise();
+      toast.success('اصلاح خوانش ذخیره شد.');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'ذخیره اصلاح ناموفق بود.');
+    } finally {
+      setOcrBusy(false);
+    }
+  };
+
+  const deleteAnswerAsset = async (assetId: number) => {
+    setOcrBusy(true);
+    try {
+      await deleteExerciseAnswerAsset(sessionId, exerciseId, assetId);
+      await refreshExercise();
+      toast.success('فایل از پاسخ جاری کنار گذاشته شد.');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'حذف فایل ناموفق بود.');
+    } finally {
+      setOcrBusy(false);
     }
   };
 
@@ -273,7 +395,13 @@ export function ExerciseSolver({
     saveAbortRef.current?.abort();
     setSubmitting(true);
     try {
-      await submitExercise(sessionId, exerciseId, answersRef.current);
+      const wholeSource = detail?.answerSources?.find((source) => source.scope === 'exercise');
+      await submitExercise(
+        sessionId,
+        exerciseId,
+        answersRef.current,
+        Boolean(wholeSource && !wholeSource.appliedAt && wholeSource.status !== 'superseded'),
+      );
       submittedRef.current = true;
       dirty.current = false;
       clearDraftBackup(draftBackupKey);
@@ -305,6 +433,24 @@ export function ExerciseSolver({
   const deadlinePassed = deadlineMs != null && deadlineMs < Date.now();
   const deadlineSoon =
     deadlineMs != null && !deadlinePassed && deadlineMs - Date.now() < 24 * 3600 * 1000;
+  const wholeAnswerSource = detail.answerSources?.find((source) => source.scope === 'exercise');
+  const questionSources = new Map(
+    (detail.answerSources ?? [])
+      .filter((source) => source.scope === 'question' && source.questionId != null)
+      .map((source) => [source.questionId as number, source]),
+  );
+  const pendingOcr = (detail.answerSources ?? []).some((source) => (
+    source.status === 'queued'
+    || source.status === 'reading'
+    || source.status === 'segmenting'
+    || source.status === 'matching'
+  ));
+  const failedOcr = (detail.answerSources ?? []).some((source) => source.status === 'failed');
+  const unappliedWholeOcr = Boolean(
+    wholeAnswerSource
+    && !wholeAnswerSource.appliedAt
+    && wholeAnswerSource.status !== 'superseded',
+  );
 
   return (
     <div dir="rtl" className="space-y-4">
@@ -350,6 +496,18 @@ export function ExerciseSolver({
           مهلت ارسال این تمرین به پایان رسیده است. اگر مدرس ارسال با تأخیر را مجاز کرده باشد،
           پاسخ شما با برچسب «با تأخیر» ثبت می‌شود؛ در غیر این صورت ارسال پذیرفته نخواهد شد.
         </p>
+      )}
+
+      {detail.answerOcrEnabled && (
+        <WholeAnswerOcrPanel
+          source={wholeAnswerSource}
+          questions={detail.questions}
+          disabled={alreadySubmitted}
+          busy={ocrBusy}
+          onUpload={uploadWholeAnswer}
+          onApply={applyWholeAnswer}
+          onDeleteAsset={deleteAnswerAsset}
+        />
       )}
 
       <div className="grid gap-4 lg:grid-cols-[1fr_320px]">
@@ -407,6 +565,14 @@ export function ExerciseSolver({
                     {answers[String(q.id)]?.images?.length} تصویر بارگذاری شد
                   </p>
                 )}
+                {detail.answerOcrEnabled && (
+                  <QuestionAnswerOcrPreview
+                    source={questionSources.get(q.id)}
+                    disabled={alreadySubmitted}
+                    busy={ocrBusy}
+                    onSave={saveQuestionOcr}
+                  />
+                )}
               </CardContent>
             </Card>
           ))}
@@ -445,9 +611,15 @@ export function ExerciseSolver({
               <AlertDialogHeader>
                 <AlertDialogTitle>ارسال نهایی پاسخ‌ها</AlertDialogTitle>
                 <AlertDialogDescription>
-                  {unchangedResubmission
-                    ? 'پاسخ‌های شما نسبت به ارسال قبلی تغییری نکرده‌اند. در صورت ارسال، همان نتیجه قبلی مبنای نمره‌دهی خواهد بود.'
-                    : 'پس از ارسال، امکان ویرایش پاسخ‌ها را نخواهید داشت. مطمئن هستید؟'}
+                  {pendingOcr
+                    ? 'خواندن یکی از فایل‌ها هنوز کامل نشده است. ارسال شما ثبت می‌شود و نمره‌دهی پس از پایان خوانش ادامه پیدا می‌کند.'
+                    : failedOcr
+                      ? 'خواندن یکی از فایل‌ها کامل نشد. تصویر اصلی برای مدرس محفوظ می‌ماند و پاسخ برای بررسی دستی ارسال می‌شود.'
+                      : unappliedWholeOcr
+                        ? 'پاسخ‌نامه آماده است اما هنوز اعمال نشده. با ارسال نهایی، همین تطبیق فعلی فریز و برای نمره‌دهی استفاده می‌شود.'
+                        : unchangedResubmission
+                          ? 'پاسخ‌های شما نسبت به ارسال قبلی تغییری نکرده‌اند. در صورت ارسال، همان نتیجه قبلی مبنای نمره‌دهی خواهد بود.'
+                          : 'پس از ارسال، امکان ویرایش پاسخ‌ها را نخواهید داشت. مطمئن هستید؟'}
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>

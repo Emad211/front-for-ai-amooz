@@ -830,6 +830,101 @@ class StudentExerciseSubmission(models.Model):
         ]
 
 
+class StudentExerciseAnswerSource(models.Model):
+    """Server-owned OCR source for one question or a whole exercise draft."""
+
+    class Scope(models.TextChoices):
+        QUESTION = 'question', 'Question'
+        EXERCISE = 'exercise', 'Exercise'
+
+    class Status(models.TextChoices):
+        QUEUED = 'queued', 'Queued'
+        READING = 'reading', 'Reading'
+        SEGMENTING = 'segmenting', 'Segmenting'
+        MATCHING = 'matching', 'Matching'
+        READY = 'ready', 'Ready'
+        NEEDS_REVIEW = 'needs_review', 'Needs review'
+        FAILED = 'failed', 'Failed'
+        SUPERSEDED = 'superseded', 'Superseded'
+
+    submission = models.ForeignKey(
+        StudentExerciseSubmission,
+        on_delete=models.CASCADE,
+        related_name='answer_sources',
+    )
+    scope = models.CharField(max_length=12, choices=Scope.choices)
+    target_question = models.ForeignKey(
+        ClassExerciseQuestion,
+        on_delete=models.CASCADE,
+        related_name='+',
+        null=True,
+        blank=True,
+    )
+    status = models.CharField(
+        max_length=16, choices=Status.choices, default=Status.QUEUED, db_index=True,
+    )
+    revision = models.PositiveIntegerField(default=1)
+    workflow_state = models.JSONField(default=dict, blank=True)
+    source_fingerprint = models.CharField(max_length=80, blank=True, default='')
+    raw_result = models.JSONField(default=dict, blank=True)
+    reviewed_result = models.JSONField(default=dict, blank=True)
+    processor_metadata = models.JSONField(default=dict, blank=True)
+    processing_task_id = models.CharField(max_length=255, blank=True, default='')
+    error_code = models.CharField(max_length=64, blank=True, default='')
+    applied_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.CheckConstraint(
+                condition=(
+                    models.Q(scope='question', target_question__isnull=False)
+                    | models.Q(scope='exercise', target_question__isnull=True)
+                ),
+                name='answer_ocr_source_scope_target_valid',
+            ),
+            models.UniqueConstraint(
+                fields=['submission', 'target_question'],
+                condition=models.Q(scope='question'),
+                name='uniq_question_answer_ocr_source',
+            ),
+            models.UniqueConstraint(
+                fields=['submission'],
+                condition=models.Q(scope='exercise'),
+                name='uniq_exercise_answer_ocr_source',
+            ),
+        ]
+        indexes = [models.Index(
+            fields=['submission', 'status'], name='classes_stu_submiss_4a3ad0_idx',
+        )]
+
+
+class StudentExerciseAnswerAsset(models.Model):
+    """Immutable uploaded page belonging to an OCR answer source."""
+
+    source = models.ForeignKey(
+        StudentExerciseAnswerSource,
+        on_delete=models.CASCADE,
+        related_name='assets',
+    )
+    file = models.FileField(upload_to='exercises/answers/sources/')
+    order = models.PositiveIntegerField(default=0)
+    content_type = models.CharField(max_length=100)
+    byte_size = models.PositiveBigIntegerField(default=0)
+    sha256 = models.CharField(max_length=64)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['order', 'id']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['source', 'order'], name='uniq_answer_source_asset_order',
+            ),
+        ]
+
+
 class StudentExerciseAttempt(models.Model):
     """Immutable snapshot of one finalized exercise submission attempt."""
 

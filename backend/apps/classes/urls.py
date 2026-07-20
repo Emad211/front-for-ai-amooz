@@ -15,6 +15,10 @@ from .views_exercises import (
     StudentExerciseDetailView,
     StudentExerciseDraftView,
     StudentExerciseImageView,
+    StudentExerciseAnswerSourceView,
+    StudentQuestionAnswerSourceView,
+    StudentExerciseAnswerSourceApplyView,
+    StudentExerciseAnswerAssetView,
     StudentExerciseSubmitView,
     StudentExerciseResultView,
     StudentFinishedAnswersView,
@@ -145,6 +149,10 @@ urlpatterns = [
     path('student/courses/<int:session_id>/exercises/<int:exercise_id>/submit/', StudentExerciseSubmitView.as_view(), name='student_exercise_submit'),
     path('student/courses/<int:session_id>/exercises/<int:exercise_id>/result/', StudentExerciseResultView.as_view(), name='student_exercise_result'),
     path('student/courses/<int:session_id>/exercises/<int:exercise_id>/questions/<int:question_id>/image/', StudentExerciseImageView.as_view(), name='student_exercise_image'),
+    path('student/courses/<int:session_id>/exercises/<int:exercise_id>/answer-source/', StudentExerciseAnswerSourceView.as_view(), name='student_exercise_answer_source'),
+    path('student/courses/<int:session_id>/exercises/<int:exercise_id>/answer-source/apply/', StudentExerciseAnswerSourceApplyView.as_view(), name='student_exercise_answer_source_apply'),
+    path('student/courses/<int:session_id>/exercises/<int:exercise_id>/answer-assets/<int:asset_id>/', StudentExerciseAnswerAssetView.as_view(), name='student_exercise_answer_asset'),
+    path('student/courses/<int:session_id>/exercises/<int:exercise_id>/questions/<int:question_id>/answer-source/', StudentQuestionAnswerSourceView.as_view(), name='student_question_answer_source'),
     path('student/courses/<int:session_id>/exercises/<int:exercise_id>/assistant/', StudentExerciseAssistantView.as_view(), name='student_exercise_assistant'),
 
     # Exam Prep Pipeline (2 steps)

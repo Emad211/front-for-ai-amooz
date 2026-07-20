@@ -518,6 +518,7 @@ CELERY_TASK_ROUTES = {
     'apps.classes.tasks.pregenerate_student_assessments': {'queue': 'pipeline'},
     'apps.classes.tasks.extract_exercise_content': {'queue': 'pipeline'},
     'apps.classes.tasks.grade_exercise_submission': {'queue': 'pipeline'},
+    'apps.classes.tasks.process_student_answer_source': {'queue': 'interactive'},
     # SMS and lightweight tasks explicitly on the default queue.
     'apps.classes.tasks.send_publish_sms_task': {'queue': 'default'},
     'apps.classes.tasks.send_new_invites_sms_task': {'queue': 'default'},

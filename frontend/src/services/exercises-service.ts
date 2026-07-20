@@ -498,12 +498,62 @@ export type StudentExerciseDetail = {
   questions: StudentQuestion[];
   /** @deprecated Compatibility shape; use top-level questions. */
   sections: StudentSection[];
-  myAnswers: Record<string, { text?: string; images?: string[] }>;
+  myAnswers: StudentAnswers;
   submissionStatus: SubmissionStatus | null;
   attemptCount: number;
+  answerOcrEnabled: boolean;
+  answerSources: AnswerOcrSource[];
 };
 
-export type StudentAnswers = Record<string, { text?: string; images?: string[] }>;
+export type AnswerOcrUnclearPart = {
+  page?: number | null;
+  excerpt?: string;
+  reason?: string;
+  alternatives?: string[];
+};
+
+export type AnswerOcrCandidate = {
+  question_id: number | null;
+  text: string;
+  match_status: 'matched' | 'needs_review' | 'unmatched';
+  quality?: 'clear' | 'review_recommended' | 'unreadable';
+  unclear_parts: AnswerOcrUnclearPart[];
+};
+
+export type AnswerOcrSource = {
+  id: number;
+  scope: 'question' | 'exercise';
+  questionId: number | null;
+  status: 'queued' | 'reading' | 'segmenting' | 'matching' | 'ready' | 'needs_review' | 'failed' | 'superseded';
+  revision: number;
+  workflowStage: string;
+  workflowMessage: string;
+  progressPercent: number;
+  answers: AnswerOcrCandidate[];
+  unmatchedFragments: string[];
+  missingQuestionIds: number[];
+  appliedAt: string | null;
+  assets: Array<{
+    id: number;
+    order: number;
+    contentType: string;
+    byteSize: number;
+    url: string;
+  }>;
+};
+
+export type StudentAnswers = Record<string, {
+  text?: string;
+  images?: string[];
+  ocr?: {
+    sourceId: number;
+    revision: number;
+    rawText: string;
+    text: string;
+    quality: string;
+    unclearParts: AnswerOcrUnclearPart[];
+  };
+}>;
 
 export type ExerciseResult = {
   status: SubmissionStatus;
@@ -600,7 +650,7 @@ export async function uploadAnswerImage(
   exerciseId: number,
   questionId: number,
   file: File
-): Promise<{ path: string }> {
+): Promise<{ path: string; source?: AnswerOcrSource }> {
   const form = new FormData();
   form.append('file', file);
   return requestJson(
@@ -609,10 +659,82 @@ export async function uploadAnswerImage(
   );
 }
 
+export async function uploadExerciseAnswerSource(
+  sessionId: number,
+  exerciseId: number,
+  files: File[]
+): Promise<AnswerOcrSource> {
+  const form = new FormData();
+  files.forEach((file) => form.append('files', file));
+  return requestJson(
+    `${API_URL}/classes/student/courses/${sessionId}/exercises/${exerciseId}/answer-source/`,
+    { method: 'POST', headers: authHeaders(), body: form }
+  );
+}
+
+export async function updateExerciseAnswerSource(
+  sessionId: number,
+  exerciseId: number,
+  revision: number,
+  answers: AnswerOcrCandidate[]
+): Promise<AnswerOcrSource> {
+  return requestJson(
+    `${API_URL}/classes/student/courses/${sessionId}/exercises/${exerciseId}/answer-source/`,
+    {
+      method: 'PATCH',
+      headers: jsonHeaders(),
+      body: JSON.stringify({ revision, answers: answers.map((answer) => ({
+        questionId: answer.question_id,
+        text: answer.text,
+      })) }),
+    }
+  );
+}
+
+export async function updateQuestionAnswerSource(
+  sessionId: number,
+  exerciseId: number,
+  questionId: number,
+  revision: number,
+  text: string
+): Promise<AnswerOcrSource> {
+  return requestJson(
+    `${API_URL}/classes/student/courses/${sessionId}/exercises/${exerciseId}/questions/${questionId}/answer-source/`,
+    {
+      method: 'PATCH',
+      headers: jsonHeaders(),
+      body: JSON.stringify({ revision, answers: [{ questionId, text }] }),
+    }
+  );
+}
+
+export async function applyExerciseAnswerSource(
+  sessionId: number,
+  exerciseId: number,
+  revision: number
+): Promise<AnswerOcrSource> {
+  return requestJson(
+    `${API_URL}/classes/student/courses/${sessionId}/exercises/${exerciseId}/answer-source/apply/`,
+    { method: 'POST', headers: jsonHeaders(), body: JSON.stringify({ revision }) }
+  );
+}
+
+export async function deleteExerciseAnswerAsset(
+  sessionId: number,
+  exerciseId: number,
+  assetId: number
+): Promise<void> {
+  await requestJson(
+    `${API_URL}/classes/student/courses/${sessionId}/exercises/${exerciseId}/answer-assets/${assetId}/`,
+    { method: 'DELETE', headers: authHeaders() }
+  );
+}
+
 export async function submitExercise(
   sessionId: number,
   exerciseId: number,
-  answers: StudentAnswers
+  answers: StudentAnswers,
+  includeUnappliedOcr = false
 ): Promise<{
   status: SubmissionStatus;
   isLate: boolean;
@@ -621,7 +743,11 @@ export async function submitExercise(
 }> {
   return requestJson(
     `${API_URL}/classes/student/courses/${sessionId}/exercises/${exerciseId}/submit/`,
-    { method: 'POST', headers: jsonHeaders(), body: JSON.stringify({ answers }) }
+    {
+      method: 'POST',
+      headers: jsonHeaders(),
+      body: JSON.stringify({ answers, includeUnappliedOcr }),
+    }
   );
 }
 

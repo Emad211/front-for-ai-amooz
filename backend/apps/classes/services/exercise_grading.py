@@ -12,11 +12,10 @@ Security (E5 gate carry-ins):
 * Low-2 — answer images are magic-byte sniffed (Pillow verify) before being sent
   to the vision model.
 
-Handwriting photos (E13): answers carrying ``images`` (storage paths uploaded via
-``StudentExerciseImageView``) are vision-extracted to text BEFORE grading — one
-standard-shape multimodal call per question (``exercise_handwriting_vision``
-prompt, NEVER carrying the reference answer). A vision failure degrades that
-question to text-only grading; it never fails the whole submission.
+Handwriting photos are vision-extracted before grading. Interactive OCR preview
+is reused when its frozen source fingerprint is present, so grading never sends
+the same image to vision twice. A final OCR failure for an image-only answer is
+escalated for manual grading instead of silently becoming a zero.
 """
 from __future__ import annotations
 
@@ -114,7 +113,9 @@ def _student_images(answers: dict, question, student_id: int) -> list[str]:
     prefix = f"exercises/answers/{question.section.exercise_id}/{student_id}/{question.id}_"
     return [
         p for p in images
-        if isinstance(p, str) and p.startswith(prefix)
+        if isinstance(p, str) and (
+            p.startswith(prefix) or p.startswith("exercises/answers/sources/")
+        )
     ]
 
 
@@ -285,6 +286,22 @@ def _configured_model(*names: str) -> str:
     return ""
 
 
+def _student_ocr(answers: dict, question_id) -> dict:
+    entry = answers.get(str(question_id)) if isinstance(answers, dict) else None
+    ocr = entry.get("ocr") if isinstance(entry, dict) else None
+    if not isinstance(ocr, dict):
+        return {}
+    return {
+        "text": str(ocr.get("text") or "").strip(),
+        "rawText": str(ocr.get("rawText") or "").strip(),
+        "sourceId": ocr.get("sourceId"),
+        "revision": ocr.get("revision"),
+        "sourceFingerprint": str(ocr.get("sourceFingerprint") or ""),
+        "quality": str(ocr.get("quality") or ""),
+        "unclearParts": ocr.get("unclearParts") if isinstance(ocr.get("unclearParts"), list) else [],
+    }
+
+
 def _question_fingerprint(question, answers: dict, *, student_id: int,
                           image_identities: list[dict[str, str | bool]] | None = None) -> str:
     """Hash all inputs that can legitimately change a question's AI grade."""
@@ -323,6 +340,7 @@ def _question_fingerprint(question, answers: dict, *, student_id: int,
         "answer": {
             "text": _student_text(answers, question.id),
             "images": images,
+            "confirmed_ocr": _student_ocr(answers, question.id),
         },
     })
 
@@ -467,11 +485,23 @@ def grade_attempt(attempt) -> dict:
     for question in questions:
         qid = str(question.id)
         typed_text = _student_text(answers, question.id)
+        confirmed_ocr = _student_ocr(answers, question.id)
         image_paths = _student_images(answers, question, submission.student_id)
         if typed_text and question.question_type in _DETERMINISTIC_TYPES:
             # Attached images do not affect an authoritative typed MCQ/fill answer.
             image_paths = []
-        image_identities, image_blobs = _load_image_contents(image_paths)
+            confirmed_ocr = {}
+        if confirmed_ocr.get("sourceFingerprint"):
+            # The interactive OCR source already hashed and read the immutable
+            # media. Do not reopen S3 or invoke vision again during grading.
+            image_identities = [{
+                "answerSourceId": confirmed_ocr.get("sourceId"),
+                "revision": confirmed_ocr.get("revision"),
+                "sourceFingerprint": confirmed_ocr.get("sourceFingerprint"),
+            }]
+            image_blobs = {}
+        else:
+            image_identities, image_blobs = _load_image_contents(image_paths)
         fingerprint = _question_fingerprint(
             question,
             answers,
@@ -498,12 +528,15 @@ def grade_attempt(attempt) -> dict:
             }
             continue
 
-        extracted_text = ""
-        ocr_was_reused = False
+        extracted_text = str(confirmed_ocr.get("text") or "")
+        ocr_was_reused = bool(confirmed_ocr.get("sourceFingerprint"))
         ocr_fp = _ocr_fingerprint(question, image_identities) if image_paths else ""
         current_q_meta = dict(question_meta.get(qid) or {})
         previous_q_meta = dict((previous_metadata.get("questions") or {}).get(qid) or {})
-        if image_paths and not (typed_text and question.question_type in _DETERMINISTIC_TYPES):
+        if confirmed_ocr.get("sourceFingerprint"):
+            ocr_text[qid] = extracted_text
+            ocr_fp = str(confirmed_ocr.get("sourceFingerprint") or ocr_fp)
+        elif image_paths and not (typed_text and question.question_type in _DETERMINISTIC_TYPES):
             if current_q_meta.get("ocrFingerprint") == ocr_fp and qid in ocr_text:
                 extracted_text = str(ocr_text[qid] or "")
                 ocr_was_reused = True
@@ -523,10 +556,9 @@ def grade_attempt(attempt) -> dict:
                         raise
                     if isinstance(exc, RuntimeError) and "No LLM model defined" in str(exc):
                         raise
-                    logger.warning(
-                        "Handwriting vision failed for question %s; grading text only",
-                        question.id, exc_info=True,
-                    )
+                    if not typed_text:
+                        raise RuntimeError("answer_ocr_failed") from exc
+                    logger.warning("Handwriting vision failed for question %s; using typed text", question.id)
                     extracted_text = ""
                 ocr_text[qid] = extracted_text
 
@@ -535,6 +567,10 @@ def grade_attempt(attempt) -> dict:
             "reused": False,
             "ocrReused": ocr_was_reused,
             "ocrFingerprint": ocr_fp or None,
+            "answerSourceId": confirmed_ocr.get("sourceId"),
+            "answerSourceRevision": confirmed_ocr.get("revision"),
+            "ocrQuality": confirmed_ocr.get("quality") or None,
+            "ocrUnclearParts": confirmed_ocr.get("unclearParts") or [],
         }
         if question.question_type in _DETERMINISTIC_TYPES:
             per_question[qid] = _grade_deterministic(question, student_answer)

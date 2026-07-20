@@ -164,6 +164,15 @@ class ExerciseGradingOutput(BaseModel):
     per_question: List[ExerciseGradedQuestion]
 
 
+class HandwritingUnclearPart(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    page: Optional[int] = None
+    excerpt: str = ""
+    reason: str = ""
+    alternatives: List[str] = Field(default_factory=list)
+
+
 class HandwritingTranscriptionOutput(BaseModel):
     """Vision transcription of a student's handwritten answer photo(s).
     Contract: ``PROMPTS['exercise_handwriting_vision']['default']``. ``text`` is
@@ -174,6 +183,35 @@ class HandwritingTranscriptionOutput(BaseModel):
     model_config = ConfigDict(extra="allow")
 
     text: str
+    quality: Literal['clear', 'review_recommended', 'unreadable'] = 'clear'
+    unclear_parts: List[HandwritingUnclearPart] = Field(default_factory=list)
+
+
+class ExerciseAnswerCandidate(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    question_id: Optional[int] = None
+    text: str = ""
+    match_status: Literal['matched', 'needs_review', 'unmatched'] = 'needs_review'
+    unclear_parts: List[HandwritingUnclearPart] = Field(default_factory=list)
+
+
+class ExerciseAnswerBundleOutput(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    answers: List[ExerciseAnswerCandidate] = Field(default_factory=list)
+    unmatched_fragments: List[str] = Field(default_factory=list)
+    missing_question_ids: List[int] = Field(default_factory=list)
+
+
+class AnswerPageTranscriptionOutput(BaseModel):
+    """Page-preserving OCR output before whole-exercise question matching."""
+
+    model_config = ConfigDict(extra="allow")
+
+    text: str
+    quality: Literal['clear', 'review_recommended', 'unreadable'] = 'clear'
+    unclear_parts: List[HandwritingUnclearPart] = Field(default_factory=list)
 
 
 class AssistantChatOutput(BaseModel):

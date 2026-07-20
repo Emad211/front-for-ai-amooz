@@ -47,6 +47,8 @@ LIVE_KEYS = {
     "exercise_reference_ingest": ["default"],
     "exercise_grading": ["default"],
     "exercise_handwriting_vision": ["default"],
+    "exercise_answer_bundle_vision": ["default"],
+    "exercise_answer_bundle_mapping": ["default"],
     "exercise_assistant_chat": ["default"],
     "chat_intent": None,
     "chat_system_prompt": None,
@@ -133,6 +135,10 @@ PLACEHOLDERS = {
     ],
     ("exam_prep_handwriting_vision", "default"): ["{question_context}", "{user_message}"],
     ("exercise_handwriting_vision", "default"): ["{question_text}"],
+    ("exercise_answer_bundle_vision", "default"): ["{page_numbers}"],
+    ("exercise_answer_bundle_mapping", "default"): [
+        "{questions_json}", "{transcript_json}",
+    ],
     ("exercise_assistant_chat", "default"): [
         "{question_context}", "{student_work}", "{phase}", "{history}", "{user_message}",
     ],
@@ -191,7 +197,16 @@ OUTPUT_KEYS = {
         "unclear_parts",
     ],
     # Quoted on purpose: the schema's single key would otherwise match trivially.
-    ("exercise_handwriting_vision", "default"): ['"text"'],
+    ("exercise_handwriting_vision", "default"): [
+        '"text"', '"quality"', '"unclear_parts"',
+    ],
+    ("exercise_answer_bundle_vision", "default"): [
+        '"text"', '"quality"', '"unclear_parts"',
+    ],
+    ("exercise_answer_bundle_mapping", "default"): [
+        '"answers"', '"question_id"', '"text"', '"match_status"',
+        '"unclear_parts"', '"unmatched_fragments"', '"missing_question_ids"',
+    ],
     ("notes_ai", "detailed_notes"): ["items", "related_unit_id", "notes_markdown"],
     ("fetch_quizzes", "multiple_choice"): [
         "questions", "related_unit_id", "correct_answer", "explanation",
@@ -289,6 +304,8 @@ def test_shared_safety_block_injected_into_untrusted_content_prompts():
         ("text_grading", "default"),
         ("exercise_grading", "default"),
         ("exercise_handwriting_vision", "default"),
+        ("exercise_answer_bundle_vision", "default"),
+        ("exercise_answer_bundle_mapping", "default"),
         ("exam_prep_chat", "default"),
         ("exercise_assistant_chat", "default"),
     ]
