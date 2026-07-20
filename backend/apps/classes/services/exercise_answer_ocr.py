@@ -13,7 +13,6 @@ import mimetypes
 import os
 from dataclasses import dataclass
 
-from django.core.files.storage import default_storage
 from django.db import transaction
 from django.utils import timezone
 
@@ -28,7 +27,7 @@ from .schemas import (
 )
 
 _ALGORITHM_VERSION = "student-answer-ocr-v1"
-_TIMEOUT_SECONDS = int(os.getenv("LLM_TIMEOUT_SECONDS", "600"))
+_TIMEOUT_SECONDS = int(os.getenv("EXERCISE_ANSWER_OCR_TIMEOUT_SECONDS", "180"))
 
 
 class StaleAnswerSource(RuntimeError):
@@ -40,6 +39,10 @@ class AnswerSourcePending(RuntimeError):
 
 
 class AnswerSourceFailed(RuntimeError):
+    pass
+
+
+class AnswerOcrDisabled(RuntimeError):
     pass
 
 
@@ -70,6 +73,18 @@ def pages_per_call() -> int:
 
 def settle_seconds() -> int:
     return _env_int("EXERCISE_ANSWER_OCR_SETTLE_SECONDS", 2)
+
+
+def image_max_bytes() -> int:
+    return _env_int("EXERCISE_ANSWER_OCR_IMAGE_MAX_BYTES", 3 * 1024 * 1024)
+
+
+def image_max_dimension() -> int:
+    return _env_int("EXERCISE_ANSWER_OCR_IMAGE_MAX_DIMENSION", 2400)
+
+
+def image_max_pixels() -> int:
+    return _env_int("EXERCISE_ANSWER_OCR_IMAGE_MAX_PIXELS", 30_000_000)
 
 
 def _model(*names: str) -> str:
@@ -130,16 +145,12 @@ def serialize_source(source, *, include_raw: bool = False) -> dict:
         else source.assets.filter(is_active=True).order_by("order", "id")
     )
     for asset in active_assets:
-        try:
-            url = asset.file.url
-        except Exception:
-            url = ""
         assets.append({
             "id": asset.id,
             "order": asset.order,
             "contentType": asset.content_type,
             "byteSize": asset.byte_size,
-            "url": url,
+            "url": f"/api/classes/exercise-answer-assets/{asset.id}/content/",
         })
     payload = {
         "id": source.id,
@@ -161,6 +172,22 @@ def serialize_source(source, *, include_raw: bool = False) -> dict:
     return payload
 
 
+def serialize_source_status(source) -> dict:
+    """Return only workflow fields needed by the polling endpoint."""
+    return {
+        "id": source.id,
+        "scope": source.scope,
+        "questionId": source.target_question_id,
+        "status": source.status,
+        "revision": source.revision,
+        "workflowStage": (source.workflow_state or {}).get("stage", source.status),
+        "workflowMessage": (source.workflow_state or {}).get("message", ""),
+        "progressPercent": int(
+            (source.workflow_state or {}).get("progressPercent", 0) or 0
+        ),
+    }
+
+
 @dataclass(frozen=True)
 class Page:
     number: int
@@ -168,12 +195,45 @@ class Page:
     data: bytes
 
 
+def _normalize_pil_page(source, number: int) -> Page:
+    """Bound decoded pixels and encoded bytes for one vision page."""
+    from PIL import Image, ImageOps
+
+    if source.width * source.height > image_max_pixels():
+        raise ValueError("image_pixel_limit_exceeded")
+    image = ImageOps.exif_transpose(source).convert("RGB")
+    max_dimension = image_max_dimension()
+    image.thumbnail((max_dimension, max_dimension), Image.Resampling.LANCZOS)
+    for scale in (1.0, 0.8, 0.65):
+        candidate = image if scale == 1.0 else image.resize(
+            (max(1, int(image.width * scale)), max(1, int(image.height * scale))),
+            Image.Resampling.LANCZOS,
+        )
+        for quality in (90, 82, 74):
+            output = io.BytesIO()
+            candidate.save(output, format="JPEG", quality=quality, optimize=True)
+            encoded = output.getvalue()
+            if len(encoded) <= image_max_bytes():
+                return Page(number, f"page-{number}.jpg", encoded)
+    raise ValueError("image_too_large_after_normalization")
+
+
+def _normalize_image_page(data: bytes, number: int) -> Page:
+    from PIL import Image
+
+    with Image.open(io.BytesIO(data)) as source:
+        return _normalize_pil_page(source, number)
+
+
 def _read_asset(asset) -> bytes:
-    with default_storage.open(asset.file.name, "rb") as fh:
+    from core.storage_backends import open_answer_source_file
+
+    with open_answer_source_file(asset.file) as fh:
         return fh.read()
 
 
 def _render_pdf(data: bytes, start_number: int) -> list[Page]:
+    import math
     import pypdfium2 as pdfium
 
     pdf = pdfium.PdfDocument(data)
@@ -182,19 +242,27 @@ def _render_pdf(data: bytes, start_number: int) -> list[Page]:
             raise ValueError("too_many_pages")
         pages = []
         for index in range(len(pdf)):
-            image = pdf[index].render(scale=150 / 72).to_pil().convert("RGB")
-            output = io.BytesIO()
-            image.save(output, format="JPEG", quality=88, optimize=True)
-            pages.append(Page(start_number + index, f"page-{start_number + index}.jpg", output.getvalue()))
+            page = pdf[index]
+            width, height = page.get_size()
+            if width <= 0 or height <= 0:
+                raise ValueError("invalid_pdf_page_size")
+            scale = min(
+                150 / 72,
+                image_max_dimension() / width,
+                image_max_dimension() / height,
+                math.sqrt(image_max_pixels() / (width * height)),
+            )
+            image = page.render(scale=scale).to_pil()
+            pages.append(_normalize_pil_page(image, start_number + index))
         return pages
     finally:
         pdf.close()
 
 
-def _load_pages(source) -> list[Page]:
+def _load_pages(assets) -> list[Page]:
     pages: list[Page] = []
     total_bytes = 0
-    for asset in source.assets.filter(is_active=True).order_by("order", "id"):
+    for asset in assets:
         data = _read_asset(asset)
         total_bytes += len(data)
         if total_bytes > max_bytes():
@@ -202,7 +270,7 @@ def _load_pages(source) -> list[Page]:
         if is_probably_pdf(data):
             pages.extend(_render_pdf(data, len(pages) + 1))
         elif is_real_image(data):
-            pages.append(Page(len(pages) + 1, asset.file.name, data))
+            pages.append(_normalize_image_page(data, len(pages) + 1))
         else:
             raise ValueError("invalid_asset")
         if len(pages) > max_pages():
@@ -227,6 +295,7 @@ def _vision_call(pages: list[Page], *, prompt: str, schema):
         model=_model("EXERCISE_ANSWER_OCR_MODEL", "EXERCISE_VISION_MODEL", "IMAGE_MODEL"),
         timeout=_TIMEOUT_SECONDS,
         temperature=0,
+        sensitive=True,
     )
 
 
@@ -248,25 +317,49 @@ def _question_result(source, pages: list[Page]) -> dict:
     }
 
 
-def _bundle_result(source, pages: list[Page], revision: int) -> dict:
+def _bundle_result(
+    source,
+    pages: list[Page],
+    revision: int,
+    fingerprint: str,
+    question_contract: list[tuple[int, str]] | None = None,
+) -> dict:
     transcripts = []
+    cache = (source.processor_metadata or {}).get("transcriptionCache") or {}
+    cached_chunks = cache.get("chunks", {}) if cache.get("fingerprint") == fingerprint else {}
     for index in range(0, len(pages), pages_per_call()):
         _assert_revision(source.id, revision)
         chunk = pages[index:index + pages_per_call()]
+        chunk_key = ",".join(str(page.number) for page in chunk)
+        cached = cached_chunks.get(chunk_key)
+        if isinstance(cached, dict):
+            transcripts.append(cached)
+            continue
         prompt = str(PROMPTS["exercise_answer_bundle_vision"]["default"]).replace(
             "{page_numbers}", ", ".join(str(page.number) for page in chunk),
         )
         output = _vision_call(chunk, prompt=prompt, schema=AnswerPageTranscriptionOutput)
-        transcripts.append({
+        transcript = {
             "pages": [page.number for page in chunk],
             "text": output.text,
             "quality": output.quality,
             "unclear_parts": [item.model_dump() for item in output.unclear_parts],
-        })
+        }
+        transcripts.append(transcript)
+        cached_chunks[chunk_key] = transcript
+        updated = source.__class__.objects.filter(id=source.id, revision=revision).update(
+            processor_metadata={
+                **(source.processor_metadata or {}),
+                "transcriptionCache": {"fingerprint": fingerprint, "chunks": cached_chunks},
+            },
+            updated_at=timezone.now(),
+        )
+        if not updated:
+            raise StaleAnswerSource()
 
     _set_state(source.id, revision, source.Status.MATCHING, "matching", 75,
                "در حال تطبیق پاسخ‌ها با سوال‌ها")
-    question_rows = list(
+    question_rows = question_contract or list(
         source.submission.exercise.sections.values_list(
             "questions__id", "questions__question_markdown",
         ).order_by("order", "questions__order", "questions__id")
@@ -282,6 +375,7 @@ def _bundle_result(source, pages: list[Page], revision: int) -> dict:
         model=_model("EXERCISE_ANSWER_MAPPING_MODEL", "EXERCISE_ANSWER_OCR_MODEL", "EXERCISE_VISION_MODEL", "IMAGE_MODEL"),
         timeout=_TIMEOUT_SECONDS,
         temperature=0,
+        sensitive=True,
     ).model_dump()
     valid_ids = {item["question_id"] for item in catalog}
     seen = set()
@@ -309,9 +403,21 @@ def _has_review_flags(result: dict) -> bool:
     )
 
 
-def _projection(answer: dict, source) -> dict:
+def _projection(answer: dict, source, answer_index: int | None = None) -> dict:
     raw_answers = source.raw_result.get("answers", []) if isinstance(source.raw_result, dict) else []
-    raw = next((row for row in raw_answers if row.get("question_id") == answer.get("question_id")), {})
+    raw_fragments = (
+        source.raw_result.get("unmatched_fragments", [])
+        if isinstance(source.raw_result, dict) else []
+    )
+    raw = next(
+        (row for row in raw_answers if row.get("question_id") == answer.get("question_id")),
+        {},
+    )
+    if answer_index is not None:
+        if answer_index < len(raw_answers):
+            raw = raw_answers[answer_index]
+        elif answer_index - len(raw_answers) < len(raw_fragments):
+            raw = {"text": str(raw_fragments[answer_index - len(raw_answers)])}
     return {
         "sourceId": source.id,
         "revision": source.revision,
@@ -330,36 +436,70 @@ def apply_source(source, *, use_raw: bool = False) -> None:
     """Project OCR into draft answers without overwriting the typed channel."""
     from ..models import StudentExerciseSubmission
 
-    result = source.raw_result if use_raw else (source.reviewed_result or source.raw_result)
     with transaction.atomic():
         submission = StudentExerciseSubmission.objects.select_for_update().get(id=source.submission_id)
         if submission.status != StudentExerciseSubmission.Status.DRAFT:
             raise ValueError("submission_locked")
+        locked_source = source.__class__.objects.select_for_update().filter(
+            id=source.id,
+            submission_id=submission.id,
+            revision=source.revision,
+            status__in=[source.Status.READY, source.Status.NEEDS_REVIEW],
+        ).first()
+        if locked_source is None:
+            raise StaleAnswerSource()
+        result = (
+            locked_source.raw_result
+            if use_raw else (locked_source.reviewed_result or locked_source.raw_result)
+        )
+        if locked_source.scope == locked_source.Scope.EXERCISE and (
+            (result or {}).get("unmatched_fragments")
+            or any(
+                not item.get("question_id")
+                for item in (result or {}).get("answers", [])
+                if isinstance(item, dict)
+            )
+        ):
+            raise ValueError("unresolved_answers")
         answers = dict(submission.answers or {})
-        for answer in result.get("answers", []) if isinstance(result, dict) else []:
+        for answer_index, answer in enumerate(
+            result.get("answers", []) if isinstance(result, dict) else [],
+        ):
             qid = answer.get("question_id")
             if not qid:
                 continue
             entry = dict(answers.get(str(qid)) or {})
-            entry["ocr"] = _projection(answer, source)
+            entry["ocr"] = _projection(answer, locked_source, answer_index)
             answers[str(qid)] = entry
         submission.answers = answers
         submission.save(update_fields=["answers", "updated_at"])
-        source.applied_at = timezone.now()
-        source.save(update_fields=["applied_at", "updated_at"])
+        locked_source.applied_at = timezone.now()
+        locked_source.save(update_fields=["applied_at", "updated_at"])
 
 
 def process_source(source_id: int, revision: int) -> dict:
     source = _assert_revision(source_id, revision)
-    _set_state(source_id, revision, source.Status.READING, "reading", 15, "در حال خواندن فایل‌ها")
-    pages = _load_pages(source)
-    source = _assert_revision(source_id, revision)
-    identity = list(source.assets.filter(is_active=True).order_by("order", "id").values(
-        "order", "sha256", "byte_size", "content_type",
-    ))
+    assets = list(source.assets.filter(is_active=True).order_by("order", "id"))
+    identity = [{
+        "order": asset.order,
+        "sha256": asset.sha256,
+        "byte_size": asset.byte_size,
+        "content_type": asset.content_type,
+    } for asset in assets]
     prompt_keys = ["exercise_handwriting_vision"] if source.scope == source.Scope.QUESTION else [
         "exercise_answer_bundle_vision", "exercise_answer_bundle_mapping",
     ]
+    vision_model = _model(
+        "EXERCISE_ANSWER_OCR_MODEL", "EXERCISE_VISION_MODEL", "IMAGE_MODEL",
+    )
+    mapping_model = (
+        _model(
+            "EXERCISE_ANSWER_MAPPING_MODEL", "EXERCISE_ANSWER_OCR_MODEL",
+            "EXERCISE_VISION_MODEL", "IMAGE_MODEL",
+        )
+        if source.scope == source.Scope.EXERCISE else None
+    )
+    prompt_versions = {key: _prompt_version(key) for key in prompt_keys}
     question_contract = list(
         source.submission.exercise.sections.values_list(
             "questions__id", "questions__question_markdown",
@@ -372,15 +512,35 @@ def process_source(source_id: int, revision: int) -> dict:
         "targetQuestionId": source.target_question_id,
         "exerciseId": source.submission.exercise_id,
         "questionContract": question_contract,
-        "model": _model("EXERCISE_ANSWER_OCR_MODEL", "EXERCISE_VISION_MODEL", "IMAGE_MODEL"),
-        "prompts": [_prompt_version(key) for key in prompt_keys],
+        "models": {"vision": vision_model, "mapping": mapping_model},
+        "prompts": prompt_versions,
     })
     if source.source_fingerprint == fingerprint and source.raw_result:
-        return {"status": source.status, "source_id": source.id, "reused": True}
+        result = source.reviewed_result or source.raw_result
+        needs_review = _has_review_flags(result)
+        final_status = source.Status.NEEDS_REVIEW if needs_review else source.Status.READY
+        updated = source.__class__.objects.filter(id=source_id, revision=revision).update(
+            status=final_status,
+            workflow_state=_workflow(
+                "needs_review" if needs_review else "ready", 100,
+                "خوانش آماده بررسی است" if needs_review else "خوانش پاسخ آماده است",
+            ),
+            updated_at=timezone.now(),
+        )
+        if not updated:
+            raise StaleAnswerSource()
+        return {"status": final_status, "source_id": source.id, "reused": True}
 
+    _set_state(source_id, revision, source.Status.READING, "reading", 15, "در حال خواندن فایل‌ها")
+    source = _assert_revision(source_id, revision)
+    pages = _load_pages(assets)
     _set_state(source_id, revision, source.Status.SEGMENTING, "segmenting", 35,
                "در حال تشخیص متن و فرمول‌ها")
-    result = _question_result(source, pages) if source.scope == source.Scope.QUESTION else _bundle_result(source, pages, revision)
+    result = (
+        _question_result(source, pages)
+        if source.scope == source.Scope.QUESTION
+        else _bundle_result(source, pages, revision, fingerprint, question_contract)
+    )
     _assert_revision(source_id, revision)
     needs_review = _has_review_flags(result)
     final_status = source.Status.NEEDS_REVIEW if needs_review else source.Status.READY
@@ -394,9 +554,11 @@ def process_source(source_id: int, revision: int) -> dict:
         raw_result=result,
         reviewed_result=result,
         processor_metadata={
+            **(source.processor_metadata or {}),
             "algorithmVersion": _ALGORITHM_VERSION,
-            "model": _model("EXERCISE_ANSWER_OCR_MODEL", "EXERCISE_VISION_MODEL", "IMAGE_MODEL"),
-            "promptVersions": {key: _prompt_version(key) for key in prompt_keys},
+            "model": vision_model,
+            "mappingModel": mapping_model,
+            "promptVersions": prompt_versions,
             "pageCount": len(pages),
         },
         error_code="",
@@ -409,7 +571,13 @@ def process_source(source_id: int, revision: int) -> dict:
         source.scope == source.Scope.QUESTION
         and source.submission.status == source.submission.Status.DRAFT
     ):
-        apply_source(source)
+        try:
+            apply_source(source)
+        except ValueError as exc:
+            # Submit may commit after OCR becomes READY but before this optional
+            # draft projection. The frozen source remains valid for grading.
+            if str(exc) != "submission_locked":
+                raise
     return {"status": final_status, "source_id": source.id, "reused": False}
 
 
@@ -428,13 +596,18 @@ def freeze_sources(submission, *, include_unapplied: bool) -> list[dict]:
     from ..models import StudentExerciseAnswerSource
 
     refs = []
-    sources = submission.answer_sources.exclude(status=StudentExerciseAnswerSource.Status.SUPERSEDED)
+    sources = submission.answer_sources.exclude(
+        status=StudentExerciseAnswerSource.Status.SUPERSEDED,
+    ).prefetch_related("assets")
     for source in sources.order_by("id"):
         refs.append({
             "sourceId": source.id,
             "revision": source.revision,
             "scope": source.scope,
             "includeUnapplied": bool(include_unapplied and source.scope == source.Scope.EXERCISE),
+            "assetIds": [
+                asset.id for asset in source.assets.all() if asset.is_active
+            ],
         })
     return refs
 
@@ -446,11 +619,21 @@ def prepare_attempt_ocr(attempt) -> str:
     metadata = dict(attempt.grader_metadata or {})
     refs = metadata.get("answerSources") if isinstance(metadata.get("answerSources"), list) else []
     answers = dict(attempt.answers or {})
+    source_ids = {
+        ref.get("sourceId") for ref in refs
+        if isinstance(ref, dict) and isinstance(ref.get("sourceId"), int)
+    }
+    sources_by_id = StudentExerciseAnswerSource.objects.filter(
+        id__in=source_ids,
+        submission_id=attempt.submission_id,
+    ).in_bulk()
     for ref in refs:
-        source = StudentExerciseAnswerSource.objects.filter(
-            id=ref.get("sourceId"), revision=ref.get("revision"), submission=attempt.submission,
-        ).first()
-        if source is None or source.status == StudentExerciseAnswerSource.Status.SUPERSEDED:
+        source = sources_by_id.get(ref.get("sourceId"))
+        if (
+            source is None
+            or source.revision != ref.get("revision")
+            or source.status == StudentExerciseAnswerSource.Status.SUPERSEDED
+        ):
             raise AnswerSourceFailed()
         if source.status in {
             StudentExerciseAnswerSource.Status.QUEUED,
@@ -465,12 +648,14 @@ def prepare_attempt_ocr(attempt) -> str:
         if not should_include:
             continue
         result = source.reviewed_result or source.raw_result
-        for item in result.get("answers", []) if isinstance(result, dict) else []:
+        for answer_index, item in enumerate(
+            result.get("answers", []) if isinstance(result, dict) else [],
+        ):
             qid = item.get("question_id")
             if not qid:
                 continue
             entry = dict(answers.get(str(qid)) or {})
-            entry["ocr"] = _projection(item, source)
+            entry["ocr"] = _projection(item, source, answer_index)
             answers[str(qid)] = entry
     attempt.answers = answers
     attempt.save(update_fields=["answers", "updated_at"])

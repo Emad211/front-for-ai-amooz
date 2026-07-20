@@ -102,7 +102,7 @@ services:
       redis:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "celery -A core inspect ping --timeout 10"]
+      test: ["CMD-SHELL", "celery -A core inspect ping --timeout 10 | grep -q pong"]
       interval: 30s
       timeout: 15s
       retries: 3
@@ -118,7 +118,7 @@ services:
       dockerfile: Dockerfile
     container_name: ai_amooz_celery_interactive_worker
     restart: always
-    command: celery -A core worker -Q interactive --loglevel=info --concurrency=2 --max-tasks-per-child=50
+    command: celery -A core worker -Q interactive --loglevel=info --concurrency=1 --max-tasks-per-child=50 --hostname=interactive@%h
     env_file:
       - ./backend/.env
     environment:
@@ -135,6 +135,12 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A core inspect ping --destination \"interactive@$$(hostname)\" --timeout 10 | grep -q pong"]
+      interval: 30s
+      timeout: 15s
+      retries: 3
+      start_period: 30s
     deploy:
       resources:
         limits:

@@ -8,6 +8,7 @@ import { Loader2 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { MarkdownWithMath } from '@/components/content/markdown-with-math';
+import { ProtectedAnswerAsset } from '@/components/exercises/protected-answer-asset';
 import {
   type ExerciseResult,
   type StudentQuestion,
@@ -54,6 +55,35 @@ export default function StudentExerciseResultPage({ params }: PageProps) {
     loadResult().finally(() => setLoading(false));
   }, [sessionId, loadResult]);
 
+  useEffect(() => {
+    if (!result || !['submitted', 'grading'].includes(result.status)) return;
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+
+    const schedule = (delay: number) => {
+      timer = setTimeout(async () => {
+        if (cancelled) return;
+        if (document.visibilityState === 'visible') {
+          await loadResult(result.attemptId ?? undefined);
+        }
+        if (!cancelled) schedule(document.visibilityState === 'visible' ? 4000 : 10000);
+      }, delay);
+    };
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        if (timer) clearTimeout(timer);
+        schedule(0);
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    schedule(2500);
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+    };
+  }, [result?.status, result?.attemptId, loadResult]);
+
   const questionById = new Map<string, StudentQuestion>();
   result?.exercise?.questions.forEach((question) =>
     questionById.set(String(question.id), question)
@@ -88,9 +118,40 @@ export default function StudentExerciseResultPage({ params }: PageProps) {
             </CardHeader>
           </Card>
 
+          {(result.answerSources ?? []).some(
+            (source) => source.scope === 'exercise' && source.assets.length > 0
+          ) && (
+            <Card>
+              <CardContent className="space-y-2 py-4">
+                <p className="text-sm font-medium">پاسخ‌نامه دست‌نویس این ارسال</p>
+                <div className="flex flex-wrap gap-2">
+                  {(result.answerSources ?? [])
+                    .filter((source) => source.scope === 'exercise')
+                    .flatMap((source) => source.assets)
+                    .map((asset, index) => (
+                      <ProtectedAnswerAsset
+                        key={asset.id}
+                        asset={asset}
+                        label={`صفحه ${index + 1} پاسخ‌نامه`}
+                      />
+                    ))}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
           {(result.result?.per_question ?? []).map((pq) => {
             const q = questionById.get(pq.question_id);
             const answer = result.answers?.[pq.question_id];
+            const secureAssets = (result.answerSources ?? [])
+              .filter(
+                (source) => source.scope === 'question'
+                  && String(source.questionId) === pq.question_id
+              )
+              .flatMap((source) => source.assets);
+            const legacyImages = (answer?.images ?? []).filter(
+              (image) => !image.startsWith('exercises/answers/sources/')
+            );
             const wrong = (pq.score_points ?? 0) < (pq.max_points ?? 0);
             return (
               <Card key={pq.question_id} className={wrong ? 'border-destructive/40' : 'border-primary/40'}>
@@ -100,12 +161,22 @@ export default function StudentExerciseResultPage({ params }: PageProps) {
                     <p className="mb-1 text-muted-foreground">پاسخ شما:</p>
                     {answer?.text ? (
                       <MarkdownWithMath markdown={answer.text} />
-                    ) : !answer?.images?.length ? (
+                    ) : !answer?.images?.length && secureAssets.length === 0 ? (
                       <span className="text-muted-foreground">پاسخی ثبت نشده است.</span>
                     ) : null}
-                    {!!answer?.images?.length && (
+                    {secureAssets.length > 0 ? (
                       <div className="mt-2 flex flex-wrap gap-2">
-                        {answer.images.map((image) => (
+                        {secureAssets.map((asset, index) => (
+                          <ProtectedAnswerAsset
+                            key={asset.id}
+                            asset={asset}
+                            label={`تصویر ${index + 1} پاسخ شما`}
+                          />
+                        ))}
+                      </div>
+                    ) : legacyImages.length > 0 && (
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {legacyImages.map((image) => (
                           <a key={image} href={answerImageUrl(image)} target="_blank" rel="noreferrer">
                             {/* eslint-disable-next-line @next/next/no-img-element */}
                             <img

@@ -2,6 +2,7 @@ from django.conf import settings
 from django.db import models
 from django.db.models import UniqueConstraint
 from django.utils import timezone
+from core.storage_backends import answer_source_storage
 import uuid
 
 
@@ -908,12 +909,16 @@ class StudentExerciseAnswerAsset(models.Model):
         on_delete=models.CASCADE,
         related_name='assets',
     )
-    file = models.FileField(upload_to='exercises/answers/sources/')
+    file = models.FileField(
+        upload_to='exercises/answers/sources/',
+        storage=answer_source_storage,
+    )
     order = models.PositiveIntegerField(default=0)
     content_type = models.CharField(max_length=100)
     byte_size = models.PositiveBigIntegerField(default=0)
     sha256 = models.CharField(max_length=64)
     is_active = models.BooleanField(default=True)
+    deactivated_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

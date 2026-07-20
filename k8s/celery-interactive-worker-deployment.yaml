@@ -7,6 +7,11 @@ metadata:
     app: ai-amooz-celery-interactive-worker
 spec:
   replicas: 1
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
   selector:
     matchLabels:
       app: ai-amooz-celery-interactive-worker
@@ -15,6 +20,7 @@ spec:
       labels:
         app: ai-amooz-celery-interactive-worker
     spec:
+      terminationGracePeriodSeconds: 2800
       containers:
         - name: worker
           image: registry.hamdocker.ir/ai-products/ai-amooz-backend:latest
@@ -27,28 +33,44 @@ spec:
             - "-Q"
             - "interactive"
             - "--loglevel=info"
-            - "--concurrency=2"
+            - "--concurrency=1"
             - "--max-tasks-per-child=50"
+            - "--hostname=interactive@%h"
           envFrom:
             - secretRef:
                 name: ai-amooz-backend-secrets
           resources:
             requests:
-              memory: "512Mi"
-              cpu: "250m"
+              memory: "1Gi"
+              cpu: "500m"
             limits:
               memory: "2Gi"
               cpu: "1000m"
+          startupProbe:
+            exec:
+              command:
+                - "/bin/sh"
+                - "-c"
+                - "celery -A core inspect ping --destination \"interactive@$(hostname)\" --timeout=10 | grep -q pong"
+            periodSeconds: 10
+            timeoutSeconds: 15
+            failureThreshold: 20
+          readinessProbe:
+            exec:
+              command:
+                - "/bin/sh"
+                - "-c"
+                - "celery -A core inspect ping --destination \"interactive@$(hostname)\" --timeout=10 | grep -q pong"
+            periodSeconds: 30
+            timeoutSeconds: 15
+            failureThreshold: 3
           livenessProbe:
             exec:
               command:
-                - "celery"
-                - "-A"
-                - "core"
-                - "inspect"
-                - "ping"
-                - "--timeout=10"
-            initialDelaySeconds: 30
+                - "/bin/sh"
+                - "-c"
+                - "celery -A core inspect ping --destination \"interactive@$(hostname)\" --timeout=10 | grep -q pong"
             periodSeconds: 60
             timeoutSeconds: 15
+            failureThreshold: 3
       restartPolicy: Always

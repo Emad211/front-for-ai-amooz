@@ -44,6 +44,8 @@ import {
   applyExerciseAnswerSource,
   deleteExerciseAnswerAsset,
   getStudentExercise,
+  getStudentExerciseAnswerSourceStatus,
+  isAnswerOcrProcessing,
   saveExerciseDraft,
   updateExerciseAnswerSource,
   updateQuestionAnswerSource,
@@ -202,17 +204,68 @@ export function ExerciseSolver({
     setAnswers(merged);
   }, [sessionId, exerciseId]);
 
+  const hasActiveOcr = detail?.answerSources?.some(isAnswerOcrProcessing) ?? false;
+
   useEffect(() => {
-    const active = detail?.answerSources?.some((source) => (
-      source.status === 'queued'
-      || source.status === 'reading'
-      || source.status === 'segmenting'
-      || source.status === 'matching'
-    ));
-    if (!active) return;
-    const timer = window.setInterval(() => void refreshExercise(), 2000);
-    return () => window.clearInterval(timer);
-  }, [detail?.answerSources, refreshExercise]);
+    if (!hasActiveOcr) return;
+    let cancelled = false;
+    let inFlight = false;
+    let delay = 2000;
+    let timer: number | null = null;
+
+    const schedule = () => {
+      if (!cancelled) timer = window.setTimeout(poll, delay);
+    };
+    const poll = async () => {
+      if (cancelled || inFlight) return;
+      if (document.hidden) {
+        delay = 5000;
+        schedule();
+        return;
+      }
+      inFlight = true;
+      try {
+        const next = await getStudentExerciseAnswerSourceStatus(sessionId, exerciseId);
+        if (cancelled) return;
+        setDetail((current) => {
+          if (!current) return current;
+          const statusById = new Map(next.answerSources.map((source) => [source.id, source]));
+          return {
+            ...current,
+            answerSources: current.answerSources.map((source) => ({
+              ...source,
+              ...statusById.get(source.id),
+            })),
+          };
+        });
+        const stillActive = next.answerSources.some(isAnswerOcrProcessing);
+        if (stillActive) {
+          delay = Math.min(delay + 1000, 5000);
+          schedule();
+        } else {
+          await refreshExercise();
+        }
+      } catch {
+        delay = 5000;
+        schedule();
+      } finally {
+        inFlight = false;
+      }
+    };
+    const onVisibilityChange = () => {
+      if (!document.hidden && !inFlight) {
+        if (timer != null) window.clearTimeout(timer);
+        void poll();
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    schedule();
+    return () => {
+      cancelled = true;
+      if (timer != null) window.clearTimeout(timer);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+    };
+  }, [hasActiveOcr, refreshExercise, sessionId, exerciseId]);
 
   const alreadySubmitted =
     detail?.submissionStatus != null && detail.submissionStatus !== 'draft';
@@ -390,6 +443,10 @@ export function ExerciseSolver({
   };
 
   const doSubmit = async () => {
+    if (ocrBusy) {
+      toast.error('ابتدا صبر کنید بارگذاری یا ویرایش پاسخ‌نامه کامل شود.');
+      return;
+    }
     finalizingRef.current = true;
     if (saveTimerRef.current != null) window.clearTimeout(saveTimerRef.current);
     saveAbortRef.current?.abort();
@@ -439,12 +496,7 @@ export function ExerciseSolver({
       .filter((source) => source.scope === 'question' && source.questionId != null)
       .map((source) => [source.questionId as number, source]),
   );
-  const pendingOcr = (detail.answerSources ?? []).some((source) => (
-    source.status === 'queued'
-    || source.status === 'reading'
-    || source.status === 'segmenting'
-    || source.status === 'matching'
-  ));
+  const pendingOcr = (detail.answerSources ?? []).some(isAnswerOcrProcessing);
   const failedOcr = (detail.answerSources ?? []).some((source) => source.status === 'failed');
   const unappliedWholeOcr = Boolean(
     wholeAnswerSource
@@ -502,7 +554,7 @@ export function ExerciseSolver({
         <WholeAnswerOcrPanel
           source={wholeAnswerSource}
           questions={detail.questions}
-          disabled={alreadySubmitted}
+          disabled={alreadySubmitted || ocrBusy}
           busy={ocrBusy}
           onUpload={uploadWholeAnswer}
           onApply={applyWholeAnswer}
@@ -602,7 +654,7 @@ export function ExerciseSolver({
         <div className="sticky bottom-0 flex justify-end border-t border-border bg-background/90 py-3 backdrop-blur">
           <AlertDialog>
             <AlertDialogTrigger asChild>
-              <Button disabled={submitting}>
+              <Button disabled={submitting || ocrBusy}>
                 {submitting ? <Loader2 className="ms-2 h-4 w-4 animate-spin" /> : <Send className="ms-2 h-4 w-4" />}
                 ارسال پاسخ‌ها
               </Button>
@@ -624,7 +676,7 @@ export function ExerciseSolver({
               </AlertDialogHeader>
               <AlertDialogFooter>
                 <AlertDialogCancel>بازگشت</AlertDialogCancel>
-                <AlertDialogAction onClick={doSubmit}>ارسال نهایی</AlertDialogAction>
+                <AlertDialogAction disabled={ocrBusy} onClick={doSubmit}>ارسال نهایی</AlertDialogAction>
               </AlertDialogFooter>
             </AlertDialogContent>
           </AlertDialog>

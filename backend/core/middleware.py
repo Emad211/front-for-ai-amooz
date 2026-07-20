@@ -18,11 +18,61 @@ import json
 import logging
 import time
 
-from django.http import HttpResponse
+from django.http import HttpResponse, JsonResponse
 
 logger = logging.getLogger(__name__)
 
 HEALTH_PATH = "/api/health/"
+
+
+def _is_answer_ocr_upload(request) -> bool:
+    path = request.path
+    return (
+        request.method == "POST"
+        and path.startswith("/api/classes/student/courses/")
+        and "/exercises/" in path
+        and (path.endswith("/answer-source/") or path.endswith("/image/"))
+    )
+
+
+class AnswerOcrUploadLimitMiddleware:
+    """Apply the OCR byte cap before DRF parses multipart request bodies."""
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        if not _is_answer_ocr_upload(request):
+            return self.get_response(request)
+
+        from django.conf import settings
+        from core.upload_handlers import LimitedAnswerOcrUploadHandler
+
+        max_bytes = settings.EXERCISE_ANSWER_OCR_REQUEST_MAX_BYTES
+        raw_content_length = request.META.get("CONTENT_LENGTH")
+        if raw_content_length in (None, ""):
+            return JsonResponse({"detail": "طول درخواست باید مشخص باشد."}, status=411)
+        try:
+            content_length = int(raw_content_length)
+        except (TypeError, ValueError):
+            return JsonResponse({"detail": "طول درخواست معتبر نیست."}, status=400)
+        if content_length < 0:
+            return JsonResponse({"detail": "طول درخواست معتبر نیست."}, status=400)
+        if content_length > max_bytes:
+            return JsonResponse(
+                {"detail": "حجم درخواست پاسخ‌نامه بیش از حد مجاز است."},
+                status=413,
+            )
+        request.upload_handlers = [
+            LimitedAnswerOcrUploadHandler(request, max_bytes=max_bytes),
+        ]
+        response = self.get_response(request)
+        if getattr(request, "_answer_ocr_upload_too_large", False):
+            return JsonResponse(
+                {"detail": "حجم درخواست پاسخ‌نامه بیش از حد مجاز است."},
+                status=413,
+            )
+        return response
 
 
 class HealthCheckMiddleware:

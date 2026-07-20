@@ -136,6 +136,7 @@ def generate_structured(
     temperature: Optional[float] = None,
     max_repair: int = 1,
     json_object_mode: Optional[bool] = None,
+    sensitive: bool = False,
 ) -> T:
     """Call the LLM and return a validated Pydantic instance of ``schema``.
 
@@ -180,10 +181,16 @@ def generate_structured(
             last_error = exc
             if attempt >= max_repair:
                 break
-            logger.warning(
-                "%s parse/validate failed (attempt %d/%d); requesting repair: %s",
-                schema.__name__, attempt + 1, max_repair + 1, exc,
-            )
+            if sensitive:
+                logger.warning(
+                    "%s parse/validate failed (attempt %d/%d); requesting repair",
+                    schema.__name__, attempt + 1, max_repair + 1,
+                )
+            else:
+                logger.warning(
+                    "%s parse/validate failed (attempt %d/%d); requesting repair: %s",
+                    schema.__name__, attempt + 1, max_repair + 1, exc,
+                )
             repair_messages = [{"role": "user", "content": _repair_instruction(text, exc, schema)}]
             try:
                 text = _call(repair_messages, None)
@@ -191,6 +198,7 @@ def generate_structured(
                 last_error = call_exc
                 break
 
+    detail = '' if sensitive else f': {last_error}'
     raise StructuredOutputError(
-        f"Failed to obtain valid {schema.__name__} after {max_repair + 1} attempt(s): {last_error}"
+        f"Failed to obtain valid {schema.__name__} after {max_repair + 1} attempt(s){detail}"
     )

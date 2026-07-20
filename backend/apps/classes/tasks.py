@@ -27,6 +27,7 @@ import logging
 import os
 import tempfile
 import time
+import uuid
 from datetime import timedelta
 from pathlib import Path
 
@@ -53,6 +54,8 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 PIPELINE_TASK_SOFT_TIME_LIMIT = int(os.getenv('PIPELINE_TASK_SOFT_TIME_LIMIT', str(int(3.5 * 3600))))
 PIPELINE_TASK_TIME_LIMIT = int(os.getenv('PIPELINE_TASK_TIME_LIMIT', str(4 * 3600)))
+ANSWER_OCR_TASK_SOFT_TIME_LIMIT = int(os.getenv('EXERCISE_ANSWER_OCR_SOFT_TIME_LIMIT', '2400'))
+ANSWER_OCR_TASK_TIME_LIMIT = int(os.getenv('EXERCISE_ANSWER_OCR_TIME_LIMIT', '2700'))
 
 _PIPELINE_TIMEOUT_FA = (
     'پردازش از سقف زمانی مجاز فراتر رفت. لطفاً فایل را به جلسات کوتاه‌تر تقسیم کنید و دوباره تلاش کنید.'
@@ -1420,6 +1423,155 @@ def cleanup_stale_sessions(self) -> dict:
     return {'status': 'success', 'stale_count': count}
 
 
+@shared_task(bind=True, max_retries=0)
+def cleanup_inactive_answer_ocr_assets(self) -> dict:
+    """Delete old superseded blobs unless a current draft or Attempt references them."""
+    from collections import defaultdict
+    from django.utils import timezone as _tz
+    from .models import (
+        StudentExerciseAnswerAsset,
+        StudentExerciseAttempt,
+        StudentExerciseSubmission,
+    )
+
+    retention_days = max(1, int(os.getenv('EXERCISE_ANSWER_OCR_ASSET_RETENTION_DAYS', '30')))
+    cutoff = _tz.now() - timedelta(days=retention_days)
+    eligible = StudentExerciseAnswerAsset.objects.filter(
+        is_active=False, deactivated_at__lt=cutoff,
+    ).select_related('source').order_by('id')
+    referenced_paths = defaultdict(set)
+
+    def collect_paths(submission_id, answers):
+        for entry in (answers or {}).values() if isinstance(answers, dict) else []:
+            if isinstance(entry, dict):
+                referenced_paths[submission_id].update(
+                    path for path in (entry.get('images') or []) if isinstance(path, str)
+                )
+    deleted = 0
+    cursor = 0
+    while deleted < 500:
+        assets = list(eligible.filter(id__gt=cursor)[:500])
+        if not assets:
+            break
+        cursor = assets[-1].id
+        submission_ids = {asset.source.submission_id for asset in assets}
+        referenced_asset_ids: set[int] = set()
+        legacy_referenced_source_ids: set[int] = set()
+
+        for submission_id, answers in StudentExerciseSubmission.objects.filter(
+            id__in=submission_ids,
+        ).values_list('id', 'answers'):
+            collect_paths(submission_id, answers)
+        for submission_id, answers, metadata in StudentExerciseAttempt.objects.filter(
+            submission_id__in=submission_ids,
+        ).values_list('submission_id', 'answers', 'grader_metadata'):
+            collect_paths(submission_id, answers)
+            refs = metadata.get('answerSources', []) if isinstance(metadata, dict) else []
+            for ref in refs if isinstance(refs, list) else []:
+                if not isinstance(ref, dict):
+                    continue
+                asset_ids = ref.get('assetIds')
+                if isinstance(asset_ids, list):
+                    referenced_asset_ids.update(
+                        value for value in asset_ids if isinstance(value, int)
+                    )
+                elif isinstance(ref.get('sourceId'), int):
+                    # Pre-hardening Attempts did not snapshot asset IDs. Keep
+                    # all files for those sources rather than erase evidence.
+                    legacy_referenced_source_ids.add(ref['sourceId'])
+
+        for asset in assets:
+            if deleted >= 500:
+                break
+            if (
+                asset.id in referenced_asset_ids
+                or asset.source_id in legacy_referenced_source_ids
+                or asset.file.name in referenced_paths[asset.source.submission_id]
+            ):
+                continue
+            asset.delete()
+            deleted += 1
+    return {'status': 'success', 'deleted_count': deleted}
+
+
+@shared_task(bind=True, max_retries=0)
+def recover_queued_answer_ocr_sources(self) -> dict:
+    """Recover broker publish failures and abandoned OCR executions."""
+    from django.utils import timezone as _tz
+    from django.db.models import F
+    from .models import StudentExerciseAnswerSource, StudentExerciseAttempt
+
+    now = _tz.now()
+    cutoff = now - timedelta(minutes=2)
+    stale_cutoff = now - timedelta(
+        seconds=ANSWER_OCR_TASK_TIME_LIMIT + 300,
+    )
+    StudentExerciseAnswerSource.objects.filter(
+        status__in=[
+            StudentExerciseAnswerSource.Status.READING,
+            StudentExerciseAnswerSource.Status.SEGMENTING,
+            StudentExerciseAnswerSource.Status.MATCHING,
+        ],
+        updated_at__lt=stale_cutoff,
+    ).update(
+        status=StudentExerciseAnswerSource.Status.QUEUED,
+        processing_task_id='',
+        workflow_state={
+            'stage': 'queued', 'progressPercent': 5,
+            'message': 'پردازش متوقف‌شده دوباره در صف قرار گرفت',
+        },
+        updated_at=now,
+    )
+    # A worker can die after claiming a queued row but before moving it to the
+    # first processing state. Reclaim only after the hard task limit has passed.
+    StudentExerciseAnswerSource.objects.filter(
+        status=StudentExerciseAnswerSource.Status.QUEUED,
+        processing_task_id__gt='',
+        updated_at__lt=stale_cutoff,
+    ).update(processing_task_id='', updated_at=now)
+    rows = list(
+        StudentExerciseAnswerSource.objects.filter(
+            status=StudentExerciseAnswerSource.Status.QUEUED,
+            processing_task_id='',
+            updated_at__lt=cutoff,
+        ).order_by('id').values_list('id', 'revision')[:200]
+    )
+    dispatched = 0
+    for source_id, revision in rows:
+        task_id = str(uuid.uuid4())
+        claimed = StudentExerciseAnswerSource.objects.filter(
+            id=source_id, revision=revision,
+            status=StudentExerciseAnswerSource.Status.QUEUED,
+            processing_task_id='',
+        ).update(processing_task_id=task_id)
+        if not claimed:
+            continue
+        try:
+            process_student_answer_source.apply_async(
+                args=[source_id, revision], task_id=task_id,
+            )
+            dispatched += 1
+        except Exception:
+            StudentExerciseAnswerSource.objects.filter(
+                id=source_id, revision=revision, processing_task_id=task_id,
+            ).update(processing_task_id='')
+            logger.exception('Unable to recover queued answer OCR source %s', source_id)
+    grading_rows = list(
+        StudentExerciseAttempt.objects.filter(
+            status=StudentExerciseAttempt.Status.SUBMITTED,
+            submission__current_attempt_id=F('id'),
+            updated_at__lt=cutoff,
+        ).order_by('id').values_list('submission_id', 'id')[:200]
+    )
+    for submission_id, attempt_id in grading_rows:
+        grade_exercise_submission.apply_async(args=[submission_id, attempt_id])
+    return {
+        'status': 'success',
+        'queued_count': dispatched,
+        'grading_wakeups': len(grading_rows),
+    }
+
+
 # ---------------------------------------------------------------------------
 # Exercise Hub — async extraction (ingest OCR -> structure -> section/question
 # rows). Runs on the `pipeline` queue. Design: docs/features/exercise-hub.md.
@@ -1673,9 +1825,11 @@ def extract_exercise_content(self, exercise_id: int) -> dict:
 # ---------------------------------------------------------------------------
 
 @shared_task(bind=True, max_retries=3, default_retry_delay=15, acks_late=True,
-             soft_time_limit=20 * 60, time_limit=25 * 60)
+             soft_time_limit=ANSWER_OCR_TASK_SOFT_TIME_LIMIT,
+             time_limit=ANSWER_OCR_TASK_TIME_LIMIT)
 def process_student_answer_source(self, source_id: int, revision: int) -> dict:
     """OCR one immutable source revision and discard stale task results."""
+    from django.core.cache import cache
     from apps.commons.token_tracker import llm_tracking_context
     from .models import StudentExerciseAnswerSource
     from .services.exercise_answer_ocr import (
@@ -1688,35 +1842,47 @@ def process_student_answer_source(self, source_id: int, revision: int) -> dict:
     if source is None:
         return {'status': 'stale', 'source_id': source_id, 'revision': revision}
     task_id = _current_task_id(self)
-    StudentExerciseAnswerSource.objects.filter(id=source_id, revision=revision).update(
-        processing_task_id=task_id,
-    )
+    lock_key = f'exercise-answer-ocr:{source_id}:{revision}'
+    lock_owner = task_id or 'direct-call'
+    if not cache.add(lock_key, lock_owner, timeout=ANSWER_OCR_TASK_TIME_LIMIT):
+        return {'status': 'already_processing', 'source_id': source_id, 'revision': revision}
     try:
-        with llm_tracking_context(
-            user=source.submission.student,
-            session_id=source.submission.exercise.session_id,
-        ):
-            result = process_source(source_id, revision)
-    except StaleAnswerSource:
-        return {'status': 'stale', 'source_id': source_id, 'revision': revision}
-    except Exception as exc:
-        if is_transient_llm_error(exc) and self.request.retries < self.max_retries:
-            raise self.retry(exc=exc, countdown=_retry_countdown(self, base=15, cap=120))
-        logger.exception('Student answer OCR failed for source %s revision %s', source_id, revision)
-        mark_failed(source_id, revision)
-        result = {'status': 'failed', 'source_id': source_id, 'revision': revision}
+        StudentExerciseAnswerSource.objects.filter(id=source_id, revision=revision).update(
+            processing_task_id=task_id,
+        )
+        try:
+            with llm_tracking_context(
+                user=source.submission.student,
+                session_id=source.submission.exercise.session_id,
+            ):
+                result = process_source(source_id, revision)
+        except StaleAnswerSource:
+            return {'status': 'stale', 'source_id': source_id, 'revision': revision}
+        except Exception as exc:
+            if is_transient_llm_error(exc) and self.request.retries < self.max_retries:
+                raise self.retry(exc=exc, countdown=_retry_countdown(self, base=15, cap=120))
+            # Validation errors may embed private OCR text in their string form.
+            logger.error(
+                'Student answer OCR failed for source %s revision %s error_type=%s',
+                source_id, revision, type(exc).__name__,
+            )
+            mark_failed(source_id, revision)
+            result = {'status': 'failed', 'source_id': source_id, 'revision': revision}
 
-    # A submission may have been finalized while OCR was running. Wake grading
-    # only after this frozen source reaches a terminal state; task guards keep
-    # redelivery idempotent.
-    source = StudentExerciseAnswerSource.objects.select_related('submission').filter(
-        id=source_id, revision=revision,
-    ).first()
-    if source and source.submission.current_attempt_id:
-        attempt = source.submission.current_attempt
-        if attempt and attempt.status == attempt.Status.SUBMITTED:
-            grade_exercise_submission.delay(source.submission_id, attempt.id)
-    return result
+        # A submission may have been finalized while OCR was running. Wake grading
+        # only after this frozen source reaches a terminal state; task guards keep
+        # redelivery idempotent.
+        source = StudentExerciseAnswerSource.objects.select_related('submission').filter(
+            id=source_id, revision=revision,
+        ).first()
+        if source and source.submission.current_attempt_id:
+            attempt = source.submission.current_attempt
+            if attempt and attempt.status == attempt.Status.SUBMITTED:
+                grade_exercise_submission.delay(source.submission_id, attempt.id)
+        return result
+    finally:
+        if cache.get(lock_key) == lock_owner:
+            cache.delete(lock_key)
 
 
 # ---------------------------------------------------------------------------
@@ -1728,7 +1894,12 @@ def process_student_answer_source(self, source_id: int, revision: int) -> dict:
     bind=True, max_retries=3, default_retry_delay=60, acks_late=True,
     soft_time_limit=PIPELINE_TASK_SOFT_TIME_LIMIT, time_limit=PIPELINE_TASK_TIME_LIMIT,
 )
-def grade_exercise_submission(self, submission_id: int, attempt_id: int | None = None) -> dict:
+def grade_exercise_submission(
+    self,
+    submission_id: int,
+    attempt_id: int | None = None,
+    ocr_wait_probe: bool = False,
+) -> dict:
     """Grade one exercise submission with the LLM (+ deterministic MCQ/fill-blank).
 
     Guarded per attempt. Partial OCR/grading progress is persisted, and a retry
@@ -1803,6 +1974,12 @@ def grade_exercise_submission(self, submission_id: int, attempt_id: int | None =
         try:
             prepare_attempt_ocr(attempt)
         except AnswerSourcePending:
+            # Always leave a delayed wake-up behind. The OCR completion task may
+            # race with this lock and its immediate wake-up can be skipped.
+            if not ocr_wait_probe:
+                grade_exercise_submission.apply_async(
+                    args=[submission_id, attempt.id, True], countdown=15,
+                )
             return {
                 'status': 'waiting_for_ocr', 'submission_id': submission_id,
                 'attempt_id': attempt.id,

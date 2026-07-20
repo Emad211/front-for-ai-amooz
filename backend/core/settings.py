@@ -70,6 +70,7 @@ AUTH_USER_MODEL = 'accounts.User'
 MIDDLEWARE = [
     # Health-check middleware — MUST be first so K8s probes bypass ALLOWED_HOSTS.
     'core.middleware.HealthCheckMiddleware',
+    'core.middleware.AnswerOcrUploadLimitMiddleware',
     'django.middleware.security.SecurityMiddleware',
     'whitenoise.middleware.WhiteNoiseMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
@@ -224,6 +225,16 @@ if _USE_S3:
             # S3 public URLs automatically.
             'BACKEND': 'core.storage_backends.ProxiedS3Storage',
         },
+        'answer_sources': {
+            'BACKEND': 'core.storage_backends.PrivateAnswerSourceS3Storage',
+            'OPTIONS': {
+                'bucket_name': AWS_STORAGE_BUCKET_NAME,
+                'custom_domain': None,
+                'querystring_auth': True,
+                'default_acl': 'private',
+                'file_overwrite': False,
+            },
+        },
         'staticfiles': {
             'BACKEND': 'whitenoise.storage.CompressedManifestStaticFilesStorage',
         },
@@ -236,6 +247,10 @@ else:
     STORAGES = {
         'default': {
             'BACKEND': 'django.core.files.storage.FileSystemStorage',
+        },
+        'answer_sources': {
+            'BACKEND': 'django.core.files.storage.FileSystemStorage',
+            'OPTIONS': {'location': BASE_DIR / 'private_answer_media'},
         },
         'staticfiles': {
             'BACKEND': 'whitenoise.storage.CompressedManifestStaticFilesStorage',
@@ -274,6 +289,9 @@ REST_FRAMEWORK = {
         # Forced post-login onboarding (set username/password/email/profile).
         # Authenticated + per-user, but capped to blunt scripted abuse.
         'onboarding': os.getenv('THROTTLE_RATE_ONBOARDING', '20/hour'),
+        # OCR uploads can enqueue paid multimodal work; polling and review edits
+        # stay on the normal user rate while source uploads get a tighter cap.
+        'answer_ocr_upload': os.getenv('THROTTLE_RATE_ANSWER_OCR_UPLOAD', '12/hour'),
     },
     # Global pagination — all list endpoints return at most PAGE_SIZE items.
     'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
@@ -420,6 +438,11 @@ FILE_UPLOAD_HANDLERS = [
 TRANSCRIPTION_MAX_UPLOAD_MB = _get_env_int('TRANSCRIPTION_MAX_UPLOAD_MB', 500)
 TRANSCRIPTION_MAX_UPLOAD_BYTES = TRANSCRIPTION_MAX_UPLOAD_MB * 1024 * 1024
 
+# Route-specific cap applied before DRF parses student OCR multipart bodies.
+EXERCISE_ANSWER_OCR_REQUEST_MAX_BYTES = _get_env_int(
+    'EXERCISE_ANSWER_OCR_REQUEST_MAX_BYTES', 32 * 1024 * 1024,
+)
+
 # ---------------------------------------------------------------------------
 # PDF ingestion pipeline (Step 1 alternative to media transcription).
 # LLM-only extraction: every non-blank page is transcribed by the multimodal
@@ -526,6 +549,8 @@ CELERY_TASK_ROUTES = {
     'apps.classes.tasks.send_exercise_review_ready_sms_task': {'queue': 'default'},
     'apps.classes.tasks.send_session_review_ready_sms_task': {'queue': 'default'},
     'apps.classes.tasks.cleanup_stale_sessions': {'queue': 'default'},
+    'apps.classes.tasks.cleanup_inactive_answer_ocr_assets': {'queue': 'default'},
+    'apps.classes.tasks.recover_queued_answer_ocr_sources': {'queue': 'default'},
 }
 CELERY_TASK_REJECT_ON_WORKER_LOST = True  # requeue tasks if worker is killed (OOM)
 
@@ -534,6 +559,14 @@ CELERY_BEAT_SCHEDULE = {
     'cleanup-stale-sessions': {
         'task': 'apps.classes.tasks.cleanup_stale_sessions',
         'schedule': 30 * 60,  # every 30 minutes
+    },
+    'cleanup-inactive-answer-ocr-assets': {
+        'task': 'apps.classes.tasks.cleanup_inactive_answer_ocr_assets',
+        'schedule': 24 * 60 * 60,
+    },
+    'recover-queued-answer-ocr-sources': {
+        'task': 'apps.classes.tasks.recover_queued_answer_ocr_sources',
+        'schedule': 5 * 60,
     },
 }
 

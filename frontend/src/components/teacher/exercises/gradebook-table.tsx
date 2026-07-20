@@ -29,6 +29,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { MarkdownWithMath } from '@/components/content/markdown-with-math';
+import { ProtectedAnswerAsset } from '@/components/exercises/protected-answer-asset';
 import {
   type SubmissionListItem,
   type SubmissionDetail,
@@ -258,9 +259,31 @@ function GradingDialog({
                 این ارسال برای مشاهده تاریخچه است و قابل ویرایش نیست.
               </p>
             )}
+            {detail.answerSources
+              .filter((source) => source.scope === 'exercise' && source.assets.length > 0)
+              .map((source) => (
+                <section key={source.id} className="space-y-2 rounded-md border border-border p-3">
+                  <p className="text-sm font-medium">پاسخ‌نامه دست‌نویس کامل</p>
+                  <div className="flex flex-wrap gap-2">
+                    {source.assets.map((asset, index) => (
+                      <ProtectedAnswerAsset
+                        key={asset.id}
+                        asset={asset}
+                        label={`صفحه ${index + 1} پاسخ‌نامه`}
+                      />
+                    ))}
+                  </div>
+                </section>
+              ))}
             {(detail.result.per_question ?? []).map((pq) => {
               const qid = pq.question_id;
               const answer = detail.answers[qid];
+              const secureAssets = detail.answerSources
+                .filter((source) => source.scope === 'question' && String(source.questionId) === qid)
+                .flatMap((source) => source.assets);
+              const legacyImages = (answer?.images ?? []).filter(
+                (image) => !image.startsWith('exercises/answers/sources/')
+              );
               const teacherScore = Object.prototype.hasOwnProperty.call(
                 overrides[qid] ?? {},
                 'teacher_score'
@@ -280,12 +303,24 @@ function GradingDialog({
                     </div>
                   ) : (
                     <p className="text-sm text-muted-foreground">
-                      پاسخ دانش‌آموز: {answer?.images?.length ? '(پاسخ تصویری)' : '—'}
+                      پاسخ دانش‌آموز: {
+                        secureAssets.length > 0 || legacyImages.length > 0 ? '(پاسخ تصویری)' : '—'
+                      }
                     </p>
                   )}
-                  {(answer?.images?.length ?? 0) > 0 && (
+                  {secureAssets.length > 0 ? (
                     <div className="flex flex-wrap gap-2">
-                      {(answer?.images ?? []).map((img) => (
+                      {secureAssets.map((asset, index) => (
+                        <ProtectedAnswerAsset
+                          key={asset.id}
+                          asset={asset}
+                          label={`تصویر ${index + 1} پاسخ دانش‌آموز`}
+                        />
+                      ))}
+                    </div>
+                  ) : legacyImages.length > 0 && (
+                    <div className="flex flex-wrap gap-2">
+                      {legacyImages.map((img) => (
                         <a
                           key={img}
                           href={answerImageUrl(img)}

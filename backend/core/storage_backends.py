@@ -26,6 +26,7 @@ from botocore.exceptions import (
     EndpointConnectionError,
 )
 from django.conf import settings
+from django.core.files.storage import storages
 from django.http import FileResponse, Http404, HttpResponseNotModified, JsonResponse
 from django.utils.http import http_date
 from storages.backends.s3boto3 import S3Boto3Storage
@@ -65,6 +66,48 @@ class ProxiedS3Storage(S3Boto3Storage):
         return f'{media_url}{clean}'
 
 
+class PrivateAnswerSourceS3Storage(S3Boto3Storage):
+    """Private object storage for student handwriting originals."""
+
+    default_acl = 'private'
+    file_overwrite = False
+    querystring_auth = True
+    custom_domain = None
+
+
+def answer_source_storage():
+    """Resolve lazily so migrations work with both local and S3 settings."""
+    return storages['answer_sources']
+
+
+def open_answer_source_file(field_file):
+    """Open private-first, with a temporary legacy-storage fallback."""
+    try:
+        return field_file.storage.open(field_file.name, 'rb')
+    except Exception as private_error:
+        legacy = storages['default']
+        if legacy is field_file.storage:
+            raise
+        try:
+            return legacy.open(field_file.name, 'rb')
+        except Exception:
+            raise private_error
+
+
+def delete_answer_source_file(name: str) -> None:
+    """Best-effort deletion from both private and legacy stores."""
+    for alias in ('answer_sources', 'default'):
+        try:
+            storages[alias].delete(name)
+        except Exception:
+            logger.exception('Failed to delete answer-source object %s from %s', name, alias)
+
+
+def private_answer_source_media_view(request, path: str):  # noqa: ARG001
+    """Deny generic media access to private student answer originals."""
+    raise Http404
+
+
 def media_proxy_view(request, path: str):
     """Stream a file from S3 storage through Django.
 
@@ -77,6 +120,10 @@ def media_proxy_view(request, path: str):
     # Reject path traversal attempts.
     if '..' in path or path.startswith('/'):
         raise Http404
+    # Student OCR originals are private educational records. They are served
+    # only by the owner-scoped exercise asset endpoint.
+    if path.startswith('exercises/answers/sources/'):
+        return private_answer_source_media_view(request, path)
 
     try:
         s3_file = default_storage.open(path, 'rb')

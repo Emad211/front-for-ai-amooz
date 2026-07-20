@@ -435,7 +435,9 @@ export async function logout(): Promise<void> {
   clearAuthStorage();
 }
 
-export async function refreshAccessToken(): Promise<string> {
+let refreshAccessPromise: Promise<string> | null = null;
+
+async function performAccessTokenRefresh(): Promise<string> {
   // The refresh token travels in the HttpOnly cookie (sent via credentials:include
   // on this same-origin /api request); the backend rotates it and re-sets the
   // cookie. We never see or store the refresh token in JS.
@@ -459,4 +461,13 @@ export async function refreshAccessToken(): Promise<string> {
   }
 
   return payload.access;
+}
+
+export function refreshAccessToken(): Promise<string> {
+  if (!refreshAccessPromise) {
+    refreshAccessPromise = performAccessTokenRefresh().finally(() => {
+      refreshAccessPromise = null;
+    });
+  }
+  return refreshAccessPromise;
 }

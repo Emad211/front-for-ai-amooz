@@ -564,7 +564,7 @@ worker is unavailable.
 
 ### Interactive student-answer OCR (ADR-0009)
 
-Student handwriting preview uses revisioned answer Sources and immutable
+Student handwriting preview uses revision-checked draft Sources and content-immutable
 Assets. Per-question photos are read together after a two-second settle window.
 A whole-exercise source accepts photos or PDF (defaults: 20 pages, 30 MB, four
 rendered pages per vision call), preserves page order, then maps the transcript
@@ -578,9 +578,22 @@ confirmed text without a second vision call. Pending OCR does not block submit;
 grading wakes when the frozen Source becomes terminal. Failed image OCR moves
 the Attempt to `GRADING_FAILED` for manual review.
 
-Rollout order: migration `0034`, backend, dedicated `interactive` worker,
-frontend, then `EXERCISE_ANSWER_OCR_PREVIEW_ENABLED=True`. Keep the flag off if
-the interactive worker is absent.
+Source media is returned through an authenticated student/owning-teacher endpoint. Polling uses a
+narrow source-status response with visibility pause and backoff instead of repeatedly loading the
+full exercise document. PDF raster dimensions, encoded image size, provider call timeout and worker
+wall time are independently bounded. Completed page chunks are persisted during processing and
+reused after a mapping retry. Inactive assets are retained for 30 days after deactivation. Final
+submit snapshots exact asset IDs into Attempt metadata; cleanup preserves those IDs, legacy source
+references, and paths still used by current or historical answers. A five-minute recovery task
+re-dispatches queued sources left behind by a broker publish failure.
+
+The Source row represents the current editable draft and is not append-only. A finalized Attempt
+preserves the OCR projection used for grading; full reconstruction of every intermediate draft
+revision is explicitly outside this release.
+
+Rollout order: migrations `0034` through `0037`, backend, dedicated `interactive` worker,
+frontend, then `EXERCISE_ANSWER_OCR_PREVIEW_ENABLED=True` on both API and interactive worker. The
+worker consumes only `interactive` with concurrency 1. Keep the flag off if the worker is absent.
 
 ## Risks (accepted, monitored)
 1. `pipeline` queue congestion at deadlines (mass grading behind ingest) → monitor; dedicated `grading`
@@ -591,8 +604,8 @@ the interactive worker is absent.
 4. Teacher trust in LLM grades → immutable LLM score exists, but append-only audit is still E22.
 5. OCR quality on poor scans/handwriting via Avalai → unknown until opt-in benchmark; manual-entry
    fallback in the wizard is the product-level mitigation.
-6. Student answer/reference media privacy → E14 made image paths server-owned, but raw serving is not the
-   final privacy boundary; E23 is required before broad production claims of private media.
+6. Student answer/reference media privacy → every newly uploaded answer image uses the authenticated
+   asset endpoint even while OCR preview is disabled; the existing object bucket remains private.
 7. God-file growth → all new views in `views_exercises.py`; reviewer rejects additions to `views.py`.
 
 ## Resolved decisions (product owner, 2026-07-05)

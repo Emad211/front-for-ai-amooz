@@ -67,3 +67,10 @@ firestore-debug.log
 # test artifacts
 .coverage
 *.sqlite3
+
+# Local agent/browser walkthrough artifacts may contain bearer tokens.
+/.codex/
+*.har
+/frontend-dev.log
+/tmp-walkthrough.js
+/backend/private_answer_media/

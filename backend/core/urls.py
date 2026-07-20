@@ -115,6 +115,17 @@ urlpatterns = [
 
 from django.conf import settings
 from django.conf.urls.static import static
+from core.storage_backends import private_answer_source_media_view
+
+# Keep private student answer originals out of Django's DEBUG static-media
+# helper as well as the production S3/media proxy.
+urlpatterns += [
+    path(
+        'media/exercises/answers/sources/<path:path>',
+        private_answer_source_media_view,
+        name='private_answer_source_media',
+    ),
+]
 
 if settings.DEBUG:
     urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

@@ -5,26 +5,25 @@ import {
   AlertTriangle,
   CheckCircle2,
   ChevronDown,
-  FileText,
   Loader2,
   Trash2,
   UploadCloud,
 } from 'lucide-react';
 
 import { LatexMarkdownEditor } from '@/components/exercises/latex-markdown-editor';
+import { ProtectedAnswerAsset } from '@/components/exercises/protected-answer-asset';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Progress } from '@/components/ui/progress';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
-import type {
-  AnswerOcrCandidate,
-  AnswerOcrSource,
-  StudentQuestion,
+import {
+  isAnswerOcrProcessing,
+  type AnswerOcrCandidate,
+  type AnswerOcrSource,
+  type StudentQuestion,
 } from '@/services/exercises-service';
-
-const PROCESSING = new Set(['queued', 'reading', 'segmenting', 'matching']);
 
 function sourceCandidates(source: AnswerOcrSource): AnswerOcrCandidate[] {
   return [
@@ -39,7 +38,7 @@ function sourceCandidates(source: AnswerOcrSource): AnswerOcrCandidate[] {
 }
 
 export function AnswerSourceProgress({ source }: { source: AnswerOcrSource }) {
-  const active = PROCESSING.has(source.status);
+  const active = isAnswerOcrProcessing(source);
   return (
     <div className="space-y-2 rounded-md border border-border/70 bg-muted/20 p-3">
       <div className="flex items-center justify-between gap-3 text-sm">
@@ -85,7 +84,7 @@ export function WholeAnswerOcrPanel({
 
   useEffect(() => {
     if (!source) return;
-    const sourceRevision = `${source.id}:${source.revision}`;
+    const sourceRevision = `${source.id}:${source.revision}:${source.status}`;
     if (loadedSourceRevisionRef.current === sourceRevision) return;
     loadedSourceRevisionRef.current = sourceRevision;
     setAnswers(sourceCandidates(source));
@@ -159,21 +158,21 @@ export function WholeAnswerOcrPanel({
         />
 
         {source?.assets.length ? (
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap gap-3">
             {source.assets.map((asset, index) => (
-              <div key={asset.id} className="flex items-center gap-2 rounded-md border border-border px-3 py-2 text-xs">
-                <FileText className="h-4 w-4 text-muted-foreground" />
-                <span>فایل {index + 1}</span>
+              <div key={asset.id} className="space-y-1">
+                <ProtectedAnswerAsset asset={asset} label={`فایل ${index + 1}`} />
                 {!disabled && (
                   <Button
                     type="button"
                     size="icon"
                     variant="ghost"
-                    className="h-6 w-6 text-destructive"
+                    className="h-7 w-full text-destructive"
                     aria-label="حذف فایل"
                     onClick={() => void onDeleteAsset(asset.id)}
                   >
                     <Trash2 className="h-3.5 w-3.5" />
+                    حذف
                   </Button>
                 )}
               </div>

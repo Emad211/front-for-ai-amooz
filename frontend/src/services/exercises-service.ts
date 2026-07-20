@@ -125,6 +125,7 @@ export type SubmissionDetail = {
   attemptNumber: number;
   isLatestAttempt: boolean;
   isCurrentAttempt: boolean;
+  answerSources: AnswerOcrSource[];
 };
 
 export type QuestionOverride = {
@@ -240,6 +241,21 @@ async function requestJson<T>(url: string, options: RequestInit): Promise<T> {
     throw new Error(extractErrorMessage(payload, response.statusText));
   }
   return payload as T;
+}
+
+async function requestBlob(url: string, signal?: AbortSignal): Promise<Blob> {
+  assertApiUrl();
+  let headers = new Headers(authHeaders());
+  let response = await fetch(url, { headers, signal });
+  if (response.status === 401) {
+    const newAccess = await refreshAccessToken();
+    headers = new Headers({ Authorization: `Bearer ${newAccess}` });
+    response = await fetch(url, { headers, signal });
+  }
+  if (!response.ok) {
+    throw new Error(extractErrorMessage(await parseJson(response), response.statusText));
+  }
+  return response.blob();
 }
 
 function authHeaders(): HeadersInit {
@@ -520,6 +536,14 @@ export type AnswerOcrCandidate = {
   unclear_parts: AnswerOcrUnclearPart[];
 };
 
+export type AnswerOcrAsset = {
+  id: number;
+  order: number;
+  contentType: string;
+  byteSize: number;
+  url: string;
+};
+
 export type AnswerOcrSource = {
   id: number;
   scope: 'question' | 'exercise';
@@ -533,14 +557,36 @@ export type AnswerOcrSource = {
   unmatchedFragments: string[];
   missingQuestionIds: number[];
   appliedAt: string | null;
-  assets: Array<{
-    id: number;
-    order: number;
-    contentType: string;
-    byteSize: number;
-    url: string;
-  }>;
+  assets: AnswerOcrAsset[];
 };
+
+export type AnswerOcrSourceStatus = Pick<
+  AnswerOcrSource,
+  | 'id'
+  | 'scope'
+  | 'questionId'
+  | 'status'
+  | 'revision'
+  | 'workflowStage'
+  | 'workflowMessage'
+  | 'progressPercent'
+>;
+
+export function isAnswerOcrProcessing(source: Pick<AnswerOcrSource, 'status'>): boolean {
+  return source.status === 'queued'
+    || source.status === 'reading'
+    || source.status === 'segmenting'
+    || source.status === 'matching';
+}
+
+export async function getAnswerOcrAssetBlob(
+  assetUrl: string,
+  signal?: AbortSignal,
+): Promise<Blob> {
+  const apiOrigin = API_URL.replace(/\/api$/, '');
+  const url = assetUrl.startsWith('/api/') ? `${apiOrigin}${assetUrl}` : assetUrl;
+  return requestBlob(url, signal);
+}
 
 export type StudentAnswers = Record<string, {
   text?: string;
@@ -562,6 +608,7 @@ export type ExerciseResult = {
   maxPoints?: string | null;
   result?: { per_question?: PerQuestionResult[] };
   answers?: StudentAnswers;
+  answerSources?: AnswerOcrSource[];
   answersRevealed?: boolean;
   attempts?: ExerciseAttemptSummary[];
   attemptId?: number | null;
@@ -642,6 +689,16 @@ export async function saveExerciseDraft(
       body: JSON.stringify({ answers }),
       ...options,
     }
+  );
+}
+
+export async function getStudentExerciseAnswerSourceStatus(
+  sessionId: number,
+  exerciseId: number,
+): Promise<{ answerSources: AnswerOcrSourceStatus[] }> {
+  return requestJson(
+    `${API_URL}/classes/student/courses/${sessionId}/exercises/${exerciseId}/answer-sources/status/`,
+    { method: 'GET', headers: authHeaders() },
   );
 }
 

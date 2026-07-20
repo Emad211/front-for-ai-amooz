@@ -66,8 +66,8 @@ services:
       /bin/sh -c "
       mc alias set local http://minio:9000 minioadmin minioadmin;
       mc mb --ignore-existing local/ai-amooz-media;
-      mc anonymous set download local/ai-amooz-media;
-      echo 'Bucket ai-amooz-media ready (public-read)';
+      mc anonymous set none local/ai-amooz-media;
+      echo 'Private application media bucket ready';
       "
 
   backend:
@@ -150,7 +150,7 @@ services:
       dockerfile: Dockerfile
     container_name: ai_amooz_celery_interactive_worker
     restart: unless-stopped
-    command: celery -A core worker -Q interactive --loglevel=info --concurrency=2 --max-tasks-per-child=50
+    command: celery -A core worker -Q interactive --loglevel=info --concurrency=1 --max-tasks-per-child=50 --hostname=interactive@%h
     env_file:
       - ./backend/.env
     environment:
