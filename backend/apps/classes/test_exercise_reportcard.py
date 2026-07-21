@@ -146,6 +146,29 @@ class TestOverride:
 
         assert res.status_code == 400
 
+    @pytest.mark.parametrize('pending_status', [
+        StudentExerciseAttempt.Status.SUBMITTED,
+        StudentExerciseAttempt.Status.GRADING,
+    ])
+    def test_override_is_rejected_until_ai_grading_finishes(self, pending_status):
+        owner = _teacher()
+        _s, _ex, _st, sub = _graded_submission(owner, score='7', mx='10')
+        attempt = sub.current_attempt
+        attempt.status = pending_status
+        attempt.save(update_fields=['status'])
+        sub.status = pending_status
+        sub.save(update_fields=['status'])
+
+        response = _auth(owner).patch(
+            f'/api/classes/exercises/submissions/{sub.id}/override/',
+            {'overrides': [{'question_id': 'q1', 'teacher_score': 4}]},
+            format='json',
+        )
+
+        assert response.status_code == 409
+        attempt.refresh_from_db()
+        assert attempt.result['per_question'][0]['teacher_score'] is None
+
     @pytest.mark.django_db(transaction=True)
     def test_concurrent_overrides_merge_under_postgres_row_lock(self, monkeypatch):
         if connection.vendor != 'postgresql':
@@ -372,6 +395,28 @@ class TestAllowRedo:
         assert sub.status == SubStatus.DRAFT
         assert sub.current_attempt_id is None
         assert response.data['nextAttemptNumber'] == 2
+
+    @pytest.mark.parametrize('pending_status', [
+        StudentExerciseAttempt.Status.SUBMITTED,
+        StudentExerciseAttempt.Status.GRADING,
+    ])
+    def test_allow_redo_is_rejected_until_grading_finishes(self, pending_status):
+        owner = _teacher()
+        _s, _ex, _st, sub = _graded_submission(owner)
+        attempt = sub.current_attempt
+        attempt.status = pending_status
+        attempt.save(update_fields=['status'])
+        sub.status = pending_status
+        sub.save(update_fields=['status'])
+
+        response = _auth(owner).post(
+            f'/api/classes/exercises/submissions/{sub.id}/allow-redo/'
+        )
+
+        assert response.status_code == 409
+        sub.refresh_from_db()
+        assert sub.status == pending_status
+        assert sub.current_attempt_id == attempt.id
 
     def test_allow_redo_cross_teacher_404(self):
         owner, other = _teacher(), _teacher()

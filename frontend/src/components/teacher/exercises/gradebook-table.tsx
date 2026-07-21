@@ -49,6 +49,13 @@ const SUB_STATUS_LABEL: Record<SubmissionStatus, string> = {
   grading_failed: 'خطا در نمره‌دهی',
 };
 
+function submissionActionLabel(status: SubmissionStatus): string {
+  if (status === 'graded') return 'مشاهده و نمره‌دهی';
+  if (status === 'grading_failed') return 'مشاهده خطا';
+  if (status === 'submitted' || status === 'grading') return 'مشاهده وضعیت';
+  return 'مشاهده';
+}
+
 // Answer photos are stored as storage paths (e.g. exercises/answers/…) and
 // served by the Django /media proxy — resolve against the backend origin
 // (same convention as markdown-with-math's resolveImgSrc).
@@ -122,7 +129,7 @@ export function GradebookTable({ exerciseId }: { exerciseId: number }) {
               </TableCell>
               <TableCell>
                 <Button size="sm" variant="outline" onClick={() => setOpenId(r.id)}>
-                  مشاهده و نمره‌دهی
+                  {submissionActionLabel(r.status)}
                 </Button>
               </TableCell>
             </TableRow>
@@ -176,6 +183,14 @@ function GradingDialog({
     loadDetail();
   }, [loadDetail]);
 
+  useEffect(() => {
+    if (!detail || !['submitted', 'grading'].includes(detail.status)) return;
+    const timer = window.setTimeout(() => {
+      void loadDetail(detail.attemptId ?? undefined);
+    }, 4000);
+    return () => window.clearTimeout(timer);
+  }, [detail, loadDetail]);
+
   const setOverride = (qid: string, patch: Partial<QuestionOverride>) => {
     setOverrides((prev) => ({ ...prev, [qid]: { ...prev[qid], ...patch, question_id: qid } }));
   };
@@ -225,6 +240,12 @@ function GradingDialog({
     }
   };
 
+  const canOverride = detail?.isCurrentAttempt === true && detail.status === 'graded';
+  const canRedo = detail?.isCurrentAttempt === true
+    && ['graded', 'grading_failed'].includes(detail.status);
+  const gradingInProgress = detail != null
+    && ['submitted', 'grading'].includes(detail.status);
+
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent dir="rtl" className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
@@ -258,6 +279,17 @@ function GradingDialog({
               <p className="rounded-md border border-border bg-muted/40 p-2 text-sm text-muted-foreground">
                 این ارسال برای مشاهده تاریخچه است و قابل ویرایش نیست.
               </p>
+            )}
+            {gradingInProgress && (
+              <div className="flex items-start gap-2 rounded-md border border-border bg-muted/40 p-3">
+                <Loader2 className="mt-0.5 h-4 w-4 shrink-0 animate-spin text-primary" />
+                <div className="space-y-1 text-sm">
+                  <p className="font-medium">نمره‌دهی هوشمند در حال انجام است</p>
+                  <p className="text-muted-foreground">
+                    پس از پایان پردازش، گزینه‌های متناسب با نتیجه در دسترس قرار می‌گیرند.
+                  </p>
+                </div>
+              </div>
             )}
             {detail.answerSources
               .filter((source) => source.scope === 'exercise' && source.assets.length > 0)
@@ -356,53 +388,60 @@ function GradingDialog({
                       <MarkdownWithMath markdown={pq.feedback} />
                     </div>
                   )}
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Label className="text-sm">نمرهٔ دستی</Label>
-                    <Input
-                      type="number"
-                      min={0}
-                      max={pq.max_points ?? undefined}
-                      step="0.25"
-                      className="w-24"
-                      defaultValue={pq.teacher_score ?? undefined}
-                      aria-invalid={scoreInvalid}
-                      aria-label="نمره دستی؛ برای بازگشت به نمره هوشمند خالی بگذارید"
-                      title="برای بازگشت به نمره هوشمند، این کادر را خالی کنید."
-                      disabled={!detail.isCurrentAttempt || detail.status !== 'graded'}
-                      onChange={(e) => setOverride(qid, {
-                        teacher_score: e.target.value === '' ? null : e.target.valueAsNumber,
-                      })}
-                    />
-                    <Textarea
-                      placeholder="بازخورد معلم (اختیاری)"
-                      className="min-w-full"
-                      rows={2}
-                      defaultValue={pq.teacher_feedback ?? ''}
-                      aria-label="بازخورد معلم"
-                      disabled={!detail.isCurrentAttempt || detail.status !== 'graded'}
-                      onChange={(e) => setOverride(qid, { teacher_feedback: e.target.value })}
-                    />
-                    {scoreInvalid && (
-                      <p className="min-w-full text-xs text-destructive">
-                        نمره باید بین صفر و {pq.max_points ?? 0} باشد.
-                      </p>
-                    )}
-                    {teacherScore != null && !scoreInvalid && (
-                      <p className="min-w-full text-xs text-muted-foreground">
-                        برای بازگشت به نمره هوشمند، کادر نمره دستی را خالی کنید.
-                      </p>
-                    )}
-                  </div>
+                  {canOverride ? (
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Label className="text-sm">نمرهٔ دستی</Label>
+                      <Input
+                        type="number"
+                        min={0}
+                        max={pq.max_points ?? undefined}
+                        step="0.25"
+                        className="w-24"
+                        defaultValue={pq.teacher_score ?? undefined}
+                        aria-invalid={scoreInvalid}
+                        aria-label="نمره دستی؛ برای بازگشت به نمره هوشمند خالی بگذارید"
+                        title="برای بازگشت به نمره هوشمند، این کادر را خالی کنید."
+                        onChange={(e) => setOverride(qid, {
+                          teacher_score: e.target.value === '' ? null : e.target.valueAsNumber,
+                        })}
+                      />
+                      <Textarea
+                        placeholder="بازخورد معلم (اختیاری)"
+                        className="min-w-full"
+                        rows={2}
+                        defaultValue={pq.teacher_feedback ?? ''}
+                        aria-label="بازخورد معلم"
+                        onChange={(e) => setOverride(qid, { teacher_feedback: e.target.value })}
+                      />
+                      {scoreInvalid && (
+                        <p className="min-w-full text-xs text-destructive">
+                          نمره باید بین صفر و {pq.max_points ?? 0} باشد.
+                        </p>
+                      )}
+                      {teacherScore != null && !scoreInvalid && (
+                        <p className="min-w-full text-xs text-muted-foreground">
+                          برای بازگشت به نمره هوشمند، کادر نمره دستی را خالی کنید.
+                        </p>
+                      )}
+                    </div>
+                  ) : pq.teacher_feedback ? (
+                    <div className="rounded-md border border-border p-2 text-sm">
+                      <p className="mb-1 text-muted-foreground">بازخورد معلم:</p>
+                      <MarkdownWithMath markdown={pq.teacher_feedback} />
+                    </div>
+                  ) : null}
                 </div>
               );
             })}
-            {detail.isCurrentAttempt && ['graded', 'grading_failed'].includes(detail.status) && (
+            {(canOverride || canRedo) && (
               <div className="flex items-center justify-between gap-2 border-t border-border pt-3">
-                <Button variant="ghost" onClick={redo}>
-                  <RotateCcw className="ms-2 h-4 w-4" />
-                  اجازهٔ ارسال مجدد
-                </Button>
-                {detail.status === 'graded' && (
+                {canRedo && (
+                  <Button variant="ghost" onClick={redo}>
+                    <RotateCcw className="ms-2 h-4 w-4" />
+                    اجازهٔ ارسال مجدد
+                  </Button>
+                )}
+                {canOverride && (
                   <Button onClick={save} disabled={saving}>
                     {saving ? <Loader2 className="ms-2 h-4 w-4 animate-spin" /> : null}
                     ثبت نمرهٔ دستی

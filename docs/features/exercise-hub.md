@@ -119,8 +119,9 @@ here, deliberately.
   allowed but flagged «ارسال با تأخیر» on both sides. Auto-penalty = phase 2. A newly supplied deadline
   must be in the future in both standalone and embedded class creation; editing another setting on an
   old exercise whose deadline has already passed remains valid.
-- **Resubmission:** one final submission; drafts editable until final submit; after grading only the
-  teacher can grant a redo (exam-prep reset pattern). Free resubmit = LLM cost × gaming.
+- **Resubmission:** one final submission; drafts editable until final submit; only after grading reaches
+  `GRADED` or `GRADING_FAILED` can the teacher grant a redo. The action is hidden while the Attempt is
+  `SUBMITTED`/`GRADING` and the backend rejects the same mutation with `409`. Free resubmit = LLM cost × gaming.
 - **Partial answers:** allowed with warning; unanswered questions score 0 for that question only.
 - **Mid-progress join:** past-deadline exercises show «مهلت گذشته» and are **excluded from that
   student's average** (an unfair 0 kills trust); teacher can reopen by extending.
@@ -421,7 +422,9 @@ stored `per_question` (zero tokens), **no pregeneration** (nothing to pre-build)
   feedback, green/red start-bars from tokens); overall trend chart (recharts, Persian digits, Jalali);
   teacher gradebook matrix (row=student, column=exercise, **sticky name column on the RIGHT** —
   `right-0` not `left-0`), mobile = expandable list; cell click → submission detail with zoomable photos +
-  override panel; overridden grades always badged «ویرایش معلم».
+  override panel; overridden grades always badged «ویرایش معلم». While an Attempt is submitted/grading,
+  the detail dialog polls its status and shows neither manual-grade controls nor redo; manual override
+  appears only after `GRADED`, while a failed grade may be reopened for resubmission.
 - **Calendar:** event kinds `exercise_deadline` (suggested `hsl(var(--chart-2))`) and `timed_exam`
   (`hsl(var(--destructive))`) — **verify `--chart-*` tokens exist in BOTH `:root` and `.dark` before
   build** (the `--primary-rgb` phantom-token lesson); status badges امروز/گذشته/آینده + «انجام نشد»;
