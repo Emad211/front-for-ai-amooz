@@ -256,11 +256,13 @@ export function QuestionAnswerOcrPreview({
   disabled,
   busy,
   onSave,
+  onDeleteAsset,
 }: {
   source?: AnswerOcrSource;
   disabled?: boolean;
   busy?: boolean;
   onSave: (source: AnswerOcrSource, text: string) => Promise<void>;
+  onDeleteAsset: (assetId: number) => Promise<void>;
 }) {
   const [text, setText] = useState('');
   const answer = source?.answers[0];
@@ -270,6 +272,28 @@ export function QuestionAnswerOcrPreview({
   const ready = source.status === 'ready' || source.status === 'needs_review';
   return (
     <div className="space-y-3">
+      {source.assets.length > 0 && (
+        <div className="flex flex-wrap gap-3">
+          {source.assets.map((asset, index) => (
+            <div key={asset.id} className="space-y-1">
+              <ProtectedAnswerAsset asset={asset} label={`تصویر ${index + 1}`} />
+              {!disabled && (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  className="h-7 w-full text-destructive"
+                  disabled={busy}
+                  onClick={() => void onDeleteAsset(asset.id)}
+                >
+                  <Trash2 className="ms-1 h-3.5 w-3.5" />
+                  حذف از پاسخ جاری
+                </Button>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
       <AnswerSourceProgress source={source} />
       {ready && answer && (
         <div className="space-y-3">

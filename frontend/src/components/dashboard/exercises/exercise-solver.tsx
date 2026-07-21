@@ -612,17 +612,18 @@ export function ExerciseSolver({
                     </span>
                   </label>
                 )}
-                {(answers[String(q.id)]?.images?.length ?? 0) > 0 && (
+                {((questionSources.get(q.id)?.assets.length ?? answers[String(q.id)]?.images?.length) ?? 0) > 0 && (
                   <p className="text-xs text-muted-foreground">
-                    {answers[String(q.id)]?.images?.length} تصویر بارگذاری شد
+                    {questionSources.get(q.id)?.assets.length ?? answers[String(q.id)]?.images?.length} تصویر در پاسخ جاری
                   </p>
                 )}
-                {detail.answerOcrEnabled && (
+                {(detail.answerOcrEnabled || questionSources.has(q.id)) && (
                   <QuestionAnswerOcrPreview
                     source={questionSources.get(q.id)}
                     disabled={alreadySubmitted}
                     busy={ocrBusy}
                     onSave={saveQuestionOcr}
+                    onDeleteAsset={deleteAnswerAsset}
                   />
                 )}
               </CardContent>

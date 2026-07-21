@@ -629,6 +629,10 @@ worker consumes only `interactive` with concurrency 1. Keep the flag off if the 
    homework/assessment, but moves no-deadline homework/assessment to E21's explicit shared release policy.
 2. **LLM grade shown immediately** (labeled «نمره‌دهی هوشمند», override later); review-gate = phase 2
    per-exercise option.
+3. **Redo drafts retain prior answer media until the student removes it.** Existing images are visible in each
+   question card and can be removed from the current draft. Grading consumes every active image shown for that
+   question, not merely the latest upload. Removing an image deactivates it for the new attempt while preserving
+   any historical attempt that already referenced the blob.
 
 ## Dissent (recorded)
 product-manager proposed deferring the **per-section** assistant toggle to phase 2 (exercise-level covers
