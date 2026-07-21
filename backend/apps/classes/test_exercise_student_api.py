@@ -133,6 +133,26 @@ class TestReferenceAnswerLeakGuard:
         assert res.data['answersRevealed'] is True
         assert REF in json.dumps(res.data, ensure_ascii=False)
 
+    def test_result_keeps_reference_hidden_while_late_submissions_are_open(self):
+        session, ex = _published_exercise(
+            deadline=timezone.now() - timedelta(minutes=1),
+            allow_late=True,
+        )
+        student = _student()
+        baker.make(
+            StudentExerciseSubmission,
+            exercise=ex,
+            student=student,
+            status=SubStatus.GRADED,
+            result={'per_question': []},
+        )
+
+        res = _auth(student).get(_url(session.id, ex.id, 'result/'))
+
+        assert res.status_code == 200
+        assert res.data['answersRevealed'] is False
+        assert REF not in json.dumps(res.data, ensure_ascii=False)
+
     def test_no_deadline_reveals_on_own_graded(self):
         session, ex = _published_exercise(deadline=None)
         student = _student()
@@ -393,6 +413,19 @@ class TestFinishedAnswersBrowse:
         ids = {row['id'] for row in res.data}
         assert past.id in ids and future.id not in ids
         assert REF in json.dumps(res.data, ensure_ascii=False)  # revealed for past
+
+    def test_excludes_past_deadline_exercise_while_late_submissions_are_open(self):
+        student = _student()
+        _session, exercise = _published_exercise(
+            deadline=timezone.now() - timedelta(days=1),
+            allow_late=True,
+        )
+
+        res = _auth(student).get('/api/classes/student/exercises/answers/')
+
+        assert res.status_code == 200
+        assert exercise.id not in {row['id'] for row in res.data}
+        assert REF not in json.dumps(res.data, ensure_ascii=False)
 
     def test_no_phone_400(self):
         no_phone = baker.make(User, role=User.Role.STUDENT, phone=None)

@@ -1051,9 +1051,11 @@ def _published_exercise_for_student(phone, session_id, exercise_id):
 
 def _reveal_open(exercise, submission) -> bool:
     """THE single reveal rule: reference answers may be shown only when the
-    deadline has passed, or (no deadline) when the student's own submission is
-    graded. Never before — an early submitter must not see the answers while
-    classmates are still within the deadline (owner decision 2026-07-05)."""
+    deadline has passed and late submissions are closed, or (no deadline) when
+    the student's own submission is graded. Never reveal while another student
+    can still submit under the exercise's late-submission policy."""
+    if exercise.deadline is not None and exercise.allow_late:
+        return False
     if exercise.deadline_passed():
         return True
     if exercise.deadline is None and submission is not None:
@@ -2344,7 +2346,7 @@ class StudentExerciseResultView(APIView):
 
 class StudentFinishedAnswersView(APIView):
     """«پاسخ تمرین‌های تمام‌شده» — browse the reference answers of past
-    (deadline-passed) exercises of the student's enrolled classes."""
+    exercises whose deadline and late-submission windows are both closed."""
 
     permission_classes = [IsAuthenticated, IsStudentUser]
 
@@ -2359,7 +2361,8 @@ class StudentFinishedAnswersView(APIView):
                 session__is_published=True,
                 session__invites__phone=phone,
                 deadline__isnull=False,
-                deadline__lt=now,  # reveal is open
+                deadline__lt=now,
+                allow_late=False,
             )
             .prefetch_related('sections__questions')
             .select_related('session')
@@ -2370,7 +2373,7 @@ class StudentFinishedAnswersView(APIView):
             {
                 'sessionId': ex.session_id,
                 'courseTitle': ex.session.title,
-                **_serialize_exercise(ex, reveal=True),  # deadline passed -> reveal
+                **_serialize_exercise(ex, reveal=True),
             }
             for ex in exercises
         ])

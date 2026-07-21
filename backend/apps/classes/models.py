@@ -675,12 +675,10 @@ class ClassExercise(models.Model):
         return f"{self.session_id}:{self.title}"
 
     def deadline_passed(self) -> bool:
-        """True once the reveal window opens (reference answers may be shown).
+        """Return whether the configured deadline has elapsed.
 
-        Reference-answer reveal is gated on the deadline, NOT on grading, so an
-        early submitter cannot see the answers while classmates are still within
-        the deadline (owner decision 2026-07-05). A no-deadline exercise has no
-        shared window — the caller reveals on the student's own GRADED submission.
+        This is only a temporal helper. Callers that reveal reference answers
+        must also apply the late-submission policy via the central reveal gate.
         """
         return self.deadline is not None and self.deadline < timezone.now()
 

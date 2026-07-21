@@ -39,12 +39,14 @@ def _student(phone=PHONE):
     return baker.make(User, role=User.Role.STUDENT, phone=phone)
 
 
-def _setup(*, invited=True, deadline=None, ex_assistant=True, sec_assistant=True):
+def _setup(*, invited=True, deadline=None, allow_late=False,
+           ex_assistant=True, sec_assistant=True):
     session = baker.make(ClassCreationSession, pipeline_type='class', is_published=True)
     if invited:
         ClassInvitation.objects.create(session=session, phone=PHONE, invite_code='INV')
     ex = baker.make(ClassExercise, session=session, status=ClassExercise.Status.PUBLISHED,
-                    deadline=deadline, assistant_enabled=ex_assistant)
+                    deadline=deadline, allow_late=allow_late,
+                    assistant_enabled=ex_assistant)
     sec = baker.make(ClassExerciseSection, exercise=ex, order=0, assistant_enabled=sec_assistant)
     q = baker.make(ClassExerciseQuestion, section=sec, order=0,
                    question_markdown='۲+۲=؟', reference_answer_markdown=REF)
@@ -76,6 +78,29 @@ class TestContextLeakGuard:
         _s, _ex, _sec, q = _setup()
         ctx = build_question_context(q, reveal=True)
         assert REF in ctx
+
+    def test_assistant_excludes_reference_while_late_submissions_are_open(self, monkeypatch):
+        captured = {}
+
+        def fake_generate_structured(**kwargs):
+            captured['contents'] = kwargs['contents']
+            return type('O', (), {'content': 'راهنمایی', 'suggestions': []})()
+
+        monkeypatch.setenv('EXERCISE_CHAT_MODEL', 'test-model')
+        monkeypatch.setattr(asst, 'generate_structured', fake_generate_structured)
+        session, ex, _sec, q = _setup(
+            deadline=timezone.now() - timedelta(minutes=1),
+            allow_late=True,
+        )
+
+        res = _auth(_student()).post(
+            _url(session.id, ex.id),
+            {'question_id': q.id, 'message': 'راهنمایی کن'},
+            format='json',
+        )
+
+        assert res.status_code == 200
+        assert REF not in captured['contents']
 
 
 class TestToggleGuard:

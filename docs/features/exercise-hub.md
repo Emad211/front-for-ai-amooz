@@ -618,8 +618,11 @@ worker consumes only `interactive` with concurrency 1. Keep the flag off if the 
 7. God-file growth → all new views in `views_exercises.py`; reviewer rejects additions to `views.py`.
 
 ## Resolved decisions (product owner, 2026-07-05)
-1. **Reference-answer reveal is gated on the DEADLINE, not on grading (V1 policy).** Reference answers unlock when
-   `deadline < now` (no-deadline exercise → on the student's own GRADED submission). Prevents the
+1. **Reference-answer reveal is gated on the closed submission window, not only grading (V1 policy).** For a
+   deadline exercise, answers unlock only when `deadline < now` **and** `allow_late=false`; while late submissions
+   remain enabled, references stay hidden from result responses, the finished-answers browse, and assistant context.
+   Turning late submissions off after the deadline opens the reveal automatically. A no-deadline exercise unlocks
+   on the student's own GRADED submission. This prevents the
    early-submitter leak window. A dedicated **«پاسخ تمرین‌های تمام‌شده»** student area
    (`GET student/exercises/answers/`) browses past exercises' answers. The assistant may teach from the
    reference answer only once that same reveal condition holds. V2 keeps deadline-gated reveal for shared
