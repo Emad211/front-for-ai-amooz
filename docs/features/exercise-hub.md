@@ -569,6 +569,12 @@ Assets. Per-question photos are read together after a two-second settle window.
 A whole-exercise source accepts photos or PDF (defaults: 20 pages, 30 MB, four
 rendered pages per vision call), preserves page order, then maps the transcript
 to question IDs without sending reference answers or grading notes to OCR.
+Rendered bundle pages are consumed one provider chunk at a time; the worker does
+not retain every normalized page in memory. Upload metadata retains hashes and
+sizes but not a second in-memory copy of multipart payload bytes. During the
+two-second settle window, a newer upload increments the Source revision and the
+already-published older task exits before reading storage. Once a worker has
+entered `reading`, `segmenting`, or `matching`, replacement remains blocked.
 
 The student reviews `MarkdownWithMath` output and uncertainty markers. Typed
 text is never overwritten. Whole-answer mappings require the explicit

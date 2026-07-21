@@ -11,7 +11,9 @@ import io
 import json
 import mimetypes
 import os
+from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
+from itertools import islice
 
 from django.db import transaction
 from django.utils import timezone
@@ -39,10 +41,6 @@ class AnswerSourcePending(RuntimeError):
 
 
 class AnswerSourceFailed(RuntimeError):
-    pass
-
-
-class AnswerOcrDisabled(RuntimeError):
     pass
 
 
@@ -201,21 +199,33 @@ def _normalize_pil_page(source, number: int) -> Page:
 
     if source.width * source.height > image_max_pixels():
         raise ValueError("image_pixel_limit_exceeded")
-    image = ImageOps.exif_transpose(source).convert("RGB")
-    max_dimension = image_max_dimension()
-    image.thumbnail((max_dimension, max_dimension), Image.Resampling.LANCZOS)
-    for scale in (1.0, 0.8, 0.65):
-        candidate = image if scale == 1.0 else image.resize(
-            (max(1, int(image.width * scale)), max(1, int(image.height * scale))),
-            Image.Resampling.LANCZOS,
-        )
-        for quality in (90, 82, 74):
-            output = io.BytesIO()
-            candidate.save(output, format="JPEG", quality=quality, optimize=True)
-            encoded = output.getvalue()
-            if len(encoded) <= image_max_bytes():
-                return Page(number, f"page-{number}.jpg", encoded)
-    raise ValueError("image_too_large_after_normalization")
+    transposed = ImageOps.exif_transpose(source)
+    try:
+        image = transposed.convert("RGB")
+    finally:
+        if transposed is not source:
+            transposed.close()
+    try:
+        max_dimension = image_max_dimension()
+        image.thumbnail((max_dimension, max_dimension), Image.Resampling.LANCZOS)
+        for scale in (1.0, 0.8, 0.65):
+            candidate = image if scale == 1.0 else image.resize(
+                (max(1, int(image.width * scale)), max(1, int(image.height * scale))),
+                Image.Resampling.LANCZOS,
+            )
+            try:
+                for quality in (90, 82, 74):
+                    output = io.BytesIO()
+                    candidate.save(output, format="JPEG", quality=quality, optimize=True)
+                    encoded = output.getvalue()
+                    if len(encoded) <= image_max_bytes():
+                        return Page(number, f"page-{number}.jpg", encoded)
+            finally:
+                if candidate is not image:
+                    candidate.close()
+        raise ValueError("image_too_large_after_normalization")
+    finally:
+        image.close()
 
 
 def _normalize_image_page(data: bytes, number: int) -> Page:
@@ -232,7 +242,7 @@ def _read_asset(asset) -> bytes:
         return fh.read()
 
 
-def _render_pdf(data: bytes, start_number: int) -> list[Page]:
+def _iter_pdf_pages(data: bytes, start_number: int) -> Iterator[Page]:
     import math
     import pypdfium2 as pdfium
 
@@ -240,27 +250,41 @@ def _render_pdf(data: bytes, start_number: int) -> list[Page]:
     try:
         if len(pdf) > max_pages():
             raise ValueError("too_many_pages")
-        pages = []
         for index in range(len(pdf)):
             page = pdf[index]
-            width, height = page.get_size()
-            if width <= 0 or height <= 0:
-                raise ValueError("invalid_pdf_page_size")
-            scale = min(
-                150 / 72,
-                image_max_dimension() / width,
-                image_max_dimension() / height,
-                math.sqrt(image_max_pixels() / (width * height)),
-            )
-            image = page.render(scale=scale).to_pil()
-            pages.append(_normalize_pil_page(image, start_number + index))
-        return pages
+            try:
+                width, height = page.get_size()
+                if width <= 0 or height <= 0:
+                    raise ValueError("invalid_pdf_page_size")
+                scale = min(
+                    150 / 72,
+                    image_max_dimension() / width,
+                    image_max_dimension() / height,
+                    math.sqrt(image_max_pixels() / (width * height)),
+                )
+                bitmap = page.render(scale=scale)
+                try:
+                    image = bitmap.to_pil()
+                    try:
+                        normalized = _normalize_pil_page(image, start_number + index)
+                    finally:
+                        image.close()
+                finally:
+                    bitmap.close()
+            finally:
+                page.close()
+            yield normalized
     finally:
         pdf.close()
 
 
-def _load_pages(assets) -> list[Page]:
-    pages: list[Page] = []
+def _render_pdf(data: bytes, start_number: int) -> list[Page]:
+    """Compatibility wrapper for focused rendering tests."""
+    return list(_iter_pdf_pages(data, start_number))
+
+
+def _iter_pages(assets) -> Iterator[Page]:
+    page_count = 0
     total_bytes = 0
     for asset in assets:
         data = _read_asset(asset)
@@ -268,16 +292,22 @@ def _load_pages(assets) -> list[Page]:
         if total_bytes > max_bytes():
             raise ValueError("too_many_bytes")
         if is_probably_pdf(data):
-            pages.extend(_render_pdf(data, len(pages) + 1))
+            asset_pages = _iter_pdf_pages(data, page_count + 1)
         elif is_real_image(data):
-            pages.append(_normalize_image_page(data, len(pages) + 1))
+            asset_pages = iter([_normalize_image_page(data, page_count + 1)])
         else:
             raise ValueError("invalid_asset")
-        if len(pages) > max_pages():
-            raise ValueError("too_many_pages")
-    if not pages:
+        for page in asset_pages:
+            page_count += 1
+            if page_count > max_pages():
+                raise ValueError("too_many_pages")
+            yield page
+    if page_count == 0:
         raise ValueError("no_pages")
-    return pages
+
+
+def _load_pages(assets) -> list[Page]:
+    return list(_iter_pages(assets))
 
 
 def _data_url(page: Page) -> str:
@@ -319,7 +349,7 @@ def _question_result(source, pages: list[Page]) -> dict:
 
 def _bundle_result(
     source,
-    pages: list[Page],
+    pages: Iterable[Page],
     revision: int,
     fingerprint: str,
     question_contract: list[tuple[int, str]] | None = None,
@@ -327,9 +357,19 @@ def _bundle_result(
     transcripts = []
     cache = (source.processor_metadata or {}).get("transcriptionCache") or {}
     cached_chunks = cache.get("chunks", {}) if cache.get("fingerprint") == fingerprint else {}
-    for index in range(0, len(pages), pages_per_call()):
+    page_iterator = iter(pages)
+    transcription_started = False
+    while True:
         _assert_revision(source.id, revision)
-        chunk = pages[index:index + pages_per_call()]
+        chunk = list(islice(page_iterator, pages_per_call()))
+        if not chunk:
+            break
+        if not transcription_started:
+            _set_state(
+                source.id, revision, source.Status.SEGMENTING, "segmenting", 35,
+                "در حال تشخیص متن و فرمول‌ها",
+            )
+            transcription_started = True
         chunk_key = ",".join(str(page.number) for page in chunk)
         cached = cached_chunks.get(chunk_key)
         if isinstance(cached, dict):
@@ -533,14 +573,21 @@ def process_source(source_id: int, revision: int) -> dict:
 
     _set_state(source_id, revision, source.Status.READING, "reading", 15, "در حال خواندن فایل‌ها")
     source = _assert_revision(source_id, revision)
-    pages = _load_pages(assets)
-    _set_state(source_id, revision, source.Status.SEGMENTING, "segmenting", 35,
-               "در حال تشخیص متن و فرمول‌ها")
-    result = (
-        _question_result(source, pages)
-        if source.scope == source.Scope.QUESTION
-        else _bundle_result(source, pages, revision, fingerprint, question_contract)
-    )
+    if source.scope == source.Scope.QUESTION:
+        pages = _load_pages(assets)
+        _set_state(source_id, revision, source.Status.SEGMENTING, "segmenting", 35,
+                   "در حال تشخیص متن و فرمول‌ها")
+        result = _question_result(source, pages)
+        page_count = len(pages)
+    else:
+        result = _bundle_result(
+            source, _iter_pages(assets), revision, fingerprint, question_contract,
+        )
+        page_count = sum(
+            len(item.get("pages") or [])
+            for item in result.get("page_transcripts", [])
+            if isinstance(item, dict)
+        )
     _assert_revision(source_id, revision)
     needs_review = _has_review_flags(result)
     final_status = source.Status.NEEDS_REVIEW if needs_review else source.Status.READY
@@ -559,7 +606,7 @@ def process_source(source_id: int, revision: int) -> dict:
             "model": vision_model,
             "mappingModel": mapping_model,
             "promptVersions": prompt_versions,
-            "pageCount": len(pages),
+            "pageCount": page_count,
         },
         error_code="",
         updated_at=timezone.now(),

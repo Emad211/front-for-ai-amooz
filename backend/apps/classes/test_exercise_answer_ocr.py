@@ -164,6 +164,78 @@ def test_question_upload_creates_server_owned_source_and_queues_task(
     assert queued and queued[0][1]['countdown'] == 2
 
 
+def test_rapid_question_upload_supersedes_settling_revision(
+    monkeypatch, django_capture_on_commit_callbacks,
+):
+    _teacher, student, session, exercise, question = _world()
+    queued = []
+    monkeypatch.setattr(
+        'apps.classes.tasks.process_student_answer_source.apply_async',
+        lambda *args, **kwargs: queued.append((args, kwargs)),
+    )
+    client = _auth(student)
+
+    with django_capture_on_commit_callbacks(execute=True):
+        first = client.post(
+            _base(session, exercise) + f'questions/{question.id}/image/',
+            {'file': SimpleUploadedFile('one.png', PNG, content_type='image/png')},
+            format='multipart',
+        )
+    source = StudentExerciseAnswerSource.objects.get(id=first.data['source']['id'])
+    assert source.processing_task_id
+
+    with django_capture_on_commit_callbacks(execute=True):
+        second = client.post(
+            _base(session, exercise) + f'questions/{question.id}/image/',
+            {'file': SimpleUploadedFile('two.png', PNG + b'2', content_type='image/png')},
+            format='multipart',
+        )
+
+    assert first.status_code == 201
+    assert second.status_code == 201
+    source.refresh_from_db()
+    assert source.revision == 2
+    assert source.assets.filter(is_active=True).count() == 2
+    assert [call[1]['args'][1] for call in queued] == [1, 2]
+
+
+def test_rapid_bundle_replacement_supersedes_settling_revision(
+    monkeypatch, django_capture_on_commit_callbacks,
+):
+    _teacher, student, session, exercise, _question = _world()
+    queued = []
+    monkeypatch.setattr(
+        'apps.classes.tasks.process_student_answer_source.apply_async',
+        lambda *args, **kwargs: queued.append((args, kwargs)),
+    )
+    client = _auth(student)
+
+    with django_capture_on_commit_callbacks(execute=True):
+        first = client.post(
+            _base(session, exercise) + 'answer-source/',
+            {'files': [SimpleUploadedFile('one.png', PNG, content_type='image/png')]},
+            format='multipart',
+        )
+    source = StudentExerciseAnswerSource.objects.get(id=first.data['id'])
+    first_asset = source.assets.get()
+    assert source.processing_task_id
+
+    with django_capture_on_commit_callbacks(execute=True):
+        second = client.post(
+            _base(session, exercise) + 'answer-source/',
+            {'files': [SimpleUploadedFile('two.png', PNG + b'2', content_type='image/png')]},
+            format='multipart',
+        )
+
+    assert second.status_code == 201
+    source.refresh_from_db()
+    first_asset.refresh_from_db()
+    assert source.revision == 2
+    assert first_asset.is_active is False
+    assert source.assets.filter(is_active=True).count() == 1
+    assert [call[1]['args'][1] for call in queued] == [1, 2]
+
+
 def test_question_image_limit_rejection_does_not_mutate_source(monkeypatch):
     _teacher, student, session, exercise, question = _world()
     submission = baker.make(
@@ -216,6 +288,22 @@ def test_declared_oversized_bundle_is_rejected_before_read(monkeypatch):
 
     assert validated == []
     assert response.status_code == 413
+
+
+def test_validated_bundle_retains_metadata_not_payload_bytes():
+    upload = SimpleUploadedFile('answer.png', PNG, content_type='image/png')
+
+    validated, response = _validate_answer_source_uploads([upload])
+
+    assert response is None
+    assert len(validated) == 1
+    stored_upload, content_type, page_count, byte_size, sha256 = validated[0]
+    assert stored_upload is upload
+    assert content_type == 'image/png'
+    assert page_count == 1
+    assert byte_size == len(PNG)
+    assert sha256 == hashlib.sha256(PNG).hexdigest()
+    assert all(not isinstance(item, bytes) for item in validated[0])
 
 
 @override_settings(EXERCISE_ANSWER_OCR_REQUEST_MAX_BYTES=100)
@@ -1082,6 +1170,78 @@ def test_bundle_retry_reuses_persisted_page_chunks(monkeypatch):
 
     assert vision_calls == [1, 2]
     assert result['answers'][0]['text'] == 'پاسخ نهایی'
+
+
+def test_bundle_pages_are_consumed_one_chunk_at_a_time(monkeypatch):
+    _teacher, student, _session, exercise, question = _world()
+    submission = baker.make(StudentExerciseSubmission, exercise=exercise, student=student)
+    source = baker.make(
+        StudentExerciseAnswerSource,
+        submission=submission,
+        scope=StudentExerciseAnswerSource.Scope.EXERCISE,
+        target_question=None,
+        status=StudentExerciseAnswerSource.Status.SEGMENTING,
+    )
+    monkeypatch.setenv('EXERCISE_ANSWER_OCR_PAGES_PER_CALL', '2')
+    produced = 0
+    consumed = 0
+
+    def pages():
+        nonlocal produced
+        for number in range(1, 7):
+            produced += 1
+            if produced - consumed > 2:
+                raise AssertionError('pages were materialized beyond one provider chunk')
+            yield Page(number, f'{number}.png', PNG)
+
+    def fake_vision(chunk, **_kwargs):
+        nonlocal consumed
+        consumed += len(chunk)
+        return AnswerPageTranscriptionOutput(
+            text=f'صفحات {chunk[0].number} تا {chunk[-1].number}',
+            quality='clear',
+            unclear_parts=[],
+        )
+
+    monkeypatch.setattr('apps.classes.services.exercise_answer_ocr._vision_call', fake_vision)
+    monkeypatch.setattr(
+        'apps.classes.services.exercise_answer_ocr.generate_structured',
+        lambda **_kwargs: ExerciseAnswerBundleOutput(
+            answers=[{
+                'question_id': question.id,
+                'text': 'پاسخ',
+                'match_status': 'matched',
+                'unclear_parts': [],
+            }],
+            unmatched_fragments=[],
+            missing_question_ids=[],
+        ),
+    )
+
+    result = _bundle_result(source, pages(), source.revision, 'sha256:stream')
+
+    assert produced == consumed == 6
+    assert len(result['page_transcripts']) == 3
+
+
+def test_stale_bundle_revision_is_rejected_before_reading_pages():
+    _teacher, student, _session, exercise, _question = _world()
+    submission = baker.make(StudentExerciseSubmission, exercise=exercise, student=student)
+    source = baker.make(
+        StudentExerciseAnswerSource,
+        submission=submission,
+        scope=StudentExerciseAnswerSource.Scope.EXERCISE,
+        target_question=None,
+        revision=2,
+        status=StudentExerciseAnswerSource.Status.QUEUED,
+    )
+
+    def pages():
+        pytest.fail('a stale job must not open or render answer assets')
+        yield Page(1, 'never.png', PNG)
+
+    with pytest.raises(StaleAnswerSource):
+        _bundle_result(source, pages(), 1, 'sha256:stale')
 
 
 @pytest.mark.parametrize(('mapped_answers', 'provider_missing'), BUNDLE_FIXTURES)

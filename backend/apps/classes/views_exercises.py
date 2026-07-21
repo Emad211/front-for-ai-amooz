@@ -1547,13 +1547,7 @@ class StudentExerciseImageView(APIView):
                     )
                 if (
                     not created
-                    and (
-                        source.status in _OCR_PROCESSING_STATUSES
-                        or (
-                            source.status == StudentExerciseAnswerSource.Status.QUEUED
-                            and bool(source.processing_task_id)
-                        )
-                    )
+                    and source.status in _OCR_PROCESSING_STATUSES
                 ):
                     return Response(
                         {'detail': 'خواندن نسخه فعلی هنوز ادامه دارد.'},
@@ -1643,7 +1637,7 @@ def _answer_source_context(request, session_id: int, exercise_id: int):
 
 def _validate_answer_source_uploads(
     files,
-) -> tuple[list[tuple[object, bytes, str, int]], Response | None]:
+) -> tuple[list[tuple[object, str, int, int, str]], Response | None]:
     if not files:
         return [], Response({'detail': 'فایلی ارسال نشده است.'}, status=status.HTTP_400_BAD_REQUEST)
     validated = []
@@ -1658,7 +1652,8 @@ def _validate_answer_source_uploads(
             )
         data = uploaded.read()
         uploaded.seek(0)
-        total_bytes += len(data)
+        byte_size = len(data)
+        total_bytes += byte_size
         if total_bytes > answer_ocr_max_bytes():
             return [], Response(
                 {'detail': 'حجم مجموع فایل‌ها بیش از حد مجاز است.'},
@@ -1685,7 +1680,13 @@ def _validate_answer_source_uploads(
                 {'detail': 'تعداد صفحات پاسخ‌نامه بیش از حد مجاز است.'},
                 status=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
             )
-        validated.append((uploaded, data, content_type, page_count))
+        validated.append((
+            uploaded,
+            content_type,
+            page_count,
+            byte_size,
+            hashlib.sha256(data).hexdigest(),
+        ))
     return validated, None
 
 
@@ -1758,10 +1759,6 @@ class StudentExerciseAnswerSourceView(APIView):
         validated, validation_error = _validate_answer_source_uploads(files)
         if validation_error is not None:
             return validation_error
-        validated_with_hash = [
-            (uploaded, data, content_type, page_count, hashlib.sha256(data).hexdigest())
-            for uploaded, data, content_type, page_count in validated
-        ]
         with transaction.atomic():
             submission = StudentExerciseSubmission.objects.select_for_update().get(id=submission.id)
             if submission.status != StudentExerciseSubmission.Status.DRAFT:
@@ -1784,15 +1781,15 @@ class StudentExerciseAnswerSourceView(APIView):
                 )
                 incoming_hashes = [
                     sha256
-                    for _uploaded, _data, _content_type, _page_count, sha256
-                    in validated_with_hash
+                    for _uploaded, _content_type, _page_count, _byte_size, sha256
+                    in validated
                 ]
                 if existing_hashes == incoming_hashes:
                     if source.status == StudentExerciseAnswerSource.Status.FAILED:
                         if not _consume_answer_ocr_quota(
                             request.user.id,
-                            pages=sum(row[3] for row in validated_with_hash),
-                            byte_count=sum(len(row[1]) for row in validated_with_hash),
+                            pages=sum(row[2] for row in validated),
+                            byte_count=sum(row[3] for row in validated),
                         ):
                             return Response(
                                 {'detail': 'سهمیه ساعتی خواندن پاسخ‌نامه تکمیل شده است.'},
@@ -1816,21 +1813,15 @@ class StudentExerciseAnswerSourceView(APIView):
                     if source.status == StudentExerciseAnswerSource.Status.QUEUED:
                         _queue_answer_source(source.id, source.revision)
                     return Response(serialize_source(source), status=status.HTTP_200_OK)
-                if (
-                    source.status in _OCR_PROCESSING_STATUSES
-                    or (
-                        source.status == StudentExerciseAnswerSource.Status.QUEUED
-                        and bool(source.processing_task_id)
-                    )
-                ):
+                if source.status in _OCR_PROCESSING_STATUSES:
                     return Response(
                         {'detail': 'خواندن نسخه فعلی هنوز ادامه دارد.'},
                         status=status.HTTP_409_CONFLICT,
                     )
                 if not _consume_answer_ocr_quota(
                     request.user.id,
-                    pages=sum(row[3] for row in validated_with_hash),
-                    byte_count=sum(len(row[1]) for row in validated_with_hash),
+                    pages=sum(row[2] for row in validated),
+                    byte_count=sum(row[3] for row in validated),
                 ):
                     return Response(
                         {'detail': 'سهمیه ساعتی خواندن پاسخ‌نامه تکمیل شده است.'},
@@ -1858,8 +1849,8 @@ class StudentExerciseAnswerSourceView(APIView):
                 ])
             elif not _consume_answer_ocr_quota(
                 request.user.id,
-                pages=sum(row[3] for row in validated_with_hash),
-                byte_count=sum(len(row[1]) for row in validated_with_hash),
+                pages=sum(row[2] for row in validated),
+                byte_count=sum(row[3] for row in validated),
             ):
                 transaction.set_rollback(True)
                 return Response(
@@ -1868,8 +1859,8 @@ class StudentExerciseAnswerSourceView(APIView):
                 )
             last_order = source.assets.order_by('-order').values_list('order', flat=True).first()
             start_order = (last_order + 1) if last_order is not None else 0
-            for index, (uploaded, data, content_type, _page_count, sha256) in enumerate(
-                validated_with_hash,
+            for index, (uploaded, content_type, _page_count, byte_size, sha256) in enumerate(
+                validated,
             ):
                 _use_opaque_answer_source_name(uploaded, content_type)
                 StudentExerciseAnswerAsset.objects.create(
@@ -1877,7 +1868,7 @@ class StudentExerciseAnswerSourceView(APIView):
                     file=uploaded,
                     order=start_order + index,
                     content_type=content_type,
-                    byte_size=len(data),
+                    byte_size=byte_size,
                     sha256=sha256,
                 )
             source_id, revision = source.id, source.revision
