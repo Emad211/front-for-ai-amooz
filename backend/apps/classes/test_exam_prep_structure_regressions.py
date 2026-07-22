@@ -13,10 +13,10 @@ from apps.commons.llm_prompts import PROMPTS
 pytestmark = pytest.mark.unit
 
 
-def test_prompt_requires_video_duplicate_reconciliation_and_field_separation():
+def test_prompt_covers_all_supported_sources_and_requires_field_separation():
     prompt = PROMPTS["exam_prep_structure"]["default"]
 
-    assert "audio/video" in prompt
+    assert "audio, video, or PDF" in prompt
     assert "STRICT FIELD SEPARATION" in prompt
     assert "only inside `options`" in prompt
 
@@ -108,7 +108,15 @@ def test_normalizer_does_not_delete_partial_or_unlabelled_question_text():
     assert normalized["exam_prep"]["questions"][0]["question_text_markdown"] == original
 
 
-def test_video_transcript_output_is_structured_and_cleaned(monkeypatch):
+@pytest.mark.parametrize(
+    "source_markdown",
+    [
+        "گفتار فایل صوتی شامل سؤال و گزینه‌ها",
+        "گفتار مدرس و متن گزینه‌های دیده‌شده در فریم ویدیو",
+        "متن استخراج‌شده از PDF شامل سؤال و گزینه‌ها",
+    ],
+)
+def test_every_supported_source_is_structured_and_cleaned(monkeypatch, source_markdown):
     monkeypatch.setenv("STRUCTURE_MODEL", "test-model")
     dirty_question = {
         "question_text_markdown": "کدام درست است؟\nالف) اول\nب) دوم",
@@ -127,7 +135,7 @@ def test_video_transcript_output_is_structured_and_cleaned(monkeypatch):
     )
 
     result, _, _ = structure.extract_exam_prep_structure(
-        transcript_markdown="گفتار مدرس و متن گزینه‌های دیده‌شده در فریم ویدیو"
+        transcript_markdown=source_markdown
     )
 
     question = result["exam_prep"]["questions"][0]

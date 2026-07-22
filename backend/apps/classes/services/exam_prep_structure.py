@@ -1,4 +1,4 @@
-"""Extract validated exam-prep questions from audio/video transcript Markdown."""
+"""Extract validated exam-prep questions from normalized source Markdown."""
 
 from __future__ import annotations
 
@@ -158,7 +158,7 @@ def _reinject_exam_assets(parsed: dict, transcript_markdown: str) -> dict:
 def extract_exam_prep_structure(
     *, transcript_markdown: str
 ) -> tuple[dict[str, Any], str, str]:
-    """Return validated, deduplicated Q&A from an audio/video transcript."""
+    """Return validated, deduplicated Q&A from audio, video, or PDF Markdown."""
     model = _select_model("STRUCTURE_MODEL", "REWRITE_MODEL")
     provider = preferred_provider()
     transcript = sanitize_llm_markdown(transcript_markdown)
@@ -201,7 +201,7 @@ def extract_exam_prep_structure(
         questions.append(question)
     if not questions:
         raise RuntimeError(
-            "هیچ سؤال معتبری از محتوای ویدیو یا صوت استخراج نشد. لطفاً کیفیت فایل را بررسی کنید."
+            "هیچ سؤال معتبری از فایل ورودی استخراج نشد. لطفاً کیفیت فایل را بررسی کنید."
         )
 
     return _reinject_exam_assets(
