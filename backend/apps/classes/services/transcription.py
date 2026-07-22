@@ -30,6 +30,7 @@ from .transcription_media import (
     extract_frames_jpeg_from_path,
     probe_media_duration,
 )
+from .text_sanitize import sanitize_llm_markdown
 
 logger = logging.getLogger(__name__)
 
@@ -238,7 +239,8 @@ def transcribe_media_bytes(*, data: bytes, mime_type: str) -> Tuple[str, str, st
         "TRANSCRIBE start: model=%s is_audio=%s audio_bytes=%d frames=%d",
         model, is_audio, len(audio_bytes), len(frames_b64),
     )
-    return _run_transcription(model=model, provider=provider, messages=messages), provider, model
+    transcript = _run_transcription(model=model, provider=provider, messages=messages)
+    return sanitize_llm_markdown(transcript), provider, model
 
 
 def transcribe_media_file(
@@ -360,7 +362,9 @@ def transcribe_media_file(
         "TRANSCRIBE(file) start: model=%s is_audio=%s duration=%.0fs frames=%d",
         model, is_audio, duration, len(frames_b64),
     )
-    transcript = _run_transcription(model=model, provider=provider, messages=messages)
+    transcript = sanitize_llm_markdown(
+        _run_transcription(model=model, provider=provider, messages=messages)
+    )
     _notify_progress(progress_cb, 1, 1)
     return transcript, provider, model
 
@@ -454,7 +458,9 @@ def _transcribe_media_file_chunked(
                     part_text = ""
                 else:
                     raise
-            part_text = (part_text or "").strip()
+            # Sanitize before this chunk enters both the stored transcript and
+            # the continuity tail supplied to the next chunk.
+            part_text = sanitize_llm_markdown(part_text)
             # The chunked prompt instructs the model to answer a literal
             # no-speech marker for silent chunks — normalise it away.
             if part_text == "[بدون گفتار]":

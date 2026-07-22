@@ -1,25 +1,25 @@
-"""
-Service for extracting exam prep Q&A structure from transcript markdown.
-
-Rewritten to use the unified LLM client (GapGPT / OpenAI SDK)
-via apps.commons.services.llm_client.
-"""
+"""Extract validated exam-prep questions from audio/video transcript Markdown."""
 
 from __future__ import annotations
 
+import json
 import logging
 import os
-from typing import Any, Optional, Tuple
+from typing import Any
+
+from billiard.exceptions import SoftTimeLimitExceeded
 
 from apps.commons.llm_prompts import PROMPTS
 from apps.commons.llm_provider import preferred_provider
 from apps.commons.models import LLMUsageLog
-from apps.chatbot.services.llm_client import generate_text
-from .json_utils import extract_json_object
+from apps.commons.structured_llm import generate_structured
+
+from .exam_prep_utils import clean_exam_markdown, normalize_exam_prep_question
+from .schemas import ExamPrepOutput
+from .text_sanitize import sanitize_llm_markdown
+
 
 logger = logging.getLogger(__name__)
-
-# Per-call timeout for LLM (seconds).
 _LLM_TIMEOUT_SECONDS = int(os.getenv("LLM_TIMEOUT_SECONDS", "600"))
 
 
@@ -27,176 +27,183 @@ def _get_env(name: str) -> str:
     return (os.getenv(name) or "").strip()
 
 
+def _env_int(name: str, default: int) -> int:
+    try:
+        return int(os.getenv(name, str(default)))
+    except (TypeError, ValueError):
+        return default
+
+
 def _select_model(*names: str) -> str:
-    """Select the LLM model from ENV only — no hardcoded defaults.
-
-    Checks each of ``names`` in order, then falls back to ``MODEL_NAME``. If
-    nothing is set, raises (a misconfigured deployment must fail loudly rather
-    than silently calling a hardcoded model). Mirrors ``structure.py._select_model``.
-    """
-    for n in names:
-        val = _get_env(n)
-        if val:
-            return val
-
-    fallback = _get_env("MODEL_NAME")
-    if fallback:
+    for name in names:
+        if value := _get_env(name):
+            return value
+    if fallback := _get_env("MODEL_NAME"):
         return fallback
-
     raise RuntimeError(
         f"No LLM model defined in ENV. Checked: {names} and fallback MODEL_NAME."
     )
 
 
-def _restore_latex_escapes(value: Any) -> Any:
-    """Restore LaTeX commands inside JSON strings."""
-    replacement_map = {
-        "\t": "\\t",
-        "\b": "\\b",
-        "\f": "\\f",
-        "\n": "\\n",
-        "\r": "\\r",
-    }
-    if isinstance(value, str):
-        for ctrl, esc in replacement_map.items():
-            value = value.replace(ctrl, esc)
-        return value
-    if isinstance(value, dict):
-        return {k: _restore_latex_escapes(v) for k, v in value.items()}
-    if isinstance(value, list):
-        return [_restore_latex_escapes(item) for item in value]
-    return value
+def _window_chars() -> int:
+    return max(4_000, min(_env_int("EXAM_PREP_WINDOW_CHARS", 20_000), 40_000))
+
+
+def _window_overlap() -> int:
+    return max(0, min(_env_int("EXAM_PREP_WINDOW_OVERLAP", 4_000), 8_000))
+
+
+def _split_transcript(text: str, *, window_chars: int, overlap: int) -> list[str]:
+    """Split on nearby paragraph boundaries while retaining boundary overlap."""
+    if len(text) <= window_chars:
+        return [text] if text.strip() else []
+
+    windows: list[str] = []
+    start = 0
+    while start < len(text):
+        end = min(start + window_chars, len(text))
+        if end < len(text):
+            search_start = start + int(window_chars * 0.8)
+            boundary = text.rfind("\n\n", search_start, end)
+            if boundary < 0:
+                boundary = text.rfind("\n", search_start, end)
+            if boundary > start:
+                end = boundary
+        windows.append(text[start:end])
+        if end >= len(text):
+            break
+        start = max(end - overlap, start + 1)
+    return [window for window in windows if window.strip()]
+
+
+def _clean(value: Any) -> str:
+    """Compatibility seam used by regression tests and field normalization."""
+    return clean_exam_markdown(value)
+
+
+def _extract_window(
+    *, window_text: str, model: str, part: int, total: int
+) -> tuple[list[dict[str, Any]], str]:
+    label = (
+        f"PART {part}/{total} OF FULL_TRANSCRIPT_MARKDOWN"
+        if total > 1
+        else "FULL_TRANSCRIPT_MARKDOWN"
+    )
+    try:
+        result = generate_structured(
+            schema=ExamPrepOutput,
+            messages=[
+                {"role": "system", "content": PROMPTS["exam_prep_structure"]["default"]},
+                {"role": "user", "content": f"{label}:\n{window_text}"},
+            ],
+            model=model,
+            feature=LLMUsageLog.Feature.EXAM_PREP_STRUCTURE,
+            timeout=_LLM_TIMEOUT_SECONDS,
+            temperature=0,
+        )
+    except SoftTimeLimitExceeded:
+        raise
+    except Exception as exc:
+        logger.warning("exam-prep structure window %d/%d failed: %s", part, total, exc)
+        return [], ""
+
+    return [question.model_dump() for question in result.exam_prep.questions], _clean(
+        result.exam_prep.title
+    )
+
+
+def _question_key(question: dict[str, Any]) -> str:
+    return " ".join(question["question_text_markdown"].lower().split())
+
+
+def _merge_question(existing: dict[str, Any], candidate: dict[str, Any]) -> None:
+    for field in (
+        "correct_option_label",
+        "correct_option_text_markdown",
+        "final_answer_markdown",
+    ):
+        if not existing.get(field) and candidate.get(field):
+            existing[field] = candidate[field]
+    if len(candidate.get("options") or []) > len(existing.get("options") or []):
+        existing["options"] = candidate["options"]
+    if len(candidate.get("teacher_solution_markdown") or "") > len(
+        existing.get("teacher_solution_markdown") or ""
+    ):
+        existing["teacher_solution_markdown"] = candidate["teacher_solution_markdown"]
 
 
 def _reinject_exam_assets(parsed: dict, transcript_markdown: str) -> dict:
-    """Guarantee no extracted image is lost from the exam Q&A.
-
-    The prompt asks the model to keep `![](url)` images verbatim, but we do not
-    rely on it. If the transcript contains image URLs absent from the entire
-    serialized exam JSON, append them to the last question's solution so they
-    still reach the student. Conservative: only acts when an image would be lost.
-    """
-    import json as _json
+    """Keep extracted images even if the structure model omits their references."""
     from .markdown_assets import image_refs, image_urls
 
     try:
         refs = image_refs(transcript_markdown)
-        if not refs:
-            return parsed
-        blob = _json.dumps(parsed, ensure_ascii=False)
-        present = set(image_urls(blob))
-        missing = [r for r, u in zip(refs, image_urls(transcript_markdown)) if u not in present]
-        if not missing:
-            return parsed
+        present = set(image_urls(json.dumps(parsed, ensure_ascii=False)))
+        missing = [
+            ref
+            for ref, url in zip(refs, image_urls(transcript_markdown))
+            if url not in present
+        ]
         questions = (parsed.get("exam_prep") or {}).get("questions") or []
-        if questions and isinstance(questions[-1], dict):
-            sol = questions[-1].get("teacher_solution_markdown") or ""
+        if missing and questions:
+            solution = questions[-1].get("teacher_solution_markdown") or ""
             questions[-1]["teacher_solution_markdown"] = (
-                sol.rstrip() + "\n\n" + "\n\n".join(missing)
+                solution.rstrip() + "\n\n" + "\n\n".join(missing)
             ).strip()
     except Exception:
-        logger.exception("exam asset reinjection failed; returning as-is")
+        logger.exception("exam-prep asset reinjection failed")
     return parsed
-
-
-def _attempt_parse_with_repair(*, text: str) -> tuple[Optional[dict], Optional[str]]:
-    """
-    Try to parse JSON; return (parsed_json, preview_on_error).
-    """
-    try:
-        return extract_json_object(text), None
-    except Exception as exc:
-        preview = (text or "")[:1200]
-        return None, preview
 
 
 def extract_exam_prep_structure(
     *, transcript_markdown: str
 ) -> tuple[dict[str, Any], str, str]:
-    """
-    Extract exam prep Q&A structure from transcript markdown.
-
-    Returns:
-        (exam_prep_json_obj, provider, model_name)
-    """
-
-    # Select model from ENV only (raises if unset — no hardcoded default).
+    """Return validated, deduplicated Q&A from an audio/video transcript."""
     model = _select_model("STRUCTURE_MODEL", "REWRITE_MODEL")
-
     provider = preferred_provider()
+    transcript = sanitize_llm_markdown(transcript_markdown)
+    if not transcript:
+        return {"exam_prep": {"title": "", "questions": []}}, provider, model
 
-    prompt = PROMPTS["exam_prep_structure"]["default"]
-
-    base_messages = [
-        {"role": "system", "content": prompt},
-        {
-            "role": "user",
-            "content": f"FULL_TRANSCRIPT_MARKDOWN:\n{transcript_markdown}",
-        },
-    ]
-
-    # --------------------------------------------------------------
-    # Attempt 1 — normal run
-    # --------------------------------------------------------------
-    try:
-        resp = generate_text(
-            model=model,
-            messages=base_messages,
-            timeout=_LLM_TIMEOUT_SECONDS,
-            feature=LLMUsageLog.Feature.EXAM_PREP_STRUCTURE,
-        )
-    except Exception as exc:
-        raise RuntimeError(f"LLM call failed: {exc}") from exc
-
-    text = resp.text if hasattr(resp, "text") else str(resp)
-    parsed, preview = _attempt_parse_with_repair(text=text)
-
-    if parsed is not None:
-        parsed = _reinject_exam_assets(parsed, transcript_markdown)
-        return _restore_latex_escapes(parsed), provider, model
-
-    # --------------------------------------------------------------
-    # Attempts 2..4 — JSON repair
-    # --------------------------------------------------------------
-    repair_systems = [
-        "خروجی قبلی قرار بوده یک JSON معتبر باشد ولی قابل parse نیست. "
-        "لطفاً فقط یک JSON معتبر بده. بدون توضیح، بدون ```.",
-        "ONLY OUTPUT VALID JSON. No prose. Escape all backslashes inside strings.",
-        "Return STRICT JSON ONLY. If any field breaks JSON, replace with safe string.",
-    ]
-
-    last_preview = preview
-    last_error = None
-
-    for i, repair_sys in enumerate(repair_systems, start=2):
-        repair_messages = [
-            {"role": "system", "content": repair_sys},
-            {
-                "role": "user",
-                "content": f"INVALID_OUTPUT:\n{text or ''}",
-            },
-        ]
-
-        try:
-            repair_resp = generate_text(
-                model=model,
-                messages=repair_messages,
-                timeout=_LLM_TIMEOUT_SECONDS,
-                feature=LLMUsageLog.Feature.EXAM_PREP_STRUCTURE,
-            )
-            repair_text = repair_resp.text
-        except Exception as exc:
-            last_error = exc
-            continue
-
-        parsed, preview = _attempt_parse_with_repair(text=repair_text)
-        if parsed is not None:
-            parsed = _reinject_exam_assets(parsed, transcript_markdown)
-            return _restore_latex_escapes(parsed), provider, model
-
-        text = repair_text
-        last_preview = preview
-
-    raise RuntimeError(
-        f"LLM returned invalid JSON for exam prep structure. last_preview={last_preview!r}, last_error={last_error}"
+    window_chars = _window_chars()
+    windows = _split_transcript(
+        transcript,
+        window_chars=window_chars,
+        overlap=min(_window_overlap(), window_chars // 2),
     )
+    merged: dict[str, dict[str, Any]] = {}
+    order: list[str] = []
+    title = ""
+
+    for part, window in enumerate(windows, start=1):
+        raw_questions, window_title = _extract_window(
+            window_text=window,
+            model=model,
+            part=part,
+            total=len(windows),
+        )
+        title = title or window_title
+        for raw in raw_questions:
+            normalized = normalize_exam_prep_question(raw, index=len(order) + 1)
+            if normalized is None:
+                continue
+            key = _question_key(normalized)
+            if key in merged:
+                _merge_question(merged[key], normalized)
+            else:
+                merged[key] = normalized
+                order.append(key)
+
+    questions = []
+    for index, key in enumerate(order, start=1):
+        question = merged[key]
+        question["question_id"] = f"q-{index}"
+        questions.append(question)
+    if not questions:
+        raise RuntimeError(
+            "هیچ سؤال معتبری از محتوای ویدیو یا صوت استخراج نشد. لطفاً کیفیت فایل را بررسی کنید."
+        )
+
+    return _reinject_exam_assets(
+        {"exam_prep": {"title": title, "questions": questions}}, transcript
+    ), provider, model

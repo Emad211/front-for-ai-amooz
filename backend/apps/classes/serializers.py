@@ -931,6 +931,9 @@ class StudentExamPrepQuestionSerializer(serializers.Serializer):
     """Serializer for exam prep questions exposed to students."""
     question_id = serializers.CharField()
     question_text_markdown = serializers.CharField()
+    type = serializers.ChoiceField(
+        choices=['multiple_choice', 'true_false', 'fill_blank', 'short_answer']
+    )
     options = serializers.ListField(child=serializers.DictField())
 
 

@@ -525,19 +525,22 @@ class TestExamPrepServiceUnit:
     """Unit tests for exam prep structure extraction service."""
 
     def test_extract_exam_prep_structure_returns_expected_format(self, monkeypatch):
-        """Service returns (dict, provider, model). The LLM is mocked at the
-        module-bound `generate_text` seam (the old dual-client `_get_clients` path
-        was removed for a single OpenAI-compatible client); the model comes from
-        ENV only (STRUCTURE_MODEL) since the hardcoded fallback was removed."""
-        from types import SimpleNamespace
+        """Service returns validated question data using the env-selected model."""
         from apps.classes.services import exam_prep_structure as eps
+        from apps.classes.services.schemas import ExamPrepOutput
 
         monkeypatch.setenv('STRUCTURE_MODEL', 'test-structure-model')
         monkeypatch.setattr(
-            eps, 'generate_text',
-            lambda **kwargs: SimpleNamespace(
-                text='{"exam_prep": {"title": "Test", "questions": []}}'
-            ),
+            eps, 'generate_structured',
+            lambda **kwargs: ExamPrepOutput.model_validate({
+                'exam_prep': {
+                    'title': 'Test',
+                    'questions': [{
+                        'question_text_markdown': 'Question?',
+                        'options': [],
+                    }],
+                }
+            }),
         )
 
         result, provider, model = eps.extract_exam_prep_structure(
@@ -899,6 +902,36 @@ class TestStudentExamPrepDetail:
         assert res.data['title'] == 'آزمون فیزیک'
         assert len(res.data['questions']) == 1
         assert res.data['questions'][0]['question_text_markdown'] == 'نیروی گرانش چیست؟'
+        assert res.data['questions'][0]['type'] == 'multiple_choice'
+
+    def test_detail_repairs_legacy_question_with_duplicated_options(self, student_with_invite):
+        student, session = student_with_invite
+        session.exam_prep_json = json.dumps({
+            'exam_prep': {
+                'questions': [{
+                    'question_id': 'q-1',
+                    'question_text_markdown': r'کدام پاسخ درست است؟\n1) اول\n2) دوم',
+                    'options': [
+                        {'label': 'الف', 'text_markdown': 'اول'},
+                        {'label': 'ب', 'text_markdown': 'دوم'},
+                    ],
+                    'correct_option_label': 'الف',
+                }],
+            },
+        })
+        session.save(update_fields=['exam_prep_json'])
+        client = APIClient()
+        client.credentials(
+            HTTP_AUTHORIZATION=f'Bearer {RefreshToken.for_user(student).access_token}'
+        )
+
+        response = client.get(f'/api/classes/student/exam-preps/{session.id}/')
+
+        assert response.status_code == 200
+        assert response.data['questions'][0]['question_text_markdown'] == 'کدام پاسخ درست است؟'
+        session.refresh_from_db()
+        stored = json.loads(session.exam_prep_json)
+        assert stored['exam_prep']['questions'][0]['question_text_markdown'] == 'کدام پاسخ درست است؟'
 
     def test_student_cannot_access_uninvited_exam_prep(self, student_with_invite):
         """Student cannot access exam prep they're not invited to."""

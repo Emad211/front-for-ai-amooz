@@ -78,7 +78,7 @@ def test_long_video_is_chunked_with_continuity_and_windowed_frames(mock_gen, mon
 
     monkeypatch.setattr(transcription, "extract_frames_jpeg_from_path", _fake_frames)
     mock_gen.side_effect = [
-        SimpleNamespace(text="PART1"),
+        SimpleNamespace(text='<code class="inline-code">PART1</code>'),
         SimpleNamespace(text="PART2"),
         SimpleNamespace(text="PART3"),
     ]
@@ -89,7 +89,7 @@ def test_long_video_is_chunked_with_continuity_and_windowed_frames(mock_gen, mon
 
     # One LLM request per chunk; stitched in order.
     assert mock_gen.call_count == 3
-    assert transcript == "PART1\n\nPART2\n\nPART3"
+    assert transcript == "`PART1`\n\nPART2\n\nPART3"
     assert model == "models/gemini-2.5-flash"
 
     # Part numbering + continuity tail flow through the chunked prompt.
@@ -98,7 +98,8 @@ def test_long_video_is_chunked_with_continuity_and_windowed_frames(mock_gen, mon
     ]
     assert "قطعه 1 از 3" in prompts[0]
     assert "این اولین قطعه است" in prompts[0]
-    assert "قطعه 2 از 3" in prompts[1] and "PART1" in prompts[1]
+    assert "قطعه 2 از 3" in prompts[1] and "`PART1`" in prompts[1]
+    assert "<code" not in prompts[1]
     assert "قطعه 3 از 3" in prompts[2] and "PART2" in prompts[2]
 
     # Every chunk request carries ITS OWN audio segment + its window's frames.

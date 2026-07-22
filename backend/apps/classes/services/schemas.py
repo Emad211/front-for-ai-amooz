@@ -63,6 +63,39 @@ class StructureOutput(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# Exam prep — transcript to question/answer structure.
+# ---------------------------------------------------------------------------
+
+
+class ExamPrepQuestion(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    question_id: Optional[str] = None
+    question_text_markdown: Optional[str] = None
+    options: List[Any] = Field(default_factory=list)
+    correct_option_label: Any = None
+    correct_option_text_markdown: Optional[str] = None
+    teacher_solution_markdown: Optional[str] = None
+    final_answer_markdown: Optional[str] = None
+    confidence: Any = None
+    issues: List[Any] = Field(default_factory=list)
+
+
+class ExamPrepInner(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    title: Optional[str] = None
+    source_transcript_id: Optional[str] = None
+    questions: List[ExamPrepQuestion] = Field(default_factory=list)
+
+
+class ExamPrepOutput(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    exam_prep: ExamPrepInner = Field(default_factory=ExamPrepInner)
+
+
+# ---------------------------------------------------------------------------
 # Exercise Hub — exercise structure extraction (services/exercise_ingest.py).
 # Contract source of truth: ``PROMPTS['exercise_structure']['default']``.
 # Load-bearing invariant: ``questions`` is one ordered list. Legacy
