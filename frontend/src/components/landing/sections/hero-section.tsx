@@ -16,9 +16,9 @@ interface HeroSectionProps {
 /** Figma nodes 277:390 / 336:3232 and mobile 244:1960 / 336:2892. */
 export const HeroSection = ({ heroImage }: HeroSectionProps) => {
   return (
-    <section className="landing-section-shell h-[964px] p-2 lg:h-[1200px] lg:p-0">
-      <div className="relative h-[956px] w-full overflow-hidden lg:h-[1200px]">
-        <div className="absolute inset-x-0 bottom-0 top-[80px] overflow-hidden rounded-[20px] border border-[hsl(var(--landing-border)/.55)] bg-[hsl(var(--landing-hero))] shadow-[0_0_4px_hsl(var(--foreground)/.24)] lg:inset-x-8 lg:bottom-10 lg:top-28">
+    <section className="landing-section-shell h-[964px] p-2 lg:h-dvh lg:min-h-[720px] lg:p-0">
+      <div className="relative h-[956px] w-full overflow-hidden lg:h-full">
+        <div className="absolute inset-x-0 bottom-0 top-[80px] overflow-hidden rounded-[20px] border border-[hsl(var(--landing-border)/.55)] bg-[hsl(var(--landing-hero))] shadow-[0_0_4px_hsl(var(--foreground)/.24)] lg:inset-x-8 lg:bottom-4 lg:top-24">
           <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden">
             <div className="landing-dot-pattern absolute inset-0 opacity-80 [mask-image:radial-gradient(ellipse_at_center,black_16%,transparent_82%)]" />
             <div className="absolute -left-[19.8rem] -top-[19.8rem] h-[59.35rem] w-[59.35rem] rounded-full bg-primary/20 opacity-40 blur-[150px]" />
@@ -26,7 +26,7 @@ export const HeroSection = ({ heroImage }: HeroSectionProps) => {
             <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,transparent_35%,hsl(var(--landing-hero))_92%)]" />
           </div>
 
-          <div dir="ltr" className="relative flex h-full flex-col items-center justify-center gap-7 px-5 pb-7 pt-8 lg:flex-row lg:gap-16 lg:px-24 lg:py-0">
+          <div dir="ltr" className="relative flex h-full flex-col items-center justify-center gap-7 px-5 pb-7 pt-8 lg:-translate-y-3 lg:flex-row lg:gap-16 lg:px-24 lg:py-0">
             <motion.div
               initial={{ opacity: 0, scale: 0.97, x: -20 }}
               animate={{ opacity: 1, scale: 1, x: 0 }}
