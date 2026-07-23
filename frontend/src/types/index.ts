@@ -321,6 +321,8 @@ export interface ClassStudent {
   id: string;
   name: string;
   email: string;
+  phone?: string;
+  inviteCode?: string;
   avatar: string;
   joinDate: string;
   progress: number;

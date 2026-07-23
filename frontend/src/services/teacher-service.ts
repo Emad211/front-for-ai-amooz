@@ -425,6 +425,8 @@ export const TeacherService = {
       id: r.id,
       name: r.name,
       email: r.email,
+      phone: r.phone,
+      inviteCode: r.inviteCode,
       avatar: r.avatar || '',
       joinDate: r.joinDate,
       progress: r.progress,

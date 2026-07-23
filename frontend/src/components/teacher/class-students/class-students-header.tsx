@@ -1,7 +1,7 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { ArrowRight, UserPlus, Download } from 'lucide-react';
+import { ArrowRight, UserPlus, Download, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 interface ClassStudentsHeaderProps {
@@ -9,6 +9,7 @@ interface ClassStudentsHeaderProps {
   studentsCount: number;
   onAddStudent?: () => void;
   onExport?: () => void;
+  isExporting?: boolean;
   /** Org classes manage their roster via study groups → hide the add button. */
   canManageRoster?: boolean;
 }
@@ -18,6 +19,7 @@ export function ClassStudentsHeader({
   studentsCount,
   onAddStudent,
   onExport,
+  isExporting = false,
   canManageRoster = true,
 }: ClassStudentsHeaderProps) {
   const router = useRouter();
@@ -35,8 +37,14 @@ export function ClassStudentsHeader({
         </div>
       </div>
       <div className="flex items-center gap-2 w-full sm:w-auto">
-        <Button variant="outline" size="sm" onClick={onExport} className="h-10 sm:h-9 flex-1 sm:flex-none">
-          <Download className="h-4 w-4 sm:ml-2" />
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={onExport}
+          disabled={!studentsCount || isExporting}
+          className="h-10 sm:h-9 flex-1 sm:flex-none"
+        >
+          {isExporting ? <Loader2 className="h-4 w-4 animate-spin sm:ml-2" /> : <Download className="h-4 w-4 sm:ml-2" />}
           <span className="hidden sm:inline">خروجی اکسل</span>
         </Button>
         {canManageRoster && (

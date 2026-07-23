@@ -3,8 +3,9 @@
 import { use, useCallback, useEffect, useState } from 'react';
 import { Info, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
-import { ClassStudentsHeader, ClassStudentsStats, ClassStudentsTable } from '@/components/teacher/class-students';
-import { deleteExamPrepInvite, fetchExamPrepSession, listExamPrepInvites, type ClassInvite } from '@/services/classes-service';
+import { ClassStudentsHeader, ClassStudentsStats, ClassStudentsTable, InviteStudentsDialog } from '@/components/teacher/class-students';
+import { addExamPrepInvites, deleteExamPrepInvite, fetchExamPrepSession, listExamPrepInvites, type ClassInvite } from '@/services/classes-service';
+import { exportClassStudentsXlsx } from '@/lib/export-class-students-xlsx';
 import type { ClassStudent } from '@/types';
 
 interface PageProps {
@@ -18,6 +19,8 @@ export default function TeacherExamStudentsPage({ params }: PageProps) {
   const [isOrgExam, setIsOrgExam] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [inviteOpen, setInviteOpen] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
 
   const loadData = useCallback(async () => {
     const sessionId = Number(examId);
@@ -63,6 +66,18 @@ export default function TeacherExamStudentsPage({ params }: PageProps) {
     }
   };
 
+  const handleExport = async () => {
+    setIsExporting(true);
+    try {
+      await exportClassStudentsXlsx(title, students);
+      toast.success('فایل اکسل آماده شد.');
+    } catch (exportError) {
+      toast.error(exportError instanceof Error ? exportError.message : 'ساخت فایل اکسل انجام نشد.');
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
@@ -85,6 +100,19 @@ export default function TeacherExamStudentsPage({ params }: PageProps) {
         title={title}
         studentsCount={students.length}
         canManageRoster={!isOrgExam}
+        onAddStudent={() => setInviteOpen(true)}
+        onExport={() => void handleExport()}
+        isExporting={isExporting}
+      />
+      <InviteStudentsDialog
+        open={inviteOpen}
+        onOpenChange={setInviteOpen}
+        destinationTitle={title}
+        successMessage="دعوت دانش‌آموزان به آمادگی آزمون ثبت شد."
+        onSubmit={async (phones) => {
+          await addExamPrepInvites(Number(examId), phones);
+          await loadData();
+        }}
       />
 
       {isOrgExam && (
@@ -115,7 +143,9 @@ function mapInvitesToStudents(invites: ClassInvite[]): ClassStudent[] {
   return invites.map((inv) => ({
     id: String(inv.id),
     name: inv.phone,
-    email: inv.invite_code,
+    email: '',
+    phone: inv.phone,
+    inviteCode: inv.invite_code,
     avatar: '',
     joinDate: inv.created_at,
     progress: 0,

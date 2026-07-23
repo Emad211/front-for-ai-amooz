@@ -58,8 +58,9 @@ export function ClassStudentsTable({
   const [statusFilter, setStatusFilter] = useState<string>('all');
 
   const filteredStudents = students.filter(student => {
-    const matchesSearch = student.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                         student.email.toLowerCase().includes(searchQuery.toLowerCase());
+    const normalizedQuery = searchQuery.toLowerCase();
+    const matchesSearch = [student.name, student.email, student.phone, student.inviteCode]
+      .some((value) => value?.toLowerCase().includes(normalizedQuery));
     const matchesStatus = statusFilter === 'all' || student.status === statusFilter;
     return matchesSearch && matchesStatus;
   });
@@ -111,7 +112,11 @@ export function ClassStudentsTable({
                     </Avatar>
                     <div className="min-w-0">
                       <p className="font-medium text-sm truncate">{student.name}</p>
-                      <p className="text-xs text-muted-foreground truncate">{student.email}</p>
+                      <p className="text-xs text-muted-foreground truncate">
+                        {[student.phone, student.email, student.inviteCode]
+                          .filter((value) => value && value !== student.name)
+                          .join(' • ')}
+                      </p>
                     </div>
                   </div>
                   <DropdownMenu>
@@ -193,7 +198,11 @@ export function ClassStudentsTable({
                         </Avatar>
                         <div>
                           <p className="font-medium text-sm">{student.name}</p>
-                          <p className="text-xs text-muted-foreground">{student.email}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {[student.phone, student.email, student.inviteCode]
+                              .filter((value) => value && value !== student.name)
+                              .join(' • ')}
+                          </p>
                         </div>
                       </div>
                     </TableCell>
