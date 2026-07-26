@@ -62,7 +62,7 @@ export function FileUploadSection({
                 فایل‌ها را بکشید و رها کنید یا <span className="text-primary font-medium">کلیک کنید</span>
               </p>
               <p className="text-[10px] sm:text-xs text-muted-foreground">
-                صوت / ویدیو / PDF
+                صوت / ویدیو / تصویر / PDF
               </p>
             </div>
             <input

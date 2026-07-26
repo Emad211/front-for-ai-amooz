@@ -95,6 +95,105 @@ class ExamPrepOutput(BaseModel):
     exam_prep: ExamPrepInner = Field(default_factory=ExamPrepInner)
 
 
+class ExamPrepPageManifestItem(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    page_number: int = Field(ge=1)
+    section_type: Literal["cover", "questions", "answers", "mixed", "other"]
+    section_key: str = ""
+    question_numbers: List[str] = Field(default_factory=list)
+    answer_numbers: List[str] = Field(default_factory=list)
+    has_visuals: bool = False
+    confidence: float = Field(ge=0, le=1)
+
+
+class ExamPrepPageManifestOutput(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    title: str = ""
+    pages: List[ExamPrepPageManifestItem] = Field(default_factory=list)
+
+
+class ExamPrepInventoryOption(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    label: str
+    text_markdown: str
+
+
+class ExamPrepQuestionRecord(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    source_question_number: Optional[str] = None
+    section_key: str = ""
+    source_pages: List[int] = Field(default_factory=list)
+    block_order: int = Field(ge=0)
+    question_text_markdown: str
+    options: List[ExamPrepInventoryOption] = Field(default_factory=list)
+    visual_hints: List[str] = Field(default_factory=list)
+    confidence: float = Field(default=0, ge=0, le=1)
+
+
+class ExamPrepQuestionInventoryOutput(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    questions: List[ExamPrepQuestionRecord] = Field(default_factory=list)
+
+
+class ExamPrepAnswerRecord(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    source_question_number: Optional[str] = None
+    section_key: str = ""
+    source_pages: List[int] = Field(default_factory=list)
+    block_order: int = Field(ge=0)
+    correct_option_label: Optional[str] = None
+    correct_option_text_markdown: Optional[str] = None
+    teacher_solution_markdown: str = ""
+    final_answer_markdown: str = ""
+    visual_hints: List[str] = Field(default_factory=list)
+    confidence: float = Field(default=0, ge=0, le=1)
+
+
+class ExamPrepAnswerInventoryOutput(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    answers: List[ExamPrepAnswerRecord] = Field(default_factory=list)
+
+
+class ExamPrepVisualRegion(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    question_number: Optional[str] = None
+    section_key: str = ""
+    role: Literal["question", "option", "solution"]
+    option_label: Optional[str] = None
+    bbox: List[float] = Field(min_length=4, max_length=4)
+    order: int = Field(default=0, ge=0)
+    alt_text: str
+    visual_type: str
+    exact_text: List[str] = Field(default_factory=list)
+    specification: dict[str, Any] = Field(default_factory=dict)
+    confidence: float = Field(default=0, ge=0, le=1)
+
+
+class ExamPrepVisualDetectionOutput(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    visuals: List[ExamPrepVisualRegion] = Field(default_factory=list)
+
+
+class ExamPrepVisualVerificationOutput(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    equivalent: bool
+    labels_match: bool
+    numbers_match: bool
+    topology_matches: bool
+    confidence: float = Field(ge=0, le=1)
+    issues: List[str] = Field(default_factory=list)
+
+
 # ---------------------------------------------------------------------------
 # Exercise Hub — exercise structure extraction (services/exercise_ingest.py).
 # Contract source of truth: ``PROMPTS['exercise_structure']['default']``.

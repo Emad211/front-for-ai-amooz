@@ -182,6 +182,20 @@ async function requestJson<T>(url: string, options: RequestInit): Promise<T> {
   }
   return payload as T;
 }
+
+async function requestBlob(url: string, signal?: AbortSignal): Promise<Blob> {
+  let headers = new Headers({ Authorization: `Bearer ${getAccessToken()}` });
+  let response = await fetch(url, { headers, signal });
+  if (response.status === 401) {
+    const newAccess = await refreshAccessToken();
+    headers = new Headers({ Authorization: `Bearer ${newAccess}` });
+    response = await fetch(url, { headers, signal });
+  }
+  if (!response.ok) {
+    throw new Error(extractErrorMessage(await parseJson(response), response.statusText));
+  }
+  return response.blob();
+}
 export async function getClassCreationSessionDetail(sessionId: number): Promise<ClassCreationSessionDetail> {
   const url = `${API_URL}/classes/creation-sessions/${sessionId}/`;
 
@@ -818,6 +832,51 @@ export interface ExamPrepSessionDetail {
   readyForReview?: boolean;
   reviewReadyNotifiedAt?: string | null;
   pendingExercises?: PendingExerciseSnapshot[];
+  extractionAudit?: ExamPrepExtractionAudit | null;
+  extractionVersion?: number;
+  visualAssets?: ExamPrepVisualAsset[];
+  extractionReview?: {
+    unmatchedAnswers: Array<Record<string, unknown>>;
+    failedChunks: Array<Record<string, unknown>>;
+    pageManifest: Record<string, unknown>;
+  } | null;
+}
+
+export interface ExamPrepExtractionIssue {
+  code: string;
+  severity: 'critical' | 'warning' | string;
+  questionKey?: string;
+  sourcePages?: number[];
+  sourceQuestionNumber?: string;
+  detail?: unknown;
+}
+
+export interface ExamPrepExtractionAudit {
+  status: 'passed' | 'needs_review';
+  questionCount: number;
+  matchedAnswerCount: number;
+  outOfScopeAnswerCount: number;
+  criticalIssueCount: number;
+  issues: ExamPrepExtractionIssue[];
+}
+
+export interface ExamPrepVisualRef {
+  id: number;
+  role: 'question' | 'option' | 'solution';
+  optionLabel?: string | null;
+  altText: string;
+  selectedVariant: 'source' | 'generated';
+}
+
+export interface ExamPrepVisualAsset extends ExamPrepVisualRef {
+  questionKey: string;
+  status: string;
+  teacherApprovedGenerated: boolean;
+  hasGeneratedCandidate: boolean;
+  sourceUrl: string;
+  generatedUrl?: string | null;
+  verification?: Record<string, unknown>;
+  visualSpec?: Record<string, unknown>;
 }
 
 export interface ExamPrepData {
@@ -827,6 +886,14 @@ export interface ExamPrepData {
     questions: ExamPrepQuestion[];
   };
 }
+
+export type ExamPrepSessionUpdatePayload = Partial<{
+  title: string;
+  description: string;
+  level: string;
+  duration: string;
+  exam_prep_json: ExamPrepData;
+}>;
 
 export interface ExamPrepQuestion {
   question_id: string;
@@ -838,6 +905,7 @@ export interface ExamPrepQuestion {
   final_answer_markdown: string;
   confidence: number;
   issues?: string[];
+  visuals?: ExamPrepVisualRef[];
 }
 
 /**
@@ -913,6 +981,26 @@ export async function fetchExamPrepSession(sessionId: number): Promise<ExamPrepS
   return payload as ExamPrepSessionDetail;
 }
 
+export async function retryExamPrepExtraction(
+  sessionId: number,
+): Promise<ExamPrepSessionDetail> {
+  if (!RAW_API_URL) {
+    throw new Error('NEXT_PUBLIC_API_URL تنظیم نشده است.');
+  }
+
+  return requestJson<ExamPrepSessionDetail>(
+    `${API_URL}/classes/exam-prep-sessions/step-2/`,
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${getAccessToken()}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ session_id: sessionId }),
+    },
+  );
+}
+
 /**
  * Publish an exam prep session.
  */
@@ -930,6 +1018,45 @@ export async function publishExamPrepSession(sessionId: number): Promise<ExamPre
   });
 
   return payload as ExamPrepSessionDetail;
+}
+
+export async function selectExamPrepVisual(
+  sessionId: number,
+  assetId: number,
+  selectedVariant: 'source' | 'generated',
+): Promise<{
+  id: number;
+  selectedVariant: 'source' | 'generated';
+  teacherApprovedGenerated: boolean;
+}> {
+  if (!RAW_API_URL) {
+    throw new Error('NEXT_PUBLIC_API_URL تنظیم نشده است.');
+  }
+  return requestJson(
+    `${API_URL}/classes/exam-prep-sessions/${sessionId}/visuals/${assetId}/`,
+    {
+      method: 'PATCH',
+      headers: {
+        Authorization: `Bearer ${getAccessToken()}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ selectedVariant }),
+    },
+  );
+}
+
+export async function getExamPrepVisualBlob(
+  relativeUrl: string,
+  signal?: AbortSignal,
+): Promise<Blob> {
+  if (!RAW_API_URL) {
+    throw new Error('NEXT_PUBLIC_API_URL تنظیم نشده است.');
+  }
+  const apiOrigin = API_URL.replace(/\/api$/, '');
+  const url = relativeUrl.startsWith('http')
+    ? relativeUrl
+    : `${apiOrigin}${relativeUrl.startsWith('/') ? '' : '/'}${relativeUrl}`;
+  return requestBlob(url, signal);
 }
 
 /**
@@ -980,13 +1107,7 @@ export async function listExamPrepSessions(organizationId?: number | null): Prom
  */
 export async function updateExamPrepSession(
   sessionId: number,
-  data: Partial<{
-    title: string;
-    description: string;
-    level: string;
-    duration: string;
-    exam_prep_json: any;
-  }>,
+  data: ExamPrepSessionUpdatePayload,
 ): Promise<ExamPrepSessionDetail> {
   if (!RAW_API_URL) {
     throw new Error('NEXT_PUBLIC_API_URL تنظیم نشده است.');

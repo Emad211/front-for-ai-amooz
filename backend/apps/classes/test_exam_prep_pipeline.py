@@ -317,8 +317,10 @@ class TestExamPrepStep2Structure:
         assert res.status_code == 202
         assert res.data['status'] == ClassCreationSession.Status.EXAM_STRUCTURING
 
-    def test_rejects_session_in_wrong_status(self, teacher_with_transcribed_session):
-        """Should reject if session is not in EXAM_TRANSCRIBED status."""
+    def test_repeated_step2_request_is_idempotent_while_structuring(
+        self, teacher_with_transcribed_session
+    ):
+        """A repeated request observes the running job without dispatching another one."""
         user, session = teacher_with_transcribed_session
         session.status = ClassCreationSession.Status.EXAM_STRUCTURING
         session.save()
@@ -331,7 +333,8 @@ class TestExamPrepStep2Structure:
             '/api/classes/exam-prep-sessions/step-2/',
             {'session_id': session.id},
         )
-        assert res.status_code == 409
+        assert res.status_code == 202
+        assert res.data["status"] == ClassCreationSession.Status.EXAM_STRUCTURING
 
 
 @pytest.mark.django_db

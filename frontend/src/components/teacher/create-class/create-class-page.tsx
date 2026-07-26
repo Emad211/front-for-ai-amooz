@@ -894,7 +894,7 @@ export function CreateClassPage() {
           title={pipelineType === 'class' ? 'بارگذاری فایل درسی' : 'بارگذاری فایل حل تست'}
           isExpanded={expandedSections.includes('files')}
           onToggle={() => toggleSection('files')}
-          accept="audio/*,video/*,application/pdf,.pdf"
+          accept="audio/*,video/*,image/*,application/pdf,.pdf"
           multiple={false}
           onFilesSelected={(files) => {
             const file = files && files.length ? files[0] : null;
@@ -918,7 +918,7 @@ export function CreateClassPage() {
           <div className="mt-4 space-y-3">
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
               <div className="text-xs text-muted-foreground">
-                {lessonFile ? `فایل انتخاب‌شده: ${lessonFile.name}` : 'یک فایل صوتی، ویدیویی یا PDF انتخاب کنید.'}
+                {lessonFile ? `فایل انتخاب‌شده: ${lessonFile.name}` : 'یک فایل صوتی، ویدیویی، تصویری یا PDF انتخاب کنید.'}
               </div>
             </div>
 

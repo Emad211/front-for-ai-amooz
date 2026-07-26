@@ -45,6 +45,13 @@ export interface Question {
   }[];
   correctOptionId?: string;
   userAnswerId?: string;
+  visuals?: {
+    id: number;
+    role: 'question' | 'option';
+    optionLabel?: string | null;
+    altText: string;
+    url: string;
+  }[];
 }
 
 export interface Lesson {

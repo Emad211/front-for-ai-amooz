@@ -34,7 +34,7 @@ import io
 import logging
 import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import Optional
+from typing import Callable, Optional
 
 from django.conf import settings
 
@@ -165,7 +165,13 @@ def _grayscale_std(pil) -> float:
 # Vision call (text only)
 # ---------------------------------------------------------------------------
 
-def _vision_extract_page(*, png: bytes, page_no: int, model: str) -> "tuple[str, str, str]":
+def _vision_extract_page(
+    *,
+    png: bytes,
+    page_no: int,
+    model: str,
+    content_type: str = "image/png",
+) -> "tuple[str, str, str]":
     """Send one rendered page to the multimodal model. Returns (md, provider, model).
 
     Uses the standard OpenAI-compatible multimodal shape (a ``content`` list with
@@ -181,7 +187,7 @@ def _vision_extract_page(*, png: bytes, page_no: int, model: str) -> "tuple[str,
                 "role": "user",
                 "content": [
                     {"type": "text", "text": prompt},
-                    {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{b64}"}},
+                    {"type": "image_url", "image_url": {"url": f"data:{content_type};base64,{b64}"}},
                 ],
             }
         ],
@@ -193,6 +199,21 @@ def _vision_extract_page(*, png: bytes, page_no: int, model: str) -> "tuple[str,
     return text.strip(), getattr(res, "provider", "gapgpt"), getattr(res, "model", model)
 
 
+def extract_image_to_markdown(
+    *, data: bytes, mime_type: str
+) -> "tuple[str, str, str, int]":
+    """Extract one uploaded source image through the same vision contract as a PDF page."""
+    if not data or not (mime_type or "").lower().startswith("image/"):
+        raise PdfExtractionError("فایل ارسالی یک تصویر معتبر نیست.")
+    markdown, provider, model = _vision_extract_page(
+        png=data,
+        page_no=1,
+        model=_select_vision_model(),
+        content_type=mime_type,
+    )
+    return markdown, provider, model, 1
+
+
 # ---------------------------------------------------------------------------
 # Public entry
 # ---------------------------------------------------------------------------
@@ -202,6 +223,7 @@ def extract_pdf_to_markdown(
     data: bytes,
     mime_type: str = "application/pdf",
     asset_prefix: Optional[str] = None,  # accepted for back-compat; ignored
+    page_sink: Optional[Callable[[int, bytes, int, int], None]] = None,
 ) -> "tuple[str, str, str, int]":
     """Extract a PDF to plain-text Markdown. Returns (markdown, provider, model, page_count)."""
     import pypdfium2 as pdfium
@@ -272,7 +294,10 @@ def extract_pdf_to_markdown(
                 continue
 
             if pil is not None:
-                page_png[i] = _encode_png(pil, max_img_bytes)
+                png = _encode_png(pil, max_img_bytes)
+                page_png[i] = png
+                if page_sink is not None:
+                    page_sink(i + 1, png, int(pil.width), int(pil.height))
     finally:
         pdf.close()
 

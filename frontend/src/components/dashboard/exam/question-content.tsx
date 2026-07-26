@@ -6,6 +6,7 @@ import { Label } from '@/components/ui/label';
 import { ChevronLeft, ChevronRight, CheckCircle2, XCircle, Loader2, Lightbulb, MessageCircle } from 'lucide-react';
 import { Question } from '@/types';
 import { MarkdownWithMath } from '@/components/content/markdown-with-math';
+import { ProtectedExamVisual } from '@/components/exam-prep/protected-exam-visual';
 import { toPersianOptionLabel } from '@/lib/persian-option-label';
 import type { QuestionFeedback } from '@/hooks/use-exam';
 import {
@@ -118,6 +119,20 @@ export const QuestionContent = ({
             renderKey={question.id}
             className="text-foreground leading-8 text-base sm:text-lg"
           />
+          {question.visuals?.filter((visual) => visual.role === 'question').map((visual) => (
+            <figure key={visual.id} className="overflow-hidden rounded-lg border border-border bg-background">
+              <ProtectedExamVisual
+                url={visual.url}
+                alt={visual.altText || 'شکل سؤال'}
+                className="mx-auto max-h-[28rem] w-auto max-w-full object-contain"
+              />
+              {visual.altText && (
+                <figcaption className="border-t px-3 py-2 text-xs text-muted-foreground">
+                  {visual.altText}
+                </figcaption>
+              )}
+            </figure>
+          ))}
 
           {/* ===== TRUE / FALSE ===== */}
           {qType === 'true_false' && (
@@ -213,6 +228,19 @@ export const QuestionContent = ({
                           className="leading-7"
                         />
                       </div>
+                      {question.visuals
+                        ?.filter(
+                          (visual) =>
+                            visual.role === 'option' && visual.optionLabel === option.label,
+                        )
+                        .map((visual) => (
+                          <ProtectedExamVisual
+                            key={visual.id}
+                            url={visual.url}
+                            alt={visual.altText || `تصویر گزینه ${displayLabel}`}
+                            className="max-h-40 max-w-full rounded-md object-contain"
+                          />
+                        ))}
                     </div>
                   </Label>
                 );

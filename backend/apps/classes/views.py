@@ -16,8 +16,8 @@ from django.db import IntegrityError, transaction
 from django.utils import timezone
 
 logger = logging.getLogger(__name__)
-from django.http import HttpResponse
-from django.db.models import Count, F, Max, Min, Q
+from django.http import FileResponse, HttpResponse
+from django.db.models import Count, F, Max, Min, Prefetch, Q
 
 from rest_framework import status
 from rest_framework import serializers
@@ -30,7 +30,14 @@ from rest_framework.views import APIView
 from drf_spectacular.utils import extend_schema, OpenApiParameter
 from drf_spectacular.types import OpenApiTypes
 
-from .models import ClassAnnouncement, ClassCreationSession, ClassInvitation, ClassPrerequisite
+from .models import (
+    ClassAnnouncement,
+    ClassCreationSession,
+    ClassInvitation,
+    ClassPrerequisite,
+    ExamPrepExtractionArtifact,
+    ExamPrepVisualAsset,
+)
 from .models import ClassSection, ClassSectionQuiz, ClassSectionQuizAttempt
 from .models import ClassFinalExam, ClassFinalExamAttempt
 from .models import Enrollment, StudentInviteCode
@@ -320,6 +327,7 @@ from .services.exam_prep_utils import (
     normalize_exam_prep_questions as _normalize_exam_prep_questions,
     normalize_exam_prep_json as _normalize_exam_prep_json,
 )
+from .services.exam_prep_inventory import rebuild_audit_after_teacher_review
 
 from .services.student_chat_history import append_message, get_or_create_thread, list_messages
 from .services.student_exam_chat_history import (
@@ -3590,25 +3598,82 @@ class ExamPrepStep2StructureView(APIView):
         if session is None:
             return Response({'detail': 'جلسه آمادگی آزمون یافت نشد.'}, status=status.HTTP_404_NOT_FOUND)
 
-        if session.status != ClassCreationSession.Status.EXAM_TRANSCRIBED:
-            return Response(
-                {'detail': f'این جلسه در وضعیت {session.get_status_display()} است و قابل اجرای مرحله ۲ نیست.'},
-                status=status.HTTP_409_CONFLICT,
-            )
-
         with transaction.atomic():
-            locked = ClassCreationSession.objects.select_for_update().filter(
-                id=session_id, status=ClassCreationSession.Status.EXAM_TRANSCRIBED,
+            locked = ClassCreationSession.objects.select_for_update().select_related(
+                'exam_extraction_artifact'
+            ).filter(
+                id=session_id,
+                teacher=request.user,
+                pipeline_type=ClassCreationSession.PipelineType.EXAM_PREP,
             ).first()
             if locked is None:
-                session.refresh_from_db()
-                return Response(ExamPrepStep2StructureResponseSerializer(session).data, status=status.HTTP_202_ACCEPTED)
-            locked.status = ClassCreationSession.Status.EXAM_STRUCTURING
-            locked.save(update_fields=['status', 'updated_at'])
-            session = locked
+                return Response(
+                    {'detail': 'جلسه آمادگی آزمون یافت نشد.'},
+                    status=status.HTTP_404_NOT_FOUND,
+                )
+            if locked.status == ClassCreationSession.Status.EXAM_STRUCTURING:
+                session = locked
+                should_dispatch = False
+            else:
+                artifact = getattr(locked, 'exam_extraction_artifact', None)
+                is_v2_retry = bool(
+                    locked.status == ClassCreationSession.Status.EXAM_STRUCTURED
+                    and not locked.is_published
+                    and artifact
+                    and artifact.pipeline_version >= 2
+                    and (artifact.audit or {}).get('status') != 'passed'
+                )
+                if (
+                    locked.status != ClassCreationSession.Status.EXAM_TRANSCRIBED
+                    and not is_v2_retry
+                ):
+                    return Response(
+                        {
+                            'detail': (
+                                f'این جلسه در وضعیت {locked.get_status_display()} است '
+                                'و قابل اجرای مرحله ۲ نیست.'
+                            )
+                        },
+                        status=status.HTTP_409_CONFLICT,
+                    )
+                locked.status = ClassCreationSession.Status.EXAM_STRUCTURING
+                locked.save(update_fields=['status', 'updated_at'])
+                session = locked
+                should_dispatch = True
 
-        transaction.on_commit(lambda: process_exam_prep_step2_structure.delay(session.id))
-        return Response(ExamPrepStep2StructureResponseSerializer(session).data, status=status.HTTP_202_ACCEPTED)
+        if should_dispatch:
+            transaction.on_commit(
+                lambda: process_exam_prep_step2_structure.delay(session.id)
+            )
+        return Response(
+            ExamPrepSessionDetailSerializer(session).data,
+            status=status.HTTP_202_ACCEPTED,
+        )
+
+
+def _teacher_exam_prep_sessions(user, *, include_extraction_details=True):
+    sessions = (
+        ClassCreationSession.objects.filter(
+            teacher=user,
+            pipeline_type=ClassCreationSession.PipelineType.EXAM_PREP,
+        )
+        .select_related('teacher', 'exam_extraction_artifact')
+    )
+    if include_extraction_details:
+        return sessions.prefetch_related(
+            Prefetch(
+                'exam_extraction_artifact__visual_assets',
+                queryset=ExamPrepVisualAsset.objects.order_by('question_key', 'order'),
+            )
+        )
+    return sessions.defer(
+        'exam_extraction_artifact__source_blocks',
+        'exam_extraction_artifact__page_manifest',
+        'exam_extraction_artifact__question_records',
+        'exam_extraction_artifact__answer_records',
+        'exam_extraction_artifact__failed_chunks',
+        'exam_extraction_artifact__error_detail',
+    )
 
 
 class ExamPrepSessionDetailView(APIView):
@@ -3621,11 +3686,7 @@ class ExamPrepSessionDetailView(APIView):
         responses={200: ExamPrepSessionDetailSerializer, 404: OpenApiTypes.OBJECT},
     )
     def get(self, request, session_id: int):
-        session = ClassCreationSession.objects.filter(
-            id=session_id,
-            teacher=request.user,
-            pipeline_type=ClassCreationSession.PipelineType.EXAM_PREP,
-        ).first()
+        session = _teacher_exam_prep_sessions(request.user).filter(id=session_id).first()
 
         if session is None:
             return Response({'detail': 'جلسه آمادگی آزمون یافت نشد.'}, status=status.HTTP_404_NOT_FOUND)
@@ -3639,11 +3700,7 @@ class ExamPrepSessionDetailView(APIView):
         responses={200: ExamPrepSessionDetailSerializer, 404: OpenApiTypes.OBJECT},
     )
     def patch(self, request, session_id: int):
-        session = ClassCreationSession.objects.filter(
-            id=session_id,
-            teacher=request.user,
-            pipeline_type=ClassCreationSession.PipelineType.EXAM_PREP,
-        ).first()
+        session = _teacher_exam_prep_sessions(request.user).filter(id=session_id).first()
 
         if session is None:
             return Response({'detail': 'جلسه آمادگی آزمون یافت نشد.'}, status=status.HTTP_404_NOT_FOUND)
@@ -3672,7 +3729,21 @@ class ExamPrepSessionDetailView(APIView):
 
         if updated_fields:
             updated_fields.append('updated_at')
-            session.save(update_fields=updated_fields)
+            with transaction.atomic():
+                session.save(update_fields=updated_fields)
+                artifact = getattr(session, 'exam_extraction_artifact', None)
+                if 'exam_prep_json' in data and artifact and artifact.pipeline_version >= 2:
+                    parsed_projection = json.loads(session.exam_prep_json or '{}')
+                    projection = parsed_projection if isinstance(parsed_projection, dict) else {}
+                    artifact.audit = rebuild_audit_after_teacher_review(
+                        projection=projection,
+                        previous_audit=artifact.audit or {},
+                        available_visual_ids={
+                            visual.id for visual in artifact.visual_assets.all()
+                        },
+                    )
+                    artifact.audit['teacherReviewedAt'] = timezone.now().isoformat()
+                    artifact.save(update_fields=['audit', 'updated_at'])
 
         return Response(ExamPrepSessionDetailSerializer(session).data)
 
@@ -3682,11 +3753,7 @@ class ExamPrepSessionDetailView(APIView):
         responses={204: None, 404: OpenApiTypes.OBJECT},
     )
     def delete(self, request, session_id: int):
-        session = ClassCreationSession.objects.filter(
-            id=session_id,
-            teacher=request.user,
-            pipeline_type=ClassCreationSession.PipelineType.EXAM_PREP,
-        ).first()
+        session = _teacher_exam_prep_sessions(request.user).filter(id=session_id).first()
 
         if session is None:
             return Response({'detail': 'جلسه آمادگی آزمون یافت نشد.'}, status=status.HTTP_404_NOT_FOUND)
@@ -3707,11 +3774,7 @@ class ExamPrepSessionCancelView(APIView):
         responses={200: ExamPrepSessionDetailSerializer, 404: OpenApiTypes.OBJECT, 409: OpenApiTypes.OBJECT},
     )
     def post(self, request, session_id: int):
-        session = ClassCreationSession.objects.filter(
-            id=session_id,
-            teacher=request.user,
-            pipeline_type=ClassCreationSession.PipelineType.EXAM_PREP,
-        ).first()
+        session = _teacher_exam_prep_sessions(request.user).filter(id=session_id).first()
         if session is None:
             return Response({'detail': 'جلسه آمادگی آزمون یافت نشد.'}, status=status.HTTP_404_NOT_FOUND)
 
@@ -3744,9 +3807,9 @@ class ExamPrepSessionListView(APIView):
         responses={200: ExamPrepSessionDetailSerializer(many=True)},
     )
     def get(self, request):
-        sessions = ClassCreationSession.objects.filter(
-            teacher=request.user,
-            pipeline_type=ClassCreationSession.PipelineType.EXAM_PREP,
+        sessions = _teacher_exam_prep_sessions(
+            request.user,
+            include_extraction_details=False,
         )
 
         org_param = request.query_params.get('organization')
@@ -3763,7 +3826,13 @@ class ExamPrepSessionListView(APIView):
             ),
         ).order_by('-created_at')
 
-        return Response(ExamPrepSessionDetailSerializer(sessions, many=True).data)
+        return Response(
+            ExamPrepSessionDetailSerializer(
+                sessions,
+                many=True,
+                context={'includeExtractionDetails': False},
+            ).data
+        )
 
 
 class ExamPrepSessionPublishView(APIView):
@@ -3777,11 +3846,7 @@ class ExamPrepSessionPublishView(APIView):
         responses={200: ExamPrepSessionDetailSerializer, 400: OpenApiTypes.OBJECT, 404: OpenApiTypes.OBJECT},
     )
     def post(self, request, session_id: int):
-        session = ClassCreationSession.objects.filter(
-            id=session_id,
-            teacher=request.user,
-            pipeline_type=ClassCreationSession.PipelineType.EXAM_PREP,
-        ).first()
+        session = _teacher_exam_prep_sessions(request.user).filter(id=session_id).first()
 
         if session is None:
             return Response({'detail': 'جلسه آمادگی آزمون یافت نشد.'}, status=status.HTTP_404_NOT_FOUND)
@@ -3791,6 +3856,30 @@ class ExamPrepSessionPublishView(APIView):
                 {'detail': f'فقط جلسه‌های با وضعیت exam_structured قابل انتشار هستند. وضعیت فعلی: {session.status}'},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+
+        artifact = getattr(session, 'exam_extraction_artifact', None)
+        if artifact is not None and artifact.pipeline_version >= 2:
+            audit = artifact.audit or {}
+            if audit.get('status') != 'passed' or int(audit.get('criticalIssueCount') or 0) > 0:
+                return Response(
+                    {
+                        'detail': 'پیش از انتشار، خطاهای بحرانی استخراج را در بخش بازبینی برطرف کنید.',
+                        'code': 'extraction_review_required',
+                        'audit': audit,
+                    },
+                    status=status.HTTP_409_CONFLICT,
+                )
+            if artifact.visual_assets.filter(
+                selected_variant=ExamPrepVisualAsset.SelectedVariant.GENERATED,
+                teacher_approved_generated=False,
+            ).exists():
+                return Response(
+                    {
+                        'detail': 'نسخه بازطراحی‌شده تصویر باید پیش از انتشار توسط معلم تأیید شود.',
+                        'code': 'visual_approval_required',
+                    },
+                    status=status.HTTP_409_CONFLICT,
+                )
 
         # Atomic update to prevent double publish from concurrent requests.
         now = timezone.now()
@@ -3814,6 +3903,101 @@ class ExamPrepSessionPublishView(APIView):
             transaction.on_commit(_dispatch_exam_publish_sms)
 
         return Response(ExamPrepSessionDetailSerializer(session).data)
+
+
+class ExamPrepVisualAssetView(APIView):
+    """Select the original crop or an automatically verified generated candidate."""
+
+    permission_classes = [IsAuthenticated, IsTeacherUser]
+
+    def patch(self, request, session_id: int, asset_id: int):
+        asset = ExamPrepVisualAsset.objects.select_related(
+            'artifact__session'
+        ).filter(
+            id=asset_id,
+            artifact__session_id=session_id,
+            artifact__session__teacher=request.user,
+        ).first()
+        if asset is None:
+            return Response({'detail': 'تصویر یافت نشد.'}, status=status.HTTP_404_NOT_FOUND)
+        variant = str(request.data.get('selectedVariant') or '').strip()
+        if variant not in {
+            ExamPrepVisualAsset.SelectedVariant.SOURCE,
+            ExamPrepVisualAsset.SelectedVariant.GENERATED,
+        }:
+            return Response({'detail': 'نسخه تصویر نامعتبر است.'}, status=status.HTTP_400_BAD_REQUEST)
+        if variant == ExamPrepVisualAsset.SelectedVariant.GENERATED:
+            if not asset.generated_file or asset.status != ExamPrepVisualAsset.Status.VERIFIED:
+                return Response(
+                    {'detail': 'نسخه بازطراحی‌شده هنوز تأیید خودکار نشده است.'},
+                    status=status.HTTP_409_CONFLICT,
+                )
+            asset.teacher_approved_generated = True
+        else:
+            asset.teacher_approved_generated = False
+        asset.selected_variant = variant
+        asset.save(update_fields=['selected_variant', 'teacher_approved_generated', 'updated_at'])
+        return Response({
+            'id': asset.id,
+            'selectedVariant': asset.selected_variant,
+            'teacherApprovedGenerated': asset.teacher_approved_generated,
+        })
+
+
+class ExamPrepVisualAssetContentView(APIView):
+    """Stream a private visual to its owner or an invited student."""
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, session_id: int, asset_id: int):
+        asset = ExamPrepVisualAsset.objects.select_related(
+            'artifact__session'
+        ).filter(id=asset_id, artifact__session_id=session_id).first()
+        if asset is None:
+            return Response({'detail': 'تصویر یافت نشد.'}, status=status.HTTP_404_NOT_FOUND)
+        session = asset.artifact.session
+        is_teacher = session.teacher_id == request.user.id
+        phone = (getattr(request.user, 'phone', '') or '').strip()
+        is_student = bool(
+            session.is_published and phone and session.invites.filter(phone=phone).exists()
+        )
+        if not is_teacher and not is_student:
+            return Response({'detail': 'تصویر یافت نشد.'}, status=status.HTTP_404_NOT_FOUND)
+        if is_student and asset.role == ExamPrepVisualAsset.Role.SOLUTION:
+            return Response({'detail': 'تصویر یافت نشد.'}, status=status.HTTP_404_NOT_FOUND)
+
+        variant = request.query_params.get('variant')
+        if variant not in {None, 'source', 'generated'}:
+            return Response(
+                {'detail': 'نسخه تصویر نامعتبر است.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if variant is None:
+            variant = (
+                asset.selected_variant
+                if asset.selected_variant == ExamPrepVisualAsset.SelectedVariant.GENERATED
+                and asset.teacher_approved_generated
+                else ExamPrepVisualAsset.SelectedVariant.SOURCE
+            )
+        if variant == 'generated':
+            if not is_teacher and not (
+                asset.selected_variant == ExamPrepVisualAsset.SelectedVariant.GENERATED
+                and asset.teacher_approved_generated
+            ):
+                return Response({'detail': 'تصویر یافت نشد.'}, status=status.HTTP_404_NOT_FOUND)
+            field = asset.generated_file
+            content_type = asset.generated_content_type or 'image/png'
+        else:
+            field = asset.source_file
+            content_type = asset.source_content_type or 'image/png'
+        if not field:
+            return Response({'detail': 'تصویر یافت نشد.'}, status=status.HTTP_404_NOT_FOUND)
+        from core.storage_backends import open_answer_source_file
+        try:
+            stream = open_answer_source_file(field)
+        except Exception:
+            return Response({'detail': 'فایل تصویر در دسترس نیست.'}, status=status.HTTP_404_NOT_FOUND)
+        return FileResponse(stream, content_type=content_type)
 
 
 # ==========================================================================
@@ -4244,12 +4428,26 @@ class StudentExamPrepDetailView(APIView):
                         opts.append({'label': label, 'text_markdown': text_md})
 
             if qid:
+                visuals = []
+                for visual in q.get('visuals') or []:
+                    if not isinstance(visual, dict) or visual.get('role') == 'solution':
+                        continue
+                    visual_id = visual.get('id')
+                    if visual_id:
+                        visuals.append({
+                            'id': visual_id,
+                            'role': visual.get('role'),
+                            'optionLabel': visual.get('optionLabel'),
+                            'altText': visual.get('altText') or '',
+                            'url': f'/api/classes/exam-prep-sessions/{session.id}/visuals/{visual_id}/content/',
+                        })
                 safe_questions.append(
                     {
                         'question_id': qid,
                         'question_text_markdown': qtext,
                         'type': qtype,
                         'options': opts,
+                        'visuals': visuals,
                     }
                 )
 

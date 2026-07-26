@@ -43,6 +43,12 @@ LIVE_KEYS = {
     "structure_content": ["default"],
     "recap_and_notes": ["default"],
     "exam_prep_structure": ["default"],
+    "exam_prep_page_manifest": ["default"],
+    "exam_prep_question_inventory": ["default"],
+    "exam_prep_answer_inventory": ["default"],
+    "exam_prep_visual_detection": ["default"],
+    "exam_prep_visual_generation": ["default"],
+    "exam_prep_visual_verification": ["default"],
     "exercise_structure": ["default"],
     "exercise_reference_ingest": ["default"],
     "exercise_grading": ["default"],
@@ -108,6 +114,7 @@ PLACEHOLDERS = {
     ("image_plan", "default"): ["{unit_content}", "{user_message}"],
     ("text_grading", "default"): ["{question}", "{reference_answer}", "{student_answer}"],
     ("exercise_grading", "default"): ["{grading_items_json}"],
+    ("exam_prep_visual_generation", "default"): ["{visual_spec_json}"],
     ("exercise_reference_ingest", "default"): [
         "{mode_hint}", "{existing_questions_json}", "{source_markdown}",
     ],
@@ -199,6 +206,30 @@ OUTPUT_KEYS = {
     # Quoted on purpose: the schema's single key would otherwise match trivially.
     ("exercise_handwriting_vision", "default"): [
         '"text"', '"quality"', '"unclear_parts"',
+    ],
+    ("exam_prep_page_manifest", "default"): [
+        "title", "pages", "page_number", "section_type", "section_key",
+        "question_numbers", "answer_numbers", "has_visuals", "confidence",
+    ],
+    ("exam_prep_question_inventory", "default"): [
+        "questions", "source_question_number", "section_key", "source_pages",
+        "block_order", "question_text_markdown", "options", "visual_hints",
+        "confidence",
+    ],
+    ("exam_prep_answer_inventory", "default"): [
+        "answers", "source_question_number", "section_key", "source_pages",
+        "block_order", "correct_option_label", "correct_option_text_markdown",
+        "teacher_solution_markdown", "final_answer_markdown", "visual_hints",
+        "confidence",
+    ],
+    ("exam_prep_visual_detection", "default"): [
+        "visuals", "question_number", "section_key", "role", "option_label",
+        "bbox", "order", "alt_text", "visual_type", "exact_text",
+        "specification", "confidence",
+    ],
+    ("exam_prep_visual_verification", "default"): [
+        "equivalent", "labels_match", "numbers_match", "topology_matches",
+        "confidence", "issues",
     ],
     ("exercise_answer_bundle_vision", "default"): [
         '"text"', '"quality"', '"unclear_parts"',
@@ -298,6 +329,11 @@ def test_shared_safety_block_injected_into_untrusted_content_prompts():
         ("recap_and_notes", "default"),
         ("prerequisites_prompt", "default"),
         ("exam_prep_structure", "default"),
+        ("exam_prep_page_manifest", "default"),
+        ("exam_prep_question_inventory", "default"),
+        ("exam_prep_answer_inventory", "default"),
+        ("exam_prep_visual_detection", "default"),
+        ("exam_prep_visual_verification", "default"),
         ("exercise_structure", "default"),
         ("exercise_reference_ingest", "default"),
         ("chat_system_prompt", None),

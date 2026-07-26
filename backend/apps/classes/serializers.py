@@ -33,19 +33,20 @@ def is_pdf_upload(value) -> bool:
 
 
 def validate_step1_upload(value):
-    """Shared validation for Step 1 uploads: audio, video, or PDF.
+    """Shared validation for Step 1 uploads: audio, video, image, or PDF.
 
-    PDFs use the (smaller) PDF size cap; media uses the transcription cap.
+    PDFs and images use the smaller document cap; media uses the transcription cap.
     """
     content_type = (getattr(value, 'content_type', '') or '').lower()
     is_media = content_type.startswith('audio/') or content_type.startswith('video/')
+    is_image = content_type.startswith('image/')
     is_pdf = is_pdf_upload(value)
-    if not (is_media or is_pdf):
+    if not (is_media or is_image or is_pdf):
         raise serializers.ValidationError(
-            'Only audio, video, or PDF uploads are supported.'
+            'Only audio, video, image, or PDF uploads are supported.'
         )
 
-    if is_pdf:
+    if is_pdf or is_image:
         max_bytes = getattr(settings, 'PDF_MAX_UPLOAD_BYTES', 100 * 1024 * 1024)
     else:
         max_bytes = getattr(settings, 'TRANSCRIPTION_MAX_UPLOAD_BYTES', 500 * 1024 * 1024)
@@ -152,6 +153,73 @@ class Step1TranscribeRequestSerializer(serializers.Serializer):
                 'sources': norm_sources,
             })
         return out
+
+
+class ExamPrepExtractionReviewSerializerMixin:
+    extractionAudit = serializers.SerializerMethodField()
+    extractionVersion = serializers.SerializerMethodField()
+    visualAssets = serializers.SerializerMethodField()
+    extractionReview = serializers.SerializerMethodField()
+
+    def _artifact(self, obj):
+        return getattr(obj, 'exam_extraction_artifact', None)
+
+    def get_extractionAudit(self, obj):
+        artifact = self._artifact(obj)
+        return artifact.audit if artifact else None
+
+    def get_extractionVersion(self, obj):
+        artifact = self._artifact(obj)
+        return artifact.pipeline_version if artifact else 1
+
+    def get_visualAssets(self, obj):
+        if not self.context.get('includeExtractionDetails', True):
+            return []
+        artifact = self._artifact(obj)
+        if artifact is None:
+            return []
+        assets = sorted(
+            artifact.visual_assets.all(),
+            key=lambda asset: (asset.question_key, asset.order),
+        )
+        return [
+            {
+                'id': asset.id,
+                'questionKey': asset.question_key,
+                'role': asset.role,
+                'optionLabel': asset.option_label or None,
+                'altText': asset.alt_text,
+                'status': asset.status,
+                'selectedVariant': asset.selected_variant,
+                'teacherApprovedGenerated': asset.teacher_approved_generated,
+                'hasGeneratedCandidate': bool(asset.generated_file),
+                'sourceUrl': f'/api/classes/exam-prep-sessions/{obj.id}/visuals/{asset.id}/content/?variant=source',
+                'generatedUrl': (
+                    f'/api/classes/exam-prep-sessions/{obj.id}/visuals/{asset.id}/content/?variant=generated'
+                    if asset.generated_file else None
+                ),
+                'verification': asset.verification,
+                'visualSpec': asset.visual_spec,
+            }
+            for asset in assets
+        ]
+
+    def get_extractionReview(self, obj):
+        if not self.context.get('includeExtractionDetails', True):
+            return None
+        artifact = self._artifact(obj)
+        if artifact is None:
+            return None
+        return {
+            'unmatchedAnswers': [
+                answer
+                for answer in artifact.answer_records or []
+                if isinstance(answer, dict)
+                and answer.get('match_status') in {'unmatched', 'out_of_scope'}
+            ],
+            'failedChunks': artifact.failed_chunks or [],
+            'pageManifest': artifact.page_manifest or {},
+        }
 
 
 class Step1TranscribeResponseSerializer(serializers.ModelSerializer):
@@ -794,7 +862,10 @@ class ExamPrepStep2StructureResponseSerializer(serializers.ModelSerializer):
         ]
 
 
-class ExamPrepSessionDetailSerializer(serializers.ModelSerializer):
+class ExamPrepSessionDetailSerializer(
+    ExamPrepExtractionReviewSerializerMixin,
+    serializers.ModelSerializer,
+):
     """Detail serializer for Exam Prep sessions."""
     exam_prep_data = serializers.SerializerMethodField()
     invites_count = serializers.SerializerMethodField()
@@ -806,6 +877,10 @@ class ExamPrepSessionDetailSerializer(serializers.ModelSerializer):
     readyForReview = serializers.SerializerMethodField()
     reviewReadyNotifiedAt = serializers.SerializerMethodField()
     pendingExercises = serializers.SerializerMethodField()
+    extractionAudit = serializers.SerializerMethodField()
+    extractionVersion = serializers.SerializerMethodField()
+    visualAssets = serializers.SerializerMethodField()
+    extractionReview = serializers.SerializerMethodField()
 
     @extend_schema_field(serializers.DictField())
     def get_exam_prep_data(self, obj: ClassCreationSession):
@@ -878,6 +953,10 @@ class ExamPrepSessionDetailSerializer(serializers.ModelSerializer):
             'readyForReview',
             'reviewReadyNotifiedAt',
             'pendingExercises',
+            'extractionAudit',
+            'extractionVersion',
+            'visualAssets',
+            'extractionReview',
         ]
 
 
@@ -935,6 +1014,9 @@ class StudentExamPrepQuestionSerializer(serializers.Serializer):
         choices=['multiple_choice', 'true_false', 'fill_blank', 'short_answer']
     )
     options = serializers.ListField(child=serializers.DictField())
+    visuals = serializers.ListField(
+        child=serializers.DictField(), required=False, default=list
+    )
 
 
 class StudentExamPrepDetailSerializer(serializers.Serializer):

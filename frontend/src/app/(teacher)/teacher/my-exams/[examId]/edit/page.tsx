@@ -7,6 +7,7 @@ import {
   fetchExamPrepSession,
   updateExamPrepSession,
   type ExamPrepSessionDetail,
+  type ExamPrepSessionUpdatePayload,
 } from '@/services/classes-service';
 import { ExamEditHeader, ExamEditForm } from '@/components/teacher/exam-edit';
 
@@ -44,12 +45,12 @@ export default function TeacherExamEditPage({ params }: PageProps) {
     fetchData();
   }, [examId]);
 
-  const handleSave = async (data: Partial<ExamPrepSessionDetail>) => {
+  const handleSave = async (data: ExamPrepSessionUpdatePayload) => {
     if (!detail) return;
 
     setIsSaving(true);
     try {
-      const updated = await updateExamPrepSession(detail.id, data as any);
+      const updated = await updateExamPrepSession(detail.id, data);
       setDetail(updated);
       toast.success('تغییرات با موفقیت ذخیره شد');
     } catch (err) {

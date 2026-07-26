@@ -1,6 +1,6 @@
 'use client';
 
-import { use, useEffect, useRef, useState } from 'react';
+import { use, useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { Loader2, ArrowRight, CheckCircle, Users, FileQuestion, Calendar, Clock, AlertCircle, Edit3 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
@@ -11,9 +11,11 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/
 import { MarkdownWithMath } from '@/components/content/markdown-with-math';
 import { StudentInviteSection } from '@/components/teacher/create-class/student-invite-section';
 import { ClassAnnouncementsCard } from '@/components/teacher/class-detail';
+import { ExamExtractionReview } from '@/components/teacher/exam-edit/exam-extraction-review';
 import {
   fetchExamPrepSession,
   publishExamPrepSession,
+  retryExamPrepExtraction,
   type ExamPrepSessionDetail,
   listExamPrepInvites,
   type ClassInvite,
@@ -48,6 +50,28 @@ export default function TeacherExamDetailPage({ params }: PageProps) {
   const [invites, setInvites] = useState<ClassInvite[]>([]);
   const pollTimer = useRef<number | null>(null);
 
+  const stopPolling = useCallback(() => {
+    if (pollTimer.current) {
+      window.clearInterval(pollTimer.current);
+      pollTimer.current = null;
+    }
+  }, []);
+
+  const startPolling = useCallback((sessionId: number) => {
+    stopPolling();
+    pollTimer.current = window.setInterval(async () => {
+      try {
+        const updated = await fetchExamPrepSession(sessionId);
+        setExamPrep(updated);
+        if (!['exam_transcribing', 'exam_structuring'].includes(updated.status)) {
+          stopPolling();
+        }
+      } catch {
+        // A transient poll failure must not discard the last durable state.
+      }
+    }, 2000);
+  }, [stopPolling]);
+
   useEffect(() => {
     const sessionId = Number(examId);
     if (!Number.isFinite(sessionId)) {
@@ -72,23 +96,7 @@ export default function TeacherExamDetailPage({ params }: PageProps) {
 
         // Start polling if processing
         if (['exam_transcribing', 'exam_structuring'].includes(data.status)) {
-          if (!pollTimer.current) {
-            pollTimer.current = window.setInterval(async () => {
-              try {
-                const updated = await fetchExamPrepSession(sessionId);
-                setExamPrep(updated);
-
-                if (!['exam_transcribing', 'exam_structuring'].includes(updated.status)) {
-                  if (pollTimer.current) {
-                    window.clearInterval(pollTimer.current);
-                    pollTimer.current = null;
-                  }
-                }
-              } catch {
-                // Ignore polling errors
-              }
-            }, 2000);
-          }
+          startPolling(sessionId);
         }
       } catch (err) {
         setError(err instanceof Error ? err.message : 'خطا در دریافت اطلاعات آزمون');
@@ -100,12 +108,9 @@ export default function TeacherExamDetailPage({ params }: PageProps) {
     fetchData();
 
     return () => {
-      if (pollTimer.current) {
-        window.clearInterval(pollTimer.current);
-        pollTimer.current = null;
-      }
+      stopPolling();
     };
-  }, [examId]);
+  }, [examId, startPolling, stopPolling]);
 
   const handlePublish = async () => {
     if (!examPrep) return;
@@ -120,6 +125,18 @@ export default function TeacherExamDetailPage({ params }: PageProps) {
     } finally {
       setIsPublishing(false);
     }
+  };
+
+  const reloadExam = async () => {
+    const updated = await fetchExamPrepSession(Number(examId));
+    setExamPrep(updated);
+  };
+
+  const handleRetryExtraction = async () => {
+    const sessionId = Number(examId);
+    const updated = await retryExamPrepExtraction(sessionId);
+    setExamPrep(updated);
+    startPolling(sessionId);
   };
 
   if (isLoading) {
@@ -144,7 +161,13 @@ export default function TeacherExamDetailPage({ params }: PageProps) {
 
   const questions = examPrep.exam_prep_data?.exam_prep?.questions ?? [];
   const isProcessing = ['exam_transcribing', 'exam_structuring'].includes(examPrep.status);
-  const canPublish = examPrep.status === 'exam_structured' && !examPrep.is_published && questions.length > 0;
+  const extractionPassed =
+    !examPrep.extractionAudit || examPrep.extractionAudit.status === 'passed';
+  const canPublish =
+    examPrep.status === 'exam_structured'
+    && !examPrep.is_published
+    && questions.length > 0
+    && extractionPassed;
 
   const getStatusBadge = () => {
     if (examPrep.is_published) {
@@ -204,6 +227,12 @@ export default function TeacherExamDetailPage({ params }: PageProps) {
           )}
         </div>
       </div>
+
+      <ExamExtractionReview
+        exam={examPrep}
+        onChanged={reloadExam}
+        onRetry={handleRetryExtraction}
+      />
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6">
         {/* Main Content */}

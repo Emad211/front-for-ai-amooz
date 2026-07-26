@@ -167,6 +167,142 @@ class ClassCreationSession(models.Model):
         ]
 
 
+class ExamPrepExtractionArtifact(models.Model):
+    """Durable, reviewable state for inventory-first exam extraction."""
+
+    class Status(models.TextChoices):
+        COLLECTING_PAGES = 'collecting_pages', 'Collecting source pages'
+        INVENTORY = 'inventory', 'Building page inventory'
+        EXTRACTING = 'extracting', 'Extracting questions and answers'
+        MATCHING = 'matching', 'Matching answers'
+        VISUALS = 'visuals', 'Processing visuals'
+        READY = 'ready', 'Ready for review'
+        FAILED = 'failed', 'Failed'
+
+    session = models.OneToOneField(
+        ClassCreationSession,
+        on_delete=models.CASCADE,
+        related_name='exam_extraction_artifact',
+    )
+    pipeline_version = models.PositiveSmallIntegerField(default=2)
+    status = models.CharField(
+        max_length=32,
+        choices=Status.choices,
+        default=Status.COLLECTING_PAGES,
+        db_index=True,
+    )
+    source_fingerprint = models.CharField(max_length=64, blank=True, default='')
+    source_blocks = models.JSONField(default=list, blank=True)
+    page_manifest = models.JSONField(default=dict, blank=True)
+    question_records = models.JSONField(default=list, blank=True)
+    answer_records = models.JSONField(default=list, blank=True)
+    audit = models.JSONField(default=dict, blank=True)
+    failed_chunks = models.JSONField(default=list, blank=True)
+    prompt_version = models.CharField(max_length=32, blank=True, default='')
+    provider = models.CharField(max_length=32, blank=True, default='')
+    model_name = models.CharField(max_length=128, blank=True, default='')
+    error_code = models.CharField(max_length=64, blank=True, default='')
+    error_detail = models.TextField(blank=True, default='')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=['status', 'updated_at'], name='exam_art_status_updated_idx'),
+        ]
+
+
+class ExamPrepVisualAsset(models.Model):
+    """Original source crop and optional generated candidate for one visual."""
+
+    class Role(models.TextChoices):
+        QUESTION = 'question', 'Question'
+        OPTION = 'option', 'Option'
+        SOLUTION = 'solution', 'Solution'
+
+    class Status(models.TextChoices):
+        SOURCE_READY = 'source_ready', 'Source crop ready'
+        GENERATING = 'generating', 'Generating candidate'
+        GENERATED = 'generated', 'Candidate generated'
+        VERIFIED = 'verified', 'Candidate verified'
+        NEEDS_REVIEW = 'needs_review', 'Needs teacher review'
+        FAILED = 'failed', 'Failed'
+
+    class SelectedVariant(models.TextChoices):
+        SOURCE = 'source', 'Original source'
+        GENERATED = 'generated', 'Generated candidate'
+
+    class SourceKind(models.TextChoices):
+        PDF_PAGE = 'pdf_page', 'PDF page'
+        VIDEO_FRAME = 'video_frame', 'Video frame'
+        SOURCE_IMAGE = 'source_image', 'Source image'
+
+    artifact = models.ForeignKey(
+        ExamPrepExtractionArtifact,
+        on_delete=models.CASCADE,
+        related_name='visual_assets',
+    )
+    asset_key = models.CharField(max_length=64)
+    question_key = models.CharField(max_length=160, blank=True, default='')
+    role = models.CharField(max_length=16, choices=Role.choices)
+    option_label = models.CharField(max_length=16, blank=True, default='')
+    source_kind = models.CharField(max_length=24, choices=SourceKind.choices)
+    source_page = models.PositiveIntegerField(null=True, blank=True)
+    source_timestamp_ms = models.PositiveBigIntegerField(null=True, blank=True)
+    source_bbox = models.JSONField(default=dict, blank=True)
+    order = models.PositiveIntegerField(default=0)
+    source_file = models.FileField(
+        upload_to='exam-prep/visuals/source/',
+        storage=answer_source_storage,
+    )
+    source_content_type = models.CharField(max_length=100, default='image/png')
+    source_byte_size = models.PositiveBigIntegerField(default=0)
+    source_sha256 = models.CharField(max_length=64)
+    generated_file = models.FileField(
+        upload_to='exam-prep/visuals/generated/',
+        storage=answer_source_storage,
+        blank=True,
+    )
+    generated_content_type = models.CharField(max_length=100, blank=True, default='')
+    generated_byte_size = models.PositiveBigIntegerField(default=0)
+    generated_sha256 = models.CharField(max_length=64, blank=True, default='')
+    alt_text = models.TextField(blank=True, default='')
+    visual_spec = models.JSONField(default=dict, blank=True)
+    verification = models.JSONField(default=dict, blank=True)
+    fingerprint = models.CharField(max_length=64)
+    status = models.CharField(
+        max_length=24,
+        choices=Status.choices,
+        default=Status.SOURCE_READY,
+        db_index=True,
+    )
+    selected_variant = models.CharField(
+        max_length=16,
+        choices=SelectedVariant.choices,
+        default=SelectedVariant.SOURCE,
+    )
+    teacher_approved_generated = models.BooleanField(default=False)
+    generation_provider = models.CharField(max_length=32, blank=True, default='')
+    generation_model = models.CharField(max_length=128, blank=True, default='')
+    generation_prompt_version = models.CharField(max_length=32, blank=True, default='')
+    error_detail = models.TextField(blank=True, default='')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            UniqueConstraint(
+                fields=['artifact', 'asset_key'],
+                name='uniq_exam_visual_asset_key',
+            ),
+        ]
+        indexes = [
+            models.Index(
+                fields=['artifact', 'question_key', 'order'],
+                name='exam_visual_question_order_idx',
+            ),
+        ]
+
 class ClassInvitation(models.Model):
     session = models.ForeignKey(
         ClassCreationSession,

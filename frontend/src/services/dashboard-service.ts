@@ -559,6 +559,13 @@ export const DashboardService = {
         question_text_markdown: string;
         type?: string;
         options: { label: string; text_markdown: string }[];
+        visuals?: {
+          id: number;
+          role: 'question' | 'option';
+          optionLabel?: string | null;
+          altText: string;
+          url: string;
+        }[];
       }[];
       totalQuestions: number;
       subject?: string;
@@ -580,6 +587,7 @@ export const DashboardService = {
         label: opt.label,
         text: opt.text_markdown,
       })),
+      visuals: q.visuals || [],
     }));
 
     return {

@@ -13,6 +13,10 @@ flows to durable background processing for:
 
 Publish remains explicit and manual.
 
+Exam-prep extraction version 2 is documented separately in
+`docs/features/exam-prep-inventory-extraction.md`; it preserves this durable save-and-process flow
+while replacing the internal extraction and review contract.
+
 ## Prerequisite Language Consistency
 
 Class pipeline steps 3 and 4 preserve the dominant natural language of the uploaded lesson:

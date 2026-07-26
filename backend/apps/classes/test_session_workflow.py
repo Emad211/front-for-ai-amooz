@@ -87,6 +87,25 @@ def test_session_title_is_length_limited(serializer_cls):
     assert '۱۲۰' in str(serializer.errors['title'][0])
 
 
+@pytest.mark.parametrize(
+    'serializer_cls',
+    [Step1TranscribeRequestSerializer, ExamPrepStep1TranscribeRequestSerializer],
+)
+def test_step1_accepts_image_source(serializer_cls):
+    serializer = serializer_cls(
+        data={
+            'title': 'منبع تصویری',
+            'file': SimpleUploadedFile(
+                'question.png',
+                b'\x89PNG\r\n\x1a\nsource',
+                content_type='image/png',
+            ),
+        }
+    )
+
+    assert serializer.is_valid(), serializer.errors
+
+
 def test_embedded_exercise_rejects_late_submission_without_deadline():
     pending = [{
         'clientExerciseKey': 'exercise-invalid-policy',

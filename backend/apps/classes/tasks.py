@@ -618,20 +618,166 @@ def _ingest_source_to_markdown(session, tmp_path: str, progress_cb=None):
 
     Returns ``(markdown, provider, model, page_count)``.
     """
-    from .models import ClassCreationSession
+    from .models import ClassCreationSession, ExamPrepExtractionArtifact
+    from .services.exam_prep_inventory_pipeline import inventory_enabled
     from .services.transcription import transcribe_media_file
-    from .services.pdf_extraction import extract_pdf_to_markdown
+    from .services.pdf_extraction import extract_image_to_markdown, extract_pdf_to_markdown
+    from core.storage_backends import delete_answer_source_file
 
     mime = session.source_mime_type or ''
-    if session.source_type == ClassCreationSession.SourceType.PDF:
-        return extract_pdf_to_markdown(
-            data=_read_file_bytes(tmp_path), mime_type=mime or 'application/pdf',
-            asset_prefix=f'class_creation/extracted/{session.id}',
-        )
-    markdown, provider, model_name = transcribe_media_file(
-        path=tmp_path, mime_type=mime or 'application/octet-stream',
-        progress_cb=progress_cb,
+    capture_sources = (
+        session.pipeline_type == ClassCreationSession.PipelineType.EXAM_PREP
+        and inventory_enabled()
     )
+    artifact = None
+    source_blocks = []
+    old_source_names: set[str] = set()
+    new_source_names: set[str] = set()
+    source_changed = False
+    source_fingerprint = ''
+    if capture_sources:
+        import hashlib
+        with open(tmp_path, 'rb') as source:
+            digest = hashlib.sha256()
+            for chunk in iter(lambda: source.read(1024 * 1024), b''):
+                digest.update(chunk)
+        source_fingerprint = digest.hexdigest()
+        artifact, _ = ExamPrepExtractionArtifact.objects.get_or_create(session=session)
+        source_changed = bool(
+            artifact.source_fingerprint
+            and artifact.source_fingerprint != source_fingerprint
+        )
+        old_source_names = {
+            str(block.get('storageName'))
+            for block in artifact.source_blocks or []
+            if isinstance(block, dict) and block.get('storageName')
+        }
+        if artifact.source_fingerprint == source_fingerprint and artifact.source_blocks:
+            source_blocks = list(artifact.source_blocks)
+
+    def _save_source_image(
+        *,
+        data: bytes,
+        kind: str,
+        content_type: str,
+        page=None,
+        timestamp_ms=None,
+        width=0,
+        height=0,
+    ):
+        import hashlib
+        from django.core.files.base import ContentFile
+        from django.core.files.storage import storages
+
+        digest = hashlib.sha256(data).hexdigest()
+        suffix = {
+            'image/jpeg': 'jpg',
+            'image/png': 'png',
+            'image/webp': 'webp',
+        }.get(content_type, 'bin')
+        name = storages['answer_sources'].save(
+            f'exam-prep/source/{session.id}/{digest}.{suffix}',
+            ContentFile(data),
+        )
+        new_source_names.add(name)
+        source_blocks.append({
+            'sourceKind': kind,
+            'pageNumber': page,
+            'timestampMs': timestamp_ms,
+            'storageName': name,
+            'contentType': content_type,
+            'byteSize': len(data),
+            'sha256': digest,
+            'width': width,
+            'height': height,
+        })
+
+    def _discard_new_source_files():
+        for name in new_source_names - old_source_names:
+            delete_answer_source_file(name)
+
+    def _persist_source_blocks():
+        if artifact is None:
+            return
+        artifact.source_fingerprint = source_fingerprint
+        artifact.source_blocks = source_blocks
+        artifact.save(update_fields=['source_fingerprint', 'source_blocks', 'updated_at'])
+        if source_changed:
+            artifact.visual_assets.all().delete()
+        current_names = {
+            str(block.get('storageName'))
+            for block in source_blocks
+            if isinstance(block, dict) and block.get('storageName')
+        }
+        for name in old_source_names - current_names:
+            delete_answer_source_file(name)
+
+    if session.source_type == ClassCreationSession.SourceType.PDF:
+        should_capture = capture_sources and not source_blocks
+        try:
+            result = extract_pdf_to_markdown(
+                data=_read_file_bytes(tmp_path), mime_type=mime or 'application/pdf',
+                asset_prefix=f'class_creation/extracted/{session.id}',
+                page_sink=(
+                    lambda page, data, width, height: _save_source_image(
+                        data=data,
+                        kind='pdf_page',
+                        content_type='image/png',
+                        page=page,
+                        width=width,
+                        height=height,
+                    )
+                ) if should_capture else None,
+            )
+        except Exception:
+            _discard_new_source_files()
+            raise
+        _persist_source_blocks()
+        return result
+
+    if mime.lower().startswith('image/'):
+        source_image = _read_file_bytes(tmp_path)
+        try:
+            if artifact is not None and not source_blocks:
+                _save_source_image(
+                    data=source_image,
+                    kind='source_image',
+                    content_type=mime,
+                    page=1,
+                )
+            result = extract_image_to_markdown(data=source_image, mime_type=mime)
+        except Exception:
+            _discard_new_source_files()
+            raise
+        _persist_source_blocks()
+        return result
+
+    try:
+        markdown, provider, model_name = transcribe_media_file(
+            path=tmp_path, mime_type=mime or 'application/octet-stream',
+            progress_cb=progress_cb,
+        )
+        if artifact is not None and not source_blocks and mime.lower().startswith('video/'):
+            from .services.transcription_media import (
+                extract_frames_jpeg_from_path,
+                probe_media_duration,
+            )
+            frames = extract_frames_jpeg_from_path(tmp_path)
+            duration = probe_media_duration(tmp_path)
+            for index, frame in enumerate(frames):
+                timestamp = int(
+                    (duration * index / max(len(frames) - 1, 1)) * 1000
+                ) if duration else None
+                _save_source_image(
+                    data=frame,
+                    kind='video_frame',
+                    content_type='image/jpeg',
+                    timestamp_ms=timestamp,
+                )
+    except Exception:
+        _discard_new_source_files()
+        raise
+    _persist_source_blocks()
     return markdown, provider, model_name, 0
 
 
@@ -1073,7 +1219,11 @@ def process_exam_prep_step1_transcription(self, session_id: int) -> dict:
 def process_exam_prep_step2_structure(self, session_id: int) -> dict:
     """Extract Q&A structure from exam prep transcript."""
     import json as _json
-    from .models import ClassCreationSession
+    from .models import ClassCreationSession, ExamPrepExtractionArtifact
+    from .services.exam_prep_inventory_pipeline import (
+        extract_exam_prep_inventory,
+        inventory_enabled,
+    )
     from .services.exam_prep_structure import extract_exam_prep_structure
     from .services.exam_prep_utils import normalize_exam_prep_questions
 
@@ -1092,9 +1242,59 @@ def process_exam_prep_step2_structure(self, session_id: int) -> dict:
         return {'status': 'failed', 'error': session.error_detail}
 
     try:
-        exam_prep_obj, provider, model_name = extract_exam_prep_structure(
-            transcript_markdown=session.transcript_markdown,
-        )
+        if inventory_enabled():
+            artifact, _ = ExamPrepExtractionArtifact.objects.get_or_create(session=session)
+            artifact.status = ExamPrepExtractionArtifact.Status.INVENTORY
+            artifact.error_code = ''
+            artifact.error_detail = ''
+            artifact.save(update_fields=['status', 'error_code', 'error_detail', 'updated_at'])
+            exam_prep_obj, artifact_payload, audit, provider, model_name = (
+                extract_exam_prep_inventory(
+                    transcript_markdown=session.transcript_markdown,
+                )
+            )
+            for field, value in artifact_payload.items():
+                setattr(artifact, field, value)
+            artifact.audit = audit
+            artifact.provider = provider
+            artifact.model_name = model_name
+            artifact.save()
+            try:
+                from .services.exam_prep_visuals import process_exam_prep_visuals
+                artifact.status = ExamPrepExtractionArtifact.Status.VISUALS
+                artifact.save(update_fields=['status', 'updated_at'])
+                exam_prep_obj, visual_issues = process_exam_prep_visuals(
+                    artifact=artifact,
+                    projection=exam_prep_obj,
+                    model=model_name,
+                )
+                if visual_issues:
+                    audit['issues'] = [*(audit.get('issues') or []), *visual_issues]
+                    audit['criticalIssueCount'] = sum(
+                        1 for issue in audit['issues'] if issue.get('severity') == 'critical'
+                    )
+                    audit['status'] = 'needs_review' if audit['criticalIssueCount'] else 'passed'
+            except Exception as visual_exc:
+                logger.exception('Exam-prep visual processing failed session=%s', session.id)
+                audit['issues'] = [
+                    *(audit.get('issues') or []),
+                    {
+                        'code': 'visual_processing_failed',
+                        'severity': 'critical',
+                        'detail': str(visual_exc)[:500],
+                    },
+                ]
+                audit['criticalIssueCount'] = sum(
+                    1 for issue in audit['issues'] if issue.get('severity') == 'critical'
+                )
+                audit['status'] = 'needs_review'
+            artifact.audit = audit
+            artifact.status = ExamPrepExtractionArtifact.Status.READY
+            artifact.save(update_fields=['audit', 'status', 'updated_at'])
+        else:
+            exam_prep_obj, provider, model_name = extract_exam_prep_structure(
+                transcript_markdown=session.transcript_markdown,
+            )
         normalized, _changed = normalize_exam_prep_questions(exam_prep_obj)
         session.exam_prep_json = _json.dumps(normalized, ensure_ascii=False)
         session.llm_provider = provider
@@ -1105,6 +1305,12 @@ def process_exam_prep_step2_structure(self, session_id: int) -> dict:
         _mark_session_ready_for_review(session)
         return {'status': 'success', 'session_id': session_id}
     except Exception as exc:
+        if inventory_enabled():
+            ExamPrepExtractionArtifact.objects.filter(session=session).update(
+                status=ExamPrepExtractionArtifact.Status.FAILED,
+                error_code='inventory_extraction_failed',
+                error_detail=str(exc)[:2000],
+            )
         if self.request.retries >= self.max_retries:
             _safe_mark_failed(session, str(exc))
             return {'status': 'failed', 'error': str(exc)}

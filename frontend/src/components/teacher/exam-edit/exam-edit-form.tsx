@@ -15,11 +15,17 @@ import {
 import { Separator } from '@/components/ui/separator';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { CLASS_TITLE_MAX_LENGTH } from '@/constants/teacher-limits';
-import type { ExamPrepSessionDetail, ExamPrepData, ExamPrepQuestion } from '@/services/classes-service';
+import type {
+  ExamPrepSessionDetail,
+  ExamPrepData,
+  ExamPrepQuestion,
+  ExamPrepSessionUpdatePayload,
+} from '@/services/classes-service';
+import { ProtectedExamVisual } from '@/components/exam-prep/protected-exam-visual';
 
 interface ExamEditFormProps {
   examDetail: ExamPrepSessionDetail;
-  onSave: (data: Partial<ExamPrepSessionDetail>) => Promise<void>;
+  onSave: (data: ExamPrepSessionUpdatePayload) => Promise<void>;
   isSaving?: boolean;
 }
 
@@ -253,6 +259,18 @@ export function ExamEditForm({ examDetail, onSave, isSaving }: ExamEditFormProps
               </div>
 
               <AccordionContent className="px-4 pt-4 pb-6 space-y-6">
+                {(q.visuals?.length ?? 0) > 0 && (
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    {q.visuals?.map((visual) => (
+                      <ProtectedExamVisual
+                        key={visual.id}
+                        url={`/api/classes/exam-prep-sessions/${examDetail.id}/visuals/${visual.id}/content/`}
+                        alt={visual.altText || 'تصویر مرتبط با سؤال'}
+                        className="h-48 w-full rounded-md border object-contain"
+                      />
+                    ))}
+                  </div>
+                )}
                 <div className="space-y-2">
                   <Label>متن اصلی سوال (صورت سوال)</Label>
                   <Textarea

@@ -4,7 +4,20 @@ from django.dispatch import receiver
 
 from core.storage_backends import delete_answer_source_file
 
-from .models import StudentExerciseAnswerAsset
+from .models import (
+    ExamPrepExtractionArtifact,
+    ExamPrepVisualAsset,
+    StudentExerciseAnswerAsset,
+)
+
+
+def _delete_blobs_after_commit(names: list[str]) -> None:
+    def delete_files() -> None:
+        for name in names:
+            delete_answer_source_file(name)
+
+    transaction.on_commit(delete_files)
+
 
 @receiver(post_delete, sender=StudentExerciseAnswerAsset)
 def delete_answer_asset_blob(sender, instance, **kwargs):  # noqa: ARG001
@@ -16,3 +29,25 @@ def delete_answer_asset_blob(sender, instance, **kwargs):  # noqa: ARG001
         delete_answer_source_file(name)
 
     transaction.on_commit(delete_after_commit)
+
+
+@receiver(post_delete, sender=ExamPrepVisualAsset)
+def delete_exam_visual_blobs(sender, instance, **kwargs):  # noqa: ARG001
+    names = [
+        field.name
+        for field in (instance.source_file, instance.generated_file)
+        if field and field.name
+    ]
+    if names:
+        _delete_blobs_after_commit(names)
+
+
+@receiver(post_delete, sender=ExamPrepExtractionArtifact)
+def delete_exam_source_blocks(sender, instance, **kwargs):  # noqa: ARG001
+    names = [
+        block.get('storageName')
+        for block in instance.source_blocks or []
+        if isinstance(block, dict) and block.get('storageName')
+    ]
+    if names:
+        _delete_blobs_after_commit(names)
