@@ -410,7 +410,7 @@ export default function LearnPage() {
                     isDownloadingPdf={isDownloadingPdf}
                 />
                 <div className={cn(
-                    "flex-1 flex flex-col relative transition-all duration-300 ease-in-out", 
+                    "min-h-0 min-w-0 flex-1 flex flex-col relative transition-all duration-300 ease-in-out",
                     isChatOpen ? "lg:w-[calc(100%-20rem-24rem)]" : "w-full"
                 )}>
                     {Number.isFinite(numericCourseId) && (
@@ -424,6 +424,7 @@ export default function LearnPage() {
                         content={content}
                         lesson={currentLesson}
                         courseId={String(courseId ?? '')}
+                        draftOwnerId={String(user?.id ?? '')}
                         onSelectPrerequisiteTeaching={handleSelectPrerequisiteTeaching}
                         onBackToPrerequisites={handleSelectPrerequisites}
                         onProgressUpdate={(progress) => {

@@ -7,6 +7,7 @@ import { MarkdownWithMath } from '@/components/content/markdown-with-math';
 import { MathText } from '@/components/content/math-text';
 import { DashboardService } from '@/services/dashboard-service';
 import { CheckCircle2, XCircle, RotateCcw, AlertCircle, Sparkles } from 'lucide-react';
+import { useAssessmentDraft } from '@/hooks/use-assessment-draft';
 
 type QStatus = 'correct' | 'partial' | 'wrong' | null;
 
@@ -63,15 +64,27 @@ type SubmitPayload = {
   course_progress?: number;
 };
 
-export function FinalExam({ courseId, onProgressUpdate }: { courseId: string; onProgressUpdate?: (progress: number) => void }) {
+export function FinalExam({
+  courseId,
+  draftOwnerId,
+  onProgressUpdate,
+}: {
+  courseId: string;
+  draftOwnerId: string;
+  onProgressUpdate?: (progress: number) => void;
+}) {
   const [isLoading, setIsLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
   const [exam, setExam] = React.useState<FinalExamPayload | null>(null);
-  const [answers, setAnswers] = React.useState<Record<string, string>>({});
   const [isSubmitting, setIsSubmitting] = React.useState(false);
   const [isRegenerating, setIsRegenerating] = React.useState(false);
   const [submitResult, setSubmitResult] = React.useState<SubmitPayload | null>(null);
   const resultRef = React.useRef<HTMLDivElement | null>(null);
+  const { answers, initializeAssessment, updateAnswer, clearDraft } = useAssessmentDraft({
+    ownerId: draftOwnerId,
+    courseId,
+    assessmentType: 'final-exam',
+  });
 
   // Per-question grading keyed by id, so each question card can render its own
   // inline feedback (instead of a separate block the user had to scroll to find).
@@ -91,21 +104,25 @@ export function FinalExam({ courseId, onProgressUpdate }: { courseId: string; on
     try {
       const q = await DashboardService.getFinalExam(courseId);
       setExam(q);
-      const init: Record<string, string> = {};
-      (q?.questions ?? []).forEach((qq: FinalExamQuestion) => {
-        init[qq.id] = '';
-      });
-      setAnswers(init);
+      initializeAssessment(
+        q.exam_id,
+        (q?.questions ?? []).map((question: FinalExamQuestion) => question.id),
+      );
     } catch (e: any) {
       setError(e?.message || 'خطا در دریافت آزمون نهایی');
     } finally {
       setIsLoading(false);
     }
-  }, [courseId]);
+  }, [courseId, initializeAssessment]);
 
   React.useEffect(() => {
     load();
   }, [load]);
+
+  const resetExam = React.useCallback(() => {
+    clearDraft();
+    void load();
+  }, [clearDraft, load]);
 
   // Bring the result summary into view once it renders — the submit button
   // sits at the bottom of a long form, so the score/feedback that appears here
@@ -123,12 +140,12 @@ export function FinalExam({ courseId, onProgressUpdate }: { courseId: string; on
     setError(null);
     try {
       const q = await DashboardService.regenerateFinalExam(courseId);
+      clearDraft();
       setExam(q);
-      const init: Record<string, string> = {};
-      (q?.questions ?? []).forEach((qq: FinalExamQuestion) => {
-        init[qq.id] = '';
-      });
-      setAnswers(init);
+      initializeAssessment(
+        q.exam_id,
+        (q?.questions ?? []).map((question: FinalExamQuestion) => question.id),
+      );
       setSubmitResult(null);
     } catch (e: any) {
       setError(e?.message || 'ساخت آزمون جدید با خطا مواجه شد. کمی بعد دوباره تلاش کنید.');
@@ -143,6 +160,7 @@ export function FinalExam({ courseId, onProgressUpdate }: { courseId: string; on
     setError(null);
     try {
       const res = await DashboardService.submitFinalExam(courseId, answers);
+      clearDraft();
       setSubmitResult(res);
       const maybeProgress = Number(res?.course_progress);
       if (Number.isFinite(maybeProgress)) {
@@ -298,7 +316,7 @@ export function FinalExam({ courseId, onProgressUpdate }: { courseId: string; on
                           value={tf.val}
                           checked={selected}
                           disabled={reviewing}
-                          onChange={() => setAnswers((prev) => ({ ...prev, [q.id]: tf.val }))}
+                          onChange={() => updateAnswer(q.id, tf.val)}
                           className="sr-only"
                         />
                         {tf.label}
@@ -338,7 +356,7 @@ export function FinalExam({ courseId, onProgressUpdate }: { courseId: string; on
                           value={opt}
                           checked={selected}
                           disabled={reviewing}
-                          onChange={() => setAnswers((prev) => ({ ...prev, [q.id]: opt }))}
+                          onChange={() => updateAnswer(q.id, opt)}
                           className="mt-1 shrink-0"
                         />
                         <span className="break-words text-xs sm:text-sm text-foreground">
@@ -354,7 +372,7 @@ export function FinalExam({ courseId, onProgressUpdate }: { courseId: string; on
               {(qType === 'fill_blank' || qType === 'short_answer' || (!q.type && (!q.options || q.options.length === 0))) && qType !== 'true_false' && qType !== 'multiple_choice' && (
                 <textarea
                   value={value}
-                  onChange={(e) => setAnswers((prev) => ({ ...prev, [q.id]: e.target.value }))}
+                  onChange={(e) => updateAnswer(q.id, e.target.value)}
                   disabled={reviewing}
                   className="mt-3 w-full min-h-24 rounded-lg border border-border bg-background p-3 text-sm text-foreground disabled:opacity-70"
                   placeholder={qType === 'fill_blank' ? 'پاسخ خود را برای جای خالی بنویسید...' : 'پاسخ خود را بنویسید...'}
@@ -451,7 +469,7 @@ export function FinalExam({ courseId, onProgressUpdate }: { courseId: string; on
             {isSubmitting ? 'در حال ارسال...' : 'ثبت پاسخ‌ها و دریافت نمره'}
           </Button>
         )}
-        <Button variant="outline" onClick={load} disabled={isSubmitting || isRegenerating} className="rounded-xl gap-2">
+        <Button variant="outline" onClick={resetExam} disabled={isSubmitting || isRegenerating} className="rounded-xl gap-2">
           <RotateCcw className="h-4 w-4" />
           {reviewing ? 'تلاش دوباره' : 'پاک کردن پاسخ‌ها'}
         </Button>

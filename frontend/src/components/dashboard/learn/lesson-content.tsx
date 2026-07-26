@@ -13,6 +13,7 @@ interface LessonContentProps {
   content: CourseContent;
   lesson: any;
   courseId?: string;
+  draftOwnerId?: string;
   onSelectPrerequisiteTeaching?: (prereqId: number) => void;
   onBackToPrerequisites?: () => void;
   onProgressUpdate?: (progress: number) => void;
@@ -22,6 +23,7 @@ export const LessonContent = ({
   content,
   lesson,
   courseId,
+  draftOwnerId,
   onSelectPrerequisiteTeaching,
   onBackToPrerequisites,
   onProgressUpdate,
@@ -55,7 +57,7 @@ export const LessonContent = ({
   const recapMarkdown = (content.recapMarkdown ?? '').trim();
 
   return (
-    <section className="flex-1 flex flex-col gap-3 overflow-y-auto no-scrollbar h-full rounded-2xl relative">
+    <section className="min-h-0 flex-1 flex flex-col gap-3 overflow-hidden h-full rounded-2xl relative">
     <div className="bg-card border border-border rounded-2xl p-4 shadow-lg relative overflow-hidden flex-shrink-0">
       <div className="flex flex-col gap-4">
         <div>
@@ -86,7 +88,7 @@ export const LessonContent = ({
         </div>
       </div>
     </div>
-    <div className="bg-card border border-border rounded-2xl p-3 sm:p-4 md:p-6 lg:p-8 flex-1 shadow-xl overflow-y-auto no-scrollbar">
+    <div className="min-h-0 bg-card border border-border rounded-2xl p-3 sm:p-4 md:p-6 lg:p-8 flex-1 shadow-xl overflow-y-auto overscroll-contain no-scrollbar">
       <div className="flex items-center gap-3 mb-6 pb-3 border-b border-border/50">
         <div className="h-8 w-8 rounded-lg bg-primary/10 flex items-center justify-center text-primary">
           <PlayCircle className="h-5 w-5" />
@@ -99,10 +101,15 @@ export const LessonContent = ({
             courseId={courseId}
             chapterId={lesson.chapterId}
             chapterTitle={lesson.chapterTitle ?? ''}
+            draftOwnerId={draftOwnerId ?? ''}
             onProgressUpdate={onProgressUpdate}
           />
         ) : lesson?.type === 'quiz' && lesson?.finalExam && courseId ? (
-          <FinalExam courseId={courseId} onProgressUpdate={onProgressUpdate} />
+          <FinalExam
+            courseId={courseId}
+            draftOwnerId={draftOwnerId ?? ''}
+            onProgressUpdate={onProgressUpdate}
+          />
         ) : lesson?.id === 'learning-objectives' ? (
           <div className="text-justify">
             <MarkdownWithMath markdown={objectivesMarkdown} />
