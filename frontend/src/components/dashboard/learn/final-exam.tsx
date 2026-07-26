@@ -306,7 +306,7 @@ export function FinalExam({
                     return (
                       <label
                         key={tf.val}
-                        className={`flex items-center justify-center gap-2 p-3 rounded-lg border text-sm font-semibold ${
+                        className={`relative flex items-center justify-center gap-2 overflow-hidden p-3 rounded-lg border text-sm font-semibold focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2 focus-within:ring-offset-background ${
                           reviewing ? 'cursor-default' : 'cursor-pointer'
                         } ${cls}`}
                       >
@@ -317,7 +317,7 @@ export function FinalExam({
                           checked={selected}
                           disabled={reviewing}
                           onChange={() => updateAnswer(q.id, tf.val)}
-                          className="sr-only"
+                          className="absolute inset-0 m-0 h-full w-full cursor-pointer opacity-0 disabled:cursor-default"
                         />
                         {tf.label}
                       </label>

@@ -27,6 +27,10 @@ the inner lesson card owns scrolling. This prevents focused quiz controls from
 scrolling nested ancestors and moving the assessment outside the visible
 viewport.
 
+True/false radio inputs remain positioned over their visible option instead of
+using the generic one-pixel `sr-only` treatment. The browser can therefore
+focus the real control without scrolling toward an off-flow focus target.
+
 ## Verification
 
 - `npx tsx --test src/lib/assessment-draft.test.ts`
