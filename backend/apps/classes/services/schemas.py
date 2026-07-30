@@ -127,6 +127,7 @@ class ExamPrepQuestionRecord(BaseModel):
     source_question_number: Optional[str] = None
     section_key: str = ""
     source_pages: List[int] = Field(default_factory=list)
+    source_block_ids: List[str] = Field(default_factory=list)
     block_order: int = Field(ge=0)
     question_text_markdown: str
     options: List[ExamPrepInventoryOption] = Field(default_factory=list)
@@ -138,6 +139,7 @@ class ExamPrepQuestionInventoryOutput(BaseModel):
     model_config = ConfigDict(extra="allow")
 
     questions: List[ExamPrepQuestionRecord] = Field(default_factory=list)
+    processed_source_block_ids: List[str] = Field(default_factory=list)
 
 
 class ExamPrepAnswerRecord(BaseModel):
@@ -146,6 +148,7 @@ class ExamPrepAnswerRecord(BaseModel):
     source_question_number: Optional[str] = None
     section_key: str = ""
     source_pages: List[int] = Field(default_factory=list)
+    source_block_ids: List[str] = Field(default_factory=list)
     block_order: int = Field(ge=0)
     correct_option_label: Optional[str] = None
     correct_option_text_markdown: Optional[str] = None
@@ -159,6 +162,7 @@ class ExamPrepAnswerInventoryOutput(BaseModel):
     model_config = ConfigDict(extra="allow")
 
     answers: List[ExamPrepAnswerRecord] = Field(default_factory=list)
+    processed_source_block_ids: List[str] = Field(default_factory=list)
 
 
 class ExamPrepVisualRegion(BaseModel):

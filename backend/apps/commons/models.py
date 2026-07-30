@@ -110,6 +110,7 @@ class LLMUsageLog(models.Model):
     # Optional context
     session_id = models.PositiveIntegerField(null=True, blank=True, db_index=True)
     detail = models.CharField(max_length=200, blank=True, default='')
+    context = models.JSONField(default=dict, blank=True)
 
     duration_ms = models.PositiveIntegerField(default=0, help_text='LLM call duration in milliseconds')
 

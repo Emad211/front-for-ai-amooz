@@ -317,8 +317,8 @@ def test_failed_v2_extraction_can_be_retried_once(
     )
     dispatched = []
     monkeypatch.setattr(
-        "apps.classes.views.process_exam_prep_step2_structure.delay",
-        lambda session_id: dispatched.append(session_id),
+        "apps.classes.views.process_exam_prep_step2_structure.apply_async",
+        lambda *, args, task_id: dispatched.append(args[0]),
     )
 
     with django_capture_on_commit_callbacks(execute=True):

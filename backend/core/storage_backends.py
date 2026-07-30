@@ -32,6 +32,11 @@ from django.utils.http import http_date
 from storages.backends.s3boto3 import S3Boto3Storage
 
 logger = logging.getLogger(__name__)
+PRIVATE_MEDIA_PREFIXES = (
+    'exercises/answers/sources/',
+    'exam-prep/source/',
+    'exam-prep/visuals/',
+)
 
 
 class ProxiedS3Storage(S3Boto3Storage):
@@ -94,13 +99,16 @@ def open_answer_source_file(field_file):
             raise private_error
 
 
-def delete_answer_source_file(name: str) -> None:
+def delete_answer_source_file(name: str) -> bool:
     """Best-effort deletion from both private and legacy stores."""
+    deleted = True
     for alias in ('answer_sources', 'default'):
         try:
             storages[alias].delete(name)
         except Exception:
+            deleted = False
             logger.exception('Failed to delete answer-source object %s from %s', name, alias)
+    return deleted
 
 
 def private_answer_source_media_view(request, path: str):  # noqa: ARG001
@@ -122,7 +130,7 @@ def media_proxy_view(request, path: str):
         raise Http404
     # Student OCR originals are private educational records. They are served
     # only by the owner-scoped exercise asset endpoint.
-    if path.startswith('exercises/answers/sources/'):
+    if path.startswith(PRIVATE_MEDIA_PREFIXES):
         return private_answer_source_media_view(request, path)
 
     try:

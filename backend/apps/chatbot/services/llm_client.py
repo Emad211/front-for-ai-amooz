@@ -4,7 +4,7 @@ import base64
 import os
 import re
 import threading
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Optional, List, Dict
 
 import httpx
@@ -119,6 +119,9 @@ class LlmResult:
     text: str
     provider: str
     model: str
+    response_id: str = ""
+    finish_reason: str = ""
+    usage: Dict[str, int] = field(default_factory=dict)
 
 
 # ====================================================================
@@ -234,6 +237,9 @@ def _call_gapgpt_with_messages(
     timeout: Optional[float] = None,
     temperature: Optional[float] = None,
     response_format: Optional[Dict[str, Any]] = None,
+    max_output_tokens: Optional[int] = None,
+    detail: str = "",
+    tracking_context: Optional[Dict[str, Any]] = None,
 ) -> LlmResult:
 
     # Strip any "models/" prefix just before sending
@@ -251,11 +257,20 @@ def _call_gapgpt_with_messages(
         create_kwargs["response_format"] = response_format
     if temperature is not None:
         create_kwargs["temperature"] = temperature
+    if max_output_tokens is not None:
+        create_kwargs["max_tokens"] = max(1, int(max_output_tokens))
+
+    safe_context = {
+        str(key)[:80]: value
+        for key, value in (tracking_context or {}).items()
+        if isinstance(value, (str, int, float, bool)) or value is None
+    }
 
     try:
         response = client.chat.completions.create(**create_kwargs)
 
-        text = response.choices[0].message.content.strip()
+        choice = response.choices[0]
+        text = (choice.message.content or "").strip()
         if not text:
             raise ValueError("Empty response from GAPGPT")
 
@@ -264,13 +279,23 @@ def _call_gapgpt_with_messages(
             feature=feature,
             provider="gapgpt",
             model_name=clean_model,
+            detail=detail,
+            context=safe_context,
             duration_ms=timer.elapsed_ms,
         )
 
+        usage = getattr(response, "usage", None)
         return LlmResult(
             text=text,
             provider="gapgpt",
-            model=clean_model
+            model=clean_model,
+            response_id=str(getattr(response, "id", "") or ""),
+            finish_reason=str(getattr(choice, "finish_reason", "") or ""),
+            usage={
+                "input_tokens": int(getattr(usage, "prompt_tokens", 0) or 0),
+                "output_tokens": int(getattr(usage, "completion_tokens", 0) or 0),
+                "total_tokens": int(getattr(usage, "total_tokens", 0) or 0),
+            },
         )
 
     except Exception as exc:
@@ -279,6 +304,9 @@ def _call_gapgpt_with_messages(
             provider="gapgpt",
             model_name=clean_model,
             error_message=str(exc),
+            detail=detail,
+            context=safe_context,
+            duration_ms=timer.elapsed_ms,
         )
         if is_transient_llm_error(exc):
             raise ProviderTransientError(str(exc)) from exc
@@ -297,6 +325,10 @@ def generate_text(
     timeout: Optional[float] = None,
     temperature: Optional[float] = None,
     response_format: Optional[Dict[str, Any]] = None,
+    max_output_tokens: Optional[int] = None,
+    detail: str = "",
+    tracking_context: Optional[Dict[str, Any]] = None,
+    provider_attempts: int = 3,
     **kwargs,
 ) -> LlmResult:
     """
@@ -318,13 +350,23 @@ def generate_text(
     else:
         raise ValueError("Either 'messages' or 'contents' must be provided")
 
-    return _call_gapgpt_with_messages(
+    if provider_attempts not in {1, 3}:
+        raise ValueError("provider_attempts must be 1 or 3")
+    caller = (
+        _call_gapgpt_with_messages.__wrapped__
+        if provider_attempts == 1
+        else _call_gapgpt_with_messages
+    )
+    return caller(
         messages=final_messages,
         used_model=used_model,
         feature=resolved_feature,
         timeout=timeout,
         temperature=temperature,
         response_format=response_format,
+        max_output_tokens=max_output_tokens,
+        detail=detail,
+        tracking_context=tracking_context,
     )
 
 

@@ -1,4 +1,5 @@
 import json
+from types import SimpleNamespace
 
 import pytest
 
@@ -141,3 +142,44 @@ def test_inventory_pipeline_records_failed_answer_chunk_instead_of_silent_empty(
     assert artifact["failed_chunks"][0]["phase"] == "answers"
     assert audit["status"] == "needs_review"
     assert any(issue["code"] == "failed_chunk" for issue in audit["issues"])
+
+
+def test_v3_failed_chunk_does_not_persist_provider_error_text(monkeypatch):
+    class EmptyUnits:
+        def filter(self, **_kwargs):
+            return self
+
+        @staticmethod
+        def first():
+            return None
+
+    def failing_answer_call(*, schema, **kwargs):
+        if schema is ExamPrepAnswerInventoryOutput:
+            raise RuntimeError("private model output must not be stored")
+        result = _fake_call(schema=schema, **kwargs)
+        if schema is ExamPrepQuestionInventoryOutput:
+            source_block_id = kwargs["blocks"][0]["block_id"]
+            return result.model_copy(update={
+                "questions": [
+                    question.model_copy(
+                        update={"source_block_ids": [source_block_id]}
+                    )
+                    for question in result.questions
+                ]
+            })
+        return result
+
+    monkeypatch.setattr(pipeline, "_call", failing_answer_call)
+    monkeypatch.setattr(pipeline, "_select_model", lambda: "test-model")
+    monkeypatch.setattr(pipeline, "preferred_provider", lambda: "test-provider")
+
+    _, artifact, _, _, _ = pipeline.extract_exam_prep_inventory(
+        transcript_markdown="## صفحه 1\nپاسخ ۷۸ ب\n\n## صفحه 2\nسؤال ۷۸ چیست؟",
+        artifact=SimpleNamespace(
+            pipeline_version=3,
+            revision=1,
+            units=EmptyUnits(),
+        ),
+    )
+
+    assert artifact["failed_chunks"][0]["error"] == "RuntimeError"

@@ -142,7 +142,8 @@ def test_pdf_step1_still_reads_bytes(monkeypatch):
     monkeypatch.setattr(tasks, "_read_session_file_to_disk", lambda s: "/tmp/fake.pdf")
     monkeypatch.setattr(tasks, "_read_file_bytes", lambda p: b"%PDF-1.7 fake")
 
-    def _fake_pdf(*, data, mime_type, asset_prefix):
+    def _fake_pdf(*, data, mime_type, asset_prefix, page_sink=None):
+        assert page_sink is None
         return "PDF-MARKDOWN", "avalai", "models/x", 3
     monkeypatch.setattr("apps.classes.services.pdf_extraction.extract_pdf_to_markdown", _fake_pdf)
 

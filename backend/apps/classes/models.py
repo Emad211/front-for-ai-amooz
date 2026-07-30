@@ -185,6 +185,8 @@ class ExamPrepExtractionArtifact(models.Model):
         related_name='exam_extraction_artifact',
     )
     pipeline_version = models.PositiveSmallIntegerField(default=2)
+    revision = models.PositiveIntegerField(default=1)
+    active_task_id = models.CharField(max_length=255, blank=True, default='')
     status = models.CharField(
         max_length=32,
         choices=Status.choices,
@@ -203,12 +205,100 @@ class ExamPrepExtractionArtifact(models.Model):
     model_name = models.CharField(max_length=128, blank=True, default='')
     error_code = models.CharField(max_length=64, blank=True, default='')
     error_detail = models.TextField(blank=True, default='')
+    teacher_reviewed_at = models.DateTimeField(null=True, blank=True)
+    teacher_reviewed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='reviewed_exam_prep_extractions',
+    )
+    reviewed_revision = models.PositiveIntegerField(null=True, blank=True)
+    reviewed_projection_fingerprint = models.CharField(
+        max_length=64, blank=True, default=''
+    )
+    source_retain_until = models.DateTimeField(null=True, blank=True)
+    heartbeat_at = models.DateTimeField(null=True, blank=True, db_index=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         indexes = [
             models.Index(fields=['status', 'updated_at'], name='exam_art_status_updated_idx'),
+        ]
+
+
+class ExamPrepExtractionUnit(models.Model):
+    """One durable, retryable V3 extraction operation."""
+
+    class Stage(models.TextChoices):
+        OCR = 'ocr', 'OCR'
+        MANIFEST = 'manifest', 'Manifest'
+        QUESTIONS = 'questions', 'Questions'
+        ANSWERS = 'answers', 'Answers'
+        VISUALS = 'visuals', 'Visuals'
+
+    class Status(models.TextChoices):
+        PENDING = 'pending', 'Pending'
+        PROCESSING = 'processing', 'Processing'
+        ACCEPTED = 'accepted', 'Accepted'
+        RETRYABLE = 'retryable', 'Retryable'
+        QUARANTINED = 'quarantined', 'Quarantined'
+        FAILED = 'failed', 'Failed'
+        SUPERSEDED = 'superseded', 'Superseded'
+
+    artifact = models.ForeignKey(
+        ExamPrepExtractionArtifact,
+        on_delete=models.CASCADE,
+        related_name='units',
+    )
+    stage = models.CharField(max_length=16, choices=Stage.choices, db_index=True)
+    unit_key = models.CharField(max_length=160)
+    revision = models.PositiveIntegerField(default=1)
+    status = models.CharField(
+        max_length=16,
+        choices=Status.choices,
+        default=Status.PENDING,
+        db_index=True,
+    )
+    source_page = models.PositiveIntegerField(null=True, blank=True)
+    source_timestamp_ms = models.PositiveBigIntegerField(null=True, blank=True)
+    source_segment = models.PositiveIntegerField(null=True, blank=True)
+    input_fingerprint = models.CharField(max_length=64)
+    output_payload = models.JSONField(default=dict, blank=True)
+    quality_report = models.JSONField(default=dict, blank=True)
+    attempt_count = models.PositiveSmallIntegerField(default=0)
+    processing_task_id = models.CharField(max_length=255, blank=True, default='')
+    provider = models.CharField(max_length=32, blank=True, default='')
+    model_name = models.CharField(max_length=128, blank=True, default='')
+    prompt_version = models.CharField(max_length=32, blank=True, default='')
+    response_id = models.CharField(max_length=255, blank=True, default='')
+    finish_reason = models.CharField(max_length=64, blank=True, default='')
+    input_length = models.PositiveIntegerField(default=0)
+    output_length = models.PositiveIntegerField(default=0)
+    duration_ms = models.PositiveIntegerField(default=0)
+    error_code = models.CharField(max_length=64, blank=True, default='')
+    error_detail = models.TextField(blank=True, default='')
+    heartbeat_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            UniqueConstraint(
+                fields=['artifact', 'stage', 'unit_key', 'revision'],
+                name='uniq_exam_extract_unit_revision',
+            ),
+        ]
+        indexes = [
+            models.Index(
+                fields=['artifact', 'stage', 'status'],
+                name='exam_unit_art_stage_status_idx',
+            ),
+            models.Index(
+                fields=['status', 'heartbeat_at'],
+                name='exam_unit_status_heartbeat_idx',
+            ),
         ]
 
 
@@ -300,6 +390,14 @@ class ExamPrepVisualAsset(models.Model):
             models.Index(
                 fields=['artifact', 'question_key', 'order'],
                 name='exam_visual_question_order_idx',
+            ),
+            models.Index(
+                fields=['source_file'],
+                name='exam_visual_src_file_idx',
+            ),
+            models.Index(
+                fields=['generated_file'],
+                name='exam_visual_gen_file_idx',
             ),
         ]
 

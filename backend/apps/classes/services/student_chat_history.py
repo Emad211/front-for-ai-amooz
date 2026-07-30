@@ -63,7 +63,7 @@ def list_messages(
     """Return chat messages, newest last.
 
     Supports cursor-based pagination via ``before_id`` — returns ``limit``
-    messages with ``id < before_id``, ordered ascending by created_at.
+    messages with ``id < before_id``, ordered ascending by creation time and ID.
     This prevents unbounded result sets for long-lived chats.
     """
     qs = StudentCourseChatMessage.objects.filter(
@@ -80,7 +80,7 @@ def list_messages(
 
     # Take the most recent `limit` messages, then reverse for ascending order.
     rows: Iterable[StudentCourseChatMessage] = (
-        qs.order_by('-created_at')[:limit]
+        qs.order_by('-created_at', '-id')[:limit]
     )
 
     out: list[dict[str, Any]] = []

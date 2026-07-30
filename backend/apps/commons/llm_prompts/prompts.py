@@ -215,7 +215,30 @@ You transcribe ONE page image of a document into faithful Markdown. This is OCR 
 ### Output
 Return only the Markdown transcription of THIS page.
 """
-    )
+    ),
+    "quality_retry": (
+"""### Role
+You are retrying OCR for ONE page because the previous transcription failed an automated quality check.
+Read the supplied page image from scratch. Do not imitate, extend, or repair any unseen previous output.
+
+"""
+        + SAFETY_PREAMBLE +
+"""
+
+### Absolute rules
+- Output ONLY faithful GitHub-Flavored Markdown from the visible page.
+- Preserve the original language, reading order, numbers, formulas, choices, and answer text exactly.
+- Never invent a question, answer, continuation, page, or repeated block.
+- If a region cannot be read, write `[ناخوانا]` once at that exact position.
+- Stop after the final visible content on this page.
+
+"""
+        + MATH_FORMAT_INSTRUCTIONS +
+"""
+### Output
+Return only the transcription of THIS page.
+"""
+    ),
     },
 
     # ==========================================================================
@@ -679,18 +702,23 @@ Never turn an answer key, explanation, worked solution, or option-only list into
 a question. A record requires a genuine question stem. Keep options out of the
 stem. Preserve source numbering exactly, including numbering that starts at 51,
 78, or 116. Use the manifest section key. Return:
-{"questions":[{
+{"processed_source_block_ids":["page:1:0"],"questions":[{
   "source_question_number":"78",
   "section_key":"",
   "source_pages":[1],
+  "source_block_ids":["page:1:0"],
   "block_order":0,
   "question_text_markdown":"",
   "options":[{"label":"الف","text_markdown":""}],
   "visual_hints":[],
   "confidence":0.0
 }]}
-If no genuine question exists, return `{"questions":[]}`. Preserve language and
-LaTeX. Do not include answers or solutions. JSON only.
+`processed_source_block_ids` MUST list every supplied block you inspected,
+including blocks that contain no genuine question. If no genuine question
+exists, return an empty `questions` list while still listing all inspected
+block IDs. Preserve language and LaTeX. Every block ID MUST come from
+SOURCE_BLOCKS. Record-level `source_block_ids` must identify every block that
+supports that record. Do not include answers or solutions. JSON only.
 """).strip() + "\n\n" + MATH_FORMAT_INSTRUCTIONS
     },
     "exam_prep_answer_inventory": {
@@ -703,10 +731,11 @@ An answer may be before, after, or directly below its question. Preserve its
 source number and section. Never create a question. Never invent reasoning: if
 the source contains only a correct option or final answer, leave
 `teacher_solution_markdown` empty. Return:
-{"answers":[{
+{"processed_source_block_ids":["page:1:0"],"answers":[{
   "source_question_number":"78",
   "section_key":"",
   "source_pages":[1],
+  "source_block_ids":["page:1:0"],
   "block_order":0,
   "correct_option_label":"الف",
   "correct_option_text_markdown":"",
@@ -715,8 +744,11 @@ the source contains only a correct option or final answer, leave
   "visual_hints":[],
   "confidence":0.0
 }]}
-If no answer exists, return `{"answers":[]}`. Preserve language and LaTeX.
-JSON only.
+`processed_source_block_ids` MUST list every supplied block you inspected,
+including blocks that contain no answer. If no answer exists, return an empty
+`answers` list while still listing all inspected block IDs. Preserve language
+and LaTeX. Every block ID MUST come from SOURCE_BLOCKS. Record-level
+`source_block_ids` must identify the exact source evidence. JSON only.
 """).strip() + "\n\n" + MATH_FORMAT_INSTRUCTIONS
     },
     "exam_prep_visual_detection": {

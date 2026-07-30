@@ -160,6 +160,12 @@ class ExamPrepExtractionReviewSerializerMixin:
     extractionVersion = serializers.SerializerMethodField()
     visualAssets = serializers.SerializerMethodField()
     extractionReview = serializers.SerializerMethodField()
+    artifactRevision = serializers.SerializerMethodField()
+    extractionProgress = serializers.SerializerMethodField()
+    sourceUnitIssues = serializers.SerializerMethodField()
+    teacherReviewRequired = serializers.SerializerMethodField()
+    teacherReviewedAt = serializers.SerializerMethodField()
+    projectionFingerprint = serializers.SerializerMethodField()
 
     def _artifact(self, obj):
         return getattr(obj, 'exam_extraction_artifact', None)
@@ -220,6 +226,57 @@ class ExamPrepExtractionReviewSerializerMixin:
             'failedChunks': artifact.failed_chunks or [],
             'pageManifest': artifact.page_manifest or {},
         }
+
+    def get_artifactRevision(self, obj):
+        artifact = self._artifact(obj)
+        return artifact.revision if artifact else None
+
+    def get_extractionProgress(self, obj):
+        if not self.context.get('includeExtractionDetails', True):
+            return None
+        artifact = self._artifact(obj)
+        if artifact is None or artifact.pipeline_version < 3:
+            return None
+        units = list(artifact.units.all())
+        current = [unit for unit in units if unit.revision == artifact.revision]
+        completed = sum(
+            unit.status in {'accepted', 'quarantined', 'failed'}
+            for unit in current
+        )
+        total = len(current)
+        return {
+            'completedUnits': completed,
+            'totalUnits': total,
+            'percent': int(100 * completed / total) if total else 0,
+        }
+
+    def get_sourceUnitIssues(self, obj):
+        if not self.context.get('includeExtractionDetails', True):
+            return []
+        artifact = self._artifact(obj)
+        if artifact is None or artifact.pipeline_version < 3:
+            return []
+        from .services.exam_prep_v3 import current_unit_issues
+        return current_unit_issues(artifact)
+
+    def get_teacherReviewRequired(self, obj):
+        artifact = self._artifact(obj)
+        if artifact is None:
+            return False
+        from .services.exam_prep_v3 import teacher_review_required
+        return teacher_review_required(artifact)
+
+    def get_teacherReviewedAt(self, obj):
+        artifact = self._artifact(obj)
+        return artifact.teacher_reviewed_at if artifact else None
+
+    def get_projectionFingerprint(self, obj):
+        artifact = self._artifact(obj)
+        if artifact is None or artifact.pipeline_version < 3:
+            return None
+        from .services.exam_prep_v3 import projection_fingerprint
+
+        return projection_fingerprint(obj.exam_prep_json)
 
 
 class Step1TranscribeResponseSerializer(serializers.ModelSerializer):
@@ -881,6 +938,12 @@ class ExamPrepSessionDetailSerializer(
     extractionVersion = serializers.SerializerMethodField()
     visualAssets = serializers.SerializerMethodField()
     extractionReview = serializers.SerializerMethodField()
+    artifactRevision = serializers.SerializerMethodField()
+    extractionProgress = serializers.SerializerMethodField()
+    sourceUnitIssues = serializers.SerializerMethodField()
+    teacherReviewRequired = serializers.SerializerMethodField()
+    teacherReviewedAt = serializers.SerializerMethodField()
+    projectionFingerprint = serializers.SerializerMethodField()
 
     @extend_schema_field(serializers.DictField())
     def get_exam_prep_data(self, obj: ClassCreationSession):
@@ -957,6 +1020,12 @@ class ExamPrepSessionDetailSerializer(
             'extractionVersion',
             'visualAssets',
             'extractionReview',
+            'artifactRevision',
+            'extractionProgress',
+            'sourceUnitIssues',
+            'teacherReviewRequired',
+            'teacherReviewedAt',
+            'projectionFingerprint',
         ]
 
 

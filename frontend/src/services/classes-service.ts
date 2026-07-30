@@ -840,6 +840,32 @@ export interface ExamPrepSessionDetail {
     failedChunks: Array<Record<string, unknown>>;
     pageManifest: Record<string, unknown>;
   } | null;
+  artifactRevision?: number | null;
+  extractionProgress?: {
+    completedUnits: number;
+    totalUnits: number;
+    percent: number;
+  } | null;
+  sourceUnitIssues?: ExamPrepSourceUnitIssue[];
+  teacherReviewRequired?: boolean;
+  teacherReviewedAt?: string | null;
+  projectionFingerprint?: string | null;
+}
+
+export interface ExamPrepSourceUnitIssue {
+  id: number;
+  stage: 'ocr' | 'manifest' | 'questions' | 'answers' | 'visuals';
+  status: 'pending' | 'processing' | 'retryable' | 'quarantined' | 'failed';
+  pageNumber?: number | null;
+  timestampMs?: number | null;
+  segmentIndex?: number | null;
+  attemptCount: number;
+  qualityReport?: {
+    hardIssues?: string[];
+    softIssues?: string[];
+    acceptedWithWarnings?: boolean;
+  };
+  errorCode?: string;
 }
 
 export interface ExamPrepExtractionIssue {
@@ -999,6 +1025,55 @@ export async function retryExamPrepExtraction(
       body: JSON.stringify({ session_id: sessionId }),
     },
   );
+}
+
+export async function retryExamPrepExtractionUnit(
+  sessionId: number,
+  unitId: number,
+  artifactRevision: number,
+): Promise<{ artifactRevision: number; unitId: number; status: 'queued' }> {
+  if (!RAW_API_URL) {
+    throw new Error('NEXT_PUBLIC_API_URL تنظیم نشده است.');
+  }
+  return requestJson(
+    `${API_URL}/classes/exam-prep-sessions/${sessionId}/extraction-units/${unitId}/retry/`,
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${getAccessToken()}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ artifactRevision }),
+    },
+  );
+}
+
+export async function confirmExamPrepExtractionReview(
+  sessionId: number,
+  artifactRevision: number,
+  projectionFingerprint: string,
+): Promise<ExamPrepSessionDetail> {
+  if (!RAW_API_URL) {
+    throw new Error('NEXT_PUBLIC_API_URL تنظیم نشده است.');
+  }
+  return requestJson(
+    `${API_URL}/classes/exam-prep-sessions/${sessionId}/extraction-review/confirm/`,
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${getAccessToken()}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ artifactRevision, projectionFingerprint }),
+    },
+  );
+}
+
+export function getExamPrepExtractionUnitSourceUrl(
+  sessionId: number,
+  unitId: number,
+): string {
+  return `/api/classes/exam-prep-sessions/${sessionId}/extraction-units/${unitId}/source/`;
 }
 
 /**

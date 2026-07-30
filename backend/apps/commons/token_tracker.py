@@ -141,6 +141,7 @@ def track_llm_usage(
     user=None,
     session_id: int | None = None,
     detail: str = '',
+    context: dict[str, Any] | None = None,
     duration_ms: int = 0,
     success: bool = True,
     error_message: str = '',
@@ -195,6 +196,7 @@ def track_llm_usage(
             usd_toman_rate=rate or 0,
             session_id=resolved_session,
             detail=detail[:200] if detail else '',
+            context=context or {},
             duration_ms=duration_ms,
             success=success,
             error_message=error_message[:1000] if error_message else '',
@@ -215,6 +217,7 @@ def track_llm_error(
     user=None,
     session_id: int | None = None,
     detail: str = '',
+    context: dict[str, Any] | None = None,
     duration_ms: int = 0,
 ) -> LLMUsageLog | None:
     """Log a failed LLM call."""
@@ -238,6 +241,7 @@ def track_llm_error(
             estimated_cost_usd=0,
             session_id=resolved_session,
             detail=detail[:200] if detail else '',
+            context=context or {},
             duration_ms=duration_ms,
             success=False,
             error_message=str(error_message)[:1000],

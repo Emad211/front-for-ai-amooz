@@ -40,7 +40,12 @@ def parse_source_blocks(transcript_markdown: str) -> list[dict[str, Any]]:
         return []
     matches = list(_PAGE_HEADING_RE.finditer(text))
     if not matches:
-        return [{"page_number": 1, "block_order": 0, "content": text}]
+        return [{
+            "block_id": "source:1:0",
+            "page_number": 1,
+            "block_order": 0,
+            "content": text,
+        }]
 
     blocks: list[dict[str, Any]] = []
     for order, match in enumerate(matches):
@@ -49,6 +54,7 @@ def parse_source_blocks(transcript_markdown: str) -> list[dict[str, Any]]:
         page_number = int(match.group(1).translate(_DIGIT_TRANSLATION))
         blocks.append(
             {
+                "block_id": f"page:{page_number}:0",
                 "page_number": page_number,
                 "block_order": order,
                 "content": text[start:end].strip(),
@@ -60,7 +66,7 @@ def parse_source_blocks(transcript_markdown: str) -> list[dict[str, Any]]:
 def chunk_source_blocks(
     blocks: Iterable[dict[str, Any]], *, max_chars: int
 ) -> list[list[dict[str, Any]]]:
-    """Pack source blocks into bounded chunks, splitting only oversized blocks."""
+    """Pack complete blocks; oversized blocks retain an 800-char overlap."""
     payload_overhead = 96
     content_limit = max(1, max_chars - payload_overhead)
     expanded: list[dict[str, Any]] = []
@@ -86,12 +92,17 @@ def chunk_source_blocks(
                 expanded.append(
                     {
                         **block,
+                        "block_id": f"{block.get('block_id') or 'block'}:segment:{segment_index}",
                         "segment_index": segment_index,
+                        "source_start": start,
+                        "source_end": end,
                         "content": segment,
                     }
                 )
                 segment_index += 1
-            start = end
+            if end >= len(content):
+                break
+            start = max(start + 1, end - min(800, content_limit // 4))
             while start < len(content) and content[start].isspace():
                 start += 1
 
@@ -218,6 +229,14 @@ def _merge_answer(target: dict[str, Any], answer: dict[str, Any]) -> list[str]:
     new_solution = clean_exam_markdown(answer.get("teacher_solution_markdown"))
     if len(new_solution) > len(old_solution):
         target["teacher_solution_markdown"] = new_solution
+    target["source_block_ids"] = list(
+        dict.fromkeys(
+            [
+                *(target.get("source_block_ids") or []),
+                *(answer.get("source_block_ids") or []),
+            ]
+        )
+    )
     return conflicts
 
 
@@ -323,16 +342,16 @@ def match_answers_to_questions(
             candidates = by_number[number]
             provenance = "unique_number"
         if not candidates and not number:
-            page_set = set(answer.get("source_pages") or [])
+            answer_blocks = set(answer.get("source_block_ids") or [])
             preceding = [
                 index
                 for index, question in enumerate(questions)
-                if page_set.intersection(question.get("source_pages") or [])
+                if answer_blocks.intersection(question.get("source_block_ids") or [])
                 and int(question.get("block_order") or 0) <= int(answer.get("block_order") or 0)
             ]
             if preceding:
                 candidates = [max(preceding, key=lambda i: int(questions[i].get("block_order") or 0))]
-                provenance = "same_page_adjacency"
+                provenance = "same_block_adjacency"
 
         if len(candidates) != 1:
             answer["match_status"] = "out_of_scope" if number and number not in by_number else "unmatched"
@@ -415,6 +434,10 @@ def build_extraction_audit(
     issues: Iterable[dict[str, Any]],
     failed_chunks: Iterable[dict[str, Any]] = (),
     page_manifest: Iterable[dict[str, Any]] = (),
+    expected_source_block_ids: Iterable[str] = (),
+    processed_source_block_ids: Iterable[str] | None = None,
+    expected_source_block_ids_by_phase: dict[str, Iterable[str]] | None = None,
+    processed_source_block_ids_by_phase: dict[str, Iterable[str]] | None = None,
 ) -> dict[str, Any]:
     all_issues = [deepcopy(issue) for issue in issues]
     for chunk in failed_chunks:
@@ -437,6 +460,44 @@ def build_extraction_audit(
             )
     if not questions:
         all_issues.append({"code": "no_questions", "severity": "critical"})
+    if expected_source_block_ids_by_phase is not None:
+        processed_by_phase = processed_source_block_ids_by_phase or {}
+        for phase, expected_values in expected_source_block_ids_by_phase.items():
+            expected_blocks = {
+                str(value) for value in expected_values if value
+            }
+            referenced_blocks = {
+                str(value)
+                for value in processed_by_phase.get(phase, ())
+                if value
+            }
+            for block_id in sorted(expected_blocks - referenced_blocks):
+                all_issues.append({
+                    "code": "unprocessed_source_block",
+                    "severity": "critical",
+                    "phase": phase,
+                    "sourceBlockId": block_id,
+                })
+    else:
+        expected_blocks = {
+            str(value) for value in expected_source_block_ids if value
+        }
+        referenced_blocks = (
+            {str(value) for value in processed_source_block_ids if value}
+            if processed_source_block_ids is not None
+            else {
+                str(block_id)
+                for question in questions
+                for block_id in question.get("source_block_ids") or []
+                if block_id
+            }
+        )
+        for block_id in sorted(expected_blocks - referenced_blocks):
+            all_issues.append({
+                "code": "unprocessed_source_block",
+                "severity": "critical",
+                "sourceBlockId": block_id,
+            })
 
     manifest_pages = {
         int(page["page_number"])

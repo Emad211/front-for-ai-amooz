@@ -32,6 +32,31 @@ GENERATION_PROMPT_VERSION = "exam-visual-v1"
 ANALYSIS_PROMPT_VERSION = "exam-visual-detection-v1"
 
 
+def delete_visual_assets(queryset) -> bool:
+    """Delete private blobs before deleting their database inventory."""
+    assets = list(queryset.only("id", "source_file", "generated_file"))
+    names = sorted({
+        field.name
+        for asset in assets
+        for field in (asset.source_file, asset.generated_file)
+        if field and field.name
+    })
+    deletion_results = [
+        delete_answer_source_file(name)
+        for name in names
+    ]
+    if not all(deletion_results):
+        return False
+    if assets:
+        asset_ids = [asset.id for asset in assets]
+        queryset.filter(id__in=asset_ids).update(
+            source_file="",
+            generated_file="",
+        )
+        queryset.filter(id__in=asset_ids).delete()
+    return True
+
+
 def image_generation_enabled() -> bool:
     return (os.getenv("EXAM_PREP_IMAGE_GENERATION_ENABLED", "false") or "").strip().lower() in {
         "1",
@@ -72,23 +97,53 @@ def _question_lookup(records: list[dict[str, Any]]) -> dict[tuple[str, str], str
 
 
 def _detect_visuals(
-    *, image: bytes, content_type: str, context: dict[str, Any], model: str
+    *,
+    image: bytes,
+    content_type: str,
+    context: dict[str, Any],
+    model: str,
+    artifact: ExamPrepExtractionArtifact | None = None,
+    unit_key: str = "",
 ) -> ExamPrepVisualDetectionOutput:
+    context_json = json.dumps(context, ensure_ascii=False, sort_keys=True)
+    messages = [
+        {"role": "system", "content": PROMPTS["exam_prep_visual_detection"]["default"]},
+        {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": "PAGE_CONTEXT:\n" + context_json},
+                _image_part(image, content_type),
+            ],
+        },
+    ]
+    if artifact is not None and artifact.pipeline_version >= 3:
+        from .exam_prep_v3 import run_structured_unit
+
+        return run_structured_unit(
+            artifact=artifact,
+            stage="visuals",
+            unit_key=unit_key,
+            source_page=context["source"].get("pageNumber"),
+            source_segment=None,
+            input_payload=json.dumps(
+                {
+                    "context": context,
+                    "contentType": content_type,
+                    "imageSha256": hashlib.sha256(image).hexdigest(),
+                },
+                ensure_ascii=False,
+                sort_keys=True,
+            ),
+            messages=messages,
+            schema=ExamPrepVisualDetectionOutput,
+            model=model,
+            feature=LLMUsageLog.Feature.EXAM_PREP_STRUCTURE,
+            prompt_version=ANALYSIS_PROMPT_VERSION,
+            quality_contract_version="visual-detection-v1",
+        )
     return generate_structured(
         schema=ExamPrepVisualDetectionOutput,
-        messages=[
-            {"role": "system", "content": PROMPTS["exam_prep_visual_detection"]["default"]},
-            {
-                "role": "user",
-                "content": [
-                    {
-                        "type": "text",
-                        "text": "PAGE_CONTEXT:\n" + json.dumps(context, ensure_ascii=False),
-                    },
-                    _image_part(image, content_type),
-                ],
-            },
-        ],
+        messages=messages,
         model=model,
         feature=LLMUsageLog.Feature.EXAM_PREP_STRUCTURE,
         timeout=int(os.getenv("LLM_TIMEOUT_SECONDS", "600")),
@@ -301,6 +356,17 @@ def process_exam_prep_visuals(
             content_type=source_block.get("contentType") or "image/png",
             context=context,
             model=analysis_model,
+            artifact=artifact,
+            unit_key=(
+                "visuals:"
+                + hashlib.sha256(
+                    str(
+                        source_block.get("storageName")
+                        or source_block.get("sha256")
+                        or f"{page}:{source_block.get('timestampMs')}"
+                    ).encode("utf-8")
+                ).hexdigest()[:24]
+            ),
         )
         for region in detection.visuals:
             section = normalize_section_key(region.section_key)
@@ -428,5 +494,7 @@ def process_exam_prep_visuals(
                         "selectedVariant": asset.selected_variant,
                     }
                 )
-    artifact.visual_assets.exclude(id__in=retained_asset_ids).delete()
+    stale_assets = artifact.visual_assets.exclude(id__in=retained_asset_ids)
+    if not delete_visual_assets(stale_assets):
+        raise RuntimeError("Unable to delete stale private visual files.")
     return projection, issues

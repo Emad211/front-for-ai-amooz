@@ -1,5 +1,3 @@
-import re
-
 from apps.classes.services.exam_prep_inventory import (
     build_exam_projection,
     build_extraction_audit,
@@ -64,16 +62,83 @@ def test_chunk_source_blocks_splits_oversized_media_without_losing_text():
     assert len(segments) > 1
     assert all(len(block["content"]) + 96 <= 700 for block in segments)
     assert [block["segment_index"] for block in segments] == list(range(len(segments)))
-    normalized_source = re.sub(r"\s+", " ", source).strip()
-    normalized_result = re.sub(
-        r"\s+", " ", " ".join(block["content"] for block in segments)
-    ).strip()
-    assert normalized_result == normalized_source
+    assert segments[0]["source_start"] == 0
+    assert segments[-1]["source_end"] == len(source)
+    assert all(
+        current["source_start"] < previous["source_end"]
+        for previous, current in zip(segments, segments[1:])
+    )
+    assert all(
+        block["content"]
+        == source[block["source_start"] : block["source_end"]].strip()
+        for block in segments
+    )
 
 
 def test_normalize_source_number_accepts_persian_and_arabic_digits():
     assert normalize_source_number("سؤال ۷۸") == "78"
     assert normalize_source_number("١١٦)") == "116"
+
+
+def test_audit_blocks_when_an_expected_source_block_produced_no_record():
+    audit = build_extraction_audit(
+        questions=[
+            {
+                **_questions(1, 1)[0],
+                "source_block_ids": ["page:1:0"],
+            }
+        ],
+        unmatched_answers=[],
+        issues=[],
+        expected_source_block_ids=["page:1:0", "page:2:0"],
+        processed_source_block_ids=["page:1:0"],
+    )
+
+    assert audit["status"] == "needs_review"
+    assert audit["criticalIssueCount"] == 1
+    assert audit["issues"] == [
+        {
+            "code": "unprocessed_source_block",
+            "severity": "critical",
+            "sourceBlockId": "page:2:0",
+        }
+    ]
+
+
+def test_audit_tracks_question_and_answer_coverage_independently():
+    audit = build_extraction_audit(
+        questions=[
+            {
+                **_questions(1, 1)[0],
+                "source_block_ids": ["page:1:0"],
+            }
+        ],
+        unmatched_answers=[],
+        issues=[],
+        expected_source_block_ids_by_phase={
+            "questions": ["page:1:0"],
+            "answers": ["page:1:0"],
+        },
+        processed_source_block_ids_by_phase={
+            "questions": [],
+            "answers": ["page:1:0"],
+        },
+    )
+
+    missing = [
+        issue
+        for issue in audit["issues"]
+        if issue["code"] == "unprocessed_source_block"
+    ]
+    assert audit["status"] == "needs_review"
+    assert missing == [
+        {
+            "code": "unprocessed_source_block",
+            "severity": "critical",
+            "phase": "questions",
+            "sourceBlockId": "page:1:0",
+        }
+    ]
 
 
 def test_first_booklet_questions_then_answers_produces_exactly_fifty():

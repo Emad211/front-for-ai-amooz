@@ -158,7 +158,8 @@ class TestChartTehranBucketing:
         assert {'date', 'registrations', 'classes', 'quizzes', 'chats'} <= set(out[0])
         last = out[-1]
         assert last['date'] == '2026-06-16'  # Tehran today, not UTC's 06-15
-        assert last['registrations'] == User.objects.count()
+        expected_today = User.objects.filter(date_joined=admin.date_joined).count()
+        assert last['registrations'] == expected_today
 
     def test_chart_days_param_is_clamped(self, freeze_tehran):
         admin = _admin()

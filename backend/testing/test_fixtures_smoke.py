@@ -65,10 +65,10 @@ def test_wrong_owner_clients_are_distinct(teacher_client, other_teacher_client):
 
 def test_mock_llm_patches_stage_generate_text(mock_llm):
     from types import SimpleNamespace
-    from apps.classes.services import exam_prep_structure as eps
+    from apps.classes.services import structure
     mock_llm.return_value = SimpleNamespace(text='{"exam_prep": {"questions": []}}')
     # Calling the patched name returns the canned value without hitting the gateway.
-    assert eps.generate_text(messages=[]).text == '{"exam_prep": {"questions": []}}'
+    assert structure.generate_text(messages=[]).text == '{"exam_prep": {"questions": []}}'
     assert mock_llm.call_count == 1
 
 

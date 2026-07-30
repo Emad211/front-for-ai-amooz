@@ -147,7 +147,12 @@ class TestPdfExamPipeline:
 
         monkeypatch.setattr(
             'apps.classes.services.pdf_extraction.extract_pdf_to_markdown',
-            lambda *, data, mime_type, asset_prefix=None: ('# سوالات استخراج‌شده', 'local', 'pdfplumber', 5),
+            lambda *, data, mime_type, asset_prefix=None, page_sink=None: (
+                '# سوالات استخراج‌شده',
+                'local',
+                'pdfplumber',
+                5,
+            ),
         )
 
         user = User.objects.create_user(username='te_pdf', password='p', role=User.Role.TEACHER)

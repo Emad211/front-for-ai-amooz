@@ -99,6 +99,8 @@ class TestAnnouncements:
     def test_exam_prep_patch_updates_fields(self):
         client, teacher = self._auth_client('TEACHER')
         session = self._create_session(teacher, pipeline_type=ClassCreationSession.PipelineType.EXAM_PREP)
+        session.status = ClassCreationSession.Status.EXAM_STRUCTURED
+        session.save(update_fields=['status', 'updated_at'])
 
         payload = {
             'title': 'عنوان جدید',

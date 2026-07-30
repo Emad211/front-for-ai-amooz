@@ -125,6 +125,16 @@ urlpatterns += [
         private_answer_source_media_view,
         name='private_answer_source_media',
     ),
+    path(
+        'media/exam-prep/source/<path:path>',
+        private_answer_source_media_view,
+        name='private_exam_source_media',
+    ),
+    path(
+        'media/exam-prep/visuals/<path:path>',
+        private_answer_source_media_view,
+        name='private_exam_visual_media',
+    ),
 ]
 
 if settings.DEBUG:

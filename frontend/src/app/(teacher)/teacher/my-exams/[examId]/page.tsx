@@ -130,6 +130,11 @@ export default function TeacherExamDetailPage({ params }: PageProps) {
   const reloadExam = async () => {
     const updated = await fetchExamPrepSession(Number(examId));
     setExamPrep(updated);
+    if (['exam_transcribing', 'exam_structuring'].includes(updated.status)) {
+      startPolling(updated.id);
+    } else {
+      stopPolling();
+    }
   };
 
   const handleRetryExtraction = async () => {
@@ -163,11 +168,14 @@ export default function TeacherExamDetailPage({ params }: PageProps) {
   const isProcessing = ['exam_transcribing', 'exam_structuring'].includes(examPrep.status);
   const extractionPassed =
     !examPrep.extractionAudit || examPrep.extractionAudit.status === 'passed';
+  const extractionReviewConfirmed =
+    !examPrep.teacherReviewRequired || Boolean(examPrep.teacherReviewedAt);
   const canPublish =
     examPrep.status === 'exam_structured'
     && !examPrep.is_published
     && questions.length > 0
-    && extractionPassed;
+    && extractionPassed
+    && extractionReviewConfirmed;
 
   const getStatusBadge = () => {
     if (examPrep.is_published) {

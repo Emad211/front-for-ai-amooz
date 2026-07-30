@@ -6,8 +6,13 @@ import { toast } from 'sonner';
 
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import type { ExamPrepSessionDetail } from '@/services/classes-service';
-import { selectExamPrepVisual } from '@/services/classes-service';
+import type { ExamPrepSessionDetail, ExamPrepSourceUnitIssue } from '@/services/classes-service';
+import {
+  confirmExamPrepExtractionReview,
+  getExamPrepExtractionUnitSourceUrl,
+  retryExamPrepExtractionUnit,
+  selectExamPrepVisual,
+} from '@/services/classes-service';
 import { ProtectedExamVisual } from '@/components/exam-prep/protected-exam-visual';
 
 interface ExamExtractionReviewProps {
@@ -25,11 +30,32 @@ const issueLabels: Record<string, string> = {
   visual_processing_failed: 'پردازش تصاویر کامل نشده است.',
   unmatched_visual: 'یک تصویر به سؤال مشخصی متصل نشده است.',
   invalid_visual_bbox: 'محدوده یک تصویر به‌درستی تشخیص داده نشده است.',
+  unprocessed_source_block: 'بخشی از منبع معتبر تشخیص داده نشد و وارد خروجی نهایی نشده است.',
+};
+
+const stageLabels: Record<ExamPrepSourceUnitIssue['stage'], string> = {
+  ocr: 'خواندن منبع',
+  manifest: 'تشخیص ساختار صفحات',
+  questions: 'استخراج سؤال‌ها',
+  answers: 'استخراج پاسخ‌ها',
+  visuals: 'پردازش تصاویر',
+};
+
+const qualityIssueLabels: Record<string, string> = {
+  empty_output: 'متنی از این بخش خوانده نشد.',
+  incomplete_finish_reason: 'پاسخ سرویس پردازش کامل دریافت نشد.',
+  absolute_length_limit: 'حجم متن استخراج‌شده غیرعادی بود.',
+  length_outlier: 'حجم متن این صفحه با صفحات دیگر سازگار نبود.',
+  native_text_ratio: 'خروجی خوانده‌شده با متن داخلی فایل اختلاف غیرعادی داشت.',
+  duplicate_lines: 'تکرار غیرعادی در متن استخراج‌شده دیده شد.',
+  numeric_instability: 'اعداد در دو بار خواندن این صفحه یکسان نبودند.',
 };
 
 export function ExamExtractionReview({ exam, onChanged, onRetry }: ExamExtractionReviewProps) {
   const [changingId, setChangingId] = useState<number | null>(null);
   const [isRetrying, setIsRetrying] = useState(false);
+  const [retryingUnitId, setRetryingUnitId] = useState<number | null>(null);
+  const [isConfirming, setIsConfirming] = useState(false);
   const audit = exam.extractionAudit;
   if (!audit || (exam.extractionVersion ?? 1) < 2) return null;
   const hasFailedChunks = (exam.extractionReview?.failedChunks.length ?? 0) > 0;
@@ -60,6 +86,38 @@ export function ExamExtractionReview({ exam, onChanged, onRetry }: ExamExtractio
     }
   };
 
+  const retryUnit = async (unitId: number) => {
+    if (exam.artifactRevision == null) return;
+    setRetryingUnitId(unitId);
+    try {
+      await retryExamPrepExtractionUnit(exam.id, unitId, exam.artifactRevision);
+      await onChanged();
+      toast.success('خواندن دوباره این بخش در صف پردازش قرار گرفت.');
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'تلاش دوباره آغاز نشد.');
+    } finally {
+      setRetryingUnitId(null);
+    }
+  };
+
+  const confirmReview = async () => {
+    if (exam.artifactRevision == null || !exam.projectionFingerprint) return;
+    setIsConfirming(true);
+    try {
+      await confirmExamPrepExtractionReview(
+        exam.id,
+        exam.artifactRevision,
+        exam.projectionFingerprint,
+      );
+      await onChanged();
+      toast.success('بازبینی نهایی ثبت شد. آزمون آماده انتشار است.');
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'ثبت بازبینی انجام نشد.');
+    } finally {
+      setIsConfirming(false);
+    }
+  };
+
   return (
     <section className="space-y-5 rounded-lg border border-border bg-card p-4 md:p-5" dir="rtl">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -84,6 +142,71 @@ export function ExamExtractionReview({ exam, onChanged, onRetry }: ExamExtractio
                 <span>{issueLabels[issue.code] ?? 'بخشی از خروجی باید پیش از انتشار بررسی شود.'}</span>
               </div>
             ))}
+        </div>
+      )}
+
+      {(exam.sourceUnitIssues?.length ?? 0) > 0 && (
+        <div className="space-y-3">
+          <div>
+            <h3 className="font-semibold">بخش‌های پردازش‌نشده منبع</h3>
+            <p className="mt-1 text-sm text-muted-foreground">
+              این بخش‌ها وارد سؤال‌ها و پاسخ‌های نهایی نشده‌اند. منبع را ببینید و فقط همان بخش را دوباره پردازش کنید.
+            </p>
+          </div>
+          <div className="grid gap-3 lg:grid-cols-2">
+            {exam.sourceUnitIssues?.map((unit) => {
+              const qualityCodes = [
+                ...(unit.qualityReport?.hardIssues ?? []),
+                ...(unit.qualityReport?.softIssues ?? []),
+              ];
+              const canRetry =
+                ['retryable', 'quarantined', 'failed'].includes(unit.status)
+                && exam.status !== 'exam_structuring';
+              return (
+                <article key={unit.id} className="space-y-3 rounded-md border border-amber-500/30 p-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <AlertTriangle className="h-4 w-4 text-amber-600" />
+                      <span className="text-sm font-semibold">{stageLabels[unit.stage]}</span>
+                    </div>
+                    <Badge variant="outline">
+                      {unit.pageNumber ? `صفحه ${unit.pageNumber}` : `بخش ${unit.segmentIndex ?? unit.id}`}
+                    </Badge>
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    {qualityCodes.length
+                      ? qualityCodes.map((code) => qualityIssueLabels[code] ?? 'کیفیت این بخش قابل اتکا نبود.').join(' ')
+                      : 'پردازش این بخش کامل نشد و برای جلوگیری از ساخت سؤال نادرست کنار گذاشته شد.'}
+                  </p>
+                  {unit.pageNumber && (
+                    <ProtectedExamVisual
+                      url={getExamPrepExtractionUnitSourceUrl(exam.id, unit.id)}
+                      alt={`منبع صفحه ${unit.pageNumber}`}
+                      className="h-56 w-full rounded-md border bg-muted/20 object-contain"
+                    />
+                  )}
+                  <div className="flex items-center justify-end gap-2">
+                    {canRetry && (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        disabled={retryingUnitId === unit.id}
+                        onClick={() => void retryUnit(unit.id)}
+                      >
+                        {retryingUnitId === unit.id ? (
+                          <Loader2 className="ml-2 h-4 w-4 animate-spin" />
+                        ) : (
+                          <RefreshCw className="ml-2 h-4 w-4" />
+                        )}
+                        پردازش دوباره
+                      </Button>
+                    )}
+                  </div>
+                </article>
+              );
+            })}
+          </div>
         </div>
       )}
 
@@ -175,6 +298,39 @@ export function ExamExtractionReview({ exam, onChanged, onRetry }: ExamExtractio
               </article>
             ))}
           </div>
+        </div>
+      )}
+
+      {(exam.extractionVersion ?? 1) >= 3 && exam.teacherReviewRequired && (
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-4">
+          <div>
+            <p className="font-semibold">
+              {exam.teacherReviewedAt ? 'بازبینی نهایی ثبت شده است.' : 'تأیید نهایی بازبینی'}
+            </p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              پس از بررسی سؤال‌ها، پاسخ‌ها و منبع بخش‌های مشکوک، نتیجه را تأیید کنید.
+            </p>
+          </div>
+          {exam.teacherReviewedAt ? (
+            <Badge variant="outline">
+              <CheckCircle2 className="ml-1 h-3.5 w-3.5 text-emerald-600" />
+              تأییدشده
+            </Badge>
+          ) : (
+            <Button
+              type="button"
+              disabled={
+                isConfirming
+                || audit.criticalIssueCount > 0
+                || !exam.projectionFingerprint
+                || exam.artifactRevision == null
+              }
+              onClick={() => void confirmReview()}
+            >
+              {isConfirming && <Loader2 className="ml-2 h-4 w-4 animate-spin" />}
+              تأیید بازبینی
+            </Button>
+          )}
         </div>
       )}
     </section>

@@ -12,6 +12,7 @@ from apps.classes.models import (
     ExamPrepVisualAsset,
 )
 from apps.classes.services import exam_prep_visuals
+from apps.classes.services import exam_prep_v3
 from apps.classes.services.schemas import (
     ExamPrepVisualDetectionOutput,
     ExamPrepVisualRegion,
@@ -68,6 +69,42 @@ def test_crop_uses_normalized_bbox_and_rejects_empty_regions():
 
     with pytest.raises(ValueError):
         exam_prep_visuals._crop(_png(), [0.5, 0.5, 0.5, 0.8])
+
+
+@pytest.mark.django_db
+def test_v3_visual_detection_uses_durable_visual_unit(monkeypatch):
+    session = baker.make(
+        ClassCreationSession,
+        pipeline_type=ClassCreationSession.PipelineType.EXAM_PREP,
+    )
+    artifact = ExamPrepExtractionArtifact.objects.create(
+        session=session,
+        pipeline_version=3,
+    )
+    calls = []
+    expected = ExamPrepVisualDetectionOutput(visuals=[])
+
+    def run_unit(**kwargs):
+        calls.append(kwargs)
+        return expected
+
+    monkeypatch.setattr(exam_prep_v3, "run_structured_unit", run_unit)
+
+    result = exam_prep_visuals._detect_visuals(
+        image=_png(),
+        content_type="image/png",
+        context={"source": {"pageNumber": 4}, "manifest": {}},
+        model="vision-model",
+        artifact=artifact,
+        unit_key="visuals:page-4",
+    )
+
+    assert result is expected
+    assert calls[0]["stage"] == "visuals"
+    assert calls[0]["unit_key"] == "visuals:page-4"
+    assert calls[0]["source_page"] == 4
+    assert calls[0]["prompt_version"] == exam_prep_visuals.ANALYSIS_PROMPT_VERSION
+    assert '"imageSha256"' in calls[0]["input_payload"]
 
 
 @pytest.mark.django_db
@@ -213,3 +250,148 @@ def test_question_and_solution_visuals_with_same_order_remain_distinct(monkeypat
     finally:
         for asset in artifact.visual_assets.all():
             asset.source_file.delete(save=False)
+
+
+@pytest.mark.django_db
+def test_stale_visual_cleanup_deletes_blobs_before_inventory(monkeypatch):
+    session = baker.make(
+        ClassCreationSession,
+        pipeline_type=ClassCreationSession.PipelineType.EXAM_PREP,
+    )
+    artifact = ExamPrepExtractionArtifact.objects.create(
+        session=session,
+        source_blocks=[],
+        page_manifest={"pages": []},
+    )
+    stale = ExamPrepVisualAsset.objects.create(
+        artifact=artifact,
+        asset_key="stale-visual",
+        question_key="q-1",
+        role=ExamPrepVisualAsset.Role.QUESTION,
+        source_kind=ExamPrepVisualAsset.SourceKind.PDF_PAGE,
+        source_file="exam-prep/visuals/source/stale.png",
+        source_sha256="a" * 64,
+        generated_file="exam-prep/visuals/generated/stale.png",
+        generated_sha256="b" * 64,
+        fingerprint="c" * 64,
+    )
+    deleted = []
+    monkeypatch.setattr(
+        exam_prep_visuals,
+        "delete_answer_source_file",
+        lambda name: deleted.append(name) or True,
+    )
+
+    projection, issues = exam_prep_visuals.process_exam_prep_visuals(
+        artifact=artifact,
+        projection={"exam_prep": {"questions": []}},
+        model="vision-model",
+    )
+
+    assert projection == {"exam_prep": {"questions": []}}
+    assert issues == []
+    assert deleted == [
+        "exam-prep/visuals/generated/stale.png",
+        "exam-prep/visuals/source/stale.png",
+    ]
+    assert not ExamPrepVisualAsset.objects.filter(id=stale.id).exists()
+
+
+@pytest.mark.django_db
+def test_stale_visual_cleanup_preserves_inventory_when_blob_delete_fails(
+    monkeypatch,
+):
+    session = baker.make(
+        ClassCreationSession,
+        pipeline_type=ClassCreationSession.PipelineType.EXAM_PREP,
+    )
+    artifact = ExamPrepExtractionArtifact.objects.create(
+        session=session,
+        source_blocks=[],
+        page_manifest={"pages": []},
+    )
+    stale = ExamPrepVisualAsset.objects.create(
+        artifact=artifact,
+        asset_key="stale-visual-failure",
+        question_key="q-1",
+        role=ExamPrepVisualAsset.Role.QUESTION,
+        source_kind=ExamPrepVisualAsset.SourceKind.PDF_PAGE,
+        source_file="exam-prep/visuals/source/stale.png",
+        source_sha256="d" * 64,
+        generated_file="exam-prep/visuals/generated/stale.png",
+        generated_sha256="e" * 64,
+        fingerprint="f" * 64,
+    )
+    attempted = []
+
+    def delete_visual(name):
+        attempted.append(name)
+        return name.endswith("source/stale.png")
+
+    monkeypatch.setattr(
+        exam_prep_visuals,
+        "delete_answer_source_file",
+        delete_visual,
+    )
+
+    with pytest.raises(RuntimeError, match="stale private visual"):
+        exam_prep_visuals.process_exam_prep_visuals(
+            artifact=artifact,
+            projection={"exam_prep": {"questions": []}},
+            model="vision-model",
+        )
+
+    assert attempted == [
+        "exam-prep/visuals/generated/stale.png",
+        "exam-prep/visuals/source/stale.png",
+    ]
+    assert ExamPrepVisualAsset.objects.filter(id=stale.id).exists()
+
+
+@pytest.mark.django_db
+def test_explicit_visual_cleanup_does_not_schedule_duplicate_blob_delete(
+    monkeypatch,
+    django_capture_on_commit_callbacks,
+):
+    session = baker.make(
+        ClassCreationSession,
+        pipeline_type=ClassCreationSession.PipelineType.EXAM_PREP,
+    )
+    artifact = ExamPrepExtractionArtifact.objects.create(session=session)
+    asset = ExamPrepVisualAsset.objects.create(
+        artifact=artifact,
+        asset_key="single-delete",
+        question_key="q-1",
+        role=ExamPrepVisualAsset.Role.QUESTION,
+        source_kind=ExamPrepVisualAsset.SourceKind.PDF_PAGE,
+        source_file="exam-prep/visuals/source/shared.png",
+        source_sha256="1" * 64,
+        generated_file="exam-prep/visuals/generated/shared.png",
+        generated_sha256="2" * 64,
+        fingerprint="3" * 64,
+    )
+    deleted = []
+
+    def delete_once(name):
+        deleted.append(name)
+        return True
+
+    monkeypatch.setattr(
+        exam_prep_visuals,
+        "delete_answer_source_file",
+        delete_once,
+    )
+    monkeypatch.setattr(
+        "apps.classes.signals.delete_answer_source_file",
+        delete_once,
+    )
+
+    with django_capture_on_commit_callbacks(execute=True):
+        assert exam_prep_visuals.delete_visual_assets(
+            ExamPrepVisualAsset.objects.filter(id=asset.id)
+        )
+
+    assert deleted == [
+        "exam-prep/visuals/generated/shared.png",
+        "exam-prep/visuals/source/shared.png",
+    ]

@@ -69,6 +69,7 @@ def _block_payload(blocks: list[dict[str, Any]], manifest_by_page: dict[int, dic
         payload.append(
             {
                 "page_number": page_number,
+                "source_block_id": block["block_id"],
                 "block_order": int(block["block_order"]),
                 "segment_index": int(block.get("segment_index") or 0),
                 "manifest": manifest_by_page.get(page_number, {}),
@@ -85,16 +86,36 @@ def _call(
     blocks: list[dict[str, Any]],
     manifest_by_page: dict[int, dict],
     model: str,
+    artifact=None,
+    phase: str = "",
+    chunk_index: int = 0,
 ) -> BaseModel:
+    payload = _block_payload(blocks, manifest_by_page)
+    messages = [
+        {"role": "system", "content": PROMPTS[prompt_key]["default"]},
+        {
+            "role": "user",
+            "content": "SOURCE_BLOCKS:\n" + payload,
+        },
+    ]
+    if artifact is not None and artifact.pipeline_version >= 3:
+        from .exam_prep_v3 import run_structured_unit
+
+        return run_structured_unit(
+            artifact=artifact,
+            stage=phase,
+            unit_key=f"{phase}:chunk:{chunk_index}",
+            source_page=min((int(block["page_number"]) for block in blocks), default=None),
+            source_segment=chunk_index,
+            input_payload=payload,
+            messages=messages,
+            schema=schema,
+            model=model,
+            feature=LLMUsageLog.Feature.EXAM_PREP_STRUCTURE,
+        )
     return generate_structured(
         schema=schema,
-        messages=[
-            {"role": "system", "content": PROMPTS[prompt_key]["default"]},
-            {
-                "role": "user",
-                "content": "SOURCE_BLOCKS:\n" + _block_payload(blocks, manifest_by_page),
-            },
-        ],
+        messages=messages,
         model=model,
         feature=LLMUsageLog.Feature.EXAM_PREP_STRUCTURE,
         timeout=int(os.getenv("LLM_TIMEOUT_SECONDS", "600")),
@@ -103,22 +124,37 @@ def _call(
 
 
 def _normalize_record_pages(
-    record: dict[str, Any], blocks: list[dict[str, Any]]
+    record: dict[str, Any],
+    blocks: list[dict[str, Any]],
+    *,
+    require_block_ids: bool = False,
 ) -> dict[str, Any]:
+    allowed_by_id = {str(block["block_id"]): block for block in blocks}
+    source_block_ids = [
+        str(block_id)
+        for block_id in record.get("source_block_ids") or []
+        if str(block_id) in allowed_by_id
+    ]
+    if require_block_ids and not source_block_ids:
+        raise ValueError("LLM record has no valid source_block_ids")
+    record["source_block_ids"] = list(dict.fromkeys(source_block_ids))
     allowed_pages = {int(block["page_number"]) for block in blocks}
     pages = [
         int(page)
         for page in record.get("source_pages") or []
         if str(page).isdigit() and int(page) in allowed_pages
     ]
-    if not pages and len(allowed_pages) == 1:
-        pages = list(allowed_pages)
+    if not pages and source_block_ids:
+        pages = [
+            int(allowed_by_id[block_id]["page_number"])
+            for block_id in record["source_block_ids"]
+        ]
     record["source_pages"] = sorted(set(pages))
-    if pages:
-        block_order_by_page = {
-            int(block["page_number"]): int(block["block_order"]) for block in blocks
-        }
-        record["block_order"] = min(block_order_by_page[page] for page in pages)
+    if source_block_ids:
+        record["block_order"] = min(
+            int(allowed_by_id[block_id]["block_order"])
+            for block_id in record["source_block_ids"]
+        )
     return record
 
 
@@ -147,7 +183,9 @@ def _candidate_blocks(
 
 
 def extract_exam_prep_inventory(
-    *, transcript_markdown: str
+    *,
+    transcript_markdown: str,
+    artifact=None,
 ) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any], str, str]:
     """Return projection, durable artifact payload, audit, provider, and model."""
     transcript = sanitize_llm_markdown(transcript_markdown)
@@ -157,9 +195,17 @@ def extract_exam_prep_inventory(
 
     model = _select_model()
     provider = preferred_provider()
-    max_chars = max(4_000, min(_env_int("EXAM_PREP_INVENTORY_CHUNK_CHARS", 16_000), 32_000))
+    is_v3 = artifact is not None and artifact.pipeline_version >= 3
+    max_chars = (
+        24_000
+        if is_v3
+        else max(4_000, min(_env_int("EXAM_PREP_INVENTORY_CHUNK_CHARS", 16_000), 32_000))
+    )
     chunks = chunk_source_blocks(blocks, max_chars=max_chars)
     failed_chunks: list[dict[str, Any]] = []
+
+    def failure_code(exc: Exception) -> str:
+        return exc.__class__.__name__ if is_v3 else str(exc)
 
     manifest_items: list[dict[str, Any]] = []
     title = ""
@@ -171,12 +217,20 @@ def extract_exam_prep_inventory(
                 blocks=chunk,
                 manifest_by_page={},
                 model=model,
+                artifact=artifact,
+                phase="manifest",
+                chunk_index=index,
             )
             title = title or result.title.strip()
             manifest_items.extend(item.model_dump() for item in result.pages)
         except Exception as exc:
             failed_chunks.append(
-                {"phase": "manifest", "chunk": index, "pages": [b["page_number"] for b in chunk], "error": str(exc)}
+                {
+                    "phase": "manifest",
+                    "chunk": index,
+                    "pages": [b["page_number"] for b in chunk],
+                    "error": failure_code(exc),
+                }
             )
 
     manifest_by_page = {
@@ -201,6 +255,9 @@ def extract_exam_prep_inventory(
 
     question_records: list[dict[str, Any]] = []
     answer_records: list[dict[str, Any]] = []
+    expected_block_ids_by_phase: dict[str, set[str]] = {}
+    processed_block_ids_by_phase: dict[str, set[str]] = {}
+    chunk_block_ids: dict[tuple[str, int], set[str]] = {}
     phase_specs = (
         (
             "questions",
@@ -219,7 +276,15 @@ def extract_exam_prep_inventory(
     )
     for phase, schema, prompt_key, field_name, destination in phase_specs:
         candidates = _candidate_blocks(blocks, manifest_by_page, kind=phase)
+        expected_block_ids_by_phase[phase] = {
+            str(block["block_id"]) for block in candidates
+        }
+        processed_block_ids_by_phase[phase] = set()
         for index, chunk in enumerate(chunk_source_blocks(candidates, max_chars=max_chars)):
+            allowed_block_ids = {
+                str(block["block_id"]) for block in chunk
+            }
+            chunk_block_ids[(phase, index)] = allowed_block_ids
             try:
                 result = _call(
                     schema=schema,
@@ -227,14 +292,41 @@ def extract_exam_prep_inventory(
                     blocks=chunk,
                     manifest_by_page=manifest_by_page,
                     model=model,
+                    artifact=artifact,
+                    phase=phase,
+                    chunk_index=index,
                 )
-                destination.extend(
-                    _normalize_record_pages(item.model_dump(), chunk)
+                normalized_records = [
+                    _normalize_record_pages(
+                        item.model_dump(),
+                        chunk,
+                        require_block_ids=is_v3,
+                    )
                     for item in getattr(result, field_name)
+                ]
+                destination.extend(normalized_records)
+                processed_block_ids_by_phase[phase].update(
+                    str(block_id)
+                    for block_id in getattr(
+                        result,
+                        "processed_source_block_ids",
+                        (),
+                    )
+                    if str(block_id) in allowed_block_ids
+                )
+                processed_block_ids_by_phase[phase].update(
+                    str(block_id)
+                    for record in normalized_records
+                    for block_id in record.get("source_block_ids") or []
                 )
             except Exception as exc:
                 failed_chunks.append(
-                    {"phase": phase, "chunk": index, "pages": [b["page_number"] for b in chunk], "error": str(exc)}
+                    {
+                        "phase": phase,
+                        "chunk": index,
+                        "pages": [b["page_number"] for b in chunk],
+                        "error": failure_code(exc),
+                    }
                 )
 
     deduplicated, duplicate_issues = deduplicate_question_records(question_records)
@@ -250,13 +342,49 @@ def extract_exam_prep_inventory(
         issues=[*duplicate_issues, *answer_duplicate_issues, *match_issues],
         failed_chunks=failed_chunks,
         page_manifest=list(manifest_by_page.values()),
+        expected_source_block_ids_by_phase=(
+            expected_block_ids_by_phase if is_v3 else None
+        ),
+        processed_source_block_ids_by_phase=(
+            processed_block_ids_by_phase if is_v3 else None
+        ),
     )
+    if is_v3:
+        from apps.classes.models import ExamPrepExtractionUnit
+
+        for (phase, index), unit_block_ids in chunk_block_ids.items():
+            missing_ids = sorted(
+                unit_block_ids - processed_block_ids_by_phase[phase]
+            )
+            if not missing_ids:
+                continue
+            unit = artifact.units.filter(
+                revision=artifact.revision,
+                stage=phase,
+                unit_key=f"{phase}:chunk:{index}",
+                status=ExamPrepExtractionUnit.Status.ACCEPTED,
+            ).first()
+            if unit is None:
+                continue
+            quality = dict(unit.quality_report or {})
+            quality["missingSourceBlockIds"] = missing_ids
+            unit.status = ExamPrepExtractionUnit.Status.RETRYABLE
+            unit.quality_report = quality
+            unit.error_code = "unprocessed_source_block"
+            unit.error_detail = ""
+            unit.save(update_fields=[
+                "status",
+                "quality_report",
+                "error_code",
+                "error_detail",
+                "updated_at",
+            ])
     if not matched and failed_chunks:
         raise RuntimeError("استخراج سؤال‌ها کامل نشد و برای تلاش مجدد در صف قرار می‌گیرد.")
 
     projection = build_exam_projection(title=title, questions=matched)
     artifact = {
-        "pipeline_version": PIPELINE_VERSION,
+        "pipeline_version": 3 if is_v3 else PIPELINE_VERSION,
         "page_manifest": {"title": title, "pages": list(manifest_by_page.values())},
         "question_records": matched,
         "answer_records": annotate_answer_match_status(

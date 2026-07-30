@@ -22,6 +22,7 @@ Design principles
 from __future__ import annotations
 
 import functools
+import heapq
 import json
 import logging
 import os
@@ -60,6 +61,117 @@ ANSWER_OCR_TASK_TIME_LIMIT = int(os.getenv('EXERCISE_ANSWER_OCR_TIME_LIMIT', '27
 _PIPELINE_TIMEOUT_FA = (
     'پردازش از سقف زمانی مجاز فراتر رفت. لطفاً فایل را به جلسات کوتاه‌تر تقسیم کنید و دوباره تلاش کنید.'
 )
+_ORPHAN_SOURCE_SWEEP_CURSOR_KEY = 'exam-prep:orphan-source-sweep:cursor:v1'
+_ORPHAN_VISUAL_SWEEP_CURSOR_PREFIX = 'exam-prep:orphan-visual-sweep:cursor:v1'
+_ORPHAN_SOURCE_SWEEP_LIMIT = 100
+_ORPHAN_VISUAL_GRACE_SECONDS = 60 * 60
+
+
+def _list_exam_source_session_dirs(storage, *, after: str = '') -> list[str]:
+    """Return one bounded, lexicographically ordered page of source prefixes."""
+    prefix = 'exam-prep/source'
+    connection = getattr(storage, 'connection', None)
+    bucket_name = getattr(storage, 'bucket_name', None)
+    if connection is not None and bucket_name:
+        request = {
+            'Bucket': bucket_name,
+            'Prefix': f'{prefix}/',
+            'Delimiter': '/',
+            'MaxKeys': _ORPHAN_SOURCE_SWEEP_LIMIT,
+        }
+        if after:
+            request['StartAfter'] = f'{prefix}/{after}/'
+        response = connection.meta.client.list_objects_v2(**request)
+        return [
+            value
+            for item in response.get('CommonPrefixes') or []
+            if (
+                value := str(item.get('Prefix') or '')
+                .removeprefix(f'{prefix}/')
+                .rstrip('/')
+            ).isdigit()
+        ]
+
+    try:
+        root = Path(storage.path(prefix))
+    except (AttributeError, NotImplementedError):
+        logger.warning(
+            'Skipping orphan exam-source sweep: storage has no paginated listing.'
+        )
+        return []
+    if not root.exists():
+        return []
+    with os.scandir(root) as entries:
+        return heapq.nsmallest(
+            _ORPHAN_SOURCE_SWEEP_LIMIT,
+            (
+                entry.name
+                for entry in entries
+                if entry.is_dir() and entry.name.isdigit() and entry.name > after
+            ),
+        )
+
+
+def _list_private_files(
+    storage,
+    *,
+    prefix: str,
+    after: str = '',
+) -> list[tuple[str, float | None]]:
+    """Return one bounded page of private objects and modification timestamps."""
+    connection = getattr(storage, 'connection', None)
+    bucket_name = getattr(storage, 'bucket_name', None)
+    if connection is not None and bucket_name:
+        request = {
+            'Bucket': bucket_name,
+            'Prefix': f'{prefix}/',
+            'MaxKeys': _ORPHAN_SOURCE_SWEEP_LIMIT,
+        }
+        if after:
+            request['StartAfter'] = after
+        response = connection.meta.client.list_objects_v2(**request)
+        return [
+            (
+                name,
+                (
+                    item['LastModified'].timestamp()
+                    if item.get('LastModified') is not None
+                    else None
+                ),
+            )
+            for item in response.get('Contents') or []
+            if (
+                name := str(item.get('Key') or '')
+            ).startswith(f'{prefix}/')
+            and not name.endswith('/')
+        ]
+
+    try:
+        root = Path(storage.path(prefix))
+    except (AttributeError, NotImplementedError):
+        logger.warning(
+            'Skipping orphan private-file sweep: storage has no paginated listing.'
+        )
+        return []
+    if not root.exists():
+        return []
+    after_name = Path(after).name if after else ''
+    with os.scandir(root) as entries:
+        names = heapq.nsmallest(
+            _ORPHAN_SOURCE_SWEEP_LIMIT,
+            (
+                entry.name
+                for entry in entries
+                if entry.is_file() and entry.name > after_name
+            ),
+        )
+    return [
+        (
+            f'{prefix}/{name}',
+            (root / name).stat().st_mtime,
+        )
+        for name in names
+    ]
 
 
 def _current_task_id(task) -> str:
@@ -384,7 +496,7 @@ def _read_file_bytes(path: str) -> bytes:
         return f.read()
 
 
-def _cleanup_source_file(session) -> None:
+def _cleanup_source_file(session) -> bool:
     """Delete the uploaded source file from disk and clear the DB field.
 
     Called after successful transcription — only the transcript text is
@@ -396,8 +508,10 @@ def _cleanup_source_file(session) -> None:
             session.source_file.delete(save=False)
             session.source_file = None
             session.save(update_fields=['source_file', 'updated_at'])
+        return True
     except Exception:
         logger.warning('Failed to cleanup source file for session %s', session.id, exc_info=True)
+        return False
 
 
 def _safe_refresh(session) -> bool:
@@ -455,6 +569,19 @@ def _safe_mark_cancelled(session) -> None:
                 message='پردازش توسط شما متوقف شد.',
             )
             session.save(update_fields=['status', 'workflow_state', 'updated_at'])
+        if session.pipeline_type == session.PipelineType.EXAM_PREP:
+            from .models import ExamPrepExtractionArtifact
+            from .services.exam_prep_v3 import source_retention_deadline
+
+            ExamPrepExtractionArtifact.objects.filter(
+                session_id=session.id,
+                pipeline_version__gte=3,
+                source_retain_until__isnull=True,
+            ).update(
+                source_retain_until=source_retention_deadline(),
+                active_task_id='',
+                updated_at=timezone.now(),
+            )
     except Exception:
         logger.info(
             'Could not mark session %s as CANCELLED (likely deleted).',
@@ -618,18 +745,24 @@ def _ingest_source_to_markdown(session, tmp_path: str, progress_cb=None):
 
     Returns ``(markdown, provider, model, page_count)``.
     """
-    from .models import ClassCreationSession, ExamPrepExtractionArtifact
-    from .services.exam_prep_inventory_pipeline import inventory_enabled
-    from .services.transcription import transcribe_media_file
+    from .models import (
+        ClassCreationSession,
+        ExamPrepExtractionArtifact,
+        ExamPrepExtractionUnit,
+        ExamPrepVisualAsset,
+    )
+    from django.db import transaction
+    from .services.transcription import TranscriptionAborted, transcribe_media_file
     from .services.pdf_extraction import extract_image_to_markdown, extract_pdf_to_markdown
     from core.storage_backends import delete_answer_source_file
 
     mime = session.source_mime_type or ''
-    capture_sources = (
-        session.pipeline_type == ClassCreationSession.PipelineType.EXAM_PREP
-        and inventory_enabled()
+    artifact = (
+        ExamPrepExtractionArtifact.objects.filter(session=session).first()
+        if session.pipeline_type == ClassCreationSession.PipelineType.EXAM_PREP
+        else None
     )
-    artifact = None
+    capture_sources = artifact is not None and artifact.pipeline_version >= 2
     source_blocks = []
     old_source_names: set[str] = set()
     new_source_names: set[str] = set()
@@ -642,7 +775,8 @@ def _ingest_source_to_markdown(session, tmp_path: str, progress_cb=None):
             for chunk in iter(lambda: source.read(1024 * 1024), b''):
                 digest.update(chunk)
         source_fingerprint = digest.hexdigest()
-        artifact, _ = ExamPrepExtractionArtifact.objects.get_or_create(session=session)
+        if artifact is None:
+            artifact, _ = ExamPrepExtractionArtifact.objects.get_or_create(session=session)
         source_changed = bool(
             artifact.source_fingerprint
             and artifact.source_fingerprint != source_fingerprint
@@ -679,8 +813,7 @@ def _ingest_source_to_markdown(session, tmp_path: str, progress_cb=None):
             f'exam-prep/source/{session.id}/{digest}.{suffix}',
             ContentFile(data),
         )
-        new_source_names.add(name)
-        source_blocks.append({
+        block = {
             'sourceKind': kind,
             'pageNumber': page,
             'timestampMs': timestamp_ms,
@@ -690,20 +823,87 @@ def _ingest_source_to_markdown(session, tmp_path: str, progress_cb=None):
             'sha256': digest,
             'width': width,
             'height': height,
-        })
+        }
+        try:
+            with transaction.atomic():
+                live_session = ClassCreationSession.objects.select_for_update().get(
+                    id=session.id,
+                )
+                if live_session.cancel_requested:
+                    raise TranscriptionAborted(
+                        'Exam-prep source capture was cancelled.'
+                    )
+                live_artifact = ExamPrepExtractionArtifact.objects.select_for_update().get(
+                    id=artifact.id,
+                    session_id=session.id,
+                )
+                persisted_blocks = list(live_artifact.source_blocks or [])
+                if not any(
+                    isinstance(value, dict)
+                    and value.get('storageName') == name
+                    for value in persisted_blocks
+                ):
+                    persisted_blocks.append(block)
+                    live_artifact.source_blocks = persisted_blocks
+                    live_artifact.save(
+                        update_fields=['source_blocks', 'updated_at']
+                    )
+                source_blocks[:] = persisted_blocks
+                artifact.source_blocks = persisted_blocks
+        except (
+            ClassCreationSession.DoesNotExist,
+            ExamPrepExtractionArtifact.DoesNotExist,
+        ) as exc:
+            delete_answer_source_file(name)
+            raise TranscriptionAborted(
+                'Exam-prep source capture no longer has an active session.'
+            ) from exc
+        except Exception:
+            delete_answer_source_file(name)
+            raise
+        new_source_names.add(name)
 
     def _discard_new_source_files():
-        for name in new_source_names - old_source_names:
+        discarded_names = new_source_names - old_source_names
+        for name in discarded_names:
             delete_answer_source_file(name)
+        if artifact is None or not discarded_names:
+            return
+        try:
+            with transaction.atomic():
+                live_artifact = ExamPrepExtractionArtifact.objects.select_for_update().filter(
+                    id=artifact.id
+                ).first()
+                if live_artifact is None:
+                    return
+                live_artifact.source_blocks = [
+                    block
+                    for block in live_artifact.source_blocks or []
+                    if not isinstance(block, dict)
+                    or block.get('storageName') not in discarded_names
+                ]
+                live_artifact.save(
+                    update_fields=['source_blocks', 'updated_at']
+                )
+        except Exception:
+            logger.warning(
+                'Failed to remove discarded exam source metadata artifact=%s.',
+                artifact.id,
+                exc_info=True,
+            )
 
     def _persist_source_blocks():
         if artifact is None:
             return
-        artifact.source_fingerprint = source_fingerprint
-        artifact.source_blocks = source_blocks
-        artifact.save(update_fields=['source_fingerprint', 'source_blocks', 'updated_at'])
         if source_changed:
-            artifact.visual_assets.all().delete()
+            from .services.exam_prep_visuals import delete_visual_assets
+
+            if not delete_visual_assets(artifact.visual_assets.all()):
+                raise RuntimeError(
+                    'Unable to delete private visual files for changed source.'
+                )
+        artifact.source_fingerprint = source_fingerprint
+        artifact.save(update_fields=['source_fingerprint', 'updated_at'])
         current_names = {
             str(block.get('storageName'))
             for block in source_blocks
@@ -715,20 +915,29 @@ def _ingest_source_to_markdown(session, tmp_path: str, progress_cb=None):
     if session.source_type == ClassCreationSession.SourceType.PDF:
         should_capture = capture_sources and not source_blocks
         try:
-            result = extract_pdf_to_markdown(
-                data=_read_file_bytes(tmp_path), mime_type=mime or 'application/pdf',
-                asset_prefix=f'class_creation/extracted/{session.id}',
-                page_sink=(
-                    lambda page, data, width, height: _save_source_image(
-                        data=data,
-                        kind='pdf_page',
-                        content_type='image/png',
-                        page=page,
-                        width=width,
-                        height=height,
-                    )
-                ) if should_capture else None,
-            )
+            page_sink = (
+                lambda page, data, width, height: _save_source_image(
+                    data=data,
+                    kind='pdf_page',
+                    content_type='image/png',
+                    page=page,
+                    width=width,
+                    height=height,
+                )
+            ) if should_capture else None
+            if artifact is not None and artifact.pipeline_version >= 3:
+                from .services.exam_prep_v3 import extract_pdf_v3
+                result = extract_pdf_v3(
+                    data=_read_file_bytes(tmp_path),
+                    artifact=artifact,
+                    page_sink=page_sink,
+                )
+            else:
+                result = extract_pdf_to_markdown(
+                    data=_read_file_bytes(tmp_path), mime_type=mime or 'application/pdf',
+                    asset_prefix=f'class_creation/extracted/{session.id}',
+                    page_sink=page_sink,
+                )
         except Exception:
             _discard_new_source_files()
             raise
@@ -745,7 +954,23 @@ def _ingest_source_to_markdown(session, tmp_path: str, progress_cb=None):
                     content_type=mime,
                     page=1,
                 )
-            result = extract_image_to_markdown(data=source_image, mime_type=mime)
+            if artifact is not None and artifact.pipeline_version >= 3:
+                from .services.exam_prep_v3 import process_ocr_page
+                outcome = process_ocr_page(
+                    artifact_id=artifact.id,
+                    image=source_image,
+                    page_number=1,
+                    native_text_length=0,
+                    content_type=mime,
+                )
+                result = (
+                    f"## صفحه 1\n\n{outcome.text}".strip(),
+                    outcome.provider,
+                    outcome.model,
+                    1,
+                )
+            else:
+                result = extract_image_to_markdown(data=source_image, mime_type=mime)
         except Exception:
             _discard_new_source_files()
             raise
@@ -774,6 +999,29 @@ def _ingest_source_to_markdown(session, tmp_path: str, progress_cb=None):
                     content_type='image/jpeg',
                     timestamp_ms=timestamp,
                 )
+        if artifact is not None and artifact.pipeline_version >= 3:
+            import hashlib
+            fingerprint = hashlib.sha256(
+                (markdown + model_name + 'media-ocr-v3').encode('utf-8')
+            ).hexdigest()
+            ExamPrepExtractionUnit.objects.update_or_create(
+                artifact=artifact,
+                stage=ExamPrepExtractionUnit.Stage.OCR,
+                unit_key='media:transcript',
+                revision=artifact.revision,
+                defaults={
+                    'status': ExamPrepExtractionUnit.Status.ACCEPTED,
+                    'input_fingerprint': fingerprint,
+                    'output_payload': {'text': markdown},
+                    'quality_report': {'accepted': True, 'source': 'media_transcription'},
+                    'attempt_count': 1,
+                    'provider': provider,
+                    'model_name': model_name,
+                    'prompt_version': 'media-transcription-v3',
+                    'output_length': len(markdown),
+                    'heartbeat_at': timezone.now(),
+                },
+            )
     except Exception:
         _discard_new_source_files()
         raise
@@ -1149,7 +1397,12 @@ def process_class_full_pipeline(self, session_id: int) -> dict:
 @_attribute_llm_usage_to_teacher
 def process_exam_prep_step1_transcription(self, session_id: int) -> dict:
     """Transcribe uploaded media (or extract a PDF) for exam prep pipeline."""
-    from .models import ClassCreationSession
+    from .models import (
+        ClassCreationSession,
+        ExamPrepExtractionArtifact,
+        ExamPrepExtractionUnit,
+        ExamPrepVisualAsset,
+    )
     from .services.transcription import TranscriptionAborted
 
     session = ClassCreationSession.objects.filter(id=session_id).first()
@@ -1157,6 +1410,11 @@ def process_exam_prep_step1_transcription(self, session_id: int) -> dict:
         return {'status': 'skipped', 'reason': 'session not found'}
     if session.status != ClassCreationSession.Status.EXAM_TRANSCRIBING:
         return {'status': 'skipped', 'reason': f'unexpected status {session.status}'}
+    task_id = str(getattr(self.request, 'id', '') or session.celery_task_id or '')
+    ExamPrepExtractionArtifact.objects.filter(session=session).update(
+        active_task_id=task_id,
+        heartbeat_at=timezone.now(),
+    )
     _sync_session_workflow_to_status(session, message='منبع آمادگی آزمون دریافت شد و در حال تبدیل به متن هستیم.')
     session.save(update_fields=['workflow_state', 'updated_at'])
 
@@ -1185,8 +1443,12 @@ def process_exam_prep_step1_transcription(self, session_id: int) -> dict:
         _sync_session_workflow_to_status(session, message='متن آمادگی آزمون آماده شد و حالا سوال‌ها را استخراج می‌کنیم.')
         session.save(update_fields=['transcript_markdown', 'llm_provider', 'llm_model', 'source_page_count', 'status', 'workflow_state', 'updated_at'])
 
-        # Delete the uploaded source file to free disk space.
-        _cleanup_source_file(session)
+        artifact = ExamPrepExtractionArtifact.objects.filter(session=session).first()
+        if artifact is None or artifact.pipeline_version < 3:
+            _cleanup_source_file(session)
+        else:
+            artifact.heartbeat_at = timezone.now()
+            artifact.save(update_fields=['heartbeat_at', 'updated_at'])
 
         return {'status': 'success', 'session_id': session_id}
     except TranscriptionAborted:
@@ -1219,7 +1481,11 @@ def process_exam_prep_step1_transcription(self, session_id: int) -> dict:
 def process_exam_prep_step2_structure(self, session_id: int) -> dict:
     """Extract Q&A structure from exam prep transcript."""
     import json as _json
-    from .models import ClassCreationSession, ExamPrepExtractionArtifact
+    from .models import (
+        ClassCreationSession,
+        ExamPrepExtractionArtifact,
+        ExamPrepExtractionUnit,
+    )
     from .services.exam_prep_inventory_pipeline import (
         extract_exam_prep_inventory,
         inventory_enabled,
@@ -1232,6 +1498,18 @@ def process_exam_prep_step2_structure(self, session_id: int) -> dict:
         return {'status': 'skipped', 'reason': 'session not found'}
     if session.status != ClassCreationSession.Status.EXAM_STRUCTURING:
         return {'status': 'skipped', 'reason': f'unexpected status {session.status}'}
+    artifact = ExamPrepExtractionArtifact.objects.filter(session=session).first()
+    use_inventory = (
+        artifact.pipeline_version >= 2
+        if artifact is not None
+        else inventory_enabled()
+    )
+    coordinator_id = str(session.celery_task_id or getattr(self.request, 'id', '') or '')
+    if artifact is not None:
+        artifact.active_task_id = coordinator_id
+        artifact.heartbeat_at = timezone.now()
+        artifact.save(update_fields=['active_task_id', 'heartbeat_at', 'updated_at'])
+    starting_revision = artifact.revision if artifact is not None else 0
     _sync_session_workflow_to_status(session)
     session.save(update_fields=['workflow_state', 'updated_at'])
     if not (session.transcript_markdown or '').strip():
@@ -1242,8 +1520,11 @@ def process_exam_prep_step2_structure(self, session_id: int) -> dict:
         return {'status': 'failed', 'error': session.error_detail}
 
     try:
-        if inventory_enabled():
-            artifact, _ = ExamPrepExtractionArtifact.objects.get_or_create(session=session)
+        if use_inventory:
+            artifact, _ = ExamPrepExtractionArtifact.objects.get_or_create(
+                session=session,
+                defaults={'pipeline_version': 2},
+            )
             artifact.status = ExamPrepExtractionArtifact.Status.INVENTORY
             artifact.error_code = ''
             artifact.error_detail = ''
@@ -1251,6 +1532,7 @@ def process_exam_prep_step2_structure(self, session_id: int) -> dict:
             exam_prep_obj, artifact_payload, audit, provider, model_name = (
                 extract_exam_prep_inventory(
                     transcript_markdown=session.transcript_markdown,
+                    artifact=artifact if artifact.pipeline_version >= 3 else None,
                 )
             )
             for field, value in artifact_payload.items():
@@ -1290,22 +1572,88 @@ def process_exam_prep_step2_structure(self, session_id: int) -> dict:
                 audit['status'] = 'needs_review'
             artifact.audit = audit
             artifact.status = ExamPrepExtractionArtifact.Status.READY
-            artifact.save(update_fields=['audit', 'status', 'updated_at'])
+            if artifact.pipeline_version >= 3:
+                from .services.exam_prep_v3 import current_unit_issues
+                unit_issues = [
+                    issue
+                    for issue in current_unit_issues(artifact)
+                    if issue.get('stage') == ExamPrepExtractionUnit.Stage.OCR
+                ]
+                if unit_issues:
+                    audit['issues'] = [
+                        *(audit.get('issues') or []),
+                        *[
+                            {
+                                'code': 'unprocessed_source_block',
+                                'severity': 'critical',
+                                'unit': issue,
+                            }
+                            for issue in unit_issues
+                        ],
+                    ]
+                    audit['criticalIssueCount'] = sum(
+                        1 for issue in audit['issues']
+                        if issue.get('severity') == 'critical'
+                    )
+                    audit['status'] = 'needs_review'
+            artifact.audit = audit
+            artifact.heartbeat_at = timezone.now()
+            artifact.save(update_fields=['audit', 'status', 'heartbeat_at', 'updated_at'])
         else:
             exam_prep_obj, provider, model_name = extract_exam_prep_structure(
                 transcript_markdown=session.transcript_markdown,
             )
         normalized, _changed = normalize_exam_prep_questions(exam_prep_obj)
-        session.exam_prep_json = _json.dumps(normalized, ensure_ascii=False)
-        session.llm_provider = provider
-        session.llm_model = model_name
-        session.status = ClassCreationSession.Status.EXAM_STRUCTURED
-        _sync_session_workflow_to_status(session)
-        session.save(update_fields=['exam_prep_json', 'llm_provider', 'llm_model', 'status', 'workflow_state', 'updated_at'])
+        normalized_json = _json.dumps(normalized, ensure_ascii=False)
+        with transaction.atomic():
+            locked_session = ClassCreationSession.objects.select_for_update().get(id=session.id)
+            if (
+                locked_session.cancel_requested
+                or locked_session.status != ClassCreationSession.Status.EXAM_STRUCTURING
+            ):
+                return {'status': 'stale', 'reason': 'session changed before commit'}
+            if artifact is not None and artifact.pipeline_version >= 3:
+                locked_artifact = ExamPrepExtractionArtifact.objects.select_for_update().get(
+                    id=artifact.id
+                )
+                if (
+                    locked_artifact.revision != starting_revision
+                    or locked_artifact.active_task_id != coordinator_id
+                ):
+                    return {'status': 'stale', 'reason': 'artifact revision or coordinator changed'}
+                locked_artifact.active_task_id = ''
+                locked_artifact.heartbeat_at = timezone.now()
+                locked_artifact.teacher_reviewed_at = None
+                locked_artifact.teacher_reviewed_by = None
+                locked_artifact.reviewed_revision = None
+                locked_artifact.reviewed_projection_fingerprint = ''
+                locked_artifact.save(update_fields=[
+                    'active_task_id',
+                    'heartbeat_at',
+                    'teacher_reviewed_at',
+                    'teacher_reviewed_by',
+                    'reviewed_revision',
+                    'reviewed_projection_fingerprint',
+                    'updated_at',
+                ])
+            locked_session.exam_prep_json = normalized_json
+            locked_session.llm_provider = provider
+            locked_session.llm_model = model_name
+            locked_session.status = ClassCreationSession.Status.EXAM_STRUCTURED
+            _sync_session_workflow_to_status(locked_session)
+            locked_session.save(update_fields=[
+                'exam_prep_json',
+                'llm_provider',
+                'llm_model',
+                'status',
+                'workflow_state',
+                'updated_at',
+            ])
+            session = locked_session
         _mark_session_ready_for_review(session)
         return {'status': 'success', 'session_id': session_id}
     except Exception as exc:
-        if inventory_enabled():
+        if use_inventory:
             ExamPrepExtractionArtifact.objects.filter(session=session).update(
                 status=ExamPrepExtractionArtifact.Status.FAILED,
                 error_code='inventory_extraction_failed',
@@ -1315,6 +1663,78 @@ def process_exam_prep_step2_structure(self, session_id: int) -> dict:
             _safe_mark_failed(session, str(exc))
             return {'status': 'failed', 'error': str(exc)}
         raise self.retry(exc=exc)
+
+
+@shared_task(
+    bind=True,
+    max_retries=0,
+    acks_late=True,
+    soft_time_limit=PIPELINE_TASK_SOFT_TIME_LIMIT,
+    time_limit=PIPELINE_TASK_TIME_LIMIT,
+)
+@_attribute_llm_usage_to_teacher
+def retry_exam_prep_extraction_unit(self, session_id: int) -> dict:
+    """Retry one pending extraction unit, then rebuild the projection."""
+    from django.core.files.storage import storages
+
+    from .models import (
+        ClassCreationSession,
+        ExamPrepExtractionArtifact,
+        ExamPrepExtractionUnit,
+    )
+    from .services.exam_prep_v3 import process_ocr_page
+
+    artifact = ExamPrepExtractionArtifact.objects.select_related('session').filter(
+        session_id=session_id,
+        pipeline_version__gte=3,
+    ).first()
+    if artifact is None:
+        return {'status': 'skipped', 'reason': 'v3 artifact not found'}
+    session = artifact.session
+    if (
+        session.cancel_requested
+        or session.is_published
+        or session.status != ClassCreationSession.Status.EXAM_STRUCTURING
+    ):
+        return {'status': 'stale', 'reason': 'session is not retryable'}
+    target = artifact.units.filter(
+        revision=artifact.revision,
+        status=ExamPrepExtractionUnit.Status.PENDING,
+    ).order_by('stage', 'source_page', 'id').first()
+    if target is None:
+        return {'status': 'skipped', 'reason': 'pending unit not found'}
+    if target.stage != ExamPrepExtractionUnit.Stage.OCR:
+        return process_exam_prep_step2_structure.run(session_id)
+    block = next(
+        (
+            value
+            for value in artifact.source_blocks or []
+            if isinstance(value, dict)
+            and value.get('pageNumber') == target.source_page
+            and value.get('storageName')
+        ),
+        None,
+    )
+    if block is None:
+        target.status = ExamPrepExtractionUnit.Status.FAILED
+        target.error_code = 'source_missing'
+        target.error_detail = 'Source image metadata is unavailable.'
+        target.save(update_fields=[
+            'status', 'error_code', 'error_detail', 'updated_at',
+        ])
+    else:
+        storage = storages['answer_sources']
+        with storage.open(block['storageName'], 'rb') as handle:
+            source_bytes = handle.read()
+        process_ocr_page(
+            artifact_id=artifact.id,
+            image=source_bytes,
+            page_number=target.source_page or 1,
+            native_text_length=0,
+            content_type=block.get('contentType') or 'image/png',
+            force_retry=True,
+        )
+    return process_exam_prep_step2_structure.run(session_id)
 
 
 @shared_task(
@@ -1609,15 +2029,40 @@ def cleanup_stale_sessions(self) -> dict:
     Can also be called manually via Django management shell.
     """
     from django.utils import timezone as _tz
-    from .models import ClassCreationSession
+    from django.db.models import F, Q
+    from django.core.cache import cache
+    from django.core.files.storage import storages
+    from .models import (
+        ClassCreationSession,
+        ExamPrepExtractionArtifact,
+        ExamPrepExtractionUnit,
+        ExamPrepVisualAsset,
+    )
+    from core.storage_backends import delete_answer_source_file
 
-    cutoff = _tz.now() - timedelta(hours=2)
+    now = _tz.now()
+    cutoff = now - timedelta(hours=2)
     stale_statuses = _get_in_progress_statuses()
 
     stale_qs = ClassCreationSession.objects.filter(
         status__in=stale_statuses,
         updated_at__lt=cutoff,
-    )
+    ).exclude(
+        Q(
+            exam_extraction_artifact__pipeline_version__gte=3,
+            exam_extraction_artifact__heartbeat_at__gte=cutoff,
+        )
+        | Q(
+            exam_extraction_artifact__pipeline_version__gte=3,
+            exam_extraction_artifact__units__revision=(
+                F('exam_extraction_artifact__revision')
+            ),
+            exam_extraction_artifact__units__status=(
+                ExamPrepExtractionUnit.Status.PROCESSING
+            ),
+            exam_extraction_artifact__units__heartbeat_at__gte=cutoff,
+        )
+    ).distinct()
     count = stale_qs.count()
     if count > 0:
         stale_qs.update(
@@ -1626,7 +2071,158 @@ def cleanup_stale_sessions(self) -> dict:
         )
         logger.warning('Marked %d stale sessions as FAILED (stuck >2h).', count)
 
-    return {'status': 'success', 'stale_count': count}
+    cleaned_sources = 0
+    due_artifacts = list(
+        ExamPrepExtractionArtifact.objects.filter(
+            pipeline_version__gte=3,
+            source_retain_until__isnull=False,
+            source_retain_until__lte=now,
+        )
+        .select_related('session')
+        .order_by('source_retain_until', 'id')[:100]
+    )
+    for artifact in due_artifacts:
+        source_blocks = [
+            block
+            for block in artifact.source_blocks or []
+            if isinstance(block, dict)
+        ]
+        storage_names = {
+            str(block.get('storageName'))
+            for block in source_blocks
+            if block.get('storageName')
+        }
+        deletion_results = {}
+        for storage_name in storage_names:
+            try:
+                deletion_results[storage_name] = delete_answer_source_file(
+                    storage_name
+                )
+            except Exception:
+                deletion_results[storage_name] = False
+                logger.warning(
+                    'Failed to delete retained exam source %s (artifact=%s).',
+                    storage_name,
+                    artifact.id,
+                    exc_info=True,
+                )
+        session = artifact.session
+        had_source_file = bool(session.source_file)
+        source_file_deleted = (
+            _cleanup_source_file(session) if had_source_file else True
+        )
+        artifact.source_blocks = [
+            block
+            for block in source_blocks
+            if block.get('storageName')
+            and not deletion_results.get(str(block.get('storageName')), False)
+        ]
+        cleanup_complete = not artifact.source_blocks and source_file_deleted
+        artifact.source_retain_until = (
+            None if cleanup_complete else now + timedelta(hours=1)
+        )
+        artifact.save(
+            update_fields=['source_blocks', 'source_retain_until', 'updated_at']
+        )
+        cleaned_sources += sum(deletion_results.values()) + int(
+            had_source_file and source_file_deleted
+        )
+
+    cleaned_orphan_sources = 0
+    try:
+        source_storage = storages['answer_sources']
+        cursor = str(cache.get(_ORPHAN_SOURCE_SWEEP_CURSOR_KEY) or '')
+        numeric_dirs = _list_exam_source_session_dirs(
+            source_storage,
+            after=cursor,
+        )
+        if not numeric_dirs and cursor:
+            numeric_dirs = _list_exam_source_session_dirs(source_storage)
+        if numeric_dirs:
+            cache.set(
+                _ORPHAN_SOURCE_SWEEP_CURSOR_KEY,
+                numeric_dirs[-1],
+                timeout=None,
+            )
+        existing_session_ids = set(
+            ClassCreationSession.objects.filter(
+                id__in=[int(value) for value in numeric_dirs]
+            ).values_list('id', flat=True)
+        )
+        for directory in numeric_dirs:
+            if int(directory) in existing_session_ids:
+                continue
+            prefix = f'exam-prep/source/{directory}'
+            _, filenames = source_storage.listdir(prefix)
+            for filename in filenames:
+                if delete_answer_source_file(f'{prefix}/{filename}'):
+                    cleaned_orphan_sources += 1
+    except (FileNotFoundError, NotImplementedError):
+        pass
+    except Exception:
+        logger.warning(
+            'Exam-prep orphan source sweep failed.',
+            exc_info=True,
+        )
+
+    cleaned_orphan_visuals = 0
+    try:
+        source_storage = storages['answer_sources']
+        visual_cutoff_timestamp = (
+            now - timedelta(seconds=_ORPHAN_VISUAL_GRACE_SECONDS)
+        ).timestamp()
+        for prefix in (
+            'exam-prep/visuals/source',
+            'exam-prep/visuals/generated',
+        ):
+            cursor_key = f'{_ORPHAN_VISUAL_SWEEP_CURSOR_PREFIX}:{prefix}'
+            cursor = str(cache.get(cursor_key) or '')
+            object_entries = _list_private_files(
+                source_storage,
+                prefix=prefix,
+                after=cursor,
+            )
+            if not object_entries and cursor:
+                object_entries = _list_private_files(
+                    source_storage,
+                    prefix=prefix,
+                )
+            if object_entries:
+                cache.set(cursor_key, object_entries[-1][0], timeout=None)
+            object_names = [
+                name
+                for name, modified_timestamp in object_entries
+                if modified_timestamp is not None
+                and modified_timestamp <= visual_cutoff_timestamp
+            ]
+            referenced_names = {
+                str(name)
+                for pair in ExamPrepVisualAsset.objects.filter(
+                    Q(source_file__in=object_names)
+                    | Q(generated_file__in=object_names)
+                ).values_list('source_file', 'generated_file')
+                for name in pair
+                if name
+            }
+            for object_name in object_names:
+                if (
+                    object_name not in referenced_names
+                    and delete_answer_source_file(object_name)
+                ):
+                    cleaned_orphan_visuals += 1
+    except Exception:
+        logger.warning(
+            'Exam-prep orphan visual sweep failed.',
+            exc_info=True,
+        )
+
+    return {
+        'status': 'success',
+        'stale_count': count,
+        'cleaned_exam_source_count': cleaned_sources,
+        'cleaned_orphan_exam_source_count': cleaned_orphan_sources,
+        'cleaned_orphan_exam_visual_count': cleaned_orphan_visuals,
+    }
 
 
 @shared_task(bind=True, max_retries=0)

@@ -77,7 +77,7 @@ def list_messages(
         qs = qs.filter(id__lt=before_id)
 
     rows: Iterable[StudentCourseChatMessage] = (
-        qs.order_by('-created_at')[:limit]
+        qs.order_by('-created_at', '-id')[:limit]
     )
 
     out: list[dict[str, Any]] = []

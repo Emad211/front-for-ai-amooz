@@ -129,7 +129,6 @@ def mock_llm():
         'apps.classes.services.prerequisites.generate_text',
         'apps.classes.services.recap.generate_text',
         'apps.classes.services.quizzes.generate_text',
-        'apps.classes.services.exam_prep_structure.generate_text',
         'apps.classes.services.pdf_extraction.generate_text',
         'apps.chatbot.services.memory_service.generate_text',
     ]

@@ -538,6 +538,7 @@ CELERY_TASK_ROUTES = {
     'apps.classes.tasks.process_exam_prep_full_pipeline': {'queue': 'pipeline'},
     'apps.classes.tasks.process_exam_prep_step1_transcription': {'queue': 'pipeline'},
     'apps.classes.tasks.process_exam_prep_step2_structure': {'queue': 'pipeline'},
+    'apps.classes.tasks.retry_exam_prep_extraction_unit': {'queue': 'pipeline'},
     'apps.classes.tasks.pregenerate_student_assessments': {'queue': 'pipeline'},
     'apps.classes.tasks.extract_exercise_content': {'queue': 'pipeline'},
     'apps.classes.tasks.grade_exercise_submission': {'queue': 'pipeline'},

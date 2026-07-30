@@ -37,7 +37,7 @@ pytestmark = pytest.mark.unit
 # --- The authoritative live-key map (top-level key -> expected sub-keys) ------
 # A value of None means the top-level value is a plain string prompt.
 LIVE_KEYS = {
-    "pdf_extraction": ["default"],
+    "pdf_extraction": ["default", "quality_retry"],
     "prerequisites_prompt": ["default"],
     "prerequisite_teaching": ["default"],
     "structure_content": ["default"],
@@ -213,14 +213,15 @@ OUTPUT_KEYS = {
     ],
     ("exam_prep_question_inventory", "default"): [
         "questions", "source_question_number", "section_key", "source_pages",
-        "block_order", "question_text_markdown", "options", "visual_hints",
-        "confidence",
+        "source_block_ids", "processed_source_block_ids", "block_order",
+        "question_text_markdown", "options", "visual_hints", "confidence",
     ],
     ("exam_prep_answer_inventory", "default"): [
         "answers", "source_question_number", "section_key", "source_pages",
-        "block_order", "correct_option_label", "correct_option_text_markdown",
-        "teacher_solution_markdown", "final_answer_markdown", "visual_hints",
-        "confidence",
+        "source_block_ids", "processed_source_block_ids", "block_order",
+        "correct_option_label", "correct_option_text_markdown",
+        "teacher_solution_markdown", "final_answer_markdown",
+        "visual_hints", "confidence",
     ],
     ("exam_prep_visual_detection", "default"): [
         "visuals", "question_number", "section_key", "role", "option_label",

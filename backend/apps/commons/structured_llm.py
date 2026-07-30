@@ -137,6 +137,10 @@ def generate_structured(
     max_repair: int = 1,
     json_object_mode: Optional[bool] = None,
     sensitive: bool = False,
+    max_output_tokens: Optional[int] = None,
+    detail: str = "",
+    tracking_context: Optional[dict[str, Any]] = None,
+    provider_attempts: int = 3,
 ) -> T:
     """Call the LLM and return a validated Pydantic instance of ``schema``.
 
@@ -158,6 +162,10 @@ def generate_structured(
             timeout=timeout,
             temperature=temperature,
             response_format=response_format,
+            max_output_tokens=max_output_tokens,
+            detail=detail,
+            tracking_context=tracking_context,
+            provider_attempts=provider_attempts,
         ).text
 
     # --- First attempt (optionally in JSON mode, with graceful fallback) ---
