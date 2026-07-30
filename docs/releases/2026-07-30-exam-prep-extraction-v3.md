@@ -4,7 +4,7 @@ Scope: backend, existing pipeline worker, frontend
 
 ## Commits
 
-- `feat(exam-prep): add quality-gated extraction v3` (release commit)
+- `d791137` - `feat(exam-prep): add quality-gated extraction v3`
 
 ## Changes
 
