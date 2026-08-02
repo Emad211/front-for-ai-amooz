@@ -6,4 +6,8 @@ class ClassesConfig(AppConfig):
     name = 'apps.classes'
 
     def ready(self):
+        # V4 is additive and isolated while the legacy classes model module
+        # remains stable. Importing here registers the V4 models under the
+        # existing ``classes`` app before checks, migrations, and requests run.
+        from . import models_v4  # noqa: F401
         from . import signals  # noqa: F401
