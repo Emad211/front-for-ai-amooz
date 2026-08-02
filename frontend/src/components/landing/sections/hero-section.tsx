@@ -16,17 +16,16 @@ interface HeroSectionProps {
 /** Figma nodes 277:390 / 336:3232 and mobile 244:1960 / 336:2892. */
 export const HeroSection = ({ heroImage }: HeroSectionProps) => {
   return (
-    <section className="landing-section-shell h-[964px] p-2 lg:h-dvh lg:min-h-[720px] lg:p-0">
+    <section className="landing-section-shell h-[964px] p-2 lg:h-dvh lg:min-h-[720px] lg:p-0 min-[1820px]:h-[1200px] min-[1820px]:min-h-0">
       <div className="relative h-[956px] w-full overflow-hidden lg:h-full">
-        <div className="absolute inset-x-0 bottom-0 top-[80px] overflow-hidden rounded-[20px] border border-[hsl(var(--landing-border)/.55)] bg-[hsl(var(--landing-hero))] shadow-[0_0_4px_hsl(var(--foreground)/.24)] lg:inset-x-8 lg:bottom-4 lg:top-24">
+        <div className="absolute inset-x-0 bottom-0 top-[80px] overflow-hidden rounded-[20px] border border-[hsl(var(--landing-border)/.55)] bg-[hsl(var(--landing-hero))] shadow-[0_0_4px_hsl(var(--foreground)/.24)] lg:inset-x-8 lg:bottom-10 lg:top-28">
           <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden">
             <div className="landing-dot-pattern absolute inset-0 opacity-80 [mask-image:radial-gradient(ellipse_at_center,black_16%,transparent_82%)]" />
             <div className="absolute -left-[19.8rem] -top-[19.8rem] h-[59.35rem] w-[59.35rem] rounded-full bg-primary/20 opacity-40 blur-[150px]" />
             <div className="absolute -bottom-16 -right-12 h-[27.6rem] w-[27.6rem] rounded-full bg-purple-500/10 opacity-40 blur-[60px]" />
             <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,transparent_35%,hsl(var(--landing-hero))_92%)]" />
           </div>
-
-          <div dir="ltr" className="relative flex h-full flex-col items-center justify-center gap-7 px-5 pb-7 pt-8 lg:-translate-y-3 lg:flex-row lg:gap-16 lg:px-24 lg:py-0">
+          <div dir="ltr" className="relative flex h-full flex-col items-center justify-center gap-7 px-5 pb-7 pt-8 lg:flex-row lg:gap-16 lg:px-24 lg:py-0">
             <motion.div
               initial={{ opacity: 0, scale: 0.97, x: -20 }}
               animate={{ opacity: 1, scale: 1, x: 0 }}
@@ -42,8 +41,8 @@ export const HeroSection = ({ heroImage }: HeroSectionProps) => {
                   height={609}
                   priority
                   quality={95}
-                  sizes="792px"
-                  className="absolute bottom-px left-1/2 h-[609px] w-[792px] -translate-x-1/2 object-contain drop-shadow-[0_30px_48px_rgba(0,0,0,.48)]"
+                  sizes="(max-width: 1279px) 42vw, 792px"
+                  className="absolute bottom-px left-1/2 h-auto max-h-[609px] w-full max-w-[792px] -translate-x-1/2 object-contain drop-shadow-[0_30px_48px_rgba(0,0,0,.48)]"
                 />
                 <Image
                   src="/landing/phone-toc-dark.png"
@@ -56,7 +55,6 @@ export const HeroSection = ({ heroImage }: HeroSectionProps) => {
                   className="absolute bottom-0 right-0 h-[277px] w-[129px] object-contain drop-shadow-2xl"
                 />
               </div>
-
               <div className="relative flex h-[305px] w-full max-w-[340px] items-end justify-center lg:hidden">
                 <div className="absolute inset-x-8 bottom-4 h-16 rounded-full bg-primary/25 blur-3xl" />
                 <Image
@@ -71,7 +69,6 @@ export const HeroSection = ({ heroImage }: HeroSectionProps) => {
                 />
               </div>
             </motion.div>
-
             <motion.div
               dir="rtl"
               initial={{ opacity: 0, y: 26 }}
@@ -85,7 +82,6 @@ export const HeroSection = ({ heroImage }: HeroSectionProps) => {
               <p className="mx-auto mt-6 max-w-[777px] text-[15px] font-medium leading-7 text-muted-foreground sm:text-lg lg:mx-0 lg:mt-8 lg:text-xl lg:leading-8">
                 یادگیری یک سفر است و ما همسفر توایم؛ پا‌به‌پای تو محتوا را شخصی‌سازی می‌کنیم، نقاط ضعفت را پوشش می‌دهیم و مسئله حل می‌کنیم تا هرگز به بن‌بست نرسی.
               </p>
-
               <div className="mt-7 flex items-center justify-center gap-3 lg:mt-8 lg:justify-start lg:gap-4">
                 <Button
                   asChild
