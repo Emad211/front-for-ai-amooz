@@ -3,7 +3,7 @@
 import Image from 'next/image';
 import { Settings } from 'lucide-react';
 
-const cardBase = 'relative overflow-hidden text-white shadow-xl ring-1 ring-white/10';
+const cardBase = 'overflow-hidden text-white shadow-xl ring-1 ring-white/10';
 
 function SectionHeading() {
   return (
@@ -27,7 +27,7 @@ function MobileFeatures() {
     <div dir="ltr" className="mx-auto mt-8 flex w-full max-w-[408px] flex-col gap-[10px] md:hidden">
       <article
         dir="rtl"
-        className={`${cardBase} aspect-[408/512] w-full rounded-[20px] bg-gradient-to-br from-violet-600 to-purple-700`}
+        className={`${cardBase} relative aspect-[408/512] w-full rounded-[20px] bg-gradient-to-br from-violet-600 to-purple-700`}
       >
         <div aria-hidden className="absolute -bottom-20 -right-20 h-64 w-64 rounded-full bg-white/10 blur-3xl" />
         <div
@@ -50,30 +50,28 @@ function MobileFeatures() {
 
       <article
         dir="rtl"
-        className={`${cardBase} aspect-[408/320] w-full rounded-[10px] bg-gradient-to-br from-rose-600 to-pink-700`}
+        className={`${cardBase} relative aspect-[408/320] w-full rounded-[10px] bg-gradient-to-br from-rose-600 to-pink-700`}
       >
         <div aria-hidden className="absolute -bottom-24 -left-12 h-[31rem] w-[31rem] rounded-full bg-white/35 blur-[75px]" />
         <h3 className="absolute inset-x-[5.6%] top-[14.5%] z-10 text-center text-[clamp(20px,5.6vw,24px)] font-black leading-[1.45]">
           آزمون آنلاین طراحی‌شده توسط هوش مصنوعی
         </h3>
         <div className="absolute left-[4.61%] top-[47.975%] h-[74.837%] w-[90.956%] -skew-x-1 overflow-hidden rounded-[12px] border border-white/10 shadow-2xl">
-          <div className="absolute left-[-36.11%] top-[-35.11%] h-[143.62%] w-[166.67%]">
-            <Image
-              src="/landing/exam-builder-dark.png"
-              alt="سازنده آزمون هوشمند"
-              fill
-              quality={92}
-              sizes="(max-width: 440px) 150vw, 612px"
-              className="object-cover object-top"
-            />
-          </div>
+          <Image
+            src="/landing/exam-builder-dark.png"
+            alt="سازنده آزمون هوشمند"
+            fill
+            quality={92}
+            sizes="(max-width: 440px) 91vw, 371px"
+            className="object-cover object-top"
+          />
         </div>
       </article>
 
       <div className="grid grid-cols-2 gap-[10px]">
         <article
           dir="rtl"
-          className={`${cardBase} aspect-[199/256] min-w-0 rounded-[10px] bg-gradient-to-br from-amber-500 to-orange-600`}
+          className={`${cardBase} relative aspect-[199/256] min-w-0 rounded-[10px] bg-gradient-to-br from-amber-500 to-orange-600`}
         >
           <h3 className="absolute inset-x-[3%] top-[18.75%] z-10 text-center text-[clamp(16px,4.8vw,24px)] font-black leading-[1.4]">
             دسته‌بندی مراحل یادگیری
@@ -91,7 +89,7 @@ function MobileFeatures() {
 
         <article
           dir="rtl"
-          className={`${cardBase} aspect-[199/256] min-w-0 rounded-[10px] bg-gradient-to-br from-emerald-600 to-teal-700`}
+          className={`${cardBase} relative aspect-[199/256] min-w-0 rounded-[10px] bg-gradient-to-br from-emerald-600 to-teal-700`}
         >
           <div aria-hidden className="absolute -bottom-[120%] -right-[105%] select-none text-[36rem] font-black leading-none text-white/10">*</div>
           <h3 className="absolute inset-x-[3%] top-[18.75%] z-10 text-center text-[clamp(16px,4.8vw,24px)] font-black leading-[1.4]">
