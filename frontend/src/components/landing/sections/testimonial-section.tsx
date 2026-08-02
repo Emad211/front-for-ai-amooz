@@ -41,16 +41,13 @@ export const TestimonialSection = () => {
         <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden">
           <div className="absolute bottom-0 left-1/2 h-72 w-[40rem] -translate-x-1/2 rounded-full bg-primary/10 blur-[130px]" />
         </div>
-
         <div className="absolute left-1/2 top-[104px] flex h-[38px] -translate-x-1/2 items-center gap-2 rounded-full border border-primary/20 bg-primary/10 px-[17px] text-sm font-medium text-primary lg:top-[186px]">
           نظرات
           <MessageCircle className="h-[19px] w-[19px]" />
         </div>
-
         <div className="absolute inset-x-2 top-[174px] h-[366px] lg:inset-x-32 lg:top-[256px] lg:h-[326px]">
           <Quote aria-hidden className="absolute -right-2 -top-[68px] h-8 w-8 rotate-180 fill-current text-primary/25 lg:right-[19%] lg:top-[-58px]" />
           <Quote aria-hidden className="absolute bottom-9 left-8 h-[51px] w-[51px] fill-current text-primary/25 lg:bottom-[95px] lg:left-[16%]" />
-
           <div className="flex h-[190px] items-center justify-center lg:h-[150px]">
             <AnimatePresence mode="wait">
               <motion.blockquote
@@ -65,7 +62,6 @@ export const TestimonialSection = () => {
               </motion.blockquote>
             </AnimatePresence>
           </div>
-
           <div className="absolute inset-x-0 bottom-0 flex h-[120px] flex-col items-center gap-2">
             <Avatar className="h-16 w-16 border-2 border-primary/30">
               <AvatarImage src={active.image} alt={active.name} />
@@ -76,23 +72,37 @@ export const TestimonialSection = () => {
           </div>
         </div>
 
-        <div className="absolute bottom-8 left-1/2 flex h-8 -translate-x-1/2 items-center justify-center gap-5 lg:bottom-[12px]">
-          <button type="button" onClick={() => go(-1)} aria-label="نظر قبلی" className="text-muted-foreground transition-colors hover:text-primary">
-            <ChevronRight className="h-5 w-5" />
+        {/* Figma slider: x=154/y=692 on mobile and x=902/y=740.5 on desktop. */}
+        <div className="absolute left-1/2 top-[680px] h-8 w-[116px] -translate-x-1/2 lg:top-[728.5px]">
+          <button
+            type="button"
+            onClick={() => go(-1)}
+            aria-label="نظر قبلی"
+            className="absolute left-[-22px] top-[-6px] flex h-11 w-11 items-center justify-center rounded-full text-muted-foreground transition-colors hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+          >
+            <ChevronRight className="h-4 w-4" />
           </button>
-          <div className="flex items-center gap-3">
+          <div className="absolute left-[34px] top-3 flex h-2 w-12 items-center justify-between">
             {TESTIMONIALS.map((_, itemIndex) => (
               <button
                 key={itemIndex}
                 type="button"
                 onClick={() => setIndex(itemIndex)}
                 aria-label={`نظر ${itemIndex + 1}`}
-                className={`h-2 rounded-full transition-all ${itemIndex === index ? 'w-5 bg-primary' : 'w-2 bg-border'}`}
+                aria-current={itemIndex === index ? 'true' : undefined}
+                className={`relative h-2 w-2 rounded-full transition-colors before:absolute before:-inset-4 before:content-[''] ${
+                  itemIndex === index ? 'bg-primary' : 'bg-border'
+                }`}
               />
             ))}
           </div>
-          <button type="button" onClick={() => go(1)} aria-label="نظر بعدی" className="text-muted-foreground transition-colors hover:text-primary">
-            <ChevronLeft className="h-5 w-5" />
+          <button
+            type="button"
+            onClick={() => go(1)}
+            aria-label="نظر بعدی"
+            className="absolute right-[-22px] top-[-6px] flex h-11 w-11 items-center justify-center rounded-full text-muted-foreground transition-colors hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+          >
+            <ChevronLeft className="h-4 w-4" />
           </button>
         </div>
       </div>
