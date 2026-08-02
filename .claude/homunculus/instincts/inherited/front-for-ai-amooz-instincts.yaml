@@ -1,0 +1,365 @@
+# Instincts generated from https://github.com/Emad211/front-for-ai-amooz
+# Generated: 2026-08-02T21:39:53.277Z
+# Version: 2.0
+# NOTE: This file supplements (does not replace) any existing curated instincts.
+# High-confidence manually curated instincts should be preserved alongside these.
+
+---
+id: front-for-ai-amooz-commit-conventional
+trigger: "when writing a commit message"
+confidence: 0.85
+domain: git
+source: repo-analysis
+source_repo: https://github.com/Emad211/front-for-ai-amooz
+---
+
+# Front For Ai Amooz Commit Conventional
+
+## Action
+
+Use conventional commit format with prefixes: fix
+
+## Evidence
+
+- 5 commits analyzed
+- Detected conventional commit pattern
+- Examples: fix(landing): align hero with Figma artboards, fix(landing): align why-us layouts with Figma
+
+---
+id: front-for-ai-amooz-commit-length
+trigger: "when writing a commit message"
+confidence: 0.6
+domain: git
+source: repo-analysis
+source_repo: https://github.com/Emad211/front-for-ai-amooz
+---
+
+# Front For Ai Amooz Commit Length
+
+## Action
+
+Write moderate-length commit messages (~54 characters)
+
+## Evidence
+
+- Average commit message length: 54 chars
+- Based on 5 commits
+
+---
+id: front-for-ai-amooz-naming-files
+trigger: "when creating a new file"
+confidence: 0.8
+domain: code-style
+source: repo-analysis
+source_repo: https://github.com/Emad211/front-for-ai-amooz
+---
+
+# Front For Ai Amooz Naming Files
+
+## Action
+
+Use kebab-case naming convention
+
+## Evidence
+
+- Analyzed file naming patterns in repository
+- Dominant pattern: kebab-case
+
+---
+id: front-for-ai-amooz-import-alias
+trigger: "when importing modules"
+confidence: 0.85
+domain: code-style
+source: repo-analysis
+source_repo: https://github.com/Emad211/front-for-ai-amooz
+---
+
+# Front For Ai Amooz Import Alias
+
+## Action
+
+Use path aliases (@/, ~/) instead of relative imports
+
+## Evidence
+
+- Import analysis shows alias pattern
+- Example: import { x } from '@/lib/x'
+
+---
+id: front-for-ai-amooz-export-style
+trigger: "when exporting from a module"
+confidence: 0.7
+domain: code-style
+source: repo-analysis
+source_repo: https://github.com/Emad211/front-for-ai-amooz
+---
+
+# Front For Ai Amooz Export Style
+
+## Action
+
+Prefer named exports
+
+## Evidence
+
+- Export pattern analysis
+- Dominant style: named
+
+---
+id: front-for-ai-amooz-arch-type-based
+trigger: "when adding new code"
+confidence: 0.8
+domain: architecture
+source: repo-analysis
+source_repo: https://github.com/Emad211/front-for-ai-amooz
+---
+
+# Front For Ai Amooz Arch Type Based
+
+## Action
+
+Place code in the appropriate type folder (components/, services/, utils/, etc.)
+
+## Evidence
+
+- Type-based module organization detected
+- Folders: 
+
+---
+id: front-for-ai-amooz-test-separate
+trigger: "when writing tests"
+confidence: 0.8
+domain: testing
+source: repo-analysis
+source_repo: https://github.com/Emad211/front-for-ai-amooz
+---
+
+# Front For Ai Amooz Test Separate
+
+## Action
+
+Place tests in the tests/ or __tests__/ directory, mirroring src structure
+
+## Evidence
+
+- Separate test directory pattern detected
+- Tests live in dedicated test folders
+
+---
+id: front-for-ai-amooz-workflow-align-landing-section-with-figma
+trigger: "when doing align landing section with figma"
+confidence: 0.75
+domain: workflow
+source: repo-analysis
+source_repo: https://github.com/Emad211/front-for-ai-amooz
+---
+
+# Front For Ai Amooz Workflow Align Landing Section With Figma
+
+## Action
+
+Follow the align-landing-section-with-figma workflow:
+1. Open the relevant section component in frontend/src/components/landing/sections/
+2. Adjust layout, styles, and structure to match Figma artboards
+3. Test responsiveness and visual fidelity
+4. Commit changes with a message referencing Figma alignment
+
+## Evidence
+
+- Workflow detected from commit patterns
+- Frequency: ~5x per month
+- Files: frontend/src/components/landing/sections/hero-section.tsx, frontend/src/components/landing/sections/why-us-section.tsx, frontend/src/components/landing/sections/features-section.tsx
+
+---
+id: front-for-ai-amooz-instinct-file-naming
+trigger: "When creating a new file in the codebase"
+confidence: 0.9
+domain: code-style
+source: repo-analysis
+source_repo: Emad211/front-for-ai-amooz
+---
+
+# Front For Ai Amooz Instinct File Naming
+
+## Action
+
+Name the file using kebab-case (e.g., my-component.tsx)
+
+## Evidence
+
+- Pattern in namingConventions.files: kebab-case
+
+---
+id: front-for-ai-amooz-instinct-function-naming
+trigger: "When defining a new function"
+confidence: 0.9
+domain: code-style
+source: repo-analysis
+source_repo: Emad211/front-for-ai-amooz
+---
+
+# Front For Ai Amooz Instinct Function Naming
+
+## Action
+
+Name the function using camelCase (e.g., fetchData)
+
+## Evidence
+
+- Pattern in namingConventions.functions: camelCase
+
+---
+id: front-for-ai-amooz-instinct-class-naming
+trigger: "When defining a new class"
+confidence: 0.9
+domain: code-style
+source: repo-analysis
+source_repo: Emad211/front-for-ai-amooz
+---
+
+# Front For Ai Amooz Instinct Class Naming
+
+## Action
+
+Name the class using PascalCase (e.g., UserProfile)
+
+## Evidence
+
+- Pattern in namingConventions.classes: PascalCase
+
+---
+id: front-for-ai-amooz-instinct-constant-naming
+trigger: "When defining a new constant"
+confidence: 0.9
+domain: code-style
+source: repo-analysis
+source_repo: Emad211/front-for-ai-amooz
+---
+
+# Front For Ai Amooz Instinct Constant Naming
+
+## Action
+
+Name the constant using SCREAMING_SNAKE_CASE (e.g., MAX_RETRIES)
+
+## Evidence
+
+- Pattern in namingConventions.constants: SCREAMING_SNAKE_CASE
+
+---
+id: front-for-ai-amooz-instinct-import-style
+trigger: "When importing modules"
+confidence: 0.8
+domain: code-style
+source: repo-analysis
+source_repo: Emad211/front-for-ai-amooz
+---
+
+# Front For Ai Amooz Instinct Import Style
+
+## Action
+
+Use alias import style
+
+## Evidence
+
+- Pattern in importStyle: alias
+
+---
+id: front-for-ai-amooz-instinct-export-style
+trigger: "When exporting modules or functions"
+confidence: 0.8
+domain: code-style
+source: repo-analysis
+source_repo: Emad211/front-for-ai-amooz
+---
+
+# Front For Ai Amooz Instinct Export Style
+
+## Action
+
+Use named exports
+
+## Evidence
+
+- Pattern in exportStyle: named
+
+---
+id: front-for-ai-amooz-instinct-test-location
+trigger: "When adding or updating tests"
+confidence: 0.8
+domain: testing
+source: repo-analysis
+source_repo: Emad211/front-for-ai-amooz
+---
+
+# Front For Ai Amooz Instinct Test Location
+
+## Action
+
+Place test files in a separate directory from source files
+
+## Evidence
+
+- Pattern in architecture.testLocation: separate
+
+---
+id: front-for-ai-amooz-instinct-git-commit-format
+trigger: "When writing a commit message"
+confidence: 0.9
+domain: git
+source: repo-analysis
+source_repo: Emad211/front-for-ai-amooz
+---
+
+# Front For Ai Amooz Instinct Git Commit Format
+
+## Action
+
+Use the conventional commit format with a 'fix' prefix for bug fixes (e.g., fix(component): description...)
+
+## Evidence
+
+- Pattern in commits.type: conventional
+- Pattern in commits.prefixes: fix
+- Seen in commit: fix(landing): align hero with Figma artboards
+
+---
+id: front-for-ai-amooz-instinct-git-commit-length
+trigger: "When writing a commit message"
+confidence: 0.7
+domain: git
+source: repo-analysis
+source_repo: Emad211/front-for-ai-amooz
+---
+
+# Front For Ai Amooz Instinct Git Commit Length
+
+## Action
+
+Keep the commit message concise, averaging around 54 characters
+
+## Evidence
+
+- Pattern in commits.averageLength: 54
+
+---
+id: front-for-ai-amooz-instinct-align-landing-section-with-figma
+trigger: "When updating a landing page section to match the latest Figma design"
+confidence: 0.95
+domain: workflow
+source: repo-analysis
+source_repo: Emad211/front-for-ai-amooz
+---
+
+# Front For Ai Amooz Instinct Align Landing Section With Figma
+
+## Action
+
+Open the relevant section component in frontend/src/components/landing/sections/, adjust layout/styles/structure to match Figma artboards, test responsiveness and visual fidelity, and commit changes with a message referencing Figma alignment
+
+## Evidence
+
+- Workflow: align-landing-section-with-figma
+- Example commits: fix(landing): align hero with Figma artboards
+
