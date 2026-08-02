@@ -58,6 +58,7 @@ const TEACHER_FEATURES: TeacherFeature[] = [
 
 function TeacherScreen({ feature, mobile = false }: { feature: TeacherFeature; mobile?: boolean }) {
   const source = mobile && feature.image.mobileSrc ? feature.image.mobileSrc : feature.image.src;
+
   return (
     <AnimatePresence mode="wait">
       <motion.div
@@ -81,13 +82,41 @@ function TeacherScreen({ feature, mobile = false }: { feature: TeacherFeature; m
   );
 }
 
+function FeatureIconButton({
+  feature,
+  active,
+  onActivate,
+  compact = false,
+}: {
+  feature: TeacherFeature;
+  active: boolean;
+  onActivate: () => void;
+  compact?: boolean;
+}) {
+  const Icon = feature.icon;
+
+  return (
+    <button
+      type="button"
+      aria-label={feature.title}
+      aria-pressed={active}
+      onClick={onActivate}
+      className={`flex items-center justify-center rounded-2xl transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/80 ${
+        compact ? 'h-24' : 'h-[88px]'
+      } ${active ? 'bg-white/20 shadow-lg' : 'bg-[#030711]/15 text-white/75'}`}
+    >
+      <Icon className="h-6 w-6" />
+    </button>
+  );
+}
+
 export const TeacherCtaSection = () => {
   const [activeIndex, setActiveIndex] = useState(2);
   const activeFeature = TEACHER_FEATURES[activeIndex] ?? TEACHER_FEATURES[2]!;
 
   return (
-    <section id="teacher-tools" className="landing-section-shell h-[827px] px-2 pt-10 lg:h-[848px] lg:px-8 lg:py-10">
-      <div className="mx-auto h-[787px] w-full max-w-[424px] lg:h-[768px] lg:max-w-[1856px]">
+    <section id="teacher-tools" className="landing-section-shell h-[827px] px-2 pt-10 md:h-[1060px] md:px-8 md:py-10 min-[1820px]:h-[848px] min-[1820px]:px-8 min-[1820px]:py-10">
+      <div className="mx-auto h-[787px] w-full max-w-[424px] md:h-[980px] md:max-w-[1200px] min-[1820px]:h-[768px] min-[1820px]:max-w-[1856px]">
         <div className="relative h-full overflow-hidden rounded-[20px] bg-gradient-to-br from-emerald-600 to-teal-700 text-white shadow-[0_0_4px_hsl(var(--foreground)/.25)]">
           <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden">
             <div className="absolute -bottom-48 -left-48 h-[40rem] w-[40rem] rounded-full bg-white/35 blur-[130px]" />
@@ -95,38 +124,27 @@ export const TeacherCtaSection = () => {
             <div className="absolute -bottom-[45rem] -right-[25rem] select-none text-[92rem] font-black leading-none text-white/[0.045]">*</div>
           </div>
 
-          {/* Mobile artboard, node 327:2322 */}
-          <div className="relative h-full lg:hidden">
+          {/* Exact mobile artboard, node 327:2322. */}
+          <div className="relative h-full md:hidden">
             <div className="absolute left-2 right-2 top-10 h-[189px] text-center">
               <h2 className="landing-display text-[36px] font-black leading-[1.25]">تدریست رو با هوش مصنوعی متحول کن</h2>
               <p className="mt-5 text-[15px] font-medium leading-[25px] text-white/85">
                 همان موتور هوشمندی که کنار دانش‌آموزهاست، حالا ابزارهای حرفه‌ای را هم در اختیار معلم‌ها می‌گذارد؛ از ساخت آزمون و تصحیح خودکار تا تحلیل دقیق پیشرفت کلاس.
               </p>
             </div>
-
             <div className="absolute left-2 right-2 top-[285px] h-[96px]">
               <div dir="ltr" className="grid h-full grid-cols-4 gap-2">
-                {TEACHER_FEATURES.map((feature, index) => {
-                  const Icon = feature.icon;
-                  const active = index === activeIndex;
-                  return (
-                    <button
-                      key={feature.title}
-                      type="button"
-                      aria-label={feature.title}
-                      aria-pressed={active}
-                      onClick={() => setActiveIndex(index)}
-                      className={`flex h-24 items-center justify-center rounded-2xl transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/80 ${
-                        active ? 'bg-white/20 shadow-lg' : 'bg-[#030711]/15 text-white/75'
-                      }`}
-                    >
-                      <Icon className="h-6 w-6" />
-                    </button>
-                  );
-                })}
+                {TEACHER_FEATURES.map((feature, index) => (
+                  <FeatureIconButton
+                    key={feature.title}
+                    feature={feature}
+                    active={index === activeIndex}
+                    onActivate={() => setActiveIndex(index)}
+                    compact
+                  />
+                ))}
               </div>
             </div>
-
             <div className="absolute left-[9px] right-[9px] top-[413px] h-[210px]">
               <div className="absolute inset-x-0 bottom-0 h-4 rounded-b-[18px] bg-[#07101c] shadow-[0_18px_30px_rgba(3,7,17,.45)]" />
               <div className="absolute inset-x-0 top-0 h-[198px] overflow-hidden rounded-t-[18px] border-[9px] border-[#07101c] bg-[#030711]">
@@ -136,7 +154,6 @@ export const TeacherCtaSection = () => {
                 مخصوص دبیران <Sparkles className="h-2.5 w-2.5" />
               </div>
             </div>
-
             <div dir="rtl" className="absolute left-2 right-2 top-[655px] h-[92px] text-center">
               <AnimatePresence mode="wait">
                 <motion.div
@@ -153,8 +170,57 @@ export const TeacherCtaSection = () => {
             </div>
           </div>
 
-          {/* Desktop artboard, node 277:553 */}
-          <div className="relative hidden h-full lg:block">
+          {/* Dedicated tablet/laptop composition prevents the 1920px absolute artboard from overlapping. */}
+          <div className="relative hidden h-full md:block min-[1820px]:hidden">
+            <div className="absolute inset-x-8 top-12 text-center">
+              <h2 className="landing-display text-[40px] font-black leading-[1.3]">تدریست رو با هوش مصنوعی متحول کن</h2>
+              <p className="mx-auto mt-5 max-w-[880px] text-[18px] font-medium leading-8 text-white/85">
+                همان موتور هوشمندی که کنار دانش‌آموزهاست، حالا ابزارهای حرفه‌ای را هم در اختیار معلم‌ها می‌گذارد؛ از ساخت آزمون و تصحیح خودکار تا تحلیل دقیق پیشرفت کلاس.
+              </p>
+            </div>
+            <div className="absolute left-1/2 top-[230px] h-[88px] w-[440px] -translate-x-1/2">
+              <div dir="ltr" className="grid h-full grid-cols-4 gap-3">
+                {TEACHER_FEATURES.map((feature, index) => (
+                  <FeatureIconButton
+                    key={feature.title}
+                    feature={feature}
+                    active={index === activeIndex}
+                    onActivate={() => setActiveIndex(index)}
+                  />
+                ))}
+              </div>
+            </div>
+            <div className="absolute left-1/2 top-[350px] h-[470px] w-[calc(100%_-_64px)] max-w-[880px] -translate-x-1/2">
+              <div className="absolute -inset-1 rounded-[28px] bg-black/25 blur-md" />
+              <div className="absolute inset-x-0 top-0 h-[430px] overflow-hidden rounded-t-[28px] border-[16px] border-[#07101c] bg-[#030711] shadow-[0_30px_70px_rgba(3,7,17,.45)]">
+                <div className="relative h-full w-full overflow-hidden rounded-[10px]">
+                  <TeacherScreen feature={activeFeature} />
+                </div>
+              </div>
+              <div className="absolute inset-x-0 bottom-0 h-[44px] rounded-b-[28px] bg-gradient-to-b from-[#111827] to-[#050a12]" />
+              <div className="absolute bottom-[2px] left-1/2 h-3 w-44 -translate-x-1/2 rounded-b-xl bg-white/10" />
+              <div className="absolute left-1/2 top-[-22px] z-20 flex -translate-x-1/2 items-center gap-2 rounded-t-[10px] bg-black px-4 py-2 text-xs">
+                مخصوص دبیران <Sparkles className="h-5 w-5" />
+              </div>
+            </div>
+            <div dir="rtl" className="absolute inset-x-10 top-[850px] text-center">
+              <AnimatePresence mode="wait">
+                <motion.div
+                  key={activeFeature.title}
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -8 }}
+                  transition={{ duration: 0.22 }}
+                >
+                  <h3 className="text-[28px] font-black leading-9">{activeFeature.title}</h3>
+                  <p className="mx-auto mt-3 max-w-[820px] text-base leading-7 text-white/85">{activeFeature.description}</p>
+                </motion.div>
+              </AnimatePresence>
+            </div>
+          </div>
+
+          {/* Exact desktop artboard, node 277:553. */}
+          <div className="relative hidden h-full min-[1820px]:block">
             <div className="absolute left-[-192px] top-[84px] h-[600px] w-[1067px]">
               <div className="absolute -inset-1 rounded-[28px] bg-black/25 blur-md" />
               <div className="absolute inset-x-0 top-0 h-[560px] rounded-t-[28px] border-[18px] border-[#07101c] bg-[#030711] shadow-[0_30px_70px_rgba(3,7,17,.45)]">
@@ -168,18 +234,17 @@ export const TeacherCtaSection = () => {
                 مخصوص دبیران <Sparkles className="h-6 w-6" />
               </div>
             </div>
-
             <div dir="rtl" className="absolute right-24 top-[103px] h-[153px] w-[777px] text-right">
               <h2 className="landing-display text-[48px] font-black leading-[67px]">تدریست رو با هوش مصنوعی متحول کن</h2>
               <p className="mt-6 text-[20px] font-medium leading-[31px] text-white/90">
                 همان موتور هوشمندی که کنار دانش‌آموزهاست، حالا ابزارهای حرفه‌ای را هم در اختیار معلم‌ها می‌گذارد؛ از ساخت آزمون و تصحیح خودکار تا تحلیل دقیق پیشرفت کلاس.
               </p>
             </div>
-
             <div dir="rtl" className="absolute right-24 top-[288px] h-[376px] w-[777px]">
               {TEACHER_FEATURES.map((feature, index) => {
                 const Icon = feature.icon;
                 const active = index === activeIndex;
+
                 return (
                   <button
                     key={feature.title}
