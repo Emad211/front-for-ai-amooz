@@ -34,17 +34,22 @@ const FAQS = [
 
 export const FAQSection = () => {
   return (
-    <section id="faq" className="landing-section-shell h-[743px] px-2 pt-10 lg:h-[805px] lg:px-8 lg:py-10">
-      <div className="landing-panel mx-auto h-[703px] w-full max-w-[424px] overflow-hidden px-2 pt-10 lg:h-[725px] lg:max-w-[1856px] lg:px-0">
-        <motion.div initial={{ opacity: 0, y: 14 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} className="text-center">
+    <section id="faq" className="landing-section-shell px-2 py-10 lg:px-8">
+      <div className="landing-panel mx-auto min-h-[703px] w-full max-w-[424px] px-2 py-10 lg:min-h-[725px] lg:max-w-[1856px] lg:px-0">
+        <motion.div
+          initial={{ opacity: 0, y: 14 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true }}
+          className="text-center"
+        >
           <div className="mx-auto flex h-[38px] w-fit items-center gap-2 rounded-full border border-primary/20 bg-primary/10 px-[17px] text-sm font-medium text-primary">
             سوالات متداول
             <MessageCircleQuestion className="h-4 w-4" />
           </div>
-          <h2 className="landing-display mt-8 h-[45px] text-[32px] font-black leading-[45px] text-foreground lg:h-[67px] lg:text-[48px] lg:leading-[67px]">
+          <h2 className="landing-display mt-8 text-[32px] font-black leading-[45px] text-foreground lg:text-[48px] lg:leading-[67px]">
             پاسخ به سوالات شما
           </h2>
-          <p className="mt-8 h-7 text-[16px] font-medium leading-7 text-muted-foreground lg:text-[20px]">
+          <p className="mx-auto mt-8 max-w-[777px] px-2 text-[16px] font-medium leading-7 text-muted-foreground lg:px-0 lg:text-[20px]">
             اگر سوالی دارید، احتمالاً جوابش اینجاست
           </p>
         </motion.div>
@@ -54,22 +59,22 @@ export const FAQSection = () => {
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true }}
           transition={{ delay: 0.1 }}
-          className="mx-auto mt-8 h-[360px] w-full max-w-[408px] lg:max-w-[768px]"
+          className="mx-auto mt-8 w-full max-w-[408px] lg:max-w-[768px]"
         >
           <Accordion type="single" collapsible className="space-y-4">
             {FAQS.map((faq) => (
               <AccordionItem
                 key={faq.id}
                 value={faq.id}
-                className="group h-[78px] overflow-hidden rounded-2xl border border-border/60 bg-card/60 px-6 backdrop-blur-sm transition-all hover:border-primary/30 data-[state=open]:h-auto data-[state=open]:border-primary/40"
+                className="group min-h-[78px] overflow-hidden rounded-2xl border border-border/60 bg-card/60 px-5 backdrop-blur-sm transition-[border-color,background-color] hover:border-primary/30 data-[state=open]:border-primary/50 data-[state=open]:bg-card/80 sm:px-6"
               >
-                <AccordionTrigger className="h-[76px] py-0 text-right text-[16px] font-bold hover:no-underline lg:text-[18px]">
-                  <span className="flex w-full items-center gap-3">
-                    <HelpCircle className="h-5 w-5 shrink-0 text-primary/70" />
-                    <span className="flex-1">{faq.question}</span>
+                <AccordionTrigger className="min-h-[76px] py-4 text-right text-[14px] font-bold leading-6 hover:no-underline sm:text-[15px] lg:text-[18px] lg:leading-7">
+                  <span className="flex min-w-0 flex-1 items-center gap-3">
+                    <HelpCircle className="h-5 w-5 shrink-0 text-primary" />
+                    <span className="min-w-0 flex-1 whitespace-normal break-words text-right">{faq.question}</span>
                   </span>
                 </AccordionTrigger>
-                <AccordionContent className="pb-6 pe-8 text-sm leading-7 text-muted-foreground lg:text-base">
+                <AccordionContent className="px-1 pb-6 text-right text-[14px] leading-7 text-muted-foreground sm:px-2 lg:text-base lg:leading-8">
                   {faq.answer}
                 </AccordionContent>
               </AccordionItem>
@@ -77,7 +82,7 @@ export const FAQSection = () => {
           </Accordion>
         </motion.div>
 
-        <p className="mx-auto mt-8 h-6 text-center text-[16px] leading-6 text-muted-foreground">
+        <p className="mx-auto mt-8 px-2 text-center text-[15px] leading-7 text-muted-foreground sm:text-[16px] sm:leading-6">
           سوال دیگری دارید؟{' '}
           <a href="mailto:info@ai-amooz.ir" className="font-semibold text-primary hover:underline">
             با ما تماس بگیرید
