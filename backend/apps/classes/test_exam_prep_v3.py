@@ -79,6 +79,76 @@ def _v3_session(teacher, *, audit=None):
     return session, artifact
 
 
+def test_step2_commits_v3_projection_atomically(monkeypatch):
+    teacher = baker.make("accounts.User", role="TEACHER")
+    session = baker.make(
+        ClassCreationSession,
+        teacher=teacher,
+        pipeline_type=ClassCreationSession.PipelineType.EXAM_PREP,
+        status=ClassCreationSession.Status.EXAM_STRUCTURING,
+        transcript_markdown="## صفحه 1\n\n۱- صورت سؤال",
+        celery_task_id="coordinator-1",
+    )
+    artifact = ExamPrepExtractionArtifact.objects.create(
+        session=session,
+        pipeline_version=3,
+        active_task_id="coordinator-1",
+    )
+    audit = {
+        "status": "passed",
+        "criticalIssueCount": 0,
+        "issues": [],
+        "questionCount": 1,
+    }
+    extraction_calls = 0
+
+    def extract_inventory(**_kwargs):
+        nonlocal extraction_calls
+        extraction_calls += 1
+        return (
+            _projection(),
+            {
+                "pipeline_version": 3,
+                "page_manifest": {},
+                "question_records": [],
+                "answer_records": [],
+                "failed_chunks": [],
+                "prompt_version": "test",
+            },
+            audit,
+            "test-provider",
+            "test-model",
+        )
+
+    monkeypatch.setattr(
+        exam_prep_inventory_pipeline,
+        "extract_exam_prep_inventory",
+        extract_inventory,
+    )
+    monkeypatch.setattr(
+        "apps.classes.services.exam_prep_visuals.process_exam_prep_visuals",
+        lambda **kwargs: (kwargs["projection"], []),
+    )
+    monkeypatch.setattr(class_tasks, "_mark_session_ready_for_review", lambda _session: None)
+
+    result = class_tasks.process_exam_prep_step2_structure.apply(
+        args=[session.id],
+        throw=False,
+    ).result
+
+    session.refresh_from_db()
+    artifact.refresh_from_db()
+    assert result == {"status": "success", "session_id": session.id}
+    assert session.status == ClassCreationSession.Status.EXAM_STRUCTURED
+    stored = json.loads(session.exam_prep_json)["exam_prep"]
+    assert stored["title"] == "آزمون"
+    assert [question["question_id"] for question in stored["questions"]] == ["q-1"]
+    assert stored["questions"][0]["final_answer_markdown"] == "پاسخ"
+    assert artifact.active_task_id == ""
+    assert artifact.status == ExamPrepExtractionArtifact.Status.READY
+    assert extraction_calls == 1
+
+
 @pytest.mark.unit
 def test_quality_contract_rejects_successful_but_repeated_output(monkeypatch):
     monkeypatch.setenv("PDF_OCR_DUPLICATE_LINE_RATIO_LIMIT", "0.35")

@@ -1481,6 +1481,8 @@ def process_exam_prep_step1_transcription(self, session_id: int) -> dict:
 def process_exam_prep_step2_structure(self, session_id: int) -> dict:
     """Extract Q&A structure from exam prep transcript."""
     import json as _json
+    from django.db import transaction
+
     from .models import (
         ClassCreationSession,
         ExamPrepExtractionArtifact,
