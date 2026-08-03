@@ -10,6 +10,10 @@ from apps.classes.views_v4_extraction import (
     ExamPrepV4ExtractionRetryView,
     ExamPrepV4ExtractionStatusView,
 )
+from apps.classes.views_v4_projection import (
+    ExamPrepV4ProjectionView,
+    ExamPrepV4PublishView,
+)
 from apps.classes.views_v4_records import ExamPrepV4RecordSummaryView
 from apps.classes.views_v4_review import (
     ExamPrepV4ReviewDecisionView,
@@ -54,6 +58,16 @@ urlpatterns = [
         'projects/<int:project_id>/review/finalize/',
         ExamPrepV4ReviewFinalizeView.as_view(),
         name='project-review-finalize',
+    ),
+    path(
+        'projects/<int:project_id>/projection/',
+        ExamPrepV4ProjectionView.as_view(),
+        name='project-projection',
+    ),
+    path(
+        'projects/<int:project_id>/publish/',
+        ExamPrepV4PublishView.as_view(),
+        name='project-publish',
     ),
     path(
         (
