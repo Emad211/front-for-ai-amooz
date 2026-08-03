@@ -353,6 +353,22 @@ def classify_document_pages_fast(
         model=selected_model,
     )
 
+    # The accepted fingerprint is the cache key. Reuse happens before any
+    # provider call; a different fingerprint on the same revision fails closed.
+    if document.classification_fingerprint:
+        persisted = persist_classification_result(
+            document_id=document.id,
+            expected_revision=expected_revision,
+            fingerprint=fingerprint,
+            raw_output={'pages': []},
+        )
+        return FastClassifierResult(
+            model=selected_model,
+            prompt_version=PROMPT_VERSION,
+            input_fingerprint=fingerprint,
+            classification=persisted,
+        )
+
     envelope = generate_structured(
         schema=FastClassificationEnvelope,
         messages=_messages(page_catalog=catalog, sheets=sheets),
