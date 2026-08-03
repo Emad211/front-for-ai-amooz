@@ -6,6 +6,7 @@ No classifier or extractor may infer cross-document project membership.
 """
 from __future__ import annotations
 
+import os
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -52,7 +53,14 @@ class NewExamPdf:
 def exam_prep_v4_enabled() -> bool:
     """Return the explicit rollout flag; V4 is off unless configured."""
 
-    return bool(getattr(settings, 'EXAM_PREP_V4_ENABLED', False))
+    value = getattr(
+        settings,
+        'EXAM_PREP_V4_ENABLED',
+        os.getenv('EXAM_PREP_V4_ENABLED', 'False'),
+    )
+    if isinstance(value, bool):
+        return value
+    return str(value).strip().lower() in {'1', 'true', 'yes', 'on'}
 
 
 def _validate_source(source: NewExamPdf) -> None:
