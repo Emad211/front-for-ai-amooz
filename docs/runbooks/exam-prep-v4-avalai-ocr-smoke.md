@@ -1,6 +1,6 @@
 # Runbook — Exam Prep V4 AvalAI Mistral OCR Smoke
 
-- **Status:** first live evidence run completed eight requests but failed aggregate acceptance; retry instrumentation is ready
+- **Status:** bounded live feasibility evidence recorded
 - **Branch:** `feat/exam-prep-v4-source-aware`
 - **Owner:** Classes / Exam Prep V4
 - **Reviewed:** 2026-08-04
@@ -10,44 +10,29 @@
 
 ## Official documentation reviewed
 
-AvalAI pages are re-read before every endpoint/model/retry decision:
+AvalAI documentation is re-read before every AvalAI-dependent decision:
 
 ```text
-https://docs.avalai.ir/fa/
 https://docs.avalai.ir/fa/api-reference/ocr
 https://docs.avalai.ir/fa/examples/processing_documents_with_mistral_ocr
 https://docs.avalai.ir/fa/models/mistral-ocr-2512
 ```
 
-Supplementary upstream Mistral documentation is capability context only and must be measured through AvalAI:
+The documentation establishes the AvalAI endpoint, authentication, document/image data-URL input, page selection, Markdown/table output, document annotation, and bbox annotation. It does not establish endpoint-specific no-retention, no-training, or residency guarantees; none are inferred.
+
+## Test contract
+
+Private fixture:
 
 ```text
-https://docs.mistral.ai/studio-api/document-processing/basic_ocr
-https://docs.mistral.ai/studio-api/document-processing/annotations
-https://docs.mistral.ai/api/endpoint/ocr
-```
-
-## Model and capability interpretation
-
-- `mistral-ocr-2512` is OCR 3.
-- `mistral-ocr-4-0` is the reproducible OCR 4 identifier in upstream documentation.
-- `mistral-ocr-latest` is used only in the bounded discovery retry because AvalAI currently exposes the alias more consistently; the resolved model returned by each successful response is recorded in aggregate evidence.
-- `blocks` is treated as an OCR4 capability that must be measured through AvalAI, not assumed.
-- `bbox_annotation` annotates extracted figures/images and is not assumed to replace textual block detection.
-
-No production route may depend on the mutable alias. A production decision must pin a model proven by measured evidence.
-
-## Authorized private fixture
-
-```text
-source PDF: دفترچه اول (زیست).pdf on main
+source: دفترچه اول (زیست).pdf
 question page: physical page 5
 answer-solution page: physical page 12
 ```
 
-The complete PDF is never transmitted. The GitHub runner renders only these two pages locally and sends the two bounded PNG images.
+The runner rendered both pages locally and sent only the bounded PNG images. The complete PDF was not transmitted.
 
-Four isolated modes are evaluated:
+Modes:
 
 ```text
 markdown
@@ -56,99 +41,43 @@ document_annotation
 bbox_annotation
 ```
 
-Two images × four modes = exactly eight external requests per run.
+Two images × four modes = eight requests.
 
-## Privacy and bounds
+Bounds:
 
 ```text
-max input bytes per rendered page: 12 MiB
-max response bytes per request:    24 MiB
-max Markdown chars per page:       500,000
-max annotation chars:              500,000
-request timeout:                   180 seconds
-include_image_base64:              false
+max input bytes per page:       12 MiB
+max response bytes per request: 24 MiB
+max Markdown chars per page:    500,000
+max annotation chars:           500,000
+request timeout:                180 seconds
+include_image_base64:           false
 ```
 
-Forbidden from logs, artifacts, serializers, and roadmap evidence:
-
-- source PDF/image bytes or data URLs;
-- paths and filenames;
-- OCR Markdown and block text;
-- annotation payloads;
-- questions, answers, and solutions;
-- API credentials;
-- raw provider response/error bodies.
-
-The aggregate artifact may contain fixture/mode identifiers, model, content-free error class, counts, issue codes, confidence, usage, latency, and opaque request IDs. The workflow log prints a stricter sanitized subset without request IDs or input byte counts.
-
-## First live run — terminal evidence
+## First live run
 
 ```text
 run: 30852221763
 job: 91814702919
 requested model: mistral-ocr-4-0
-executed requests: 8
-command acceptance: false
+requests attempted: 8
+acceptance: false
 ```
 
-Successful stages:
+The old workflow lost the per-mode failed report because artifact upload was skipped after the command returned nonzero. A later PR-comment attempt also failed with GitHub 403. No quality conclusion was recorded from the first run.
 
-- API secret validation;
-- V4 code checkout;
-- sparse checkout of the selected PDF;
-- exact 16-page validation;
-- local rendering of pages 5 and 12;
-- all eight planned OCR request attempts;
-- private-file cleanup.
-
-Terminal command output:
+## Evidence-preservation patch
 
 ```text
-Exam Prep V4 AvalAI OCR smoke completed; requests=8; passed=False
-CommandError: AvalAI OCR smoke acceptance failed.
-```
-
-Interpretation:
-
-- at least one of the eight requests raised a bounded transport, response-parse, or privacy exception;
-- merely returning no blocks, no bbox annotations, or no document annotation would not by itself mark a request failed;
-- the exact failed mode/error class is unavailable because the old workflow skipped artifact upload after the command returned nonzero;
-- the later PR-comment step independently failed with GitHub `403 Forbidden`;
-- cleanup then deleted the local report, so the first failed aggregate cannot be reconstructed.
-
-No quality conclusion can be drawn from the first run.
-
-## Failure-evidence patch
-
-Feature branch:
-
-```text
-workflow commit: 32913cff94bc58493f09c9abe9f7204985fbabb0
+feature workflow commit: 32913cff94bc58493f09c9abe9f7204985fbabb0
 static-test commit: 137518464ec3d2ee60a6051b07432cf6b8832f57
+operational workflow commit: 5947a090c927243a1a7402b38cb59539af6a3972
+focused CI: 30853630677
 ```
 
-Operational workflow on `main`:
+Verification:
 
 ```text
-commit: 5947a090c927243a1a7402b38cb59539af6a3972
-```
-
-The patched workflow now:
-
-1. lets the command complete and write its report even when acceptance is false;
-2. prints a content-free per-mode summary;
-3. uploads `aggregate-report.json` on pass or fail;
-4. retains the artifact for one day;
-5. removes the GitHub PR-comment request that returned 403;
-6. enforces pass/fail only after evidence upload;
-7. always deletes the PDF checkout, rendered pages, and local report.
-
-Focused verification:
-
-```text
-workflow: 30853630677
-backend job: 91819412114
-frontend job: 91819412054
 System check identified no issues (0 silenced).
 No changes detected in app 'classes'.
 236 passed, 47 warnings in 24.09s
@@ -156,34 +85,176 @@ Focused TypeScript check: passed
 Source-map state tests: passed
 ```
 
-## Retry contract
+The patched workflow preserved aggregate evidence on pass or fail, uploaded it for one day, then enforced acceptance.
 
-The retry is another bounded evidence run, not a production rollout:
+## Second live run — measured evidence
 
 ```text
-model requested: mistral-ocr-latest
-inputs: the same two rendered pages
-modes: the same four modes
-external-request ceiling: 8
-artifact retention: 1 day
+run: 30854537419
+job: 91822320489
+artifact: 8871965000
+requested model: mistral-ocr-latest
+requests attempted: 8
+passed: 6
+failed: 2
+acceptance: false
 ```
 
-The retry must produce an aggregate artifact even if every request fails. The evidence review must determine:
+Aggregate totals:
 
-- status and content-free error class for each mode/page;
-- resolved model returned by successful requests;
-- Markdown/RTL/formula/table signal counts;
-- block/bbox/annotation availability;
-- issue codes and latency;
-- request IDs for authoritative transaction/cost lookup.
+```text
+returned pages: 6
+blocks: 134
+bboxes: 138
+RTL characters: 16,750
+formula signals: 0
+table signals: 0
+total wall time: 96,360.34 ms
+successful-request latency average: 5,739.00 ms
+```
 
-## Decision after the retry
+### Question page
 
-Only measured evidence may select one of these outcomes:
+All four modes passed.
 
-1. **OCR-first candidate:** Markdown/blocks propose SourceBlocks, with vision fallback.
-2. **Transcription-only:** Markdown supplies text; current vision detector retains layout ownership.
-3. **Diagram-only utility:** bbox/image annotations are useful but text blocks are not.
-4. **Rejected for V4:** current vision route remains authoritative.
+Each response returned:
 
-No roadmap credit or production routing change is granted merely because the requests executed.
+```text
+pages: 1
+blocks: 21
+bboxes: 22
+RTL characters: 2,299
+```
+
+Observed block types:
+
+```text
+header: 3
+text: 9
+list: 7
+image: 1
+footer: 1
+```
+
+Additional evidence:
+
+- blocks-mode page confidence: `0.981177`;
+- document annotation was present;
+- one image bbox annotation was present;
+- no content-free parser issue codes were recorded.
+
+### Answer page
+
+Passed:
+
+```text
+document_annotation
+bbox_annotation
+```
+
+Both successful responses returned:
+
+```text
+pages: 1
+blocks: 25
+bboxes: 25
+RTL characters: 3,777
+```
+
+Observed block types:
+
+```text
+title: 7
+header: 4
+text: 13
+footer: 1
+```
+
+Additional evidence:
+
+- document annotation was present;
+- no extracted images were returned;
+- no content-free parser issue codes were recorded.
+
+Failed:
+
+```text
+markdown → AvalAIOCRTransportError
+blocks   → AvalAIOCRTransportError
+```
+
+The workflow did not retain the HTTP status or provider error body by design. Later annotation calls on the same answer image succeeded, so a transient gateway/provider failure is a plausible inference only.
+
+## Interpretation
+
+### Supported by measurement
+
+- Persian/Arabic-script content is returned at substantial volume.
+- OCR responses can provide typed block labels and bboxes.
+- document annotation can coexist with Markdown and block evidence in one request.
+- bbox annotation can classify an extracted figure on the question page.
+- a successful page request completes in roughly 5.4–7.0 seconds in this sample.
+
+### Not proven
+
+- exact transcription accuracy;
+- correct RTL reading order;
+- printed-number recall;
+- formula preservation;
+- table preservation;
+- multi-column ownership;
+- continuation boundaries;
+- immutable resolved model behind the alias;
+- authoritative cost;
+- reliable single-attempt transport.
+
+Zero formula/table signals cannot distinguish “structure absent” from “signal detector missed it.”
+
+## Architecture decision
+
+OCR4 is **accepted as an optional evidence-proposal source**, not as the authoritative production extractor.
+
+Recommended bounded path:
+
+```text
+confirmed Source Map
+→ document_annotation OCR call
+→ Markdown + blocks + bboxes + page-role proposal
+→ deterministic SourceBlock proposal builder
+→ existing validators, revision, provenance, and persistence
+→ optional bbox_annotation only for figure-bearing pages
+→ vision fallback for failed, low-confidence, formula-heavy, ambiguous, or layout-sensitive evidence
+```
+
+Rationale:
+
+- `document_annotation` succeeded on both pages while also returning block/bbox evidence;
+- a separate four-call-per-page strategy is unnecessary for the production candidate;
+- two transport failures show that retry/fallback is mandatory;
+- current server-authoritative contracts remain necessary.
+
+## Required implementation before full private benchmark
+
+1. add a provider adapter that maps OCR blocks to bounded SourceBlock proposals;
+2. use `document_annotation` as the primary OCR request;
+3. invoke `bbox_annotation` only when extracted-image evidence is needed;
+4. classify HTTP 408/429/5xx and network failures as retryable without exposing provider bodies;
+5. use bounded exponential backoff and a strict request ceiling;
+6. cache accepted unchanged page evidence for zero-call warm reuse;
+7. fall back to the current vision detector when OCR evidence is unavailable or insufficient;
+8. preserve all current project/document/page authority and downstream invalidation guarantees;
+9. run the full three-PDF benchmark with aggregate precision, recall, latency, call, and warm-reuse metrics.
+
+## Operational cleanup
+
+The one-shot workflow was removed from `main` after the aggregate artifact was secured:
+
+```text
+2f457da65029c6c617dc4f1ab70c542096c4a563
+```
+
+No recurring live smoke workflow remains on the default branch.
+
+## Roadmap credit
+
+No canonical item is credited by this two-page aggregate smoke. Phase 4 private-fixture acceptance remains open because text quality, formulas, tables, RTL order, multi-column ownership, and continuation were not fully measured.
