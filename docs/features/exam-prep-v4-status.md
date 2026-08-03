@@ -6,7 +6,8 @@
 - **PR:** #4 (Draft)
 - **Phase:** 2
 - **Completed:** privacy-safe benchmark harness
-- **Blocked on:** real three-PDF live-provider benchmark
+- **Blocking gate:** real three-PDF live-provider benchmark
+- **Selected execution environment:** local Windows development machine
 - **Validated code:** `b9426c0dffafa04aa61cc850b814f4df3feba1b7`
 - **CI:** run `30778629588`, job `91578823573`, 128 passed
 
@@ -14,6 +15,8 @@
 
 - **Overall:** **24.7% (19/77)**
 - **Phase 2:** **88.9% (8/9)**
+
+The final Phase 2 item is credited only after the real private PDFs pass the local live-provider gate and aggregate evidence is recorded.
 
 ## Verified
 
@@ -27,12 +30,23 @@ No changes detected in app 'classes'.
 
 ## Guardrail
 
-No Phase 3/4, extraction, matching, projection, or publication before the real benchmark is recorded.
+No Phase 3/4, extraction, matching, projection, or publication before the local live benchmark result is recorded.
 
-## User action required
+## User action now
 
-Choose: **local development machine** or **staging/backend server**. Make the three PDFs, private manifest, V4/model config, secret `AVALAI_API_KEY`, and private output path available there. Never send the credential in chat or Git.
+On the local Windows machine:
+
+1. check out and update `feat/exam-prep-v4-source-aware`;
+2. prepare Python, PostgreSQL, and Redis;
+3. place the three private PDFs in a private directory outside Git;
+4. create a local manifest from `docs/runbooks/exam-prep-v4-benchmark-manifest.example.json`;
+5. configure `EXAM_PREP_V4_ENABLED`, database/Redis settings, the classification model, and `AVALAI_API_KEY` locally;
+6. run the fake-provider smoke test;
+7. run the live-provider benchmark;
+8. return only the aggregate JSON report or its non-sensitive metrics for roadmap recording.
+
+Never paste the provider credential into chat or commit it.
 
 ## Next
 
-Run only the real live Phase 2 benchmark and record aggregate pass/fail evidence.
+Run only the local fake smoke test and then the local live Phase 2 benchmark. Record aggregate pass/fail evidence before any Phase 3 work.
