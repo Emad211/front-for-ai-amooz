@@ -1,35 +1,32 @@
 # Exam Prep V4 — Implementation Status Ledger
 
-> Living roadmap execution ledger. Updated in every V4 implementation turn. Canonical roadmap: `exam-prep-v4-source-aware-split-pipeline.md`.
+> Living execution ledger. Update this file before every V4 implementation step. Canonical roadmap: `exam-prep-v4-source-aware-split-pipeline.md`.
 
 - **Branch:** `feat/exam-prep-v4-source-aware`
 - **PR:** #4 — Draft
 - **Execution mode:** Critical Path Acceleration
 - **Current roadmap span:** Phase 4 → Phase 7 vertical extraction path
 - **Last completed slice:** isolated bounded AvalAI Mistral OCR 4 fake-response smoke gate
-- **Active gate:** product-owner authorization for the two-page private live OCR smoke
-- **Validated branch head:** `b29055d900d2ec6727d39be181567a554e0b336a`
-- **Focused workflow:** `30845511947`
-- **Backend job:** `91792716665`
-- **Frontend job:** `91792716703`
-- **Validated PR merge ref:** `744149f2029e95fad17229ea36740baa845f2096`
+- **Active gate:** authorized two-page private live OCR smoke
+- **Last fully validated implementation checkpoint:** `b29055d900d2ec6727d39be181567a554e0b336a`
+- **Last fully validated focused workflow:** `30846013026`
 - **Last updated:** 2026-08-03
 
 ## Progress
 
-Progress is counted only from the 77 canonical roadmap deliverables. Documentation, adapters, synthetic responses, and passing smoke tests do not credit private-fixture quality by themselves.
+Progress is counted only from the 77 canonical roadmap deliverables.
 
 | Phase | Credited | Total | State |
 |---|---:|---:|---|
-| Phase 0 | 5 | 6 | PR-level ledger enforcement remains open. |
+| Phase 0 | 5 | 6 | PR ledger enforcement remains open. |
 | Phase 1 | 6 | 7 | Read-only admin inspection remains deferred. |
-| Phase 2 | 8 | 9 | Real private live-provider benchmark remains open and uncredited. |
+| Phase 2 | 8 | 9 | Real private classification benchmark remains open and uncredited. |
 | Phase 3 | 4 | 7 | Core Source Map works; split/group and browser validation remain open. |
-| Phase 4 | 3 | 8 | Bounding-box persistence, continuation candidates, and safe block inspection are verified. Real OCR/layout accuracy remains open. |
-| Phase 5 | 6 | 7 | Typed question path, tolerant validation, private evidence, revisioning, partial retry, and warm reuse are verified. Private precision/recall remains open. |
-| Phase 6 | 4 | 7 | Unified answer-solution records, continuation evidence, complete solution contract, and tolerant retry are verified. Real numbered-heading, answer-key, and inline accuracy remain open. |
-| Phase 7 | 6 | 7 | Exact/unique matching, duplicate refusal, out-of-scope handling, provenance, and project isolation are verified. Full option/solution consistency remains open. |
-| Phases 8–10 | 0 | 20 | Review, projection, hardening, shadow benchmark, and rollout have not started. |
+| Phase 4 | 3 | 8 | Block persistence/continuation/inspection are verified; real OCR/layout quality remains open. |
+| Phase 5 | 6 | 7 | Typed question path is verified; private precision/recall remains open. |
+| Phase 6 | 4 | 7 | Unified answer-solution path is verified; real heading/answer-key/inline quality remains open. |
+| Phase 7 | 6 | 7 | Deterministic matching is verified; complete consistency gate remains open. |
+| Phases 8–10 | 0 | 20 | Not started. |
 
 - **Entire V4 roadmap:** **42/77 = 54.5%**
 - **Phase 4:** **3/8 = 37.5%**
@@ -37,63 +34,28 @@ Progress is counted only from the 77 canonical roadmap deliverables. Documentati
 - **Phase 6:** **4/7 = 57.1%**
 - **Phase 7:** **6/7 = 85.7%**
 
-No credit was added for the OCR feasibility implementation. A live two-page result may guide architecture, but roadmap credit changes only when measured evidence closes a listed deliverable.
-
-## Roadmap invariants
-
-1. every uploaded PDF remains an independent `ExamProject` by default;
-2. physical page identity, project scope, and evidence provenance remain authoritative;
-3. questions originate only from accepted question-bearing evidence;
-4. answer-only content never creates questions;
-5. answer and complete source solution remain one record;
-6. automatic matching remains deterministic and project-scoped;
-7. ambiguous evidence remains unresolved rather than guessed;
-8. malformed provider siblings remain isolated;
-9. accepted unchanged units are excluded from provider calls;
-10. private source content, paths, crops, extracted text, annotations, and raw provider output remain outside public serializers and aggregate reports;
-11. historical revisions remain auditable;
-12. production routing is not changed by a feasibility smoke;
-13. Phase 8 and rollout remain blocked until private evidence is recorded or explicitly waived.
+No progress credit is added before measured private evidence closes a canonical deliverable.
 
 ## AvalAI documentation rule
 
-For every AvalAI-dependent implementation turn:
+For every AvalAI-dependent turn:
 
-1. update this ledger before code changes;
-2. re-read the relevant current official AvalAI pages;
-3. pin reproducible model identifiers instead of mutable aliases where available;
-4. distinguish documented behavior, upstream capability context, engineering inference, and measured behavior;
-5. never infer retention, training, residency, or privacy guarantees absent from the specific endpoint documentation;
-6. record the reviewed URLs and date in this ledger or the related runbook.
+1. update this ledger before code or live execution;
+2. re-read the relevant current official AvalAI documentation;
+3. pin reproducible model identifiers instead of mutable aliases;
+4. separate documented behavior, inference, and measured behavior;
+5. never infer endpoint retention/training/residency guarantees;
+6. record reviewed documentation in the related runbook.
 
-Reviewed for this slice:
+Required official pages for this gate:
 
 ```text
-https://docs.avalai.ir/fa/
 https://docs.avalai.ir/fa/api-reference/ocr
 https://docs.avalai.ir/fa/examples/processing_documents_with_mistral_ocr
 https://docs.avalai.ir/fa/models/mistral-ocr-2512
 ```
 
-Supplementary upstream Mistral pages were used only to understand OCR 4 block capabilities that must still be verified through the AvalAI gateway.
-
-## Documentation findings recorded
-
-- AvalAI OCR uses `POST https://api.avalai.ir/v1/ocr`.
-- The reproducible OCR 4 identifier is pinned as `mistral-ocr-4-0`.
-- `mistral-ocr-latest` is not used because it is a mutable alias.
-- `mistral-ocr-2512` documents OCR 3, not OCR 4.
-- private local PDF/image bytes can be transmitted as base64 data URLs without public URLs.
-- PDF `pages` indexes are zero-based.
-- Markdown, table formatting, document annotation, bbox/image annotation, and image extraction controls are documented.
-- current upstream Mistral docs describe OCR 4 paragraph-level `blocks`; AvalAI gateway support remains a live-smoke question rather than an assumed guarantee.
-- bbox annotation is treated as image/figure annotation, not as a replacement for text-block detection.
-- AvalAI's OCR reference states OCR and annotation page prices, but exact combined billing behavior is measured rather than inferred.
-- base64 transport does not establish a no-retention/no-training guarantee.
-
-## Closed gate — isolated AvalAI OCR fake smoke
-
-Implemented files:
+## Existing OCR feasibility implementation
 
 ```text
 backend/apps/classes/services/exam_prep_v4_avalai_ocr.py
@@ -102,9 +64,9 @@ backend/apps/classes/test_exam_prep_v4_avalai_ocr.py
 docs/runbooks/exam-prep-v4-avalai-ocr-smoke.md
 ```
 
-The service is isolated from the production extraction runner. No production SourceBlock, QuestionRecord, AnswerSolutionRecord, MatchDecision, task, or API routing was modified.
+The OCR service remains isolated from production extraction routing.
 
-### Four independent smoke modes
+Four modes are supported:
 
 ```text
 markdown
@@ -113,103 +75,35 @@ document_annotation
 bbox_annotation
 ```
 
-The modes measure different capabilities instead of treating all annotations as equivalent:
+The client uses local private PDF/image bytes as in-memory base64 data URLs, sets `include_image_base64=false`, enforces bounded input/response/page/annotation limits, and emits aggregate-only metrics.
 
-- Markdown for Persian/RTL transcription, formula signals, and HTML tables;
-- OCR 4 blocks for paragraph-level type/bbox/confidence feasibility;
-- document annotation for constrained page/document-level classification;
-- bbox annotation for extracted figure/image classification.
+## Product-owner authorization recorded
 
-### Input and privacy contract
+The product owner explicitly approved all required items on 2026-08-03:
 
-- local PDF, PNG, and JPEG bytes only;
-- base64 data URLs generated in memory;
-- no public or presigned source URL;
-- bounded input, response, page count, Markdown, annotation, and timeout;
-- `include_image_base64=false` on every request;
-- unexpected returned image base64 fails closed;
-- duplicate/missing requested page indexes fail closed;
-- malformed annotations become content-free issues while valid sibling OCR pages remain available;
-- stdout and report exclude source paths, filenames, bytes, data URLs, Markdown, block text, annotations, questions, answers, solutions, credentials, and raw provider errors.
+1. `AVALAI_API_KEY` is available in the local secret/environment;
+2. exactly two selected private page images may be transmitted to AvalAI/Mistral;
+3. pinned model `mistral-ocr-4-0` is approved;
+4. hard request ceiling `8` is approved;
+5. the implementation agent may choose one representative question page and one representative answer-solution/continuation page.
 
-### Smoke command
+This authorization does **not** permit:
 
-```text
-python backend/manage.py smoke_exam_prep_v4_avalai_ocr
-```
+- sending complete PDFs;
+- sending more than two selected page images;
+- exceeding eight OCR requests;
+- changing production routing;
+- starting Phase 8, publication, or rollout.
 
-Default plan:
+## Active gate — bounded live OCR smoke
+
+Exact plan:
 
 ```text
-2 private page images × 4 modes = 8 requests
-```
-
-Live mode requires all of:
-
-```text
---mode live_provider
---model mistral-ocr-4-0
---max-requests 8
---allow-private-transmission
-AVALAI_API_KEY in local environment/secret
-```
-
-The command refuses to read/send inputs when permission, key, or request ceiling preflight is missing.
-
-## Fake-smoke acceptance evidence
-
-Verified with the same parser and report builder used by live mode:
-
-- pinned model and endpoint;
-- private base64 data URL payloads;
-- zero-based bounded page selection;
-- Markdown, Persian/RTL, formula, and HTML table signal metrics;
-- OCR4 block type and bbox parsing;
-- document annotation and bbox/image annotation parsing;
-- malformed annotation isolation;
-- duplicate and missing page refusal;
-- input, response, Markdown, and annotation bounds;
-- unexpected image-base64 privacy refusal;
-- eight-request aggregate command flow;
-- aggregate-only stdout/report;
-- live permission/key/request-ceiling preflight.
-
-## Focused verification evidence
-
-The focused workflow validated the pull-request merge result against current `main`.
-
-```text
-Python 3.12
-PostgreSQL 16
-Redis 7
-System check identified no issues (0 silenced).
-No changes detected in app 'classes'.
-231 passed, 47 warnings in 25.38s
-Focused frontend TypeScript check: passed
-Source-map state-model tests: passed
-```
-
-Warnings remain limited to the CI checkout lacking generated `backend/staticfiles/`. Expected negative PostgreSQL constraint logs are not suite failures.
-
-## What is not claimed
-
-- no OCR request reached AvalAI in this slice;
-- no private page content was transmitted;
-- no OCR 4 gateway response shape was observed live;
-- no Persian RTL, formula, table, diagram, numbered-heading, continuation, block bbox, latency, or cost quality is claimed;
-- no production extraction route uses OCR;
-- no three-PDF benchmark was run;
-- no canonical deliverable received new credit.
-
-## Active gate — two-page private live OCR smoke
-
-The next allowed operation is only a two-page live feasibility run:
-
-```text
-one representative question page
-one representative answer-solution or continuation page
+1 representative question page
+1 representative answer-solution or continuation page
 × markdown, blocks, document_annotation, bbox_annotation
-= exactly 8 requests
+= exactly 8 maximum requests
 ```
 
 Pinned configuration:
@@ -220,34 +114,31 @@ model: mistral-ocr-4-0
 hard request ceiling: 8
 include_image_base64: false
 input transport: local base64 data URL
-output: aggregate-only report plus private local human inspection
 ```
 
-The live smoke will measure:
+Measured outputs must remain aggregate-only:
 
-- Persian/RTL reading-order plausibility;
-- printed-number preservation;
-- formula and table preservation;
-- OCR 4 block labels/bboxes/confidence returned through AvalAI;
-- document role annotation;
-- image/diagram bbox annotation usefulness;
-- latency, request IDs, processed pages, and authoritative cost lookup;
-- whether OCR should be OCR-first, transcription-only, diagram-only, or rejected for V4.
+- request count and request IDs;
+- processed-page count;
+- latency;
+- Markdown/RTL/formula/table signal counts;
+- OCR4 block count/type/bbox/confidence availability;
+- document annotation presence;
+- image/bbox annotation count;
+- content-free issue codes;
+- authoritative cost lookup when available.
 
-Production integration remains forbidden until this result is reviewed and explicitly recorded.
+Raw OCR results may remain only in the operator's local private directory for human inspection. They must not be committed or pasted into chat.
 
-## User action required now
+## Current blocker
 
-Before the first live OCR request, the product owner must explicitly confirm:
-
-1. `AVALAI_API_KEY` is available in the local secret/environment and will not be pasted into chat or Git;
-2. permission to transmit exactly two selected private page images to AvalAI/Mistral for this smoke;
-3. approval of pinned model `mistral-ocr-4-0`;
-4. approval of the hard request ceiling of exactly 8;
-5. which representative question page and answer-solution/continuation page should be used, or permission for the implementation agent to select them from the supplied private PDFs.
-
-The full three PDFs are not authorized by this gate.
+The assistant does not have access to the user's local filesystem, local `AVALAI_API_KEY`, or local private page images. The live command must therefore be executed by the user/operator on the authorized local machine. Only the aggregate JSON report should be returned.
 
 ## Exact continuation point
 
-Obtain the five approvals above. Then execute only the bounded two-page OCR smoke, retain raw OCR results locally/private for human inspection, emit only aggregate metrics, record measured evidence in this ledger and runbook, and decide whether an OCR-assisted production path merits a separate roadmap slice.
+1. re-read the three official AvalAI pages;
+2. identify two representative source pages from the private fixtures;
+3. export those pages locally as PNG/JPEG without committing them;
+4. execute `smoke_exam_prep_v4_avalai_ocr` with model `mistral-ocr-4-0`, request ceiling `8`, and explicit private-transmission permission;
+5. return only the aggregate report;
+6. record measured evidence in this ledger and the OCR runbook before deciding whether OCR should be OCR-first, transcription-only, diagram-only, or rejected for V4.
