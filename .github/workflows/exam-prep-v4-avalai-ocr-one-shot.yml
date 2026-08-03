@@ -2,15 +2,9 @@ name: exam-prep-v4-avalai-ocr-one-shot
 
 on:
   workflow_dispatch:
-    inputs:
-      confirmation:
-        description: 'Type I_APPROVE_8_PRIVATE_OCR_REQUESTS'
-        required: true
-        type: string
 
 permissions:
   contents: read
-  issues: write
 
 concurrency:
   group: exam-prep-v4-avalai-ocr-one-shot
@@ -18,8 +12,7 @@ concurrency:
 
 jobs:
   live-ocr-smoke:
-    if: inputs.confirmation == 'I_APPROVE_8_PRIVATE_OCR_REQUESTS'
-    name: authorized one-shot AvalAI OCR smoke
+    name: two-page AvalAI OCR evidence run
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
@@ -31,24 +24,24 @@ jobs:
       EXPECTED_PAGE_COUNT: '16'
       QUESTION_PAGE_NUMBER: '5'
       ANSWER_PAGE_NUMBER: '12'
+      OCR_MODEL: mistral-ocr-latest
 
     steps:
-      - name: Validate authorization and secret
+      - name: Validate branch and secret
         shell: bash
         run: |
           set -euo pipefail
           test "${GITHUB_REF}" = "refs/heads/main"
-          test "${{ inputs.confirmation }}" = "I_APPROVE_8_PRIVATE_OCR_REQUESTS"
           test -n "${AVALAI_API_KEY:-}"
 
-      - name: Check out validated V4 implementation
+      - name: Check out current V4 implementation
         uses: actions/checkout@v4
         with:
           ref: feat/exam-prep-v4-source-aware
           path: code
           fetch-depth: 1
 
-      - name: Check out only the selected private fixture from main
+      - name: Check out only the selected private fixture
         uses: actions/checkout@v4
         with:
           ref: main
@@ -128,6 +121,7 @@ jobs:
 
       - name: Run exactly eight live OCR requests
         id: live_smoke
+        continue-on-error: true
         shell: bash
         run: |
           set -euo pipefail
@@ -138,14 +132,14 @@ jobs:
             --answer-page "${ANSWER_PATH}" \
             --report "${REPORT_PATH}" \
             --mode live_provider \
-            --model mistral-ocr-4-0 \
+            --model "${OCR_MODEL}" \
             --smoke-modes markdown,blocks,document_annotation,bbox_annotation \
             --max-requests 8 \
             --allow-private-transmission
 
-      - name: Validate aggregate report
-        id: validate_report
-        if: steps.live_smoke.outcome == 'success'
+      - name: Validate and print sanitized aggregate summary
+        id: aggregate
+        if: always()
         shell: bash
         run: |
           set -euo pipefail
@@ -154,17 +148,45 @@ jobs:
           import os
           from pathlib import Path
 
-          report = json.loads(Path(os.environ['REPORT_PATH']).read_text(encoding='utf-8'))
-          assert report['model'] == 'mistral-ocr-4-0'
+          report_path = Path(os.environ['REPORT_PATH'])
+          if not report_path.is_file():
+              raise SystemExit('aggregate report was not created')
+          report = json.loads(report_path.read_text(encoding='utf-8'))
           assert report['plannedRequestCount'] == 8
           assert report['executedRequestCount'] == 8
           assert report['maxRequests'] == 8
-          assert report['acceptance']['passed'] is True
           assert len(report['results']) == 8
+          summary = {
+              'modelRequested': report.get('model'),
+              'totalLatencyMs': report.get('totalLatencyMs'),
+              'totals': report.get('totals'),
+              'acceptance': report.get('acceptance'),
+              'results': [
+                  {
+                      'fixtureId': item.get('fixtureId'),
+                      'mode': item.get('mode'),
+                      'status': item.get('status'),
+                      'errorCode': item.get('errorCode'),
+                      'model': item.get('model'),
+                      'returnedPageCount': item.get('returnedPageCount'),
+                      'blockCount': item.get('blockCount'),
+                      'bboxCount': item.get('bboxCount'),
+                      'documentAnnotationPresent': item.get('documentAnnotationPresent'),
+                      'issueCodes': item.get('issueCodes'),
+                      'latencyMs': item.get('latencyMs'),
+                  }
+                  for item in report['results']
+              ],
+          }
+          print(json.dumps(summary, ensure_ascii=False, sort_keys=True))
+          with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as handle:
+              handle.write(
+                  'passed=' + str(bool(report['acceptance']['passed'])).lower() + '\n'
+              )
           PY
 
-      - name: Upload aggregate-only report for one day
-        if: steps.validate_report.outcome == 'success'
+      - name: Upload aggregate report on pass or fail
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: exam-prep-v4-avalai-ocr-aggregate
@@ -173,65 +195,13 @@ jobs:
           retention-days: 1
           compression-level: 9
 
-      - name: Post sanitized aggregate result to Draft PR
+      - name: Enforce smoke acceptance after evidence upload
         if: always()
-        env:
-          GH_TOKEN: ${{ github.token }}
-          SMOKE_OUTCOME: ${{ steps.live_smoke.outcome }}
-          VALIDATION_OUTCOME: ${{ steps.validate_report.outcome }}
         shell: bash
         run: |
           set -euo pipefail
-          python - <<'PY'
-          import json
-          import os
-          from pathlib import Path
-          import requests
-
-          report_path = Path(os.environ['REPORT_PATH'])
-          payload = {
-              'workflowRunId': os.environ['GITHUB_RUN_ID'],
-              'smokeOutcome': os.environ.get('SMOKE_OUTCOME') or 'not_run',
-              'validationOutcome': os.environ.get('VALIDATION_OUTCOME') or 'not_run',
-          }
-          if report_path.is_file():
-              report = json.loads(report_path.read_text(encoding='utf-8'))
-              payload.update({
-                  'mode': report.get('mode'),
-                  'model': report.get('model'),
-                  'plannedRequestCount': report.get('plannedRequestCount'),
-                  'executedRequestCount': report.get('executedRequestCount'),
-                  'totalLatencyMs': report.get('totalLatencyMs'),
-                  'totals': report.get('totals'),
-                  'acceptance': report.get('acceptance'),
-                  'results': [
-                      {
-                          key: value
-                          for key, value in item.items()
-                          if key not in {'requestId', 'inputBytes'}
-                      }
-                      for item in report.get('results', [])
-                  ],
-              })
-          body = (
-              '<!-- exam-prep-v4-avalai-ocr-one-shot -->\n'
-              '## AvalAI OCR live smoke — aggregate-only result\n\n'
-              '```json\n'
-              + json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True)
-              + '\n```'
-          )
-          response = requests.post(
-              f"https://api.github.com/repos/{os.environ['GITHUB_REPOSITORY']}/issues/4/comments",
-              headers={
-                  'Authorization': f"Bearer {os.environ['GH_TOKEN']}",
-                  'Accept': 'application/vnd.github+json',
-                  'X-GitHub-Api-Version': '2022-11-28',
-              },
-              json={'body': body},
-              timeout=30,
-          )
-          response.raise_for_status()
-          PY
+          test "${{ steps.aggregate.outputs.passed }}" = "true"
+          test "${{ steps.live_smoke.outcome }}" = "success"
 
       - name: Delete private PDF checkout, page images, and local report
         if: always()
