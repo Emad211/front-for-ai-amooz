@@ -21,17 +21,18 @@ def test_live_ocr_workflow_is_manual_only_and_read_only():
     assert 'push:' not in text
     assert 'schedule:' not in text
     assert 'contents: read' in text
-    assert 'I_APPROVE_8_PRIVATE_OCR_REQUESTS' in text
+    assert 'issues: write' not in text
     assert 'feat/exam-prep-v4-source-aware' in text
 
 
-def test_live_ocr_workflow_uses_only_api_secret_and_pinned_model():
+def test_live_ocr_workflow_uses_only_api_secret_and_current_discovery_alias():
     text = _workflow_text()
 
     assert '${{ secrets.AVALAI_API_KEY }}' in text
     assert 'OCR_QUESTION_PAGE_URL' not in text
     assert 'OCR_ANSWER_PAGE_URL' not in text
-    assert '--model mistral-ocr-4-0' in text
+    assert 'OCR_MODEL: mistral-ocr-latest' in text
+    assert '--model "${OCR_MODEL}"' in text
     assert '--max-requests 8' in text
     assert '--allow-private-transmission' in text
     assert '--smoke-modes markdown,blocks,document_annotation,bbox_annotation' in text
@@ -56,17 +57,34 @@ def test_live_ocr_workflow_extracts_only_selected_main_pages():
     assert 'shred -u "${PRIVATE_DIR}/source.pdf"' in text
 
 
-def test_live_ocr_workflow_uses_valid_temp_paths_and_never_uploads_private_inputs():
+def test_live_ocr_workflow_preserves_failed_aggregate_before_terminal_failure():
     text = _workflow_text()
 
     assert 'PRIVATE_DIR: /tmp/exam-prep-v4-ocr-smoke' in text
     assert 'REPORT_PATH: /tmp/exam-prep-v4-ocr-smoke/aggregate-report.json' in text
     assert '${{ runner.temp }}' not in text
+    assert 'continue-on-error: true' in text
+    assert 'Validate and print sanitized aggregate summary' in text
+    assert 'if: always()' in text
+    assert 'Upload aggregate report on pass or fail' in text
     assert 'path: ${{ env.REPORT_PATH }}' in text
     assert 'retention-days: 1' in text
     assert 'name: exam-prep-v4-avalai-ocr-aggregate' in text
+    assert 'Enforce smoke acceptance after evidence upload' in text
+    assert 'Post sanitized aggregate result to Draft PR' not in text
+    assert '/issues/4/comments' not in text
+    assert "assert report['executedRequestCount'] == 8" in text
+    assert "handle.write(" in text
+    assert "'passed='" in text
+
+
+def test_live_ocr_workflow_never_uploads_private_inputs():
+    text = _workflow_text()
+
     assert 'include_image_base64' not in text
     assert 'find "${PRIVATE_DIR}" -type f -exec shred -u {}' in text
     assert 'rm -rf "${PRIVATE_DIR}"' in text
-    assert "assert report['executedRequestCount'] == 8" in text
-    assert "assert report['acceptance']['passed'] is True" in text
+    assert "'requestId'" not in text
+    assert "'inputBytes'" not in text
+    assert "'fixtureId': item.get('fixtureId')" in text
+    assert "'errorCode': item.get('errorCode')" in text
