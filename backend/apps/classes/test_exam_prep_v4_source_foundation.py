@@ -3,6 +3,7 @@ import uuid
 import pytest
 from django.apps import apps
 from django.core.exceptions import ValidationError
+from django.core.management import call_command
 from django.db import IntegrityError, transaction
 from django.test import override_settings
 from model_bakery import baker
@@ -51,6 +52,16 @@ def test_v4_models_are_registered_under_classes_app():
     assert apps.get_model('classes', 'ExamSourceDocument') is ExamSourceDocument
     assert apps.get_model('classes', 'ExamSourcePage') is ExamSourcePage
     assert apps.get_model('classes', 'ExamSourceSegment') is ExamSourceSegment
+
+
+def test_v4_model_state_has_no_classes_migration_drift():
+    call_command(
+        'makemigrations',
+        'classes',
+        check=True,
+        dry_run=True,
+        verbosity=0,
+    )
 
 
 @override_settings(EXAM_PREP_V4_ENABLED=False)
