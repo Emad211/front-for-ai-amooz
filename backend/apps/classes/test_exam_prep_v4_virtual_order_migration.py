@@ -25,6 +25,7 @@ def test_virtual_order_migration_backfills_and_preserves_confirmation():
         username='v4-order-migration-teacher',
         email='v4-order-migration@example.com',
         role='TEACHER',
+        is_freelancer=True,
     )
     project = Project.objects.create(
         teacher_id=teacher.id,
