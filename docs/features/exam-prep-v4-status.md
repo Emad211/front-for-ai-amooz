@@ -6,14 +6,15 @@
 - **PR:** #4 — Draft
 - **Execution mode:** Critical Path Acceleration
 - **Current roadmap span:** Phase 4 → Phase 7 vertical extraction path
-- **Last completed slice:** measured two-page AvalAI OCR feasibility run and selected a bounded OCR evidence-proposal role
-- **Active gate:** implement and verify the optional OCR evidence adapter with transient retry, authoritative validation, exact reuse, and deterministic fallback to the existing detector
-- **Second live run/job:** `30854537419` / `91822320489`
-- **Artifact:** `8871965000` — aggregate-only, one-day retention
-- **Second-run external requests:** 8 attempted
-- **Second-run result:** 6 passed, 2 transport failures
-- **One-shot workflow removal from main:** `2f457da65029c6c617dc4f1ab70c542096c4a563`
-- **Focused verification before adapter slice:** `30853630677`; 236 backend tests passed; frontend focused validation passed
+- **Last completed slice:** optional OCR evidence adapter with deterministic numbered-heading proposals, transient retry, fail-closed fallback, diagram-only bbox escalation, privacy-safe stats, and warm zero-call reuse
+- **Active gate:** wire the optional adapter into the aggregate full-pipeline benchmark, expose adapter metrics, and calculate the hard request ceiling for the three private PDFs
+- **Adapter checkpoint:** `62815466d9af92348705d4c68acb1e2b7400f86e`
+- **Focused workflow:** `30856089814`
+- **Backend job:** `91827311913`
+- **Frontend job:** `91827311993`
+- **Validated PR merge ref:** `cfc5229087afb714cd050f9a426c90497edbcaad`
+- **Focused result:** 244 backend tests passed; migration drift zero; frontend focused validation passed
+- **Measured OCR smoke:** run `30854537419`, job `91822320489`, artifact `8871965000`; 6/8 calls passed
 - **Last updated:** 2026-08-04
 
 ## Progress
@@ -26,19 +27,19 @@ Progress remains based on the 77 canonical roadmap deliverables.
 | Phase 1 | 6 | 7 | Read-only admin inspection remains deferred. |
 | Phase 2 | 8 | 9 | Real private classification benchmark remains open and uncredited. |
 | Phase 3 | 4 | 7 | Core Source Map works; split/group and browser validation remain open. |
-| Phase 4 | 3 | 8 | Real OCR block/bbox evidence exists; optional adapter/retry/fallback and private quality gates remain open. |
+| Phase 4 | 4 | 8 | Numbered-heading detection is now implemented and focused-tested; content-area/columns, RTL reading order, page deduplication, and private layout/formula/diagram/continuation acceptance remain open. |
 | Phase 5 | 6 | 7 | Typed question path is verified; private precision/recall remains open. |
 | Phase 6 | 4 | 7 | Unified answer-solution path is verified; real heading/answer-key/inline accuracy remains open. |
 | Phase 7 | 6 | 7 | Deterministic matching is verified; complete consistency gate remains open. |
 | Phases 8–10 | 0 | 20 | Not started. |
 
-- **Entire V4 roadmap:** **42/77 = 54.5%**
-- **Phase 4:** **3/8 = 37.5%**
+- **Entire V4 roadmap:** **43/77 = 55.8%**
+- **Phase 4:** **4/8 = 50.0%**
 - **Phase 5:** **6/7 = 85.7%**
 - **Phase 6:** **4/7 = 57.1%**
 - **Phase 7:** **6/7 = 85.7%**
 
-No adapter credit is added until focused PostgreSQL and fallback/reuse evidence passes.
+The single new credit is the canonical Phase 4 deliverable **Implement numbered-heading detection**. It is supported by deterministic Persian/Arabic/Latin number parsing, proposal generation, fail-closed validation, full-pipeline persistence, exact matching, retry/fallback tests, and the complete PostgreSQL suite. No private-accuracy credit is inferred.
 
 ## AvalAI documentation rule
 
@@ -50,7 +51,7 @@ Before every AvalAI-dependent change or evidence interpretation:
 4. never infer retention, training, or residency guarantees;
 5. update `docs/runbooks/exam-prep-v4-avalai-ocr-smoke.md`.
 
-Official/current evidence re-read before this slice:
+Official/current evidence re-read for the adapter and benchmark-wiring decision:
 
 ```text
 https://docs.avalai.ir/fa/api-reference/ocr
@@ -59,97 +60,72 @@ https://docs.avalai.ir/fa/models/mistral-ocr-2512
 https://docs.avalai.org/en/providers/mistralai
 ```
 
-Current official provider documentation states that `mistral-ocr-latest` resolves to `mistral-ocr-4-0`, supports OCR4 blocks/annotations, and that the explicit versioned identifier is preferred for reproducible workflows. The adapter must therefore default to the versioned ID while retaining measured fallback behavior.
+The adapter defaults to the reproducible `mistral-ocr-4-0` identifier. The mutable `mistral-ocr-latest` alias is retained only as measured historical evidence from the smoke.
 
-## Measured second-run evidence
+## Closed adapter gate
 
-Fixture:
-
-```text
-source PDF: دفترچه اول (زیست).pdf
-question page: physical page 5
-answer-solution page: physical page 12
-requested model: mistral-ocr-latest
-modes: markdown, blocks, document_annotation, bbox_annotation
-```
-
-Aggregate totals:
+Implemented:
 
 ```text
-requests attempted: 8
-passed: 6
-failed: 2
-returned pages: 6
-blocks: 134
-bboxes: 138
-RTL characters: 16,750
-formula signals: 0
-table signals: 0
-total wall time: 96,360.34 ms
-successful-request latency average: 5,739.00 ms
+backend/apps/classes/services/exam_prep_v4_ocr_evidence.py
+backend/apps/classes/test_exam_prep_v4_ocr_evidence.py
 ```
 
-Question page:
+Verified behavior:
 
-- all four modes passed;
-- each successful response returned one page, 21 blocks, and 22 bboxes;
-- blocks mode returned page confidence `0.981177`;
-- document annotation was present;
-- one extracted image received bbox annotation.
+1. `document_annotation` is the primary per-page OCR call;
+2. deterministic heading detection accepts Persian, Arabic, and Latin digits;
+3. OCR blocks become bounded proposals only, then pass through existing SourceBlock parsing and persistence;
+4. only `AvalAIOCRTransportError` receives bounded retry;
+5. response/schema/privacy/configuration errors do not retry;
+6. exhausted retries, malformed/empty evidence, low confidence, unsupported roles, and page/image mismatches fall back once for the whole segment;
+7. bbox annotation is requested only when the document annotation reports a diagram;
+8. answer pages without a new numbered heading may become continuation proposals only after an accepted primary answer block;
+9. accepted unchanged blocks short-circuit before OCR or fallback calls;
+10. disabled mode preserves the existing detector output;
+11. adapter stats contain only counts, reason codes, and model identifiers—not OCR text, annotations, image bytes, local paths, credentials, or raw responses.
 
-Answer page:
+Focused evidence:
 
-- `document_annotation` and `bbox_annotation` passed;
-- both successful responses returned one page, 25 blocks, and 25 bboxes;
-- standalone `markdown` and `blocks` calls failed with `AvalAIOCRTransportError`;
-- later annotation calls on the same image succeeded, so transient provider/gateway failure is plausible but not proven.
+```text
+System check identified no issues (0 silenced).
+No changes detected in app 'classes'.
+244 passed, 47 warnings in 24.41s
+Focused frontend TypeScript check: passed
+Source-map state-model tests: passed
+```
 
-## Adapter contract for this slice
+## Active benchmark-wiring contract
 
-The adapter is proposal-only and must not become the production authority.
+The next change is limited to the private full-pipeline benchmark path. It must not enable OCR by default in production.
 
 Required behavior:
 
-1. use one `document_annotation` request as the primary page call because it returned Markdown, blocks, bboxes, and document annotation together on both measured pages;
-2. request `bbox_annotation` only when diagram/figure evidence is explicitly needed;
-3. retry only transient transport failures with a small bounded attempt count and deterministic backoff supplied/injected for tests;
-4. never retry schema/privacy/configuration failures;
-5. validate project/document/page/revision ownership before persistence;
-6. convert OCR blocks only into bounded SourceBlock proposals; existing SourceBlock persistence remains authoritative;
-7. reject empty, malformed, duplicate, out-of-range, or low-confidence proposals and fall back to the existing detector;
-8. preserve history and downstream invalidation semantics;
-9. cache accepted unchanged page evidence so a warm rerun makes zero provider calls;
-10. record aggregate provider calls, attempts, fallback reasons, latency, model and request IDs privately/audit-safely;
-11. never expose OCR Markdown, block content, annotations, source bytes, local paths, or raw responses through public APIs/logs;
-12. keep feature-disabled/default behavior identical to the current detector.
+1. construct the existing live structured provider exactly as before;
+2. wrap it with `AvalAIOCREvidenceAdapter` only when an explicit benchmark option/flag is enabled;
+3. keep classification, question extraction, answer-solution extraction, persistence, matching, cleanup, and warm reuse unchanged;
+4. include aggregate OCR metrics in the benchmark report: OCR calls, retries, primary successes, bbox calls, fallback count/reasons, resolved model IDs, and wrapped-provider calls;
+5. keep all private OCR content and request credentials out of the report;
+6. calculate the worst-case external-request ceiling from fixture pages, configured OCR attempts/bbox escalation, classification calls, fallback block calls, and semantic batch calls;
+7. fail before any provider call if the supplied hard ceiling is below the calculated maximum;
+8. prove fake-mode output and existing live mode without OCR remain unchanged;
+9. prove warm rerun performs zero extraction/OCR calls;
+10. run the complete V4 PostgreSQL/frontend gate before requesting live execution authorization.
 
-## Required focused tests
+## Locked sequence
 
-- primary document-annotation success creates bounded deterministic proposals;
-- transient transport failure retries and then succeeds;
-- exhausted transient retries fall back exactly once to the existing detector;
-- response/schema/privacy/configuration errors do not retry and fall back safely;
-- low-confidence or empty OCR evidence falls back;
-- optional bbox call occurs only for explicitly diagram-relevant pages;
-- unchanged accepted evidence warm-rerun performs zero provider calls;
-- changed page/revision invalidates reuse;
-- project/document/page isolation is enforced;
-- no private OCR content enters aggregate/public output;
-- existing non-OCR detector path remains byte-stable when OCR is disabled.
-
-## Current locked sequence
-
-1. inspect the existing detector, block persistence, page/revision fingerprints, provider abstractions and full-pipeline benchmark;
-2. implement the smallest optional adapter at the proposal boundary;
-3. add focused fake-transport retry/fallback/reuse/privacy tests;
-4. run full V4 PostgreSQL/frontend CI;
-5. update this ledger and canonical roadmap with exact evidence;
-6. only then define the bounded request ceiling for the three-private-PDF live full-pipeline benchmark.
+1. inspect and patch only `benchmark_exam_prep_v4_full_pipeline` and its benchmark service/provider construction;
+2. add aggregate/report/privacy/ceiling tests;
+3. run complete focused CI;
+4. update this ledger, canonical roadmap, OCR runbook, and benchmark runbook;
+5. present the exact calculated request ceiling and estimated cost for approval;
+6. only after approval, run all three private PDFs once cold and once warm;
+7. do not begin Phase 8, publication, or rollout.
 
 ## User action required
 
-None for this adapter slice. Do not begin Phase 8, publication, rollout, or a live three-PDF run before the adapter gate is green.
+None during benchmark wiring. A single decision will be requested only after the exact hard request ceiling and cost envelope are calculated.
 
 ## Exact continuation point
 
-Read the current detector/persistence/benchmark code and implement only the optional OCR evidence adapter described above. Keep progress at 42/77 until focused evidence proves a canonical deliverable.
+Read the full-pipeline benchmark command and provider construction, then add optional OCR wrapping and deterministic ceiling calculation without changing production defaults. Keep progress at 43/77 until another canonical deliverable is proven.
