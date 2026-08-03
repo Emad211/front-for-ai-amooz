@@ -145,6 +145,7 @@ export type ExamPrepV4ExtractionStatus = {
   active: boolean;
   terminal: boolean;
   retryable: boolean;
+  cancellationRequested: boolean;
   runId: string | null;
   taskId: string | null;
   attempt: number;
@@ -306,6 +307,16 @@ export async function retryExamPrepV4Extraction(
 ): Promise<ExamPrepV4ExtractionStatus> {
   return requestJson<ExamPrepV4ExtractionStatus>(
     `/projects/${projectId}/documents/${documentId}/extraction/retry/`,
+    { method: 'POST', body: JSON.stringify({}) },
+  );
+}
+
+export async function cancelExamPrepV4Extraction(
+  projectId: number,
+  documentId: number,
+): Promise<ExamPrepV4ExtractionStatus> {
+  return requestJson<ExamPrepV4ExtractionStatus>(
+    `/projects/${projectId}/documents/${documentId}/extraction/cancel/`,
     { method: 'POST', body: JSON.stringify({}) },
   );
 }
