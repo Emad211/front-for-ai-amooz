@@ -11,6 +11,11 @@ from apps.classes.views_v4_extraction import (
     ExamPrepV4ExtractionStatusView,
 )
 from apps.classes.views_v4_records import ExamPrepV4RecordSummaryView
+from apps.classes.views_v4_review import (
+    ExamPrepV4ReviewDecisionView,
+    ExamPrepV4ReviewFinalizeView,
+    ExamPrepV4ReviewQueueView,
+)
 from apps.classes.views_v4_source_map import (
     ExamPrepV4SourceMapConfirmationView,
     ExamPrepV4SourceMapMutationView,
@@ -34,6 +39,21 @@ urlpatterns = [
         'projects/<int:project_id>/records/summary/',
         ExamPrepV4RecordSummaryView.as_view(),
         name='project-record-summary',
+    ),
+    path(
+        'projects/<int:project_id>/review/',
+        ExamPrepV4ReviewQueueView.as_view(),
+        name='project-review-queue',
+    ),
+    path(
+        'projects/<int:project_id>/review/decisions/',
+        ExamPrepV4ReviewDecisionView.as_view(),
+        name='project-review-decision',
+    ),
+    path(
+        'projects/<int:project_id>/review/finalize/',
+        ExamPrepV4ReviewFinalizeView.as_view(),
+        name='project-review-finalize',
     ),
     path(
         (
