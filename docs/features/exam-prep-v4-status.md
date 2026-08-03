@@ -6,15 +6,16 @@
 - **PR:** #4 — Draft
 - **Execution mode:** Critical Path Acceleration
 - **Current roadmap span:** Phase 4 → Phase 7 vertical extraction path
-- **Last completed slice:** validated direct extraction of two representative pages from the `main` fixture and installation of the guarded live workflow on `main`
+- **Last completed slice:** fixed and validated the manual live OCR workflow syntax on `main`
 - **Active gate:** product-owner manual dispatch of the bounded two-page live OCR workflow, followed by aggregate evidence recording and workflow removal
-- **Validated feature implementation checkpoint:** `3bc8814726cf2218d3b8534ce6b0d74120e2c4f1`
+- **Validated feature implementation checkpoint before syntax fix:** `3bc8814726cf2218d3b8534ce6b0d74120e2c4f1`
 - **Focused workflow:** `30850414707`
 - **Backend job:** `91808774481`
 - **Frontend job:** `91808774469`
 - **Focused result:** 235 backend tests passed; frontend focused validation passed
-- **Manual live workflow commit on main:** `ce78007836cd65a81ca3ca8ffb60ed32733e83fe`
-- **Last updated:** 2026-08-03
+- **Valid manual live workflow commit on main:** `867817effb4df7669c4d1ec04f2775e25d615201`
+- **Feature workflow syntax/test commits:** `19836ec62d18db99e25bc318baeb4d575fcb19f6`, `f16f57619982ae5418546a1db0773d436d31afa0`
+- **Last updated:** 2026-08-04
 
 ## Progress
 
@@ -111,34 +112,36 @@ Focused frontend TypeScript check: passed
 Source-map state-model tests: passed
 ```
 
-## Push-trigger attempt outcome
+## Workflow syntax failure and correction
 
-A push-scoped one-shot workflow and marker commit were initially created on `main`. GitHub did not create an Actions workflow run for the connector-generated marker commit. No OCR result comment or workflow run exists for that commit, and no AvalAI request was made through that mechanism.
+The first manual workflow revision failed validation because `runner.temp` was referenced inside job-level `env`, where that context was not recognized.
 
-The push trigger has therefore been removed. The workflow on `main` is now `workflow_dispatch`-only and requires the exact confirmation input:
+Correction:
+
+```text
+PRIVATE_DIR: /tmp/exam-prep-v4-ocr-smoke
+REPORT_PATH: /tmp/exam-prep-v4-ocr-smoke/aggregate-report.json
+artifact path: ${{ env.REPORT_PATH }}
+```
+
+The same correction was applied to the feature-branch workflow and enforced by a static test that rejects `${{ runner.temp }}` in the workflow.
+
+The obsolete push marker was removed. No live OCR request was issued by the invalid workflow or the connector-generated push attempt.
+
+## Current manual workflow
+
+```text
+.github/workflows/exam-prep-v4-avalai-ocr-one-shot.yml
+main commit: 867817effb4df7669c4d1ec04f2775e25d615201
+```
+
+The workflow is `workflow_dispatch`-only and requires:
 
 ```text
 I_APPROVE_8_PRIVATE_OCR_REQUESTS
 ```
 
-Manual workflow file:
-
-```text
-.github/workflows/exam-prep-v4-avalai-ocr-one-shot.yml
-main commit: ce78007836cd65a81ca3ca8ffb60ed32733e83fe
-```
-
-## What the manual workflow does
-
-1. validates branch, confirmation phrase, and `AVALAI_API_KEY` presence;
-2. checks out V4 implementation from `feat/exam-prep-v4-source-aware`;
-3. sparse-checks out only `دفترچه اول (زیست).pdf` from `main`;
-4. renders physical pages 5 and 12 locally;
-5. executes exactly the planned eight OCR mode/page requests;
-6. validates the aggregate report;
-7. uploads only the aggregate report for one day;
-8. posts a sanitized aggregate result to PR #4;
-9. removes private checkout and temporary files in `always()` cleanup.
+It checks out V4 code, sparse-checks out only the first PDF, renders pages 5 and 12, executes the bounded smoke, uploads only aggregate evidence, posts a sanitized PR comment, and cleans private temporary files.
 
 ## User action required now
 
@@ -153,16 +156,15 @@ Actions
 → Run workflow
 ```
 
-Do not run it twice. After clicking once, report only that the run was started; do not paste logs, keys, PDFs, or raw OCR output.
+Run it once only. After starting it, report only `شروع شد`.
 
 ## Exact continuation point
 
-After the user starts the single manual workflow run:
+After the single manual workflow run starts:
 
-1. wait for the sanitized marker comment on PR #4;
-2. inspect the workflow job and aggregate artifact if necessary;
-3. determine exact executed request count and terminal status;
-4. record measured evidence in this ledger and the OCR runbook;
-5. remove the manual one-shot workflow and obsolete marker from `main`;
-6. decide whether OCR should be OCR-first, transcription-only, diagram-only, or rejected;
-7. do not change production routing or the 42/77 score before evidence review.
+1. inspect the sanitized PR comment and workflow result;
+2. determine exact executed request count and terminal status;
+3. record measured evidence in this ledger and the OCR runbook;
+4. remove the manual workflow from `main`;
+5. decide OCR-first, transcription-only, diagram-only, or rejected;
+6. do not change production routing or the 42/77 score before evidence review.
