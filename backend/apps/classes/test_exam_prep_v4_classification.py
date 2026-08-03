@@ -39,6 +39,7 @@ def _pages(pattern):
     return tuple(
         PagePrediction(
             page_number=page_number,
+            display_order=page_number,
             role=role,
             confidence=confidence,
             predicted_role=role,
@@ -79,6 +80,7 @@ def test_partial_invalid_output_keeps_valid_sibling_pages():
         ExamSourceRole.UNKNOWN,
         ExamSourceRole.QUESTIONS,
     ]
+    assert [page.display_order for page in result.pages] == [1, 2, 3]
     assert result.pages[2].printed_numbers == ('1', '2')
     assert {issue.code for issue in result.issues} == {
         'invalid_page_record',
@@ -93,6 +95,7 @@ def test_missing_pages_are_explicit_unknown_records():
     )
 
     assert [page.page_number for page in result.pages] == [1, 2, 3, 4]
+    assert [page.display_order for page in result.pages] == [1, 2, 3, 4]
     assert [page.role for page in result.pages] == [
         'unknown',
         'questions',
@@ -150,6 +153,26 @@ def test_teacher_role_is_authoritative_without_erasing_prediction():
     assert page.predicted_confidence == 0.8
 
 
+def test_parser_preserves_explicit_complete_virtual_order():
+    result = parse_page_predictions(
+        raw_output={
+            'pages': [
+                {'page_number': 1, 'role': 'cover'},
+                {'page_number': 2, 'role': 'questions'},
+                {'page_number': 3, 'role': 'questions'},
+            ]
+        },
+        page_count=3,
+        display_orders={1: 1, 2: 3, 3: 2},
+    )
+
+    assert [page.display_order for page in result.pages] == [1, 3, 2]
+    segments = build_segment_proposals(result.pages)
+    assert segments[1].metadata['pageNumbers'] == [3, 2]
+    assert segments[1].start_page == 3
+    assert segments[1].end_page == 2
+
+
 @pytest.mark.parametrize(
     ('pattern', 'expected'),
     [
@@ -197,26 +220,27 @@ def test_segment_builder_rejects_non_total_page_map():
         )
 
 
-def test_segment_number_bounds_are_advisory_and_normalized():
-    pages = (
-        PagePrediction(
-            page_number=1,
-            role='questions',
-            confidence=0.9,
-            printed_numbers=('51', '۵۲'),
-            predicted_role='questions',
-            predicted_confidence=0.9,
-        ),
-        PagePrediction(
-            page_number=2,
-            role='questions',
-            confidence=0.8,
-            printed_numbers=('53', 'not-a-number'),
-            predicted_role='questions',
-            predicted_confidence=0.8,
-        ),
-    )
+def test_segment_builder_rejects_non_total_virtual_order():
+    with pytest.raises(InvalidClassificationInput, match='Virtual page order'):
+        build_segment_proposals(
+            (
+                PagePrediction(
+                    page_number=1,
+                    display_order=1,
+                    role='cover',
+                    confidence=1.0,
+                ),
+                PagePrediction(
+                    page_number=2,
+                    display_order=1,
+                    role='questions',
+                    confidence=1.0,
+                ),
+            )
+        )
 
+
+def test_segment_number_bounds_are_advisory_and_normalized():
     parsed = parse_page_predictions(
         raw_output={
             'pages': [
@@ -260,6 +284,9 @@ def test_persist_classification_creates_total_page_map_and_segments():
         'unknown',
         'answer_solutions',
     ]
+    assert [page.display_order for page in document.pages.order_by('page_number')] == [
+        1, 2, 3, 4,
+    ]
     assert [
         (segment.start_page, segment.end_page, segment.role)
         for segment in document.segments.order_by('order')
@@ -278,6 +305,7 @@ def test_persist_classification_respects_existing_teacher_page_override():
     ExamSourcePage.objects.create(
         document=document,
         page_number=1,
+        display_order=1,
         teacher_role=ExamSourceRole.COVER,
     )
 
@@ -297,6 +325,36 @@ def test_persist_classification_respects_existing_teacher_page_override():
     assert page.teacher_role == ExamSourceRole.COVER
     assert page.predicted_role == ExamSourceRole.ANSWER_SOLUTIONS
     assert document.segments.get(order=0).role == ExamSourceRole.COVER
+
+
+def test_persist_classification_preserves_existing_virtual_order():
+    _, document = _document(page_count=3)
+    for page_number, display_order in ((1, 1), (2, 3), (3, 2)):
+        ExamSourcePage.objects.create(
+            document=document,
+            page_number=page_number,
+            display_order=display_order,
+        )
+
+    result = persist_classification_result(
+        document_id=document.id,
+        expected_revision=1,
+        fingerprint='9' * 64,
+        raw_output={
+            'pages': [
+                {'page_number': 1, 'role': 'cover'},
+                {'page_number': 2, 'role': 'questions'},
+                {'page_number': 3, 'role': 'questions'},
+            ]
+        },
+    )
+
+    assert [page.page_number for page in result.pages] == [1, 3, 2]
+    assert [page.display_order for page in result.pages] == [1, 2, 3]
+    question_segment = document.segments.get(order=1)
+    assert question_segment.start_page == 3
+    assert question_segment.end_page == 2
+    assert question_segment.metadata['pageNumbers'] == [3, 2]
 
 
 def test_same_fingerprint_reuses_persisted_result_without_duplicate_segments():
