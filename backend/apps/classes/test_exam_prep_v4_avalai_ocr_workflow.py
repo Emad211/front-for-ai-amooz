@@ -25,16 +25,35 @@ def test_live_ocr_workflow_is_manual_only_and_read_only():
     assert 'feat/exam-prep-v4-source-aware' in text
 
 
-def test_live_ocr_workflow_uses_only_named_secrets_and_pinned_model():
+def test_live_ocr_workflow_uses_only_api_secret_and_pinned_model():
     text = _workflow_text()
 
     assert '${{ secrets.AVALAI_API_KEY }}' in text
-    assert '${{ secrets.OCR_QUESTION_PAGE_URL }}' in text
-    assert '${{ secrets.OCR_ANSWER_PAGE_URL }}' in text
+    assert 'OCR_QUESTION_PAGE_URL' not in text
+    assert 'OCR_ANSWER_PAGE_URL' not in text
     assert '--model mistral-ocr-4-0' in text
     assert '--max-requests 8' in text
     assert '--allow-private-transmission' in text
     assert '--smoke-modes markdown,blocks,document_annotation,bbox_annotation' in text
+
+
+def test_live_ocr_workflow_extracts_only_selected_main_pages():
+    text = _workflow_text()
+
+    assert "SOURCE_PDF_REPO_PATH: 'دفترچه اول (زیست).pdf'" in text
+    assert "EXPECTED_PAGE_COUNT: '16'" in text
+    assert "QUESTION_PAGE_NUMBER: '5'" in text
+    assert "ANSWER_PAGE_NUMBER: '12'" in text
+    assert 'git fetch --no-tags --depth=1 origin main' in text
+    assert 'git show "origin/main:${SOURCE_PDF_REPO_PATH}"' in text
+    assert "source_path.read_bytes()[:5] != b'%PDF-'" in text
+    assert 'pypdfium2 as pdfium' in text
+    assert "if len(document) != expected_page_count" in text
+    assert 'page.render(scale=2.0)' in text
+    assert 'image.thumbnail((1800, 2400))' in text
+    assert '12 * 1024 * 1024' in text
+    assert 'selected smoke pages must be different images' in text
+    assert 'shred -u "${PRIVATE_DIR}/source.pdf"' in text
 
 
 def test_live_ocr_workflow_never_uploads_private_inputs():
@@ -52,16 +71,7 @@ def test_live_ocr_workflow_never_uploads_private_inputs():
     assert aggregate_path in text
     assert private_directory_path not in text
     assert 'include_image_base64' not in text
-    assert 'shred -u' in text
+    assert 'find "${PRIVATE_DIR}" -type f -exec shred -u {}' in text
     assert 'rm -rf "${PRIVATE_DIR}"' in text
-
-
-def test_live_ocr_workflow_bounds_and_validates_private_downloads():
-    text = _workflow_text()
-
-    assert 'max_bytes = 12 * 1024 * 1024' in text
-    assert "raw.startswith(b'\\x89PNG\\r\\n\\x1a\\n')" in text
-    assert "raw.startswith(b'\\xff\\xd8\\xff')" in text
-    assert 'private smoke inputs must be different images' in text
     assert "assert report['executedRequestCount'] == 8" in text
     assert "assert report['acceptance']['passed'] is True" in text
