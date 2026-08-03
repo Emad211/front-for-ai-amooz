@@ -41,7 +41,6 @@ from apps.classes.services.exam_prep_v4_source_pipeline import (
 from apps.classes.services.exam_prep_v4_projects import exam_prep_v4_enabled
 
 
-LOGGER = logging.getLogger('apps.classes.exam_prep_v4')
 TASK_SOFT_LIMIT = int(os.getenv('EXAM_PREP_V4_TASK_SOFT_LIMIT_SECONDS', '3300'))
 TASK_HARD_LIMIT = int(os.getenv('EXAM_PREP_V4_TASK_HARD_LIMIT_SECONDS', '3600'))
 EXTRACTION_MAX_RETRIES = int(os.getenv('EXAM_PREP_V4_EXTRACTION_MAX_RETRIES', '2'))
@@ -98,11 +97,26 @@ def _run_lock_key(document: ExamSourceDocument) -> str:
     )
 
 
-def _existing_dispatch(project: ExamProject, document: ExamSourceDocument) -> ExtractionDispatchResult | None:
+def _project_state(project_id: int) -> dict:
+    raw = (
+        ExamProject.objects.filter(id=project_id)
+        .values_list('workflow_state', flat=True)
+        .first()
+    )
+    return dict(raw) if isinstance(raw, dict) else {}
+
+
+def _existing_dispatch(
+    project: ExamProject,
+    document: ExamSourceDocument,
+) -> ExtractionDispatchResult | None:
     state = project.workflow_state if isinstance(project.workflow_state, dict) else {}
     run_id = str(state.get('runId') or '').strip()
     task_id = str(state.get('taskId') or '').strip()
-    same_revision = int(state.get('sourceMapRevision') or 0) == document.classification_revision
+    same_revision = (
+        int(state.get('sourceMapRevision') or 0)
+        == document.classification_revision
+    )
     same_fingerprint = (
         str(state.get('sourceMapFingerprintPrefix') or '')
         == str(document.source_map_fingerprint or '')[:12]
@@ -218,16 +232,9 @@ def dispatch_exam_prep_v4_extraction(
         )
     except Exception:
         cache.delete(key)
-        ExamProject.objects.filter(id=project.id).update(
-            status=ExamProject.Status.FAILED,
-            error_code='extraction_dispatch_failed',
-            error_detail='Extraction task could not be queued.',
-            workflow_state={
-                **(
-                    project.workflow_state
-                    if isinstance(project.workflow_state, dict)
-                    else {}
-                ),
+        state = _project_state(project.id)
+        state.update(
+            {
                 'stage': 'extraction_dispatch_failed',
                 'progressPercent': 32,
                 'runId': selected_run_id,
@@ -235,7 +242,14 @@ def dispatch_exam_prep_v4_extraction(
                 'sourceMapRevision': document.classification_revision,
                 'sourceMapFingerprintPrefix': document.source_map_fingerprint[:12],
                 'lastEventAt': timezone.now().isoformat(),
-            },
+                'errorCode': 'extraction_dispatch_failed',
+            }
+        )
+        ExamProject.objects.filter(id=project.id).update(
+            status=ExamProject.Status.FAILED,
+            error_code='extraction_dispatch_failed',
+            error_detail='Extraction task could not be queued.',
+            workflow_state=state,
         )
         emit_v4_event(
             'exam_prep_v4.extraction.task_failed',
@@ -512,11 +526,7 @@ def process_exam_prep_v4_extraction(
             )
             raise self.retry(exc=exc, countdown=countdown)
 
-        state = (
-            dict(document.project.workflow_state)
-            if isinstance(document.project.workflow_state, dict)
-            else {}
-        )
+        state = _project_state(document.project_id)
         state.update(
             {
                 'stage': 'extraction_failed',
@@ -546,12 +556,9 @@ def process_exam_prep_v4_extraction(
             transient=transient,
             providerCalls=provider.provider_calls if provider else 0,
         )
-        return {
-            'status': 'failed',
-            'run_id': context.run_id,
-            'task_id': context.task_id,
-            'error_code': type(exc).__name__,
-        }
+        raise RuntimeError(
+            f'Exam Prep V4 extraction failed: {type(exc).__name__}'
+        ) from None
     finally:
         cache.delete(lock_key)
         cache.delete(_dispatch_key(document))
