@@ -16,33 +16,16 @@
 
 ## Progress calculation
 
-Progress is calculated from the 77 explicit checklist deliverables in the canonical roadmap, not from commit count, changed files, test count, or lines of code.
-
-| Phase | Credited | Total | State |
-|---|---:|---:|---|
-| Phase 0 | 5 | 6 | Architecture and benchmark contract exist; PR-level ledger enforcement remains open. |
-| Phase 1 | 6 | 7 | Models, migration and isolation are verified; read-only Django admin inspection remains deferred. |
-| Phase 2 | 8 | 9 | The harness exists; the real three-fixture live benchmark is the only open Phase 2 deliverable. |
-| Phases 3–10 | 0 | 55 | Not started by design. |
+Progress is calculated from the 77 explicit checklist deliverables in the canonical roadmap.
 
 - **Entire V4 roadmap:** **19 / 77 = 24.7%**.
 - **Current Phase 2 checklist:** **8 / 9 = 88.9%**.
 
-The percentage does not increase for harness implementation alone. The ninth Phase 2 deliverable is credited only after all three private PDFs are executed with the real configured provider and the aggregate results are recorded. Synthetic/fake-provider success is not model-accuracy evidence.
+The final Phase 2 credit requires a recorded real-provider run on all three private PDFs. Synthetic/fake-provider success is not model-accuracy evidence.
 
 ## Roadmap guardrail
 
-No Phase 3 source-map mutation, Phase 3 UI, Phase 4 block detection, question extraction, answer/solution extraction, matching, projection or publication work may begin until the real Phase 2 benchmark result is recorded.
-
-The only permitted next operation is:
-
-1. place or identify the three private PDFs on the selected execution machine;
-2. create a local, non-committed manifest from `docs/runbooks/exam-prep-v4-benchmark-manifest.example.json`;
-3. configure the real classification model and provider credential as local/deployment secrets;
-4. run `benchmark_exam_prep_v4 --live-provider`;
-5. inspect only the aggregate report;
-6. record pass/fail evidence in the runbook and this ledger;
-7. recalculate progress only if the full Phase 2 exit gate passes.
+No Phase 3 source-map mutation/UI, Phase 4 block detection, question extraction, answer/solution extraction, matching, projection, or publication work may begin until the real Phase 2 benchmark result is recorded.
 
 ## Verified benchmark harness
 
@@ -50,22 +33,25 @@ The only permitted next operation is:
 python backend/manage.py benchmark_exam_prep_v4
 ```
 
-- explicit `--fake-provider` or `--live-provider` mode;
-- strict three-fixture manifest and anonymous fixture IDs;
+Verified properties:
+
+- explicit fake or live provider mode;
+- strict three-fixture manifest;
+- anonymous report-visible fixture IDs;
 - one independent project/document per fixture;
-- aggregate-only report;
+- aggregate-only output;
 - no private paths, filenames, hashes, keys, images, text, payloads, database IDs, credentials, or raw provider errors;
-- default cleanup of projects and private blobs;
-- nonzero result for failed acceptance;
-- live preflight before writes;
-- unchanged accepted warm reuse with zero provider calls/tokens/cost.
+- default project/private-blob cleanup;
+- live configuration preflight before writes;
+- nonzero result on failed acceptance;
+- unchanged accepted warm reuse with zero new provider calls, tokens, and cost.
 
-## Latest focused CI evidence
+## Latest focused evidence
 
-- **Run:** `30778629588`
-- **Job:** `91578823573`
-- **Head:** `b9426c0dffafa04aa61cc850b814f4df3feba1b7`
-- **Environment:** Python 3.12, PostgreSQL 16, Redis 7
+- run `30778629588`;
+- job `91578823573`;
+- code head `b9426c0dffafa04aa61cc850b814f4df3feba1b7`;
+- Python 3.12, PostgreSQL 16, Redis 7.
 
 ```text
 System check identified no issues (0 silenced).
@@ -73,53 +59,37 @@ No changes detected in app 'classes'.
 128 passed, 33 warnings in 12.36s
 ```
 
-Warnings are limited to the existing CI-only missing generated `backend/staticfiles/` warning.
-
 ## Real benchmark acceptance gate
 
-Phase 2 closes only if all three private fixtures in live-provider mode satisfy:
+All three private fixtures must have:
 
-- fixture count and independent project count: 3;
-- exact page count per fixture;
+- exact independent project count and page counts;
 - 100% page-role accuracy;
-- exact segment map;
+- exact segment maps;
 - aggregate status `passed`;
 - zero warm provider calls;
 - no private source data in stdout/report.
 
-Any failure keeps Phase 2 open and must be recorded honestly before classifier correction.
+Any failure leaves Phase 2 open.
 
 ## User action required now
 
-State which environment will run the real benchmark:
+Identify the execution environment:
 
 - local development machine; or
 - staging/backend server.
 
-On that environment, make available:
+On that environment make available:
 
 1. the three private PDFs;
-2. a private local copy of the manifest template with real paths;
+2. a private copy of `docs/runbooks/exam-prep-v4-benchmark-manifest.example.json` with real local paths;
 3. `EXAM_PREP_V4_ENABLED=1`;
 4. model configuration;
-5. `AVALAI_API_KEY` through local/deployment secrets;
-6. a private aggregate output path.
+5. `AVALAI_API_KEY` through a local/deployment secret;
+6. a private output path.
 
 Do not paste credentials into chat or commit them.
 
-## Exact live command
-
-```bash
-EXAM_PREP_V4_ENABLED=1 \
-EXAM_PREP_V4_CLASSIFICATION_MODEL=<configured-model> \
-AVALAI_API_KEY=<configured-secret> \
-python backend/manage.py benchmark_exam_prep_v4 \
-  --manifest "$EXAM_PREP_V4_BENCHMARK_MANIFEST" \
-  --stage classify-and-segment \
-  --live-provider \
-  --output /safe/private/path/v4-benchmark-live.json
-```
-
 ## Next verified step
 
-Wait for the user to identify the execution environment and make the private PDFs plus provider configuration available there. Then run only the live Phase 2 benchmark, record aggregate pass/fail evidence, and do not begin Phase 3 unless the entire exit gate passes.
+After the user identifies the environment and makes the inputs available, run only the live Phase 2 benchmark and record aggregate pass/fail evidence. Do not begin Phase 3 unless the whole exit gate passes.
