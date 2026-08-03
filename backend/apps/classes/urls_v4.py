@@ -1,0 +1,129 @@
+from django.urls import path
+
+from apps.classes.views_v4 import (
+    ExamPrepV4BatchUploadView,
+    ExamPrepV4PageThumbnailView,
+    ExamPrepV4ProjectDetailView,
+)
+from apps.classes.views_v4_blocks import ExamPrepV4BlockListView
+from apps.classes.views_v4_extraction import (
+    ExamPrepV4ExtractionCancelView,
+    ExamPrepV4ExtractionRetryView,
+    ExamPrepV4ExtractionStatusView,
+)
+from apps.classes.views_v4_projection import (
+    ExamPrepV4ProjectionView,
+    ExamPrepV4PublishView,
+)
+from apps.classes.views_v4_records import ExamPrepV4RecordSummaryView
+from apps.classes.views_v4_review import (
+    ExamPrepV4ReviewDecisionView,
+    ExamPrepV4ReviewFinalizeView,
+    ExamPrepV4ReviewQueueView,
+)
+from apps.classes.views_v4_source_map import (
+    ExamPrepV4SourceMapConfirmationView,
+    ExamPrepV4SourceMapMutationView,
+)
+
+
+app_name = 'exam_prep_v4'
+
+urlpatterns = [
+    path(
+        'projects/',
+        ExamPrepV4BatchUploadView.as_view(),
+        name='project-list-create',
+    ),
+    path(
+        'projects/<int:project_id>/',
+        ExamPrepV4ProjectDetailView.as_view(),
+        name='project-source-map-detail',
+    ),
+    path(
+        'projects/<int:project_id>/records/summary/',
+        ExamPrepV4RecordSummaryView.as_view(),
+        name='project-record-summary',
+    ),
+    path(
+        'projects/<int:project_id>/review/',
+        ExamPrepV4ReviewQueueView.as_view(),
+        name='project-review-queue',
+    ),
+    path(
+        'projects/<int:project_id>/review/decisions/',
+        ExamPrepV4ReviewDecisionView.as_view(),
+        name='project-review-decision',
+    ),
+    path(
+        'projects/<int:project_id>/review/finalize/',
+        ExamPrepV4ReviewFinalizeView.as_view(),
+        name='project-review-finalize',
+    ),
+    path(
+        'projects/<int:project_id>/projection/',
+        ExamPrepV4ProjectionView.as_view(),
+        name='project-projection',
+    ),
+    path(
+        'projects/<int:project_id>/publish/',
+        ExamPrepV4PublishView.as_view(),
+        name='project-publish',
+    ),
+    path(
+        (
+            'projects/<int:project_id>/documents/<int:document_id>/'
+            'source-map/'
+        ),
+        ExamPrepV4SourceMapMutationView.as_view(),
+        name='project-source-map-mutation',
+    ),
+    path(
+        (
+            'projects/<int:project_id>/documents/<int:document_id>/'
+            'source-map/confirm/'
+        ),
+        ExamPrepV4SourceMapConfirmationView.as_view(),
+        name='project-source-map-confirmation',
+    ),
+    path(
+        (
+            'projects/<int:project_id>/documents/<int:document_id>/'
+            'extraction/status/'
+        ),
+        ExamPrepV4ExtractionStatusView.as_view(),
+        name='project-extraction-status',
+    ),
+    path(
+        (
+            'projects/<int:project_id>/documents/<int:document_id>/'
+            'extraction/retry/'
+        ),
+        ExamPrepV4ExtractionRetryView.as_view(),
+        name='project-extraction-retry',
+    ),
+    path(
+        (
+            'projects/<int:project_id>/documents/<int:document_id>/'
+            'extraction/cancel/'
+        ),
+        ExamPrepV4ExtractionCancelView.as_view(),
+        name='project-extraction-cancel',
+    ),
+    path(
+        (
+            'projects/<int:project_id>/documents/<int:document_id>/'
+            'blocks/'
+        ),
+        ExamPrepV4BlockListView.as_view(),
+        name='project-source-block-list',
+    ),
+    path(
+        (
+            'projects/<int:project_id>/documents/<int:document_id>/'
+            'pages/<int:page_number>/thumbnail/'
+        ),
+        ExamPrepV4PageThumbnailView.as_view(),
+        name='project-page-thumbnail',
+    ),
+]

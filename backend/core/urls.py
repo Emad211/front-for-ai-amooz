@@ -106,6 +106,8 @@ urlpatterns = [
     # New App Endpoints
     path('api/accounts/', include('apps.accounts.urls')),
     path('api/auth/', include('apps.authentication.urls')),
+    # Keep V4 intake isolated from the legacy classes URL module.
+    path('api/classes/exam-prep-v4/', include('apps.classes.urls_v4')),
     path('api/classes/', include('apps.classes.urls')),
     path('api/notifications/', include('apps.notification.urls')),
     path('api/admin/', include('apps.commons.urls')),
@@ -117,8 +119,8 @@ from django.conf import settings
 from django.conf.urls.static import static
 from core.storage_backends import private_answer_source_media_view
 
-# Keep private student answer originals out of Django's DEBUG static-media
-# helper as well as the production S3/media proxy.
+# Keep private student answer originals and all exam source artifacts out of
+# Django's DEBUG static-media helper as well as the production S3/media proxy.
 urlpatterns += [
     path(
         'media/exercises/answers/sources/<path:path>',
@@ -134,6 +136,11 @@ urlpatterns += [
         'media/exam-prep/visuals/<path:path>',
         private_answer_source_media_view,
         name='private_exam_visual_media',
+    ),
+    path(
+        'media/exam-prep-v4/<path:path>',
+        private_answer_source_media_view,
+        name='private_exam_v4_media',
     ),
 ]
 
