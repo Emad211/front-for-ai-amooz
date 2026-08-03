@@ -1,171 +1,92 @@
-# Runbook — Exam Prep V4 AvalAI OCR Evidence
+# Exam Prep V4 — Optional AvalAI OCR Diagnostic
 
-- **Status:** two-page feasibility measured; optional adapter implemented and verified; three-PDF benchmark ready
-- **Branch:** `feat/exam-prep-v4-source-aware`
-- **Reviewed:** 2026-08-04
-- **Production routing:** unchanged/default-disabled
-- **Endpoint:** `POST https://api.avalai.ir/v1/ocr`
-- **Reproducible model:** `mistral-ocr-4-0`
-- **Ledger:** `docs/features/exam-prep-v4-status.md`
+## Policy
 
-## Official documentation rule
+This smoke is not a development gate and must not run automatically in CI.
 
-Before every AvalAI-dependent decision, re-read:
+- The production OCR evidence adapter is selected only through environment configuration.
+- The owner may run an OCR diagnostic intentionally in a controlled deployment or private runner.
+- Normal development validation uses fake transport/provider contracts.
+- Real PDF behavior is inspected through the correlated production teacher flow documented in `exam-prep-v4-production-validation.md`.
 
-```text
-https://docs.avalai.ir/fa/api-reference/ocr
-https://docs.avalai.ir/fa/examples/processing_documents_with_mistral_ocr
-https://docs.avalai.ir/fa/models/mistral-ocr-2512
+## Production configuration
+
+```env
+EXAM_PREP_V4_OCR_EVIDENCE_ENABLED=True
+EXAM_PREP_V4_OCR_EVIDENCE_MODEL=mistral-ocr-4-0
+EXAM_PREP_V4_OCR_EVIDENCE_MAX_ATTEMPTS=2
+EXAM_PREP_V4_OCR_EVIDENCE_RETRY_BACKOFF_SECONDS=0.25
+EXAM_PREP_V4_OCR_EVIDENCE_MIN_CONFIDENCE=0.65
+EXAM_PREP_V4_OCR_EVIDENCE_BBOX_FOR_DIAGRAMS=True
 ```
 
-The documentation supports image/document data URLs, selective pages, OCR Markdown, blocks, document annotation and bbox annotation. It does not establish endpoint-specific retention, training or residency guarantees; none are inferred.
+When disabled, the existing structured block detector remains the fallback and authoritative proposal path.
 
-## Measured feasibility smoke
-
-Fixture:
+## Adapter contract
 
 ```text
-دفترچه اول (زیست).pdf
-question page: physical page 5
-answer-solution page: physical page 12
+confirmed Source Map
+→ one document-annotation request per eligible page
+→ deterministic Persian/Arabic/Latin numbered-heading grouping
+→ optional bbox request for diagram pages
+→ bounded SourceBlock proposals
+→ existing parser/persistence validation
+→ whole-segment structured fallback when evidence is invalid, unavailable or low-confidence
 ```
 
-Only two locally rendered PNG images were transmitted. The PDF was not sent.
+The adapter is proposal-only. It cannot override project, document, page, revision, Source Map or persistence ownership.
 
-### First run
+Only transport failures receive bounded retry. Schema, response, privacy and configuration failures fall back without repeated requests. Accepted unchanged evidence makes zero OCR and detector calls.
+
+## Production log evidence
+
+Use the extraction `runId` and inspect safe counters:
 
 ```text
-run: 30852221763
-job: 91814702919
-requests: 8
-result: acceptance failed
+ocrCalls
+ocrRetries
+ocrFallbackCount
+ocrBboxCalls
+providerCalls
 ```
 
-The initial workflow lost the aggregate failure report. Evidence preservation was subsequently fixed and verified.
+Fallback reason counts and resolved model IDs may be recorded when content-free. OCR Markdown, block content, annotations, source images and raw responses must not be logged.
 
-### Second run
+## Optional direct diagnostic command
 
-```text
-run: 30854537419
-job: 91822320489
-artifact: 8871965000
-requested model: mistral-ocr-latest
-attempted: 8
-passed: 6
-failed: 2
+Only the owner should run this intentionally:
+
+```bash
+python backend/manage.py smoke_exam_prep_v4_avalai_ocr \
+  --question-page /private/question-page.png \
+  --answer-page /private/answer-page.png \
+  --report /private/aggregate-report.json \
+  --mode live_provider \
+  --model mistral-ocr-4-0 \
+  --smoke-modes markdown,blocks,document_annotation,bbox_annotation \
+  --max-requests 8 \
+  --allow-private-transmission
 ```
 
-Aggregate evidence:
+Requirements:
 
-```text
-returned pages: 6
-blocks: 134
-bboxes: 138
-RTL characters: 16,750
-formula signals: 0
-table signals: 0
-wall time: 96,360.34 ms
-successful latency average: 5,739.00 ms
-```
+- explicit owner action;
+- explicit API secret and model ID;
+- exact bounded request count;
+- no automatic rerun;
+- private input cleanup;
+- aggregate/content-free report only.
 
-Question page: all four modes passed, 21 blocks, 22 bboxes, page confidence `0.981177`, document annotation present and one image annotation present.
+## Acceptance interpretation
 
-Answer page: `document_annotation` and `bbox_annotation` passed with 25 blocks/25 bboxes; standalone Markdown and blocks calls failed with `AvalAIOCRTransportError`. Later calls on the same image succeeded, so transient transport failure is plausible but not proven.
+A transport-successful OCR response is not proof of block quality. Validate in production:
 
-The smoke supports OCR as an evidence source. It does not prove transcription accuracy, RTL order, formula/table preservation, continuation ownership or private-fixture recall.
+- printed heading detection;
+- correct block boundaries;
+- continuation handling;
+- multi-column and RTL order;
+- diagram/formula ownership;
+- fallback frequency;
+- downstream question/answer correctness.
 
-## Implemented adapter
-
-```text
-backend/apps/classes/services/exam_prep_v4_ocr_evidence.py
-backend/apps/classes/test_exam_prep_v4_ocr_evidence.py
-```
-
-Contract:
-
-1. `document_annotation` is the primary page request because it can return Markdown, blocks, bboxes and page annotation together;
-2. `bbox_annotation` is requested only when page annotation marks diagram evidence;
-3. only transport failures receive bounded retry;
-4. schema, response, privacy and configuration errors do not retry;
-5. exhausted retry, low confidence, missing headings, unsupported roles or malformed evidence fall back once for the complete segment;
-6. Persian, Arabic and Latin printed numbers are normalized deterministically;
-7. OCR output creates proposals only; existing SourceBlock parser/persistence remain authoritative;
-8. answer continuation is allowed only after a prior accepted answer block;
-9. accepted unchanged evidence performs zero OCR and zero detector calls;
-10. stats expose only counts, reason codes and model IDs.
-
-Adapter verification:
-
-```text
-checkpoint: 62815466d9af92348705d4c68acb1e2b7400f86e
-workflow: 30856089814
-backend: 244 passed, 47 warnings in 24.41s
-frontend focused validation: passed
-```
-
-## Full benchmark integration
-
-The adapter is available only through the explicit private benchmark option:
-
-```text
---ocr-evidence
---ocr-model mistral-ocr-4-0
---ocr-max-attempts 2
---ocr-bbox-for-diagrams
-```
-
-Every direct OCR HTTP request reserves one slot from the shared live-call budget before transport. The aggregate report records:
-
-- OCR calls;
-- primary successes;
-- bbox calls;
-- retries;
-- fallback count and reason codes;
-- resolved model IDs;
-- shared request-ceiling consumption.
-
-It never records OCR text, annotations, data URLs, paths, bytes, credentials or raw responses.
-
-## Current three-PDF live configuration
-
-```text
-structured model: gemini-2.5-flash
-OCR model: mistral-ocr-4-0
-OCR attempts: 2
-bbox escalation: diagram pages only
-OCR-eligible pages: 55
-OCR worst-case external slots: 220
-shared hard ceiling: 484
-```
-
-The OCR bound assumes two attempts for both primary and possible bbox calls on every eligible page. Actual OCR calls should be lower when first attempts pass and pages have no diagrams.
-
-## Acceptance and decision after full benchmark
-
-The aggregate run must provide:
-
-- OCR call/retry/fallback totals;
-- structural classification and Source Map accuracy;
-- block, question and answer counts;
-- question and answer recall against the private manifest;
-- automatic match precision and cross-project isolation;
-- cold latency and warm zero-call reuse;
-- provider usage and exact transaction-cost evidence where available.
-
-After private evidence review, OCR may be accepted as:
-
-1. OCR-first proposal source with structured fallback;
-2. transcription-only evidence;
-3. diagram-only utility; or
-4. rejected for the production path.
-
-No production routing or rollout decision is implied by adapter implementation.
-
-## Current workflow
-
-```text
-.github/workflows/exam-prep-v4-full-live-benchmark.yml
-main commit: 5903d08fc3f58d8625f4ddf80fdccd92949b1ac6
-```
-
-It is manual-only, non-recurring, bounded to 484 external calls, retains only aggregate evidence for one day and must be removed after terminal evidence is recovered.
+Report failures using the production extraction `runId`, `taskId`, page number, printed question number and expected/observed behavior. Do not make this diagnostic a blocker for unrelated coding.
