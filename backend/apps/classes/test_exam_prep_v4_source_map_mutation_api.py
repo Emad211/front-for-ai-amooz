@@ -67,6 +67,7 @@ def _build_map(*, unknown=False):
         ExamSourcePage.objects.create(
             document=document,
             page_number=number,
+            display_order=number,
             predicted_role=role,
             predicted_confidence=Decimal('0.9000'),
             native_text_sample='PRIVATE_NATIVE_TEXT',
@@ -81,7 +82,12 @@ def _build_map(*, unknown=False):
             role=role,
             predicted_role=role,
             predicted_confidence=Decimal('0.9000'),
-            metadata={'private': 'PRIVATE_SEGMENT_METADATA'},
+            metadata={
+                'pageNumbers': [number],
+                'displayOrderStart': number,
+                'displayOrderEnd': number,
+                'private': 'PRIVATE_SEGMENT_METADATA',
+            },
         )
     return teacher, project, document
 
@@ -92,10 +98,11 @@ def _payload(document):
         'pages': [
             {
                 'pageNumber': page.page_number,
+                'displayOrder': page.display_order,
                 'role': page.effective_role,
                 'orientation': page.orientation,
             }
-            for page in document.pages.order_by('page_number')
+            for page in document.pages.order_by('display_order', 'page_number')
         ],
     }
 
@@ -187,7 +194,28 @@ def test_owner_can_replace_complete_map_and_receives_safe_binding(settings):
         assert secret not in rendered
 
 
-def test_mutation_requires_complete_unique_page_map(settings):
+def test_owner_can_reorder_without_renumbering_source_pages(settings):
+    settings.EXAM_PREP_V4_ENABLED = True
+    teacher, project, document = _build_map()
+    payload = _payload(document)
+    payload['pages'][1]['displayOrder'] = 3
+    payload['pages'][2]['displayOrder'] = 2
+
+    response = _client(teacher).put(
+        _mutation_url(project.id, document.id),
+        payload,
+        format='json',
+    )
+
+    assert response.status_code == 200
+    assert response.data['classificationRevision'] == 2
+    virtual_pages = list(document.pages.order_by('display_order'))
+    assert [page.page_number for page in virtual_pages] == [1, 3, 2]
+    assert [page.display_order for page in virtual_pages] == [1, 2, 3]
+    assert sorted(page.page_number for page in virtual_pages) == [1, 2, 3]
+
+
+def test_mutation_requires_complete_unique_page_and_display_order_map(settings):
     settings.EXAM_PREP_V4_ENABLED = True
     teacher, project, document = _build_map()
     payload = _payload(document)
@@ -203,6 +231,32 @@ def test_mutation_requires_complete_unique_page_map(settings):
     assert response.data['code'] == 'invalid_source_map'
     document.refresh_from_db()
     assert document.classification_revision == 1
+
+    duplicate_order = _payload(document)
+    duplicate_order['pages'][1]['displayOrder'] = 1
+    response = _client(teacher).put(
+        _mutation_url(project.id, document.id),
+        duplicate_order,
+        format='json',
+    )
+    assert response.status_code == 400
+    assert response.data['code'] == 'invalid_source_map'
+
+
+def test_display_order_is_required_by_serializer(settings):
+    settings.EXAM_PREP_V4_ENABLED = True
+    teacher, project, document = _build_map()
+    payload = _payload(document)
+    payload['pages'][0].pop('displayOrder')
+
+    response = _client(teacher).put(
+        _mutation_url(project.id, document.id),
+        payload,
+        format='json',
+    )
+
+    assert response.status_code == 400
+    assert 'displayOrder' in response.data['pages'][0]
 
 
 def test_stale_mutation_returns_stable_409_code(settings):
