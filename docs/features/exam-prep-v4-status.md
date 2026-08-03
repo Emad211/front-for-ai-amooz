@@ -10,8 +10,9 @@
 - **Current gate:** Real private-fixture live-provider benchmark
 - **State:** Harness and synthetic CI are verified; progression to Phase 3 is blocked until the real benchmark is run and recorded
 - **Last updated:** 2026-08-03
-- **Latest fully validated checkpoint:** `b9426c0dffafa04aa61cc850b814f4df3feba1b7`
+- **Latest fully validated code checkpoint:** `b9426c0dffafa04aa61cc850b814f4df3feba1b7`
 - **Latest focused evidence:** run `30778629588`, job `91578823573`, 128 tests passed
+- **Canonical roadmap sync:** commit `6dafd16e1193a9d63dd980a6da15577b74af5852` updates documentation only after the validated code checkpoint
 
 ## Progress calculation
 
