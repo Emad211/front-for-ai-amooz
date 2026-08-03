@@ -139,7 +139,7 @@ Legend:
 
 **Exit gate:** The three private fixtures produce the correct independent segment maps without full-quality OCR, aggregate latency/usage is recorded, and an unchanged accepted warm rerun makes zero provider calls.
 
-**Phase state:** 8/9 credited. The private benchmark harness and recorded real run are the only remaining Phase 2 deliverable.
+**Phase state:** 8/9 credited. The privacy-safe harness and fake-provider CI are complete; only the recorded real three-fixture live-provider run remains.
 
 ### Phase 3 — Teacher source-map confirmation and virtual tools
 
@@ -251,17 +251,22 @@ Legend:
 - multi-PDF intake with one project/task per PDF;
 - owner-scoped project list and source-map detail;
 - owner-scoped private thumbnail streaming with no storage fallback;
+- privacy-safe benchmark management command with explicit fake/live modes;
+- strict local manifest validation for the three structural patterns;
+- aggregate-only benchmark reports with no source paths, filenames, text, image bytes, model payloads, storage keys, or database IDs;
+- default benchmark project/blob cleanup;
+- accepted unchanged warm-rerun verification with zero provider calls;
 - private media denial and lifecycle tests.
 
 ### Latest focused evidence
 
-- branch head before this documentation sync: `8f38978266f55955a76ed2b4185b19ad74ac78e0`;
-- workflow run `30777631820`;
-- job `91576032877`;
+- validated branch head: `b9426c0dffafa04aa61cc850b814f4df3feba1b7`;
+- workflow run `30778629588`;
+- job `91578823573`;
 - PostgreSQL 16 and Redis 7;
 - system check clean;
 - migration drift clean;
-- `114 passed, 33 warnings in 9.02s`.
+- `128 passed, 33 warnings in 12.36s`.
 
 Warnings are limited to the CI checkout lacking generated `backend/staticfiles/` while API tests initialize Django handlers.
 
@@ -274,11 +279,23 @@ The canonical roadmap contains 77 checklist deliverables:
 - **overall completion: 24.7%**;
 - **Phase 2 completion: 88.9% (8/9)**.
 
-The thumbnail slice does not add a second credit to the already completed source-map API deliverable.
+The harness implementation does not receive the ninth Phase 2 credit by itself. That credit requires a recorded live-provider run over all three private fixtures.
+
+### Current blocker and user action
+
+The next operation requires an execution environment that can access both the repository backend and the three private PDFs. The user must identify whether the live benchmark will run on the local development machine or a staging/backend server, and make the following available there:
+
+- all three private PDFs;
+- a local manifest based on `docs/runbooks/exam-prep-v4-benchmark-manifest.example.json`;
+- the configured classification model;
+- `AVALAI_API_KEY` as a local/deployment secret;
+- a private aggregate-output path outside Git.
+
+Credentials must not be pasted into chat or committed.
 
 ### Next verified step
 
-Implement only a privacy-safe Phase 2 benchmark harness with fake-provider CI coverage and aggregate-only reporting. Do not begin Phase 3 teacher mutations or Phase 4 block detection until the Phase 2 private-fixture exit gate is measured and recorded.
+Run only the real Phase 2 classify-and-segment benchmark, record aggregate pass/fail evidence, and keep Phase 3 and Phase 4 blocked unless the entire exit gate passes.
 
 ---
 
@@ -323,3 +340,7 @@ No global page or block identity is inferred across independent exams.
 ### D-010 — Private V4 thumbnail storage never falls back
 
 A missing V4 thumbnail may not fall back to default or legacy storage. The owner-scoped endpoint opens only the storage bound to the private field and otherwise returns an indistinguishable 404.
+
+### D-011 — Benchmark execution is explicit and aggregate-only
+
+Benchmark mode has no implicit default. Fake-provider and live-provider modes must be chosen explicitly, every fixture remains an independent project, report-visible fixture IDs are anonymous, and no private source data or raw model payload may enter command output or the aggregate report.
