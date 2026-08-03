@@ -1,0 +1,171 @@
+name: exam-prep-v4-avalai-ocr-live-smoke
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: 'Type I_APPROVE_8_PRIVATE_OCR_REQUESTS'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: exam-prep-v4-avalai-ocr-live-smoke
+  cancel-in-progress: false
+
+jobs:
+  live-ocr-smoke:
+    name: bounded two-page AvalAI OCR live smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    env:
+      AVALAI_API_KEY: ${{ secrets.AVALAI_API_KEY }}
+      OCR_QUESTION_PAGE_URL: ${{ secrets.OCR_QUESTION_PAGE_URL }}
+      OCR_ANSWER_PAGE_URL: ${{ secrets.OCR_ANSWER_PAGE_URL }}
+      PRIVATE_DIR: ${{ runner.temp }}/exam-prep-v4-ocr-smoke
+      REPORT_PATH: ${{ runner.temp }}/exam-prep-v4-ocr-smoke/aggregate-report.json
+
+    steps:
+      - name: Enforce branch and explicit authorization
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${GITHUB_REF_NAME}" = "feat/exam-prep-v4-source-aware"
+          test "${{ inputs.confirmation }}" = "I_APPROVE_8_PRIVATE_OCR_REQUESTS"
+
+      - name: Validate required secrets without printing values
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${AVALAI_API_KEY:-}"
+          test -n "${OCR_QUESTION_PAGE_URL:-}"
+          test -n "${OCR_ANSWER_PAGE_URL:-}"
+
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install backend dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt
+
+      - name: Download exactly two private page images
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          mkdir -p "${PRIVATE_DIR}"
+          python - <<'PY'
+          import os
+          from pathlib import Path
+          import requests
+
+          private_dir = Path(os.environ['PRIVATE_DIR'])
+          max_bytes = 12 * 1024 * 1024
+          fixtures = (
+              ('question-page', os.environ['OCR_QUESTION_PAGE_URL']),
+              ('answer-page', os.environ['OCR_ANSWER_PAGE_URL']),
+          )
+
+          def download(label: str, url: str) -> Path:
+              try:
+                  response = requests.get(
+                      url,
+                      timeout=(15, 90),
+                      stream=True,
+                      allow_redirects=True,
+                  )
+                  response.raise_for_status()
+              except requests.RequestException as exc:
+                  raise SystemExit(f'{label} download failed') from exc
+
+              data = bytearray()
+              for chunk in response.iter_content(chunk_size=64 * 1024):
+                  if not chunk:
+                      continue
+                  data.extend(chunk)
+                  if len(data) > max_bytes:
+                      raise SystemExit(f'{label} exceeds byte limit')
+
+              raw = bytes(data)
+              if raw.startswith(b'\x89PNG\r\n\x1a\n'):
+                  suffix = '.png'
+              elif raw.startswith(b'\xff\xd8\xff'):
+                  suffix = '.jpg'
+              else:
+                  raise SystemExit(f'{label} is not PNG or JPEG')
+
+              path = private_dir / f'{label}{suffix}'
+              path.write_bytes(raw)
+              return path
+
+          question_path = download(*fixtures[0])
+          answer_path = download(*fixtures[1])
+          if question_path.read_bytes() == answer_path.read_bytes():
+              raise SystemExit('private smoke inputs must be different images')
+
+          (private_dir / 'question-path.txt').write_text(str(question_path), encoding='utf-8')
+          (private_dir / 'answer-path.txt').write_text(str(answer_path), encoding='utf-8')
+          PY
+
+      - name: Run bounded aggregate-only live OCR smoke
+        shell: bash
+        run: |
+          set -euo pipefail
+          QUESTION_PATH="$(cat "${PRIVATE_DIR}/question-path.txt")"
+          ANSWER_PATH="$(cat "${PRIVATE_DIR}/answer-path.txt")"
+          python backend/manage.py smoke_exam_prep_v4_avalai_ocr \
+            --question-page "${QUESTION_PATH}" \
+            --answer-page "${ANSWER_PATH}" \
+            --report "${REPORT_PATH}" \
+            --mode live_provider \
+            --model mistral-ocr-4-0 \
+            --smoke-modes markdown,blocks,document_annotation,bbox_annotation \
+            --max-requests 8 \
+            --allow-private-transmission
+
+      - name: Validate aggregate report contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          report = json.loads(Path(os.environ['REPORT_PATH']).read_text(encoding='utf-8'))
+          assert report['model'] == 'mistral-ocr-4-0'
+          assert report['plannedRequestCount'] == 8
+          assert report['executedRequestCount'] == 8
+          assert report['maxRequests'] == 8
+          assert report['acceptance']['passed'] is True
+          assert len(report['results']) == 8
+          PY
+
+      - name: Upload aggregate-only report
+        uses: actions/upload-artifact@v4
+        with:
+          name: exam-prep-v4-avalai-ocr-aggregate
+          path: ${{ runner.temp }}/exam-prep-v4-ocr-smoke/aggregate-report.json
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 9
+
+      - name: Delete private inputs and local report
+        if: always()
+        shell: bash
+        run: |
+          set +e
+          find "${PRIVATE_DIR}" -type f -exec shred -u {} \; 2>/dev/null
+          rm -rf "${PRIVATE_DIR}"
