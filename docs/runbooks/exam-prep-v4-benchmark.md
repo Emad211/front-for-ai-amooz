@@ -44,30 +44,9 @@ No default mode exists. This prevents accidental provider calls and cost.
 
 ## Manifest schema
 
-The manifest must contain exactly three fixtures:
+The manifest must contain exactly three fixtures. Copy `exam-prep-v4-benchmark-manifest.example.json` to a private location outside Git and replace only its placeholder PDF paths.
 
-```json
-{
-  "manifestVersion": 1,
-  "fixtures": [
-    {
-      "fixtureId": "fixture-a",
-      "pattern": "cover_questions_solutions",
-      "pdfPath": "/private/path/fixture-a.pdf",
-      "expectedPageCount": 16,
-      "expectedSegments": [
-        {"startPage": 1, "endPage": 1, "role": "cover"},
-        {"startPage": 2, "endPage": 8, "role": "questions"},
-        {"startPage": 9, "endPage": 16, "role": "answer_solutions"}
-      ],
-      "expectedQuestionNumbers": {"from": 1, "to": 50},
-      "expectedOutOfScopeNumbers": [51, 52, 53, 54]
-    }
-  ]
-}
-```
-
-The full example contains fixtures A/B/C. Relative `pdfPath` values are resolved relative to the manifest file. Paths are used internally and are never copied into the report.
+Relative `pdfPath` values are resolved relative to the manifest file. Paths are used internally and are never copied into the report.
 
 ### Supported structural patterns
 
@@ -164,17 +143,7 @@ The report contains:
 - independent project count;
 - explicit privacy flags, all of which must remain false.
 
-The report excludes:
-
-- source or manifest path;
-- source filename;
-- source hash or object key;
-- page images;
-- native or OCR text;
-- model prompt or response payload;
-- classifier reasons;
-- database project/document IDs;
-- credential or provider error details.
+The report excludes source/manifest paths, filenames, hashes, object keys, images, native/OCR text, prompts, model payloads, classifier reasons, database IDs, credentials, and raw provider errors.
 
 ## Warm-rerun acceptance
 
@@ -205,17 +174,7 @@ If the real model misses a boundary or role, Phase 2 remains open and the aggreg
 
 Default execution deletes benchmark projects, source documents, rendered pages, thumbnails, and private blobs after metrics are collected.
 
-To inspect persisted benchmark records deliberately:
-
-```bash
-python backend/manage.py benchmark_exam_prep_v4 \
-  --manifest "$EXAM_PREP_V4_BENCHMARK_MANIFEST" \
-  --live-provider \
-  --teacher-id <existing-teacher-id> \
-  --keep-projects
-```
-
-Do not use `--keep-projects` in CI or routine benchmark runs.
+To inspect persisted benchmark records deliberately, add `--teacher-id <existing-teacher-id> --keep-projects`. Do not use `--keep-projects` in CI or routine benchmark runs.
 
 ## Verified synthetic evidence
 
@@ -258,18 +217,18 @@ This is synthetic/fake-provider evidence only.
 
 ## User action required now
 
-The harness is implemented and verified. To run the real exit gate, the user must identify where it should run:
+State which environment will run the real benchmark:
 
 - local development machine; or
 - staging/backend server.
 
-On that selected machine:
+On that environment, make the following available:
 
-1. place the three private PDFs;
-2. copy and complete `docs/runbooks/exam-prep-v4-benchmark-manifest.example.json` outside Git;
-3. configure the model;
-4. configure `AVALAI_API_KEY` through local/deployment secrets;
-5. choose a private aggregate output path.
+1. the three private PDFs;
+2. a private copy of the manifest template with real local paths;
+3. the model configuration;
+4. `AVALAI_API_KEY` through the environment's secret mechanism;
+5. a private aggregate output path.
 
 Do not send credentials in chat or commit them.
 
