@@ -91,7 +91,7 @@ def _stream_body(response) -> bytes:
     return b''.join(response.streaming_content)
 
 
-def test_thumbnail_requires_authentication(settings):
+def test_thumbnail_requires_authentication(private_storage, settings):
     settings.EXAM_PREP_V4_ENABLED = True
     _teacher, project, document, page, _data = _source_page()
 
@@ -100,7 +100,7 @@ def test_thumbnail_requires_authentication(settings):
     assert response.status_code == 401
 
 
-def test_student_cannot_read_teacher_thumbnail(settings):
+def test_student_cannot_read_teacher_thumbnail(private_storage, settings):
     settings.EXAM_PREP_V4_ENABLED = True
     _teacher, project, document, page, _data = _source_page()
 
