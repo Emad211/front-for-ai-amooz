@@ -7,6 +7,7 @@ from apps.classes.views_v4 import (
 )
 from apps.classes.views_v4_blocks import ExamPrepV4BlockListView
 from apps.classes.views_v4_extraction import (
+    ExamPrepV4ExtractionCancelView,
     ExamPrepV4ExtractionRetryView,
     ExamPrepV4ExtractionStatusView,
 )
@@ -100,6 +101,14 @@ urlpatterns = [
         ),
         ExamPrepV4ExtractionRetryView.as_view(),
         name='project-extraction-retry',
+    ),
+    path(
+        (
+            'projects/<int:project_id>/documents/<int:document_id>/'
+            'extraction/cancel/'
+        ),
+        ExamPrepV4ExtractionCancelView.as_view(),
+        name='project-extraction-cancel',
     ),
     path(
         (
