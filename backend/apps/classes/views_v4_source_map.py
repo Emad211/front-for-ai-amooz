@@ -174,8 +174,7 @@ class ExamPrepV4SourceMapConfirmationView(APIView):
                 status=status.HTTP_503_SERVICE_UNAVAILABLE,
             )
 
-        response_status = status.HTTP_202_ACCEPTED if dispatch.queued else status.HTTP_200_OK
         return Response(
             _result_payload(result, dispatch=dispatch),
-            status=response_status,
+            status=status.HTTP_200_OK,
         )
