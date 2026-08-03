@@ -151,7 +151,7 @@ No changes detected in app 'classes'.
 54 passed, 1 warning in 9.05s
 ```
 
-The warning only reports that the CI checkout has no generated `backend/staticfiles/` directory during a negative private-media-route test. Later commits only update documentation until a newer focused run is explicitly inspected and recorded here.
+The warning only reports that the CI checkout has no generated `backend/staticfiles/` directory during a negative private-media-route test.
 
 Repository-wide frontend CI remains red on pre-existing files unrelated to V4:
 
