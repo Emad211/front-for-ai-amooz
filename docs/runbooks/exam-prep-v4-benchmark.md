@@ -1,237 +1,208 @@
-# Runbook — Exam Prep V4 Source-Aware Benchmark
+# Runbook — Exam Prep V4 Private Full-Pipeline Benchmark
 
-- **Status:** Operational harness verified; real private-fixture run pending user execution-environment selection
+- **Status:** harness, OCR adapter, request budget and one-click workflow verified; live three-PDF run pending one manual dispatch
 - **Branch:** `feat/exam-prep-v4-source-aware`
-- **Owner:** Classes / Exam Prep
-- **Created:** 2026-08-03
-- **Last updated:** 2026-08-03
-- **Related design:** `docs/features/exam-prep-v4-source-aware-split-pipeline.md`
-- **Example manifest:** `docs/runbooks/exam-prep-v4-benchmark-manifest.example.json`
+- **Updated:** 2026-08-04
+- **Roadmap:** `docs/features/exam-prep-v4-source-aware-split-pipeline.md`
+- **Ledger:** `docs/features/exam-prep-v4-status.md`
 
 ## Purpose
 
-This runbook defines and operates the Phase 2 classify-and-segment benchmark for Exam Prep V4. Each private PDF remains an independent exam project. The benchmark measures page-role classification, segment boundaries, latency, provider usage, cost, and unchanged warm-rerun reuse before any question or answer extraction begins.
+This runbook operates one independent cold/warm V4 extraction benchmark for each of the three private PDFs. It measures classification, segments, block proposals, typed question/answer extraction, matching, latency, usage, OCR retry/fallback and unchanged warm reuse without publishing user output.
 
-The harness does **not** yet evaluate question recall, answer-solution recall, matching precision, or publication. Those metrics belong to later roadmap phases.
+## Fixture contract
 
-## Implemented command
-
-```bash
-python backend/manage.py benchmark_exam_prep_v4 \
-  --manifest "$EXAM_PREP_V4_BENCHMARK_MANIFEST" \
-  --stage classify-and-segment \
-  --fake-provider
-```
-
-The command requires an explicit execution mode:
-
-- `--fake-provider`: deterministic, no network, for CI and contract verification;
-- `--live-provider`: calls the configured provider and records aggregate usage.
-
-No default mode exists. This prevents accidental provider calls and cost.
-
-## Data-handling rules
-
-1. Never commit source PDFs, rendered pages, filenames, paths, extracted text, answer keys, screenshots, or provider payloads.
-2. Keep the manifest and PDFs outside Git or under an ignored private directory.
-3. Use only anonymous fixture IDs matching `[a-z0-9][a-z0-9_-]{0,63}`.
-4. Every fixture remains a separate `ExamProject` and `ExamSourceDocument`, even when bytes or hashes are equal.
-5. The report may contain only anonymous fixture IDs, structural ranges, counts, latency, usage, cost, and boolean acceptance results.
-6. The command does not print manifest paths, PDF paths, PDF filenames, storage keys, native text, image bytes, or model payloads.
-7. Benchmark projects and private objects are deleted by default after the report is built.
-8. `--keep-projects` is allowed only with an explicit existing `--teacher-id`.
-9. A failed fixture makes the aggregate status `failed`; partial success is never reported as a pass.
-
-## Manifest schema
-
-The manifest must contain exactly three fixtures. Copy `exam-prep-v4-benchmark-manifest.example.json` to a private location outside Git and replace only its placeholder PDF paths.
-
-Relative `pdfPath` values are resolved relative to the manifest file. Paths are used internally and are never copied into the report.
-
-### Supported structural patterns
-
-- `cover_questions_solutions`
-- `solutions_cover_questions`
-- `cover_questions_solutions_overlap`
-
-Segments must:
-
-- start at page 1;
-- be contiguous with no gaps or overlap;
-- end exactly at `expectedPageCount`;
-- match the role order declared by `pattern`.
-
-Unknown manifest keys, duplicate fixture IDs, invalid page ranges, unsupported roles, unavailable PDFs, and non-PDF files fail before any benchmark project is created.
-
-## Fixture matrix
-
-The real benchmark contains three independent exams.
-
-### Fixture A — questions first, solutions second
-
-- pages: 16;
-- segment map: `cover 1`, `questions 2–8`, `answer_solutions 9–16`;
-- printed question range: 1–50.
-
-### Fixture B — solutions first, cover in the middle, questions last
-
-- pages: 27;
-- segment map: `answer_solutions 1–11`, `cover 12`, `questions 13–27`;
-- printed question range: 51–115.
-
-### Fixture C — questions first with overlapping solution-number boundaries
-
-- pages: 15;
-- segment map: `cover 1`, `questions 2–8`, `answer_solutions 9–15`;
-- printed question range: 116–145.
-
-The overlap and out-of-scope number expectations are retained in the local manifest for later extraction phases. The current Phase 2 benchmark scores only page roles and segment boundaries.
-
-## Fake-provider execution
-
-Use fake mode to validate the harness, manifest, storage lifecycle, structural patterns, reporting contract, and warm reuse without network access:
-
-```bash
-EXAM_PREP_V4_ENABLED=1 \
-python backend/manage.py benchmark_exam_prep_v4 \
-  --manifest "$EXAM_PREP_V4_BENCHMARK_MANIFEST" \
-  --stage classify-and-segment \
-  --fake-provider \
-  --output /safe/path/v4-benchmark-fake.json
-```
-
-Fake mode uses the expected content-free page roles from the local manifest. It is not evidence of real model accuracy and cannot close the Phase 2 exit gate.
-
-## Live-provider execution
-
-Required environment:
+### Fixture A
 
 ```text
-EXAM_PREP_V4_ENABLED=1
-EXAM_PREP_V4_CLASSIFICATION_MODEL=<configured model>
-AVALAI_API_KEY=<private provider key>
+file: دفترچه اول (زیست).pdf
+pages: 16
+cover: 1
+questions: 2–8
+answer_solutions: 9–16
+question numbers: 1–50
+out of scope: 51–54
 ```
 
-Run:
-
-```bash
-python backend/manage.py benchmark_exam_prep_v4 \
-  --manifest "$EXAM_PREP_V4_BENCHMARK_MANIFEST" \
-  --stage classify-and-segment \
-  --live-provider \
-  --output /safe/path/v4-benchmark-live.json
-```
-
-An explicit model may be supplied with `--model`. Missing model configuration or credentials fails before creating benchmark projects.
-
-## Output contract
-
-The report contains:
-
-- `schemaVersion`;
-- `mode`;
-- aggregate `status`;
-- anonymous fixture ID and declared pattern;
-- actual and expected page counts;
-- page-role accuracy and role counts;
-- expected and actual segment maps;
-- exact-boundary result;
-- issue count;
-- preparation, cold-classification, and warm-reuse latency;
-- provider calls, tokens, provider duration, and estimated USD cost;
-- warm reuse boolean;
-- independent project count;
-- explicit privacy flags, all of which must remain false.
-
-The report excludes source/manifest paths, filenames, hashes, object keys, images, native/OCR text, prompts, model payloads, classifier reasons, database IDs, credentials, and raw provider errors.
-
-## Warm-rerun acceptance
-
-For each unchanged accepted classification:
-
-- the same source, page catalog, contact sheets, model, prompt version, and revision produce the same fingerprint;
-- the persisted result is reused;
-- new provider calls equal **0**;
-- new provider tokens and cost equal **0**.
-
-Any nonzero warm provider call fails that fixture.
-
-## Phase 2 acceptance
-
-A real live run closes Phase 2 only when all three private fixtures satisfy:
-
-- independent project count: 3;
-- expected page count exact;
-- page-role accuracy: 100%;
-- segment map exact: true;
-- warm rerun provider calls: 0;
-- no private data in stdout or report;
-- report status: `passed`.
-
-If the real model misses a boundary or role, Phase 2 remains open and the aggregate report is recorded as failed without moving to Phase 3.
-
-## Cleanup and retention
-
-Default execution deletes benchmark projects, source documents, rendered pages, thumbnails, and private blobs after metrics are collected.
-
-To inspect persisted benchmark records deliberately, add `--teacher-id <existing-teacher-id> --keep-projects`. Do not use `--keep-projects` in CI or routine benchmark runs.
-
-## Verified synthetic evidence
-
-Focused PostgreSQL CI validates:
-
-- all three documented structural patterns using synthetic blank PDFs;
-- three independent projects for equal PDF bytes;
-- aggregate-only reporting;
-- path and filename non-disclosure;
-- anonymous report-visible fixture IDs;
-- default project/blob cleanup;
-- exact segment maps;
-- zero warm provider calls;
-- fail-closed missing configuration;
-- invalid manifest rejection;
-- failed aggregate nonzero command result.
-
-Latest fully validated harness evidence:
-
-- run: `30778629588`;
-- job: `91578823573`;
-- code head: `b9426c0dffafa04aa61cc850b814f4df3feba1b7`;
-- Python 3.12, PostgreSQL 16, Redis 7.
+### Fixture B
 
 ```text
-System check identified no issues (0 silenced).
-No changes detected in app 'classes'.
-128 passed, 33 warnings in 12.36s
+file: دفترچه دوم .pdf
+pages: 27
+answer_solutions: 1–11
+cover: 12
+questions: 13–27
+question numbers: 51–115
+out of scope: 49, 50, 116, 117
 ```
 
-This is synthetic/fake-provider evidence only.
+### Fixture C
 
-## Benchmark result log
+```text
+file: دفترچه سوم.pdf
+pages: 15
+cover: 1
+questions: 2–8
+answer_solutions: 9–15
+question numbers: 116–145
+out of scope: 114, 115, 146, 147
+```
 
-| Date | Commit | Mode | Fixtures | Result | Key notes |
-|---|---|---|---|---|---|
-| 2026-08-03 | Initial V4 branch | Contract only | A/B/C | Not run | Design contract created. |
-| 2026-08-03 | `b9426c0d...` | Fake provider / synthetic | Three structural patterns | Passed | Contract, privacy, cleanup, independence and warm reuse verified; not a live accuracy result. |
-| Pending | Pending live checkpoint | Live provider / private | A/B/C | Not run | Requires user-selected environment, local private paths, configured model and provider credential. |
+Each fixture remains a separate project. Equal hashes, page similarity and overlapping numbers never merge projects.
 
-## User action required now
+## Command
 
-State which environment will run the real benchmark:
+```bash
+python backend/manage.py benchmark_exam_prep_v4_full_pipeline \
+  --manifest /private/manifest.json \
+  --mode live_provider \
+  --classifier-model gemini-2.5-flash \
+  --block-model gemini-2.5-flash \
+  --question-model gemini-2.5-flash \
+  --answer-model gemini-2.5-flash \
+  --ocr-evidence \
+  --ocr-model mistral-ocr-4-0 \
+  --ocr-max-attempts 2 \
+  --ocr-bbox-for-diagrams \
+  --max-provider-calls 484 \
+  --report /private/aggregate-report.json
+```
 
-- local development machine; or
-- staging/backend server.
+To calculate the ceiling without creating projects or calling providers:
 
-On that environment, make the following available:
+```bash
+python backend/manage.py benchmark_exam_prep_v4_full_pipeline \
+  --manifest /private/manifest.json \
+  --mode live_provider \
+  --model gemini-2.5-flash \
+  --ocr-evidence \
+  --ocr-model mistral-ocr-4-0 \
+  --ocr-max-attempts 2 \
+  --ocr-bbox-for-diagrams \
+  --show-required-ceiling \
+  --report /tmp/not-written.json
+```
 
-1. the three private PDFs;
-2. a private copy of the manifest template with real local paths;
-3. the model configuration;
-4. `AVALAI_API_KEY` through the environment's secret mechanism;
-5. a private aggregate output path.
+## Hard request ceiling
 
-Do not send credentials in chat or commit them.
+Recorded manifest calculation:
 
-## Current completion state
+```text
+classification invocations: 3
+possible structured block fallbacks: 6
+semantic batch invocations: 79
+structured invocations: 88
+structured external upper bound: 264
+OCR-eligible pages: 55
+OCR external upper bound: 220
+required minimum: 484
+```
 
-The harness implementation slice is complete and verified. Phase 2 remains **8/9** until the real private-fixture run is executed and aggregate evidence is recorded. Phase 3 and Phase 4 remain blocked.
+The bound is deliberately conservative:
+
+- every structured invocation reserves JSON mode, one response-format fallback and one repair;
+- every eligible page reserves two primary OCR attempts and two possible bbox attempts;
+- structured detector fallback is reserved for every non-cover segment;
+- the runtime guard still stops before the next call if provider output creates more work than the manifest predicted.
+
+A ceiling below 484 fails before project creation or provider access.
+
+## Aggregate report
+
+Allowed:
+
+- anonymous fixture IDs and structural ranges;
+- page, block, question, answer and match counts;
+- issue counts and acceptance booleans;
+- cold/warm latency;
+- provider calls, tokens, duration and estimated cost;
+- request-ceiling plan and consumption;
+- OCR calls, retries, primary successes, bbox calls, fallback counts/reasons and resolved model IDs;
+- opaque request IDs when needed for transaction-cost lookup.
+
+Forbidden:
+
+- filenames and paths in report output;
+- PDF/render bytes or data URLs;
+- OCR Markdown/block content/annotations;
+- questions, answers or solutions;
+- prompts and raw provider responses;
+- object keys, database IDs and credentials.
+
+The workflow stores either the aggregate report or a content-free failure summary for one day.
+
+## Acceptance gates
+
+### Phase 2
+
+- exactly three independent projects;
+- page counts exact;
+- page-role and segment boundaries exact;
+- unchanged warm classification calls: zero.
+
+### Phase 4
+
+- stable bounded blocks before semantic extraction;
+- numbered headings retained;
+- multi-column/RTL/diagram/continuation evidence reviewable;
+- fallback/retry behavior recorded.
+
+### Phase 5
+
+- question recall at least 99%;
+- no question fabricated from answer-only evidence.
+
+### Phase 6
+
+- in-scope answer-solution recall at least 99%;
+- answer and complete source solution boundaries correct;
+- out-of-scope answers do not create questions.
+
+### Phase 7
+
+- automatic match precision 100%;
+- zero cross-project matches;
+- duplicate/ambiguous numbers remain unresolved;
+- warm extraction/OCR calls: zero.
+
+A failed gate is recorded as failed; it is not silently waived or converted into roadmap credit.
+
+## Cleanup
+
+Benchmark projects and their private artifacts are deleted by default after aggregate metrics are built. The GitHub runner also deletes the sparse private fixture checkout and temporary files in an `always()` step.
+
+Do not use `--keep-projects` in the GitHub workflow.
+
+## Verification before live execution
+
+Benchmark guard and workflow contract:
+
+```text
+feature checkpoint: 5db6e4b7eab2d4ae3150b79d342b8cfc93b107c9
+workflow: 30857010156
+backend job: 91830257210
+frontend job: 91830257126
+validated merge ref: 54e401d067c596444b20e1c4497d77fd7ad58615
+System check: passed
+Migration drift: none
+Backend: 252 passed, 47 warnings in 25.62s
+Frontend focused TypeScript/state tests: passed
+```
+
+## GitHub Actions execution
+
+```text
+workflow: .github/workflows/exam-prep-v4-full-live-benchmark.yml
+main commit: 5903d08fc3f58d8625f4ddf80fdccd92949b1ac6
+secret: AVALAI_API_KEY
+```
+
+The workflow is `workflow_dispatch` only, has no input field, never retries automatically, uses PostgreSQL/Redis, verifies the 484 ceiling before provider access, and uploads only `exam-prep-v4-full-live-aggregate` with one-day retention.
+
+Run exactly once:
+
+```text
+GitHub → Actions → exam-prep-v4-full-live-benchmark → Run workflow
+```
+
+After terminal evidence is recovered, remove this workflow from `main`, update the roadmap/runbooks, and decide which private gates are closed.
