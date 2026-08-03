@@ -1,16 +1,16 @@
 # Runbook — Exam Prep V4 AvalAI Mistral OCR Smoke
 
-- **Status:** fake-response gate implemented; live request not authorized or executed
+- **Status:** first live evidence run completed eight requests but failed aggregate acceptance; retry instrumentation is ready
 - **Branch:** `feat/exam-prep-v4-source-aware`
 - **Owner:** Classes / Exam Prep V4
-- **Reviewed:** 2026-08-03
-- **Pinned model:** `mistral-ocr-4-0`
+- **Reviewed:** 2026-08-04
+- **Production routing:** unchanged
 - **Endpoint:** `POST https://api.avalai.ir/v1/ocr`
 - **Roadmap ledger:** `docs/features/exam-prep-v4-status.md`
 
 ## Official documentation reviewed
 
-AvalAI pages reviewed before implementation:
+AvalAI pages are re-read before every endpoint/model/retry decision:
 
 ```text
 https://docs.avalai.ir/fa/
@@ -19,7 +19,7 @@ https://docs.avalai.ir/fa/examples/processing_documents_with_mistral_ocr
 https://docs.avalai.ir/fa/models/mistral-ocr-2512
 ```
 
-Supplementary upstream Mistral documentation was used only where the current AvalAI page did not expose enough response detail:
+Supplementary upstream Mistral documentation is capability context only and must be measured through AvalAI:
 
 ```text
 https://docs.mistral.ai/studio-api/document-processing/basic_ocr
@@ -27,93 +27,27 @@ https://docs.mistral.ai/studio-api/document-processing/annotations
 https://docs.mistral.ai/api/endpoint/ocr
 ```
 
-AvalAI documentation remains authoritative for the AvalAI endpoint, authentication, exposed parameters, and AvalAI pricing. Upstream Mistral documentation is treated as capability context that must still be verified against the AvalAI gateway.
+## Model and capability interpretation
 
-## Documentation findings
+- `mistral-ocr-2512` is OCR 3.
+- `mistral-ocr-4-0` is the reproducible OCR 4 identifier in upstream documentation.
+- `mistral-ocr-latest` is used only in the bounded discovery retry because AvalAI currently exposes the alias more consistently; the resolved model returned by each successful response is recorded in aggregate evidence.
+- `blocks` is treated as an OCR4 capability that must be measured through AvalAI, not assumed.
+- `bbox_annotation` annotates extracted figures/images and is not assumed to replace textual block detection.
 
-### OCR model versions
+No production route may depend on the mutable alias. A production decision must pin a model proven by measured evidence.
 
-- `mistral-ocr-2512` is OCR 3 and remains available for existing integrations.
-- OCR 4 is the newer model.
-- AvalAI's OCR reference pins OCR 4 as `mistral-ocr-4-0`.
-- `mistral-ocr-latest` is a mutable alias and is not used for reproducible tests.
-- paragraph-level block labels are an OCR 4 capability in current upstream Mistral documentation; AvalAI gateway support is measured in the smoke rather than assumed.
-
-### Input contract
-
-AvalAI documents:
-
-- PDF/document input through `document_url`;
-- image input through `image_url`;
-- private bytes through a base64 data URL;
-- zero-based selective PDF pages through `pages`;
-- `include_image_base64` control;
-- image extraction limits;
-- `document_annotation_format`;
-- `bbox_annotation_format`;
-- header/footer extraction;
-- Markdown or HTML table formatting.
-
-The V4 smoke uses only local bytes encoded to data URLs. It never creates a public or presigned source URL.
-
-### Output distinction
-
-The four smoke modes answer different questions:
-
-1. **markdown** — is Persian/RTL text, formula syntax, and table structure preserved?
-2. **blocks** — does the AvalAI OCR 4 gateway return paragraph-level block labels, ordered bboxes, and page confidence?
-3. **document_annotation** — can the entire page be classified into a constrained JSON schema?
-4. **bbox_annotation** — can extracted images/figures be classified with a constrained schema?
-
-BBox annotation is not treated as a replacement for text-block detection. Current Mistral documentation describes it as annotation of extracted image/figure bboxes. OCR 4 blocks are the candidate acceleration path for Phase 4 text/layout boundaries.
-
-### Pricing stated by AvalAI OCR reference
+## Authorized private fixture
 
 ```text
-mistral-ocr-4-0 OCR:        $0.004 per page
-mistral-ocr-4-0 annotation: $0.005 per annotated page
+source PDF: دفترچه اول (زیست).pdf on main
+question page: physical page 5
+answer-solution page: physical page 12
 ```
 
-The documentation available during review does not establish whether annotation pricing replaces or adds to base OCR pricing for every billing case. Exact live cost must be measured from provider request IDs/transaction records and must not be inferred solely from the table.
+The complete PDF is never transmitted. The GitHub runner renders only these two pages locally and sends the two bounded PNG images.
 
-### Data-handling boundary
-
-The docs establish base64 transport, not a no-retention/no-training guarantee for this endpoint. No such guarantee is inferred. Live execution requires explicit product-owner permission to transmit the selected two private page images.
-
-## Architecture decision before live evidence
-
-The production path remains unchanged:
-
-```text
-confirmed Source Map
-→ current V4 block detector
-→ typed QuestionRecord / AnswerSolutionRecord
-→ deterministic matcher
-```
-
-The OCR smoke is isolated. It may justify a later candidate path:
-
-```text
-confirmed Source Map
-→ OCR 4 Markdown + blocks
-→ deterministic SourceBlock proposals
-→ typed validators and persistence already implemented
-→ vision fallback only for unresolved/low-confidence evidence
-```
-
-No routing switch is allowed before measured live smoke evidence.
-
-## Implemented smoke command
-
-```bash
-python backend/manage.py smoke_exam_prep_v4_avalai_ocr \
-  --question-page /private/question-page.png \
-  --answer-page /private/answer-page.png \
-  --report /private/ocr-smoke-report.json \
-  --mode fake_provider
-```
-
-Default modes:
+Four isolated modes are evaluated:
 
 ```text
 markdown
@@ -122,112 +56,134 @@ document_annotation
 bbox_annotation
 ```
 
-Two inputs × four modes = eight requests in live mode.
+Two images × four modes = exactly eight external requests per run.
 
-## Live preflight contract
-
-Live mode requires all of the following:
-
-```bash
-export AVALAI_API_KEY='configured-through-local-secret'
-
-python backend/manage.py smoke_exam_prep_v4_avalai_ocr \
-  --question-page /private/question-page.png \
-  --answer-page /private/answer-page.png \
-  --report /private/ocr-smoke-report.json \
-  --mode live_provider \
-  --model mistral-ocr-4-0 \
-  --max-requests 8 \
-  --allow-private-transmission
-```
-
-The credential must not be committed, pasted into the ledger, or printed by the command.
-
-## Bounds
-
-Defaults:
+## Privacy and bounds
 
 ```text
-max input bytes per page:       12 MiB
-max response bytes per request: 24 MiB
-max selected PDF pages:         8
-max Markdown chars per page:    500,000
-max annotation chars:           500,000
-request timeout:                180 seconds
+max input bytes per rendered page: 12 MiB
+max response bytes per request:    24 MiB
+max Markdown chars per page:       500,000
+max annotation chars:              500,000
+request timeout:                   180 seconds
+include_image_base64:              false
 ```
 
-`include_image_base64` is always false. If image base64 is unexpectedly returned, parsing fails with a privacy error.
+Forbidden from logs, artifacts, serializers, and roadmap evidence:
 
-## Aggregate-only report
+- source PDF/image bytes or data URLs;
+- paths and filenames;
+- OCR Markdown and block text;
+- annotation payloads;
+- questions, answers, and solutions;
+- API credentials;
+- raw provider response/error bodies.
 
-Allowed metrics:
+The aggregate artifact may contain fixture/mode identifiers, model, content-free error class, counts, issue codes, confidence, usage, latency, and opaque request IDs. The workflow log prints a stricter sanitized subset without request IDs or input byte counts.
 
-- anonymous fixture ID;
-- mode and pinned model;
-- opaque request ID;
-- input byte count;
-- returned page count/indexes;
-- Markdown character count;
-- RTL character count;
-- formula/table signal counts;
-- block/image/bbox counts;
-- block type counts;
-- annotation-present booleans/counts;
-- content-free issue codes;
-- aggregate page confidence;
-- provider-reported pages processed/document bytes;
-- latency and request counts.
+## First live run — terminal evidence
 
-Forbidden:
+```text
+run: 30852221763
+job: 91814702919
+requested model: mistral-ocr-4-0
+executed requests: 8
+command acceptance: false
+```
 
-- local paths and filenames;
-- source bytes or data URLs;
-- Markdown text;
-- block content;
-- document/image annotation payloads;
-- image base64;
-- question, answer, or solution text;
-- credentials or raw provider errors.
+Successful stages:
 
-## Fake-response acceptance
+- API secret validation;
+- V4 code checkout;
+- sparse checkout of the selected PDF;
+- exact 16-page validation;
+- local rendering of pages 5 and 12;
+- all eight planned OCR request attempts;
+- private-file cleanup.
 
-The fake gate must prove:
+Terminal command output:
 
-- all four modes use the same production parser/report builder as live mode;
-- private input is base64 encoded without public URLs;
-- exact page coverage is enforced;
-- duplicate/missing pages fail closed;
-- response, Markdown, input, and annotation bounds are enforced;
-- malformed annotations become content-free issues without deleting healthy OCR pages;
-- unexpected image base64 fails closed;
-- fake report contains no source path, filename, text, annotation, or bytes;
-- live mode refuses to start without permission, key, and a sufficient request ceiling;
-- all focused V4 backend/frontend gates remain green.
+```text
+Exam Prep V4 AvalAI OCR smoke completed; requests=8; passed=False
+CommandError: AvalAI OCR smoke acceptance failed.
+```
 
-## Live evaluation metrics
+Interpretation:
 
-The first live smoke will compare the two selected pages across all four modes:
+- at least one of the eight requests raised a bounded transport, response-parse, or privacy exception;
+- merely returning no blocks, no bbox annotations, or no document annotation would not by itself mark a request failed;
+- the exact failed mode/error class is unavailable because the old workflow skipped artifact upload after the command returned nonzero;
+- the later PR-comment step independently failed with GitHub `403 Forbidden`;
+- cleanup then deleted the local report, so the first failed aggregate cannot be reconstructed.
 
-- Persian/RTL reading-order plausibility;
-- printed-number preservation;
-- formula preservation;
-- table preservation;
-- OCR 4 block type/bbox coverage;
-- question/answer page-role annotation;
-- diagram/image annotation usefulness;
-- content-free issue counts;
-- latency;
-- request IDs and authoritative cost lookup.
+No quality conclusion can be drawn from the first run.
 
-A human inspection of the private OCR result is required for quality evaluation. Only aggregate conclusions are recorded in the ledger.
+## Failure-evidence patch
 
-## Decision after live smoke
+Feature branch:
 
-Possible outcomes:
+```text
+workflow commit: 32913cff94bc58493f09c9abe9f7204985fbabb0
+static-test commit: 137518464ec3d2ee60a6051b07432cf6b8832f57
+```
 
-1. **OCR-first candidate accepted:** use OCR4 blocks/Markdown to propose Phase 4/5 evidence and keep vision fallback.
-2. **Transcription-only candidate:** use Markdown for block text but retain current vision block detector.
-3. **Diagram-only utility:** use bbox annotations only for figures/diagrams.
-4. **Rejected for V4:** retain the current vision path when RTL/formula/layout evidence is inadequate.
+Operational workflow on `main`:
 
-No canonical roadmap credit is granted until a measured result closes a listed deliverable.
+```text
+commit: 5947a090c927243a1a7402b38cb59539af6a3972
+```
+
+The patched workflow now:
+
+1. lets the command complete and write its report even when acceptance is false;
+2. prints a content-free per-mode summary;
+3. uploads `aggregate-report.json` on pass or fail;
+4. retains the artifact for one day;
+5. removes the GitHub PR-comment request that returned 403;
+6. enforces pass/fail only after evidence upload;
+7. always deletes the PDF checkout, rendered pages, and local report.
+
+Focused verification:
+
+```text
+workflow: 30853630677
+backend job: 91819412114
+frontend job: 91819412054
+System check identified no issues (0 silenced).
+No changes detected in app 'classes'.
+236 passed, 47 warnings in 24.09s
+Focused TypeScript check: passed
+Source-map state tests: passed
+```
+
+## Retry contract
+
+The retry is another bounded evidence run, not a production rollout:
+
+```text
+model requested: mistral-ocr-latest
+inputs: the same two rendered pages
+modes: the same four modes
+external-request ceiling: 8
+artifact retention: 1 day
+```
+
+The retry must produce an aggregate artifact even if every request fails. The evidence review must determine:
+
+- status and content-free error class for each mode/page;
+- resolved model returned by successful requests;
+- Markdown/RTL/formula/table signal counts;
+- block/bbox/annotation availability;
+- issue codes and latency;
+- request IDs for authoritative transaction/cost lookup.
+
+## Decision after the retry
+
+Only measured evidence may select one of these outcomes:
+
+1. **OCR-first candidate:** Markdown/blocks propose SourceBlocks, with vision fallback.
+2. **Transcription-only:** Markdown supplies text; current vision detector retains layout ownership.
+3. **Diagram-only utility:** bbox/image annotations are useful but text blocks are not.
+4. **Rejected for V4:** current vision route remains authoritative.
+
+No roadmap credit or production routing change is granted merely because the requests executed.
