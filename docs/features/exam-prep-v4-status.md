@@ -6,13 +6,15 @@
 - **PR:** #4 — Draft
 - **Execution mode:** Critical Path Acceleration
 - **Current roadmap span:** Phase 4 → Phase 7 vertical extraction path
-- **Last completed slice:** guarded manual GitHub Actions orchestration for the two-page AvalAI OCR live smoke
-- **Active gate:** extract two representative pages from the three private fixtures now present on `main`, then execute the bounded live OCR smoke
-- **Validated implementation checkpoint:** `86d0ccbc312dd7adc725add4ef3ee671c574390a`
-- **Focused workflow:** `30849183611`
-- **Backend job:** `91804786818`
-- **Frontend job:** `91804786856`
-- **Validated PR merge ref:** `92d30fd1f4d96f3efc175cf15e3520118dd2c0f2`
+- **Last completed slice:** validated direct extraction of two representative pages from the `main` fixture for the guarded OCR smoke
+- **Active gate:** determine the result of the authorized one-shot live OCR workflow, record aggregate evidence, and disable the one-shot trigger
+- **Validated feature implementation checkpoint:** `3bc8814726cf2218d3b8534ce6b0d74120e2c4f1`
+- **Focused workflow:** `30850414707`
+- **Backend job:** `91808774481`
+- **Frontend job:** `91808774469`
+- **Focused result:** 235 backend tests passed; frontend focused validation passed
+- **One-shot workflow installed on main:** `6337a1dcd191e41c967f560aeb686f45835179f5`
+- **Authorized trigger commit on main:** `fd39c172662bc91e8c5e0e2078630c418ef80aa4`
 - **Last updated:** 2026-08-03
 
 ## Progress
@@ -50,10 +52,11 @@ No progress credit is added before measured private evidence closes a canonical 
 7. ambiguous evidence remains unresolved rather than guessed;
 8. malformed provider siblings remain isolated;
 9. accepted unchanged units are excluded from provider calls;
-10. private source content, paths, crops, OCR text, annotations, and raw provider output remain outside public serializers, logs, and aggregate reports;
+10. private source content, paths, crops, OCR text, annotations, request credentials, and raw provider output remain outside public serializers, logs, PR comments, and aggregate reports;
 11. historical revisions remain auditable;
 12. production routing is not changed by a feasibility smoke;
-13. Phase 8 and rollout remain blocked until private evidence is recorded or explicitly waived.
+13. Phase 8 and rollout remain blocked until private evidence is recorded or explicitly waived;
+14. no second live OCR run may be triggered until the first one-shot outcome is known and the trigger is disabled or explicitly re-authorized.
 
 ## AvalAI documentation rule
 
@@ -74,74 +77,89 @@ https://docs.avalai.ir/fa/examples/processing_documents_with_mistral_ocr
 https://docs.avalai.ir/fa/models/mistral-ocr-2512
 ```
 
-## Product-owner authorization and credential state
+## Product-owner authorization and fixture selection
 
-The product owner has now explicitly authorized live requests and confirmed that repository Actions secret `AVALAI_API_KEY` is configured.
+The product owner authorized live requests, confirmed repository Actions secret `AVALAI_API_KEY`, and permitted use of the private PDFs stored on `main`.
 
-The user placed these three private benchmark PDFs at the repository root on `main`:
+The live smoke is restricted to:
 
 ```text
-دفترچه اول (زیست).pdf
-دفترچه دوم .pdf
-دفترچه سوم.pdf
+source PDF: دفترچه اول (زیست).pdf
+question page: physical page 5
+answer-solution page: physical page 12
+model: mistral-ocr-4-0
+modes: markdown, blocks, document_annotation, bbox_annotation
+hard external-request ceiling: 8
 ```
 
-The PDFs may be read inside the GitHub runner for the authorized feasibility smoke. This does **not** authorize sending complete PDFs to AvalAI. Only two extracted page images may leave the runner, with a hard ceiling of eight OCR requests.
+The complete PDF is never submitted to AvalAI. The runner renders pages 5 and 12 locally and only those two bounded PNG images may leave the runner.
 
-## Selected two-page smoke fixture
+## Verified pre-live workflow gate
 
-Use `دفترچه اول (زیست).pdf` because it is the strongest candidate for RTL text plus biological diagrams/formulas.
+The feature-branch workflow and static tests prove:
 
-Selected physical pages:
+- source file is read from `origin/main` without adding it to the V4 branch;
+- `%PDF-` signature and exact 16-page count are checked;
+- only physical pages 5 and 12 are rendered;
+- images are bounded and byte-distinct;
+- exactly four modes and a maximum of eight requests are configured;
+- only `aggregate-report.json` may be uploaded for one day;
+- temporary PDF, PNGs, path files, and local report are deleted;
+- no URL secrets or additional private transport are required.
 
-```text
-question page: 5
-answer-solution/continuation page: 12
-```
-
-These are interior pages of the previously recorded ranges:
-
-```text
-cover: 1
-questions: 2–8
-answer_solutions: 9–16
-```
-
-Selecting interior pages avoids cover/boundary bias while preserving representative question and solution evidence.
-
-## Active implementation contract
-
-Modify only the guarded manual OCR workflow so it:
-
-1. checks out the V4 branch code;
-2. fetches the named PDF from `origin/main` into a private runner-temp directory without adding it to the feature branch;
-3. validates PDF signature and expected page count;
-4. renders physical pages 5 and 12 to bounded PNG images locally;
-5. sends only those two PNGs through the four existing smoke modes;
-6. executes at most eight requests with pinned `mistral-ocr-4-0`;
-7. uploads only `aggregate-report.json` for one day;
-8. deletes the temporary PDF, PNGs, path files, and local report in an `always()` cleanup step;
-9. never prints or artifacts source bytes, OCR text, annotations, data URLs, credentials, or raw provider output.
-
-## Current verification before this implementation
+Verification:
 
 ```text
-Python 3.12
-PostgreSQL 16
-Redis 7
 System check identified no issues (0 silenced).
 No changes detected in app 'classes'.
-235 passed, 47 warnings in 26.63s
+235 passed, 47 warnings in 21.06s
 Focused frontend TypeScript check: passed
 Source-map state-model tests: passed
 ```
 
-No live OCR request has yet been executed by this branch.
+## One-shot execution mechanism
+
+A one-shot workflow was installed on `main` because GitHub manual dispatch requires the workflow file on the default branch and the available connector cannot dispatch arbitrary workflows directly.
+
+Files/commits:
+
+```text
+.github/workflows/exam-prep-v4-avalai-ocr-one-shot.yml
+workflow installation commit: 6337a1dcd191e41c967f560aeb686f45835179f5
+trigger file: .github/v4-ocr-live-trigger
+trigger commit: fd39c172662bc91e8c5e0e2078630c418ef80aa4
+```
+
+The workflow runs only when all of these match:
+
+- push to `main`;
+- changed path `.github/v4-ocr-live-trigger`;
+- exact commit message `chore(exam-prep-v4): [run-v4-ocr-smoke] authorized one-shot`.
+
+It checks out validated V4 code separately, sparse-checks out only the selected PDF, extracts two pages, runs the smoke, posts a sanitized aggregate-only result to PR #4, retains the aggregate artifact for one day, and deletes private checkout/render files.
+
+## Current evidence state
+
+- The trigger commit was created.
+- No marked aggregate OCR comment has yet been observed on PR #4.
+- Therefore the workflow outcome is currently **unknown**, not passed or failed.
+- No live-result claims and no roadmap credit are permitted until the run/job or sanitized result is recovered.
+
+## Active investigation contract
+
+Only the following work is allowed now:
+
+1. locate the push-triggered one-shot workflow run or check-run;
+2. determine whether it is queued, running, skipped, failed, or successful;
+3. if successful, retrieve only the aggregate artifact/comment and record measured evidence;
+4. if failed before or during provider calls, establish the exact request count before any retry decision;
+5. disable/remove the trigger after a terminal outcome;
+6. do not issue a second live run without explicit evidence that the first made zero requests or a new product-owner authorization.
 
 ## User action required
 
-No additional credential or file-upload action is required. The next implementation step is fully defined.
+No user action is required while the one-shot outcome is being recovered.
 
 ## Exact continuation point
 
-Update the guarded manual workflow from URL-secret input to direct private extraction of physical pages 5 and 12 from `دفترچه اول (زیست).pdf` on `origin/main`. Add static workflow tests, run focused CI, then manually dispatch the live smoke if the workflow gate is green. Do not change production routing or the 42/77 score before measured evidence is reviewed.
+Find the one-shot push workflow state for commit `fd39c172662bc91e8c5e0e2078630c418ef80aa4`. Then record aggregate evidence or the exact failure stage, disable the one-shot trigger, update this ledger and the OCR runbook, and only afterward decide whether a bounded retry is safe. Do not change production routing or the 42/77 score before measured evidence is reviewed.
