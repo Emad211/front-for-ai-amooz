@@ -72,6 +72,14 @@ def _mark_dispatch_failed(document_ids: list[int], exc: Exception) -> None:
     )
 
 
+def _control_payload(request) -> dict[str, object]:
+    return {
+        key: value
+        for key in ('organizationId', 'studyGroupId')
+        if (value := request.data.get(key)) not in (None, '')
+    }
+
+
 class ExamPrepV4BatchUploadView(APIView):
     """Upload several PDFs while creating one independent exam per file."""
 
@@ -99,10 +107,7 @@ class ExamPrepV4BatchUploadView(APIView):
             )
 
         controls = ExamPrepV4BatchUploadControlSerializer(
-            data={
-                'organizationId': request.data.get('organizationId'),
-                'studyGroupId': request.data.get('studyGroupId'),
-            }
+            data=_control_payload(request)
         )
         controls.is_valid(raise_exception=True)
         metadata = parse_upload_metadata(
@@ -136,31 +141,40 @@ class ExamPrepV4BatchUploadView(APIView):
                 status=status.HTTP_409_CONFLICT,
             )
 
-        document_ids = [item.document_id for item in uploaded]
-        try:
-            dispatch_id = dispatch_exam_prep_v4_sources(document_ids)
-        except Exception as exc:
-            logger.exception('Unable to dispatch Exam Prep V4 documents: %s', document_ids)
-            _mark_dispatch_failed(document_ids, exc)
-            return Response(
-                {
-                    'detail': (
-                        'فایل‌ها با موفقیت و به‌صورت خصوصی ذخیره شدند، اما '
-                        'ارسال پردازش به صف انجام نشد. با همان شناسه‌ها دوباره تلاش کنید.'
-                    ),
-                    'code': 'dispatch_failed',
-                    'projects': [
-                        {
-                            'id': item.project_id,
-                            'documentId': item.document_id,
-                            'clientRequestId': str(item.client_request_id),
-                            'clientDocumentId': str(item.client_document_id),
-                        }
-                        for item in uploaded
-                    ],
-                },
-                status=status.HTTP_503_SERVICE_UNAVAILABLE,
-            )
+        pending_document_ids = [
+            item.document_id
+            for item in uploaded
+            if not item.classification_already_available
+        ]
+        dispatch_id = None
+        if pending_document_ids:
+            try:
+                dispatch_id = dispatch_exam_prep_v4_sources(pending_document_ids)
+            except Exception as exc:
+                logger.exception(
+                    'Unable to dispatch Exam Prep V4 documents: %s',
+                    pending_document_ids,
+                )
+                _mark_dispatch_failed(pending_document_ids, exc)
+                return Response(
+                    {
+                        'detail': (
+                            'فایل‌ها با موفقیت و به‌صورت خصوصی ذخیره شدند، اما '
+                            'ارسال پردازش به صف انجام نشد. با همان شناسه‌ها دوباره تلاش کنید.'
+                        ),
+                        'code': 'dispatch_failed',
+                        'projects': [
+                            {
+                                'id': item.project_id,
+                                'documentId': item.document_id,
+                                'clientRequestId': str(item.client_request_id),
+                                'clientDocumentId': str(item.client_document_id),
+                            }
+                            for item in uploaded
+                        ],
+                    },
+                    status=status.HTTP_503_SERVICE_UNAVAILABLE,
+                )
 
         return Response(
             {
@@ -173,8 +187,12 @@ class ExamPrepV4BatchUploadView(APIView):
                         'clientDocumentId': str(item.client_document_id),
                         'title': item.title,
                         'originalName': item.original_name,
-                        'status': ExamProject.Status.UPLOADING,
+                        'status': item.project_status,
+                        'documentStatus': item.document_status,
                         'reusedSource': item.reused_source,
+                        'classificationAlreadyAvailable': (
+                            item.classification_already_available
+                        ),
                     }
                     for item in uploaded
                 ],
