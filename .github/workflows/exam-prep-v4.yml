@@ -9,6 +9,8 @@ on:
       - 'backend/apps/classes/migrations/0040_exam_prep_v4_source_foundation.py'
       - 'backend/apps/classes/services/exam_prep_v4_*.py'
       - 'backend/apps/classes/test_exam_prep_v4_*.py'
+      - 'backend/apps/commons/llm_prompts/__init__.py'
+      - 'backend/apps/commons/llm_prompts/exam_prep_v4.py'
       - 'docs/features/exam-prep-v4-*.md'
       - 'docs/runbooks/exam-prep-v4-*.md'
   workflow_dispatch:
