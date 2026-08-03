@@ -1,6 +1,7 @@
 import pytest
 from django.db import connection
 from django.db.migrations.executor import MigrationExecutor
+from model_bakery import baker
 
 
 pytestmark = pytest.mark.django_db(transaction=True)
@@ -11,24 +12,23 @@ MIGRATE_TO = [('classes', '0042_exam_prep_v4_virtual_page_order')]
 
 
 def test_virtual_order_migration_backfills_and_preserves_confirmation():
+    # Create the owner with the current accounts model before moving only the
+    # classes app back to its 0041 state. This avoids coupling the fixture to a
+    # historical User model that intentionally lacks newer account fields.
+    teacher = baker.make('accounts.User', role='TEACHER')
+    teacher_id = teacher.id
+
     executor = MigrationExecutor(connection)
     executor.migrate(MIGRATE_FROM)
     old_apps = executor.loader.project_state(MIGRATE_FROM).apps
 
-    User = old_apps.get_model('accounts', 'User')
     Project = old_apps.get_model('classes', 'ExamProject')
     Document = old_apps.get_model('classes', 'ExamSourceDocument')
     Page = old_apps.get_model('classes', 'ExamSourcePage')
     Segment = old_apps.get_model('classes', 'ExamSourceSegment')
 
-    teacher = User.objects.create(
-        username='v4-order-migration-teacher',
-        email='v4-order-migration@example.com',
-        role='TEACHER',
-        is_freelancer=True,
-    )
     project = Project.objects.create(
-        teacher_id=teacher.id,
+        teacher_id=teacher_id,
         title='Migration fixture',
         status='segmenting',
     )
@@ -41,7 +41,7 @@ def test_virtual_order_migration_backfills_and_preserves_confirmation():
         source_map_fingerprint='1' * 64,
         teacher_confirmed_revision=2,
         teacher_confirmed_fingerprint='1' * 64,
-        teacher_confirmed_by_id=teacher.id,
+        teacher_confirmed_by_id=teacher_id,
     )
     roles = ['cover', 'questions', 'questions']
     for page_number, role in enumerate(roles, start=1):
