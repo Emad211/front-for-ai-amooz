@@ -1,0 +1,77 @@
+name: exam-prep-v4
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/exam-prep-v4.yml'
+      - 'backend/apps/classes/apps.py'
+      - 'backend/apps/classes/models_v4.py'
+      - 'backend/apps/classes/migrations/0040_exam_prep_v4_source_foundation.py'
+      - 'backend/apps/classes/services/exam_prep_v4_*.py'
+      - 'backend/apps/classes/test_exam_prep_v4_*.py'
+      - 'docs/features/exam-prep-v4-*.md'
+      - 'docs/runbooks/exam-prep-v4-*.md'
+  workflow_dispatch:
+
+jobs:
+  validate:
+    name: v4 foundation (postgres)
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: ai_amooz
+          POSTGRES_USER: ai_amooz
+          POSTGRES_PASSWORD: ai_amooz_password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ai_amooz -d ai_amooz"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgresql://ai_amooz:ai_amooz_password@localhost:5432/ai_amooz
+      REDIS_URL: redis://localhost:6379/0
+      DJANGO_SECRET_KEY: ci-insecure-v4-test-key
+      DEBUG: 'True'
+      EXAM_PREP_V4_ENABLED: 'True'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt
+
+      - name: Django system check
+        run: python backend/manage.py check
+
+      - name: Check classes migration drift
+        run: python backend/manage.py makemigrations classes --check --dry-run
+
+      - name: Run V4 foundation tests on PostgreSQL
+        run: |
+          python -m pytest \
+            backend/apps/classes/test_exam_prep_v4_source_foundation.py \
+            -q --create-db
