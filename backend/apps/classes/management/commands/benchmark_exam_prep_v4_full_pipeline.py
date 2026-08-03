@@ -3,11 +3,13 @@ from pathlib import Path
 
 from django.core.management.base import BaseCommand, CommandError
 
+from apps.classes.services.exam_prep_v4_benchmark_guard import (
+    run_bounded_full_pipeline_benchmark,
+)
 from apps.classes.services.exam_prep_v4_full_benchmark import (
     FullBenchmarkError,
     FullBenchmarkManifestError,
     load_full_benchmark_manifest,
-    run_full_pipeline_benchmark,
 )
 
 
@@ -36,6 +38,15 @@ class Command(BaseCommand):
         parser.add_argument('--block-model', default='')
         parser.add_argument('--question-model', default='')
         parser.add_argument('--answer-model', default='')
+        parser.add_argument(
+            '--max-provider-calls',
+            type=int,
+            default=None,
+            help=(
+                'Mandatory hard ceiling for live-provider calls. The command '
+                'fails before the next external call when the ceiling is used.'
+            ),
+        )
         parser.add_argument('--report', required=True)
         parser.add_argument('--keep-projects', action='store_true')
 
@@ -52,7 +63,7 @@ class Command(BaseCommand):
 
         try:
             manifest = load_full_benchmark_manifest(options['manifest'])
-            result = run_full_pipeline_benchmark(
+            result = run_bounded_full_pipeline_benchmark(
                 manifest=manifest,
                 mode=options['mode'],
                 classifier_model=classifier_model or None,
@@ -60,6 +71,7 @@ class Command(BaseCommand):
                 question_model=question_model or None,
                 answer_model=answer_model or None,
                 keep_projects=bool(options.get('keep_projects')),
+                max_provider_calls=options.get('max_provider_calls'),
             )
         except (
             FullBenchmarkError,
