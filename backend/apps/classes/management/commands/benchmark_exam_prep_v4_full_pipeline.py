@@ -3,7 +3,11 @@ from pathlib import Path
 
 from django.core.management.base import BaseCommand, CommandError
 
+from apps.classes.services.exam_prep_v4_avalai_ocr import (
+    AVALAI_OCR_PINNED_MODEL,
+)
 from apps.classes.services.exam_prep_v4_benchmark_guard import (
+    calculate_required_external_request_ceiling,
     run_bounded_full_pipeline_benchmark,
 )
 from apps.classes.services.exam_prep_v4_full_benchmark import (
@@ -39,12 +43,42 @@ class Command(BaseCommand):
         parser.add_argument('--question-model', default='')
         parser.add_argument('--answer-model', default='')
         parser.add_argument(
+            '--ocr-evidence',
+            action='store_true',
+            help=(
+                'Use the optional AvalAI OCR evidence adapter for block '
+                'proposals; existing structured detector remains fallback.'
+            ),
+        )
+        parser.add_argument(
+            '--ocr-model',
+            default=AVALAI_OCR_PINNED_MODEL,
+        )
+        parser.add_argument(
+            '--ocr-max-attempts',
+            type=int,
+            default=2,
+        )
+        parser.add_argument(
+            '--ocr-bbox-for-diagrams',
+            action='store_true',
+            help='Allow one bounded bbox-annotation path for diagram pages.',
+        )
+        parser.add_argument(
             '--max-provider-calls',
             type=int,
             default=None,
             help=(
-                'Mandatory hard ceiling for live-provider calls. The command '
-                'fails before the next external call when the ceiling is used.'
+                'Mandatory hard ceiling for all live external calls, including '
+                'structured fallbacks/repairs and direct OCR requests.'
+            ),
+        )
+        parser.add_argument(
+            '--show-required-ceiling',
+            action='store_true',
+            help=(
+                'Print the deterministic manifest/config ceiling and exit '
+                'without creating projects or calling providers.'
             ),
         )
         parser.add_argument('--report', required=True)
@@ -60,9 +94,28 @@ class Command(BaseCommand):
             str(options.get('question_model') or '').strip() or common_model
         )
         answer_model = str(options.get('answer_model') or '').strip() or common_model
+        ocr_enabled = bool(options.get('ocr_evidence'))
+        ocr_model = str(options.get('ocr_model') or '').strip()
+        ocr_attempts = options.get('ocr_max_attempts')
+        ocr_bbox = bool(options.get('ocr_bbox_for_diagrams'))
 
         try:
             manifest = load_full_benchmark_manifest(options['manifest'])
+            ceiling_plan = calculate_required_external_request_ceiling(
+                manifest=manifest,
+                ocr_evidence_enabled=ocr_enabled,
+                ocr_max_attempts=ocr_attempts,
+                ocr_bbox_for_diagrams=ocr_bbox,
+            )
+            if options.get('show_required_ceiling'):
+                self.stdout.write(
+                    json.dumps(
+                        ceiling_plan,
+                        ensure_ascii=False,
+                        sort_keys=True,
+                    )
+                )
+                return
             result = run_bounded_full_pipeline_benchmark(
                 manifest=manifest,
                 mode=options['mode'],
@@ -72,6 +125,10 @@ class Command(BaseCommand):
                 answer_model=answer_model or None,
                 keep_projects=bool(options.get('keep_projects')),
                 max_provider_calls=options.get('max_provider_calls'),
+                ocr_evidence_enabled=ocr_enabled,
+                ocr_model=ocr_model,
+                ocr_max_attempts=ocr_attempts,
+                ocr_bbox_for_diagrams=ocr_bbox,
             )
         except (
             FullBenchmarkError,
