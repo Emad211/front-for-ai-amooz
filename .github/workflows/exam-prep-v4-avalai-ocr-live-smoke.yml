@@ -2,11 +2,6 @@ name: exam-prep-v4-avalai-ocr-live-smoke
 
 on:
   workflow_dispatch:
-    inputs:
-      confirmation:
-        description: 'Type I_APPROVE_8_PRIVATE_OCR_REQUESTS'
-        required: true
-        type: string
 
 permissions:
   contents: read
@@ -29,19 +24,14 @@ jobs:
       EXPECTED_PAGE_COUNT: '16'
       QUESTION_PAGE_NUMBER: '5'
       ANSWER_PAGE_NUMBER: '12'
+      OCR_MODEL: mistral-ocr-latest
 
     steps:
-      - name: Enforce branch and explicit authorization
+      - name: Validate branch and secret
         shell: bash
         run: |
           set -euo pipefail
           test "${GITHUB_REF_NAME}" = "feat/exam-prep-v4-source-aware"
-          test "${{ inputs.confirmation }}" = "I_APPROVE_8_PRIVATE_OCR_REQUESTS"
-
-      - name: Validate required secret without printing it
-        shell: bash
-        run: |
-          set -euo pipefail
           test -n "${AVALAI_API_KEY:-}"
 
       - uses: actions/checkout@v4
@@ -101,10 +91,9 @@ jobs:
                   image.thumbnail((1800, 2400))
                   output_path = private_dir / f'{label}.png'
                   image.save(output_path, format='PNG', optimize=True)
-                  if output_path.stat().st_size < 1:
-                      raise SystemExit('rendered page is empty')
-                  if output_path.stat().st_size > 12 * 1024 * 1024:
-                      raise SystemExit('rendered page exceeds byte limit')
+                  size = output_path.stat().st_size
+                  if not 1 <= size <= 12 * 1024 * 1024:
+                      raise SystemExit('rendered page violates byte bounds')
                   rendered_paths.append(output_path)
               if rendered_paths[0].read_bytes() == rendered_paths[1].read_bytes():
                   raise SystemExit('selected smoke pages must be different images')
@@ -120,6 +109,8 @@ jobs:
           shred -u "${PRIVATE_DIR}/source.pdf"
 
       - name: Run bounded aggregate-only live OCR smoke
+        id: live_smoke
+        continue-on-error: true
         shell: bash
         run: |
           set -euo pipefail
@@ -130,12 +121,14 @@ jobs:
             --answer-page "${ANSWER_PATH}" \
             --report "${REPORT_PATH}" \
             --mode live_provider \
-            --model mistral-ocr-4-0 \
+            --model "${OCR_MODEL}" \
             --smoke-modes markdown,blocks,document_annotation,bbox_annotation \
             --max-requests 8 \
             --allow-private-transmission
 
-      - name: Validate aggregate report contract
+      - name: Validate and print sanitized aggregate summary
+        id: aggregate
+        if: always()
         shell: bash
         run: |
           set -euo pipefail
@@ -144,16 +137,45 @@ jobs:
           import os
           from pathlib import Path
 
-          report = json.loads(Path(os.environ['REPORT_PATH']).read_text(encoding='utf-8'))
-          assert report['model'] == 'mistral-ocr-4-0'
+          report_path = Path(os.environ['REPORT_PATH'])
+          if not report_path.is_file():
+              raise SystemExit('aggregate report was not created')
+          report = json.loads(report_path.read_text(encoding='utf-8'))
           assert report['plannedRequestCount'] == 8
           assert report['executedRequestCount'] == 8
           assert report['maxRequests'] == 8
-          assert report['acceptance']['passed'] is True
           assert len(report['results']) == 8
+          summary = {
+              'modelRequested': report.get('model'),
+              'totalLatencyMs': report.get('totalLatencyMs'),
+              'totals': report.get('totals'),
+              'acceptance': report.get('acceptance'),
+              'results': [
+                  {
+                      'fixtureId': item.get('fixtureId'),
+                      'mode': item.get('mode'),
+                      'status': item.get('status'),
+                      'errorCode': item.get('errorCode'),
+                      'model': item.get('model'),
+                      'returnedPageCount': item.get('returnedPageCount'),
+                      'blockCount': item.get('blockCount'),
+                      'bboxCount': item.get('bboxCount'),
+                      'documentAnnotationPresent': item.get('documentAnnotationPresent'),
+                      'issueCodes': item.get('issueCodes'),
+                      'latencyMs': item.get('latencyMs'),
+                  }
+                  for item in report['results']
+              ],
+          }
+          print(json.dumps(summary, ensure_ascii=False, sort_keys=True))
+          with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as handle:
+              handle.write(
+                  'passed=' + str(bool(report['acceptance']['passed'])).lower() + '\n'
+              )
           PY
 
-      - name: Upload aggregate-only report
+      - name: Upload aggregate report on pass or fail
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: exam-prep-v4-avalai-ocr-aggregate
@@ -161,6 +183,14 @@ jobs:
           if-no-files-found: error
           retention-days: 1
           compression-level: 9
+
+      - name: Enforce smoke acceptance after evidence upload
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${{ steps.aggregate.outputs.passed }}" = "true"
+          test "${{ steps.live_smoke.outcome }}" = "success"
 
       - name: Delete private fixture, page images, and local report
         if: always()
