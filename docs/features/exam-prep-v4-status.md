@@ -7,14 +7,16 @@
 - **Execution mode:** Critical Path Acceleration
 - **Current roadmap span:** Phase 4 → Phase 7 vertical extraction path
 - **Last completed slice:** fixed and validated the manual live OCR workflow syntax on `main`
-- **Active gate:** product-owner manual dispatch of the bounded two-page live OCR workflow, followed by aggregate evidence recording and workflow removal
-- **Validated feature implementation checkpoint before syntax fix:** `3bc8814726cf2218d3b8534ce6b0d74120e2c4f1`
+- **Active gate:** inspect the failed manual live OCR run, establish the exact failing step and executed request count, then patch only that failure
+- **Validated feature implementation checkpoint before live run:** `3bc8814726cf2218d3b8534ce6b0d74120e2c4f1`
 - **Focused workflow:** `30850414707`
 - **Backend job:** `91808774481`
 - **Frontend job:** `91808774469`
 - **Focused result:** 235 backend tests passed; frontend focused validation passed
-- **Valid manual live workflow commit on main:** `867817effb4df7669c4d1ec04f2775e25d615201`
-- **Feature workflow syntax/test commits:** `19836ec62d18db99e25bc318baeb4d575fcb19f6`, `f16f57619982ae5418546a1db0773d436d31afa0`
+- **Current manual live workflow on main:** `867817effb4df7669c4d1ec04f2775e25d615201`
+- **Latest manual run state reported by product owner:** failed
+- **Exact workflow run/job ID:** pending recovery
+- **Exact external request count:** unknown; rerun prohibited until recovered
 - **Last updated:** 2026-08-04
 
 ## Progress
@@ -128,43 +130,34 @@ The same correction was applied to the feature-branch workflow and enforced by a
 
 The obsolete push marker was removed. No live OCR request was issued by the invalid workflow or the connector-generated push attempt.
 
-## Current manual workflow
+## Current failed manual run
 
-```text
-.github/workflows/exam-prep-v4-avalai-ocr-one-shot.yml
-main commit: 867817effb4df7669c4d1ec04f2775e25d615201
-```
+The product owner manually started the corrected workflow and reported a failure. No sanitized aggregate comment has appeared on PR #4, so the terminal stage and request count are not yet proven.
 
-The workflow is `workflow_dispatch`-only and requires:
+Until the exact run/job is inspected:
 
-```text
-I_APPROVE_8_PRIVATE_OCR_REQUESTS
-```
+- do not rerun;
+- do not modify production routing;
+- do not increase roadmap credit;
+- do not assume zero or eight provider requests;
+- do not infer the error from the absence of a PR comment.
 
-It checks out V4 code, sparse-checks out only the first PDF, renders pages 5 and 12, executes the bounded smoke, uploads only aggregate evidence, posts a sanitized PR comment, and cleans private temporary files.
+## Active investigation contract
 
-## User action required now
+Only this sequence is allowed:
 
-In GitHub:
+1. recover the manual workflow run URL/ID;
+2. fetch job steps and complete logs;
+3. identify the exact first failing step;
+4. determine whether the live command started and, if so, how many requests completed;
+5. patch only the demonstrated failure;
+6. run static/focused CI before any bounded retry;
+7. update this ledger and the OCR runbook with evidence.
 
-```text
-Actions
-→ exam-prep-v4-avalai-ocr-one-shot
-→ Run workflow
-→ Branch: main
-→ confirmation: I_APPROVE_8_PRIVATE_OCR_REQUESTS
-→ Run workflow
-```
+## User action required only if connector discovery is insufficient
 
-Run it once only. After starting it, report only `شروع شد`.
+Provide only the GitHub Actions run URL from the browser address bar. Do not paste logs, the API key, PDF content, OCR output, or screenshots containing secrets.
 
 ## Exact continuation point
 
-After the single manual workflow run starts:
-
-1. inspect the sanitized PR comment and workflow result;
-2. determine exact executed request count and terminal status;
-3. record measured evidence in this ledger and the OCR runbook;
-4. remove the manual workflow from `main`;
-5. decide OCR-first, transcription-only, diagram-only, or rejected;
-6. do not change production routing or the 42/77 score before evidence review.
+Recover and inspect the failed run. Then fix only the proven cause, update this ledger before retry, and keep the 42/77 score unchanged until measured OCR evidence is reviewed.
