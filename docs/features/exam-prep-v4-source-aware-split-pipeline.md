@@ -88,7 +88,7 @@ Private source previews must use explicit authenticated endpoints with owner/pro
 - no valid sibling record lost due to one malformed record;
 - no private object leaked through response metadata;
 - accepted warm reruns invoke no provider calls;
-- rollout is blocked until private benchmark metrics are recorded.
+- rollout is blocked until private benchmark metrics are recorded or explicitly waived with risk retained.
 
 ---
 
@@ -135,23 +135,25 @@ Legend:
 - [x] Aggregate page roles into deterministic segment proposals.
 - [x] Add owner-scoped source-map and private thumbnail read APIs.
 - [x] Add classification usage/fingerprint/warm-reuse tracking.
-- [-] Run and record private-fixture structural, latency, usage, and warm-rerun benchmark evidence.
+- [-] Run and record private-fixture structural, latency, usage, and warm-rerun benchmark evidence. **Deferred by product owner on 2026-08-03; not credited.**
 
 **Exit gate:** The three private fixtures produce the correct independent segment maps without full-quality OCR, aggregate latency/usage is recorded, and an unchanged accepted warm rerun makes zero provider calls.
 
-**Phase state:** 8/9 credited. The privacy-safe harness and fake-provider CI are complete; only the recorded real three-fixture live-provider run remains.
+**Phase state:** 8/9 credited. Harness and synthetic coverage are complete; the real run remains open under an explicit product-owner waiver.
 
 ### Phase 3 — Teacher source-map confirmation and virtual tools
 
 - [ ] Build simple source-map UI.
-- [ ] Support boundary changes and role changes.
-- [ ] Support ignore, rotate, and reorder metadata.
+- [-] Support boundary changes and role changes. **Revision-safe backend and APIs complete; teacher UI pending.**
+- [-] Support ignore, rotate, and reorder metadata. **Ignore/rotation backend complete; reorder and UI pending.**
 - [ ] Add explicit split-into-separate-exams action.
 - [ ] Add explicit group-documents action later behind a separate control.
-- [ ] Persist revisions and invalidate stale classification.
+- [x] Persist revisions and invalidate stale classification.
 - [ ] Add accessibility and RTL tests.
 
 **Exit gate:** A nontechnical teacher can correct each benchmark source map without opening an advanced editor.
+
+**Phase state:** 1/7 credited. Backend correction/confirmation foundation is verified; UI and remaining virtual tools are open.
 
 ### Phase 4 — Page layout and block detection
 
@@ -243,7 +245,7 @@ Legend:
 
 ### Verified implementation
 
-- source-domain models and migration;
+- source-domain models and migrations `0040` and `0041`;
 - project isolation and constraints;
 - private PDF preparation, renders, and thumbnails;
 - tolerant fast page-role classification contract;
@@ -251,22 +253,39 @@ Legend:
 - multi-PDF intake with one project/task per PDF;
 - owner-scoped project list and source-map detail;
 - owner-scoped private thumbnail streaming with no storage fallback;
-- privacy-safe benchmark management command with explicit fake/live modes;
-- strict local manifest validation for the three structural patterns;
-- aggregate-only benchmark reports with no source paths, filenames, text, image bytes, model payloads, storage keys, or database IDs;
-- default benchmark project/blob cleanup;
-- accepted unchanged warm-rerun verification with zero provider calls;
-- private media denial and lifecycle tests.
+- privacy-safe benchmark harness with fake/live modes and aggregate-only output;
+- product-owner waiver retaining the unmeasured real benchmark risk;
+- canonical structural Source Map fingerprint;
+- complete-map teacher mutation with optimistic revision checks;
+- preservation of classifier predictions and separate teacher overrides;
+- role/ignored/orientation metadata edits;
+- deterministic segment reconstruction;
+- prior revision segment supersession and bounded structural history;
+- stale classification and confirmation invalidation;
+- exact revision/fingerprint confirmation;
+- owner-scoped mutation and confirmation endpoints;
+- transaction rollback, retry, stale-write, privacy, and confirmation tests.
+
+### Current endpoints
+
+```text
+POST /api/classes/exam-prep-v4/projects/
+GET  /api/classes/exam-prep-v4/projects/
+GET  /api/classes/exam-prep-v4/projects/<project_id>/
+PUT  /api/classes/exam-prep-v4/projects/<project_id>/documents/<document_id>/source-map/
+POST /api/classes/exam-prep-v4/projects/<project_id>/documents/<document_id>/source-map/confirm/
+GET  /api/classes/exam-prep-v4/projects/<project_id>/documents/<document_id>/pages/<page_number>/thumbnail/
+```
 
 ### Latest focused evidence
 
-- validated branch head: `b9426c0dffafa04aa61cc850b814f4df3feba1b7`;
-- workflow run `30778629588`;
-- job `91578823573`;
+- validated branch head: `3e65e7391feec798b9e893dae5071d7ec7c2e988`;
+- workflow run `30780894549`;
+- job `91585164044`;
 - PostgreSQL 16 and Redis 7;
 - system check clean;
 - migration drift clean;
-- `128 passed, 33 warnings in 12.36s`.
+- `150 passed, 42 warnings in 12.74s`.
 
 Warnings are limited to the CI checkout lacking generated `backend/staticfiles/` while API tests initialize Django handlers.
 
@@ -274,28 +293,17 @@ Warnings are limited to the CI checkout lacking generated `backend/staticfiles/`
 
 The canonical roadmap contains 77 checklist deliverables:
 
-- credited: 19;
+- credited: 20;
 - total: 77;
-- **overall completion: 24.7%**;
-- **Phase 2 completion: 88.9% (8/9)**.
+- **overall completion: 26.0%**;
+- **Phase 2: 88.9% (8/9), one item deferred**;
+- **Phase 3: 14.3% (1/7)**.
 
-The harness implementation does not receive the ninth Phase 2 credit by itself. That credit requires a recorded live-provider run over all three private fixtures.
-
-### Current blocker and user action
-
-The next operation requires an execution environment that can access both the repository backend and the three private PDFs. The user must identify whether the live benchmark will run on the local development machine or a staging/backend server, and make the following available there:
-
-- all three private PDFs;
-- a local manifest based on `docs/runbooks/exam-prep-v4-benchmark-manifest.example.json`;
-- the configured classification model;
-- `AVALAI_API_KEY` as a local/deployment secret;
-- a private aggregate-output path outside Git.
-
-Credentials must not be pasted into chat or committed.
+Only the revision/invalidation deliverable receives new credit. Backend portions of role/boundary and ignore/rotation remain in progress until UI/reorder acceptance is satisfied.
 
 ### Next verified step
 
-Run only the real Phase 2 classify-and-segment benchmark, record aggregate pass/fail evidence, and keep Phase 3 and Phase 4 blocked unless the entire exit gate passes.
+Implement only the simple RTL/accessibility-conscious teacher source-map UI over the verified APIs. Do not begin Phase 4 block detection until the Phase 3 UI/correction flow passes its own tests and the status ledger is updated again.
 
 ---
 
@@ -344,3 +352,11 @@ A missing V4 thumbnail may not fall back to default or legacy storage. The owner
 ### D-011 — Benchmark execution is explicit and aggregate-only
 
 Benchmark mode has no implicit default. Fake-provider and live-provider modes must be chosen explicitly, every fixture remains an independent project, report-visible fixture IDs are anonymous, and no private source data or raw model payload may enter command output or the aggregate report.
+
+### D-012 — Real benchmark deferred by product owner
+
+The product owner explicitly chose to continue development without running the local live Phase 2 benchmark. The gate remains open, receives no credit, and its accuracy/latency/cost risk remains visible until resumed.
+
+### D-013 — Complete-map optimistic mutations and exact confirmation binding
+
+Teacher corrections replace the complete structural page map under an expected revision. Accepted edits create a new revision, preserve prior audit history, and invalidate stale state. Confirmation is valid only for the exact current revision and structural Source Map fingerprint.
