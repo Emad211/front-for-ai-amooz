@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - '.github/workflows/exam-prep-v4.yml'
+      - '.github/workflows/exam-prep-v4-avalai-ocr-live-smoke.yml'
       - 'backend/apps/classes/apps.py'
       - 'backend/apps/classes/models_v4.py'
       - 'backend/apps/classes/signals.py'
