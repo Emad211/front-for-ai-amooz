@@ -127,6 +127,7 @@ def _safe_document_issues(document: ExamSourceDocument) -> list[dict[str, Any]]:
 def _serialize_page(page: ExamSourcePage) -> dict[str, Any]:
     return {
         'pageNumber': page.page_number,
+        'displayOrder': page.display_order,
         'predictedRole': page.predicted_role,
         'predictedConfidence': float(page.predicted_confidence),
         'teacherRole': page.teacher_role or None,
@@ -139,13 +140,68 @@ def _serialize_page(page: ExamSourcePage) -> dict[str, Any]:
     }
 
 
-def _serialize_segment(segment: ExamSourceSegment) -> dict[str, Any]:
+def _safe_segment_page_numbers(
+    segment: ExamSourceSegment,
+    *,
+    page_count: int,
+) -> list[int]:
+    metadata = segment.metadata if isinstance(segment.metadata, dict) else {}
+    raw = metadata.get('pageNumbers')
+    if not isinstance(raw, list):
+        return [segment.start_page] if segment.start_page == segment.end_page else [
+            segment.start_page,
+            segment.end_page,
+        ]
+    result: list[int] = []
+    for value in raw:
+        try:
+            number = int(value)
+        except (TypeError, ValueError):
+            continue
+        if 1 <= number <= page_count and number not in result:
+            result.append(number)
+    return result
+
+
+def _safe_segment_display_bound(
+    segment: ExamSourceSegment,
+    key: str,
+    *,
+    page_count: int,
+) -> int | None:
+    metadata = segment.metadata if isinstance(segment.metadata, dict) else {}
+    try:
+        value = int(metadata.get(key))
+    except (TypeError, ValueError):
+        return None
+    return value if 1 <= value <= page_count else None
+
+
+def _serialize_segment(
+    segment: ExamSourceSegment,
+    *,
+    page_count: int,
+) -> dict[str, Any]:
     return {
         'id': segment.id,
         'revision': segment.revision,
         'order': segment.order,
         'startPage': segment.start_page,
         'endPage': segment.end_page,
+        'displayOrderStart': _safe_segment_display_bound(
+            segment,
+            'displayOrderStart',
+            page_count=page_count,
+        ),
+        'displayOrderEnd': _safe_segment_display_bound(
+            segment,
+            'displayOrderEnd',
+            page_count=page_count,
+        ),
+        'pageNumbers': _safe_segment_page_numbers(
+            segment,
+            page_count=page_count,
+        ),
         'role': segment.role,
         'predictedRole': segment.predicted_role,
         'predictedConfidence': float(segment.predicted_confidence),
@@ -165,9 +221,10 @@ def _safe_source_map_fingerprint(
         return document.source_map_fingerprint
     if document.page_count < 1 or len(pages) != document.page_count:
         return None
-    if [page.page_number for page in pages] != list(
-        range(1, document.page_count + 1)
-    ):
+    expected = list(range(1, document.page_count + 1))
+    if sorted(page.page_number for page in pages) != expected:
+        return None
+    if sorted(page.display_order for page in pages) != expected:
         return None
     return source_map_fingerprint(
         structural_page_map_from_models(pages),
@@ -228,6 +285,7 @@ def get_teacher_project_source_map(*, teacher, project_id: int) -> dict[str, Any
             'id',
             'document_id',
             'page_number',
+            'display_order',
             'thumbnail_file',
             'width',
             'height',
@@ -236,7 +294,7 @@ def get_teacher_project_source_map(*, teacher, project_id: int) -> dict[str, Any
             'teacher_role',
             'orientation',
             'duplicate_of_id',
-        ).order_by('document_id', 'page_number')
+        ).order_by('document_id', 'display_order', 'page_number')
         for page in pages:
             pages_by_document[page.document_id].append(page)
 
@@ -265,6 +323,7 @@ def get_teacher_project_source_map(*, teacher, project_id: int) -> dict[str, Any
                 'expected_number_start',
                 'expected_number_end',
                 'status',
+                'metadata',
             )
             .order_by('document_id', 'order', 'id')
         )
@@ -313,7 +372,10 @@ def get_teacher_project_source_map(*, teacher, project_id: int) -> dict[str, Any
                 'updatedAt': document.updated_at,
                 'pages': [_serialize_page(page) for page in document_pages],
                 'segments': [
-                    _serialize_segment(segment)
+                    _serialize_segment(
+                        segment,
+                        page_count=document.page_count,
+                    )
                     for segment in segments_by_document.get(document.id, [])
                 ],
             }
