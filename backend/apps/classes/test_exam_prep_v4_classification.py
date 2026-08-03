@@ -308,6 +308,11 @@ def test_persist_classification_respects_existing_teacher_page_override():
         display_order=1,
         teacher_role=ExamSourceRole.COVER,
     )
+    ExamSourcePage.objects.create(
+        document=document,
+        page_number=2,
+        display_order=2,
+    )
 
     persist_classification_result(
         document_id=document.id,
