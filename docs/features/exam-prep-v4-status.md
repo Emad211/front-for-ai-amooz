@@ -46,30 +46,19 @@ The only permitted next operation is:
 
 ## Verified benchmark harness
 
-### Management command
-
 ```text
 python backend/manage.py benchmark_exam_prep_v4
 ```
 
-- requires exactly one explicit mode: `--fake-provider` or `--live-provider`;
-- accepts a local non-committed manifest through `--manifest`;
-- supports aggregate JSON output through `--output`;
-- supports optional `--model` override;
-- creates one independent project/document per fixture;
-- deletes temporary projects and private blobs by default;
-- permits `--keep-projects` only with an explicit existing teacher ID;
-- returns nonzero when any fixture fails;
-- fails before writes when live model configuration or credentials are missing.
-
-### Manifest and privacy contract
-
-- exactly three fixtures and manifest version 1;
-- anonymous unique IDs matching `[a-z0-9][a-z0-9_-]{0,63}`;
-- strict unknown-key, page-range, role, pattern, file-existence, and PDF validation;
-- no paths, filenames, hashes, keys, image bytes, text, payloads, database IDs, credentials, or raw provider errors in reports;
-- structures A/B/C retained independently;
-- warm reuse requires zero new provider calls, tokens, and cost.
+- explicit `--fake-provider` or `--live-provider` mode;
+- strict three-fixture manifest and anonymous fixture IDs;
+- one independent project/document per fixture;
+- aggregate-only report;
+- no private paths, filenames, hashes, keys, images, text, payloads, database IDs, credentials, or raw provider errors;
+- default cleanup of projects and private blobs;
+- nonzero result for failed acceptance;
+- live preflight before writes;
+- unchanged accepted warm reuse with zero provider calls/tokens/cost.
 
 ## Latest focused CI evidence
 
@@ -77,7 +66,6 @@ python backend/manage.py benchmark_exam_prep_v4
 - **Job:** `91578823573`
 - **Head:** `b9426c0dffafa04aa61cc850b814f4df3feba1b7`
 - **Environment:** Python 3.12, PostgreSQL 16, Redis 7
-- **Result:** success
 
 ```text
 System check identified no issues (0 silenced).
