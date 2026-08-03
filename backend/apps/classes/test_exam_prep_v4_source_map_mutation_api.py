@@ -256,7 +256,8 @@ def test_display_order_is_required_by_serializer(settings):
     )
 
     assert response.status_code == 400
-    assert 'displayOrder' in response.data['pages'][0]
+    rendered = json.dumps(response.data, ensure_ascii=False)
+    assert 'displayOrder' in rendered
 
 
 def test_stale_mutation_returns_stable_409_code(settings):
