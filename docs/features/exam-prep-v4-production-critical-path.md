@@ -1,10 +1,8 @@
 # Exam Prep V4 — Production Critical Path
 
-> This is the execution overlay for finishing V4 quickly. The canonical architecture remains `exam-prep-v4-source-aware-split-pipeline.md`. Real provider validation is performed manually by the owner in the deployed production environment; development and CI must not make live AvalAI calls.
+> This execution overlay prioritizes a production-callable teacher flow. Real provider validation is performed manually by the owner in the deployed environment; development and CI make no live AvalAI calls.
 
 ## Goal
-
-Move the existing V4 source-aware engine from a benchmark/test-callable implementation to a production-callable teacher workflow:
 
 ```text
 upload PDF
@@ -16,32 +14,25 @@ upload PDF
 → answer-solution extraction
 → deterministic matching
 → exception-only review
-→ projection/publication
+→ backward-compatible projection
+→ publication through the existing student Exam Prep flow
 ```
-
-## Non-goals for the critical path
-
-- no live provider smoke or benchmark from CI;
-- no provider-quality gate that blocks coding;
-- no rewrite of V3 infrastructure;
-- no broad refactor unrelated to the teacher workflow;
-- no hidden provider/model fallback;
-- no raw source text, image bytes, prompts, model output or credentials in logs.
 
 ## Execution rules
 
-1. Update `exam-prep-v4-status.md` before each implementation slice.
-2. Keep V4 behind `EXAM_PREP_V4_ENABLED`.
-3. All heavy work runs on the `pipeline` Celery queue.
-4. Source-map confirmation is the only automatic extraction trigger.
-5. Every run has a stable `runId` and Celery `taskId` visible in the API and logs.
-6. Retries reuse accepted blocks/records and never overwrite accepted history.
-7. Production logs are structured, content-free and correlation-friendly.
-8. CI uses fake providers and contract tests only; the owner validates real accuracy in deployment.
+1. Keep V4 behind `EXAM_PREP_V4_ENABLED`.
+2. Select structured/OCR models from environment only.
+3. Run heavy work on the `pipeline` Celery queue.
+4. Source Map confirmation dispatches only the exact current revision/fingerprint.
+5. Every extraction run exposes `runId` and Celery `taskId` in API/state/logs.
+6. Accepted blocks/records are reused and historical accepted evidence is not overwritten.
+7. Logs are structured, content-free and correlation-friendly.
+8. CI uses fake providers and contract tests only.
+9. The owner measures real accuracy, latency, calls and cost in deployment.
 
 ## Production log contract
 
-Every V4 production event is emitted as one JSON object in the log message with these common fields:
+Common safe fields:
 
 ```text
 event
@@ -60,7 +51,7 @@ status
 errorCode
 ```
 
-Optional safe counters:
+Safe counters:
 
 ```text
 pageCount
@@ -82,136 +73,148 @@ ocrFallbackCount
 Forbidden log data:
 
 ```text
-original filename or object key
+filename or object key
 PDF/image bytes or base64
 native/OCR text
 question/option/solution text
-raw model response
-prompt body
+prompt or raw model response
 API key or authorization header
-full traceback returned to the client
+private exception detail returned to clients
 ```
 
-Required production events:
+Logger:
 
 ```text
-exam_prep_v4.extraction.dispatch_requested
-exam_prep_v4.extraction.dispatch_reused
-exam_prep_v4.extraction.task_started
-exam_prep_v4.extraction.stage_started
-exam_prep_v4.extraction.stage_completed
-exam_prep_v4.extraction.task_completed
-exam_prep_v4.extraction.task_failed
-exam_prep_v4.extraction.task_retried
-exam_prep_v4.extraction.task_skipped
+apps.classes.exam_prep_v4
 ```
 
 ## Slice P1 — Production orchestration and observability
 
-**State: active**
+**State: complete**
 
-Deliverables:
+Completed:
 
-- add a production extraction Celery task;
-- dispatch it after exact Source Map confirmation;
-- keep dispatch idempotent for one document revision/fingerprint;
-- support optional OCR evidence only through existing environment configuration;
-- add structured run/stage/provider logs;
-- put `runId`, `taskId`, stage and safe counters in `workflow_state`;
-- route the task explicitly to the `pipeline` queue;
-- preserve warm reuse and current revision/fingerprint guards;
-- mark failures with stable safe error codes and retain retryability.
+- production extraction Celery task;
+- automatic dispatch after exact Source Map confirmation;
+- revision/fingerprint idempotency;
+- optional OCR evidence through environment only;
+- structured run/stage/batch/provider events;
+- `runId`, `taskId`, stage and safe counters in `workflow_state`;
+- explicit `pipeline` queue routing;
+- warm/partial reuse;
+- bounded transient retries and explicit terminal Celery failures;
+- safe error codes and deployment configuration.
 
-Exit condition:
+## Slice P2 — Status, retry and cancellation
 
-- confirmation returns an extraction correlation ID;
-- project polling shows queued/running/completed/failed state;
-- deployment logs can reconstruct one run without exposing source content.
+**State: complete**
 
-## Slice P2 — Status and controlled retry API
+Completed:
 
-**State: queued after P1**
-
-Deliverables:
-
-- owner-scoped extraction status endpoint;
-- owner-scoped retry endpoint;
-- retry only the current confirmed revision;
-- return existing active run instead of creating duplicate work;
-- expose safe stage counters and issue codes;
-- frontend polls while the project is in a running state;
-- failed projects show a retry action and correlation ID.
-
-Exit condition:
-
-- the owner can start, observe and retry production extraction without shell access.
+- owner-scoped extraction status API;
+- owner-scoped retry API for the current confirmed revision;
+- duplicate active-run refusal/reuse;
+- active frontend polling;
+- runtime panel with Run ID, Task ID, stage, progress and counters;
+- failed/cancelled-state retry;
+- cooperative cancellation API/UI;
+- cancellation checkpoints before and after provider stages/batches;
+- non-terminating Celery revoke request.
 
 ## Slice P3 — Exception review
 
-**State: not started**
+**State: complete for the production flow; dedicated persisted issue rows remain a canonical hardening item**
 
-Deliverables:
+Completed:
 
-- issue read model/API for invalid/missing block records and matcher exceptions;
+- exception read queue/API derived from current match decisions;
+- immutable teacher review-decision model;
 - exception-only teacher UI;
-- teacher decisions: match, ignore, out-of-scope, retry record;
-- decisions bound to current question/answer set fingerprints;
-- no accepted historical record mutation.
+- match, ignore and out-of-scope decisions;
+- exact question/answer/match fingerprint binding;
+- stale-review refusal;
+- review finalization and `ready_to_publish` transition.
 
-Exit condition:
+Remaining hardening:
 
-- a teacher can resolve all unresolved/ambiguous/conflict cases and reach a review-complete state.
+- separately persisted issue rows for parser/integrity problems beyond match exceptions;
+- record-specific retry controls in the review UI.
 
 ## Slice P4 — Final projection and publication
 
-**State: not started**
+**State: complete**
 
-Deliverables:
+Completed:
 
-- backward-compatible projection into the current Exam Prep student domain;
-- projection fingerprint bound to current V4 revisions;
-- exclude provenance and solution content from unauthorized responses;
-- final teacher confirmation;
-- publish/cancel API and UI;
-- idempotent publication and rollback-safe failure handling.
-
-Exit condition:
-
-- one V4 project can be published and used by a student through the existing product flow.
+- projection into existing `ClassCreationSession` Exam Prep domain;
+- fingerprint-bound, idempotent projection;
+- opaque student question IDs;
+- no V4 provenance/raw payload projection;
+- existing authorized student serializer strips teacher answers/solutions from question delivery;
+- final review/projection binding;
+- projection and publication APIs/UI;
+- existing invitation, scoring and result flow reuse;
+- post-commit roster/SMS hooks with safe failure logging.
 
 ## Slice P5 — Production hardening
 
-**State: not started**
+**State: partially complete**
 
-Deliverables:
+Completed:
 
-- stale task recovery;
-- cancellation checkpoints between stages/batches;
-- orphan/private-artifact cleanup;
-- queue/concurrency/worker-memory controls;
-- aggregate operational metrics;
+- stale active-run recovery task and management command;
+- cooperative cancellation checkpoints;
 - safe error taxonomy and operator runbook;
-- limited-cohort feature-flag rollout and rollback.
+- audit-safe correlated operational events;
+- bounded queue/task/runtime configuration;
+- fake-provider production orchestration/review/projection/publication contracts.
 
-Exit condition:
+Remaining:
 
-- V4 can run repeatedly in production without manual database repair.
+- retention and orphan sweeps;
+- fail-closed project deletion across every V4/projection artifact;
+- private-media denial tests for every artifact path;
+- load/concurrency/worker-memory sizing;
+- limited-cohort monitoring and rollback controls.
 
-## Manual production validation checklist
+## Contract evidence
 
-The owner performs these checks in deployment. They do not block implementation commits:
+```text
+feature head: d7b53393d77c50a53b81f0cba5e7d45367b6c6d8
+validated merge ref: fd137cf8779eff5318cea23ca68fb7dc29f4cdb3
+workflow: 30862683847
+backend job: 91847863122
+frontend job: 91847863181
+Django system check: passed
+migration drift: none
+backend: 261 passed, 49 warnings in 26.03s
+frontend focused TypeScript/state validation: passed
+live provider calls: 0
+```
 
-1. upload each real PDF;
-2. confirm the proposed Source Map;
-3. record `runId` and `taskId`;
-4. follow logs by `runId`;
-5. verify stage progression and final counters;
-6. inspect question, answer-solution and matching output in the review UI/API;
-7. retry one failed or partial run;
-8. verify warm reuse does not repeat accepted work;
-9. record observed latency, provider calls and corrections;
-10. report only concrete failed cases for the next patch.
+## Manual production validation
+
+The owner performs:
+
+1. deploy migrations `0045` and `0046`;
+2. ensure a worker consumes `pipeline`;
+3. upload a real PDF;
+4. confirm Source Map;
+5. copy `runId` and `taskId`;
+6. inspect stage logs and counters;
+7. verify extracted questions, answers and matches;
+8. resolve exception items;
+9. finalize review, build projection and publish;
+10. run the student exam flow;
+11. cancel one active run and retry one terminal run;
+12. report concrete failures with page/question and correlation IDs.
+
+Full operator details:
+
+```text
+docs/runbooks/exam-prep-v4-production-validation.md
+```
 
 ## Immediate continuation point
 
-Implement Slice P1, then P2. Do not run the temporary three-PDF live benchmark and do not start Phase 8 review UI until the production extraction task, status/retry controls and observability are callable end to end.
+The coding critical path is production-callable through publication. Deploy it and let the owner perform real validation. Patch the first concrete correlated production failure without reintroducing a live CI gate. In parallel, complete the remaining P5 cleanup/deletion/media-denial/load/rollout items.
