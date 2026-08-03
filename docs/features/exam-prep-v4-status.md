@@ -12,41 +12,36 @@
 - **Last updated:** 2026-08-03
 - **Latest fully validated code checkpoint:** `b9426c0dffafa04aa61cc850b814f4df3feba1b7`
 - **Latest focused evidence:** run `30778629588`, job `91578823573`, 128 tests passed
-- **Documentation state:** canonical roadmap, runbook, ledger, and local-path manifest template are synchronized after the validated code checkpoint
 
-## Progress calculation
-
-Progress is calculated from the 77 explicit checklist deliverables in the canonical roadmap.
+## Progress
 
 - **Entire V4 roadmap:** **19 / 77 = 24.7%**.
-- **Current Phase 2 checklist:** **8 / 9 = 88.9%**.
+- **Current Phase 2:** **8 / 9 = 88.9%**.
 
 The final Phase 2 credit requires a recorded real-provider run on all three private PDFs. Synthetic/fake-provider success is not model-accuracy evidence.
 
-## Roadmap guardrail
+## Guardrail
 
-No Phase 3 source-map mutation/UI, Phase 4 block detection, question extraction, answer/solution extraction, matching, projection, or publication work may begin until the real Phase 2 benchmark result is recorded.
+No Phase 3 source-map mutation/UI, Phase 4 block detection, extraction, matching, projection, or publication may begin until the real Phase 2 benchmark is recorded.
 
-## Verified benchmark harness
+## Verified harness
 
 ```text
 python backend/manage.py benchmark_exam_prep_v4
 ```
 
-Verified properties:
-
-- explicit fake or live provider mode;
+- explicit fake/live provider mode;
 - strict three-fixture manifest;
-- anonymous report-visible fixture IDs;
-- one independent project/document per fixture;
+- anonymous fixture IDs;
+- independent projects/documents;
 - aggregate-only output;
-- no private paths, filenames, hashes, keys, images, text, payloads, database IDs, credentials, or raw provider errors;
-- default project/private-blob cleanup;
-- live configuration preflight before writes;
-- nonzero result on failed acceptance;
-- unchanged accepted warm reuse with zero new provider calls, tokens, and cost.
+- no private paths, filenames, hashes, keys, images, text, payloads, IDs, credentials, or raw provider errors;
+- default cleanup;
+- preflight before live writes;
+- failed acceptance returns nonzero;
+- unchanged accepted warm reuse makes zero new provider calls/tokens/cost.
 
-## Latest focused evidence
+## Evidence
 
 - run `30778629588`;
 - job `91578823573`;
@@ -59,18 +54,9 @@ No changes detected in app 'classes'.
 128 passed, 33 warnings in 12.36s
 ```
 
-## Real benchmark acceptance gate
+## Real acceptance gate
 
-All three private fixtures must have:
-
-- exact independent project count and page counts;
-- 100% page-role accuracy;
-- exact segment maps;
-- aggregate status `passed`;
-- zero warm provider calls;
-- no private source data in stdout/report.
-
-Any failure leaves Phase 2 open.
+All three private fixtures require exact page/segment maps, 100% page-role accuracy, aggregate `passed`, zero warm provider calls, and no private-data leakage. Any failure leaves Phase 2 open.
 
 ## User action required now
 
@@ -79,17 +65,17 @@ Identify the execution environment:
 - local development machine; or
 - staging/backend server.
 
-On that environment make available:
+On it, make available:
 
 1. the three private PDFs;
-2. a private copy of `docs/runbooks/exam-prep-v4-benchmark-manifest.example.json` with real local paths;
-3. `EXAM_PREP_V4_ENABLED=1`;
+2. a private manifest copy with their local paths;
+3. V4 enabled;
 4. model configuration;
-5. `AVALAI_API_KEY` through a local/deployment secret;
+5. `AVALAI_API_KEY` through local/deployment secrets;
 6. a private output path.
 
 Do not paste credentials into chat or commit them.
 
-## Next verified step
+## Next step
 
-After the user identifies the environment and makes the inputs available, run only the live Phase 2 benchmark and record aggregate pass/fail evidence. Do not begin Phase 3 unless the whole exit gate passes.
+After the environment and inputs are available, run only the live Phase 2 benchmark and record aggregate pass/fail evidence. Do not begin Phase 3 unless the entire gate passes.
