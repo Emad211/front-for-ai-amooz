@@ -36,6 +36,7 @@ PRIVATE_MEDIA_PREFIXES = (
     'exercises/answers/sources/',
     'exam-prep/source/',
     'exam-prep/visuals/',
+    'exam-prep-v4/',
 )
 
 
@@ -54,7 +55,7 @@ class ProxiedS3Storage(S3Boto3Storage):
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        # Apply botocore Config (timeouts, retries) if provided in settings.
+        # Apply botocore Config (timeouts, retries) if present in settings.
         config = getattr(settings, 'AWS_S3_CONFIG', None)
         if config and hasattr(self, 'connection') is False:
             # django-storages >=1.14 reads config from settings automatically
@@ -128,8 +129,8 @@ def media_proxy_view(request, path: str):
     # Reject path traversal attempts.
     if '..' in path or path.startswith('/'):
         raise Http404
-    # Student OCR originals are private educational records. They are served
-    # only by the owner-scoped exercise asset endpoint.
+    # Student OCR originals and exam-prep source artifacts are private
+    # educational records. They are served only by owner-scoped endpoints.
     if path.startswith(PRIVATE_MEDIA_PREFIXES):
         return private_answer_source_media_view(request, path)
 
