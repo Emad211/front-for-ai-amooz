@@ -9,6 +9,7 @@ from .models import (
     ExamPrepVisualAsset,
     StudentExerciseAnswerAsset,
 )
+from .models_v4 import ExamSourceDocument, ExamSourcePage
 
 
 def _delete_blobs_after_commit(names: list[str]) -> None:
@@ -51,3 +52,21 @@ def delete_exam_source_blocks(sender, instance, **kwargs):  # noqa: ARG001
     ]
     if names:
         _delete_blobs_after_commit(names)
+
+
+@receiver(post_delete, sender=ExamSourcePage)
+def delete_exam_v4_page_blobs(sender, instance, **kwargs):  # noqa: ARG001
+    names = [
+        field.name
+        for field in (instance.rendered_file, instance.thumbnail_file)
+        if field and field.name
+    ]
+    if names:
+        _delete_blobs_after_commit(names)
+
+
+@receiver(post_delete, sender=ExamSourceDocument)
+def delete_exam_v4_document_blob(sender, instance, **kwargs):  # noqa: ARG001
+    name = instance.source_file.name if instance.source_file else ''
+    if name:
+        _delete_blobs_after_commit([name])
