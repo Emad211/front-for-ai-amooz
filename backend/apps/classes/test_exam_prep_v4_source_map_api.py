@@ -102,6 +102,7 @@ def _build_sensitive_source_map(teacher):
     ExamSourcePage.objects.create(
         document=document,
         page_number=1,
+        display_order=1,
         rendered_file='exam-prep-v4/source/pages/PRIVATE_RENDER_KEY.png',
         thumbnail_file='exam-prep-v4/source/thumbnails/PRIVATE_THUMB_KEY.jpg',
         width=1000,
@@ -120,6 +121,7 @@ def _build_sensitive_source_map(teacher):
     first_question_page = ExamSourcePage.objects.create(
         document=document,
         page_number=2,
+        display_order=3,
         rendered_file='exam-prep-v4/source/pages/PRIVATE_RENDER_2.png',
         thumbnail_file='exam-prep-v4/source/thumbnails/PRIVATE_THUMB_2.jpg',
         width=1000,
@@ -134,6 +136,7 @@ def _build_sensitive_source_map(teacher):
     ExamSourcePage.objects.create(
         document=document,
         page_number=3,
+        display_order=2,
         rendered_file='exam-prep-v4/source/pages/PRIVATE_RENDER_3.png',
         thumbnail_file='exam-prep-v4/source/thumbnails/PRIVATE_THUMB_3.jpg',
         width=1000,
@@ -167,21 +170,32 @@ def _build_sensitive_source_map(teacher):
         predicted_confidence=Decimal('0.9900'),
         section_key='PRIVATE_SECTION_KEY',
         fingerprint='PRIVATE_SEGMENT_FINGERPRINT',
-        metadata={'raw': 'PRIVATE_SEGMENT_METADATA'},
+        metadata={
+            'raw': 'PRIVATE_SEGMENT_METADATA',
+            'pageNumbers': [1],
+            'displayOrderStart': 1,
+            'displayOrderEnd': 1,
+        },
         error_detail='PRIVATE_SEGMENT_ERROR_DETAIL',
     )
     current_questions = ExamSourceSegment.objects.create(
         document=document,
         revision=2,
         order=1,
-        start_page=2,
-        end_page=3,
+        start_page=3,
+        end_page=2,
         role=ExamSourceRole.QUESTIONS,
         predicted_role=ExamSourceRole.UNKNOWN,
         predicted_confidence=Decimal('0.7900'),
         teacher_confirmed=True,
         expected_number_start=1,
         expected_number_end=20,
+        metadata={
+            'pageNumbers': [3, 2],
+            'displayOrderStart': 2,
+            'displayOrderEnd': 3,
+            'raw': 'PRIVATE_QUESTIONS_METADATA',
+        },
     )
     return project, document, current_cover, current_questions
 
@@ -202,17 +216,13 @@ def _all_keys(value):
 
 def test_list_requires_authentication(settings):
     settings.EXAM_PREP_V4_ENABLED = True
-
     response = APIClient().get(LIST_URL)
-
     assert response.status_code == 401
 
 
 def test_student_cannot_read_teacher_projects(settings):
     settings.EXAM_PREP_V4_ENABLED = True
-
     response = _client(_user('STUDENT')).get(LIST_URL)
-
     assert response.status_code == 403
 
 
@@ -221,7 +231,6 @@ def test_list_and_detail_are_hidden_when_v4_is_disabled(settings):
     teacher = _user()
     project = _project(teacher)
     client = _client(teacher)
-
     assert client.get(LIST_URL).status_code == 404
     assert client.get(_detail_url(project.id)).status_code == 404
 
@@ -236,10 +245,7 @@ def test_list_returns_only_current_teachers_projects_in_updated_order(
     older = _project(teacher, title='قدیمی')
     newer = _project(teacher, title='جدید')
     _project(other, title='نباید دیده شود')
-    ExamSourceDocument.objects.create(
-        project=newer,
-        original_name='private.pdf',
-    )
+    ExamSourceDocument.objects.create(project=newer, original_name='private.pdf')
     ExamProject.objects.filter(id=older.id).update(updated_at='2026-08-01T00:00:00Z')
     ExamProject.objects.filter(id=newer.id).update(updated_at='2026-08-02T00:00:00Z')
 
@@ -257,7 +263,6 @@ def test_list_does_not_expose_scope_ids_or_private_project_fields(settings):
     settings.EXAM_PREP_V4_ENABLED = True
     teacher = _user()
     project, _document, _segment1, _segment2 = _build_sensitive_source_map(teacher)
-
     response = _client(teacher).get(LIST_URL)
 
     assert response.status_code == 200
@@ -281,13 +286,11 @@ def test_other_teacher_receives_404_for_project_detail(settings):
     owner = _user()
     attacker = _user()
     project = _project(owner)
-
     response = _client(attacker).get(_detail_url(project.id))
-
     assert response.status_code == 404
 
 
-def test_detail_returns_complete_safe_current_revision_source_map(
+def test_detail_returns_safe_source_map_in_virtual_order(
     settings,
     django_assert_num_queries,
 ):
@@ -320,20 +323,27 @@ def test_detail_returns_complete_safe_current_revision_source_map(
         {'code': 'missing_page_prediction', 'pageNumber': 2},
         {'code': 'unknown', 'pageNumber': None},
     ]
-    assert [page['pageNumber'] for page in source['pages']] == [1, 2, 3]
-    assert source['pages'][0]['effectiveRole'] == ExamSourceRole.COVER
-    assert source['pages'][0]['hasThumbnail'] is True
-    assert source['pages'][1]['predictedRole'] == ExamSourceRole.ANSWER_SOLUTIONS
-    assert source['pages'][1]['teacherRole'] == ExamSourceRole.QUESTIONS
-    assert source['pages'][1]['effectiveRole'] == ExamSourceRole.QUESTIONS
-    assert source['pages'][1]['orientation'] == 90
-    assert source['pages'][2]['isDuplicate'] is True
+    assert [page['pageNumber'] for page in source['pages']] == [1, 3, 2]
+    assert [page['displayOrder'] for page in source['pages']] == [1, 2, 3]
+    by_number = {page['pageNumber']: page for page in source['pages']}
+    assert by_number[1]['effectiveRole'] == ExamSourceRole.COVER
+    assert by_number[1]['hasThumbnail'] is True
+    assert by_number[2]['predictedRole'] == ExamSourceRole.ANSWER_SOLUTIONS
+    assert by_number[2]['teacherRole'] == ExamSourceRole.QUESTIONS
+    assert by_number[2]['effectiveRole'] == ExamSourceRole.QUESTIONS
+    assert by_number[2]['orientation'] == 90
+    assert by_number[3]['isDuplicate'] is True
 
     assert [segment['id'] for segment in source['segments']] == [
         current_cover.id,
         current_questions.id,
     ]
     assert all(segment['revision'] == 2 for segment in source['segments'])
+    assert source['segments'][1]['startPage'] == 3
+    assert source['segments'][1]['endPage'] == 2
+    assert source['segments'][1]['displayOrderStart'] == 2
+    assert source['segments'][1]['displayOrderEnd'] == 3
+    assert source['segments'][1]['pageNumbers'] == [3, 2]
     assert source['segments'][1]['expectedNumberStart'] == 1
     assert source['segments'][1]['expectedNumberEnd'] == 20
     assert source['segments'][1]['teacherConfirmed'] is True
@@ -343,7 +353,6 @@ def test_detail_response_contains_no_private_content_or_storage_identifiers(sett
     settings.EXAM_PREP_V4_ENABLED = True
     teacher = _user()
     project, _document, _segment1, _segment2 = _build_sensitive_source_map(teacher)
-
     response = _client(teacher).get(_detail_url(project.id))
 
     assert response.status_code == 200
@@ -391,6 +400,7 @@ def test_detail_response_contains_no_private_content_or_storage_identifiers(sett
         'PRIVATE_SECTION_KEY',
         'PRIVATE_SEGMENT_FINGERPRINT',
         'PRIVATE_SEGMENT_METADATA',
+        'PRIVATE_QUESTIONS_METADATA',
         'PRIVATE_SEGMENT_ERROR_DETAIL',
         'PRIVATE_ORGANIZATION_NAME',
         'PRIVATE_STUDY_GROUP_NAME',
@@ -404,9 +414,7 @@ def test_detail_with_no_documents_returns_empty_source_map(settings):
     settings.EXAM_PREP_V4_ENABLED = True
     teacher = _user()
     project = _project(teacher)
-
     response = _client(teacher).get(_detail_url(project.id))
-
     assert response.status_code == 200
     assert response.data['documentCount'] == 0
     assert response.data['documents'] == []
@@ -414,7 +422,5 @@ def test_detail_with_no_documents_returns_empty_source_map(settings):
 
 def test_nonexistent_project_returns_404(settings):
     settings.EXAM_PREP_V4_ENABLED = True
-
     response = _client(_user()).get(_detail_url(999999))
-
     assert response.status_code == 404
