@@ -56,14 +56,15 @@ def test_display_order_must_be_unique_inside_document():
 
 def test_display_order_must_be_positive():
     document = _document(page_count=1)
+    page = ExamSourcePage.objects.create(
+        document=document,
+        page_number=1,
+        display_order=1,
+    )
 
     with pytest.raises(IntegrityError):
         with transaction.atomic():
-            ExamSourcePage.objects.create(
-                document=document,
-                page_number=1,
-                display_order=0,
-            )
+            ExamSourcePage.objects.filter(id=page.id).update(display_order=0)
 
 
 def test_same_display_order_is_allowed_in_separate_documents():
