@@ -24,6 +24,10 @@ LOGGER = logging.getLogger('apps.classes.exam_prep_v4')
 _SAFE_CODE = re.compile(r'^[A-Za-z0-9_.:-]{1,160}$')
 
 
+class ExtractionRunCancelled(RuntimeError):
+    """Raised at bounded stage/batch boundaries after a teacher cancellation."""
+
+
 @dataclass(frozen=True, slots=True)
 class ExtractionRunContext:
     run_id: str
@@ -161,7 +165,7 @@ _STAGE_CONFIG = {
 
 
 class ObservedExamPrepV4Provider:
-    """Log provider-stage timing without exposing provider input or output."""
+    """Log provider-stage timing and enforce cancellation at safe boundaries."""
 
     def __init__(self, *, delegate: Any, context: ExtractionRunContext) -> None:
         self.delegate = delegate
@@ -174,6 +178,22 @@ class ObservedExamPrepV4Provider:
 
     def __getattr__(self, name: str):
         return getattr(self.delegate, name)
+
+    def _assert_not_cancelled(self, *, stage: str, operation: str) -> None:
+        cancelled = ExamProject.objects.filter(
+            id=self.context.project_id,
+            cancel_requested=True,
+        ).exists()
+        if not cancelled:
+            return
+        emit_v4_event(
+            'exam_prep_v4.extraction.cancellation_checkpoint',
+            context=self.context,
+            stage=stage,
+            operation=operation,
+            providerCalls=self.provider_calls,
+        )
+        raise ExtractionRunCancelled('Exam Prep V4 extraction was cancelled.')
 
     def _enter_stage(self, stage: str) -> None:
         if stage == self._last_stage:
@@ -197,6 +217,7 @@ class ObservedExamPrepV4Provider:
         safe_fields: Mapping[str, Any],
         kwargs: Mapping[str, Any],
     ) -> Any:
+        self._assert_not_cancelled(stage=stage, operation=operation)
         self._enter_stage(stage)
         started = time.monotonic()
         calls_before = self.provider_calls
@@ -210,6 +231,9 @@ class ObservedExamPrepV4Provider:
         )
         try:
             result = callback(**dict(kwargs))
+            self._assert_not_cancelled(stage=stage, operation=operation)
+        except ExtractionRunCancelled:
+            raise
         except Exception as exc:
             emit_v4_event(
                 'exam_prep_v4.extraction.stage_failed',
