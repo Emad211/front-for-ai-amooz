@@ -10,7 +10,8 @@
 - **Next slice:** Private benchmark harness for the Phase 2 exit gate
 - **State:** Thumbnail delivery is verified; Phase 3 and Phase 4 have not started
 - **Last updated:** 2026-08-03
-- **Verified checkpoint:** `8f38978266f55955a76ed2b4185b19ad74ac78e0`
+- **Latest fully validated checkpoint:** `65baef2f0c9bc67ce99a978df730ba7fa24d1c84`
+- **Note:** the commit containing this ledger update follows the validated checkpoint and changes documentation only.
 
 ## Overall progress calculation
 
@@ -174,23 +175,23 @@ Verified behavior:
 
 ## Focused CI evidence
 
-Latest successful focused workflow:
+Latest fully validated workflow:
 
-- **Run:** `30777631820`
-- **Job:** `91576032877`
-- **Head:** `8f38978266f55955a76ed2b4185b19ad74ac78e0`
+- **Run:** `30777760405`
+- **Job:** `91576402385`
+- **Head:** `65baef2f0c9bc67ce99a978df730ba7fa24d1c84`
 - **Environment:** Python 3.12, PostgreSQL 16, Redis 7
 - **Result:** success
 
 ```text
 System check identified no issues (0 silenced).
 No changes detected in app 'classes'.
-114 passed, 33 warnings in 9.02s
+114 passed, 33 warnings in 7.37s
 ```
 
 All warnings are the existing CI-only warning that `backend/staticfiles/` has not been generated while API/private-media tests initialize Django handlers.
 
-The immediately preceding focused run `30777540171` failed with `113 passed, 1 failed`. The failure was in the test harness: creation of the outsider user occurred inside an exact one-query assertion and contributed three setup queries. The user fixture was moved outside the measured block. The endpoint itself already returned 404 without opening storage. The corrected head then passed all 114 tests.
+The earlier focused run `30777540171` failed with `113 passed, 1 failed`. The failure was in the test harness: creation of the outsider user occurred inside an exact one-query assertion and contributed three setup queries. The user fixture was moved outside the measured block. The endpoint itself already returned 404 without opening storage. Corrected heads then passed all 114 tests repeatedly.
 
 ## Full repository status
 
