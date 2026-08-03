@@ -14,7 +14,7 @@ from celery import group, shared_task
 from django.core.cache import cache
 
 from apps.chatbot.services.llm_client import is_transient_llm_error
-from apps.classes.models_v4 import ExamSourceDocument
+from apps.classes.models_v4 import ExamProject, ExamSourceDocument
 from apps.classes.services.exam_prep_v4_source_pipeline import (
     prepare_and_classify_pdf_source,
 )
@@ -23,6 +23,25 @@ from apps.classes.services.exam_prep_v4_projects import exam_prep_v4_enabled
 
 TASK_SOFT_LIMIT = int(os.getenv('EXAM_PREP_V4_TASK_SOFT_LIMIT_SECONDS', '3300'))
 TASK_HARD_LIMIT = int(os.getenv('EXAM_PREP_V4_TASK_HARD_LIMIT_SECONDS', '3600'))
+
+
+def _mark_source_file_missing(document: ExamSourceDocument) -> None:
+    document.status = ExamSourceDocument.Status.FAILED
+    document.error_code = 'source_file_missing'
+    document.error_detail = 'Private source file is missing.'
+    document.save(
+        update_fields=['status', 'error_code', 'error_detail', 'updated_at']
+    )
+    ExamProject.objects.filter(id=document.project_id).update(
+        status=ExamProject.Status.FAILED,
+        error_code='source_file_missing',
+        error_detail='Private source file is missing.',
+        workflow_state={
+            'stage': 'failed',
+            'message': 'فایل خصوصی منبع در دسترس نیست؛ فایل را دوباره بارگذاری کنید.',
+            'progressPercent': 0,
+        },
+    )
 
 
 @shared_task(
@@ -66,14 +85,14 @@ def process_exam_prep_v4_source(self, document_id: int) -> dict:
                 'reason': 'document_not_found',
             }
         if not document.source_file:
+            _mark_source_file_missing(document)
             return {
                 'status': 'failed',
                 'document_id': document_id,
                 'reason': 'source_file_missing',
             }
 
-        suffix = '.pdf'
-        with tempfile.NamedTemporaryFile(suffix=suffix) as handle:
+        with tempfile.NamedTemporaryFile(suffix='.pdf') as handle:
             with document.source_file.open('rb') as source:
                 shutil.copyfileobj(source, handle, length=1024 * 1024)
             handle.flush()
