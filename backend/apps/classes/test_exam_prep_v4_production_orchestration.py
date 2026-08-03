@@ -146,7 +146,7 @@ def test_status_api_is_owner_scoped_and_content_free(settings):
     assert response.data['counters']['questionCount'] == 10
     assert response.data['counters']['providerCalls'] == 7
     assert response.data['cancellationRequested'] is False
-    rendered = json.dumps(response.data, ensure_ascii=False)
+    rendered = json.dumps(response.data, ensure_ascii=False, default=str)
     for private_value in (
         'PRIVATE_SOURCE_NAME',
         'PRIVATE_DOCUMENT_ERROR',
