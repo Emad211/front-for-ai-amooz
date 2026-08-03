@@ -112,6 +112,17 @@ def _project_source_name(
     return f'{project_id}/{document_id}/{source_sha256}.pdf'
 
 
+def _source_blob_exists(document: ExamSourceDocument) -> bool:
+    if not document.source_file or not document.source_file.name:
+        return False
+    try:
+        return document.source_file.storage.exists(document.source_file.name)
+    except Exception:
+        # Storage availability failures must fail the whole atomic intake rather
+        # than silently treating an unknown blob state as reusable.
+        raise
+
+
 def _mark_queued(project: ExamProject, document: ExamSourceDocument) -> None:
     if document.classification_fingerprint:
         return
@@ -218,7 +229,7 @@ def persist_uploaded_pdf_batch(
                         'The upload retry contains different PDF bytes.'
                     )
 
-                reused_source = bool(document.source_file and document.source_file.name)
+                reused_source = _source_blob_exists(document)
                 if not reused_source:
                     _rewind(item.upload)
                     document.source_file.save(
