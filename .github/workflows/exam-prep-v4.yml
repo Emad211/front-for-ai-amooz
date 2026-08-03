@@ -8,7 +8,8 @@ on:
       - 'backend/apps/classes/models_v4.py'
       - 'backend/apps/classes/signals.py'
       - 'backend/apps/classes/tasks_v4.py'
-      - 'backend/apps/classes/views_v4*.py'
+      - 'backend/apps/classes/views_v4.py'
+      - 'backend/apps/classes/views_v4_source_map.py'
       - 'backend/apps/classes/serializers_v4.py'
       - 'backend/apps/classes/urls_v4.py'
       - 'backend/apps/classes/management/commands/benchmark_exam_prep_v4.py'
@@ -19,13 +20,22 @@ on:
       - 'backend/apps/commons/llm_prompts/exam_prep_v4.py'
       - 'backend/core/storage_backends.py'
       - 'backend/core/urls.py'
+      - 'frontend/tsconfig.exam-prep-v4.json'
+      - 'frontend/src/features/exam-prep-v4/**'
+      - 'frontend/src/services/exam-prep-v4-service.ts'
+      - 'frontend/src/hooks/use-exam-prep-v4-*.ts'
+      - 'frontend/src/components/teacher/exam-prep-v4/**'
+      - 'frontend/src/app/(teacher)/teacher/exam-prep-v4/**'
+      - 'frontend/src/constants/navigation.ts'
+      - 'frontend/package.json'
+      - 'frontend/package-lock.json'
       - 'docs/features/exam-prep-v4-*.md'
       - 'docs/runbooks/exam-prep-v4-*.md'
   workflow_dispatch:
 
 jobs:
-  validate:
-    name: v4 focused validation (postgres)
+  backend:
+    name: v4 backend validation (postgres)
     runs-on: ubuntu-latest
 
     services:
@@ -85,3 +95,31 @@ jobs:
           python -m pytest \
             backend/apps/classes/test_exam_prep_v4_*.py \
             -q --create-db
+
+  frontend:
+    name: v4 source-map frontend validation
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Focused TypeScript check
+        working-directory: frontend
+        run: npx tsc -p tsconfig.exam-prep-v4.json --noEmit
+
+      - name: Source-map state model tests
+        working-directory: frontend
+        run: >-
+          node --experimental-strip-types --test
+          src/features/exam-prep-v4/source-map-model.test.ts
