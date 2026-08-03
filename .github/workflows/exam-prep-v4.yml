@@ -6,14 +6,13 @@ on:
       - '.github/workflows/exam-prep-v4.yml'
       - '.github/workflows/exam-prep-v4-avalai-ocr-live-smoke.yml'
       - 'backend/apps/classes/apps.py'
-      - 'backend/apps/classes/models_v4.py'
+      - 'backend/apps/classes/models_v4*.py'
       - 'backend/apps/classes/signals.py'
       - 'backend/apps/classes/tasks_v4.py'
-      - 'backend/apps/classes/views_v4.py'
-      - 'backend/apps/classes/views_v4_source_map.py'
-      - 'backend/apps/classes/serializers_v4.py'
+      - 'backend/apps/classes/views_v4*.py'
+      - 'backend/apps/classes/serializers_v4*.py'
       - 'backend/apps/classes/urls_v4.py'
-      - 'backend/apps/classes/management/commands/benchmark_exam_prep_v4.py'
+      - 'backend/apps/classes/management/commands/benchmark_exam_prep_v4*.py'
       - 'backend/apps/classes/migrations/004*_exam_prep_v4_*.py'
       - 'backend/apps/classes/services/exam_prep_v4_*.py'
       - 'backend/apps/classes/test_exam_prep_v4_*.py'
@@ -21,9 +20,10 @@ on:
       - 'backend/apps/commons/llm_prompts/exam_prep_v4.py'
       - 'backend/core/storage_backends.py'
       - 'backend/core/urls.py'
+      - 'backend/.env.production.example'
       - 'frontend/tsconfig.exam-prep-v4.json'
       - 'frontend/src/features/exam-prep-v4/**'
-      - 'frontend/src/services/exam-prep-v4-service.ts'
+      - 'frontend/src/services/exam-prep-v4*.ts'
       - 'frontend/src/hooks/use-exam-prep-v4-*.ts'
       - 'frontend/src/components/teacher/exam-prep-v4/**'
       - 'frontend/src/app/(teacher)/teacher/exam-prep-v4/**'
@@ -98,7 +98,7 @@ jobs:
             -q --create-db
 
   frontend:
-    name: v4 source-map frontend validation
+    name: v4 teacher-flow frontend validation
     runs-on: ubuntu-latest
 
     steps:
