@@ -20,6 +20,7 @@ import {
   ClipboardList,
   UserCog,
   NotebookPen,
+  ScanSearch,
 } from 'lucide-react';
 import { NavSection, NavItem, OrgRole } from '@/types';
 
@@ -81,6 +82,7 @@ export const TEACHER_NAV_MENU: NavSection[] = [
       { label: 'ایجاد کلاس جدید', href: '/teacher/create-class', icon: PlusCircle },
       { label: 'کلاس‌های من', href: '/teacher/my-classes', icon: FolderOpen },
       { label: 'آزمون‌های من', href: '/teacher/my-exams', icon: FileQuestion },
+      { label: 'آماده‌سازی آزمون V4', href: '/teacher/exam-prep-v4', icon: ScanSearch },
       { label: 'دانش‌آموزان', href: '/teacher/students', icon: Users },
     ]
   },
@@ -112,6 +114,7 @@ export const ORG_TEACHER_TEACHING_NAV_MENU: NavSection[] = [
       { label: 'ایجاد کلاس جدید', href: '/teacher/create-class', icon: PlusCircle },
       { label: 'کلاس‌های سازمان آموزشی', href: '/teacher/my-classes', icon: FolderOpen },
       { label: 'آزمون‌های سازمان آموزشی', href: '/teacher/my-exams', icon: FileQuestion },
+      { label: 'آماده‌سازی آزمون V4', href: '/teacher/exam-prep-v4', icon: ScanSearch },
       { label: 'دانش‌آموزان', href: '/teacher/students', icon: Users },
     ],
   },
