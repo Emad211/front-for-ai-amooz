@@ -1,6 +1,6 @@
 # Exam Prep V4 — Source-Aware Split Pipeline
 
-> Canonical architecture and roadmap. The execution ledger in `exam-prep-v4-status.md` must be updated before every implementation step.
+> Canonical architecture and roadmap. The execution ledger in `exam-prep-v4-status.md` must be updated before every implementation step. Real-provider validation is performed by the owner in the deployed environment; CI remains fake-provider/contract-only.
 
 ## 1. Product contract
 
@@ -18,7 +18,12 @@ Core decisions:
 8. private source content never crosses generic media/public-report boundaries;
 9. physical `pageNumber` remains immutable while virtual `displayOrder` may change;
 10. OCR/vision providers propose evidence only; Source Map, SourceBlock, typed-record, revision, provenance and matcher contracts remain server-authoritative;
-11. production routing does not change without measured private evidence and an explicit roadmap decision.
+11. production models are selected from environment only;
+12. Source Map confirmation queues the exact current revision for production extraction;
+13. every extraction run has stable correlation IDs and content-free structured logs;
+14. teacher exception decisions are immutable and fingerprint-bound;
+15. reviewed V4 records project into the existing student Exam Prep domain rather than duplicating student/scoring infrastructure;
+16. real accuracy, latency and provider-cost measurements belong to owner-run deployment validation, not CI.
 
 Target flow:
 
@@ -29,13 +34,14 @@ independent private PDF
 → complete revision-bound Source Map
 → deterministic virtual segments
 → teacher confirmation
+→ idempotent production extraction dispatch
 → layout/block evidence proposals
 → typed question extraction
 → typed answer-plus-solution extraction
 → deterministic project-scoped matching
 → exception-only review
-→ backward-compatible projection
-→ publication
+→ fingerprint-bound backward-compatible projection
+→ publication through the existing student Exam Prep flow
 ```
 
 Optional OCR evidence path:
@@ -51,18 +57,20 @@ confirmed Source Map
 
 ## 2. Privacy and reliability boundaries
 
-- source PDFs, renders, thumbnails, text, OCR Markdown, annotations, raw payloads, object keys, credentials and private errors never enter public serializers or aggregate reports;
+- source PDFs, renders, thumbnails, text, OCR Markdown, annotations, raw payloads, object keys, credentials and private errors never enter public serializers or operational logs;
 - authenticated private previews enforce owner/project/document/page ancestry and `no-store` caching;
-- benchmark reports contain only aggregate metrics, reason codes and opaque request IDs;
+- status/operational APIs expose identifiers, stages, safe counters and reason codes only;
 - accepted unchanged results make zero provider calls;
 - changed Source Maps, blocks, questions or answers supersede dependent rows transactionally while preserving history;
 - provider output cannot override project/document/page/revision ownership;
-- live runs require explicit secrets, reproducible model IDs and fail-closed request ceilings;
-- rollout remains blocked until private metrics are recorded or explicitly waived with retained risk.
+- source-map confirmation, retries, reviews and publication remain bound to exact current fingerprints;
+- cooperative cancellation is checked around provider stages/batches;
+- stale active runs fail closed and retain correlation evidence;
+- rollout remains feature-flagged until the owner records production behavior.
 
 ## 3. Implementation roadmap
 
-Legend: `[ ]` open, `[-]` in progress, `[x]` complete with evidence.
+Legend: `[ ]` open, `[-]` in progress, `[x]` complete with contract evidence. Real-quality items remain `[-]` until owner-run deployment evidence exists.
 
 ### Phase 0 — Canonical design and benchmark contract
 
@@ -97,9 +105,9 @@ Legend: `[ ]` open, `[-]` in progress, `[x]` complete with evidence.
 - [x] Aggregate page roles into deterministic segment proposals.
 - [x] Add owner-scoped source-map and private-thumbnail APIs.
 - [x] Add classification usage/fingerprint/warm-reuse tracking.
-- [-] Run and record private-fixture structural, latency, usage and warm-rerun evidence.
+- [-] Run and record production structural, latency, usage and warm-rerun evidence.
 
-**State:** 8/9. The real three-PDF run is the active gate.
+**State:** 8/9. The owner measures this after deployment.
 
 ### Phase 3 — Teacher source-map confirmation and virtual tools
 
@@ -122,9 +130,9 @@ Legend: `[ ]` open, `[-]` in progress, `[x]` complete with evidence.
 - [x] Implement continuation candidates.
 - [ ] Add project-scoped page deduplication at the block-processing boundary.
 - [x] Add block inspection endpoints.
-- [-] Test multi-column, formula, diagram and continuation pages on private fixtures.
+- [-] Test multi-column, formula, diagram and continuation pages in production.
 
-**State:** 4/8. Persian/Arabic/Latin numbered headings are deterministic and provider evidence remains proposal-only; private quality evidence is still open.
+**State:** 4/8. Provider evidence remains proposal-only; production quality evidence remains owner-run.
 
 ### Phase 5 — Question extraction
 
@@ -134,14 +142,14 @@ Legend: `[ ]` open, `[-]` in progress, `[x]` complete with evidence.
 - [x] Persist raw payload, warnings and evidence privately.
 - [x] Implement visual ownership references.
 - [x] Implement record-level retry and cache reuse.
-- [-] Add private-fixture precision/recall tests.
+- [-] Record production precision/recall.
 
 **State:** 6/7.
 
 ### Phase 6 — Answer-solution extraction
 
 - [x] Define unified answer-solution schema.
-- [-] Implement and validate real numbered answer-heading extraction.
+- [-] Validate real numbered answer-heading extraction.
 - [x] Implement continuation merge.
 - [x] Extract correct option, final answer and full source solution together.
 - [ ] Add and validate compact answer-key accuracy.
@@ -156,7 +164,7 @@ Legend: `[ ]` open, `[-]` in progress, `[x]` complete with evidence.
 - [x] Implement unique-number matching.
 - [x] Implement duplicate-number refusal.
 - [x] Implement out-of-scope classification.
-- [ ] Implement complete option and solution consistency checks.
+- [ ] Implement complete option and solution semantic consistency checks.
 - [x] Persist match provenance.
 - [x] Add zero-cross-project-match tests.
 
@@ -164,26 +172,39 @@ Legend: `[ ]` open, `[-]` in progress, `[x]` complete with evidence.
 
 ### Phase 8 — Exception review and final projection
 
-- [ ] Create issue model and APIs.
-- [ ] Build exception-only review UI.
-- [ ] Support teacher match/ignore/out-of-scope decisions.
-- [ ] Build backward-compatible student projection.
-- [ ] Remove provenance and solutions from unauthorized student responses.
-- [ ] Bind final confirmation to current revision and projection fingerprint.
+- [-] Create a dedicated persisted issue model and APIs. The current exception queue API and immutable decision model are production-callable; a separately persisted issue row remains open.
+- [x] Build exception-only review UI.
+- [x] Support teacher match/ignore/out-of-scope decisions.
+- [x] Build backward-compatible student projection.
+- [x] Remove V4 provenance/raw payloads and rely on the existing authorized student response contract.
+- [x] Bind review finalization and publication to current record/projection fingerprints.
+
+**State:** 5/6.
 
 ### Phase 9 — Reliability, cleanup and security hardening
 
-- [ ] Add stale-task recovery.
+- [x] Add stale-task recovery.
 - [ ] Add retention and orphan sweeps.
-- [ ] Add fail-closed project deletion.
+- [ ] Add fail-closed project deletion across all V4/projection artifacts.
 - [ ] Add private-media denial tests across all new artifact classes.
 - [ ] Add load, concurrency and worker-memory tests.
-- [ ] Add audit-safe observability.
+- [x] Add audit-safe observability.
+
+Additional production reliability implemented without changing the denominator:
+
+- idempotent extraction dispatch after exact Source Map confirmation;
+- owner-scoped status/retry/cancel APIs and frontend controls;
+- stable `runId`/`taskId` correlation;
+- cooperative cancellation around provider stages/batches;
+- bounded transient retry and explicit Celery terminal failure;
+- stale-run management command/task and operator runbook.
+
+**State:** 2/6.
 
 ### Phase 10 — Shadow benchmark and rollout
 
 - [ ] Implement production shadow-benchmark management.
-- [ ] Run cold and warm end-to-end private benchmarks.
+- [ ] Run cold and warm end-to-end production validations.
 - [ ] Run V3/V4 shadow comparison without mutating user output.
 - [ ] Record aggregate results in the rollout runbook.
 - [ ] Enable for a limited cohort.
@@ -191,85 +212,82 @@ Legend: `[ ]` open, `[-]` in progress, `[x]` complete with evidence.
 - [ ] Verify rollback.
 - [ ] Make V4 default only after all gates pass.
 
+**State:** 0/8. All real-provider execution is owner-run in deployment.
+
 ## 4. Current checkpoint — 2026-08-04
 
-Verified implementation now includes:
+Verified implementation includes:
 
-- additive source-domain schema, private storage lifecycle and project isolation;
-- complete revision-bound Source Map APIs and RTL teacher UI;
+- additive source, block, typed-record, review-decision and legacy-projection schemas;
+- private storage lifecycle and project isolation;
+- complete Source Map APIs and RTL teacher UI;
 - immutable physical identity plus auditable virtual order;
-- typed SourceBlocks/Fragments, crops, bboxes, continuation candidates and safe inspection;
+- typed SourceBlocks/Fragments, crops, bboxes and continuation candidates;
 - typed QuestionRecord and unified AnswerSolutionRecord paths;
 - tolerant parsing, partial retry, exact reuse and private evidence;
 - deterministic matching, duplicate refusal, out-of-scope handling and zero cross-project matches;
 - transaction-safe downstream invalidation;
 - bounded question/answer batching;
-- synthetic three-project cold/warm full-pipeline benchmark;
-- isolated AvalAI OCR4 client and measured two-page smoke;
-- optional OCR evidence adapter using primary `document_annotation`, transient-only retry, diagram-only bbox escalation, whole-segment fallback and warm zero-call reuse;
-- OCR-aware aggregate full benchmark with a manifest-derived fail-closed ceiling;
-- manual one-click three-private-PDF workflow on `main`.
+- optional AvalAI OCR evidence adapter, disabled unless selected by environment;
+- automatic production extraction dispatch after Source Map confirmation;
+- stage/batch/provider observability with safe counters and correlation IDs;
+- status, retry and cooperative cancellation APIs/UI;
+- exception-only review queue, immutable decisions and finalization;
+- backward-compatible projection into `ClassCreationSession.exam_prep_json`;
+- idempotent publication into the existing student/invitation/scoring/result flow;
+- stale-run recovery and production operations runbook.
 
-Latest focused evidence:
+Latest contract evidence:
 
 ```text
-feature head: 5db6e4b7eab2d4ae3150b79d342b8cfc93b107c9
-workflow: 30857010156
-backend job: 91830257210
-frontend job: 91830257126
-validated merge ref: 54e401d067c596444b20e1c4497d77fd7ad58615
+feature head: d7b53393d77c50a53b81f0cba5e7d45367b6c6d8
+validated merge ref: fd137cf8779eff5318cea23ca68fb7dc29f4cdb3
+workflow: 30862683847
+backend job: 91847863122
+frontend job: 91847863181
 System check: passed
 Migration drift: none
-Backend: 252 passed, 47 warnings in 25.62s
+Backend: 261 passed, 49 warnings in 26.03s
 Frontend focused TypeScript/state tests: passed
+Live provider calls: 0
 ```
 
 Established denominator remains 77 deliverables:
 
-- credited: 43;
-- **overall: 43/77 = 55.8%**;
-- Phase 4: 4/8;
-- Phase 5: 6/7;
-- Phase 6: 4/7;
-- Phase 7: 6/7.
+- credited: 50;
+- **overall: 50/77 = 64.9%**;
+- Phase 8: 5/6;
+- Phase 9: 2/6;
+- Phase 10: 0/8.
 
-## 5. Active live gate
+## 5. Production validation contract
 
-Workflow:
+The application is now callable end to end in deployment. CI does not validate real provider accuracy.
 
-```text
-.github/workflows/exam-prep-v4-full-live-benchmark.yml
-main commit: 5903d08fc3f58d8625f4ddf80fdccd92949b1ac6
-```
-
-Configuration:
+Deployment must include:
 
 ```text
-three recorded private PDFs
-structured model: gemini-2.5-flash
-OCR model: mistral-ocr-4-0
-OCR attempts: 2
-bbox escalation: diagram pages only
-hard external-call ceiling: 484
-aggregate artifact retention: 1 day
+migrations: 0045, 0046
+feature flag: EXAM_PREP_V4_ENABLED=True
+worker queues: default,pipeline,interactive
+models: EXAM_PREP_V4_BLOCK_MODEL / QUESTION_MODEL / ANSWER_MODEL
+optional OCR flag: EXAM_PREP_V4_OCR_EVIDENCE_ENABLED
+logger: apps.classes.exam_prep_v4
 ```
 
-Ceiling derivation:
+The owner validates:
 
 ```text
-3 classification invocations
-6 possible structured block fallbacks
-79 semantic batches
-88 structured invocations × 3 request slots = 264
-55 OCR-eligible pages × 2 attempts × 2 possible modes = 220
-required fail-closed ceiling = 484
+upload → Source Map confirm → correlated extraction → review → projection → publish → student flow
 ```
 
-This is a worst-case bound, not expected usage. The workflow never reruns automatically and stores only an aggregate report or content-free failure summary.
+Use `docs/runbooks/exam-prep-v4-production-validation.md` for environment, worker command, APIs, log events, counters, cancellation, stale recovery and production test reporting.
 
-The next permitted operation is exactly one manual workflow run. Phase 8, publication and rollout remain blocked until its evidence is reviewed.
+## 6. Exact continuation point
 
-## 6. Decision log
+Deploy the branch and migrations with a worker consuming `pipeline`. The owner runs real PDFs in production and reports concrete failures by `runId`, `taskId`, page/question and expected/observed behavior. Code continues from those failures while the remaining Phase 9 items—persisted issues, cleanup/deletion/media denial, load sizing and rollout controls—are completed independently. Do not require or run a CI live-provider benchmark.
+
+## 7. Decision log
 
 - **D-001:** Build V4 as a new engine on durable V3 infrastructure.
 - **D-002:** One PDF equals one independent project by default.
@@ -281,14 +299,20 @@ The next permitted operation is exactly one manual workflow run. Phase 8, public
 - **D-008:** Out-of-scope answers never create questions.
 - **D-009:** Deduplication is project-scoped.
 - **D-010:** Private V4 thumbnail storage never falls back to public/default media.
-- **D-011:** Benchmarks are explicit and aggregate-only.
-- **D-012:** Unmeasured private gates receive no credit.
+- **D-011:** Operational reports/logs are aggregate/content-free.
+- **D-012:** Unmeasured real-quality gates receive no credit.
 - **D-013:** Source Map mutations use complete-map optimistic concurrency.
 - **D-014:** Source Map UI preserves local edits and privacy.
 - **D-015:** Virtual order never changes physical evidence identity.
 - **D-016:** Downstream invalidation is transactional and auditable.
 - **D-017:** Provider batching remains block-authoritative.
-- **D-018:** Live benchmarks require hard external-call ceilings.
-- **D-019:** Current official AvalAI documentation is a mandatory decision input.
+- **D-018:** Production execution is bounded and explicitly correlated.
+- **D-019:** Current official AvalAI documentation remains a decision input for provider-dependent changes.
 - **D-020:** OCR4 is an optional evidence adapter; existing detector/persistence remain authoritative and default-disabled.
-- **D-021:** The three-private-PDF run uses a manifest-derived ceiling of 484 and one manual, non-recurring workflow execution.
+- **D-021:** Real-provider validation is performed manually by the owner in deployment, not CI.
+- **D-022:** Exact Source Map confirmation dispatches the current semantic extraction revision.
+- **D-023:** Every production extraction run exposes stable `runId` and `taskId` and content-free stage logs.
+- **D-024:** Teacher exception decisions are immutable and bound to question/answer/match fingerprints.
+- **D-025:** V4 projects into the existing Exam Prep student domain rather than creating a parallel student runtime.
+- **D-026:** Publication is idempotent and bound to the reviewed V4 revision and projection fingerprint.
+- **D-027:** Cancellation is cooperative and stale runs fail closed while preserving correlation evidence.
