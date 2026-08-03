@@ -1,36 +1,42 @@
 # Exam Prep V4 — Implementation Status Ledger
 
-> Living execution ledger. Updated in every V4 implementation turn. Canonical roadmap: `exam-prep-v4-source-aware-split-pipeline.md`.
+> Living roadmap execution ledger. Updated in every V4 implementation turn. Canonical roadmap: `exam-prep-v4-source-aware-split-pipeline.md`.
 
 - **Branch:** `feat/exam-prep-v4-source-aware`
 - **PR:** #4 — Draft
 - **Execution mode:** Critical Path Acceleration
 - **Current roadmap span:** Phase 4 → Phase 7 vertical extraction path
-- **Last completed slice:** evidence-bound Source Block persistence
-- **Active slice:** typed QuestionRecord + unified AnswerSolutionRecord + deterministic matcher
-- **Validated code checkpoint:** `6e411e4483bfdb19b176731df24400c4ad60ed3f`
-- **Focused workflow:** `30811932130`
-- **Backend job:** `91680491219`
-- **Frontend job:** `91680491251`
+- **Last completed slice:** three-project synthetic cold/warm full-pipeline gate and byte-stable retry validation
+- **Active slice:** downstream invalidation and provider-call batching before the first private live-provider run
+- **Validated code checkpoint:** `bb31ce85671ab5080fcd09c229afa6ba0f9131d6`
+- **Focused workflow:** `30825335511`
+- **Backend job:** `91725403092`
+- **Frontend job:** `91725403209`
 - **Last updated:** 2026-08-03
 
 ## Progress
 
-Progress is counted only from the 77 canonical roadmap deliverables.
+Progress is counted only from the 77 canonical roadmap deliverables. A model, service, prompt, commit, or passing synthetic test does not by itself credit a private-fixture accuracy requirement.
 
 | Phase | Credited | Total | State |
 |---|---:|---:|---|
-| Phase 0 | 5 | 6 | PR-level ledger enforcement open. |
-| Phase 1 | 6 | 7 | Read-only admin inspection deferred. |
-| Phase 2 | 8 | 9 | Real live-provider benchmark deferred by product owner; uncredited. |
+| Phase 0 | 5 | 6 | PR-level ledger enforcement remains open. |
+| Phase 1 | 6 | 7 | Read-only admin inspection remains deferred. |
+| Phase 2 | 8 | 9 | Real private live-provider benchmark remains deferred and uncredited. |
 | Phase 3 | 4 | 7 | Core Source Map works; split/group and browser validation remain open. |
-| Phase 4 | 3 | 8 | Bounding-box evidence, continuation candidates, and safe inspection API verified. |
-| Phases 5–10 | 0 | 40 | Typed extraction slice starts now. |
+| Phase 4 | 3 | 8 | Bounding-box persistence, continuation candidates, and safe block inspection are verified. Real detector accuracy remains open. |
+| Phase 5 | 6 | 7 | Typed question path, tolerant validation, private evidence, revisioning, and warm reuse are verified. Private precision/recall remains open. |
+| Phase 6 | 4 | 7 | Unified answer-solution records, continuation evidence, complete solution contract, and tolerant retry are verified. Real numbered-heading, answer-key, and inline accuracy remain open. |
+| Phase 7 | 6 | 7 | Exact/unique matching, duplicate refusal, out-of-scope handling, provenance, and project isolation are verified. Full option/solution consistency gate remains open. |
+| Phases 8–10 | 0 | 20 | Review, projection, hardening, shadow benchmark, and rollout have not started. |
 
-- **Entire V4 roadmap:** **26/77 = 33.8%**
+- **Entire V4 roadmap:** **42/77 = 54.5%**
 - **Phase 4:** **3/8 = 37.5%**
+- **Phase 5:** **6/7 = 85.7%**
+- **Phase 6:** **4/7 = 57.1%**
+- **Phase 7:** **6/7 = 85.7%**
 
-No Phase 5–7 credit is recorded until typed persistence and matcher tests pass.
+The increase from 26 to 42 credited deliverables is recorded only after the complete synthetic PDF runner, PostgreSQL suite, migration-drift check, frontend regression gate, cold/warm reuse test, project-isolation tests, and aggregate benchmark command all passed together.
 
 ## Product-owner acceleration directive — 2026-08-03
 
@@ -43,147 +49,207 @@ Execution rules:
 3. deferred work remains visible and receives no credit;
 4. the first real fixture path is not blocked on unrelated admin or browser-test infrastructure;
 5. privacy, provenance, revision binding, tolerant record validation, deterministic matching, and no-fabrication gates may not be skipped;
-6. each vertical slice must pass focused PostgreSQL/backend/frontend gates before the next one is credited.
+6. each vertical slice must pass focused PostgreSQL/backend/frontend gates before the next one is credited;
+7. no live-model credential or cost decision is requested until the fake-provider gate is completely green;
+8. the roadmap ledger is updated in every implementation turn.
 
-## Browser-test infrastructure decision
+## Closed gate — three-project synthetic full pipeline
 
-Repository inspection found no installed Playwright, Cypress, or equivalent browser-test framework. No broad dependency was added. Browser-level RTL, keyboard, focus, screen-reader, contrast, and visual-regression evidence remains open and uncredited and must be completed before rollout.
-
-## Verified Phase 4 Source Block layer
-
-Migration:
+The synthetic benchmark now runs three independent PDF projects through the same persistence and matching path used by live mode:
 
 ```text
-classes.0043_exam_prep_v4_source_blocks
-```
-
-Models:
-
-```text
-ExamSourceBlock
-ExamSourceBlockFragment
-```
-
-Block kinds:
-
-```text
-question
-answer_solution
-answer_key
-inline_question_answer
-continuation
-ignored
-unknown
+private PDF preparation
+→ page rendering and thumbnails
+→ source-role classification
+→ canonical Source Map fingerprint
+→ teacher-style confirmation
+→ source block persistence
+→ QuestionRecord extraction
+→ unified AnswerSolutionRecord extraction
+→ deterministic matching
+→ aggregate-only report
+→ cold/warm comparison
+→ private artifact cleanup
 ```
 
 Verified guarantees:
 
-- blocks can only be persisted against the exact current confirmed Source Map revision and fingerprint;
-- every block belongs to one current confirmed segment;
-- every fragment belongs to an immutable source page inside that segment;
-- bounding boxes are normalized, positive, and database-constrained;
-- fragments follow virtual page order while retaining physical `pageNumber` identity;
-- a logical block may own several ordered page fragments;
-- continuation candidates may link only to an earlier block in the same document and block revision;
-- block and complete-set fingerprints support exact warm reuse;
-- an unchanged retry creates no new revision or provider-visible work;
-- changed sets supersede previous revisions without deleting history;
-- failed replacement rolls back supersession, fragments, project state, and new revisions together;
-- an individual source page with active evidence is protected from deletion while project deletion still cascades cleanly;
-- owner-scoped block inspection exposes only kind, order, printed number, confidence, segment role/order, safe page numbers, display positions, bounding boxes, columns, and continuation flags;
-- raw metadata, text, provider payloads, source fingerprints, storage identifiers, and private error details remain hidden.
+- each PDF remains an independent `ExamProject`;
+- fake and live modes share the same database, provenance, revision, persistence, and matcher path;
+- fake mode replaces only provider responses and does not bypass production persistence;
+- answer-only records do not create questions;
+- out-of-scope answers remain out of scope;
+- duplicate or ambiguous numbers are not automatically matched;
+- no match can cross an `ExamProject` boundary;
+- malformed sibling records remain isolated;
+- accepted unchanged warm reruns invoke zero extraction-provider calls;
+- command output and report remain aggregate-only;
+- source paths, filenames, PDF bytes, images, question text, answer text, solution text, crop data, and raw provider payloads are not emitted;
+- benchmark-created database rows and private files are cleaned after the command.
 
-Safe endpoint:
+This closes the synthetic infrastructure gate only. It does **not** prove private-fixture OCR, layout detection, formula handling, question recall, answer-solution recall, automatic-match precision, latency, or cost.
+
+## Retry/idempotency correction in this turn
+
+The last failing test was not a production idempotency defect. The production contract intentionally requires:
 
 ```text
-GET /api/classes/exam-prep-v4/projects/<project_id>/documents/<document_id>/blocks/
+same client request id
++ same client document id
++ same filename and MIME type
++ same exact PDF SHA-256
 ```
 
-## Phase 4 credit boundaries
+The affected API tests generated a fresh PDF on each retry. PDF encoder metadata can change the bytes even when the rendered page looks identical, so a valid `409 idempotency_conflict` was produced.
 
-Credited:
+Correction:
 
-- [x] source crops and bounding-box persistence;
-- [x] continuation candidates;
-- [x] block inspection endpoints.
+- production comparison rules were not weakened;
+- retry tests now generate one PDF byte buffer and wrap the same bytes in a new upload object for each request;
+- successful dispatch retry, already-ready retry, and ordinary same-byte retry all use exact byte-stable fixtures;
+- intentionally different PDF bytes still produce `409` and preserve the accepted private source.
 
-Still open and uncredited:
+## Verified typed question path
 
-- [ ] content-area and column detection;
-- [ ] RTL reading-order detector;
-- [ ] numbered-heading detector;
-- [ ] project-scoped page deduplication at block-processing boundary;
-- [ ] real multi-column/formula/diagram fixture validation.
+Credited Phase 5 capabilities:
 
-The block schema is ready, but provider/layout detection accuracy has not yet been claimed.
+- [x] simple typed `ExamQuestionRecord` schema;
+- [x] per-block question extraction path;
+- [x] tolerant parser and per-record validation;
+- [x] private raw payload, warnings, and ordered block evidence persistence;
+- [x] visual ownership through evidence-bound source blocks and block fragments;
+- [x] record-set revision, exact fingerprint reuse, and unchanged warm retry;
+- [ ] private-fixture precision/recall measurement.
+
+No question may originate from answer-only content. Question inventory is created only from accepted question-bearing blocks.
+
+## Verified unified answer-solution path
+
+Credited Phase 6 capabilities:
+
+- [x] unified `ExamAnswerSolutionRecord` schema;
+- [ ] real numbered answer-heading extraction accuracy;
+- [x] ordered continuation-block evidence merge;
+- [x] correct option or final answer plus complete source solution in one record;
+- [ ] compact answer-key sub-pipeline accuracy;
+- [ ] inline question-answer sub-pipeline accuracy;
+- [x] tolerant per-record validation, revisioning, and exact reuse.
+
+An answer-solution block is rejected when it lacks a complete source solution or lacks both a correct option and final answer. Valid siblings remain usable.
+
+## Verified deterministic matcher
+
+Credited Phase 7 capabilities:
+
+- [x] project-scoped exact normalized section and printed-number matching;
+- [x] project-unique printed-number matching;
+- [x] duplicate-number refusal;
+- [x] out-of-scope classification without question fabrication;
+- [ ] complete option-and-solution consistency gate;
+- [x] persisted method, reason, fingerprints, and match provenance;
+- [x] zero-cross-project-match tests.
+
+Fuzzy similarity is not an automatic matching method.
 
 ## Focused verification evidence
 
-Backend:
+Backend environment:
+
+```text
+Python 3.12
+PostgreSQL 16
+Redis 7
+```
+
+Backend result:
 
 ```text
 System check identified no issues (0 silenced).
 No changes detected in app 'classes'.
-178 passed, 46 warnings in 13.09s
+202 passed, 47 warnings in 19.94s
 ```
 
-Frontend regression gate:
+Frontend result:
 
 ```text
 Focused TypeScript check: passed
-Source-map state-model tests: 8 passed, 0 failed
+Source-map state-model tests: passed
 ```
 
-The first block-layer run exposed one stale in-memory test expectation. Production rollback behavior was correct; the test was refreshed against persisted state and the next run passed without changing service semantics.
+The warnings remain limited to the CI checkout lacking generated `backend/staticfiles/`. PostgreSQL constraint-error lines in the service-container log are expected negative tests that passed; they are not suite failures.
 
-## Active typed-record and matcher slice
+## Still open and explicitly uncredited
 
-The next accelerated slice implements the smallest complete semantic path over accepted blocks:
+- real content-area, column, RTL reading-order, and numbered-heading detector accuracy;
+- project-scoped visual/page deduplication at the block-processing boundary;
+- private multi-column, formula, diagram, table, and continuation validation;
+- private question and answer-solution precision/recall;
+- full option/solution consistency checks;
+- browser-level RTL, keyboard, focus, screen-reader, contrast, and visual-regression evidence;
+- split and group actions;
+- exception-review model and UI;
+- student projection and publication;
+- stale-task recovery, orphan sweeps, load/concurrency tests, and rollout controls;
+- the real three-PDF live-provider benchmark.
 
-```text
-accepted question block
-→ tolerant QuestionRecord candidate
-→ persisted question inventory
+## Active slice — downstream invalidation and provider batching
 
-accepted answer_solution block + continuation chain
-→ tolerant unified AnswerSolutionRecord candidate
-→ persisted answer and full solution together
+The next roadmap-preserving slice is locked to two prerequisites for a trustworthy and affordable live run.
 
-question inventory + answer-solution records
-→ exact project-scoped deterministic MatchDecision
-```
+### A. Downstream invalidation
 
-Locked invariants:
+A changed confirmed Source Map or accepted block-set revision must make prior semantic output non-current before any new extraction result can be accepted.
 
-- QuestionRecord can originate only from `question` or approved inline question-bearing blocks;
-- AnswerSolutionRecord can originate only from answer-solution, answer-key, or approved inline blocks;
-- full solution and correct answer remain in one record and one evidence chain;
-- content fields are private and never emitted from the safe structural API;
-- source block and block-set fingerprints bind every record to evidence;
-- malformed model records are isolated per block and cannot erase valid siblings;
-- exact normalized printed number and logical scope are the only automatic keys;
-- duplicate question numbers refuse automatic matching;
-- answers absent from question inventory become `out_of_scope` and never create questions;
-- missing numbers remain unresolved;
-- match decisions retain explicit provenance and may be recomputed idempotently;
-- no cross-project or stale-block match is possible.
+Required behavior:
 
-## Explicitly out of scope for the active slice
+1. supersede current QuestionRecords whose evidence belongs to the changed document/block set;
+2. supersede current AnswerSolutionRecords whose evidence belongs to the changed document/block set;
+3. supersede MatchDecisions that reference either superseded set;
+4. retain all historical rows and private evidence for audit;
+5. perform invalidation transactionally with the source/block revision change;
+6. leave unrelated documents and independent projects untouched;
+7. rollback all invalidation when the replacing block/source operation fails.
 
-- live provider selection or tuning;
-- claiming OCR/vision accuracy from synthetic payloads;
-- fuzzy automatic matching;
-- teacher exception-review UI;
-- final student projection or publication;
-- physical PDF rewriting;
-- completing deferred browser tests by assertion.
+### B. Provider-call batching
+
+Question and answer-solution extraction may batch compatible blocks to reduce latency and cost, while preserving record-level isolation.
+
+Required behavior:
+
+1. bounded batch size and image payload size;
+2. separate question and answer-solution schemas/prompts;
+3. each returned record remains bound to an authoritative block id;
+4. one malformed record does not reject valid siblings;
+5. missing returned block ids become retryable issues, not silent omissions;
+6. stronger-model escalation remains block-specific;
+7. unchanged accepted units remain excluded from provider calls;
+8. aggregate usage remains attributable to project, document, stage, model, and batch.
+
+### Acceptance tests for the active slice
+
+- changing one document never invalidates another project;
+- changing one accepted block set supersedes dependent semantic records and matches;
+- failed replacement restores prior current records and matches;
+- unchanged warm rerun performs zero provider calls;
+- batched output with one malformed record preserves healthy siblings;
+- missing and duplicate block ids are surfaced as issues;
+- no answer-only batch can create a question;
+- no batched match crosses a project boundary;
+- migration drift, all V4 PostgreSQL tests, and focused frontend regression remain green.
 
 ## User action required
 
-No user action is required for typed-record persistence and deterministic matching.
+**No user action is required now.**
 
-A user decision will be requested before the first live three-PDF run only when a concrete live model/API credential and expected cost must be selected. The missing booklet containing source questions 146–147 will be requested only if those records must be treated as in-scope rather than intentionally out-of-scope.
+A user decision will be requested only after downstream invalidation and batching pass their gates. At that point the product owner must choose or approve:
+
+1. the live provider/model names;
+2. the API credential source;
+3. the acceptable maximum test cost;
+4. whether the three supplied private PDFs may be sent to that selected provider under its data-handling terms.
+
+The missing booklet containing questions 146–147 will be requested only if those answers must be treated as in-scope rather than intentionally out-of-scope.
 
 ## Next verified step
 
-Implement migration-backed typed records, tolerant per-block persistence, exact deterministic matching, safe aggregate inspection, and zero-cross-project tests. When green, add the provider adapter and fixture runner needed for the first real three-PDF pipeline execution.
+Implement transaction-safe downstream semantic invalidation first. Do not begin batching until invalidation tests pass. Then add bounded provider batching, rerun the complete synthetic cold/warm gate, update this ledger, and request the live-model decision from the product owner.
