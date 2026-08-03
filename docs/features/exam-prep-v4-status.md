@@ -6,18 +6,18 @@
 - **PR:** #4 — Draft
 - **Execution mode:** Critical Path Acceleration
 - **Current roadmap span:** Phase 4 → Phase 7 vertical extraction path
-- **Last completed slice:** transaction-safe invalidation, bounded semantic batching, and hard live-benchmark provider-call ceiling
-- **Active slice:** AvalAI Mistral OCR 4 feasibility smoke test for Phase 4/5 acceleration
-- **Last fully validated code checkpoint:** `df105aa9f62302b6914c430de5be9ee654acfdd9`
-- **Latest focused workflow:** `30842575840`
-- **Backend job:** `91782991966`
-- **Frontend job:** `91782991994`
-- **Latest focused result:** 222 V4 backend tests passed; frontend focused validation passed
+- **Last completed slice:** isolated bounded AvalAI Mistral OCR 4 fake-response smoke gate
+- **Active gate:** product-owner authorization for the two-page private live OCR smoke
+- **Validated branch head:** `b29055d900d2ec6727d39be181567a554e0b336a`
+- **Focused workflow:** `30845511947`
+- **Backend job:** `91792716665`
+- **Frontend job:** `91792716703`
+- **Validated PR merge ref:** `744149f2029e95fad17229ea36740baa845f2096`
 - **Last updated:** 2026-08-03
 
 ## Progress
 
-Progress is counted only from the 77 canonical roadmap deliverables. A model, service, prompt, synthetic fixture, or passing smoke test does not by itself credit private-fixture accuracy.
+Progress is counted only from the 77 canonical roadmap deliverables. Documentation, adapters, synthetic responses, and passing smoke tests do not credit private-fixture quality by themselves.
 
 | Phase | Credited | Total | State |
 |---|---:|---:|---|
@@ -25,7 +25,7 @@ Progress is counted only from the 77 canonical roadmap deliverables. A model, se
 | Phase 1 | 6 | 7 | Read-only admin inspection remains deferred. |
 | Phase 2 | 8 | 9 | Real private live-provider benchmark remains open and uncredited. |
 | Phase 3 | 4 | 7 | Core Source Map works; split/group and browser validation remain open. |
-| Phase 4 | 3 | 8 | Bounding-box persistence, continuation candidates, and safe block inspection are verified. Real detector accuracy remains open. |
+| Phase 4 | 3 | 8 | Bounding-box persistence, continuation candidates, and safe block inspection are verified. Real OCR/layout accuracy remains open. |
 | Phase 5 | 6 | 7 | Typed question path, tolerant validation, private evidence, revisioning, partial retry, and warm reuse are verified. Private precision/recall remains open. |
 | Phase 6 | 4 | 7 | Unified answer-solution records, continuation evidence, complete solution contract, and tolerant retry are verified. Real numbered-heading, answer-key, and inline accuracy remain open. |
 | Phase 7 | 6 | 7 | Exact/unique matching, duplicate refusal, out-of-scope handling, provenance, and project isolation are verified. Full option/solution consistency remains open. |
@@ -37,7 +37,7 @@ Progress is counted only from the 77 canonical roadmap deliverables. A model, se
 - **Phase 6:** **4/7 = 57.1%**
 - **Phase 7:** **6/7 = 85.7%**
 
-No progress credit is added for this OCR feasibility slice until measured evidence closes a canonical deliverable.
+No credit was added for the OCR feasibility implementation. A live two-page result may guide architecture, but roadmap credit changes only when measured evidence closes a listed deliverable.
 
 ## Roadmap invariants
 
@@ -46,33 +46,137 @@ No progress credit is added for this OCR feasibility slice until measured eviden
 3. questions originate only from accepted question-bearing evidence;
 4. answer-only content never creates questions;
 5. answer and complete source solution remain one record;
-6. matching remains deterministic and project-scoped;
+6. automatic matching remains deterministic and project-scoped;
 7. ambiguous evidence remains unresolved rather than guessed;
 8. malformed provider siblings remain isolated;
 9. accepted unchanged units are excluded from provider calls;
-10. private source content, paths, crops, extracted text, and raw provider output remain outside public serializers and aggregate reports;
+10. private source content, paths, crops, extracted text, annotations, and raw provider output remain outside public serializers and aggregate reports;
 11. historical revisions remain auditable;
-12. Phase 8 and rollout remain blocked until private evidence is recorded or explicitly waived.
+12. production routing is not changed by a feasibility smoke;
+13. Phase 8 and rollout remain blocked until private evidence is recorded or explicitly waived.
 
-## Closed prerequisites
+## AvalAI documentation rule
 
-### Synthetic full pipeline
+For every AvalAI-dependent implementation turn:
 
-Three independent synthetic PDFs pass through preparation, classification, Source Map confirmation, block persistence, typed question extraction, unified answer-solution extraction, deterministic matching, cold/warm reuse, aggregate-only reporting, and cleanup.
+1. update this ledger before code changes;
+2. re-read the relevant current official AvalAI pages;
+3. pin reproducible model identifiers instead of mutable aliases where available;
+4. distinguish documented behavior, upstream capability context, engineering inference, and measured behavior;
+5. never infer retention, training, residency, or privacy guarantees absent from the specific endpoint documentation;
+6. record the reviewed URLs and date in this ledger or the related runbook.
 
-### Transaction-safe downstream invalidation
+Reviewed for this slice:
 
-Changing a confirmed Source Map or accepted block set supersedes dependent accepted QuestionRecords, AnswerSolutionRecords, and MatchDecisions without deleting history. Unrelated projects remain untouched and failed replacement rolls back invalidation.
+```text
+https://docs.avalai.ir/fa/
+https://docs.avalai.ir/fa/api-reference/ocr
+https://docs.avalai.ir/fa/examples/processing_documents_with_mistral_ocr
+https://docs.avalai.ir/fa/models/mistral-ocr-2512
+```
 
-### Bounded semantic batching
+Supplementary upstream Mistral pages were used only to understand OCR 4 block capabilities that must still be verified through the AvalAI gateway.
 
-Question and answer-solution extraction use bounded stage-specific batches with authoritative block IDs, tolerant sibling handling, partial retry, accepted-unit exclusion, and warm zero-call reuse.
+## Documentation findings recorded
 
-### Hard live-provider call ceiling
+- AvalAI OCR uses `POST https://api.avalai.ir/v1/ocr`.
+- The reproducible OCR 4 identifier is pinned as `mistral-ocr-4-0`.
+- `mistral-ocr-latest` is not used because it is a mutable alias.
+- `mistral-ocr-2512` documents OCR 3, not OCR 4.
+- private local PDF/image bytes can be transmitted as base64 data URLs without public URLs.
+- PDF `pages` indexes are zero-based.
+- Markdown, table formatting, document annotation, bbox/image annotation, and image extraction controls are documented.
+- current upstream Mistral docs describe OCR 4 paragraph-level `blocks`; AvalAI gateway support remains a live-smoke question rather than an assumed guarantee.
+- bbox annotation is treated as image/figure annotation, not as a replacement for text-block detection.
+- AvalAI's OCR reference states OCR and annotation page prices, but exact combined billing behavior is measured rather than inferred.
+- base64 transport does not establish a no-retention/no-training guarantee.
 
-Live benchmark requires `--max-provider-calls`. Each structured invocation reserves three worst-case external requests for JSON mode, fallback, and one repair. Exhaustion fails before entering the next provider request path.
+## Closed gate — isolated AvalAI OCR fake smoke
 
-## Focused verification before this slice
+Implemented files:
+
+```text
+backend/apps/classes/services/exam_prep_v4_avalai_ocr.py
+backend/apps/classes/management/commands/smoke_exam_prep_v4_avalai_ocr.py
+backend/apps/classes/test_exam_prep_v4_avalai_ocr.py
+docs/runbooks/exam-prep-v4-avalai-ocr-smoke.md
+```
+
+The service is isolated from the production extraction runner. No production SourceBlock, QuestionRecord, AnswerSolutionRecord, MatchDecision, task, or API routing was modified.
+
+### Four independent smoke modes
+
+```text
+markdown
+blocks
+document_annotation
+bbox_annotation
+```
+
+The modes measure different capabilities instead of treating all annotations as equivalent:
+
+- Markdown for Persian/RTL transcription, formula signals, and HTML tables;
+- OCR 4 blocks for paragraph-level type/bbox/confidence feasibility;
+- document annotation for constrained page/document-level classification;
+- bbox annotation for extracted figure/image classification.
+
+### Input and privacy contract
+
+- local PDF, PNG, and JPEG bytes only;
+- base64 data URLs generated in memory;
+- no public or presigned source URL;
+- bounded input, response, page count, Markdown, annotation, and timeout;
+- `include_image_base64=false` on every request;
+- unexpected returned image base64 fails closed;
+- duplicate/missing requested page indexes fail closed;
+- malformed annotations become content-free issues while valid sibling OCR pages remain available;
+- stdout and report exclude source paths, filenames, bytes, data URLs, Markdown, block text, annotations, questions, answers, solutions, credentials, and raw provider errors.
+
+### Smoke command
+
+```text
+python backend/manage.py smoke_exam_prep_v4_avalai_ocr
+```
+
+Default plan:
+
+```text
+2 private page images × 4 modes = 8 requests
+```
+
+Live mode requires all of:
+
+```text
+--mode live_provider
+--model mistral-ocr-4-0
+--max-requests 8
+--allow-private-transmission
+AVALAI_API_KEY in local environment/secret
+```
+
+The command refuses to read/send inputs when permission, key, or request ceiling preflight is missing.
+
+## Fake-smoke acceptance evidence
+
+Verified with the same parser and report builder used by live mode:
+
+- pinned model and endpoint;
+- private base64 data URL payloads;
+- zero-based bounded page selection;
+- Markdown, Persian/RTL, formula, and HTML table signal metrics;
+- OCR4 block type and bbox parsing;
+- document annotation and bbox/image annotation parsing;
+- malformed annotation isolation;
+- duplicate and missing page refusal;
+- input, response, Markdown, and annotation bounds;
+- unexpected image-base64 privacy refusal;
+- eight-request aggregate command flow;
+- aggregate-only stdout/report;
+- live permission/key/request-ceiling preflight.
+
+## Focused verification evidence
+
+The focused workflow validated the pull-request merge result against current `main`.
 
 ```text
 Python 3.12
@@ -80,80 +184,70 @@ PostgreSQL 16
 Redis 7
 System check identified no issues (0 silenced).
 No changes detected in app 'classes'.
-222 passed, 47 warnings in 25.47s
+231 passed, 47 warnings in 25.38s
 Focused frontend TypeScript check: passed
 Source-map state-model tests: passed
 ```
 
 Warnings remain limited to the CI checkout lacking generated `backend/staticfiles/`. Expected negative PostgreSQL constraint logs are not suite failures.
 
-## Active slice — AvalAI Mistral OCR 4 feasibility smoke test
+## What is not claimed
 
-The product owner requested that AvalAI documentation remain an explicit source for model/provider decisions. Before any implementation or live request in this slice, read and ground decisions in the current official AvalAI documentation, including:
+- no OCR request reached AvalAI in this slice;
+- no private page content was transmitted;
+- no OCR 4 gateway response shape was observed live;
+- no Persian RTL, formula, table, diagram, numbered-heading, continuation, block bbox, latency, or cost quality is claimed;
+- no production extraction route uses OCR;
+- no three-PDF benchmark was run;
+- no canonical deliverable received new credit.
+
+## Active gate — two-page private live OCR smoke
+
+The next allowed operation is only a two-page live feasibility run:
 
 ```text
-https://docs.avalai.ir/fa/
-https://docs.avalai.ir/fa/examples/processing_documents_with_mistral_ocr
-https://docs.avalai.ir/fa/models/mistral-ocr-2512
+one representative question page
+one representative answer-solution or continuation page
+× markdown, blocks, document_annotation, bbox_annotation
+= exactly 8 requests
 ```
 
-### Purpose
+Pinned configuration:
 
-Determine whether the specialized AvalAI OCR endpoint can replace or accelerate part of the existing Phase 4 block-detection and Phase 5/6 transcription path while preserving the current domain model, persistence, provenance, revision, matching, privacy, and warm-reuse contracts.
+```text
+endpoint: https://api.avalai.ir/v1/ocr
+model: mistral-ocr-4-0
+hard request ceiling: 8
+include_image_base64: false
+input transport: local base64 data URL
+output: aggregate-only report plus private local human inspection
+```
 
-### Allowed work
+The live smoke will measure:
 
-1. verify the exact current OCR endpoint, pinned model identifier, request/response contract, page selection, base64/private-input support, structured annotation options, layout/bbox semantics, pricing, limits, and data-handling caveats from official documentation;
-2. document which claims are explicit and which remain unverified;
-3. implement a provider-neutral AvalAI OCR client isolated from the production pipeline;
-4. support local private PDF/image bytes through base64 without public URLs;
-5. validate response size, page indexes, dimensions, usage data, markdown bounds, and optional annotations fail-closed;
-6. create an aggregate-only smoke command for one question page and one answer/continuation page;
-7. add fake-response tests for Persian RTL text, formulas, tables, images/bboxes, malformed annotations, missing pages, oversized output, and privacy;
-8. record request count, processed pages, latency, and provider-reported usage without printing source content;
-9. keep all existing V4 block/record/matcher paths unchanged until a measured live smoke result justifies an integration decision;
-10. update this ledger and canonical roadmap with exact evidence.
+- Persian/RTL reading-order plausibility;
+- printed-number preservation;
+- formula and table preservation;
+- OCR 4 block labels/bboxes/confidence returned through AvalAI;
+- document role annotation;
+- image/diagram bbox annotation usefulness;
+- latency, request IDs, processed pages, and authoritative cost lookup;
+- whether OCR should be OCR-first, transcription-only, diagram-only, or rejected for V4.
 
-### Explicitly out of scope
+Production integration remains forbidden until this result is reviewed and explicitly recorded.
 
-- sending all three private PDFs;
-- replacing the existing block detector before measured evidence;
-- changing SourceBlock, QuestionRecord, AnswerSolutionRecord, or MatchDecision authority;
-- persisting raw OCR output as public data;
-- public or presigned source URLs;
-- Phase 8 review UI, student projection, publication, or rollout;
-- adding progress credit from documentation or synthetic OCR fixtures alone.
+## User action required now
 
-### Smoke acceptance criteria
+Before the first live OCR request, the product owner must explicitly confirm:
 
-- endpoint/model/request contract is pinned from current official AvalAI docs;
-- no private input path, filename, source bytes, markdown, annotation payload, crop, question, answer, or solution appears in stdout or aggregate report;
-- fake mode validates the same parser, bounds, privacy, and report path used by live mode;
-- local base64 input is bounded and no public URL is required;
-- requested page indexes and returned page indexes are exact and unique;
-- malformed or unexpected page/annotation records fail closed or surface content-free issues;
-- JSON/annotation parsing is tolerant per record but never invents missing evidence;
-- provider usage and latency are aggregate-only;
-- live mode requires explicit model, credential, page/request ceiling, and product-owner permission;
-- all focused PostgreSQL/backend/frontend gates remain green.
+1. `AVALAI_API_KEY` is available in the local secret/environment and will not be pasted into chat or Git;
+2. permission to transmit exactly two selected private page images to AvalAI/Mistral for this smoke;
+3. approval of pinned model `mistral-ocr-4-0`;
+4. approval of the hard request ceiling of exactly 8;
+5. which representative question page and answer-solution/continuation page should be used, or permission for the implementation agent to select them from the supplied private PDFs.
 
-## AvalAI documentation rule
-
-For future AvalAI-dependent implementation turns:
-
-1. re-read the relevant current official AvalAI pages before model, endpoint, pricing, parameter, or data-handling decisions;
-2. pin reproducible model identifiers rather than mutable aliases when available;
-3. distinguish documented behavior from inference and measured behavior;
-4. never infer retention, training, residency, or privacy guarantees that are not stated for the specific endpoint;
-5. record official-doc URLs and the date reviewed in this ledger or the related runbook;
-6. update code only after the roadmap is updated for that turn.
-
-## User action required
-
-No credential, model approval, cost ceiling, or permission to transmit the three original PDFs is required for documentation review and fake-response implementation.
-
-A user decision will be requested only before the first live OCR request, with the exact pinned model, page count, expected maximum cost, request ceiling, and data-transmission scope stated explicitly.
+The full three PDFs are not authorized by this gate.
 
 ## Exact continuation point
 
-Read the official AvalAI OCR processing example and pinned model page. Then implement only the isolated bounded OCR client, aggregate-only two-page smoke command, and fake-response acceptance tests. Do not modify production extraction routing or send private content before the smoke gate is reviewed and explicitly authorized.
+Obtain the five approvals above. Then execute only the bounded two-page OCR smoke, retain raw OCR results locally/private for human inspection, emit only aggregate metrics, record measured evidence in this ledger and runbook, and decide whether an OCR-assisted production path merits a separate roadmap slice.
