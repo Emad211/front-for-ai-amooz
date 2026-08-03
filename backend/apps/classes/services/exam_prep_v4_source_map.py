@@ -1,0 +1,287 @@
+"""Privacy-safe read models for Exam Prep V4 source maps.
+
+This module is the only serializer boundary for the initial read-only V4 APIs.
+Private filenames, object keys, hashes, native text, raw model payloads, model
+reasons, fingerprints, and error details are intentionally absent.
+"""
+from __future__ import annotations
+
+import re
+from collections import defaultdict
+from typing import Any
+
+from django.db.models import Count, Q, QuerySet
+
+from apps.classes.models_v4 import (
+    ExamProject,
+    ExamSourceDocument,
+    ExamSourcePage,
+    ExamSourceSegment,
+)
+
+
+_SAFE_ISSUE_CODE = re.compile(r'^[a-z0-9_]{1,64}$')
+
+
+def teacher_project_list_queryset(teacher) -> QuerySet[ExamProject]:
+    """Return the owner-only, bounded list base queryset."""
+
+    return (
+        ExamProject.objects.filter(teacher=teacher)
+        .annotate(document_count=Count('source_documents'))
+        .only(
+            'id',
+            'title',
+            'description',
+            'engine_version',
+            'revision',
+            'status',
+            'workflow_state',
+            'error_code',
+            'is_published',
+            'published_at',
+            'created_at',
+            'updated_at',
+        )
+        .order_by('-updated_at', '-id')
+    )
+
+
+def _safe_nonnegative_int(value: Any, default: int = 0) -> int:
+    try:
+        return max(0, int(value))
+    except (TypeError, ValueError):
+        return default
+
+
+def _safe_progress(raw: Any) -> dict[str, Any]:
+    state = raw if isinstance(raw, dict) else {}
+    stage = str(state.get('stage') or '').strip().lower()[:64]
+    return {
+        'stage': stage,
+        'progressPercent': min(
+            100,
+            _safe_nonnegative_int(state.get('progressPercent')),
+        ),
+        'warningCount': _safe_nonnegative_int(state.get('warningCount')),
+    }
+
+
+def serialize_project_summary(project: ExamProject) -> dict[str, Any]:
+    """Serialize only teacher-safe project metadata."""
+
+    return {
+        'id': project.id,
+        'title': project.title,
+        'description': project.description,
+        'engineVersion': project.engine_version,
+        'revision': project.revision,
+        'status': project.status,
+        'progress': _safe_progress(project.workflow_state),
+        'errorCode': project.error_code or None,
+        'documentCount': int(getattr(project, 'document_count', 0)),
+        'isPublished': project.is_published,
+        'publishedAt': project.published_at,
+        'createdAt': project.created_at,
+        'updatedAt': project.updated_at,
+    }
+
+
+def _safe_issue(issue: Any, *, page_count: int) -> dict[str, Any] | None:
+    if not isinstance(issue, dict):
+        return None
+    code = str(issue.get('code') or '').strip().lower()
+    if not _SAFE_ISSUE_CODE.fullmatch(code):
+        code = 'unknown'
+
+    page_number = issue.get('pageNumber')
+    try:
+        page_number = int(page_number) if page_number is not None else None
+    except (TypeError, ValueError):
+        page_number = None
+    if page_number is not None and not (1 <= page_number <= page_count):
+        page_number = None
+
+    return {
+        'code': code,
+        'pageNumber': page_number,
+    }
+
+
+def _safe_document_issues(document: ExamSourceDocument) -> list[dict[str, Any]]:
+    metadata = (
+        document.classification_metadata
+        if isinstance(document.classification_metadata, dict)
+        else {}
+    )
+    raw_issues = metadata.get('issues')
+    if not isinstance(raw_issues, list):
+        return []
+    issues: list[dict[str, Any]] = []
+    for issue in raw_issues[:500]:
+        safe = _safe_issue(issue, page_count=document.page_count)
+        if safe is not None:
+            issues.append(safe)
+    return issues
+
+
+def _serialize_page(page: ExamSourcePage) -> dict[str, Any]:
+    return {
+        'pageNumber': page.page_number,
+        'predictedRole': page.predicted_role,
+        'predictedConfidence': float(page.predicted_confidence),
+        'teacherRole': page.teacher_role or None,
+        'effectiveRole': page.effective_role,
+        'orientation': page.orientation,
+        'width': page.width,
+        'height': page.height,
+        'hasThumbnail': bool(page.thumbnail_file),
+        'isDuplicate': page.duplicate_of_id is not None,
+    }
+
+
+def _serialize_segment(segment: ExamSourceSegment) -> dict[str, Any]:
+    return {
+        'id': segment.id,
+        'revision': segment.revision,
+        'order': segment.order,
+        'startPage': segment.start_page,
+        'endPage': segment.end_page,
+        'role': segment.role,
+        'predictedRole': segment.predicted_role,
+        'predictedConfidence': float(segment.predicted_confidence),
+        'teacherConfirmed': segment.teacher_confirmed,
+        'expectedNumberStart': segment.expected_number_start,
+        'expectedNumberEnd': segment.expected_number_end,
+        'status': segment.status,
+    }
+
+
+def get_teacher_project_source_map(*, teacher, project_id: int) -> dict[str, Any]:
+    """Fetch one owner-scoped project with its current safe source map.
+
+    Query shape is bounded: project, documents, pages, and current segments.
+    """
+
+    project = (
+        ExamProject.objects.filter(teacher=teacher, id=project_id)
+        .only(
+            'id',
+            'title',
+            'description',
+            'engine_version',
+            'revision',
+            'status',
+            'workflow_state',
+            'error_code',
+            'is_published',
+            'published_at',
+            'created_at',
+            'updated_at',
+        )
+        .first()
+    )
+    if project is None:
+        raise ExamProject.DoesNotExist
+
+    documents = list(
+        ExamSourceDocument.objects.filter(project=project)
+        .only(
+            'id',
+            'project_id',
+            'upload_order',
+            'page_count',
+            'status',
+            'classification_revision',
+            'classification_fingerprint',
+            'classification_metadata',
+            'teacher_confirmed_at',
+            'error_code',
+            'created_at',
+            'updated_at',
+        )
+        .order_by('upload_order', 'id')
+    )
+    document_ids = [document.id for document in documents]
+
+    pages_by_document: dict[int, list[ExamSourcePage]] = defaultdict(list)
+    if document_ids:
+        pages = ExamSourcePage.objects.filter(document_id__in=document_ids).only(
+            'id',
+            'document_id',
+            'page_number',
+            'thumbnail_file',
+            'width',
+            'height',
+            'predicted_role',
+            'predicted_confidence',
+            'teacher_role',
+            'orientation',
+            'duplicate_of_id',
+        ).order_by('document_id', 'page_number')
+        for page in pages:
+            pages_by_document[page.document_id].append(page)
+
+    current_segment_filter = Q(pk__in=[])
+    for document in documents:
+        current_segment_filter |= Q(
+            document_id=document.id,
+            revision=document.classification_revision,
+        )
+
+    segments_by_document: dict[int, list[ExamSourceSegment]] = defaultdict(list)
+    if documents:
+        segments = (
+            ExamSourceSegment.objects.filter(current_segment_filter)
+            .only(
+                'id',
+                'document_id',
+                'revision',
+                'order',
+                'start_page',
+                'end_page',
+                'role',
+                'predicted_role',
+                'predicted_confidence',
+                'teacher_confirmed',
+                'expected_number_start',
+                'expected_number_end',
+                'status',
+            )
+            .order_by('document_id', 'order', 'id')
+        )
+        for segment in segments:
+            segments_by_document[segment.document_id].append(segment)
+
+    project.document_count = len(documents)
+    payload = serialize_project_summary(project)
+    payload['documents'] = []
+
+    for document in documents:
+        issues = _safe_document_issues(document)
+        payload['documents'].append(
+            {
+                'id': document.id,
+                'uploadOrder': document.upload_order,
+                'status': document.status,
+                'pageCount': document.page_count,
+                'classificationRevision': document.classification_revision,
+                'hasClassification': bool(document.classification_fingerprint),
+                'issueCount': len(issues),
+                'issues': issues,
+                'teacherConfirmedAt': document.teacher_confirmed_at,
+                'errorCode': document.error_code or None,
+                'createdAt': document.created_at,
+                'updatedAt': document.updated_at,
+                'pages': [
+                    _serialize_page(page)
+                    for page in pages_by_document.get(document.id, [])
+                ],
+                'segments': [
+                    _serialize_segment(segment)
+                    for segment in segments_by_document.get(document.id, [])
+                ],
+            }
+        )
+
+    return payload
