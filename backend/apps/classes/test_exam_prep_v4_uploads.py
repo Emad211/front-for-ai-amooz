@@ -175,16 +175,29 @@ def test_same_identifiers_and_bytes_reuse_project_document_and_blob(
     settings.EXAM_PREP_V4_ENABLED = True
     teacher = _teacher()
     metadata = _metadata(1)
+    same_bytes = _pdf(230)
 
     first = persist_uploaded_pdf_batch(
         teacher=teacher,
-        uploads=[_upload('retry.pdf', tone=230)],
+        uploads=[
+            SimpleUploadedFile(
+                'retry.pdf',
+                same_bytes,
+                content_type='application/pdf',
+            )
+        ],
         metadata=metadata,
     )[0]
     files_before = _storage_files(private_storage)
     second = persist_uploaded_pdf_batch(
         teacher=teacher,
-        uploads=[_upload('retry.pdf', tone=230)],
+        uploads=[
+            SimpleUploadedFile(
+                'retry.pdf',
+                same_bytes,
+                content_type='application/pdf',
+            )
+        ],
         metadata=metadata,
     )[0]
 
@@ -264,9 +277,16 @@ def test_existing_classification_keeps_reviewable_state_and_is_not_requeued(
     settings.EXAM_PREP_V4_ENABLED = True
     teacher = _teacher()
     metadata = _metadata(1)
+    source_bytes = _pdf()
     first = persist_uploaded_pdf_batch(
         teacher=teacher,
-        uploads=[_upload('ready.pdf')],
+        uploads=[
+            SimpleUploadedFile(
+                'ready.pdf',
+                source_bytes,
+                content_type='application/pdf',
+            )
+        ],
         metadata=metadata,
     )[0]
     project = ExamProject.objects.get(id=first.project_id)
@@ -286,7 +306,13 @@ def test_existing_classification_keeps_reviewable_state_and_is_not_requeued(
 
     retry = persist_uploaded_pdf_batch(
         teacher=teacher,
-        uploads=[_upload('ready.pdf')],
+        uploads=[
+            SimpleUploadedFile(
+                'ready.pdf',
+                source_bytes,
+                content_type='application/pdf',
+            )
+        ],
         metadata=metadata,
     )[0]
 
