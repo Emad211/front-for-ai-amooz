@@ -184,7 +184,7 @@ export function ExamPrepV4ExtractionRuntimePanel({ projectId }: { projectId: num
             <div className="space-y-2">
               <div className="flex items-center justify-between text-xs">
                 <span className="font-bold">
-                  {stageLabels[runtime.stage] ?? runtime.stage || 'در انتظار تأیید نقشه'}
+                  {stageLabels[runtime.stage] ?? (runtime.stage || 'در انتظار تأیید نقشه')}
                 </span>
                 <span className="text-muted-foreground">{runtime.progressPercent}٪</span>
               </div>
