@@ -1,8 +1,7 @@
 """Privacy-safe read models for Exam Prep V4 source maps.
 
-This module is the only serializer boundary for the initial read-only V4 APIs.
 Private filenames, object keys, hashes, native text, raw model payloads, model
-reasons, fingerprints, and error details are intentionally absent.
+reasons, and error details are intentionally absent.
 """
 from __future__ import annotations
 
@@ -18,14 +17,16 @@ from apps.classes.models_v4 import (
     ExamSourcePage,
     ExamSourceSegment,
 )
+from apps.classes.services.exam_prep_v4_source_map_contract import (
+    source_map_fingerprint,
+    structural_page_map_from_models,
+)
 
 
 _SAFE_ISSUE_CODE = re.compile(r'^[a-z0-9_]{1,64}$')
 
 
 def teacher_project_list_queryset(teacher) -> QuerySet[ExamProject]:
-    """Return the owner-only, bounded list base queryset."""
-
     return (
         ExamProject.objects.filter(teacher=teacher)
         .annotate(document_count=Count('source_documents'))
@@ -68,8 +69,6 @@ def _safe_progress(raw: Any) -> dict[str, Any]:
 
 
 def serialize_project_summary(project: ExamProject) -> dict[str, Any]:
-    """Serialize only teacher-safe project metadata."""
-
     return {
         'id': project.id,
         'title': project.title,
@@ -157,11 +156,27 @@ def _serialize_segment(segment: ExamSourceSegment) -> dict[str, Any]:
     }
 
 
-def get_teacher_project_source_map(*, teacher, project_id: int) -> dict[str, Any]:
-    """Fetch one owner-scoped project with its current safe source map.
+def _safe_source_map_fingerprint(
+    *,
+    document: ExamSourceDocument,
+    pages: list[ExamSourcePage],
+) -> str | None:
+    if document.source_map_fingerprint:
+        return document.source_map_fingerprint
+    if document.page_count < 1 or len(pages) != document.page_count:
+        return None
+    if [page.page_number for page in pages] != list(
+        range(1, document.page_count + 1)
+    ):
+        return None
+    return source_map_fingerprint(
+        structural_page_map_from_models(pages),
+        page_count=document.page_count,
+    )
 
-    Query shape is bounded: project, documents, pages, and current segments.
-    """
+
+def get_teacher_project_source_map(*, teacher, project_id: int) -> dict[str, Any]:
+    """Fetch one owner-scoped project with its current safe source map."""
 
     project = (
         ExamProject.objects.filter(teacher=teacher, id=project_id)
@@ -194,8 +209,11 @@ def get_teacher_project_source_map(*, teacher, project_id: int) -> dict[str, Any
             'status',
             'classification_revision',
             'classification_fingerprint',
+            'source_map_fingerprint',
             'classification_metadata',
             'teacher_confirmed_at',
+            'teacher_confirmed_revision',
+            'teacher_confirmed_fingerprint',
             'error_code',
             'created_at',
             'updated_at',
@@ -259,6 +277,18 @@ def get_teacher_project_source_map(*, teacher, project_id: int) -> dict[str, Any
 
     for document in documents:
         issues = _safe_document_issues(document)
+        document_pages = pages_by_document.get(document.id, [])
+        fingerprint = _safe_source_map_fingerprint(
+            document=document,
+            pages=document_pages,
+        )
+        is_confirmed = bool(
+            fingerprint
+            and document.status == ExamSourceDocument.Status.CONFIRMED
+            and document.teacher_confirmed_revision
+            == document.classification_revision
+            and document.teacher_confirmed_fingerprint == fingerprint
+        )
         payload['documents'].append(
             {
                 'id': document.id,
@@ -267,16 +297,21 @@ def get_teacher_project_source_map(*, teacher, project_id: int) -> dict[str, Any
                 'pageCount': document.page_count,
                 'classificationRevision': document.classification_revision,
                 'hasClassification': bool(document.classification_fingerprint),
+                'hasSourceMap': fingerprint is not None,
+                'sourceMapFingerprint': fingerprint,
+                'isTeacherConfirmed': is_confirmed,
+                'teacherConfirmedRevision': (
+                    document.teacher_confirmed_revision if is_confirmed else None
+                ),
                 'issueCount': len(issues),
                 'issues': issues,
-                'teacherConfirmedAt': document.teacher_confirmed_at,
+                'teacherConfirmedAt': (
+                    document.teacher_confirmed_at if is_confirmed else None
+                ),
                 'errorCode': document.error_code or None,
                 'createdAt': document.created_at,
                 'updatedAt': document.updated_at,
-                'pages': [
-                    _serialize_page(page)
-                    for page in pages_by_document.get(document.id, [])
-                ],
+                'pages': [_serialize_page(page) for page in document_pages],
                 'segments': [
                     _serialize_segment(segment)
                     for segment in segments_by_document.get(document.id, [])
