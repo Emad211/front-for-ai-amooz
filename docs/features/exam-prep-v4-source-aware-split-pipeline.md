@@ -1,6 +1,6 @@
 # Exam Prep V4 — Source-Aware Split Pipeline
 
-> Canonical architecture and roadmap. The detailed, turn-by-turn evidence ledger lives in `exam-prep-v4-status.md` and must be updated in every implementation turn.
+> Canonical architecture and roadmap. The detailed, turn-by-turn evidence ledger lives in `exam-prep-v4-status.md` and must be updated before implementation work in every V4 turn.
 
 ## 1. Problem statement
 
@@ -24,6 +24,8 @@ V4 replaces that extraction path with a source-aware pipeline while reusing dura
 12. Teacher corrections and confirmation are revision-bound.
 13. Physical page identity and virtual processing order are separate: `pageNumber` is immutable evidence identity and `displayOrder` is mutable one-based virtual order.
 14. Virtual reorder never rewrites source PDFs or moves pages across source documents.
+15. Provider-specific OCR or vision services may propose evidence, but current Source Map, SourceBlock, typed-record, revision, provenance, and matcher contracts remain server-authoritative.
+16. No provider-specific production route replaces the verified path without measured private evidence and an explicit roadmap decision.
 
 ## 3. Target pipeline
 
@@ -35,13 +37,23 @@ independent private PDF
 → complete physical page map
 → deterministic virtual page order and segments
 → teacher source-map confirmation
-→ layout/block detection
+→ layout/block detection or evidence proposal
 → specialized question extraction
 → specialized answer-plus-solution extraction
 → deterministic project-scoped matching
 → exception-only teacher review
 → backward-compatible projection
 → publication
+```
+
+A possible OCR-assisted implementation remains a candidate, not the active production route:
+
+```text
+confirmed Source Map
+→ OCR Markdown / OCR4 blocks
+→ deterministic SourceBlock proposals
+→ existing typed validators and persistence
+→ vision fallback for unresolved evidence
 ```
 
 ## 4. Source roles
@@ -65,11 +77,13 @@ Ambiguous, duplicate, unnumbered, or conflicting evidence remains unresolved for
 
 ## 6. Privacy boundary
 
-Private PDF bytes, page renders, thumbnails, extracted text, native text samples, object keys, hashes, raw model payloads, model reasons, and error details must not be exposed through public serializers or generic `/media/` routes.
+Private PDF bytes, page renders, thumbnails, extracted text, native text samples, object keys, hashes, OCR Markdown, annotation payloads, raw model payloads, model reasons, and private error details must not be exposed through public serializers or generic `/media/` routes.
 
 Private source previews must use explicit authenticated endpoints with owner/project/document/page ancestry checks, private no-store caching, and no storage URL or object-name disclosure.
 
 Virtual ordering may expose only immutable page number, one-based display order, safe role/orientation data, and safe segment page sequences. It may not expose private segment metadata or storage identity.
+
+Benchmark and smoke reports may contain aggregate metrics and opaque request IDs only. Local paths, filenames, source bytes, text, crops, annotations, questions, answers, solutions, credentials, and raw provider output are forbidden.
 
 ## 7. Reliability boundary
 
@@ -85,6 +99,9 @@ Virtual ordering may expose only immutable page number, one-based display order,
 - Complete-map mutations contain every physical page and every virtual position exactly once.
 - Reorder-only changes invalidate stale confirmation and downstream bindings.
 - Prior virtual order and segment revisions remain auditable.
+- Changed Source Maps or block sets supersede dependent semantic rows and matches transactionally.
+- Batched provider output remains record-level validated and block-authoritative.
+- Live private runs require explicit credentials, transmission permission, reproducible model IDs, and hard request ceilings.
 
 ## 8. Acceptance principles
 
@@ -96,6 +113,8 @@ Virtual ordering may expose only immutable page number, one-based display order,
 - no private object leaked through response metadata;
 - accepted warm reruns invoke no provider calls;
 - physical page evidence is never renumbered by virtual reorder;
+- provider output cannot override document/project/evidence authority;
+- documentation or synthetic tests alone do not prove private accuracy;
 - rollout is blocked until private benchmark metrics are recorded or explicitly waived with risk retained.
 
 ---
@@ -157,60 +176,68 @@ Legend:
 - [ ] Add explicit split-into-separate-exams action.
 - [ ] Add explicit group-documents action later behind a separate control.
 - [x] Persist revisions and invalidate stale classification.
-- [-] Add accessibility and RTL tests. **RTL/accessibility implementation, focused typecheck, and pure state tests pass; browser-level keyboard/RTL/accessibility interaction tests remain open.**
+- [-] Add accessibility and RTL tests. **Implementation, focused typecheck, and pure-state tests pass; browser-level keyboard/RTL/accessibility evidence remains open.**
 
 **Exit gate:** A nontechnical teacher can correct each benchmark source map without opening an advanced editor.
 
-**Phase state:** 4/7 credited. Source Map UI, role/boundary correction, ignore/rotation/reorder, and revision safety are verified. Split/group actions and browser-level accessibility evidence remain open.
+**Phase state:** 4/7 credited.
 
 ### Phase 4 — Page layout and block detection
 
 - [ ] Implement content-area and column detection.
 - [ ] Implement RTL reading order.
 - [ ] Implement numbered-heading detection.
-- [ ] Implement source crops and bounding-box persistence.
-- [ ] Implement continuation candidates.
+- [x] Implement source crops and bounding-box persistence.
+- [x] Implement continuation candidates.
 - [ ] Add project-scoped page deduplication at the block-processing boundary.
-- [ ] Add block inspection endpoints.
-- [ ] Test multi-column, formula, diagram, and continuation pages.
+- [x] Add block inspection endpoints.
+- [ ] Test multi-column, formula, diagram, and continuation pages on private fixtures.
 
 **Exit gate:** Stable blocks exist before semantic question/answer extraction.
 
+**Phase state:** 3/8 credited. Typed bbox/fragment persistence, continuation evidence, and owner-scoped safe inspection are verified. Real detector quality remains open.
+
 ### Phase 5 — Question extraction
 
-- [ ] Define simple question record schema.
-- [ ] Implement per-block extraction.
-- [ ] Implement tolerant parser and per-record validation.
-- [ ] Persist raw payload, warnings, and evidence privately.
-- [ ] Implement visual ownership references.
-- [ ] Implement record-level retry and cache reuse.
-- [ ] Add precision/recall tests.
+- [x] Define simple question record schema.
+- [x] Implement per-block extraction.
+- [x] Implement tolerant parser and per-record validation.
+- [x] Persist raw payload, warnings, and evidence privately.
+- [x] Implement visual ownership references.
+- [x] Implement record-level retry and cache reuse.
+- [ ] Add private-fixture precision/recall tests.
 
 **Exit gate:** At least 99% question recall on private fixtures without fabricated questions.
 
+**Phase state:** 6/7 credited.
+
 ### Phase 6 — Answer-solution extraction
 
-- [ ] Define unified answer-solution schema.
-- [ ] Implement numbered answer heading extraction.
-- [ ] Implement continuation merge.
-- [ ] Extract correct option, final answer, and full source solution together.
-- [ ] Add compact answer-key sub-pipeline.
-- [ ] Add inline question-answer sub-pipeline.
-- [ ] Add per-record tolerant validation and retry.
+- [x] Define unified answer-solution schema.
+- [ ] Implement and validate real numbered answer-heading extraction.
+- [x] Implement continuation merge.
+- [x] Extract correct option, final answer, and full source solution together.
+- [ ] Add and validate compact answer-key sub-pipeline accuracy.
+- [ ] Add and validate inline question-answer sub-pipeline accuracy.
+- [x] Add per-record tolerant validation and retry.
 
 **Exit gate:** At least 99% in-scope answer-solution recall with correct boundaries.
 
+**Phase state:** 4/7 credited.
+
 ### Phase 7 — Deterministic matcher and integrity gates
 
-- [ ] Implement project-scoped exact matching.
-- [ ] Implement unique-number matching.
-- [ ] Implement duplicate-number refusal.
-- [ ] Implement out-of-scope classification.
-- [ ] Implement option and solution consistency checks.
-- [ ] Persist match provenance.
-- [ ] Add zero-cross-project-match tests.
+- [x] Implement project-scoped exact matching.
+- [x] Implement unique-number matching.
+- [x] Implement duplicate-number refusal.
+- [x] Implement out-of-scope classification.
+- [ ] Implement complete option and solution consistency checks.
+- [x] Persist match provenance.
+- [x] Add zero-cross-project-match tests.
 
 **Exit gate:** 100% automatic match precision for answers and solutions on private fixtures.
+
+**Phase state:** 6/7 credited.
 
 ### Phase 8 — Exception review and final projection
 
@@ -253,41 +280,28 @@ Legend:
 
 ### Verified implementation
 
-- source-domain models and migrations `0040`, `0041`, and `0042`;
-- project isolation and constraints;
-- private PDF preparation, renders, and thumbnails;
-- tolerant fast page-role classification contract;
-- deterministic current-revision virtual segments;
-- multi-PDF intake with one project/task per PDF;
-- owner-scoped project list and source-map detail;
-- owner-scoped private thumbnail streaming with no storage fallback;
-- privacy-safe benchmark harness with fake/live modes and aggregate-only output;
-- product-owner waiver retaining the unmeasured real benchmark risk;
-- canonical structural Source Map fingerprint;
-- complete-map teacher mutation with optimistic revision checks;
-- preservation of classifier predictions and separate teacher overrides;
-- role/ignored/orientation metadata edits;
-- deterministic segment reconstruction;
-- prior revision segment supersession and bounded structural history;
-- stale classification and confirmation invalidation;
-- exact revision/fingerprint confirmation;
-- owner-scoped mutation and confirmation endpoints;
-- teacher V4 project-list and Source Map routes;
-- centralized V4 frontend service and revision-safe hooks;
-- responsive RTL page-card grid;
-- explicit role, ignore, rotation, save, discard, reload, and confirm controls;
-- virtual `displayOrder` separate from immutable `pageNumber`;
-- migration backfill and schema-v2 fingerprint upgrade;
-- database uniqueness/positivity constraints for virtual order;
-- virtual-order-aware classifier and segment builder;
-- transaction-safe reorder swaps without uniqueness collisions;
-- safe read serialization of virtual order and physical page sequence;
-- accessible Move Earlier/Move Later controls without drag dependency;
-- virtual DOM ordering while thumbnail/evidence identity remains physical;
-- dirty-state, rollback, stale-conflict, retry, and confirmation behavior after reorder;
-- PostgreSQL migration/constraint/mutation coverage and focused frontend state tests.
+- source-domain models and additive migrations `0040` through `0044`;
+- project isolation, private storage lifecycle, constraints, and byte-stable idempotency;
+- private PDF preparation, renders, thumbnails, and bounded native-text evidence;
+- tolerant fast page-role classification and deterministic virtual segments;
+- owner-scoped source-map/detail/mutation/confirmation/thumbnail APIs;
+- complete-map revision and structural-fingerprint binding;
+- RTL teacher Source Map UI with role, boundary, ignore, rotation, virtual reorder, Save, Discard, conflict, and confirmation flows;
+- immutable `pageNumber` plus mutable `displayOrder` and auditable prior revisions;
+- typed SourceBlock/Fragment persistence with bbox, crop provenance, continuation candidates, and safe inspection;
+- typed QuestionRecord and unified AnswerSolutionRecord schemas;
+- tolerant record-level parsers, private raw payload/warnings/evidence, exact reuse, and partial retry;
+- deterministic project-scoped matching, duplicate refusal, out-of-scope decisions, and persisted provenance;
+- transaction-safe downstream invalidation preserving history;
+- bounded semantic question/answer batching with authoritative block IDs;
+- three-project synthetic cold/warm full-pipeline benchmark and aggregate-only report;
+- hard live-benchmark external-request ceiling;
+- isolated AvalAI OCR4 bounded client, two-page aggregate smoke command, fake transport, parser/privacy bounds, and runbook;
+- no OCR production routing change and no private OCR request executed.
 
-### Current endpoints
+### Current APIs and commands
+
+Application APIs:
 
 ```text
 POST /api/classes/exam-prep-v4/projects/
@@ -296,65 +310,92 @@ GET  /api/classes/exam-prep-v4/projects/<project_id>/
 PUT  /api/classes/exam-prep-v4/projects/<project_id>/documents/<document_id>/source-map/
 POST /api/classes/exam-prep-v4/projects/<project_id>/documents/<document_id>/source-map/confirm/
 GET  /api/classes/exam-prep-v4/projects/<project_id>/documents/<document_id>/pages/<page_number>/thumbnail/
+GET  /api/classes/exam-prep-v4/projects/<project_id>/documents/<document_id>/blocks/
 ```
 
-### Current teacher routes
+Private management commands:
 
 ```text
-/teacher/exam-prep-v4
-/teacher/exam-prep-v4/<projectId>
+benchmark_exam_prep_v4
+benchmark_exam_prep_v4_full_pipeline
+smoke_exam_prep_v4_avalai_ocr
 ```
 
 ### Latest focused evidence
 
-- validated branch head: `eb071778d3c2fba460a1e2da14e4e8587a675646`;
-- workflow run `30809570611`;
-- backend job `91672836979`;
-- frontend job `91672836921`.
-
-Backend:
+- validated branch head: `b29055d900d2ec6727d39be181567a554e0b336a`;
+- workflow run `30845511947`;
+- backend job `91792716665`;
+- frontend job `91792716703`;
+- validated PR merge ref `744149f2029e95fad17229ea36740baa845f2096`.
 
 ```text
+Python 3.12
+PostgreSQL 16
+Redis 7
 System check identified no issues (0 silenced).
 No changes detected in app 'classes'.
-165 passed, 44 warnings in 14.07s
-```
-
-Frontend:
-
-```text
+231 passed, 47 warnings in 25.38s
 Focused TypeScript check: passed
-Source-map state-model tests: 8 passed, 0 failed
+Source-map state-model tests: passed
 ```
 
-Backend warnings are limited to the CI checkout lacking generated `backend/staticfiles/`. The native Node runner emits a non-failing package-module warning. Existing dependency-audit findings are not claimed resolved or caused by this slice.
+Warnings are limited to the CI checkout lacking generated `backend/staticfiles/`. Expected negative PostgreSQL constraint logs are successful failure-path tests.
 
 ### Progress
 
-The canonical roadmap contains 77 checklist deliverables:
+The canonical roadmap denominator remains 77 established deliverables:
 
-- credited: 23;
-- total: 77;
-- **overall completion: 29.9%**;
-- **Phase 2: 88.9% (8/9), one item deferred**;
-- **Phase 3: 57.1% (4/7)**.
+- credited: 42;
+- **overall completion: 42/77 = 54.5%**;
+- Phase 4: 3/8;
+- Phase 5: 6/7;
+- Phase 6: 4/7;
+- Phase 7: 6/7.
 
-The virtual-order slice closes the combined ignore/rotate/reorder roadmap item. Accessibility/RTL browser validation, split, and group remain open.
+No OCR feasibility credit was added because no live private quality evidence exists.
 
-### Known limitations
+### AvalAI OCR feasibility checkpoint
 
-- no source PDF rewriting or reordered-PDF generation exists;
-- no cross-document page movement exists;
-- no drag-and-drop interaction exists or is required;
-- no browser/E2E, visual-regression, contrast, screen-reader, or full keyboard-flow run is recorded yet;
-- no split/group action exists;
-- no Phase 4 block detection or later extraction work has started;
-- the real private benchmark remains deferred and unmeasured;
-- unrelated baseline frontend failures mean the full repository is not claimed all-green.
+Official AvalAI documentation must be re-read before future AvalAI endpoint/model/pricing/data-handling decisions. The pinned candidate is:
 
-### Next verified step
+```text
+endpoint: POST https://api.avalai.ir/v1/ocr
+model: mistral-ocr-4-0
+input: bounded local bytes as base64 data URL
+```
 
-Inspect existing browser-test infrastructure and add only focused RTL, keyboard, dialog-focus, stale-conflict, confirmation, and accessibility interaction tests for the existing Source Map UI. Do not begin split/group actions or Phase 4 block detection.
+Four isolated smoke modes are implemented:
+
+```text
+markdown
+blocks
+document_annotation
+bbox_annotation
+```
+
+`bbox_annotation` is treated as extracted-image/figure annotation. It is not assumed to replace text-block detection. OCR4 `blocks` support through the AvalAI gateway remains a live measurement target.
+
+### Active gate
+
+The next permitted operation is only a bounded two-page live OCR smoke:
+
+```text
+one representative question page
+one representative answer-solution or continuation page
+× four modes
+= exactly 8 requests
+```
+
+Required before execution:
+
+1. local/environment `AVALAI_API_KEY` availability;
+2. explicit permission to transmit exactly those two private page images;
+3. approval of pinned `mistral-ocr-4-0`;
+4. approval of hard request ceiling `8`;
+5. page selection by the product owner or permission for the implementation agent to select representative pages.
+
+No full PDF, production routing change, Phase 8 work, publication, or rollout is authorized by this gate.
 
 ---
 
@@ -398,24 +439,44 @@ No global page or block identity is inferred across independent exams.
 
 ### D-010 — Private V4 thumbnail storage never falls back
 
-A missing V4 thumbnail may not fall back to default or legacy storage. The owner-scoped endpoint opens only the storage bound to the private field and otherwise returns an indistinguishable 404.
+A missing V4 thumbnail may not fall back to default or legacy storage.
 
 ### D-011 — Benchmark execution is explicit and aggregate-only
 
-Benchmark mode has no implicit default. Fake-provider and live-provider modes must be chosen explicitly, every fixture remains an independent project, report-visible fixture IDs are anonymous, and no private source data or raw model payload may enter command output or the aggregate report.
+Fake and live benchmark modes are explicit, projects remain independent, and private source content or raw provider payloads may not enter reports.
 
-### D-012 — Real benchmark deferred by product owner
+### D-012 — Real Phase 2 benchmark deferred by product owner
 
-The product owner explicitly chose to continue development without running the local live Phase 2 benchmark. The gate remains open, receives no credit, and its accuracy/latency/cost risk remains visible until resumed.
+The original three-PDF classification gate remains open and uncredited under an explicit product-owner waiver.
 
 ### D-013 — Complete-map optimistic mutations and exact confirmation binding
 
-Teacher corrections replace the complete structural page map under an expected revision. Accepted edits create a new revision, preserve prior audit history, and invalidate stale state. Confirmation is valid only for the exact current revision and structural Source Map fingerprint.
+Teacher corrections replace the complete structural page map under an expected revision. Confirmation is valid only for the exact current revision and fingerprint.
 
-### D-014 — Source Map UI preserves complete-map and privacy boundaries
+### D-014 — Source Map UI preserves privacy and complete-map authority
 
-The teacher UI keeps all network access in a centralized service, stores edits locally until explicit save, preserves local changes on stale conflicts, retrieves private thumbnails only as authenticated Blobs, and confirms only the currently saved revision/fingerprint.
+The teacher UI stores edits locally until explicit save, preserves local changes on stale conflicts, retrieves authenticated private thumbnails, and confirms only saved current state.
 
 ### D-015 — Virtual page order is not physical page identity
 
-`pageNumber` permanently identifies the original PDF page and evidence. `displayOrder` alone controls virtual presentation and future processing order. Reordering swaps adjacent virtual positions inside one document, participates in the structural fingerprint and revision history, and never rewrites the PDF, renumbers evidence, changes page-row identity, or crosses document/project boundaries. Accessible explicit move buttons are the required baseline interaction; drag-and-drop is optional and not necessary for correctness.
+`pageNumber` permanently identifies source evidence. `displayOrder` controls virtual presentation and processing only.
+
+### D-016 — Semantic output invalidates transactionally
+
+Changed Source Maps, block sets, question sets, or answer sets supersede dependent accepted downstream rows and matches without deleting audit history.
+
+### D-017 — Semantic provider calls may batch but remain block-authoritative
+
+Bounded stage-specific batches reduce calls while every record remains tied to authoritative block identity and malformed siblings remain isolated.
+
+### D-018 — Private live benchmarks require hard request ceilings
+
+The full live benchmark reserves the worst-case external-request budget before each structured invocation and fails before entering a request path when the ceiling is insufficient.
+
+### D-019 — AvalAI documentation is a mandatory decision input
+
+Before AvalAI-dependent code or execution, update the roadmap and re-read relevant current official AvalAI documentation. Pin reproducible model IDs, separate documented facts from upstream context/inference/measurement, and never infer endpoint privacy guarantees.
+
+### D-020 — OCR4 remains an isolated candidate until live evidence
+
+The AvalAI OCR client and smoke command do not alter production routing. `mistral-ocr-4-0` may become OCR-first, transcription-only, diagram-only, or rejected for V4 only after the bounded two-page live smoke is reviewed and recorded.
