@@ -10,40 +10,39 @@ import json
 import os
 from pathlib import Path
 import time
-from typing import Any, Mapping, Sequence
+from typing import Any, Literal, Mapping, Sequence
 
 from django.contrib.auth import get_user_model
 from django.db.models import Sum
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
-from apps.classes.models_v4 import ExamSourceRole
+from apps.classes.models_v4 import (
+    ExamProject,
+    ExamSourceDocument,
+    ExamSourceRole,
+)
 from apps.classes.models_v4_records import (
     ExamAnswerSolutionRecord,
     ExamExtractionLifecycle,
     ExamMatchDecision,
     ExamQuestionRecord,
 )
-from apps.classes.services.exam_prep_v4_benchmark import (
-    BenchmarkFixture,
-    BenchmarkManifest,
-    BenchmarkMode,
-    ResolvedBenchmarkFixture,
-    _FakeClassifier,
-    _validate_segment_map,
-    resolve_benchmark_manifest,
+from apps.classes.services.exam_prep_v4_classification import (
+    PersistedClassification,
+    persist_classification_result,
 )
 from apps.classes.services.exam_prep_v4_fast_classifier import (
-    classify_document_source_map,
+    build_contact_sheets,
+    classify_document_pages_fast,
 )
 from apps.classes.services.exam_prep_v4_live_pipeline import (
     ExamPrepV4ExtractionProvider,
-    PreparedVisionImage,
     StructuredLLMExamPrepV4Provider,
     run_document_extraction_pipeline,
 )
-from apps.classes.services.exam_prep_v4_pdf_source import prepare_pdf_source_from_path
-from apps.classes.services.exam_prep_v4_projects import (
-    NewExamPdf,
-    create_independent_exam_projects,
+from apps.classes.services.exam_prep_v4_pdf_source import (
+    load_classification_page_inputs,
+    prepare_pdf_source_from_path,
 )
 from apps.classes.services.exam_prep_v4_source_map_mutation import (
     confirm_teacher_source_map,
@@ -52,10 +51,117 @@ from apps.commons.models import LLMUsageLog
 
 
 FULL_BENCHMARK_SCHEMA_VERSION = 1
+FullBenchmarkMode = Literal['fake_provider', 'live_provider']
 
 
 class FullBenchmarkError(RuntimeError):
     pass
+
+
+class FullBenchmarkManifestError(ValueError):
+    pass
+
+
+class FullBenchmarkSegmentSpec(BaseModel):
+    model_config = ConfigDict(extra='forbid', populate_by_name=True)
+
+    start_page: int = Field(alias='startPage', ge=1)
+    end_page: int = Field(alias='endPage', ge=1)
+    role: str
+
+    @model_validator(mode='after')
+    def validate_segment(self):
+        if self.end_page < self.start_page:
+            raise ValueError('endPage must be greater than or equal to startPage')
+        if self.role not in ExamSourceRole.values:
+            raise ValueError('unsupported source role')
+        return self
+
+
+class FullBenchmarkNumberRange(BaseModel):
+    model_config = ConfigDict(extra='forbid', populate_by_name=True)
+
+    start: int = Field(alias='from', ge=1)
+    end: int = Field(alias='to', ge=1)
+
+    @model_validator(mode='after')
+    def validate_range(self):
+        if self.end < self.start:
+            raise ValueError('to must be greater than or equal to from')
+        return self
+
+
+class FullBenchmarkFixtureSpec(BaseModel):
+    model_config = ConfigDict(
+        extra='forbid',
+        populate_by_name=True,
+        str_strip_whitespace=True,
+    )
+
+    fixture_id: str = Field(alias='fixtureId', min_length=1, max_length=64)
+    pattern: Literal[
+        'cover_questions_solutions',
+        'solutions_cover_questions',
+        'cover_questions_solutions_overlap',
+    ]
+    pdf_path: str = Field(alias='pdfPath', min_length=1)
+    expected_page_count: int = Field(alias='expectedPageCount', ge=1)
+    expected_segments: list[FullBenchmarkSegmentSpec] = Field(
+        alias='expectedSegments',
+        min_length=1,
+    )
+    expected_question_numbers: FullBenchmarkNumberRange = Field(
+        alias='expectedQuestionNumbers'
+    )
+    expected_out_of_scope_numbers: list[int] = Field(
+        alias='expectedOutOfScopeNumbers',
+        default_factory=list,
+    )
+
+    @model_validator(mode='after')
+    def validate_structure(self):
+        expected_start = 1
+        for segment in self.expected_segments:
+            if segment.start_page != expected_start:
+                raise ValueError('expectedSegments must be contiguous and one-based')
+            expected_start = segment.end_page + 1
+        if expected_start - 1 != self.expected_page_count:
+            raise ValueError('expectedSegments must cover expectedPageCount exactly')
+        if len(self.expected_out_of_scope_numbers) != len(
+            set(self.expected_out_of_scope_numbers)
+        ):
+            raise ValueError('expectedOutOfScopeNumbers must be unique')
+        return self
+
+
+class FullBenchmarkManifestSpec(BaseModel):
+    model_config = ConfigDict(extra='forbid', populate_by_name=True)
+
+    manifest_version: Literal[1] = Field(alias='manifestVersion')
+    fixtures: list[FullBenchmarkFixtureSpec] = Field(min_length=3, max_length=3)
+
+    @model_validator(mode='after')
+    def validate_fixture_ids(self):
+        ids = [fixture.fixture_id for fixture in self.fixtures]
+        if len(ids) != len(set(ids)):
+            raise ValueError('fixtureId values must be unique')
+        return self
+
+
+@dataclass(frozen=True, slots=True)
+class FullBenchmarkFixture:
+    fixture_id: str
+    pattern: str
+    path: Path
+    expected_page_count: int
+    expected_segments: tuple[FullBenchmarkSegmentSpec, ...]
+    expected_question_numbers: tuple[int, int]
+    expected_out_of_scope_numbers: tuple[int, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class FullBenchmarkManifest:
+    fixtures: tuple[FullBenchmarkFixture, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -64,10 +170,73 @@ class FullBenchmarkRunResult:
     project_ids: tuple[int, ...]
 
 
+def load_full_benchmark_manifest(path: str | Path) -> FullBenchmarkManifest:
+    manifest_path = Path(path).expanduser().resolve()
+    try:
+        if manifest_path.stat().st_size > 256 * 1024:
+            raise FullBenchmarkManifestError('Benchmark manifest exceeds 256 KiB.')
+        raw = json.loads(manifest_path.read_text(encoding='utf-8'))
+    except FullBenchmarkManifestError:
+        raise
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raise FullBenchmarkManifestError(
+            'Benchmark manifest is unavailable or invalid JSON.'
+        ) from exc
+    try:
+        parsed = FullBenchmarkManifestSpec.model_validate(raw)
+    except ValidationError as exc:
+        fields = sorted(
+            {
+                '.'.join(str(part) for part in error.get('loc', ())) or 'manifest'
+                for error in exc.errors(include_url=False, include_input=False)
+            }
+        )
+        detail = ', '.join(fields[:12])
+        raise FullBenchmarkManifestError(
+            'Benchmark manifest validation failed.'
+            + (f' Fields: {detail}.' if detail else '')
+        ) from exc
+
+    fixtures: list[FullBenchmarkFixture] = []
+    for item in parsed.fixtures:
+        candidate = Path(item.pdf_path)
+        if not candidate.is_absolute():
+            candidate = manifest_path.parent / candidate
+        candidate = candidate.resolve()
+        try:
+            with candidate.open('rb') as handle:
+                header = handle.read(1024)
+        except OSError as exc:
+            raise FullBenchmarkManifestError(
+                f'Fixture {item.fixture_id}: private PDF is unavailable.'
+            ) from exc
+        if b'%PDF' not in header:
+            raise FullBenchmarkManifestError(
+                f'Fixture {item.fixture_id}: source is not a valid PDF.'
+            )
+        fixtures.append(
+            FullBenchmarkFixture(
+                fixture_id=item.fixture_id,
+                pattern=item.pattern,
+                path=candidate,
+                expected_page_count=item.expected_page_count,
+                expected_segments=tuple(item.expected_segments),
+                expected_question_numbers=(
+                    item.expected_question_numbers.start,
+                    item.expected_question_numbers.end,
+                ),
+                expected_out_of_scope_numbers=tuple(
+                    item.expected_out_of_scope_numbers
+                ),
+            )
+        )
+    return FullBenchmarkManifest(fixtures=tuple(fixtures))
+
+
 class ManifestFakeExtractionProvider:
     """Deterministic fake provider that still uses the real persistence runner."""
 
-    def __init__(self, fixture: BenchmarkFixture):
+    def __init__(self, fixture: FullBenchmarkFixture):
         self.fixture = fixture
         self.provider_calls = 0
         start, end = fixture.expected_question_numbers
@@ -78,8 +247,6 @@ class ManifestFakeExtractionProvider:
 
     @staticmethod
     def _boxes(numbers: Sequence[str], pages) -> list[dict[str, Any]]:
-        if not pages:
-            return []
         assignments: dict[int, list[str]] = defaultdict(list)
         for index, number in enumerate(numbers):
             assignments[index % len(pages)].append(number)
@@ -90,7 +257,9 @@ class ManifestFakeExtractionProvider:
             count = max(1, len(page_numbers))
             for local_index, number in enumerate(page_numbers):
                 top = Decimal('0.03') + (Decimal('0.94') * local_index / count)
-                bottom = Decimal('0.03') + (Decimal('0.94') * (local_index + 1) / count)
+                bottom = Decimal('0.03') + (
+                    Decimal('0.94') * (local_index + 1) / count
+                )
                 result.append(
                     {
                         'order': order,
@@ -116,27 +285,22 @@ class ManifestFakeExtractionProvider:
     def detect_segment_blocks(self, *, document, segment, pages, images):
         self.provider_calls += 1
         if segment.role == ExamSourceRole.QUESTIONS:
-            return {
-                'blocks': [
-                    {**item, 'kind': 'question'}
-                    for item in self._boxes(self.question_numbers, pages)
-                ]
-            }
-        if segment.role == ExamSourceRole.ANSWER_SOLUTIONS:
-            return {
-                'blocks': [
-                    {**item, 'kind': 'answer_solution'}
-                    for item in self._boxes(self.answer_numbers, pages)
-                ]
-            }
-        if segment.role == ExamSourceRole.ANSWER_KEY:
-            return {
-                'blocks': [
-                    {**item, 'kind': 'answer_key'}
-                    for item in self._boxes(self.answer_numbers, pages)
-                ]
-            }
-        return {'blocks': []}
+            kind = 'question'
+            numbers = self.question_numbers
+        elif segment.role == ExamSourceRole.ANSWER_SOLUTIONS:
+            kind = 'answer_solution'
+            numbers = self.answer_numbers
+        elif segment.role == ExamSourceRole.ANSWER_KEY:
+            kind = 'answer_key'
+            numbers = self.answer_numbers
+        else:
+            return {'blocks': []}
+        return {
+            'blocks': [
+                {**item, 'kind': kind}
+                for item in self._boxes(numbers, pages)
+            ]
+        }
 
     def extract_question(self, *, document, block, images):
         self.provider_calls += 1
@@ -214,37 +378,131 @@ def _benchmark_user():
     return user
 
 
+def _create_scope(teacher, fixture: FullBenchmarkFixture) -> ExamSourceDocument:
+    project = ExamProject.objects.create(
+        teacher=teacher,
+        title=f'V4 full benchmark {fixture.fixture_id}',
+        description='',
+        status=ExamProject.Status.DRAFT,
+        workflow_state={'stage': 'full_benchmark'},
+    )
+    return ExamSourceDocument.objects.create(
+        project=project,
+        original_name=f'{fixture.fixture_id}.pdf',
+        mime_type='application/pdf',
+        source_sha256=_sha256_path(fixture.path),
+        byte_size=fixture.path.stat().st_size,
+        upload_order=0,
+    )
+
+
+def _expected_raw_classification(fixture: FullBenchmarkFixture) -> dict[str, Any]:
+    role_map = {
+        page_number: segment.role
+        for segment in fixture.expected_segments
+        for page_number in range(segment.start_page, segment.end_page + 1)
+    }
+    return {
+        'pages': [
+            {
+                'page_number': page_number,
+                'role': role_map[page_number],
+                'confidence': 0.999,
+                'printed_numbers': [],
+                'reason': '',
+            }
+            for page_number in range(1, fixture.expected_page_count + 1)
+        ]
+    }
+
+
+def _fake_classify(
+    document: ExamSourceDocument,
+    fixture: FullBenchmarkFixture,
+) -> PersistedClassification:
+    fingerprint = hashlib.sha256(
+        json.dumps(
+            {
+                'sourceSha256': document.source_sha256,
+                'pageCount': document.page_count,
+                'revision': document.classification_revision,
+                'fixtureId': fixture.fixture_id,
+                'segments': [
+                    {
+                        'start': item.start_page,
+                        'end': item.end_page,
+                        'role': item.role,
+                    }
+                    for item in fixture.expected_segments
+                ],
+                'model': 'full-benchmark-fake-classifier-v1',
+            },
+            sort_keys=True,
+            separators=(',', ':'),
+        ).encode('utf-8')
+    ).hexdigest()
+    return persist_classification_result(
+        document_id=document.id,
+        expected_revision=document.classification_revision,
+        fingerprint=fingerprint,
+        raw_output=_expected_raw_classification(fixture),
+    )
+
+
+def _live_classify(
+    document: ExamSourceDocument,
+    model: str,
+) -> PersistedClassification:
+    page_inputs = load_classification_page_inputs(document_id=document.id)
+    sheets = build_contact_sheets(page_inputs)
+    native_text_samples = {
+        page.page_number: page.native_text_sample
+        for page in page_inputs
+        if page.native_text_sample
+    }
+    return classify_document_pages_fast(
+        document_id=document.id,
+        expected_revision=document.classification_revision,
+        contact_sheets=sheets,
+        native_text_samples=native_text_samples,
+        model=model,
+    ).classification
+
+
+def _validate_segments(
+    fixture: FullBenchmarkFixture,
+    classification: PersistedClassification,
+) -> int:
+    expected = [
+        (item.start_page, item.end_page, item.role)
+        for item in fixture.expected_segments
+    ]
+    actual = [
+        (item.start_page, item.end_page, item.role)
+        for item in classification.segments
+    ]
+    return 0 if expected == actual else max(len(expected), len(actual), 1)
+
+
 def _classify_and_confirm(
     *,
     teacher,
-    fixture: ResolvedBenchmarkFixture,
-    document,
-    mode: str,
+    fixture: FullBenchmarkFixture,
+    document: ExamSourceDocument,
+    mode: FullBenchmarkMode,
     classifier_model: str | None,
-):
-    classifier = None
-    if mode == BenchmarkMode.FAKE_PROVIDER:
-        classifier = _FakeClassifier(fixture.expected_segments)
-    classification = classify_document_source_map(
-        document_id=document.id,
-        classifier=classifier,
-        model=classifier_model,
-    )
+) -> tuple[PersistedClassification, int]:
+    if mode == 'fake_provider':
+        classification = _fake_classify(document, fixture)
+    else:
+        if not classifier_model:
+            raise FullBenchmarkError('Live benchmark requires classifier model.')
+        classification = _live_classify(document, classifier_model)
     document.refresh_from_db()
-    actual_segments = tuple(
-        document.segments.filter(
-            revision=document.classification_revision,
-        ).order_by('order')
-    )
-    structure = _validate_segment_map(
-        expected=fixture.expected_segments,
-        actual=actual_segments,
-        page_count=document.page_count,
-    )
-    if structure['mismatchCount']:
+    mismatch_count = _validate_segments(fixture, classification)
+    if mismatch_count:
         raise FullBenchmarkError(
-            f'Fixture {fixture.fixture_id} source map has '
-            f'{structure["mismatchCount"]} structural mismatches.'
+            f'Fixture {fixture.fixture_id} source map has structural mismatches.'
         )
     confirm_teacher_source_map(
         teacher=teacher,
@@ -254,10 +512,10 @@ def _classify_and_confirm(
         expected_fingerprint=document.source_map_fingerprint,
     )
     document.refresh_from_db()
-    return classification, structure
+    return classification, mismatch_count
 
 
-def _record_metrics(project, fixture: BenchmarkFixture) -> dict[str, Any]:
+def _record_metrics(project, fixture: FullBenchmarkFixture) -> dict[str, Any]:
     questions = tuple(
         ExamQuestionRecord.objects.filter(
             project=project,
@@ -372,10 +630,7 @@ def _acceptance(metrics: Mapping[str, Any], warm_provider_calls: int) -> dict[st
         ),
         'warmRerunProviderCallsZero': warm_provider_calls == 0,
     }
-    return {
-        **checks,
-        'passed': all(checks.values()),
-    }
+    return {**checks, 'passed': all(checks.values())}
 
 
 def _assert_aggregate_report(report: Mapping[str, Any]) -> None:
@@ -398,7 +653,8 @@ def _assert_aggregate_report(report: Mapping[str, Any]) -> None:
 
     def walk(value: Any) -> None:
         if isinstance(value, dict):
-            assert not (set(value) & forbidden_keys)
+            if set(value) & forbidden_keys:
+                raise FullBenchmarkError('Aggregate report contains a private key.')
             for nested in value.values():
                 walk(nested)
         elif isinstance(value, list):
@@ -406,7 +662,11 @@ def _assert_aggregate_report(report: Mapping[str, Any]) -> None:
                 walk(nested)
 
     walk(report)
-    if '%PDF' in rendered or 'SYNTHETIC_QUESTION_' in rendered:
+    if (
+        '%PDF' in rendered
+        or 'SYNTHETIC_QUESTION_' in rendered
+        or 'SYNTHETIC_SOLUTION_' in rendered
+    ):
         raise FullBenchmarkError('Aggregate report contains private or synthetic content.')
 
 
@@ -436,23 +696,22 @@ def _live_preflight(
 
 def run_full_pipeline_benchmark(
     *,
-    manifest: BenchmarkManifest,
-    mode: str,
+    manifest: FullBenchmarkManifest,
+    mode: FullBenchmarkMode,
     classifier_model: str | None = None,
     block_model: str | None = None,
     question_model: str | None = None,
     answer_model: str | None = None,
     keep_projects: bool = False,
 ) -> FullBenchmarkRunResult:
-    resolved = resolve_benchmark_manifest(manifest)
-    if mode == BenchmarkMode.LIVE_PROVIDER:
+    if mode == 'live_provider':
         _live_preflight(
             classifier_model=classifier_model,
             block_model=block_model,
             question_model=question_model,
             answer_model=answer_model,
         )
-    elif mode != BenchmarkMode.FAKE_PROVIDER:
+    elif mode != 'fake_provider':
         raise FullBenchmarkError('Unsupported full benchmark mode.')
 
     teacher = _benchmark_user()
@@ -462,38 +721,25 @@ def run_full_pipeline_benchmark(
     total_started = time.monotonic()
 
     try:
-        for fixture_index, resolved_fixture in enumerate(resolved):
-            fixture = manifest.fixtures[fixture_index]
-            source_sha256 = _sha256_path(resolved_fixture.path)
-            source = NewExamPdf(
-                original_name=resolved_fixture.path.name,
-                title=f'V4 full benchmark {resolved_fixture.fixture_id}',
-                source_sha256=source_sha256,
-                byte_size=resolved_fixture.path.stat().st_size,
-            )
-            project = create_independent_exam_projects(
-                teacher=teacher,
-                sources=[source],
-            )[0]
-            project_ids.append(project.id)
-            document = project.source_documents.get()
-
+        for fixture in manifest.fixtures:
+            document = _create_scope(teacher, fixture)
+            project_ids.append(document.project_id)
             cold_started = time.monotonic()
             prepared = prepare_pdf_source_from_path(
                 document_id=document.id,
-                source_path=resolved_fixture.path,
-                original_name=resolved_fixture.path.name,
+                source_path=fixture.path,
+                original_name=f'{fixture.fixture_id}.pdf',
             )
             document.refresh_from_db()
-            _classification, structure = _classify_and_confirm(
+            _classification, mismatch_count = _classify_and_confirm(
                 teacher=teacher,
-                fixture=resolved_fixture,
+                fixture=fixture,
                 document=document,
                 mode=mode,
                 classifier_model=classifier_model,
             )
             provider: ExamPrepV4ExtractionProvider
-            if mode == BenchmarkMode.FAKE_PROVIDER:
+            if mode == 'fake_provider':
                 provider = ManifestFakeExtractionProvider(fixture)
             else:
                 provider = StructuredLLMExamPrepV4Provider(
@@ -507,9 +753,10 @@ def run_full_pipeline_benchmark(
             )
             cold_latency_ms = round((time.monotonic() - cold_started) * 1000, 2)
 
-            warm_provider: ExamPrepV4ExtractionProvider
-            if mode == BenchmarkMode.FAKE_PROVIDER:
-                warm_provider = ManifestFakeExtractionProvider(fixture)
+            if mode == 'fake_provider':
+                warm_provider: ExamPrepV4ExtractionProvider = (
+                    ManifestFakeExtractionProvider(fixture)
+                )
             else:
                 warm_provider = StructuredLLMExamPrepV4Provider(
                     block_model=block_model,
@@ -522,13 +769,13 @@ def run_full_pipeline_benchmark(
                 provider=warm_provider,
             )
             warm_latency_ms = round((time.monotonic() - warm_started) * 1000, 2)
-            metrics = _record_metrics(project, fixture)
+            metrics = _record_metrics(document.project, fixture)
             acceptance = _acceptance(metrics, warm.provider_calls)
             fixture_reports.append(
                 {
-                    'fixtureId': resolved_fixture.fixture_id,
+                    'fixtureId': fixture.fixture_id,
                     'pageCount': prepared.page_count,
-                    'structuralMismatchCount': structure['mismatchCount'],
+                    'structuralMismatchCount': mismatch_count,
                     'blockCount': cold.block_set.block_count,
                     'fragmentCount': cold.block_set.fragment_count,
                     'coldProviderCalls': cold.provider_calls,
@@ -542,7 +789,7 @@ def run_full_pipeline_benchmark(
                 }
             )
 
-        totals: dict[str, Any] = defaultdict(int)
+        totals: dict[str, int] = defaultdict(int)
         numeric_keys = (
             'pageCount',
             'structuralMismatchCount',
@@ -574,10 +821,10 @@ def run_full_pipeline_benchmark(
             'projectCount': len(project_ids),
             'independentProjectCount': len(set(project_ids)),
             'models': {
-                'classifier': classifier_model if mode == BenchmarkMode.LIVE_PROVIDER else 'fake-provider',
-                'block': block_model if mode == BenchmarkMode.LIVE_PROVIDER else 'fake-provider',
-                'question': question_model if mode == BenchmarkMode.LIVE_PROVIDER else 'fake-provider',
-                'answer': answer_model if mode == BenchmarkMode.LIVE_PROVIDER else 'fake-provider',
+                'classifier': classifier_model if mode == 'live_provider' else 'fake-provider',
+                'block': block_model if mode == 'live_provider' else 'fake-provider',
+                'question': question_model if mode == 'live_provider' else 'fake-provider',
+                'answer': answer_model if mode == 'live_provider' else 'fake-provider',
             },
             'totalLatencyMs': round((time.monotonic() - total_started) * 1000, 2),
             'fixtures': fixture_reports,
@@ -597,5 +844,5 @@ def run_full_pipeline_benchmark(
             project_ids=tuple(project_ids),
         )
     finally:
-        if not keep_projects:
+        if not keep_projects and project_ids:
             ExamProject.objects.filter(id__in=project_ids).delete()
