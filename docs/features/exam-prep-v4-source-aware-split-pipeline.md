@@ -22,6 +22,8 @@ V4 replaces that extraction path with a source-aware pipeline while reusing dura
 10. One malformed model record must not erase valid sibling records.
 11. Private source content never crosses a generic media route.
 12. Teacher corrections and confirmation are revision-bound.
+13. Physical page identity and virtual processing order are separate: `pageNumber` is immutable evidence identity and `displayOrder` is mutable one-based virtual order.
+14. Virtual reorder never rewrites source PDFs or moves pages across source documents.
 
 ## 3. Target pipeline
 
@@ -30,8 +32,8 @@ independent private PDF
 → bounded validation and rendering
 → low-resolution page thumbnails
 → fast page-role classification
-→ complete page map
-→ deterministic virtual segments
+→ complete physical page map
+→ deterministic virtual page order and segments
 → teacher source-map confirmation
 → layout/block detection
 → specialized question extraction
@@ -67,6 +69,8 @@ Private PDF bytes, page renders, thumbnails, extracted text, native text samples
 
 Private source previews must use explicit authenticated endpoints with owner/project/document/page ancestry checks, private no-store caching, and no storage URL or object-name disclosure.
 
+Virtual ordering may expose only immutable page number, one-based display order, safe role/orientation data, and safe segment page sequences. It may not expose private segment metadata or storage identity.
+
 ## 7. Reliability boundary
 
 - Feature-gated V4 activation.
@@ -78,6 +82,9 @@ Private source previews must use explicit authenticated endpoints with owner/pro
 - Warm reuse for accepted unchanged results.
 - Controlled conflicts must not corrupt accepted state.
 - Storage lifecycle must fail closed.
+- Complete-map mutations contain every physical page and every virtual position exactly once.
+- Reorder-only changes invalidate stale confirmation and downstream bindings.
+- Prior virtual order and segment revisions remain auditable.
 
 ## 8. Acceptance principles
 
@@ -88,6 +95,7 @@ Private source previews must use explicit authenticated endpoints with owner/pro
 - no valid sibling record lost due to one malformed record;
 - no private object leaked through response metadata;
 - accepted warm reruns invoke no provider calls;
+- physical page evidence is never renumbered by virtual reorder;
 - rollout is blocked until private benchmark metrics are recorded or explicitly waived with risk retained.
 
 ---
@@ -145,15 +153,15 @@ Legend:
 
 - [x] Build simple source-map UI.
 - [x] Support boundary changes and role changes.
-- [-] Support ignore, rotate, and reorder metadata. **Ignore and rotation are complete end to end; virtual reorder remains open.**
+- [x] Support ignore, rotate, and reorder metadata.
 - [ ] Add explicit split-into-separate-exams action.
 - [ ] Add explicit group-documents action later behind a separate control.
 - [x] Persist revisions and invalidate stale classification.
-- [-] Add accessibility and RTL tests. **RTL/accessibility implementation, focused typecheck, and pure state tests pass; browser-level interaction/accessibility tests remain open.**
+- [-] Add accessibility and RTL tests. **RTL/accessibility implementation, focused typecheck, and pure state tests pass; browser-level keyboard/RTL/accessibility interaction tests remain open.**
 
 **Exit gate:** A nontechnical teacher can correct each benchmark source map without opening an advanced editor.
 
-**Phase state:** 3/7 credited. Simple UI, role/boundary correction, and revision/invalidation are verified. Reorder, split/group, and browser-level accessibility gates remain open.
+**Phase state:** 4/7 credited. Source Map UI, role/boundary correction, ignore/rotation/reorder, and revision safety are verified. Split/group actions and browser-level accessibility evidence remain open.
 
 ### Phase 4 — Page layout and block detection
 
@@ -245,7 +253,7 @@ Legend:
 
 ### Verified implementation
 
-- source-domain models and migrations `0040` and `0041`;
+- source-domain models and migrations `0040`, `0041`, and `0042`;
 - project isolation and constraints;
 - private PDF preparation, renders, and thumbnails;
 - tolerant fast page-role classification contract;
@@ -264,18 +272,20 @@ Legend:
 - stale classification and confirmation invalidation;
 - exact revision/fingerprint confirmation;
 - owner-scoped mutation and confirmation endpoints;
-- transaction rollback, retry, stale-write, privacy, and confirmation tests;
-- teacher V4 project-list route;
-- teacher Source Map editor route;
-- freelancer and organization-teacher navigation entry;
-- centralized V4 frontend service layer;
-- revision-safe Source Map hook and private-thumbnail hook;
+- teacher V4 project-list and Source Map routes;
+- centralized V4 frontend service and revision-safe hooks;
 - responsive RTL page-card grid;
-- separate prediction, teacher override, and effective-role display;
 - explicit role, ignore, rotation, save, discard, reload, and confirm controls;
-- dirty-state, before-unload, document-switch, and stale-conflict handling;
-- dark-mode semantic styling, visible focus, touch targets, reduced-motion classes, and screen-reader announcements;
-- focused V4 frontend typecheck and six pure state-model tests.
+- virtual `displayOrder` separate from immutable `pageNumber`;
+- migration backfill and schema-v2 fingerprint upgrade;
+- database uniqueness/positivity constraints for virtual order;
+- virtual-order-aware classifier and segment builder;
+- transaction-safe reorder swaps without uniqueness collisions;
+- safe read serialization of virtual order and physical page sequence;
+- accessible Move Earlier/Move Later controls without drag dependency;
+- virtual DOM ordering while thumbnail/evidence identity remains physical;
+- dirty-state, rollback, stale-conflict, retry, and confirmation behavior after reorder;
+- PostgreSQL migration/constraint/mutation coverage and focused frontend state tests.
 
 ### Current endpoints
 
@@ -297,54 +307,54 @@ GET  /api/classes/exam-prep-v4/projects/<project_id>/documents/<document_id>/pag
 
 ### Latest focused evidence
 
-- validated branch head: `49e485e5b71694b85c9051e1c7b33ea17ee4eea8`;
-- workflow run `30802787492`;
-- backend job `91651046345`;
-- frontend job `91651046449`.
+- validated branch head: `eb071778d3c2fba460a1e2da14e4e8587a675646`;
+- workflow run `30809570611`;
+- backend job `91672836979`;
+- frontend job `91672836921`.
 
 Backend:
 
 ```text
 System check identified no issues (0 silenced).
 No changes detected in app 'classes'.
-150 passed, 42 warnings in 13.28s
+165 passed, 44 warnings in 14.07s
 ```
 
 Frontend:
 
 ```text
 Focused TypeScript check: passed
-Source-map state-model tests: 6 passed, 0 failed
+Source-map state-model tests: 8 passed, 0 failed
 ```
 
-The backend warnings are limited to the CI checkout lacking generated `backend/staticfiles/`. The native Node runner emits a non-failing package-module warning. `npm ci` also reports existing repository dependency-audit findings; this slice does not claim or alter a repository-wide dependency security audit.
+Backend warnings are limited to the CI checkout lacking generated `backend/staticfiles/`. The native Node runner emits a non-failing package-module warning. Existing dependency-audit findings are not claimed resolved or caused by this slice.
 
 ### Progress
 
 The canonical roadmap contains 77 checklist deliverables:
 
-- credited: 22;
+- credited: 23;
 - total: 77;
-- **overall completion: 28.6%**;
+- **overall completion: 29.9%**;
 - **Phase 2: 88.9% (8/9), one item deferred**;
-- **Phase 3: 42.9% (3/7)**.
+- **Phase 3: 57.1% (4/7)**.
 
-The new credits are the simple Source Map UI and end-to-end role/boundary correction. Ignore and rotation are implemented, but their combined roadmap item remains uncredited until virtual reorder is complete. Accessibility/RTL browser tests remain open.
+The virtual-order slice closes the combined ignore/rotate/reorder roadmap item. Accessibility/RTL browser validation, split, and group remain open.
 
 ### Known limitations
 
-- no browser/E2E or visual-regression execution is recorded yet;
-- no automated keyboard, screen-reader, contrast, or RTL browser test is recorded yet;
-- no virtual page reorder metadata exists;
+- no source PDF rewriting or reordered-PDF generation exists;
+- no cross-document page movement exists;
+- no drag-and-drop interaction exists or is required;
+- no browser/E2E, visual-regression, contrast, screen-reader, or full keyboard-flow run is recorded yet;
 - no split/group action exists;
-- no physical PDF rewrite exists;
 - no Phase 4 block detection or later extraction work has started;
 - the real private benchmark remains deferred and unmeasured;
 - unrelated baseline frontend failures mean the full repository is not claimed all-green.
 
 ### Next verified step
 
-Implement only virtual page-order metadata and accessible reorder controls while preserving immutable source-page identity, complete-map optimistic updates, audit history, and exact confirmation binding. Do not begin split/group actions or Phase 4 block detection.
+Inspect existing browser-test infrastructure and add only focused RTL, keyboard, dialog-focus, stale-conflict, confirmation, and accessibility interaction tests for the existing Source Map UI. Do not begin split/group actions or Phase 4 block detection.
 
 ---
 
@@ -404,4 +414,8 @@ Teacher corrections replace the complete structural page map under an expected r
 
 ### D-014 — Source Map UI preserves complete-map and privacy boundaries
 
-The teacher UI keeps all network access in a centralized service, stores edits locally until explicit save, preserves local changes on stale conflicts, retrieves private thumbnails only as authenticated Blobs, and confirms only the currently saved revision/fingerprint. Responsive RTL and accessibility-oriented behavior are implemented without starting Phase 4.
+The teacher UI keeps all network access in a centralized service, stores edits locally until explicit save, preserves local changes on stale conflicts, retrieves private thumbnails only as authenticated Blobs, and confirms only the currently saved revision/fingerprint.
+
+### D-015 — Virtual page order is not physical page identity
+
+`pageNumber` permanently identifies the original PDF page and evidence. `displayOrder` alone controls virtual presentation and future processing order. Reordering swaps adjacent virtual positions inside one document, participates in the structural fingerprint and revision history, and never rewrites the PDF, renumbers evidence, changes page-row identity, or crosses document/project boundaries. Accessible explicit move buttons are the required baseline interaction; drag-and-drop is optional and not necessary for correctness.
