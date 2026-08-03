@@ -1,11 +1,12 @@
 name: exam-prep-v4-avalai-ocr-one-shot
 
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - '.github/v4-ocr-live-trigger'
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: 'Type I_APPROVE_8_PRIVATE_OCR_REQUESTS'
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -17,9 +18,7 @@ concurrency:
 
 jobs:
   live-ocr-smoke:
-    if: >-
-      github.event.head_commit.message ==
-      'chore(exam-prep-v4): [run-v4-ocr-smoke] authorized one-shot'
+    if: inputs.confirmation == 'I_APPROVE_8_PRIVATE_OCR_REQUESTS'
     name: authorized one-shot AvalAI OCR smoke
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -39,6 +38,7 @@ jobs:
         run: |
           set -euo pipefail
           test "${GITHUB_REF}" = "refs/heads/main"
+          test "${{ inputs.confirmation }}" = "I_APPROVE_8_PRIVATE_OCR_REQUESTS"
           test -n "${AVALAI_API_KEY:-}"
 
       - name: Check out validated V4 implementation
