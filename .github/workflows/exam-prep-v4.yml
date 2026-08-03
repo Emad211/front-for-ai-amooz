@@ -8,7 +8,7 @@ on:
       - 'backend/apps/classes/models_v4.py'
       - 'backend/apps/classes/signals.py'
       - 'backend/apps/classes/tasks_v4.py'
-      - 'backend/apps/classes/views_v4.py'
+      - 'backend/apps/classes/views_v4*.py'
       - 'backend/apps/classes/serializers_v4.py'
       - 'backend/apps/classes/urls_v4.py'
       - 'backend/apps/classes/management/commands/benchmark_exam_prep_v4.py'
