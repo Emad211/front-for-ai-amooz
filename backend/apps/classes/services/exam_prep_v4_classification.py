@@ -75,6 +75,7 @@ class PagePrediction:
     page_number: int
     role: str
     confidence: float
+    display_order: int = 0
     printed_numbers: tuple[str, ...] = ()
     reason: str = ''
     source: str = 'classifier'
@@ -144,17 +145,45 @@ def _records_from_payload(raw_output: Any) -> list[Any]:
     )
 
 
+def _normalize_display_orders(
+    display_orders: dict[int, int] | None,
+    *,
+    page_count: int,
+) -> dict[int, int]:
+    if not display_orders:
+        return {number: number for number in range(1, page_count + 1)}
+    normalized: dict[int, int] = {}
+    for page_number, display_order in display_orders.items():
+        try:
+            page_number = int(page_number)
+            display_order = int(display_order)
+        except (TypeError, ValueError) as exc:
+            raise InvalidClassificationInput('Invalid virtual page order.') from exc
+        normalized[page_number] = display_order
+    expected = set(range(1, page_count + 1))
+    if set(normalized) != expected or set(normalized.values()) != expected:
+        raise InvalidClassificationInput(
+            'Virtual page order must be a complete one-based sequence.'
+        )
+    return normalized
+
+
 def parse_page_predictions(
     *,
     raw_output: Any,
     page_count: int,
     teacher_roles: dict[int, str] | None = None,
+    display_orders: dict[int, int] | None = None,
 ) -> ClassificationParseResult:
     """Validate page records independently and preserve a total page map."""
 
     if page_count < 1:
         raise InvalidClassificationInput('A classified PDF must have at least one page.')
 
+    virtual_orders = _normalize_display_orders(
+        display_orders,
+        page_count=page_count,
+    )
     records = _records_from_payload(raw_output)
     by_page: dict[int, PagePredictionPayload] = {}
     issues: list[ClassificationIssue] = []
@@ -238,6 +267,7 @@ def parse_page_predictions(
         pages.append(
             PagePrediction(
                 page_number=page_number,
+                display_order=virtual_orders[page_number],
                 role=teacher_role or predicted_role,
                 confidence=1.0 if teacher_role else predicted_confidence,
                 printed_numbers=printed_numbers,
@@ -264,19 +294,36 @@ def _numeric_bounds(pages: Iterable[PagePrediction]) -> tuple[int | None, int | 
     return min(values), max(values)
 
 
+def _physically_contiguous(page_numbers: list[int]) -> bool:
+    return all(
+        abs(current - previous) == 1
+        for previous, current in zip(page_numbers, page_numbers[1:])
+    )
+
+
 def build_segment_proposals(
     pages: Iterable[PagePrediction],
 ) -> tuple[SegmentProposal, ...]:
-    """Group adjacent pages with the same effective role without reordering."""
+    """Group equal-role pages that are adjacent in virtual display order."""
 
-    ordered = tuple(sorted(pages, key=lambda item: item.page_number))
-    if not ordered:
+    source_pages = tuple(pages)
+    if not source_pages:
         return ()
-    expected_numbers = list(range(1, ordered[-1].page_number + 1))
-    actual_numbers = [page.page_number for page in ordered]
-    if actual_numbers != expected_numbers:
+    page_count = len(source_pages)
+    expected = set(range(1, page_count + 1))
+    if {page.page_number for page in source_pages} != expected:
         raise InvalidClassificationInput('Page predictions must form a complete 1-based map.')
+    if {page.display_order for page in source_pages} != expected:
+        raise InvalidClassificationInput(
+            'Virtual page order must form a complete 1-based map.'
+        )
 
+    ordered = tuple(
+        sorted(
+            source_pages,
+            key=lambda item: (item.display_order, item.page_number),
+        )
+    )
     groups: list[list[PagePrediction]] = []
     for page in ordered:
         if not groups or groups[-1][-1].role != page.role:
@@ -294,6 +341,7 @@ def build_segment_proposals(
             if len(predicted_roles) == 1
             else ExamSourceRole.UNKNOWN
         )
+        page_numbers = [page.page_number for page in group]
         proposals.append(
             SegmentProposal(
                 order=order,
@@ -307,6 +355,10 @@ def build_segment_proposals(
                 metadata={
                     'minimumConfidence': min(page.confidence for page in group),
                     'pageSources': [page.source for page in group],
+                    'pageNumbers': page_numbers,
+                    'displayOrderStart': group[0].display_order,
+                    'displayOrderEnd': group[-1].display_order,
+                    'physicalContiguous': _physically_contiguous(page_numbers),
                 },
             )
         )
@@ -317,6 +369,7 @@ def _persisted_result(document: ExamSourceDocument, *, reused: bool) -> Persiste
     pages = tuple(
         PagePrediction(
             page_number=page.page_number,
+            display_order=page.display_order,
             role=page.effective_role,
             confidence=(
                 1.0 if page.teacher_role else float(page.predicted_confidence)
@@ -325,7 +378,7 @@ def _persisted_result(document: ExamSourceDocument, *, reused: bool) -> Persiste
             predicted_role=page.predicted_role,
             predicted_confidence=float(page.predicted_confidence),
         )
-        for page in document.pages.order_by('page_number')
+        for page in document.pages.order_by('display_order', 'page_number')
     )
     proposals = tuple(
         SegmentProposal(
@@ -406,10 +459,15 @@ def persist_classification_result(
         for number, page in existing_pages.items()
         if page.teacher_role
     }
+    display_orders = {
+        number: page.display_order
+        for number, page in existing_pages.items()
+    }
     parsed = parse_page_predictions(
         raw_output=raw_output,
         page_count=document.page_count,
         teacher_roles=teacher_roles,
+        display_orders=display_orders or None,
     )
     proposals = build_segment_proposals(parsed.pages)
 
@@ -419,6 +477,7 @@ def persist_classification_result(
             page = ExamSourcePage(
                 document=document,
                 page_number=prediction.page_number,
+                display_order=prediction.display_order,
             )
         page.predicted_role = prediction.predicted_role
         page.predicted_confidence = Decimal(str(prediction.predicted_confidence))
