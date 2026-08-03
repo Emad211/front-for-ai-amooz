@@ -233,22 +233,28 @@ def test_segment_cannot_extend_beyond_known_document_page_count():
         role=ExamSourceRole.QUESTIONS,
     )
 
-    with pytest.raises(ValidationError, match='beyond the source document'):
+    with pytest.raises(ValidationError, match='belong to the source document'):
         segment.full_clean()
 
 
-def test_database_rejects_reversed_segment_page_range():
+def test_database_allows_descending_physical_boundaries_for_virtual_segment():
     project = _project()
     document = _document(project, page_count=10)
 
-    with pytest.raises(IntegrityError):
-        with transaction.atomic():
-            ExamSourceSegment.objects.create(
-                document=document,
-                start_page=8,
-                end_page=3,
-                role=ExamSourceRole.QUESTIONS,
-            )
+    segment = ExamSourceSegment.objects.create(
+        document=document,
+        start_page=8,
+        end_page=3,
+        role=ExamSourceRole.QUESTIONS,
+        metadata={
+            'pageNumbers': [8, 7, 6, 5, 4, 3],
+            'displayOrderStart': 1,
+            'displayOrderEnd': 6,
+        },
+    )
+
+    assert segment.start_page == 8
+    assert segment.end_page == 3
 
 
 def test_database_rejects_confidence_outside_zero_to_one():
