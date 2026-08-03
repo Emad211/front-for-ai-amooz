@@ -9,8 +9,9 @@
 - **Last completed slice:** source confirmation → extraction → status/retry/cancel → exception review → legacy projection → publication
 - **Live validation owner:** manual validation by the project owner in the deployed environment
 - **Development/CI live-provider calls:** forbidden for this path
-- **Feature head:** `d7b53393d77c50a53b81f0cba5e7d45367b6c6d8`
+- **Validated code head:** `d7b53393d77c50a53b81f0cba5e7d45367b6c6d8`
 - **Validated merge ref:** `fd137cf8779eff5318cea23ca68fb7dc29f4cdb3`
+- **Current documentation head before this ledger sync:** `95e67cdf053061f47bbf40f72b6908fad3affd88`
 - **Focused workflow:** `30862683847`
 - **Backend job:** `91847863122`
 - **Frontend job:** `91847863181`
@@ -77,8 +78,8 @@ Additional completed reliability work—production dispatch, retry and cooperati
 ## CI evidence
 
 ```text
-head: d7b53393d77c50a53b81f0cba5e7d45367b6c6d8
-merge ref: fd137cf8779eff5318cea23ca68fb7dc29f4cdb3
+validated code head: d7b53393d77c50a53b81f0cba5e7d45367b6c6d8
+validated merge ref: fd137cf8779eff5318cea23ca68fb7dc29f4cdb3
 workflow: 30862683847
 backend job: 91847863122
 frontend job: 91847863181
@@ -90,7 +91,7 @@ source-map state tests: passed
 live provider requests: 0
 ```
 
-CI covers fake-provider/unit/contract behavior only. It does not claim real PDF accuracy, provider latency, token usage or cost.
+Commits after the validated code checkpoint are documentation-only roadmap/runbook synchronization. CI covers fake-provider/unit/contract behavior only. It does not claim real PDF accuracy, provider latency, token usage or cost.
 
 ## Production observability contract
 
