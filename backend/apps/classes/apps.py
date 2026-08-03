@@ -10,5 +10,6 @@ class ClassesConfig(AppConfig):
         # remains stable. Importing here registers the V4 models under the
         # existing ``classes`` app before checks, migrations, and requests run.
         from . import models_v4  # noqa: F401
+        from . import models_v4_blocks  # noqa: F401
         from . import signals  # noqa: F401
         from . import tasks_v4  # noqa: F401
