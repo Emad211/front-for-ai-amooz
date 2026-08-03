@@ -1,4 +1,4 @@
-"""Feature-gated teacher API for Exam Prep V4 source intake."""
+"""Feature-gated teacher API for Exam Prep V4."""
 from __future__ import annotations
 
 import logging
@@ -7,6 +7,7 @@ import os
 from django.conf import settings
 from django.http import Http404
 from rest_framework import status
+from rest_framework.pagination import PageNumberPagination
 from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -27,10 +28,20 @@ from apps.classes.services.exam_prep_v4_scope import (
     ExamPrepV4ScopeError,
     resolve_exam_scope,
 )
+from apps.classes.services.exam_prep_v4_source_map import (
+    get_teacher_project_source_map,
+    serialize_project_summary,
+    teacher_project_list_queryset,
+)
 from apps.classes.services.exam_prep_v4_uploads import persist_uploaded_pdf_batch
 from apps.classes.tasks_v4 import dispatch_exam_prep_v4_sources
 
 logger = logging.getLogger(__name__)
+
+
+def _require_v4() -> None:
+    if not exam_prep_v4_enabled():
+        raise Http404
 
 
 def _max_batch_files() -> int:
@@ -81,14 +92,21 @@ def _control_payload(request) -> dict[str, object]:
 
 
 class ExamPrepV4BatchUploadView(APIView):
-    """Upload several PDFs while creating one independent exam per file."""
+    """List owned projects or upload independent PDF projects."""
 
     permission_classes = [IsAuthenticated, IsTeacherUser]
     parser_classes = [MultiPartParser, FormParser]
 
+    def get(self, request):
+        _require_v4()
+        queryset = teacher_project_list_queryset(request.user)
+        paginator = PageNumberPagination()
+        page = paginator.paginate_queryset(queryset, request, view=self)
+        payload = [serialize_project_summary(project) for project in page]
+        return paginator.get_paginated_response(payload)
+
     def post(self, request):
-        if not exam_prep_v4_enabled():
-            raise Http404
+        _require_v4()
 
         files = request.FILES.getlist('files')
         if not files:
@@ -199,3 +217,20 @@ class ExamPrepV4BatchUploadView(APIView):
             },
             status=status.HTTP_202_ACCEPTED,
         )
+
+
+class ExamPrepV4ProjectDetailView(APIView):
+    """Return the current teacher-safe source map for one owned project."""
+
+    permission_classes = [IsAuthenticated, IsTeacherUser]
+
+    def get(self, request, project_id: int):
+        _require_v4()
+        try:
+            payload = get_teacher_project_source_map(
+                teacher=request.user,
+                project_id=project_id,
+            )
+        except ExamProject.DoesNotExist:
+            raise Http404
+        return Response(payload, status=status.HTTP_200_OK)
