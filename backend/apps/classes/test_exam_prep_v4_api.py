@@ -50,10 +50,10 @@ def _pdf(tone=240):
     return output.getvalue()
 
 
-def _file(name, tone=240):
+def _file(name, tone=240, *, data=None):
     return SimpleUploadedFile(
         name,
-        _pdf(tone),
+        data if data is not None else _pdf(tone),
         content_type='application/pdf',
     )
 
@@ -194,14 +194,15 @@ def test_same_ids_and_bytes_retry_same_project_without_new_blob(
     settings.EXAM_PREP_V4_ENABLED = True
     teacher = _user()
     metadata = _ids(1)
+    same_pdf = _pdf(225)
     dispatches = []
     monkeypatch.setattr(
         'apps.classes.views_v4.dispatch_exam_prep_v4_sources',
         lambda document_ids: dispatches.append(list(document_ids)) or f'group-{len(dispatches)}',
     )
 
-    first = _post(_auth(teacher), [_file('retry.pdf', 225)], metadata)
-    second = _post(_auth(teacher), [_file('retry.pdf', 225)], metadata)
+    first = _post(_auth(teacher), [_file('retry.pdf', data=same_pdf)], metadata)
+    second = _post(_auth(teacher), [_file('retry.pdf', data=same_pdf)], metadata)
 
     assert first.status_code == second.status_code == 202
     assert second.data['projects'][0]['id'] == first.data['projects'][0]['id']
@@ -220,12 +221,13 @@ def test_ready_retry_does_not_dispatch_or_report_uploading(
     settings.EXAM_PREP_V4_ENABLED = True
     teacher = _user()
     metadata = _ids(1)
+    same_pdf = _pdf()
     dispatches = []
     monkeypatch.setattr(
         'apps.classes.views_v4.dispatch_exam_prep_v4_sources',
         lambda document_ids: dispatches.append(list(document_ids)) or 'group',
     )
-    first = _post(_auth(teacher), [_file('ready.pdf')], metadata)
+    first = _post(_auth(teacher), [_file('ready.pdf', data=same_pdf)], metadata)
     project = ExamProject.objects.get(id=first.data['projects'][0]['id'])
     document = ExamSourceDocument.objects.get(id=first.data['projects'][0]['documentId'])
     project.status = ExamProject.Status.AWAITING_SOURCE_CONFIRMATION
@@ -237,7 +239,7 @@ def test_ready_retry_does_not_dispatch_or_report_uploading(
         update_fields=['status', 'classification_fingerprint', 'updated_at']
     )
 
-    retry = _post(_auth(teacher), [_file('ready.pdf')], metadata)
+    retry = _post(_auth(teacher), [_file('ready.pdf', data=same_pdf)], metadata)
 
     assert retry.status_code == 202
     assert retry.data['dispatchId'] is None
@@ -282,6 +284,7 @@ def test_dispatch_failure_preserves_private_source_and_retry_requeues(
     settings.EXAM_PREP_V4_ENABLED = True
     teacher = _user()
     metadata = _ids(1)
+    same_pdf = _pdf()
     calls = []
 
     def dispatch(document_ids):
@@ -295,7 +298,7 @@ def test_dispatch_failure_preserves_private_source_and_retry_requeues(
         dispatch,
     )
 
-    failed = _post(_auth(teacher), [_file('broker.pdf')], metadata)
+    failed = _post(_auth(teacher), [_file('broker.pdf', data=same_pdf)], metadata)
     assert failed.status_code == 503
     project = ExamProject.objects.get(id=failed.data['projects'][0]['id'])
     document = ExamSourceDocument.objects.get(id=failed.data['projects'][0]['documentId'])
@@ -304,7 +307,7 @@ def test_dispatch_failure_preserves_private_source_and_retry_requeues(
     assert document.status == ExamSourceDocument.Status.FAILED
     assert private_storage.exists(document.source_file.name)
 
-    retry = _post(_auth(teacher), [_file('broker.pdf')], metadata)
+    retry = _post(_auth(teacher), [_file('broker.pdf', data=same_pdf)], metadata)
     assert retry.status_code == 202
     assert retry.data['dispatchId'] == 'group-retry'
     project.refresh_from_db()
