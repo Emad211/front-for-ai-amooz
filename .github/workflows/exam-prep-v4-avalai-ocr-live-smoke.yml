@@ -23,10 +23,12 @@ jobs:
 
     env:
       AVALAI_API_KEY: ${{ secrets.AVALAI_API_KEY }}
-      OCR_QUESTION_PAGE_URL: ${{ secrets.OCR_QUESTION_PAGE_URL }}
-      OCR_ANSWER_PAGE_URL: ${{ secrets.OCR_ANSWER_PAGE_URL }}
       PRIVATE_DIR: ${{ runner.temp }}/exam-prep-v4-ocr-smoke
       REPORT_PATH: ${{ runner.temp }}/exam-prep-v4-ocr-smoke/aggregate-report.json
+      SOURCE_PDF_REPO_PATH: 'دفترچه اول (زیست).pdf'
+      EXPECTED_PAGE_COUNT: '16'
+      QUESTION_PAGE_NUMBER: '5'
+      ANSWER_PAGE_NUMBER: '12'
 
     steps:
       - name: Enforce branch and explicit authorization
@@ -36,15 +38,15 @@ jobs:
           test "${GITHUB_REF_NAME}" = "feat/exam-prep-v4-source-aware"
           test "${{ inputs.confirmation }}" = "I_APPROVE_8_PRIVATE_OCR_REQUESTS"
 
-      - name: Validate required secrets without printing values
+      - name: Validate required secret without printing it
         shell: bash
         run: |
           set -euo pipefail
           test -n "${AVALAI_API_KEY:-}"
-          test -n "${OCR_QUESTION_PAGE_URL:-}"
-          test -n "${OCR_ANSWER_PAGE_URL:-}"
 
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -60,64 +62,62 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r backend/requirements.txt
 
-      - name: Download exactly two private page images
+      - name: Extract exactly two private page images from main fixture
         shell: bash
         run: |
           set -euo pipefail
           umask 077
           mkdir -p "${PRIVATE_DIR}"
+          git fetch --no-tags --depth=1 origin main
+          git show "origin/main:${SOURCE_PDF_REPO_PATH}" > "${PRIVATE_DIR}/source.pdf"
           python - <<'PY'
           import os
           from pathlib import Path
-          import requests
+          import pypdfium2 as pdfium
 
           private_dir = Path(os.environ['PRIVATE_DIR'])
-          max_bytes = 12 * 1024 * 1024
-          fixtures = (
-              ('question-page', os.environ['OCR_QUESTION_PAGE_URL']),
-              ('answer-page', os.environ['OCR_ANSWER_PAGE_URL']),
+          source_path = private_dir / 'source.pdf'
+          if source_path.stat().st_size < 5 or source_path.read_bytes()[:5] != b'%PDF-':
+              raise SystemExit('source fixture is not a PDF')
+
+          expected_page_count = int(os.environ['EXPECTED_PAGE_COUNT'])
+          selected = (
+              ('question-page', int(os.environ['QUESTION_PAGE_NUMBER'])),
+              ('answer-page', int(os.environ['ANSWER_PAGE_NUMBER'])),
           )
-
-          def download(label: str, url: str) -> Path:
-              try:
-                  response = requests.get(
-                      url,
-                      timeout=(15, 90),
-                      stream=True,
-                      allow_redirects=True,
-                  )
-                  response.raise_for_status()
-              except requests.RequestException as exc:
-                  raise SystemExit(f'{label} download failed') from exc
-
-              data = bytearray()
-              for chunk in response.iter_content(chunk_size=64 * 1024):
-                  if not chunk:
-                      continue
-                  data.extend(chunk)
-                  if len(data) > max_bytes:
-                      raise SystemExit(f'{label} exceeds byte limit')
-
-              raw = bytes(data)
-              if raw.startswith(b'\x89PNG\r\n\x1a\n'):
-                  suffix = '.png'
-              elif raw.startswith(b'\xff\xd8\xff'):
-                  suffix = '.jpg'
-              else:
-                  raise SystemExit(f'{label} is not PNG or JPEG')
-
-              path = private_dir / f'{label}{suffix}'
-              path.write_bytes(raw)
-              return path
-
-          question_path = download(*fixtures[0])
-          answer_path = download(*fixtures[1])
-          if question_path.read_bytes() == answer_path.read_bytes():
-              raise SystemExit('private smoke inputs must be different images')
-
-          (private_dir / 'question-path.txt').write_text(str(question_path), encoding='utf-8')
-          (private_dir / 'answer-path.txt').write_text(str(answer_path), encoding='utf-8')
+          document = pdfium.PdfDocument(str(source_path))
+          try:
+              if len(document) != expected_page_count:
+                  raise SystemExit('source fixture page count mismatch')
+              rendered_paths = []
+              for label, page_number in selected:
+                  if not 1 <= page_number <= len(document):
+                      raise SystemExit('selected source page is out of range')
+                  page = document[page_number - 1]
+                  try:
+                      image = page.render(scale=2.0).to_pil().convert('RGB')
+                  finally:
+                      page.close()
+                  image.thumbnail((1800, 2400))
+                  output_path = private_dir / f'{label}.png'
+                  image.save(output_path, format='PNG', optimize=True)
+                  if output_path.stat().st_size < 1:
+                      raise SystemExit('rendered page is empty')
+                  if output_path.stat().st_size > 12 * 1024 * 1024:
+                      raise SystemExit('rendered page exceeds byte limit')
+                  rendered_paths.append(output_path)
+              if rendered_paths[0].read_bytes() == rendered_paths[1].read_bytes():
+                  raise SystemExit('selected smoke pages must be different images')
+              (private_dir / 'question-path.txt').write_text(
+                  str(rendered_paths[0]), encoding='utf-8'
+              )
+              (private_dir / 'answer-path.txt').write_text(
+                  str(rendered_paths[1]), encoding='utf-8'
+              )
+          finally:
+              document.close()
           PY
+          shred -u "${PRIVATE_DIR}/source.pdf"
 
       - name: Run bounded aggregate-only live OCR smoke
         shell: bash
@@ -162,7 +162,7 @@ jobs:
           retention-days: 1
           compression-level: 9
 
-      - name: Delete private inputs and local report
+      - name: Delete private fixture, page images, and local report
         if: always()
         shell: bash
         run: |
