@@ -5,6 +5,7 @@ from apps.classes.views_v4 import (
     ExamPrepV4PageThumbnailView,
     ExamPrepV4ProjectDetailView,
 )
+from apps.classes.views_v4_blocks import ExamPrepV4BlockListView
 from apps.classes.views_v4_source_map import (
     ExamPrepV4SourceMapConfirmationView,
     ExamPrepV4SourceMapMutationView,
@@ -39,6 +40,14 @@ urlpatterns = [
         ),
         ExamPrepV4SourceMapConfirmationView.as_view(),
         name='project-source-map-confirmation',
+    ),
+    path(
+        (
+            'projects/<int:project_id>/documents/<int:document_id>/'
+            'blocks/'
+        ),
+        ExamPrepV4BlockListView.as_view(),
+        name='project-source-block-list',
     ),
     path(
         (
