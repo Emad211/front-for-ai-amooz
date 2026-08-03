@@ -45,6 +45,9 @@ export type ExamPrepV4Segment = {
   order: number;
   startPage: number;
   endPage: number;
+  displayOrderStart: number | null;
+  displayOrderEnd: number | null;
+  pageNumbers: number[];
   role: ExamPrepV4SourceRole;
   predictedRole: ExamPrepV4SourceRole;
   predictedConfidence: number;
@@ -60,7 +63,7 @@ export type ExamPrepV4Document = {
   status: string;
   pageCount: number;
   classificationRevision: number;
-  sourceMapFingerprint: string;
+  sourceMapFingerprint: string | null;
   hasClassification: boolean;
   hasSourceMap: boolean;
   issueCount: number;
