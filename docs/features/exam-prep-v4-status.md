@@ -1,183 +1,156 @@
 # Exam Prep V4 — Implementation Status Ledger
 
-> Update this file before every V4 implementation step. Canonical roadmap: `exam-prep-v4-source-aware-split-pipeline.md`.
+> Update this file before every V4 implementation slice. Canonical architecture: `exam-prep-v4-source-aware-split-pipeline.md`. Fast execution overlay: `exam-prep-v4-production-critical-path.md`.
 
 - **Branch:** `feat/exam-prep-v4-source-aware`
 - **PR:** #4 — Draft
-- **Current span:** Phase 2 + Phase 4 → Phase 7 private full-pipeline evidence
-- **Last completed slice:** optional OCR adapter, OCR-aware benchmark guard and one-click three-PDF workflow
-- **Active gate:** execute the manual full live benchmark exactly once and inspect aggregate evidence
-- **Feature/workflow contract checkpoint:** `5db6e4b7eab2d4ae3150b79d342b8cfc93b107c9`
-- **Manual workflow on main:** `5903d08fc3f58d8625f4ddf80fdccd92949b1ac6`
-- **Focused CI:** `30857010156`
-- **Backend job:** `91830257210`
-- **Frontend job:** `91830257126`
-- **Validated merge ref:** `54e401d067c596444b20e1c4497d77fd7ad58615`
-- **Result:** 252 backend tests passed; migration drift zero; frontend focused validation passed
-- **Hard live ceiling:** 484 external requests
-- **Structured model:** `gemini-2.5-flash`
-- **OCR model:** `mistral-ocr-4-0`
+- **Execution mode:** Production Critical Path
+- **Current span:** production orchestration and observability, then status/retry controls
+- **Last completed slice:** optional OCR adapter, OCR-aware benchmark guard and bounded manual workflow
+- **Active gate:** connect the existing V4 semantic pipeline to the real teacher confirmation flow without making live provider calls from development or CI
+- **Live validation owner:** manual validation by the project owner in the deployed environment
+- **Structured model selection:** environment only
+- **OCR model selection:** environment only; default adapter remains disabled unless explicitly configured
 - **Last updated:** 2026-08-04
 
+## Current production reality
+
+Implemented and callable:
+
+- independent private PDF upload projects;
+- render, thumbnail and fast page-role classification;
+- revision-bound Source Map API and RTL teacher editor;
+- exact teacher confirmation by revision and fingerprint;
+- SourceBlock/Fragment persistence with crops and continuations;
+- typed QuestionRecord and unified AnswerSolutionRecord persistence;
+- deterministic matching and warm zero-call reuse;
+- optional AvalAI OCR evidence adapter and structured detector fallback;
+- aggregate benchmark tooling and focused fake-provider tests.
+
+Missing from the user flow before this slice:
+
+- confirmation does not dispatch semantic extraction;
+- no production extraction Celery task;
+- no run/task correlation visible to the API;
+- no owner-controlled retry endpoint;
+- no production stage/provider log contract;
+- no exception review or final projection/publication.
+
 ## Progress
+
+The existing 77-item canonical denominator remains unchanged. Production orchestration work is an execution overlay and receives no artificial accuracy credit.
 
 | Phase | Credited | Total | State |
 |---|---:|---:|---|
 | Phase 0 | 5 | 6 | PR ledger enforcement remains open. |
 | Phase 1 | 6 | 7 | Read-only admin inspection remains deferred. |
-| Phase 2 | 8 | 9 | Real three-fixture classification evidence is active. |
-| Phase 3 | 4 | 7 | Split/group and browser accessibility evidence remain open. |
-| Phase 4 | 4 | 8 | Numbered headings complete; private layout/RTL/diagram/continuation evidence active. |
-| Phase 5 | 6 | 7 | Private question precision/recall active. |
-| Phase 6 | 4 | 7 | Private answer-heading/key/inline evidence open. |
-| Phase 7 | 6 | 7 | Private automatic-match precision/consistency active. |
-| Phases 8–10 | 0 | 20 | Not started. |
+| Phase 2 | 8 | 9 | Real production behavior will be validated by the owner after deployment. |
+| Phase 3 | 4 | 7 | Split/group controls and browser accessibility evidence remain open. |
+| Phase 4 | 4 | 8 | Column/RTL/dedup work remains open. |
+| Phase 5 | 6 | 7 | Real precision/recall will be measured by the owner in deployment. |
+| Phase 6 | 4 | 7 | Compact key and inline-answer paths remain open. |
+| Phase 7 | 6 | 7 | Complete option/solution consistency remains open. |
+| Phases 8–10 | 0 | 20 | Review, projection, hardening and rollout remain open. |
 
 - **Overall:** **43/77 = 55.8%**
-- **Phase 4:** **4/8 = 50.0%**
-- **Phase 5:** **6/7 = 85.7%**
-- **Phase 6:** **4/7 = 57.1%**
-- **Phase 7:** **6/7 = 85.7%**
 
-No private-accuracy credit is added before the live report and human review.
+## Live validation policy
 
-## AvalAI documentation rule
+Development and CI must not call live AvalAI endpoints for this critical path.
 
-For every AvalAI-dependent step:
+Allowed during coding:
 
-1. update this ledger first;
-2. re-read the relevant official AvalAI pages;
-3. pin reproducible model IDs;
-4. separate documentation, inference and measurement;
-5. never infer retention/training/residency guarantees;
-6. update the OCR and benchmark runbooks.
+- static checks;
+- fake-provider/unit/contract tests;
+- migration checks;
+- deterministic reuse and permission tests.
 
-Reviewed for this gate:
+Performed manually by the owner after deployment:
 
-```text
-https://docs.avalai.ir/fa/api-reference/ocr
-https://docs.avalai.ir/fa/examples/processing_documents_with_mistral_ocr
-https://docs.avalai.ir/fa/models/mistral-ocr-2512
-```
+- real PDF upload;
+- real provider extraction;
+- output inspection and corrections;
+- observed latency, call count and cost;
+- worker/process log inspection;
+- retry and warm-reuse behavior.
 
-## Closed implementation gates
+The temporary three-PDF live benchmark is no longer the next implementation gate and must not block coding.
 
-### OCR evidence adapter
+## Production observability contract
+
+Every extraction run receives:
 
 ```text
-backend/apps/classes/services/exam_prep_v4_ocr_evidence.py
-backend/apps/classes/test_exam_prep_v4_ocr_evidence.py
+runId: stable UUID for the logical extraction run
+taskId: Celery task id for one execution attempt
+projectId
+documentId
+sourceMapRevision
+sourceMapFingerprintPrefix
+attempt
 ```
 
-Verified:
-
-- primary `document_annotation` request;
-- deterministic Persian/Arabic/Latin numbered headings;
-- diagram-only bbox escalation;
-- retry only for transport failures;
-- whole-segment fallback for exhausted/invalid/low-confidence evidence;
-- existing SourceBlock parser/persistence remains authoritative;
-- accepted unchanged evidence makes zero OCR/detector calls;
-- private content excluded from stats/public output.
-
-### OCR-aware full benchmark
+Required log events:
 
 ```text
-backend/apps/classes/services/exam_prep_v4_benchmark_guard.py
-backend/apps/classes/management/commands/benchmark_exam_prep_v4_full_pipeline.py
-backend/apps/classes/test_exam_prep_v4_benchmark_guard.py
+exam_prep_v4.extraction.dispatch_requested
+exam_prep_v4.extraction.dispatch_reused
+exam_prep_v4.extraction.task_started
+exam_prep_v4.extraction.stage_started
+exam_prep_v4.extraction.stage_completed
+exam_prep_v4.extraction.task_completed
+exam_prep_v4.extraction.task_failed
+exam_prep_v4.extraction.task_retried
+exam_prep_v4.extraction.task_skipped
 ```
 
-Verified:
+Logs may contain identifiers, timings, models, provider-call counts, issue codes and aggregate record counts. Logs must not contain PDF/image bytes, OCR/source text, questions, answers, solutions, prompts, raw provider payloads, object keys or credentials.
 
-- OCR enabled only by explicit benchmark flag;
-- structured calls reserve three external slots;
-- direct OCR calls reserve one slot before transport;
-- below-plan ceilings fail before project/provider access;
-- report contains aggregate call/retry/fallback/ceiling data only;
-- fake and non-OCR modes remain unchanged;
-- warm extraction reuse remains zero-call.
+## Active slice P1 — production extraction task
 
-### Workflow contract
+Implementation order:
+
+1. add content-free structured observability helpers;
+2. add an observed production provider wrapper;
+3. add an idempotent extraction Celery task on queue `pipeline`;
+4. create/retain `runId` and expose Celery `taskId`;
+5. dispatch after exact Source Map confirmation;
+6. store safe current stage and counters in `project.workflow_state`;
+7. preserve current revision/fingerprint checks and warm reuse;
+8. mark failures with stable safe error codes;
+9. add explicit Celery route and deployment env/runbook notes.
+
+P1 exit condition:
+
+- teacher confirmation queues semantic extraction;
+- project API exposes correlation and progress;
+- production logs reconstruct each stage without private source content.
+
+## Next slice P2 — status and retry
+
+Implementation order:
+
+1. owner-scoped extraction status endpoint;
+2. owner-scoped retry endpoint for the current confirmed revision;
+3. return an existing active run instead of duplicate dispatch;
+4. frontend polling while status is active;
+5. display run ID, task ID, stage, progress and safe counters;
+6. failed-state retry action.
+
+P2 exit condition:
+
+- production testing can be performed from the UI/API without shell or direct database access.
+
+## After P2
+
+Continue directly through:
 
 ```text
-.github/workflows/exam-prep-v4-full-live-benchmark.yml
-backend/apps/classes/test_exam_prep_v4_full_live_workflow.py
+P3 exception-only review
+→ P4 backward-compatible projection and publication
+→ P5 stale recovery, cancellation, cleanup and limited rollout
 ```
-
-Verified:
-
-- manual `workflow_dispatch` only;
-- no confirmation input;
-- no automatic retry;
-- exact three private PDFs only;
-- PostgreSQL 16 and Redis 7;
-- preflight asserts required ceiling 484 before provider calls;
-- one cold/warm run;
-- aggregate report or content-free failure summary retained one day;
-- no PR comment/raw output;
-- private fixture checkout/temp files deleted in `always()`.
-
-Focused evidence:
-
-```text
-System check identified no issues (0 silenced).
-No changes detected in app 'classes'.
-252 passed, 47 warnings in 25.62s
-Focused frontend TypeScript check: passed
-Source-map state-model tests: passed
-```
-
-## Hard request ceiling
-
-```text
-classification invocations: 3
-possible structured block fallbacks: 6
-semantic batch invocations: 79
-structured invocations: 88
-structured external upper bound: 264
-OCR-eligible pages: 55
-OCR external upper bound: 220
-required minimum: 484
-```
-
-This is a worst-case fail-closed upper bound, not expected usage. Actual calls should be lower when OCR succeeds first attempt, pages lack diagrams, structured output needs no fallback/repair and OCR avoids detector fallback.
-
-Planning envelope remains **$10 maximum for this single run**. Exact cost is recorded from AvalAI transaction/request evidence after execution.
-
-## Active workflow
-
-```text
-name: exam-prep-v4-full-live-benchmark
-branch: main
-workflow commit: 5903d08fc3f58d8625f4ddf80fdccd92949b1ac6
-secret: AVALAI_API_KEY
-artifact: exam-prep-v4-full-live-aggregate
-retention: 1 day
-```
-
-## User action required now
-
-Run exactly once:
-
-```text
-GitHub
-→ Actions
-→ exam-prep-v4-full-live-benchmark
-→ Run workflow
-→ Run workflow
-```
-
-There is no input field. Do not start it twice.
 
 ## Exact continuation point
 
-After the run starts:
-
-1. recover run/job IDs;
-2. inspect terminal step and aggregate artifact;
-3. determine actual calls, retries, fallbacks, latency, structural accuracy, question/answer recall, match precision and warm reuse;
-4. update this ledger, canonical roadmap and runbooks;
-5. remove the temporary workflow from `main`;
-6. credit only canonical deliverables actually proven;
-7. continue the roadmap from the first failed private gate—never jump to Phase 8.
+Implement P1 now. Do not execute a real provider benchmark. After P1, implement P2 immediately, then continue from exception review rather than pausing for external benchmark approval.
