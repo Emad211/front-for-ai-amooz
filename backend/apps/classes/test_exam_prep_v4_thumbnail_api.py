@@ -162,6 +162,7 @@ def test_another_teacher_gets_404_without_storage_access(
 ):
     settings.EXAM_PREP_V4_ENABLED = True
     _owner, project, document, page, _data = _source_page()
+    outsider = _user()
     opened = []
     real_open = private_storage.open
 
@@ -172,7 +173,7 @@ def test_another_teacher_gets_404_without_storage_access(
     monkeypatch.setattr(private_storage, 'open', tracked_open)
 
     with django_assert_num_queries(1):
-        response = _auth(_user()).get(
+        response = _auth(outsider).get(
             _url(project, document, page.page_number)
         )
 
