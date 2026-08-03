@@ -1,4 +1,4 @@
-"""Owner-scoped source-map mutation endpoints for Exam Prep V4."""
+"""Owner-scoped source-map mutation and confirmation endpoints for V4."""
 from __future__ import annotations
 
 from django.http import Http404
@@ -24,6 +24,10 @@ from apps.classes.services.exam_prep_v4_source_map_mutation import (
     confirm_teacher_source_map,
     mutate_teacher_source_map,
 )
+from apps.classes.tasks_v4 import (
+    ExtractionDispatchResult,
+    dispatch_exam_prep_v4_extraction,
+)
 
 
 def _require_v4() -> None:
@@ -31,8 +35,12 @@ def _require_v4() -> None:
         raise Http404
 
 
-def _result_payload(result: SourceMapMutationResult) -> dict:
-    return {
+def _result_payload(
+    result: SourceMapMutationResult,
+    *,
+    dispatch: ExtractionDispatchResult | None = None,
+) -> dict:
+    payload = {
         'documentId': result.document_id,
         'classificationRevision': result.revision,
         'sourceMapFingerprint': result.fingerprint,
@@ -40,6 +48,14 @@ def _result_payload(result: SourceMapMutationResult) -> dict:
         'reused': result.reused,
         'isTeacherConfirmed': result.confirmed,
     }
+    if dispatch is not None:
+        payload['extraction'] = {
+            'runId': dispatch.run_id,
+            'taskId': dispatch.task_id,
+            'queued': dispatch.queued,
+            'reused': dispatch.reused,
+        }
+    return payload
 
 
 def _conflict_response(code: str, detail: str) -> Response:
@@ -92,7 +108,7 @@ class ExamPrepV4SourceMapMutationView(APIView):
 
 
 class ExamPrepV4SourceMapConfirmationView(APIView):
-    """Confirm exactly one current source-map revision and fingerprint."""
+    """Confirm the current Source Map and queue its semantic extraction."""
 
     permission_classes = [IsAuthenticated, IsTeacherUser]
 
@@ -134,4 +150,32 @@ class ExamPrepV4SourceMapConfirmationView(APIView):
                 'همهٔ صفحات باید نقش قطعی و پوشش segment معتبر داشته باشند.',
             )
 
-        return Response(_result_payload(result), status=status.HTTP_200_OK)
+        try:
+            dispatch = dispatch_exam_prep_v4_extraction(result.document_id)
+        except (ExamSourceDocument.DoesNotExist, ValueError):
+            return Response(
+                {
+                    **_result_payload(result),
+                    'code': 'extraction_not_dispatchable',
+                    'detail': 'نقشه تأیید شد اما نسخهٔ فعلی برای استخراج آماده نیست.',
+                },
+                status=status.HTTP_409_CONFLICT,
+            )
+        except Exception:
+            return Response(
+                {
+                    **_result_payload(result),
+                    'code': 'extraction_dispatch_failed',
+                    'detail': (
+                        'نقشه تأیید شد اما ارسال استخراج به صف انجام نشد. '
+                        'از عملیات تلاش مجدد استفاده کنید.'
+                    ),
+                },
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+
+        response_status = status.HTTP_202_ACCEPTED if dispatch.queued else status.HTTP_200_OK
+        return Response(
+            _result_payload(result, dispatch=dispatch),
+            status=response_status,
+        )
