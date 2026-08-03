@@ -6,6 +6,7 @@ from decimal import Decimal
 from typing import Any, Iterable, Mapping
 
 from django.db import transaction
+from django.db.models import F
 from django.utils import timezone
 
 from apps.classes.models_v4 import (
@@ -87,10 +88,11 @@ def _locked_complete_pages(document: ExamSourceDocument) -> list[ExamSourcePage]
         raise SourceMapNotReady('Source page count is unavailable.')
     if len(pages) != document.page_count:
         raise SourceMapNotReady('Source page map is incomplete.')
-    if [page.page_number for page in pages] != list(
-        range(1, document.page_count + 1)
-    ):
+    expected = list(range(1, document.page_count + 1))
+    if [page.page_number for page in pages] != expected:
         raise SourceMapNotReady('Source page map is not a complete one-based sequence.')
+    if sorted(page.display_order for page in pages) != expected:
+        raise SourceMapNotReady('Virtual page order is not a complete one-based sequence.')
     return pages
 
 
@@ -109,14 +111,15 @@ def _predictions_for_effective_map(
     pages: list[ExamSourcePage],
     normalized_map: tuple[dict[str, Any], ...],
 ) -> tuple[PagePrediction, ...]:
-    desired_by_number = {item['pageNumber']: item for item in normalized_map}
+    model_by_number = {page.page_number: page for page in pages}
     predictions: list[PagePrediction] = []
-    for page in pages:
-        desired = desired_by_number[page.page_number]
+    for desired in normalized_map:
+        page = model_by_number[desired['pageNumber']]
         is_teacher_override = desired['role'] != page.predicted_role
         predictions.append(
             PagePrediction(
                 page_number=page.page_number,
+                display_order=desired['displayOrder'],
                 role=desired['role'],
                 confidence=(
                     1.0 if is_teacher_override else float(page.predicted_confidence)
@@ -210,6 +213,39 @@ def _result(
     )
 
 
+def _persist_page_map(
+    *,
+    document: ExamSourceDocument,
+    model_pages: list[ExamSourcePage],
+    normalized_map: tuple[dict[str, Any], ...],
+) -> None:
+    desired_by_number = {item['pageNumber']: item for item in normalized_map}
+    order_changed = any(
+        page.display_order != desired_by_number[page.page_number]['displayOrder']
+        for page in model_pages
+    )
+    if order_changed:
+        ExamSourcePage.objects.filter(document=document).update(
+            display_order=F('display_order') + document.page_count
+        )
+
+    for page in model_pages:
+        desired = desired_by_number[page.page_number]
+        page.teacher_role = (
+            '' if desired['role'] == page.predicted_role else desired['role']
+        )
+        page.orientation = desired['orientation']
+        page.display_order = desired['displayOrder']
+        page.save(
+            update_fields=[
+                'teacher_role',
+                'orientation',
+                'display_order',
+                'updated_at',
+            ]
+        )
+
+
 @transaction.atomic
 def mutate_teacher_source_map(
     *,
@@ -294,14 +330,11 @@ def mutate_teacher_source_map(
             ]
         )
 
-    desired_by_number = {item['pageNumber']: item for item in normalized}
-    for page in model_pages:
-        desired = desired_by_number[page.page_number]
-        page.teacher_role = (
-            '' if desired['role'] == page.predicted_role else desired['role']
-        )
-        page.orientation = desired['orientation']
-        page.save(update_fields=['teacher_role', 'orientation', 'updated_at'])
+    _persist_page_map(
+        document=document,
+        model_pages=model_pages,
+        normalized_map=normalized,
+    )
 
     ExamSourceSegment.objects.bulk_create(
         [
@@ -368,7 +401,7 @@ def mutate_teacher_source_map(
     project.error_detail = ''
     project.workflow_state = {
         'stage': 'awaiting_source_confirmation',
-        'message': 'نقشهٔ صفحات ویرایش شد و آمادهٔ تأیید است.',
+        'message': 'نقشه و ترتیب مجازی صفحات ویرایش شد و آمادهٔ تأیید است.',
         'progressPercent': 25,
         'warningCount': 0,
     }
@@ -389,6 +422,20 @@ def mutate_teacher_source_map(
     return _result(document, reused=False)
 
 
+def _segment_metadata_matches_proposal(
+    segment: ExamSourceSegment,
+    proposal,
+) -> bool:
+    metadata = segment.metadata if isinstance(segment.metadata, dict) else {}
+    return (
+        metadata.get('pageNumbers') == proposal.metadata.get('pageNumbers')
+        and metadata.get('displayOrderStart')
+        == proposal.metadata.get('displayOrderStart')
+        and metadata.get('displayOrderEnd')
+        == proposal.metadata.get('displayOrderEnd')
+    )
+
+
 def _validate_confirmable_segments(
     *,
     document: ExamSourceDocument,
@@ -399,22 +446,34 @@ def _validate_confirmable_segments(
             'Every page must have a resolved role before confirmation.'
         )
 
+    current_map = structural_page_map_from_models(pages)
+    predictions = _predictions_for_effective_map(
+        pages=pages,
+        normalized_map=current_map,
+    )
+    proposals = build_segment_proposals(predictions)
     segments = list(
         document.segments.select_for_update()
         .filter(revision=document.classification_revision)
         .order_by('order', 'id')
     )
-    if not segments:
-        raise SourceMapNotConfirmable('Current source-map segments are unavailable.')
-    expected_start = 1
-    for order, segment in enumerate(segments):
-        if segment.order != order or segment.start_page != expected_start:
-            raise SourceMapNotConfirmable('Current source-map segments are not contiguous.')
-        if segment.role == ExamSourceRole.UNKNOWN:
-            raise SourceMapNotConfirmable('Unknown source-map segments cannot be confirmed.')
-        expected_start = segment.end_page + 1
-    if expected_start - 1 != document.page_count:
-        raise SourceMapNotConfirmable('Current source-map segments do not cover the document.')
+    if len(segments) != len(proposals) or not segments:
+        raise SourceMapNotConfirmable(
+            'Current source-map segments do not match the virtual page map.'
+        )
+
+    for expected_order, (segment, proposal) in enumerate(zip(segments, proposals)):
+        if (
+            segment.order != expected_order
+            or segment.start_page != proposal.start_page
+            or segment.end_page != proposal.end_page
+            or segment.role != proposal.role
+            or segment.role == ExamSourceRole.UNKNOWN
+            or not _segment_metadata_matches_proposal(segment, proposal)
+        ):
+            raise SourceMapNotConfirmable(
+                'Current source-map segments do not match the virtual page map.'
+            )
     return segments
 
 
@@ -507,7 +566,7 @@ def confirm_teacher_source_map(
     project.error_detail = ''
     project.workflow_state = {
         'stage': 'source_map_confirmed',
-        'message': 'نقشهٔ صفحات تأیید شد.',
+        'message': 'نقشه و ترتیب مجازی صفحات تأیید شد.',
         'progressPercent': 30,
         'warningCount': 0,
     }
