@@ -1,12 +1,21 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { normalizeApiError } from '@/services/auth-service';
 import {
   listExamPrepV4Projects,
   type ExamPrepV4PaginatedProjects,
 } from '@/services/exam-prep-v4-service';
 import { useMountedRef } from '@/hooks/use-mounted-ref';
+
+const ACTIVE_STATUSES = new Set([
+  'uploading',
+  'classifying',
+  'segmenting',
+  'extracting_questions',
+  'extracting_answers',
+  'matching',
+]);
 
 export function useExamPrepV4Projects() {
   const mountedRef = useMountedRef();
@@ -38,6 +47,19 @@ export function useExamPrepV4Projects() {
 
     return () => controller.abort();
   }, [mountedRef, page, reloadToken]);
+
+  const hasActiveProject = useMemo(
+    () => Boolean(data?.results.some((project) => ACTIVE_STATUSES.has(project.status))),
+    [data?.results],
+  );
+
+  useEffect(() => {
+    if (!hasActiveProject) return;
+    const timer = window.setInterval(() => {
+      setReloadToken((value) => value + 1);
+    }, 4000);
+    return () => window.clearInterval(timer);
+  }, [hasActiveProject]);
 
   const reload = useCallback(() => {
     setReloadToken((value) => value + 1);
