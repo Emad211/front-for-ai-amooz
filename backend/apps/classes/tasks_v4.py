@@ -26,6 +26,7 @@ from apps.classes.services.exam_prep_v4_live_pipeline import (
     run_document_extraction_pipeline,
 )
 from apps.classes.services.exam_prep_v4_observability import (
+    ExtractionRunCancelled,
     ExtractionRunContext,
     ObservedExamPrepV4Provider,
     emit_v4_event,
@@ -144,6 +145,48 @@ def _existing_dispatch(
     )
 
 
+def _cancelled_result(
+    *,
+    document: ExamSourceDocument,
+    context: ExtractionRunContext,
+    provider_calls: int = 0,
+) -> dict:
+    state = _project_state(document.project_id)
+    state.update(
+        {
+            'stage': 'cancelled',
+            'runId': context.run_id,
+            'taskId': context.task_id,
+            'attempt': context.attempt,
+            'sourceMapRevision': context.source_map_revision,
+            'sourceMapFingerprintPrefix': context.fingerprint_prefix,
+            'lastEventAt': timezone.now().isoformat(),
+            'providerCalls': max(0, int(provider_calls)),
+            'cancellationRequested': True,
+        }
+    )
+    ExamProject.objects.filter(id=document.project_id).update(
+        status=ExamProject.Status.CANCELLED,
+        cancel_requested=True,
+        error_code='',
+        error_detail='',
+        workflow_state=state,
+    )
+    emit_v4_event(
+        'exam_prep_v4.extraction.task_cancelled',
+        context=context,
+        providerCalls=max(0, int(provider_calls)),
+    )
+    return {
+        'status': 'cancelled',
+        'run_id': context.run_id,
+        'task_id': context.task_id,
+        'project_id': context.project_id,
+        'document_id': context.document_id,
+        'providerCalls': max(0, int(provider_calls)),
+    }
+
+
 def dispatch_exam_prep_v4_extraction(
     document_id: int,
     *,
@@ -179,6 +222,16 @@ def dispatch_exam_prep_v4_extraction(
             status=project.status,
         )
         return existing
+
+    if force or project.cancel_requested:
+        ExamProject.objects.filter(id=project.id).update(
+            cancel_requested=False,
+            error_code='',
+            error_detail='',
+        )
+        project.cancel_requested = False
+        project.error_code = ''
+        project.error_detail = ''
 
     selected_run_id = str(run_id or new_extraction_run_id())
     selected_task_id = str(uuid.uuid4())
@@ -223,6 +276,7 @@ def dispatch_exam_prep_v4_extraction(
         status=ExamProject.Status.SEGMENTING,
         warning_count=0,
         message='استخراج سؤال و پاسخ در صف پردازش قرار گرفت.',
+        counters={'cancellationRequested': False},
     )
     try:
         process_exam_prep_v4_extraction.apply_async(
@@ -413,12 +467,7 @@ def process_exam_prep_v4_extraction(
             )
             return {'status': 'skipped', 'reason': 'v4_disabled', 'run_id': run_id}
         if document.project.cancel_requested:
-            emit_v4_event(
-                'exam_prep_v4.extraction.task_skipped',
-                context=context,
-                reasonCode='cancel_requested',
-            )
-            return {'status': 'skipped', 'reason': 'cancel_requested', 'run_id': run_id}
+            return _cancelled_result(document=document, context=context)
         if not _is_exact_confirmed(document):
             emit_v4_event(
                 'exam_prep_v4.extraction.task_skipped',
@@ -444,7 +493,10 @@ def process_exam_prep_v4_extraction(
             status=ExamProject.Status.SEGMENTING,
             warning_count=0,
             message='استخراج ساختاریافته آغاز شد.',
-            counters={'pageCount': document.page_count},
+            counters={
+                'pageCount': document.page_count,
+                'cancellationRequested': False,
+            },
         )
 
         structured = StructuredLLMExamPrepV4Provider()
@@ -454,6 +506,11 @@ def process_exam_prep_v4_extraction(
             document_id=document.id,
             provider=provider,
         )
+        if ExamProject.objects.filter(
+            id=document.project_id,
+            cancel_requested=True,
+        ).exists():
+            raise ExtractionRunCancelled('Cancellation requested after extraction.')
 
         warning_count = (
             len(result.issues)
@@ -472,6 +529,7 @@ def process_exam_prep_v4_extraction(
             'ambiguousCount': result.matches.ambiguous_count,
             'conflictCount': result.matches.conflict_count,
             'issueCount': len(result.issues),
+            'cancellationRequested': False,
             **provider.safe_provider_metrics(),
         }
         merge_project_workflow_state(
@@ -500,6 +558,12 @@ def process_exam_prep_v4_extraction(
             'document_id': context.document_id,
             **counters,
         }
+    except ExtractionRunCancelled:
+        return _cancelled_result(
+            document=document,
+            context=context,
+            provider_calls=provider.provider_calls if provider else 0,
+        )
     except Exception as exc:
         transient = is_transient_llm_error(exc)
         if transient and self.request.retries < self.max_retries:
