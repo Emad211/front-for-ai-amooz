@@ -15,7 +15,7 @@ on:
 
 jobs:
   validate:
-    name: v4 foundation (postgres)
+    name: v4 focused validation (postgres)
     runs-on: ubuntu-latest
 
     services:
@@ -70,8 +70,8 @@ jobs:
       - name: Check classes migration drift
         run: python backend/manage.py makemigrations classes --check --dry-run
 
-      - name: Run V4 foundation tests on PostgreSQL
+      - name: Run all V4 tests on PostgreSQL
         run: |
           python -m pytest \
-            backend/apps/classes/test_exam_prep_v4_source_foundation.py \
+            backend/apps/classes/test_exam_prep_v4_*.py \
             -q --create-db
