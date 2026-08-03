@@ -6,7 +6,7 @@
 - **Branch:** `feat/exam-prep-v4-source-aware`
 - **Draft PR:** #4
 - **Current phase:** Phase 1 — source-domain foundation
-- **State:** Implementation in progress; CI validation pending
+- **State:** Implementation in progress; focused and repository CI validation pending
 - **Last updated:** 2026-08-03
 
 ## Verified baseline
@@ -15,7 +15,7 @@
 - The three private benchmark PDFs are three independent exams.
 - No private PDF, page image, OCR text, filename, answer, or solution content is committed.
 - Existing V1/V2/V3 API and pipeline code has not been changed.
-- V4 remains disabled unless `EXAM_PREP_V4_ENABLED=True` is supplied in Django settings.
+- V4 remains disabled unless `EXAM_PREP_V4_ENABLED` is enabled through Django settings or environment configuration.
 
 ## Implemented in Phase 1
 
@@ -48,8 +48,20 @@ The initial schema stores ownership, organization scope, project revision, priva
 - Project creation raises while `EXAM_PREP_V4_ENABLED` is false.
 - Legacy exam-prep models and tasks remain untouched.
 
+### Focused CI
+
+Added `.github/workflows/exam-prep-v4.yml` with a PostgreSQL 16 service and four explicit gates:
+
+1. install the production backend dependencies;
+2. run `python backend/manage.py check`;
+3. run `python backend/manage.py makemigrations classes --check --dry-run`;
+4. run only `test_exam_prep_v4_source_foundation.py` with real migrations and `--create-db`.
+
+This focused workflow is additive and does not replace the repository-wide CI.
+
 ## Files added or changed
 
+- `.github/workflows/exam-prep-v4.yml`
 - `backend/apps/classes/models_v4.py`
 - `backend/apps/classes/migrations/0040_exam_prep_v4_source_foundation.py`
 - `backend/apps/classes/apps.py`
@@ -60,11 +72,13 @@ The initial schema stores ownership, organization scope, project revision, priva
 
 | Date | Commit | Command / environment | Result |
 |---|---|---|---|
-| 2026-08-03 | `888abdde` | GitHub Actions run `30773375531` | In progress; do not mark Phase 1 complete yet. |
+| 2026-08-03 | `888abdde` | Repository GitHub Actions run `30773375531` | Backend still running at observation time. Frontend failed on pre-existing admin-ticket and mock-message type errors; no V4 frontend file changed. |
+| 2026-08-03 | `e4312932` | Focused V4 workflow + repository workflow | Queued/pending; do not mark Phase 1 complete yet. |
 
 Targeted assertions added:
 
 - models are registered under the `classes` app;
+- model state has no uncommitted `classes` migration drift;
 - feature flag defaults to disabled behavior;
 - three PDFs create three projects;
 - identical file hashes never merge projects;
@@ -96,4 +110,4 @@ Phase 1 is not complete until all of the following are evidenced:
 
 ## Next verified step
 
-Read GitHub Actions run `30773375531`. Fix any V4-caused migration, registry, or test failure before adding upload APIs or page classification.
+Read the focused workflow triggered by commit `e4312932`. Fix any V4-caused migration, registry, constraint, or test failure before adding upload APIs or page classification.
