@@ -39,6 +39,30 @@ def _locked_ids(queryset) -> tuple[int, ...]:
     )
 
 
+def _accepted_match_decisions_for_document(*, document_id: int):
+    """Select accepted decisions without joining the nullable question relation.
+
+    ``question_record`` is nullable for unresolved and out-of-scope decisions.
+    Filtering through ``question_record__document_id`` makes Django emit an
+    outer join, and PostgreSQL rejects ``SELECT ... FOR UPDATE`` when a nullable
+    join side is present. FK-id subqueries keep the lock on MatchDecision rows
+    only while preserving the exact same document dependency boundary.
+    """
+
+    answer_record_ids = ExamAnswerSolutionRecord.objects.filter(
+        document_id=document_id,
+    ).values('id')
+    question_record_ids = ExamQuestionRecord.objects.filter(
+        document_id=document_id,
+    ).values('id')
+    return ExamMatchDecision.objects.filter(
+        lifecycle_status=ExamExtractionLifecycle.ACCEPTED,
+    ).filter(
+        Q(answer_record_id__in=answer_record_ids)
+        | Q(question_record_id__in=question_record_ids)
+    )
+
+
 @transaction.atomic
 def supersede_match_decisions_for_document(
     *,
@@ -47,12 +71,7 @@ def supersede_match_decisions_for_document(
     """Supersede accepted matches that depend on either record side of a document."""
 
     match_ids = _locked_ids(
-        ExamMatchDecision.objects.filter(
-            lifecycle_status=ExamExtractionLifecycle.ACCEPTED,
-        ).filter(
-            Q(answer_record__document_id=document_id)
-            | Q(question_record__document_id=document_id)
-        )
+        _accepted_match_decisions_for_document(document_id=document_id)
     )
     if match_ids:
         ExamMatchDecision.objects.filter(id__in=match_ids).update(
