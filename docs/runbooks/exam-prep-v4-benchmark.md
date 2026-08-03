@@ -1,6 +1,6 @@
 # Runbook — Exam Prep V4 Source-Aware Benchmark
 
-- **Status:** Operational harness implemented; real private-fixture run pending
+- **Status:** Operational harness verified; real private-fixture run pending user execution-environment selection
 - **Branch:** `feat/exam-prep-v4-source-aware`
 - **Owner:** Classes / Exam Prep
 - **Created:** 2026-08-03
@@ -225,6 +225,7 @@ Focused PostgreSQL CI validates:
 - three independent projects for equal PDF bytes;
 - aggregate-only reporting;
 - path and filename non-disclosure;
+- anonymous report-visible fixture IDs;
 - default project/blob cleanup;
 - exact segment maps;
 - zero warm provider calls;
@@ -232,12 +233,17 @@ Focused PostgreSQL CI validates:
 - invalid manifest rejection;
 - failed aggregate nonzero command result.
 
-Latest harness implementation evidence before the final privacy-ID hardening:
+Latest fully validated harness evidence:
+
+- run: `30778629588`;
+- job: `91578823573`;
+- code head: `b9426c0dffafa04aa61cc850b814f4df3feba1b7`;
+- Python 3.12, PostgreSQL 16, Redis 7.
 
 ```text
 System check identified no issues (0 silenced).
 No changes detected in app 'classes'.
-127 passed, 33 warnings in 12.23s
+128 passed, 33 warnings in 12.36s
 ```
 
 This is synthetic/fake-provider evidence only.
@@ -247,20 +253,26 @@ This is synthetic/fake-provider evidence only.
 | Date | Commit | Mode | Fixtures | Result | Key notes |
 |---|---|---|---|---|---|
 | 2026-08-03 | Initial V4 branch | Contract only | A/B/C | Not run | Design contract created. |
-| 2026-08-03 | Harness implementation | Fake provider / synthetic | Three structural patterns | Passed | Contract, privacy, cleanup, independence and warm reuse verified; not a live accuracy result. |
-| Pending | Pending live checkpoint | Live provider / private | A/B/C | Not run | Requires local private paths, configured model and provider credential. |
+| 2026-08-03 | `b9426c0d...` | Fake provider / synthetic | Three structural patterns | Passed | Contract, privacy, cleanup, independence and warm reuse verified; not a live accuracy result. |
+| Pending | Pending live checkpoint | Live provider / private | A/B/C | Not run | Requires user-selected environment, local private paths, configured model and provider credential. |
 
-## User action required for the real exit gate
+## User action required now
 
-After the harness is merged into the working branch, the operator must provide on the execution machine:
+The harness is implemented and verified. To run the real exit gate, the user must identify where it should run:
 
-1. the local path of each of the three private PDFs;
-2. a local manifest based on the example file;
-3. `EXAM_PREP_V4_CLASSIFICATION_MODEL`;
-4. `AVALAI_API_KEY`.
+- local development machine; or
+- staging/backend server.
 
-Do not send credentials in chat or commit them. Configure them as local environment variables or deployment secrets.
+On that selected machine:
+
+1. place the three private PDFs;
+2. copy and complete `docs/runbooks/exam-prep-v4-benchmark-manifest.example.json` outside Git;
+3. configure the model;
+4. configure `AVALAI_API_KEY` through local/deployment secrets;
+5. choose a private aggregate output path.
+
+Do not send credentials in chat or commit them.
 
 ## Current completion state
 
-The harness is implemented and fake-provider CI coverage exists. Phase 2 remains **8/9** until the real private fixture run is executed and aggregate evidence is recorded.
+The harness implementation slice is complete and verified. Phase 2 remains **8/9** until the real private-fixture run is executed and aggregate evidence is recorded. Phase 3 and Phase 4 remain blocked.
