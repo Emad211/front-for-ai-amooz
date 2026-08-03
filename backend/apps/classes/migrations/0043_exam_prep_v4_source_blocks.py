@@ -50,7 +50,7 @@ class Migration(migrations.Migration):
                 ('created_at', models.DateTimeField(auto_now_add=True)),
                 ('updated_at', models.DateTimeField(auto_now=True)),
                 ('block', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='fragments', to='classes.examsourceblock')),
-                ('page', models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, related_name='block_fragments', to='classes.examsourcepage')),
+                ('page', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='block_fragments', to='classes.examsourcepage')),
             ],
             options={
                 'ordering': ['order', 'id'],
