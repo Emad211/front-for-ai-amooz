@@ -252,8 +252,10 @@ def test_full_fake_provider_pipeline_uses_real_crops_and_exact_match():
     project.refresh_from_db()
     assert result.provider_calls == 4
     assert provider.provider_calls == 4
-    assert len(result.issues) == 1
-    assert result.issues[0].stage == 'block_detection'
+    assert [(issue.stage, issue.code) for issue in result.issues] == [
+        ('block_detection', 'invalid_block_record'),
+        ('question_extraction', 'invalid_question_record'),
+    ]
     assert result.block_set.block_count == 3
     assert result.block_set.fragment_count == 3
     assert result.question_set.record_count == 1
