@@ -1,0 +1,44 @@
+{
+  "manifestVersion": 1,
+  "fixtures": [
+    {
+      "fixtureId": "fixture-a",
+      "pattern": "cover_questions_solutions",
+      "pdfPath": "/private/path/fixture-a.pdf",
+      "expectedPageCount": 16,
+      "expectedSegments": [
+        {"startPage": 1, "endPage": 1, "role": "cover"},
+        {"startPage": 2, "endPage": 8, "role": "questions"},
+        {"startPage": 9, "endPage": 16, "role": "answer_solutions"}
+      ],
+      "expectedQuestionNumbers": {"from": 1, "to": 50},
+      "expectedOutOfScopeNumbers": [51, 52, 53, 54]
+    },
+    {
+      "fixtureId": "fixture-b",
+      "pattern": "solutions_cover_questions",
+      "pdfPath": "/private/path/fixture-b.pdf",
+      "expectedPageCount": 27,
+      "expectedSegments": [
+        {"startPage": 1, "endPage": 11, "role": "answer_solutions"},
+        {"startPage": 12, "endPage": 12, "role": "cover"},
+        {"startPage": 13, "endPage": 27, "role": "questions"}
+      ],
+      "expectedQuestionNumbers": {"from": 51, "to": 115},
+      "expectedOutOfScopeNumbers": [49, 50, 116, 117]
+    },
+    {
+      "fixtureId": "fixture-c",
+      "pattern": "cover_questions_solutions_overlap",
+      "pdfPath": "/private/path/fixture-c.pdf",
+      "expectedPageCount": 15,
+      "expectedSegments": [
+        {"startPage": 1, "endPage": 1, "role": "cover"},
+        {"startPage": 2, "endPage": 8, "role": "questions"},
+        {"startPage": 9, "endPage": 15, "role": "answer_solutions"}
+      ],
+      "expectedQuestionNumbers": {"from": 116, "to": 145},
+      "expectedOutOfScopeNumbers": [114, 115, 146, 147]
+    }
+  ]
+}
