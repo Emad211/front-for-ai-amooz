@@ -236,6 +236,7 @@ class ExamSourcePage(models.Model):
         related_name='pages',
     )
     page_number = models.PositiveIntegerField()
+    display_order = models.PositiveIntegerField()
     rendered_file = models.FileField(
         upload_to='exam-prep-v4/source/pages/',
         storage=answer_source_storage,
@@ -292,9 +293,17 @@ class ExamSourcePage(models.Model):
                 fields=['document', 'page_number'],
                 name='uniq_exam_v4_document_page',
             ),
+            models.UniqueConstraint(
+                fields=['document', 'display_order'],
+                name='uniq_exam_v4_document_order',
+            ),
             models.CheckConstraint(
                 condition=Q(page_number__gte=1),
                 name='exam_v4_page_number_gte_1',
+            ),
+            models.CheckConstraint(
+                condition=Q(display_order__gte=1),
+                name='exam_v4_display_order_gte_1',
             ),
             models.CheckConstraint(
                 condition=Q(predicted_confidence__gte=0)
@@ -311,11 +320,24 @@ class ExamSourcePage(models.Model):
                 fields=['document', 'predicted_role', 'page_number'],
                 name='exam_v4_page_role_idx',
             ),
+            models.Index(
+                fields=['document', 'display_order'],
+                name='exam_v4_page_order_idx',
+            ),
         ]
         ordering = ['page_number']
 
+    def save(self, *args, **kwargs) -> None:
+        if not self.display_order:
+            self.display_order = self.page_number
+        super().save(*args, **kwargs)
+
     def clean(self) -> None:
         super().clean()
+        if self.display_order and self.display_order < 1:
+            raise ValidationError(
+                {'display_order': 'Virtual display order must be positive.'}
+            )
         if self.duplicate_of_id:
             own_project_id = self.document.project_id
             duplicate_project_id = self.duplicate_of.document.project_id
@@ -329,7 +351,7 @@ class ExamSourcePage(models.Model):
         return self.teacher_role or self.predicted_role
 
     def __str__(self) -> str:
-        return f'ExamSourcePage<{self.document_id}:{self.page_number}>'
+        return f'ExamSourcePage<{self.document_id}:{self.page_number}@{self.display_order}>'
 
 
 class ExamSourceSegment(models.Model):
@@ -400,8 +422,8 @@ class ExamSourceSegment(models.Model):
                 name='exam_v4_segment_start_gte_1',
             ),
             models.CheckConstraint(
-                condition=Q(end_page__gte=F('start_page')),
-                name='exam_v4_segment_page_range',
+                condition=Q(end_page__gte=1),
+                name='exam_v4_segment_end_gte_1',
             ),
             models.CheckConstraint(
                 condition=Q(predicted_confidence__gte=0)
@@ -432,13 +454,17 @@ class ExamSourceSegment(models.Model):
     def clean(self) -> None:
         super().clean()
         if self.document_id and self.document.page_count:
+            if self.start_page > self.document.page_count:
+                raise ValidationError(
+                    {'start_page': 'Segment start page must belong to the source document.'}
+                )
             if self.end_page > self.document.page_count:
                 raise ValidationError(
-                    {'end_page': 'Segment cannot extend beyond the source document.'}
+                    {'end_page': 'Segment end page must belong to the source document.'}
                 )
 
     def __str__(self) -> str:
         return (
             f'ExamSourceSegment<{self.document_id}:'
-            f'{self.start_page}-{self.end_page}:{self.role}>'
+            f'{self.start_page}->{self.end_page}:{self.role}>'
         )
