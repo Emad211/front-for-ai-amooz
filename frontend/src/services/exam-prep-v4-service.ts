@@ -99,6 +99,13 @@ export type ExamPrepV4SourceMapConfirmationPayload = {
   sourceMapFingerprint: string;
 };
 
+export type ExamPrepV4ExtractionDispatch = {
+  runId: string;
+  taskId: string;
+  queued: boolean;
+  reused: boolean;
+};
+
 export type ExamPrepV4SourceMapMutationResult = {
   documentId: number;
   classificationRevision: number;
@@ -106,6 +113,51 @@ export type ExamPrepV4SourceMapMutationResult = {
   status: string;
   reused: boolean;
   isTeacherConfirmed: boolean;
+  extraction?: ExamPrepV4ExtractionDispatch;
+};
+
+export type ExamPrepV4ExtractionCounters = Partial<{
+  pageCount: number;
+  segmentCount: number;
+  blockCount: number;
+  fragmentCount: number;
+  questionCount: number;
+  answerSolutionCount: number;
+  matchedCount: number;
+  outOfScopeCount: number;
+  unresolvedCount: number;
+  ambiguousCount: number;
+  conflictCount: number;
+  issueCount: number;
+  providerCalls: number;
+  ocrCalls: number;
+  ocrRetries: number;
+  ocrFallbackCount: number;
+  ocrBboxCalls: number;
+  retryCountdownSeconds: number;
+}>;
+
+export type ExamPrepV4ExtractionStatus = {
+  projectId: number;
+  documentId: number;
+  projectStatus: string;
+  documentStatus: string;
+  active: boolean;
+  terminal: boolean;
+  retryable: boolean;
+  runId: string | null;
+  taskId: string | null;
+  attempt: number;
+  stage: string;
+  progressPercent: number;
+  warningCount: number;
+  sourceMapRevision: number;
+  sourceMapFingerprintPrefix: string | null;
+  lastEventAt: string | null;
+  counters: ExamPrepV4ExtractionCounters;
+  errorCode: string | null;
+  updatedAt: string;
+  dispatch?: ExamPrepV4ExtractionDispatch;
 };
 
 export type ExamPrepV4ConflictCode =
@@ -234,6 +286,27 @@ export async function confirmExamPrepV4SourceMap(
       method: 'POST',
       body: JSON.stringify(payload),
     },
+  );
+}
+
+export async function getExamPrepV4ExtractionStatus(
+  projectId: number,
+  documentId: number,
+  signal?: AbortSignal,
+): Promise<ExamPrepV4ExtractionStatus> {
+  return requestJson<ExamPrepV4ExtractionStatus>(
+    `/projects/${projectId}/documents/${documentId}/extraction/status/`,
+    { method: 'GET', signal },
+  );
+}
+
+export async function retryExamPrepV4Extraction(
+  projectId: number,
+  documentId: number,
+): Promise<ExamPrepV4ExtractionStatus> {
+  return requestJson<ExamPrepV4ExtractionStatus>(
+    `/projects/${projectId}/documents/${documentId}/extraction/retry/`,
+    { method: 'POST', body: JSON.stringify({}) },
   );
 }
 
