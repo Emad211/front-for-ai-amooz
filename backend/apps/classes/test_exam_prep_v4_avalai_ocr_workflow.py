@@ -56,20 +56,15 @@ def test_live_ocr_workflow_extracts_only_selected_main_pages():
     assert 'shred -u "${PRIVATE_DIR}/source.pdf"' in text
 
 
-def test_live_ocr_workflow_never_uploads_private_inputs():
+def test_live_ocr_workflow_uses_valid_temp_paths_and_never_uploads_private_inputs():
     text = _workflow_text()
 
-    aggregate_path = (
-        'path: ${{ runner.temp }}/exam-prep-v4-ocr-smoke/'
-        'aggregate-report.json'
-    )
-    private_directory_path = 'path: ${{ runner.temp }}/exam-prep-v4-ocr-smoke\n'
-
-    assert 'aggregate-report.json' in text
+    assert 'PRIVATE_DIR: /tmp/exam-prep-v4-ocr-smoke' in text
+    assert 'REPORT_PATH: /tmp/exam-prep-v4-ocr-smoke/aggregate-report.json' in text
+    assert '${{ runner.temp }}' not in text
+    assert 'path: ${{ env.REPORT_PATH }}' in text
     assert 'retention-days: 1' in text
     assert 'name: exam-prep-v4-avalai-ocr-aggregate' in text
-    assert aggregate_path in text
-    assert private_directory_path not in text
     assert 'include_image_base64' not in text
     assert 'find "${PRIVATE_DIR}" -type f -exec shred -u {}' in text
     assert 'rm -rf "${PRIVATE_DIR}"' in text
