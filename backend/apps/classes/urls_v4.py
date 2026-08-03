@@ -6,6 +6,7 @@ from apps.classes.views_v4 import (
     ExamPrepV4ProjectDetailView,
 )
 from apps.classes.views_v4_blocks import ExamPrepV4BlockListView
+from apps.classes.views_v4_records import ExamPrepV4RecordSummaryView
 from apps.classes.views_v4_source_map import (
     ExamPrepV4SourceMapConfirmationView,
     ExamPrepV4SourceMapMutationView,
@@ -24,6 +25,11 @@ urlpatterns = [
         'projects/<int:project_id>/',
         ExamPrepV4ProjectDetailView.as_view(),
         name='project-source-map-detail',
+    ),
+    path(
+        'projects/<int:project_id>/records/summary/',
+        ExamPrepV4RecordSummaryView.as_view(),
+        name='project-record-summary',
     ),
     path(
         (
