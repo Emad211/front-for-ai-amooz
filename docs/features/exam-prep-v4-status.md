@@ -7,7 +7,7 @@
 - **Execution mode:** Critical Path Acceleration
 - **Current roadmap span:** Phase 4 → Phase 7 vertical extraction path
 - **Last completed slice:** guarded manual GitHub Actions orchestration for the two-page AvalAI OCR live smoke
-- **Active gate:** provide two short-lived signed page-image URLs as GitHub Actions secrets, then manually dispatch the bounded live smoke
+- **Active gate:** extract two representative pages from the three private fixtures now present on `main`, then execute the bounded live OCR smoke
 - **Validated implementation checkpoint:** `86d0ccbc312dd7adc725add4ef3ee671c574390a`
 - **Focused workflow:** `30849183611`
 - **Backend job:** `91804786818`
@@ -66,7 +66,7 @@ For every AvalAI-dependent turn:
 5. never infer endpoint retention, training, or residency guarantees;
 6. record reviewed documentation in the related runbook.
 
-Required official pages for this gate:
+Official pages re-read for this gate:
 
 ```text
 https://docs.avalai.ir/fa/api-reference/ocr
@@ -76,72 +76,54 @@ https://docs.avalai.ir/fa/models/mistral-ocr-2512
 
 ## Product-owner authorization and credential state
 
-The product owner approved:
+The product owner has now explicitly authorized live requests and confirmed that repository Actions secret `AVALAI_API_KEY` is configured.
 
-- transmission of exactly two selected private page images;
-- pinned model `mistral-ocr-4-0`;
-- hard ceiling of exactly eight OCR requests;
-- implementation-agent selection of one question page and one answer-solution/continuation page;
-- secret-based credential delivery.
-
-The user confirmed through the GitHub settings UI that repository Actions secret `AVALAI_API_KEY` is configured. The secret value is neither visible nor required by the implementation agent.
-
-This authorization does not permit complete PDFs, more than two images, more than eight requests, production routing changes, Phase 8, publication, or rollout.
-
-## Closed gate — guarded GitHub Actions workflow
-
-Implemented workflow:
+The user placed these three private benchmark PDFs at the repository root on `main`:
 
 ```text
-.github/workflows/exam-prep-v4-avalai-ocr-live-smoke.yml
+دفترچه اول (زیست).pdf
+دفترچه دوم .pdf
+دفترچه سوم.pdf
 ```
 
-Safety contract:
+The PDFs may be read inside the GitHub runner for the authorized feasibility smoke. This does **not** authorize sending complete PDFs to AvalAI. Only two extracted page images may leave the runner, with a hard ceiling of eight OCR requests.
 
-- `workflow_dispatch` only; no push, pull-request, schedule, or automatic trigger;
-- read-only repository contents permission;
-- explicit confirmation string `I_APPROVE_8_PRIVATE_OCR_REQUESTS`;
-- branch locked to `feat/exam-prep-v4-source-aware`;
-- pinned endpoint/model path through the existing command;
-- exactly two secret-backed HTTPS page-image URLs;
-- accepts only PNG or JPEG signatures;
-- each input is bounded to 12 MiB;
-- the two images must be byte-distinct;
-- exactly four smoke modes and a hard eight-request ceiling;
-- only `aggregate-report.json` is uploaded;
-- aggregate artifact retention is one day;
-- raw page images and local report are shredded/removed in an `always()` cleanup step;
-- no private image, OCR text, annotation, raw provider response, URL, or credential is uploaded as an artifact.
+## Selected two-page smoke fixture
 
-Required secrets:
+Use `دفترچه اول (زیست).pdf` because it is the strongest candidate for RTL text plus biological diagrams/formulas.
+
+Selected physical pages:
 
 ```text
-AVALAI_API_KEY
-OCR_QUESTION_PAGE_URL
-OCR_ANSWER_PAGE_URL
+question page: 5
+answer-solution/continuation page: 12
 ```
 
-The URL secrets must point to short-lived signed HTTPS URLs for exactly two private page images. They must not point to full PDFs or public permanent files.
-
-## Workflow safety tests
+These are interior pages of the previously recorded ranges:
 
 ```text
-backend/apps/classes/test_exam_prep_v4_avalai_ocr_workflow.py
+cover: 1
+questions: 2–8
+answer_solutions: 9–16
 ```
 
-The tests enforce:
+Selecting interior pages avoids cover/boundary bias while preserving representative question and solution evidence.
 
-- manual-only and read-only workflow behavior;
-- exact secret names;
-- pinned `mistral-ocr-4-0` model;
-- exact request ceiling `8`;
-- aggregate-only artifact path;
-- one-day artifact retention;
-- private input cleanup;
-- image signature and byte-size checks;
-- exact aggregate acceptance contract.
+## Active implementation contract
 
-## Focused verification
+Modify only the guarded manual OCR workflow so it:
+
+1. checks out the V4 branch code;
+2. fetches the named PDF from `origin/main` into a private runner-temp directory without adding it to the feature branch;
+3. validates PDF signature and expected page count;
+4. renders physical pages 5 and 12 to bounded PNG images locally;
+5. sends only those two PNGs through the four existing smoke modes;
+6. executes at most eight requests with pinned `mistral-ocr-4-0`;
+7. uploads only `aggregate-report.json` for one day;
+8. deletes the temporary PDF, PNGs, path files, and local report in an `always()` cleanup step;
+9. never prints or artifacts source bytes, OCR text, annotations, data URLs, credentials, or raw provider output.
+
+## Current verification before this implementation
 
 ```text
 Python 3.12
@@ -154,29 +136,12 @@ Focused frontend TypeScript check: passed
 Source-map state-model tests: passed
 ```
 
-Warnings remain limited to the CI checkout lacking generated `backend/staticfiles/`. Expected negative PostgreSQL constraint logs are not suite failures.
+No live OCR request has yet been executed by this branch.
 
-No live OCR request has been executed and no private image has been transmitted by this branch.
+## User action required
 
-## User action required now
-
-Add these two repository Actions secrets:
-
-```text
-OCR_QUESTION_PAGE_URL
-OCR_ANSWER_PAGE_URL
-```
-
-Each value must be a short-lived signed HTTPS URL to one PNG/JPEG page image, maximum 12 MiB. Do not paste the URLs into chat, a PR, an issue, or the repository.
+No additional credential or file-upload action is required. The next implementation step is fully defined.
 
 ## Exact continuation point
 
-After both URL secrets are confirmed:
-
-1. re-read the official AvalAI OCR pages;
-2. manually dispatch `exam-prep-v4-avalai-ocr-live-smoke` on branch `feat/exam-prep-v4-source-aware`;
-3. enter confirmation `I_APPROVE_8_PRIVATE_OCR_REQUESTS`;
-4. inspect the aggregate-only artifact and request IDs;
-5. record measured RTL, formula, table, blocks/bbox, annotation, latency, and cost evidence in this ledger and runbook;
-6. decide whether OCR should be OCR-first, transcription-only, diagram-only, or rejected;
-7. do not change production routing or the 42/77 score before that evidence is reviewed.
+Update the guarded manual workflow from URL-secret input to direct private extraction of physical pages 5 and 12 from `دفترچه اول (زیست).pdf` on `origin/main`. Add static workflow tests, run focused CI, then manually dispatch the live smoke if the workflow gate is green. Do not change production routing or the 42/77 score before measured evidence is reviewed.
