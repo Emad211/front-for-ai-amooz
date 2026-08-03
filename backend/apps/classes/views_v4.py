@@ -39,7 +39,6 @@ from apps.classes.services.exam_prep_v4_source_map import (
 )
 from apps.classes.services.exam_prep_v4_uploads import persist_uploaded_pdf_batch
 from apps.classes.tasks_v4 import dispatch_exam_prep_v4_sources
-from core.storage_backends import open_answer_source_file
 
 logger = logging.getLogger(__name__)
 
@@ -271,7 +270,13 @@ class ExamPrepV4PageThumbnailView(APIView):
             raise Http404
 
         try:
-            stream = open_answer_source_file(page.thumbnail_file)
+            # V4 page renders are never legacy media. Open only the storage
+            # bound to this private field; do not fall back to default/public
+            # storage when the private object is missing.
+            stream = page.thumbnail_file.storage.open(
+                page.thumbnail_file.name,
+                'rb',
+            )
         except Exception:
             # Missing/unavailable private objects are indistinguishable from an
             # unknown page; never disclose the object name or storage backend.
