@@ -11,3 +11,4 @@ class ClassesConfig(AppConfig):
         # existing ``classes`` app before checks, migrations, and requests run.
         from . import models_v4  # noqa: F401
         from . import signals  # noqa: F401
+        from . import tasks_v4  # noqa: F401
