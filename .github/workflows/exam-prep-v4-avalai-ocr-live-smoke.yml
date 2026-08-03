@@ -23,8 +23,8 @@ jobs:
 
     env:
       AVALAI_API_KEY: ${{ secrets.AVALAI_API_KEY }}
-      PRIVATE_DIR: ${{ runner.temp }}/exam-prep-v4-ocr-smoke
-      REPORT_PATH: ${{ runner.temp }}/exam-prep-v4-ocr-smoke/aggregate-report.json
+      PRIVATE_DIR: /tmp/exam-prep-v4-ocr-smoke
+      REPORT_PATH: /tmp/exam-prep-v4-ocr-smoke/aggregate-report.json
       SOURCE_PDF_REPO_PATH: 'دفترچه اول (زیست).pdf'
       EXPECTED_PAGE_COUNT: '16'
       QUESTION_PAGE_NUMBER: '5'
@@ -157,7 +157,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: exam-prep-v4-avalai-ocr-aggregate
-          path: ${{ runner.temp }}/exam-prep-v4-ocr-smoke/aggregate-report.json
+          path: ${{ env.REPORT_PATH }}
           if-no-files-found: error
           retention-days: 1
           compression-level: 9
