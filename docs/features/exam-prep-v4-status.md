@@ -8,6 +8,7 @@
 - **Current phase:** Phase 2 — source preparation, fast classification, and virtual split
 - **State:** Internal backend pipeline verified; upload API and live benchmark not implemented
 - **Last updated:** 2026-08-03
+- **Branch relation:** 31 commits ahead and 1 unrelated landing commit behind `main` at the latest check; do not rebase while validations are in flight.
 
 ## Verified baseline
 
