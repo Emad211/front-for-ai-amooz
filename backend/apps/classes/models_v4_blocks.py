@@ -148,7 +148,7 @@ class ExamSourceBlockFragment(models.Model):
     )
     page = models.ForeignKey(
         'classes.ExamSourcePage',
-        on_delete=models.CASCADE,
+        on_delete=models.RESTRICT,
         related_name='block_fragments',
     )
     order = models.PositiveIntegerField(default=0)
