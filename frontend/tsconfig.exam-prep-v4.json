@@ -1,0 +1,21 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "incremental": false,
+    "allowImportingTsExtensions": true,
+    "noEmit": true
+  },
+  "include": [
+    "next-env.d.ts",
+    "src/features/exam-prep-v4/**/*.ts",
+    "src/services/exam-prep-v4-service.ts",
+    "src/hooks/use-exam-prep-v4-*.ts",
+    "src/components/teacher/exam-prep-v4/**/*.tsx",
+    "src/app/(teacher)/teacher/exam-prep-v4/**/*.tsx",
+    "src/constants/navigation.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    ".next"
+  ]
+}
