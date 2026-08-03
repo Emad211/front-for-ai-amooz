@@ -121,7 +121,7 @@ The focused workflow uses PostgreSQL 16 and Redis and runs:
 3. `python backend/manage.py makemigrations classes --check --dry-run`;
 4. all `backend/apps/classes/test_exam_prep_v4_*.py` tests with real migrations and `--create-db`.
 
-Latest verified run:
+Latest fully inspected successful run:
 
 - **Workflow run:** `30774398746`
 - **Job:** `91567007925`
@@ -133,7 +133,7 @@ No changes detected in app 'classes'.
 54 passed, 1 warning in 9.05s
 ```
 
-The warning only reports that the CI checkout has no generated `backend/staticfiles/` directory during a negative private-media-route test.
+The warning only reports that the CI checkout has no generated `backend/staticfiles/` directory during a negative private-media-route test. Later commits only update documentation until a newer focused run is explicitly inspected and recorded here.
 
 Repository-wide frontend CI remains red on pre-existing files unrelated to V4:
 
