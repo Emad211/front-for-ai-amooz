@@ -7,7 +7,10 @@ import pytest
 from apps.classes.models import ClassCreationSession
 from apps.classes.models_v4 import ExamProject
 from apps.classes.models_v4_projection import ExamV4Projection
-from apps.classes.models_v4_records import ExamMatchDecision
+from apps.classes.models_v4_records import (
+    ExamMatchDecision,
+    ExamQuestionRecord,
+)
 from apps.classes.models_v4_review import ExamReviewDecision
 from apps.classes.services.exam_prep_v4_live_pipeline import (
     run_document_extraction_pipeline,
@@ -56,7 +59,7 @@ def _exception_project():
 
 def test_exception_review_is_immutable_and_revision_bound():
     teacher, project, _document, decision = _exception_project()
-    question_id = project.question_records_v4.get().id
+    question_id = ExamQuestionRecord.objects.get(project=project).id
 
     queue = get_teacher_review_queue(teacher=teacher, project_id=project.id)
     assert queue['totalCount'] == 1
@@ -101,9 +104,11 @@ def test_exception_review_is_immutable_and_revision_bound():
     assert project.workflow_state['stage'] == 'review_complete'
 
 
-def test_reviewed_v4_project_projects_into_existing_student_contract(monkeypatch):
+def test_reviewed_v4_project_projects_into_existing_student_contract(
+    monkeypatch,
+):
     teacher, project, _document, decision = _exception_project()
-    question = project.question_records_v4.get()
+    question = ExamQuestionRecord.objects.get(project=project)
     persist_teacher_review_decision(
         teacher=teacher,
         project_id=project.id,
@@ -138,7 +143,10 @@ def test_reviewed_v4_project_projects_into_existing_student_contract(monkeypatch
     assert 'source_block_id' not in json.dumps(payload)
     assert 'raw_payload' not in json.dumps(payload)
 
-    # Post-commit side effects are not part of this contract test.
+    monkeypatch.setattr(
+        'apps.classes.services.exam_prep_v4_projection.transaction.on_commit',
+        lambda _callback: None,
+    )
     published = publish_legacy_projection(teacher=teacher, project_id=project.id)
     project.refresh_from_db()
     session.refresh_from_db()
