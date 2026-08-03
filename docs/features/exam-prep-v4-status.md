@@ -6,182 +6,86 @@
 - **Branch:** `feat/exam-prep-v4-source-aware`
 - **Draft PR:** #4
 - **Current phase:** Phase 2 — upload and fast source classification
-- **Completed slice:** Owner-scoped private page-thumbnail delivery
-- **Next slice:** Private benchmark harness for the Phase 2 exit gate
-- **State:** Thumbnail delivery is verified; Phase 3 and Phase 4 have not started
+- **Active slice:** Privacy-safe private benchmark harness for the Phase 2 exit gate
+- **State:** In progress; Phase 3 source-map mutation and Phase 4 block detection remain prohibited
 - **Last updated:** 2026-08-03
-- **Latest fully validated checkpoint:** `65baef2f0c9bc67ce99a978df730ba7fa24d1c84`
-- **Note:** the commit containing this ledger update follows the validated checkpoint and changes documentation only.
+- **Latest fully validated checkpoint before this slice:** `65baef2f0c9bc67ce99a978df730ba7fa24d1c84`
+- **Latest focused evidence before this slice:** run `30777760405`, job `91576402385`, 114 tests passed
 
-## Overall progress calculation
+## Progress calculation
 
 Progress is calculated from the 77 explicit checklist deliverables in the canonical roadmap, not from commit count, changed files, test count, or lines of code.
 
-| Phase | Credited deliverables | Total deliverables | State |
+| Phase | Credited | Total | State |
 |---|---:|---:|---|
-| Phase 0 | 5 | 6 | Architecture and benchmark contract exist; PR-level living-document enforcement remains open. |
-| Phase 1 | 6 | 7 | Models, migration, isolation and constraints are verified; read-only Django admin inspection remains deferred. |
-| Phase 2 | 8 | 9 | Intake, preparation, classification contracts, virtual split and source-map delivery exist; the live private-fixture exit gate remains open. |
+| Phase 0 | 5 | 6 | Architecture and benchmark contract exist; PR-level ledger enforcement remains open. |
+| Phase 1 | 6 | 7 | Models, migration and isolation are verified; read-only Django admin inspection remains deferred. |
+| Phase 2 | 8 | 9 | Only the private-fixture benchmark exit gate remains open. |
 | Phases 3–10 | 0 | 55 | Not started by design. |
 
-**Credited total: 19 / 77 = 24.7%.**
+- **Entire V4 roadmap:** **19 / 77 = 24.7%**.
+- **Current Phase 2 checklist:** **8 / 9 = 88.9%**.
 
-Therefore:
+This slice does not receive the final Phase 2 credit until a real private-fixture run is executed and aggregate results are recorded. Building and testing the harness alone is necessary infrastructure, not completion of the live exit gate.
 
-- **Entire V4 roadmap:** **24.7% complete**.
-- **Current Phase 2 checklist:** **88.9% complete** (`8 / 9`).
+## Roadmap guardrail for this turn
 
-Closing the thumbnail endpoint does not increase the canonical total because it is a security-critical sub-deliverable of the already credited Phase 2 source-map API item. Recording a higher overall percentage here would double-count the same roadmap deliverable.
+Only the following work is allowed:
 
-The remaining work is still substantial: teacher correction, block detection, question extraction, answer-plus-solution extraction, deterministic matching, exception review, projection/publication, lifecycle hardening and controlled rollout are all later phases.
+1. implement `benchmark_exam_prep_v4` or an equivalent isolated management command;
+2. accept a local non-committed JSON manifest containing three independent fixture paths and content-free expected segment ranges;
+3. keep every fixture in its own `ExamProject` and `ExamSourceDocument`;
+4. support a deterministic fake-provider/dry-run mode for CI;
+5. support a real-provider classify-and-segment mode without printing or committing source content;
+6. measure aggregate cold latency, page-role counts, segment counts, issue counts, provider calls, tokens and estimated cost;
+7. verify unchanged accepted warm reruns make zero provider calls;
+8. fail closed for missing files, invalid manifests, absent model configuration or absent credentials;
+9. write aggregate JSON only to an explicitly requested output path;
+10. update the benchmark runbook and this ledger with exact CI evidence.
 
-## Roadmap guardrail
+Explicitly out of scope:
 
-The implementation must remain in Phase 2 until its private-fixture exit gate is measured and recorded.
-
-The next slice may implement only a private benchmark harness that:
-
-1. accepts each private PDF as an independent exam;
-2. runs source preparation and fast page-role classification without committing source content;
-3. records only aggregate page-role/segment metrics, latency, provider usage and warm-rerun reuse;
-4. verifies the three documented structural patterns;
-5. verifies that an unchanged accepted warm rerun performs zero provider calls;
-6. supports a dry-run/fake-provider mode for CI;
-7. fails closed when fixtures, model configuration or credentials are absent;
-8. updates the benchmark runbook and this ledger with exact evidence.
-
-Explicitly out of scope for the next slice:
-
-- source-map mutations or confirmation;
-- frontend UI;
-- full-resolution page delivery;
+- source-map role/boundary mutations or confirmation;
+- frontend work;
+- full-resolution source delivery;
 - block detection;
 - question extraction;
-- answer/solution extraction;
-- matching or publication;
-- claims about private-fixture accuracy without a real recorded run.
+- answer or solution extraction;
+- matching, projection or publication;
+- any claim of real fixture accuracy before the private PDFs are actually run.
 
-## Verified baseline
+## Verified implementation before this slice
 
-- Phase 0 architecture and private benchmark contracts exist.
-- The three supplied private PDFs are independent exams.
-- No private PDF, page image, native text, OCR text, answer, or solution content is committed.
-- Existing V1/V2/V3 API, task, artifact and publication behavior remains untouched.
-- V4 is hidden when `EXAM_PREP_V4_ENABLED` is disabled.
+### Phase 1 foundation
 
-## Phase 1 — complete except admin inspection
-
-Implemented and verified:
-
-- additive V4 models under the existing `classes` app;
-- migration `classes.0040`;
+- additive V4 models and migration `classes.0040`;
 - `ExamProject`, `ExamSourceDocument`, `ExamSourcePage`, and `ExamSourceSegment`;
-- owner, organization, study-group, revision, status, fingerprint, and private-storage fields;
-- project-scoped duplicate references;
-- indexes and PostgreSQL constraints;
-- one-PDF-one-project invariant;
-- equal file hashes never merge projects;
+- project-scoped isolation, duplicate references, indexes and PostgreSQL constraints;
+- one-PDF-one-project behavior even for equal hashes;
 - idempotent request/document identifiers;
-- feature-gated service boundaries;
-- migration drift and project-isolation tests.
+- V4 feature gating without changing V1/V2/V3 behavior.
 
-Still deferred within Phase 1:
+### Phase 2 implementation
 
-- Django admin/read-only inspection support.
+- private PDF validation and persistence;
+- serial bounded-memory page rendering;
+- private PNG renders and JPEG thumbnails;
+- bounded native-text samples;
+- missing-blob restoration and committed-deletion cleanup;
+- generic `/media/exam-prep-v4/...` denial;
+- tolerant fast page-role classification;
+- deterministic current-revision virtual segments;
+- input fingerprinting, usage tracking and accepted warm reuse;
+- multi-PDF intake with one independent project/task per PDF;
+- owner/organization/study-group scope enforcement;
+- owner-scoped project list and source-map detail APIs;
+- strict private thumbnail streaming with one-query ancestry validation and no storage fallback.
 
-## Phase 2 — verified implementation
-
-### Private source preparation
-
-- Validates PDF header, size, encryption, and page-count limits.
-- Stores the original PDF in private object storage.
-- Renders pages serially with bounded memory.
-- Stores private PNG page renders and JPEG thumbnails.
-- Captures bounded native-text samples.
-- Restores a named-but-missing private blob on an idempotent retry.
-- Reuses unchanged valid blobs without duplicate writes.
-- Deletes source, render, and thumbnail blobs after committed row deletion.
-- Blocks all `exam-prep-v4/` objects from the generic `/media/` route.
-
-### Fast page classification
-
-- Builds bounded numbered contact sheets.
-- Uses bounded native-text evidence only as supplemental classifier input.
-- Uses the central OpenAI-compatible gateway and central V4 prompt registry.
-- Selects the model only from environment configuration.
-- Validates classifier records independently.
-- Preserves valid sibling records when another record is malformed.
-- Converts missing pages to explicit `unknown` records.
-- Preserves teacher overrides without erasing model predictions.
-- Fingerprints source, revision, sheets, model, catalog, and prompt version.
-- Skips provider calls for accepted warm reruns.
-
-### Deterministic virtual split
-
-- Produces a complete one-based page map.
-- Groups adjacent equal effective roles without reordering pages.
-- Supports cover-first, answer-first, and cover-in-the-middle structures.
-- Persists proposed segments against classification revision and fingerprint.
-- Rejects stale revisions and conflicting accepted fingerprints.
-
-### Multi-PDF intake and independent tasks
-
-```text
-POST /api/classes/exam-prep-v4/projects/
-```
-
-- accepts several PDFs while creating one independent project per PDF;
-- prevalidates the whole batch before writes;
-- preserves idempotency and restores missing private blobs;
-- dispatches one independent task per source document;
-- validates owner, organization, and study-group scope;
-- preserves private sources across broker failures.
-
-### Read-only source-map APIs
-
-```text
-GET /api/classes/exam-prep-v4/projects/
-GET /api/classes/exam-prep-v4/projects/<project_id>/
-```
-
-- list and detail are owner-scoped;
-- another teacher receives 404;
-- current-revision pages and segments are returned in deterministic order;
-- private filenames, object keys, hashes, native text, raw model metadata, fingerprints, error details, and organization identities are excluded;
-- list and detail query counts are bounded.
-
-### Private page-thumbnail delivery — verified
-
-```text
-GET /api/classes/exam-prep-v4/projects/<project_id>/documents/<document_id>/pages/<page_number>/thumbnail/
-```
-
-Verified behavior:
-
-- authentication and teacher role are required;
-- disabled V4 returns 404;
-- project, document and page ancestry plus teacher ownership are resolved in one database query;
-- another teacher receives 404 before private storage is touched;
-- mixed project/document/page identifiers return 404;
-- missing page metadata, missing filename, missing object and storage failure are all indistinguishable 404 responses;
-- the endpoint opens only the storage bound to the private thumbnail field;
-- legacy/default-storage fallback is explicitly forbidden;
-- bytes are streamed as `image/jpeg`;
-- `Content-Disposition` uses only the synthetic name `page-<number>.jpg`;
-- private object names and storage keys do not enter body or headers;
-- the response uses `private, no-store, max-age=0`, `Pragma: no-cache`, `Expires: 0`, and varies on authorization/cookie;
-- `nosniff`, same-origin resource policy, and no-referrer headers are present;
-- the generic `/media/exam-prep-v4/...` path remains denied.
-
-## Focused CI evidence
-
-Latest fully validated workflow:
+## Latest verified evidence before this slice
 
 - **Run:** `30777760405`
 - **Job:** `91576402385`
-- **Head:** `65baef2f0c9bc67ce99a978df730ba7fa24d1c84`
 - **Environment:** Python 3.12, PostgreSQL 16, Redis 7
-- **Result:** success
 
 ```text
 System check identified no issues (0 silenced).
@@ -189,40 +93,36 @@ No changes detected in app 'classes'.
 114 passed, 33 warnings in 7.37s
 ```
 
-All warnings are the existing CI-only warning that `backend/staticfiles/` has not been generated while API/private-media tests initialize Django handlers.
+Warnings are limited to the CI checkout lacking generated `backend/staticfiles/` while API/private-media tests initialize Django handlers.
 
-The earlier focused run `30777540171` failed with `113 passed, 1 failed`. The failure was in the test harness: creation of the outsider user occurred inside an exact one-query assertion and contributed three setup queries. The user fixture was moved outside the measured block. The endpoint itself already returned 404 without opening storage. Corrected heads then passed all 114 tests repeatedly.
+## Benchmark harness acceptance criteria
 
-## Full repository status
+The implementation portion of this slice is complete only when tests prove:
 
-Focused V4 CI is authoritative for this slice and is green.
-The full repository workflow is not claimed as all-green because unrelated baseline frontend failures exist outside V4. No V4 frontend code is present.
+- manifest schema rejects unknown keys, duplicate fixture IDs, missing paths, non-PDF files, invalid page ranges and unsupported roles;
+- fixture filenames and absolute paths never appear in standard output or aggregate reports;
+- fixture bytes, page images, native text and model payloads are never serialized to output;
+- three inputs create three separate projects/documents even if their bytes are identical;
+- fake-provider mode reproduces the three documented structures A/B/C without network access;
+- aggregate reports contain only fixture IDs, counts, role metrics, boundary metrics, latency, usage totals and warm-reuse results;
+- cold provider-call counts are measurable;
+- warm reruns verify zero new provider calls after accepted unchanged classification;
+- a failed fixture prevents a false aggregate `passed` result;
+- temporary benchmark projects and private objects are removed unless an explicit keep flag is supplied;
+- system check, migration drift and all focused PostgreSQL tests pass.
 
-## Not yet verified or implemented
+## User input or decision boundary
 
-- no live provider classification benchmark has run;
-- the three private benchmark PDFs have not been processed by V4 in a recorded benchmark;
-- real classifier latency, cost and page-role accuracy remain unknown;
-- no teacher source-map mutation or confirmation API exists;
-- no V4 frontend exists;
-- no block detector, extractor, matcher, exception review, projection or publication path exists;
-- Phase 2 exit gate has not yet been met.
+No decision is needed from the user to implement and test the harness with synthetic PDFs and a fake provider.
 
-## Next slice acceptance criteria
+A real Phase 2 exit-gate run will require the user to provide or identify, on the machine where the command is executed:
 
-The private benchmark-harness slice is complete only when:
+1. the three private PDF paths;
+2. the local manifest path mapping anonymized fixture IDs A/B/C to those files;
+3. a configured classification model and provider credentials.
 
-- a management command or equivalent isolated runner accepts three independent private fixture paths;
-- fixture bytes, filenames, page images, text and model payloads are never committed or printed;
-- each fixture remains a separate project/document scope;
-- dry-run CI tests cover expected structural patterns and aggregate output shape;
-- cold-run latency, page counts, role counts, segment counts, issue counts and provider usage can be recorded;
-- warm reruns verify zero provider calls for unchanged accepted classifications;
-- missing configuration and missing fixtures fail clearly without partial benchmark claims;
-- aggregate results are written to `docs/runbooks/exam-prep-v4-benchmark.md` only after a real run;
-- focused PostgreSQL checks remain green;
-- this ledger is updated with exact evidence and recalculated progress.
+The harness must be completed first. When the code is ready, the exact command and required local inputs will be requested; no private file or credential will be committed to GitHub.
 
 ## Next verified step
 
-Implement only the Phase 2 private benchmark harness and its fake-provider/CI tests. Do not begin Phase 3 teacher mutations or Phase 4 block detection until the Phase 2 exit gate is measured and recorded.
+Implement only the private benchmark harness, fake-provider CI coverage, aggregate-only report contract and runbook updates. Do not begin Phase 3 or Phase 4 until a real private-fixture benchmark is executed and recorded.
