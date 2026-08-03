@@ -8,6 +8,7 @@ import {
   Loader2,
   RefreshCcw,
   RotateCcw,
+  Square,
 } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
@@ -15,6 +16,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { normalizeApiError } from '@/services/auth-service';
 import {
+  cancelExamPrepV4Extraction,
   getExamPrepV4ExtractionStatus,
   getExamPrepV4Project,
   retryExamPrepV4Extraction,
@@ -47,6 +49,8 @@ const stageLabels: Record<string, string> = {
   extraction_retrying: 'در انتظار تلاش مجدد',
   extraction_failed: 'پردازش ناموفق',
   extraction_dispatch_failed: 'ارسال به صف ناموفق',
+  cancellation_requested: 'درخواست توقف ثبت شد',
+  cancelled: 'پردازش لغو شد',
 };
 
 const counterLabels: Record<string, string> = {
@@ -72,6 +76,7 @@ export function ExamPrepV4ExtractionRuntimePanel({ projectId }: { projectId: num
   const [runtime, setRuntime] = useState<ExamPrepV4ExtractionStatus | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isRetrying, setIsRetrying] = useState(false);
+  const [isCancelling, setIsCancelling] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const loadRuntime = useCallback(async (signal?: AbortSignal) => {
@@ -137,6 +142,20 @@ export function ExamPrepV4ExtractionRuntimePanel({ projectId }: { projectId: num
     }
   }, [documentId, isRetrying, projectId]);
 
+  const cancel = useCallback(async () => {
+    if (!documentId || isCancelling) return;
+    setIsCancelling(true);
+    setError(null);
+    try {
+      const result = await cancelExamPrepV4Extraction(projectId, documentId);
+      setRuntime(result);
+    } catch (requestError) {
+      setError(normalizeApiError(requestError).message);
+    } finally {
+      setIsCancelling(false);
+    }
+  }, [documentId, isCancelling, projectId]);
+
   if (isLoading && !runtime) {
     return (
       <Card className="rounded-2xl border-border/60" dir="rtl">
@@ -147,6 +166,8 @@ export function ExamPrepV4ExtractionRuntimePanel({ projectId }: { projectId: num
       </Card>
     );
   }
+
+  const controlsBusy = isRetrying || isCancelling;
 
   return (
     <Card className="rounded-2xl border-border/60" dir="rtl">
@@ -174,7 +195,7 @@ export function ExamPrepV4ExtractionRuntimePanel({ projectId }: { projectId: num
         {error ? (
           <Alert variant="destructive">
             <AlertCircle className="h-4 w-4" aria-hidden="true" />
-            <AlertTitle>وضعیت پردازش دریافت نشد</AlertTitle>
+            <AlertTitle>عملیات وضعیت پردازش انجام نشد</AlertTitle>
             <AlertDescription>{error}</AlertDescription>
           </Alert>
         ) : null}
@@ -195,6 +216,16 @@ export function ExamPrepV4ExtractionRuntimePanel({ projectId }: { projectId: num
                 />
               </div>
             </div>
+
+            {runtime.cancellationRequested && runtime.active ? (
+              <Alert className="border-amber-500/30 bg-amber-500/10">
+                <Square className="h-4 w-4" aria-hidden="true" />
+                <AlertTitle>درخواست توقف ثبت شد</AlertTitle>
+                <AlertDescription>
+                  worker در اولین مرز امن stage یا batch متوقف می‌شود و وضعیت نهایی «لغو شده» ثبت خواهد شد.
+                </AlertDescription>
+              </Alert>
+            ) : null}
 
             <div className="grid grid-cols-1 gap-2 text-xs sm:grid-cols-2">
               <div className="rounded-xl border border-border/60 bg-muted/20 p-3">
@@ -232,23 +263,39 @@ export function ExamPrepV4ExtractionRuntimePanel({ projectId }: { projectId: num
               </Alert>
             ) : null}
 
-            <div className="flex flex-col gap-2 sm:flex-row">
+            <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
               <Button
                 type="button"
                 variant="outline"
                 className="h-11 rounded-xl"
                 onClick={() => void loadRuntime()}
-                disabled={isRetrying}
+                disabled={controlsBusy}
               >
                 <RefreshCcw className="ms-2 h-4 w-4" aria-hidden="true" />
                 بروزرسانی وضعیت
               </Button>
+              {runtime.active ? (
+                <Button
+                  type="button"
+                  variant="destructive"
+                  className="h-11 rounded-xl"
+                  onClick={() => void cancel()}
+                  disabled={controlsBusy || runtime.cancellationRequested}
+                >
+                  {isCancelling ? (
+                    <Loader2 className="ms-2 h-4 w-4 animate-spin" aria-hidden="true" />
+                  ) : (
+                    <Square className="ms-2 h-4 w-4" aria-hidden="true" />
+                  )}
+                  توقف پردازش
+                </Button>
+              ) : null}
               {runtime.retryable && !runtime.active ? (
                 <Button
                   type="button"
                   className="h-11 rounded-xl"
                   onClick={() => void retry()}
-                  disabled={isRetrying}
+                  disabled={controlsBusy}
                 >
                   {isRetrying ? (
                     <Loader2 className="ms-2 h-4 w-4 animate-spin" aria-hidden="true" />
