@@ -16,3 +16,4 @@ class ClassesConfig(AppConfig):
         from . import models_v4_projection  # noqa: F401
         from . import signals  # noqa: F401
         from . import tasks_v4  # noqa: F401
+        from . import tasks_v4_recovery  # noqa: F401
