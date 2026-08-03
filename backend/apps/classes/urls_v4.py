@@ -6,6 +6,10 @@ from apps.classes.views_v4 import (
     ExamPrepV4ProjectDetailView,
 )
 from apps.classes.views_v4_blocks import ExamPrepV4BlockListView
+from apps.classes.views_v4_extraction import (
+    ExamPrepV4ExtractionRetryView,
+    ExamPrepV4ExtractionStatusView,
+)
 from apps.classes.views_v4_records import ExamPrepV4RecordSummaryView
 from apps.classes.views_v4_source_map import (
     ExamPrepV4SourceMapConfirmationView,
@@ -46,6 +50,22 @@ urlpatterns = [
         ),
         ExamPrepV4SourceMapConfirmationView.as_view(),
         name='project-source-map-confirmation',
+    ),
+    path(
+        (
+            'projects/<int:project_id>/documents/<int:document_id>/'
+            'extraction/status/'
+        ),
+        ExamPrepV4ExtractionStatusView.as_view(),
+        name='project-extraction-status',
+    ),
+    path(
+        (
+            'projects/<int:project_id>/documents/<int:document_id>/'
+            'extraction/retry/'
+        ),
+        ExamPrepV4ExtractionRetryView.as_view(),
+        name='project-extraction-retry',
     ),
     path(
         (
