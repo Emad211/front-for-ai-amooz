@@ -6,24 +6,18 @@
 - **PR:** #4 (Draft)
 - **Current phase:** Phase 3 — teacher source-map confirmation and virtual tools
 - **Completed slice:** revision-safe source-map mutation and explicit confirmation backend
-- **Next locked slice:** simple teacher-facing source-map UI using the verified backend contract
+- **Active slice:** simple RTL and accessibility-conscious teacher source-map UI
 - **Phase 2 status:** 8/9; real three-PDF live-provider benchmark explicitly deferred by product owner on 2026-08-03
-- **Validated Phase 3 code checkpoint:** `3e65e7391feec798b9e893dae5071d7ec7c2e988`
-- **Focused evidence:** run `30780894549`, job `91585164044`, 150 tests passed
+- **Validated backend checkpoint:** `3e65e7391feec798b9e893dae5071d7ec7c2e988`
+- **Latest focused backend evidence:** run `30780894549`, job `91585164044`, 150 tests passed
+- **Current branch head before UI implementation:** `e2640243067a32b806200a3a91fc85716d4cd531`
+- **Last updated:** 2026-08-03
 
 ## Product-owner benchmark waiver
 
-The product owner instructed development to continue without running the live Phase 2 benchmark now.
+The live Phase 2 benchmark remains deferred by explicit product-owner instruction. It is not counted as passed and receives no progress credit. Real classifier accuracy, latency, and cost on the three private PDFs remain unknown and must be reconsidered before rollout, production-default activation, or real-document extraction tuning.
 
-This remains an explicit waiver, not a successful gate:
-
-- the privacy-safe benchmark harness remains available;
-- real classifier accuracy, latency, and cost on the three private PDFs remain unmeasured;
-- the deferred item receives no progress credit;
-- Phase 3 proceeds against synthetic and contract-level evidence;
-- the live benchmark must be reconsidered before rollout, production-default activation, or real-document extraction tuning.
-
-## Progress calculation
+## Progress before this UI slice
 
 Progress is based on the 77 explicit canonical-roadmap deliverables.
 
@@ -31,156 +25,91 @@ Progress is based on the 77 explicit canonical-roadmap deliverables.
 |---|---:|---:|---|
 | Phase 0 | 5 | 6 | Automated PR ledger enforcement remains open. |
 | Phase 1 | 6 | 7 | Read-only Django admin inspection remains deferred. |
-| Phase 2 | 8 | 9 | Live private-fixture benchmark deferred by product owner. |
-| Phase 3 | 1 | 7 | Revision persistence and stale-state invalidation are complete; UI/tools remain. |
+| Phase 2 | 8 | 9 | Live private-fixture benchmark deferred. |
+| Phase 3 | 1 | 7 | Revision persistence and stale-state invalidation are complete. |
 | Phases 4–10 | 0 | 48 | Not started. |
 
 - **Entire V4 roadmap:** **20/77 = 26.0%**
-- **Phase 2:** **8/9 = 88.9%**, with one deferred item
 - **Phase 3:** **1/7 = 14.3%**
 
-Only `Persist revisions and invalidate stale classification` receives Phase 3 credit. Backend support for role/boundary edits and ignore/rotation exists, but those deliverables remain in progress because the teacher UI and reorder behavior are not implemented.
+No UI credit is recorded until the teacher flow is implemented and its frontend acceptance gates pass.
 
-## Verified Phase 3 backend
+## Verified backend contract consumed by this slice
 
-### Structural source-map fingerprint
-
-A stable content-free SHA-256 contract now binds:
-
-- schema version;
-- page count;
-- every one-based page number;
-- effective role;
-- orientation.
-
-The fingerprint excludes PDF bytes, file hashes, filenames, text, images, object keys, classifier reasons, and model payloads.
-
-### Complete-map mutation
+### Read APIs
 
 ```text
-PUT /api/classes/exam-prep-v4/projects/<project_id>/documents/<document_id>/source-map/
+GET /api/classes/exam-prep-v4/projects/
+GET /api/classes/exam-prep-v4/projects/<project_id>/
+GET /api/classes/exam-prep-v4/projects/<project_id>/documents/<document_id>/pages/<page_number>/thumbnail/
 ```
 
-Properties:
-
-- owner-only with indistinguishable 404 for other teachers;
-- requires `expectedRevision`;
-- requires every document page exactly once;
-- validates supported roles and orientations;
-- rejects missing, duplicate, out-of-range, and stale maps without partial writes;
-- preserves classifier prediction separately from teacher override;
-- supports role changes, ignored role, and 0/90/180/270 orientation metadata;
-- deterministically rebuilds contiguous segments;
-- increments document and project revisions atomically;
-- clears stale classifier fingerprint;
-- invalidates prior confirmation and downstream review fingerprints;
-- retains prior-revision segments as `superseded` audit history;
-- retains a bounded pre-edit structural map history;
-- treats exact no-op and immediate network retry as idempotent.
-
-### Explicit confirmation
+### Mutation and confirmation APIs
 
 ```text
+PUT  /api/classes/exam-prep-v4/projects/<project_id>/documents/<document_id>/source-map/
 POST /api/classes/exam-prep-v4/projects/<project_id>/documents/<document_id>/source-map/confirm/
 ```
 
-Properties:
+Mutation requires a complete page map and `expectedRevision`. Confirmation requires the exact current revision and structural `sourceMapFingerprint`. Stale requests are rejected without partial writes.
 
-- binds confirmation to the exact current revision and source-map fingerprint;
-- rejects stale revision and mismatched fingerprint with stable 409 codes;
-- rejects unknown roles, missing segments, gaps, ordering errors, or incomplete coverage;
-- confirms only current-revision segments;
-- stores confirmer, confirmation time, revision, and fingerprint;
-- is idempotent for an identical accepted confirmation;
-- any later source-map edit invalidates confirmation;
-- advances only to the `source_map_confirmed`/`segmenting` workflow boundary; no Phase 4 processing is started.
+## Roadmap scope for this turn
 
-### Safe read contract
+Only the simple teacher-facing Source Map UI is allowed:
 
-The existing project detail response now exposes only safe binding fields:
+1. add a teacher route reachable from the existing teacher workflow;
+2. fetch one owned V4 project and its current document/page map;
+3. render an RTL thumbnail grid with responsive breakpoint-specific layouts rather than a scaled desktop layout;
+4. show predicted role, effective role, teacher override, orientation, issue state, and confirmation state without exposing private source identifiers;
+5. support role selection for all defined source roles;
+6. support 90-degree rotation steps through the existing orientation metadata contract;
+7. retain a complete local page map and track unsaved changes;
+8. save the complete map through the revision-safe PUT endpoint;
+9. handle `stale_source_map` and fingerprint conflicts by preserving local edits, warning the teacher, and offering a reload of the current server map;
+10. confirm only the current saved revision/fingerprint through the explicit confirmation endpoint;
+11. disable confirmation when unsaved changes or unresolved `unknown` roles exist;
+12. preserve keyboard navigation, visible focus, meaningful labels, screen-reader status announcements, touch targets, reduced-motion behavior, RTL alignment, dark mode, and semantic design tokens;
+13. use shared components and the existing API/auth infrastructure;
+14. add focused unit/component tests and include the new frontend files in the V4 CI path gate;
+15. update this ledger and the canonical roadmap with exact frontend and backend evidence.
 
-- `sourceMapFingerprint`;
-- `hasSourceMap`;
-- `isTeacherConfirmed`;
-- `teacherConfirmedRevision`.
-
-It still excludes filenames, storage keys, source hashes, native text, raw model metadata, classifier reasons, segment metadata, and error detail.
-
-### Additive migration
-
-Migration `classes.0041_exam_prep_v4_source_map_confirmation` adds:
-
-- `source_map_fingerprint`;
-- `teacher_confirmed_revision`;
-- `teacher_confirmed_fingerprint`;
-- database constraint for valid confirmed revisions.
-
-## Test coverage added
-
-Service and API tests verify:
-
-- owner isolation and student denial;
-- complete one-based maps;
-- duplicate/missing page rejection;
-- no-op idempotency;
-- immediate retry idempotency;
-- stale revision rejection;
-- preservation of model predictions;
-- role and orientation changes;
-- deterministic segment reconstruction;
-- old-segment supersession without deletion;
-- correct pre-edit audit snapshot;
-- full transaction rollback on persistence failure;
-- exact revision/fingerprint confirmation;
-- idempotent confirmation;
-- unknown-role confirmation refusal;
-- stale fingerprint/revision refusal;
-- confirmation invalidation after edits;
-- no private information in API responses.
-
-## Latest focused CI evidence
-
-- **Run:** `30780894549`
-- **Job:** `91585164044`
-- **Head:** `3e65e7391feec798b9e893dae5071d7ec7c2e988`
-- **Environment:** Python 3.12, PostgreSQL 16, Redis 7
-
-```text
-System check identified no issues (0 silenced).
-No changes detected in app 'classes'.
-150 passed, 42 warnings in 12.74s
-```
-
-Warnings are limited to the known CI-only missing generated `backend/staticfiles/` warning. Focused V4 CI is green. The full repository is not claimed all-green because unrelated baseline frontend failures remain outside V4.
-
-## Roadmap guardrail for the next slice
-
-The next permitted slice is only the simple source-map UI that consumes the verified APIs.
-
-It may include:
-
-- RTL page thumbnail grid;
-- effective/predicted role display;
-- role selection;
-- 90-degree rotation control;
-- unsaved-change state;
-- full-map save with revision conflict handling;
-- explicit confirmation button bound to current fingerprint;
-- accessible keyboard and screen-reader behavior.
-
-Still out of scope:
+Explicitly out of scope:
 
 - physical PDF rewriting;
 - page reorder persistence;
-- split/group actions;
+- drag-and-drop reorder;
+- split-into-separate-exams action;
+- group-documents action;
+- full-resolution PDF/page delivery;
 - block detection;
-- question or answer extraction;
+- question extraction;
+- answer/solution extraction;
 - matching, projection, or publication.
+
+## UI acceptance criteria
+
+- another teacher cannot reach or infer another project through the UI or API;
+- loading, empty, failed, ready, dirty, saving, stale, confirming, and confirmed states are distinct;
+- all pages remain represented exactly once in the save payload;
+- prediction and teacher override are visually distinct;
+- role changes and rotations never mutate the server before explicit save;
+- leaving or refreshing with unsaved changes produces a warning;
+- stale save responses never silently overwrite server changes;
+- confirmation cannot run with dirty state, missing fingerprint, unresolved unknown pages, or a non-current revision;
+- successful save updates revision/fingerprint from the returned safe source map;
+- successful confirmation updates the UI without starting Phase 4 work;
+- keyboard-only users can reach every page control and action;
+- screen readers receive page number, role, rotation, save state, errors, and confirmation results;
+- RTL ordering is correct while page numbers remain logically increasing;
+- mobile, tablet, and desktop layouts are breakpoint-specific;
+- dark mode and reduced motion remain usable;
+- no filename, storage key, source hash, native text, model payload, classifier reason, or private error detail is rendered or logged;
+- existing frontend baseline failures are separated from V4-caused failures.
 
 ## User action required
 
-No user decision or input is required for the next UI slice. The deferred live benchmark remains a known product risk and can be resumed later.
+No user input or product decision is required for this UI slice. Existing preferences are treated as binding: shared components, semantic tokens, RTL, dark mode, breakpoint-specific responsive layouts, interactive state changes, keyboard accessibility, adequate touch targets, and reduced-motion support.
 
 ## Next verified step
 
-Implement only the simple RTL/accessibility-conscious teacher source-map UI over the verified revision-safe APIs. Do not start Phase 4 block detection until the Phase 3 UI and correction flow pass their own acceptance tests and this ledger is updated again.
+Inspect the existing teacher frontend architecture and implement only the Source Map UI over the verified backend APIs. Do not begin reorder, split/group actions, Phase 4 block detection, or extraction.
