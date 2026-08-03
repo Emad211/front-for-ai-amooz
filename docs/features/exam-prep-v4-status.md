@@ -6,20 +6,19 @@
 - **PR:** #4 — Draft
 - **Execution mode:** Critical Path Acceleration
 - **Current roadmap span:** Phase 4 → Phase 7 vertical extraction path
-- **Last completed slice:** recovered and inspected failed live OCR run `30852221763`
-- **Active gate:** explain aggregate acceptance failure after eight completed requests, preserve failed aggregate evidence on future runs, and patch report delivery before any retry
-- **Validated feature checkpoint before live run:** `3bc8814726cf2218d3b8534ce6b0d74120e2c4f1`
-- **Focused verification workflow:** `30850414707`
-- **Focused backend job:** `91808774481`
-- **Focused frontend job:** `91808774469`
-- **Focused result:** 235 backend tests passed; frontend focused validation passed
-- **Manual live workflow on main:** `867817effb4df7669c4d1ec04f2775e25d615201`
-- **Failed live run:** `30852221763`
-- **Failed live job:** `91814702919`
-- **Exact external request count:** **8 completed**
-- **First failing step:** `Run exactly eight live OCR requests`
-- **Primary terminal error:** `AvalAI OCR smoke acceptance failed`
-- **Secondary reporting error:** PR comment POST returned GitHub `403 Forbidden`
+- **Last completed slice:** diagnosed the first live OCR run and implemented pass/fail aggregate-evidence preservation
+- **Active gate:** run one bounded evidence-preserving OCR retry, inspect the aggregate artifact, and decide the OCR role in V4
+- **First live run:** `30852221763`
+- **First live job:** `91814702919`
+- **First-run external requests:** **8 completed**
+- **First-run result:** aggregate acceptance false; original failed report lost by old workflow
+- **Evidence-preservation workflow commit:** `32913cff94bc58493f09c9abe9f7204985fbabb0`
+- **Evidence-preservation static-test commit:** `137518464ec3d2ee60a6051b07432cf6b8832f57`
+- **Operational workflow on main:** `5947a090c927243a1a7402b38cb59539af6a3972`
+- **Focused verification workflow:** `30853630677`
+- **Backend job:** `91819412114`
+- **Frontend job:** `91819412054`
+- **Focused result:** **236 backend tests passed; frontend focused validation passed**
 - **Last updated:** 2026-08-04
 
 ## Progress
@@ -57,89 +56,92 @@ No progress credit is added before measured private evidence closes a canonical 
 7. ambiguous evidence remains unresolved rather than guessed;
 8. malformed provider siblings remain isolated;
 9. accepted unchanged units are excluded from provider calls;
-10. private source content, paths, crops, OCR text, annotations, credentials, request IDs, and raw provider output remain outside public serializers, logs, and recorded roadmap evidence;
+10. private bytes, OCR text, annotations, credentials, and raw provider output remain outside logs and roadmap evidence;
 11. historical revisions remain auditable;
-12. production routing is not changed by a feasibility smoke;
-13. Phase 8 and rollout remain blocked until private evidence is recorded or explicitly waived;
-14. no retry is allowed until failed aggregate evidence can be preserved even when acceptance is false.
+12. production routing is unchanged by the smoke;
+13. Phase 8 and rollout remain blocked;
+14. the retry must preserve aggregate evidence before reporting success or failure.
 
 ## AvalAI documentation rule
 
-Before any AvalAI-dependent implementation or retry:
+Before every AvalAI-dependent change or execution:
 
 1. update this ledger;
 2. re-read the current official AvalAI documentation;
-3. pin reproducible model identifiers;
-4. separate documented, inferred, and measured behavior;
-5. never infer retention, training, or residency guarantees;
-6. update the OCR runbook with evidence.
+3. separate documented, inferred, and measured behavior;
+4. never infer retention/training/residency guarantees;
+5. update `docs/runbooks/exam-prep-v4-avalai-ocr-smoke.md`.
 
-Official pages for this gate:
-
-```text
-https://docs.avalai.ir/fa/api-reference/ocr
-https://docs.avalai.ir/fa/examples/processing_documents_with_mistral_ocr
-https://docs.avalai.ir/fa/models/mistral-ocr-2512
-```
-
-## Authorized live fixture
-
-```text
-source PDF: دفترچه اول (زیست).pdf on main
-question page: physical page 5
-answer-solution page: physical page 12
-model: mistral-ocr-4-0
-modes: markdown, blocks, document_annotation, bbox_annotation
-hard external-request ceiling: 8
-credential: repository Actions secret AVALAI_API_KEY
-```
-
-The complete PDF was not sent to AvalAI. Only the two locally rendered bounded PNG images were used.
-
-## Proven run evidence
-
-Run/job:
+## First live run — proven facts
 
 ```text
 run: 30852221763
 job: 91814702919
+requested model: mistral-ocr-4-0
+executed requests: 8
+command output: requests=8; passed=False
 ```
 
-Successful before provider stage:
+- PDF checkout and local page rendering succeeded.
+- The complete PDF was not sent; only pages 5 and 12 were rendered and transmitted.
+- At least one request raised a bounded transport/response/privacy exception.
+- Empty blocks or absent annotations alone would not cause request failure.
+- The old workflow skipped artifact upload after the command returned nonzero.
+- The old PR-comment step separately failed with GitHub `403 Forbidden`.
+- Cleanup deleted the local failed report, so per-mode failure details cannot be recovered.
 
-- authorization and secret validation;
-- V4 branch checkout;
-- sparse checkout of the selected PDF;
-- dependency installation;
-- PDF validation;
-- local rendering of physical pages 5 and 12.
+## Closed gate — failed-evidence preservation
 
-Provider stage:
+The patched workflow now:
+
+- runs the command with `continue-on-error`;
+- requires the aggregate report to exist with eight result rows;
+- prints only a sanitized per-mode summary;
+- uploads the aggregate artifact on pass or fail;
+- retains it for one day;
+- removes the failing PR-comment request;
+- enforces terminal pass/fail only after upload;
+- always deletes private temporary files.
+
+The bounded discovery retry requests `mistral-ocr-latest`; each successful result records the model actually returned. This alias is not approved for production routing.
+
+Verification:
 
 ```text
-Exam Prep V4 AvalAI OCR smoke completed; requests=8; passed=False
-CommandError: AvalAI OCR smoke acceptance failed.
+System check identified no issues (0 silenced).
+No changes detected in app 'classes'.
+236 passed, 47 warnings in 24.09s
+Focused TypeScript check: passed
+Source-map state tests: passed
 ```
 
-Therefore all eight planned requests completed, but at least one aggregate acceptance condition failed.
+## Authorized retry fixture
 
-The workflow skipped aggregate validation and artifact upload because the management command returned nonzero. It then tried to post the local report to PR #4, but GitHub returned `403 Forbidden`. Cleanup succeeded, so the local failed report is no longer recoverable from run `30852221763`.
+```text
+source PDF: دفترچه اول (زیست).pdf
+question page: 5
+answer-solution page: 12
+requested model: mistral-ocr-latest
+modes: markdown, blocks, document_annotation, bbox_annotation
+hard ceiling: 8 additional requests
+```
 
-## Active implementation contract
+The user previously granted broad permission for live testing and explicitly requested fast progress with real tests. The retry remains bounded to the same two images and eight requests.
 
-Only these changes are allowed next:
+## User action required now
 
-1. inspect the smoke command/service acceptance criteria against current official AvalAI OCR response contracts;
-2. make the command persist/report aggregate results before returning nonzero;
-3. upload the aggregate report on both pass and fail;
-4. remove or make non-fatal the PR-comment step;
-5. add request-progress counters that remain aggregate-only;
-6. add tests for failed-live-report preservation;
-7. run focused CI;
-8. obtain explicit bounded retry approval because the first authorization budget of eight requests was fully consumed.
+Run the updated workflow once:
 
-No production routing change and no roadmap credit increase are allowed yet.
+```text
+Actions
+→ exam-prep-v4-avalai-ocr-one-shot
+→ Run workflow
+→ Branch: main
+→ Run workflow
+```
+
+There is no confirmation textbox in the updated workflow. Do not run it more than once.
 
 ## Exact continuation point
 
-Read the OCR command, client, tests, and current AvalAI documentation. Identify which acceptance conditions can fail for legitimate OCR responses, patch evidence preservation/reporting, test the patch, update this ledger/runbook, and only then request one bounded retry authorization.
+After the retry starts, inspect its job and aggregate artifact. Record per-mode status/error classes, resolved model, counts, latency, and request IDs/cost lookup. Then remove the one-shot workflow from `main` and decide OCR-first, transcription-only, diagram-only, or rejected. Do not change the 42/77 score or production routing before reviewing that evidence.
