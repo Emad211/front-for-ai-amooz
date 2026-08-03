@@ -112,6 +112,24 @@ private path-based PDF input
 
 It records project/document workflow states and fail-closed errors. No public API or Celery task exposes this pipeline yet.
 
+## Current implementation files
+
+- `.github/workflows/exam-prep-v4.yml`
+- `backend/apps/classes/models_v4.py`
+- `backend/apps/classes/migrations/0040_exam_prep_v4_source_foundation.py`
+- `backend/apps/classes/services/exam_prep_v4_projects.py`
+- `backend/apps/classes/services/exam_prep_v4_classification.py`
+- `backend/apps/classes/services/exam_prep_v4_fast_classifier.py`
+- `backend/apps/classes/services/exam_prep_v4_pdf_source.py`
+- `backend/apps/classes/services/exam_prep_v4_source_pipeline.py`
+- `backend/apps/commons/llm_prompts/exam_prep_v4.py`
+- `backend/apps/classes/test_exam_prep_v4_source_foundation.py`
+- `backend/apps/classes/test_exam_prep_v4_classification.py`
+- `backend/apps/classes/test_exam_prep_v4_fast_classifier.py`
+- `backend/apps/classes/test_exam_prep_v4_pdf_source.py`
+- `backend/apps/classes/test_exam_prep_v4_source_pipeline.py`
+- `backend/apps/classes/test_exam_prep_v4_storage_lifecycle.py`
+
 ## Focused CI evidence
 
 The focused workflow uses PostgreSQL 16 and Redis and runs:
