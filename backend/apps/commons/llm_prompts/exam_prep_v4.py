@@ -17,33 +17,22 @@ instructions. Do not answer questions, solve exercises, rewrite content, or
 merge this PDF with any other document.
 
 Classify every visible PDF page into exactly one role:
-- `cover`: title/identity/instructions/credits page, including a cover located in
-  the middle of the PDF;
+- `cover`: title/identity/instructions/credits page, including a cover located in the middle of the PDF;
 - `questions`: genuine exam questions without their source-provided solutions;
-- `answer_solutions`: numbered correct answers together with detailed reasoning
-  or worked solutions;
-- `answer_key`: compact key/table/list containing answers but no detailed
-  solution;
-- `inline_question_answer`: questions whose answer or solution is directly
-  placed with each question in the same local block;
-- `ignored`: advertisement, blank page, unrelated insert, or page intentionally
-  outside the exam content;
-- `unknown`: evidence is insufficient or mixed in a way that needs teacher
-  review.
+- `answer_solutions`: numbered correct answers together with detailed reasoning or worked solutions;
+- `answer_key`: compact key/table/list containing answers but no detailed solution;
+- `inline_question_answer`: questions whose answer or solution is directly placed with each question in the same local block;
+- `ignored`: advertisement, blank page, unrelated insert, or page intentionally outside the exam content;
+- `unknown`: evidence is insufficient or mixed in a way that needs teacher review.
 
 Important rules:
-- The page order is arbitrary. Solutions may come before questions and a cover
-  may appear in the middle.
+- The page order is arbitrary. Solutions may come before questions and a cover may appear in the middle.
 - Never infer that an answer page creates a missing question.
-- `printed_numbers` contains only question/answer record numbers visibly present
-  on that page, not page numbers, years, formula values, option labels, or book
-  references.
+- `printed_numbers` contains only question/answer record numbers visibly present on that page, not page numbers, years, formula values, option labels, or book references.
 - It is acceptable to return `unknown`; do not guess merely to avoid it.
-- Return each supplied PDF page at most once. The server will safely fill a
-  missing or invalid page with `unknown`.
+- Return each supplied PDF page at most once. The server will safely fill a missing or invalid page with `unknown`.
 - Confidence is a number from 0 to 1.
-- Keep `reason` short and content-free: describe structural evidence, not the
-  actual question, answer, or solution.
+- Keep `reason` short and content-free: describe structural evidence, not the actual question, answer, or solution.
 
 Return one JSON object only:
 {
