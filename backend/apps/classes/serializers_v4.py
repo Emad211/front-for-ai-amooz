@@ -7,6 +7,7 @@ from typing import Any
 
 from rest_framework import serializers
 
+from apps.classes.models_v4 import ExamSourcePage, ExamSourceRole
 from apps.classes.services.exam_prep_v4_uploads import UploadMetadata
 
 
@@ -24,6 +25,29 @@ class ExamPrepV4UploadMetadataItemSerializer(serializers.Serializer):
 class ExamPrepV4BatchUploadControlSerializer(serializers.Serializer):
     organizationId = serializers.IntegerField(required=False, min_value=1)
     studyGroupId = serializers.IntegerField(required=False, min_value=1)
+
+
+class ExamPrepV4SourceMapPageSerializer(serializers.Serializer):
+    pageNumber = serializers.IntegerField(min_value=1)
+    role = serializers.ChoiceField(choices=ExamSourceRole.values)
+    orientation = serializers.ChoiceField(
+        choices=ExamSourcePage.Orientation.values,
+        default=ExamSourcePage.Orientation.DEG_0,
+    )
+
+
+class ExamPrepV4SourceMapMutationSerializer(serializers.Serializer):
+    expectedRevision = serializers.IntegerField(min_value=1)
+    pages = ExamPrepV4SourceMapPageSerializer(many=True, allow_empty=False)
+
+
+class ExamPrepV4SourceMapConfirmationSerializer(serializers.Serializer):
+    expectedRevision = serializers.IntegerField(min_value=1)
+    sourceMapFingerprint = serializers.RegexField(
+        regex=r'^[a-f0-9]{64}$',
+        min_length=64,
+        max_length=64,
+    )
 
 
 def parse_upload_metadata(raw: Any, *, file_count: int) -> tuple[UploadMetadata, ...]:
