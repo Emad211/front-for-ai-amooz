@@ -9,9 +9,9 @@ from django.core.management.base import CommandError
 from pypdf import PdfWriter
 
 from apps.classes.models_v4 import ExamProject, ExamSourceDocument, ExamSourcePage
-from apps.classes.services.exam_prep_v4_benchmark import load_benchmark_manifest
 from apps.classes.services.exam_prep_v4_full_benchmark import (
     FullBenchmarkError,
+    load_full_benchmark_manifest,
     run_full_pipeline_benchmark,
 )
 
@@ -112,7 +112,7 @@ def test_fake_full_benchmark_runs_three_independent_cold_and_warm_pipelines(
 ):
     settings.EXAM_PREP_V4_ENABLED = True
     manifest_path, private_paths = _manifest(tmp_path)
-    manifest = load_benchmark_manifest(manifest_path)
+    manifest = load_full_benchmark_manifest(manifest_path)
 
     with django_capture_on_commit_callbacks(execute=True):
         result = run_full_pipeline_benchmark(
@@ -190,7 +190,7 @@ def test_live_full_benchmark_fails_preflight_before_project_or_storage_writes(
 ):
     settings.EXAM_PREP_V4_ENABLED = True
     manifest_path, _private_paths = _manifest(tmp_path)
-    manifest = load_benchmark_manifest(manifest_path)
+    manifest = load_full_benchmark_manifest(manifest_path)
     monkeypatch.delenv('AVALAI_API_KEY', raising=False)
 
     with pytest.raises(FullBenchmarkError, match='AVALAI_API_KEY'):
