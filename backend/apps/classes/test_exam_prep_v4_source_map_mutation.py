@@ -64,6 +64,7 @@ def _build_map(*, unknown_page: bool = False):
         ExamSourcePage.objects.create(
             document=document,
             page_number=number,
+            display_order=number,
             predicted_role=role,
             predicted_confidence=Decimal('0.8000'),
             classification_metadata={'printedNumbers': [str(number)]},
@@ -74,6 +75,7 @@ def _build_map(*, unknown_page: bool = False):
         (4, 4, ExamSourceRole.ANSWER_SOLUTIONS),
     ]
     for order, (start, end, role) in enumerate(segments):
+        page_numbers = list(range(start, end + 1))
         ExamSourceSegment.objects.create(
             document=document,
             revision=2,
@@ -84,6 +86,12 @@ def _build_map(*, unknown_page: bool = False):
             predicted_role=role,
             predicted_confidence=Decimal('0.8000'),
             status=ExamSourceSegment.Status.PROPOSED,
+            metadata={
+                'pageNumbers': page_numbers,
+                'displayOrderStart': start,
+                'displayOrderEnd': end,
+                'physicalContiguous': True,
+            },
         )
     return teacher, project, document
 
@@ -92,18 +100,29 @@ def _current_payload(document):
     return [
         {
             'pageNumber': page.page_number,
+            'displayOrder': page.display_order,
             'role': page.effective_role,
             'orientation': page.orientation,
         }
-        for page in document.pages.order_by('page_number')
+        for page in document.pages.order_by('display_order', 'page_number')
     ]
 
 
 def _edited_payload(document):
     payload = _current_payload(document)
-    payload[1]['role'] = ExamSourceRole.ANSWER_KEY
-    payload[2]['orientation'] = 90
+    by_page = {item['pageNumber']: item for item in payload}
+    by_page[2]['role'] = ExamSourceRole.ANSWER_KEY
+    by_page[3]['orientation'] = 90
     return payload
+
+
+def _reordered_payload(document):
+    payload = _current_payload(document)
+    desired_order = [1, 3, 2, 4]
+    by_page = {item['pageNumber']: item for item in payload}
+    for display_order, page_number in enumerate(desired_order, start=1):
+        by_page[page_number]['displayOrder'] = display_order
+    return list(by_page.values())
 
 
 def test_noop_map_is_idempotent_without_revision_increment():
@@ -156,6 +175,7 @@ def test_mutation_creates_revision_preserves_predictions_and_supersedes_history(
     assert pages[1].effective_role == ExamSourceRole.ANSWER_KEY
     assert pages[2].teacher_role == ''
     assert pages[2].orientation == 90
+    assert [page.display_order for page in pages] == [1, 2, 3, 4]
 
     old_segments = list(document.segments.filter(revision=2).order_by('order'))
     assert len(old_segments) == 3
@@ -178,6 +198,7 @@ def test_mutation_creates_revision_preserves_predictions_and_supersedes_history(
     assert history[-1]['revision'] == 2
     assert history[-1]['pages'][1] == {
         'pageNumber': 2,
+        'displayOrder': 2,
         'role': ExamSourceRole.QUESTIONS,
         'orientation': 0,
     }
@@ -187,9 +208,81 @@ def test_mutation_creates_revision_preserves_predictions_and_supersedes_history(
     assert project.reviewed_projection_fingerprint == ''
 
 
+def test_virtual_reorder_preserves_physical_identity_and_builds_virtual_segments():
+    teacher, project, document = _build_map()
+    original_ids = dict(document.pages.values_list('page_number', 'id'))
+    original_fingerprint = source_map_fingerprint(
+        _current_payload(document),
+        page_count=4,
+    )
+
+    result = mutate_teacher_source_map(
+        teacher=teacher,
+        project_id=project.id,
+        document_id=document.id,
+        expected_revision=2,
+        pages=_reordered_payload(document),
+    )
+
+    document.refresh_from_db()
+    virtual_pages = list(document.pages.order_by('display_order'))
+    assert result.reused is False
+    assert result.revision == 3
+    assert result.fingerprint != original_fingerprint
+    assert [page.page_number for page in virtual_pages] == [1, 3, 2, 4]
+    assert [page.display_order for page in virtual_pages] == [1, 2, 3, 4]
+    assert dict(document.pages.values_list('page_number', 'id')) == original_ids
+
+    segments = list(document.segments.filter(revision=3).order_by('order'))
+    assert [
+        (segment.start_page, segment.end_page, segment.role)
+        for segment in segments
+    ] == [
+        (1, 1, ExamSourceRole.COVER),
+        (3, 2, ExamSourceRole.QUESTIONS),
+        (4, 4, ExamSourceRole.ANSWER_SOLUTIONS),
+    ]
+    assert segments[1].metadata['pageNumbers'] == [3, 2]
+    assert segments[1].metadata['displayOrderStart'] == 2
+    assert segments[1].metadata['displayOrderEnd'] == 3
+    assert segments[1].metadata['physicalContiguous'] is True
+
+    history = document.classification_metadata['sourceMapHistory'][-1]
+    assert [item['pageNumber'] for item in history['pages']] == [1, 2, 3, 4]
+    assert [item['displayOrder'] for item in history['pages']] == [1, 2, 3, 4]
+
+
+def test_reordered_map_can_be_confirmed_against_virtual_segments():
+    teacher, project, document = _build_map()
+    mutation = mutate_teacher_source_map(
+        teacher=teacher,
+        project_id=project.id,
+        document_id=document.id,
+        expected_revision=2,
+        pages=_reordered_payload(document),
+    )
+
+    confirmation = confirm_teacher_source_map(
+        teacher=teacher,
+        project_id=project.id,
+        document_id=document.id,
+        expected_revision=mutation.revision,
+        expected_fingerprint=mutation.fingerprint,
+    )
+
+    document.refresh_from_db()
+    assert confirmation.confirmed is True
+    assert document.status == ExamSourceDocument.Status.CONFIRMED
+    assert document.teacher_confirmed_revision == 3
+    assert all(
+        segment.teacher_confirmed
+        for segment in document.segments.filter(revision=3)
+    )
+
+
 def test_immediate_network_retry_with_previous_revision_reuses_new_map():
     teacher, project, document = _build_map()
-    payload = _edited_payload(document)
+    payload = _reordered_payload(document)
     first = mutate_teacher_source_map(
         teacher=teacher,
         project_id=project.id,
@@ -209,7 +302,7 @@ def test_immediate_network_retry_with_previous_revision_reuses_new_map():
     document.refresh_from_db()
     assert first.revision == retry.revision == 3
     assert retry.reused is True
-    assert document.segments.filter(revision=3).count() == 4
+    assert document.segments.filter(revision=3).count() == 3
     assert document.segments.filter(revision=4).count() == 0
 
 
@@ -223,7 +316,7 @@ def test_stale_revision_with_different_map_fails_without_writes():
             project_id=project.id,
             document_id=document.id,
             expected_revision=1,
-            pages=_edited_payload(document),
+            pages=_reordered_payload(document),
         )
 
     document.refresh_from_db()
@@ -238,9 +331,17 @@ def test_stale_revision_with_different_map_fails_without_writes():
     [
         lambda payload: payload[:-1],
         lambda payload: [*payload, deepcopy(payload[0])],
+        lambda payload: [
+            {**item, 'displayOrder': 1 if item['pageNumber'] == 2 else item['displayOrder']}
+            for item in payload
+        ],
+        lambda payload: [
+            {**item, 'displayOrder': 9 if item['pageNumber'] == 2 else item['displayOrder']}
+            for item in payload
+        ],
     ],
 )
-def test_incomplete_or_duplicate_page_map_is_rejected(payload_transform):
+def test_incomplete_duplicate_or_invalid_virtual_map_is_rejected(payload_transform):
     teacher, project, document = _build_map()
     payload = payload_transform(_current_payload(document))
 
@@ -255,6 +356,9 @@ def test_incomplete_or_duplicate_page_map_is_rejected(payload_transform):
 
     document.refresh_from_db()
     assert document.classification_revision == 2
+    assert [
+        page.display_order for page in document.pages.order_by('page_number')
+    ] == [1, 2, 3, 4]
 
 
 def test_other_teacher_cannot_mutate_document():
@@ -267,11 +371,11 @@ def test_other_teacher_cannot_mutate_document():
             project_id=project.id,
             document_id=document.id,
             expected_revision=2,
-            pages=_edited_payload(document),
+            pages=_reordered_payload(document),
         )
 
 
-def test_mutation_rolls_back_pages_and_superseded_segments_on_failure(monkeypatch):
+def test_mutation_rolls_back_reorder_and_superseded_segments_on_failure(monkeypatch):
     teacher, project, document = _build_map()
     original_bulk_create = ExamSourceSegment.objects.bulk_create
 
@@ -285,7 +389,7 @@ def test_mutation_rolls_back_pages_and_superseded_segments_on_failure(monkeypatc
             project_id=project.id,
             document_id=document.id,
             expected_revision=2,
-            pages=_edited_payload(document),
+            pages=_reordered_payload(document),
         )
     monkeypatch.setattr(ExamSourceSegment.objects, 'bulk_create', original_bulk_create)
 
@@ -293,6 +397,7 @@ def test_mutation_rolls_back_pages_and_superseded_segments_on_failure(monkeypatc
     pages = list(document.pages.order_by('page_number'))
     segments = list(document.segments.filter(revision=2).order_by('order'))
     assert document.classification_revision == 2
+    assert [page.display_order for page in pages] == [1, 2, 3, 4]
     assert pages[1].teacher_role == ''
     assert pages[2].orientation == 0
     assert all(segment.status == ExamSourceSegment.Status.PROPOSED for segment in segments)
@@ -416,7 +521,7 @@ def test_edit_after_confirmation_invalidates_confirmation():
         project_id=project.id,
         document_id=document.id,
         expected_revision=2,
-        pages=_edited_payload(document),
+        pages=_reordered_payload(document),
     )
 
     document.refresh_from_db()
