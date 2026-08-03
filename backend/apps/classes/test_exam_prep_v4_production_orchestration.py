@@ -64,6 +64,20 @@ def _status_url(project_id: int, document_id: int) -> str:
     )
 
 
+def _cancel_url(project_id: int, document_id: int) -> str:
+    return (
+        f'/api/classes/exam-prep-v4/projects/{project_id}/documents/'
+        f'{document_id}/extraction/cancel/'
+    )
+
+
+def _retry_url(project_id: int, document_id: int) -> str:
+    return (
+        f'/api/classes/exam-prep-v4/projects/{project_id}/documents/'
+        f'{document_id}/extraction/retry/'
+    )
+
+
 def test_dispatch_is_correlated_and_idempotent(monkeypatch):
     _teacher, project, document = _confirmed_document()
     sent: list[dict] = []
@@ -93,6 +107,7 @@ def test_dispatch_is_correlated_and_idempotent(monkeypatch):
     assert project.workflow_state['taskId'] == first.task_id
     assert project.workflow_state['sourceMapRevision'] == 4
     assert project.workflow_state['sourceMapFingerprintPrefix'] == 'a' * 12
+    assert project.workflow_state['cancellationRequested'] is False
 
 
 def test_status_api_is_owner_scoped_and_content_free(settings):
@@ -130,6 +145,7 @@ def test_status_api_is_owner_scoped_and_content_free(settings):
     assert response.data['stage'] == 'answer_solution_extraction'
     assert response.data['counters']['questionCount'] == 10
     assert response.data['counters']['providerCalls'] == 7
+    assert response.data['cancellationRequested'] is False
     rendered = json.dumps(response.data, ensure_ascii=False)
     for private_value in (
         'PRIVATE_SOURCE_NAME',
@@ -213,3 +229,80 @@ def test_terminal_task_failure_is_visible_to_celery_and_project(
     assert project.workflow_state['taskId'] == task_id
     assert project.workflow_state['errorCode'] == 'ValueError'
     assert 'PRIVATE_PROVIDER_FAILURE' not in project.error_detail
+
+
+def test_cancel_api_stops_at_task_checkpoint_and_retry_starts_fresh_run(
+    settings,
+    monkeypatch,
+):
+    settings.EXAM_PREP_V4_ENABLED = True
+    teacher, project, document = _confirmed_document()
+    run_id = str(uuid.uuid4())
+    task_id = str(uuid.uuid4())
+    project.workflow_state = {
+        'stage': 'question_extraction',
+        'progressPercent': 50,
+        'runId': run_id,
+        'taskId': task_id,
+        'attempt': 1,
+        'sourceMapRevision': document.classification_revision,
+        'sourceMapFingerprintPrefix': document.source_map_fingerprint[:12],
+    }
+    project.save(update_fields=['workflow_state', 'updated_at'])
+
+    revoked: list[tuple[str, bool]] = []
+    monkeypatch.setattr(
+        'apps.classes.views_v4_extraction.current_app.control.revoke',
+        lambda selected_task_id, terminate=False: revoked.append(
+            (selected_task_id, terminate)
+        ),
+    )
+    response = _client(teacher).post(
+        _cancel_url(project.id, document.id),
+        {},
+        format='json',
+    )
+
+    project.refresh_from_db()
+    assert response.status_code == 202
+    assert response.data['cancellationRequested'] is True
+    assert response.data['stage'] == 'cancellation_requested'
+    assert project.cancel_requested is True
+    assert revoked == [(task_id, False)]
+
+    monkeypatch.setattr(
+        'apps.classes.tasks_v4.cache.add',
+        lambda *args, **kwargs: True,
+    )
+    monkeypatch.setattr(
+        'apps.classes.tasks_v4.cache.delete',
+        lambda *args, **kwargs: True,
+    )
+    cancelled = process_exam_prep_v4_extraction.apply(
+        args=[document.id, run_id],
+        task_id=task_id,
+        throw=False,
+    )
+    project.refresh_from_db()
+    assert cancelled.successful()
+    assert cancelled.result['status'] == 'cancelled'
+    assert project.status == ExamProject.Status.CANCELLED
+    assert project.workflow_state['stage'] == 'cancelled'
+
+    queued: list[dict] = []
+    monkeypatch.setattr(
+        'apps.classes.tasks_v4.process_exam_prep_v4_extraction.apply_async',
+        lambda **kwargs: queued.append(kwargs),
+    )
+    retried = _client(teacher).post(
+        _retry_url(project.id, document.id),
+        {},
+        format='json',
+    )
+    project.refresh_from_db()
+    assert retried.status_code == 202
+    assert retried.data['cancellationRequested'] is False
+    assert retried.data['runId'] != run_id
+    assert project.cancel_requested is False
+    assert project.status == ExamProject.Status.SEGMENTING
+    assert len(queued) == 1
