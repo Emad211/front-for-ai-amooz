@@ -165,6 +165,7 @@ class ExamSourceDocument(models.Model):
     )
     classification_revision = models.PositiveIntegerField(default=1)
     classification_fingerprint = models.CharField(max_length=64, blank=True, default='')
+    source_map_fingerprint = models.CharField(max_length=64, blank=True, default='')
     classification_metadata = models.JSONField(default=dict, blank=True)
     teacher_confirmed_at = models.DateTimeField(null=True, blank=True)
     teacher_confirmed_by = models.ForeignKey(
@@ -173,6 +174,12 @@ class ExamSourceDocument(models.Model):
         null=True,
         blank=True,
         related_name='confirmed_exam_v4_sources',
+    )
+    teacher_confirmed_revision = models.PositiveIntegerField(null=True, blank=True)
+    teacher_confirmed_fingerprint = models.CharField(
+        max_length=64,
+        blank=True,
+        default='',
     )
     source_retain_until = models.DateTimeField(null=True, blank=True)
     error_code = models.CharField(max_length=64, blank=True, default='')
@@ -193,6 +200,13 @@ class ExamSourceDocument(models.Model):
             models.CheckConstraint(
                 condition=Q(classification_revision__gte=1),
                 name='exam_v4_doc_revision_gte_1',
+            ),
+            models.CheckConstraint(
+                condition=(
+                    Q(teacher_confirmed_revision__isnull=True)
+                    | Q(teacher_confirmed_revision__gte=1)
+                ),
+                name='exam_v4_confirmed_revision_gte_1',
             ),
         ]
         indexes = [
