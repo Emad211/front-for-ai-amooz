@@ -6,7 +6,6 @@ import {
   AlertCircle,
   ArrowRight,
   CheckCircle2,
-  FileStack,
   Loader2,
   RefreshCcw,
   RotateCcw,
@@ -27,7 +26,6 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
 import {
   Select,
   SelectContent,
@@ -40,7 +38,11 @@ import { ErrorState } from '@/components/shared/error-state';
 import { SourcePageCard } from '@/components/teacher/exam-prep-v4/source-page-card';
 import {
   SOURCE_ROLE_SHORT_LABELS,
+  canMoveEditablePageEarlier,
+  canMoveEditablePageLater,
+  sortEditablePagesByDisplayOrder,
   type EditableSourceMapPage,
+  type ExamPrepV4Page,
 } from '@/features/exam-prep-v4/source-map-model';
 import { useExamPrepV4SourceMap } from '@/hooks/use-exam-prep-v4-source-map';
 import { cn } from '@/lib/utils';
@@ -112,16 +114,26 @@ function DocumentSummary({
   );
 }
 
+type OrderedPageCard = {
+  page: ExamPrepV4Page;
+  editablePage: EditableSourceMapPage;
+};
+
 export function ExamPrepV4SourceMapEditor({ projectId }: { projectId: number }) {
   const editor = useExamPrepV4SourceMap(projectId);
   const [pendingDocumentId, setPendingDocumentId] = useState<number | null>(null);
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
 
-  const editableByPage = useMemo(() => new Map<number, EditableSourceMapPage>(
-    editor.draftPages.map((page) => [page.pageNumber, page]),
-  ), [editor.draftPages]);
+  const orderedPageCards = useMemo<OrderedPageCard[]>(() => {
+    const serverPages = new Map<number, ExamPrepV4Page>(
+      (editor.selectedDocument?.pages ?? []).map((page) => [page.pageNumber, page]),
+    );
+    return sortEditablePagesByDisplayOrder(editor.draftPages).flatMap((editablePage) => {
+      const page = serverPages.get(editablePage.pageNumber);
+      return page ? [{ page, editablePage }] : [];
+    });
+  }, [editor.draftPages, editor.selectedDocument?.pages]);
 
-  const currentPages = editor.selectedDocument?.pages ?? [];
   const currentStatusLabel = editor.project
     ? (projectStatusLabels[editor.project.status] ?? editor.project.status)
     : '';
@@ -182,7 +194,7 @@ export function ExamPrepV4SourceMapEditor({ projectId }: { projectId: number }) 
   const document = editor.selectedDocument;
   const actionsDisabled = editor.isSaving || editor.isConfirming;
   const confirmationReason = editor.hasUnsavedChanges
-    ? 'ابتدا تغییرات را ذخیره کنید.'
+    ? 'ابتدا نقش، چرخش و ترتیب مجازی صفحات را ذخیره کنید.'
     : editor.unknownPageCount > 0
       ? 'نقش تمام صفحات نامشخص را تعیین کنید.'
       : !document.sourceMapFingerprint
@@ -208,13 +220,13 @@ export function ExamPrepV4SourceMapEditor({ projectId }: { projectId: number }) 
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
                 <h1 className="text-2xl font-black tracking-tight md:text-3xl">
-                  نقشهٔ صفحات آزمون
+                  نقشه و ترتیب مجازی صفحات
                 </h1>
                 <Badge variant="outline">{currentStatusLabel}</Badge>
                 <Badge variant="secondary">نسخهٔ {document.classificationRevision}</Badge>
               </div>
               <p className="mt-2 text-sm leading-6 text-muted-foreground">
-                {editor.project.title} — نقش هر صفحه را بررسی کنید، تغییرات را ذخیره کنید و سپس همان نسخه را تأیید کنید.
+                {editor.project.title} — نقش، چرخش و ترتیب مجازی هر صفحه را بررسی کنید، تغییرات را ذخیره کنید و سپس همان نسخه را تأیید کنید.
               </p>
             </div>
           </div>
@@ -252,12 +264,20 @@ export function ExamPrepV4SourceMapEditor({ projectId }: { projectId: number }) 
         />
       </header>
 
+      <Alert className="border-sky-500/30 bg-sky-500/5">
+        <RefreshCcw className="h-4 w-4" aria-hidden="true" />
+        <AlertTitle>ترتیب مجازی، فایل اصلی را تغییر نمی‌دهد</AlertTitle>
+        <AlertDescription>
+          شمارهٔ منبع هر صفحه ثابت می‌ماند. دکمه‌های «زودتر» و «دیرتر» فقط جایگاه نمایش و پردازش آینده را تغییر می‌دهند و هیچ PDF جدیدی تولید نمی‌کنند.
+        </AlertDescription>
+      </Alert>
+
       {editor.hasUnsavedChanges ? (
         <Alert className="border-primary/30 bg-primary/5">
           <Save className="h-4 w-4" aria-hidden="true" />
           <AlertTitle>تغییرات ذخیره‌نشده دارید</AlertTitle>
           <AlertDescription>
-            تا زمان انتخاب «ذخیرهٔ نقشه»، هیچ تغییری به سرور فرستاده نمی‌شود.
+            تا زمان انتخاب «ذخیرهٔ نقشه و ترتیب»، هیچ نقش، چرخش یا جایگاه مجازی به سرور فرستاده نمی‌شود.
           </AlertDescription>
         </Alert>
       ) : null}
@@ -268,7 +288,7 @@ export function ExamPrepV4SourceMapEditor({ projectId }: { projectId: number }) 
           <AlertTitle>نسخهٔ سرور تغییر کرده است</AlertTitle>
           <AlertDescription className="space-y-3">
             <p>{editor.conflict.message}</p>
-            <p>تغییرات محلی شما حفظ شده‌اند. با بارگذاری نسخهٔ سرور، تغییرات محلی کنار گذاشته می‌شوند.</p>
+            <p>تغییرات محلی، از جمله ترتیب مجازی، حفظ شده‌اند. با بارگذاری نسخهٔ سرور، تغییرات محلی کنار گذاشته می‌شوند.</p>
             <Button
               type="button"
               variant="outline"
@@ -296,7 +316,7 @@ export function ExamPrepV4SourceMapEditor({ projectId }: { projectId: number }) 
           <CheckCircle2 className="h-4 w-4" aria-hidden="true" />
           <AlertTitle>این نسخه تأیید شده است</AlertTitle>
           <AlertDescription>
-            تأیید به نسخهٔ {document.teacherConfirmedRevision ?? document.classificationRevision} متصل است. هر ویرایش تازه، تأیید را باطل می‌کند.
+            تأیید به نسخهٔ {document.teacherConfirmedRevision ?? document.classificationRevision} و همین ترتیب مجازی متصل است. هر ویرایش تازه، تأیید را باطل می‌کند.
           </AlertDescription>
         </Alert>
       ) : null}
@@ -305,38 +325,38 @@ export function ExamPrepV4SourceMapEditor({ projectId }: { projectId: number }) 
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <h2 id="source-pages-heading" className="text-xl font-black">
-              صفحات منبع
+              صفحات در ترتیب مجازی
             </h2>
             <p className="mt-1 text-sm text-muted-foreground">
-              ترتیب نمایش، شمارهٔ واقعی صفحات PDF است. جابه‌جایی صفحات در این مرحله پشتیبانی نمی‌شود.
+              کارت‌ها بر اساس جایگاه مجازی مرتب‌اند. عنوان هر کارت همچنان شمارهٔ تغییرناپذیر صفحه در PDF اصلی را نشان می‌دهد.
             </p>
           </div>
-          <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
+          <div className="flex flex-wrap gap-2 text-xs text-muted-foreground" aria-label="segmentهای ذخیره‌شده">
             {document.segments.map((segment) => (
               <Badge key={segment.id} variant="outline">
-                {SOURCE_ROLE_SHORT_LABELS[segment.role]}: {segment.startPage}–{segment.endPage}
+                {SOURCE_ROLE_SHORT_LABELS[segment.role]} · جایگاه {segment.displayOrderStart ?? '—'} تا {segment.displayOrderEnd ?? '—'} · صفحات منبع {segment.pageNumbers.join('، ')}
               </Badge>
             ))}
           </div>
         </div>
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
-          {currentPages.map((page) => {
-            const editablePage = editableByPage.get(page.pageNumber);
-            if (!editablePage) return null;
-            return (
-              <SourcePageCard
-                key={page.pageNumber}
-                projectId={projectId}
-                documentId={document.id}
-                page={page}
-                editablePage={editablePage}
-                onRoleChange={editor.changeRole}
-                onRotate={editor.rotatePage}
-                disabled={actionsDisabled}
-              />
-            );
-          })}
+          {orderedPageCards.map(({ page, editablePage }) => (
+            <SourcePageCard
+              key={page.pageNumber}
+              projectId={projectId}
+              documentId={document.id}
+              page={page}
+              editablePage={editablePage}
+              onRoleChange={editor.changeRole}
+              onRotate={editor.rotatePage}
+              onMoveEarlier={editor.movePageEarlier}
+              onMoveLater={editor.movePageLater}
+              canMoveEarlier={canMoveEditablePageEarlier(editor.draftPages, page.pageNumber)}
+              canMoveLater={canMoveEditablePageLater(editor.draftPages, page.pageNumber)}
+              disabled={actionsDisabled}
+            />
+          ))}
         </div>
       </section>
 
@@ -345,13 +365,13 @@ export function ExamPrepV4SourceMapEditor({ projectId }: { projectId: number }) 
           <div className="min-w-0 text-sm">
             <p className="font-bold">
               {editor.hasUnsavedChanges
-                ? 'نقشه تغییر کرده و هنوز ذخیره نشده است.'
+                ? 'نقشه یا ترتیب مجازی تغییر کرده و هنوز ذخیره نشده است.'
                 : document.isTeacherConfirmed
-                  ? 'نسخهٔ فعلی ذخیره و تأیید شده است.'
+                  ? 'نسخهٔ فعلی، شامل ترتیب مجازی، ذخیره و تأیید شده است.'
                   : 'نسخهٔ فعلی با سرور همگام است.'}
             </p>
             <p className="mt-1 text-xs text-muted-foreground">
-              {confirmationReason ?? 'نقشه آمادهٔ تأیید نهایی است.'}
+              {confirmationReason ?? 'نقشه و ترتیب مجازی آمادهٔ تأیید نهایی است.'}
             </p>
           </div>
 
@@ -378,7 +398,7 @@ export function ExamPrepV4SourceMapEditor({ projectId }: { projectId: number }) 
               ) : (
                 <Save className="ms-2 h-4 w-4" aria-hidden="true" />
               )}
-              {editor.isSaving ? 'در حال ذخیره' : 'ذخیرهٔ نقشه'}
+              {editor.isSaving ? 'در حال ذخیره' : 'ذخیرهٔ نقشه و ترتیب'}
             </Button>
             <Button
               type="button"
@@ -392,12 +412,12 @@ export function ExamPrepV4SourceMapEditor({ projectId }: { projectId: number }) 
               ) : (
                 <ShieldCheck className="ms-2 h-4 w-4" aria-hidden="true" />
               )}
-              تأیید نقشه
+              تأیید نقشه و ترتیب
             </Button>
           </div>
         </div>
         <p id="source-map-confirmation-help" className="sr-only">
-          تأیید فقط زمانی فعال است که تغییر ذخیره‌نشده و صفحهٔ نامشخص وجود نداشته باشد و اثر انگشت نسخهٔ فعلی موجود باشد.
+          تأیید فقط زمانی فعال است که تغییر ذخیره‌نشده و صفحهٔ نامشخص وجود نداشته باشد و اثر انگشت نسخهٔ فعلی، شامل ترتیب مجازی، موجود باشد.
         </p>
       </div>
 
@@ -406,7 +426,7 @@ export function ExamPrepV4SourceMapEditor({ projectId }: { projectId: number }) 
           <AlertDialogHeader>
             <AlertDialogTitle>تغییرات ذخیره‌نشده کنار گذاشته شوند؟</AlertDialogTitle>
             <AlertDialogDescription>
-              با رفتن به سند دیگر، تغییرات محلی این سند حذف می‌شوند. این عملیات روی سرور اثری ندارد.
+              با رفتن به سند دیگر، تغییرات محلی نقش، چرخش و ترتیب مجازی این سند حذف می‌شوند. این عملیات روی سرور یا PDF اصلی اثری ندارد.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -421,9 +441,9 @@ export function ExamPrepV4SourceMapEditor({ projectId }: { projectId: number }) 
       <AlertDialog open={showConfirmDialog} onOpenChange={setShowConfirmDialog}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>تأیید نهایی نقشهٔ صفحات</AlertDialogTitle>
+            <AlertDialogTitle>تأیید نهایی نقشه و ترتیب مجازی</AlertDialogTitle>
             <AlertDialogDescription>
-              نسخهٔ {document.classificationRevision} با همین نقش‌ها و چرخش‌ها تأیید می‌شود. این تأیید هیچ استخراج سؤال یا پردازش فاز بعدی را در این مرحله شروع نمی‌کند.
+              نسخهٔ {document.classificationRevision} با همین نقش‌ها، چرخش‌ها و ترتیب مجازی تأیید می‌شود. PDF اصلی بازنویسی نمی‌شود و این تأیید هیچ استخراج سؤال یا پردازش فاز بعدی را شروع نمی‌کند.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
