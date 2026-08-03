@@ -5,8 +5,8 @@
 
 - **Branch:** `feat/exam-prep-v4-source-aware`
 - **Draft PR:** #4
-- **Current phase:** Phase 2 — fast page classification and virtual split
-- **State:** Phase 1 complete; Phase 2 implementation started
+- **Current phase:** Phase 2 — source preparation, fast classification, and virtual split
+- **State:** Internal backend pipeline verified; upload API and live benchmark not implemented
 - **Last updated:** 2026-08-03
 
 ## Verified baseline
@@ -14,14 +14,14 @@
 - Phase 0 architecture and benchmark contracts are committed.
 - The three private benchmark PDFs are three independent exams.
 - No private PDF, page image, OCR text, filename, answer, or solution content is committed.
-- Existing V1/V2/V3 API and pipeline code has not been changed.
-- V4 remains disabled unless `EXAM_PREP_V4_ENABLED` is enabled through Django settings or environment configuration.
+- Existing V1/V2/V3 endpoints, tasks, artifacts, and publication behavior remain unchanged.
+- V4 remains disabled unless `EXAM_PREP_V4_ENABLED` is explicitly enabled.
 
 ## Phase 1 — complete
 
 ### Source-domain schema
 
-Added additive models under the existing `classes` app:
+The additive `classes.0040` migration creates:
 
 - `ExamProject`
 - `ExamSourceDocument`
@@ -31,93 +31,133 @@ Added additive models under the existing `classes` app:
 
 The schema stores ownership, organization scope, project revision, private source-object references, page metadata, classifier roles, teacher overrides, virtual page ranges, fingerprints, retention metadata, and processing status.
 
-### Isolation rules
+### Project isolation
 
 - One PDF creates one independent project by default.
 - Several PDFs in one request create several projects.
-- Equal SHA-256 values do not merge projects.
-- Idempotent retries reuse the same project only when both request and document identifiers match.
-- A reused request identifier with different source metadata is rejected.
-- The base teacher queryset is owner-scoped.
-- Duplicate-page references may not cross project boundaries.
-- Segment page ranges and classifier confidence values have database constraints.
+- Equal SHA-256 values never merge projects.
+- Idempotent retries reuse a project only when request and document identifiers match.
+- Conflicting retry metadata is rejected.
+- Teacher querysets are owner-scoped.
+- Duplicate-page references cannot cross exam-project boundaries.
+- Page confidence and segment-range constraints are enforced by PostgreSQL.
 
-### Feature isolation
+## Phase 2 — implemented internally
 
-- No V4 endpoint is exposed yet.
-- Project creation raises while `EXAM_PREP_V4_ENABLED` is false.
-- Legacy exam-prep models and tasks remain untouched.
+### Tolerant page-classification contract
 
-### Focused CI
+- Classifier records are validated independently.
+- One malformed record does not discard valid sibling pages.
+- Missing or invalid pages become explicit `unknown` pages.
+- Duplicate predictions keep the higher-confidence record and produce an issue.
+- Persian, Arabic, and Latin printed digits are normalized.
+- Teacher page-role overrides remain authoritative without erasing the model prediction.
+- Every PDF receives a complete one-based page map.
 
-`.github/workflows/exam-prep-v4.yml` validates V4 against PostgreSQL 16:
+### Deterministic virtual split
+
+Adjacent pages with the same effective role are grouped without reordering into:
+
+- `cover`
+- `questions`
+- `answer_solutions`
+- `answer_key`
+- `inline_question_answer`
+- `ignored`
+- `unknown`
+
+The segment builder is verified against anonymized structures representing:
+
+- cover → questions → answer-solutions;
+- answer-solutions → cover → questions;
+- cover → questions → answer-solutions with overlapping answer-number bounds.
+
+### Fast multimodal classifier
+
+- Builds bounded, numbered JPEG contact sheets from low-resolution page thumbnails.
+- Uses bounded native-text samples as supplemental evidence.
+- Makes one structured multimodal classification call rather than full OCR calls per page.
+- Uses the central OpenAI-compatible gateway and centralized V4 prompt registry.
+- Selects the model only from `EXAM_PREP_V4_CLASSIFICATION_MODEL` or `PDF_VISION_MODEL`.
+- Uses temperature 0, one bounded JSON repair, one provider attempt, and sensitive usage tracking.
+- Fingerprints source, revision, page catalog, contact sheets, model, and prompt version.
+- An unchanged warm rerun returns the persisted classification before any new provider call.
+
+### Private PDF preparation
+
+- Validates size, PDF signature, encryption, and page-count limits.
+- Stores the original PDF in private object storage.
+- Renders pages serially with bounded memory.
+- Stores private PNG page renders and compact JPEG thumbnails.
+- Captures bounded native-text samples without treating them as authoritative OCR.
+- Reuses a complete unchanged source without creating new blobs.
+- Detects duplicate rendered pages only inside the same exam project.
+- Denies all `exam-prep-v4/` objects through the generic `/media/` route.
+- Deletes source PDF, rendered pages, and thumbnails after database deletion commits.
+
+### Internal source coordinator
+
+The internal coordinator currently performs:
+
+```text
+private path-based PDF input
+→ validation and private persistence
+→ serial page rendering and thumbnails
+→ contact sheets
+→ fast multimodal page classification
+→ tolerant page map
+→ persisted virtual segment proposals
+```
+
+It records project/document workflow states and fail-closed errors. No public API or Celery task exposes this pipeline yet.
+
+## Focused CI evidence
+
+The focused workflow uses PostgreSQL 16 and Redis and runs:
 
 1. production backend dependency installation;
-2. Django system check;
-3. classes migration drift check;
-4. focused V4 tests with real migrations.
+2. `python backend/manage.py check`;
+3. `python backend/manage.py makemigrations classes --check --dry-run`;
+4. all `backend/apps/classes/test_exam_prep_v4_*.py` tests with real migrations and `--create-db`.
 
-## Phase 1 test evidence
+Latest verified run:
 
-Focused workflow run `30773563369`, job `91564811542`, completed successfully:
+- **Workflow run:** `30774398746`
+- **Job:** `91567007925`
+- **Result:** success
 
 ```text
 System check identified no issues (0 silenced).
 No changes detected in app 'classes'.
-13 passed in 5.68s
+54 passed, 1 warning in 9.05s
 ```
 
-Verified on PostgreSQL 16 with migration `0040` applied through pytest `--create-db`.
-The database also demonstrably enforced the invalid segment-range and classifier-confidence constraints used by the negative tests.
+The warning only reports that the CI checkout has no generated `backend/staticfiles/` directory during a negative private-media-route test.
 
-Repository-wide frontend CI remains red on pre-existing files only:
+Repository-wide frontend CI remains red on pre-existing files unrelated to V4:
 
-- `src/app/(admin)/admin/tickets/page.tsx`
-- `src/constants/mock/messages-data.ts`
+- `frontend/src/app/(admin)/admin/tickets/page.tsx`
+- `frontend/src/constants/mock/messages-data.ts`
 
-No V4 frontend file exists yet. The repository-wide backend suite was still running at the last observation and is not claimed as green.
+Focused V4 CI is green; the full repository is not claimed as all-green.
 
-## Phase 2 scope now in progress
+## What is not yet verified
 
-The next implementation slice is intentionally independent of an LLM provider:
+- No live LLM classification call has been made.
+- The three private PDFs have not yet been run through the V4 classifier.
+- Classification latency, cost, and real page-role accuracy are unknown.
+- No V4 upload/list/detail/confirmation API exists.
+- No V4 Celery task or queue routing exists.
+- No teacher-facing source preparation UI exists.
+- Question blocks, answer-solution blocks, matching, review, and publication are not implemented.
 
-- tolerant per-page classification records;
-- malformed sibling records must not invalidate valid pages;
-- missing pages become `unknown` rather than disappearing;
-- teacher role overrides remain authoritative;
-- deterministic conversion of page roles into contiguous virtual segments;
-- persistence bound to document classification revision and fingerprint;
-- structural tests for question-first, answer-first, and cover-in-the-middle patterns.
+## Current correctness issue being closed
 
-The actual fast multimodal LLM adapter will be added only after this contract and persistence layer pass focused PostgreSQL tests.
-
-## Files added or changed so far
-
-- `.github/workflows/exam-prep-v4.yml`
-- `backend/apps/classes/models_v4.py`
-- `backend/apps/classes/migrations/0040_exam_prep_v4_source_foundation.py`
-- `backend/apps/classes/apps.py`
-- `backend/apps/classes/services/exam_prep_v4_projects.py`
-- `backend/apps/classes/test_exam_prep_v4_source_foundation.py`
-
-## Current risks
-
-1. Repository-wide CI has unrelated baseline failures; focused V4 CI remains the authoritative signal for V4-only changes.
-2. Actual classifier latency and accuracy are unverified until a provider adapter and private benchmark runner exist.
-3. Page roles are not yet generated from PDFs; only the data foundation exists.
-4. Source-file upload and private page rendering are not yet exposed through V4 APIs.
-
-## Phase 2 completion gate
-
-- page-classification contract accepts partial valid output;
-- malformed records are reported without deleting valid records;
-- every source page receives an explicit role, including `unknown`;
-- segment proposals preserve arbitrary internal ordering;
-- answer-first and cover-in-the-middle structures are represented correctly;
-- persistence is revision-safe and idempotent;
-- focused PostgreSQL tests pass;
-- private live classification benchmark remains explicitly unclaimed until executed.
+A conflicting attempt to replace an already prepared source with different PDF bytes must return a conflict without changing the valid existing document to `failed`. This behavior is the next targeted fix before public API work.
 
 ## Next verified step
 
-Implement and test the tolerant classification contract and deterministic segment builder before adding the LLM adapter.
+1. Fix and test conflict-state preservation for prepared source documents.
+2. Add an owner-scoped, feature-gated multi-PDF upload API that creates one project per PDF.
+3. Dispatch each source document to a dedicated V4 pipeline task without merging files.
+4. Add list/detail and segment-confirmation APIs only after upload isolation tests pass.
