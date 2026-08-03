@@ -155,19 +155,21 @@ def test_full_benchmark_command_writes_only_aggregate_report(
     tmp_path,
     private_storage,
     settings,
+    django_capture_on_commit_callbacks,
 ):
     settings.EXAM_PREP_V4_ENABLED = True
     manifest_path, private_paths = _manifest(tmp_path)
     report_path = tmp_path / 'aggregate-full-report.json'
     stdout = io.StringIO()
 
-    call_command(
-        'benchmark_exam_prep_v4_full_pipeline',
-        manifest=str(manifest_path),
-        mode='fake_provider',
-        report=str(report_path),
-        stdout=stdout,
-    )
+    with django_capture_on_commit_callbacks(execute=True):
+        call_command(
+            'benchmark_exam_prep_v4_full_pipeline',
+            manifest=str(manifest_path),
+            mode='fake_provider',
+            report=str(report_path),
+            stdout=stdout,
+        )
 
     report = json.loads(report_path.read_text(encoding='utf-8'))
     terminal = stdout.getvalue()
