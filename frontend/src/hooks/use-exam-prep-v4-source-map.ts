@@ -7,6 +7,8 @@ import {
   countUnknownPages,
   createEditableSourceMapPages,
   isCompleteEditableSourceMap,
+  moveEditablePageEarlier,
+  moveEditablePageLater,
   rotateEditablePageClockwise,
   sourceMapPagesEqual,
   updateEditablePageRole,
@@ -132,14 +134,38 @@ export function useExamPrepV4SourceMap(projectId: number) {
   ) => {
     setDraftPages((pages) => updateEditablePageRole(pages, pageNumber, role));
     setConflict(null);
-    setAnnouncement(`نقش صفحهٔ ${pageNumber} تغییر کرد و هنوز ذخیره نشده است.`);
+    setAnnouncement(`نقش صفحهٔ منبع ${pageNumber} تغییر کرد و هنوز ذخیره نشده است.`);
   }, []);
 
   const rotatePage = useCallback((pageNumber: number) => {
     setDraftPages((pages) => rotateEditablePageClockwise(pages, pageNumber));
     setConflict(null);
-    setAnnouncement(`چرخش صفحهٔ ${pageNumber} تغییر کرد و هنوز ذخیره نشده است.`);
+    setAnnouncement(`چرخش صفحهٔ منبع ${pageNumber} تغییر کرد و هنوز ذخیره نشده است.`);
   }, []);
+
+  const movePageEarlier = useCallback((pageNumber: number) => {
+    const nextPages = moveEditablePageEarlier(draftPages, pageNumber);
+    const nextPosition = nextPages.find((page) => page.pageNumber === pageNumber)?.displayOrder;
+    setDraftPages(nextPages);
+    setConflict(null);
+    if (nextPosition) {
+      setAnnouncement(
+        `صفحهٔ منبع ${pageNumber} به جایگاه مجازی ${nextPosition} منتقل شد و هنوز ذخیره نشده است.`,
+      );
+    }
+  }, [draftPages]);
+
+  const movePageLater = useCallback((pageNumber: number) => {
+    const nextPages = moveEditablePageLater(draftPages, pageNumber);
+    const nextPosition = nextPages.find((page) => page.pageNumber === pageNumber)?.displayOrder;
+    setDraftPages(nextPages);
+    setConflict(null);
+    if (nextPosition) {
+      setAnnouncement(
+        `صفحهٔ منبع ${pageNumber} به جایگاه مجازی ${nextPosition} منتقل شد و هنوز ذخیره نشده است.`,
+      );
+    }
+  }, [draftPages]);
 
   const discardChanges = useCallback(() => {
     setDraftPages(initialPages);
@@ -158,14 +184,14 @@ export function useExamPrepV4SourceMap(projectId: number) {
   const save = useCallback(async () => {
     if (!selectedDocument || isSaving || isConfirming) return false;
     if (!isCompleteEditableSourceMap(draftPages, selectedDocument.pageCount)) {
-      setError('نقشهٔ صفحات کامل یا معتبر نیست.');
+      setError('نقشه و ترتیب مجازی صفحات کامل یا معتبر نیست.');
       return false;
     }
 
     setIsSaving(true);
     setError(null);
     setConflict(null);
-    setAnnouncement('در حال ذخیرهٔ نقشهٔ صفحات.');
+    setAnnouncement('در حال ذخیرهٔ نقشه و ترتیب مجازی صفحات.');
     try {
       const result = await saveExamPrepV4SourceMap(
         projectId,
@@ -180,8 +206,8 @@ export function useExamPrepV4SourceMap(projectId: number) {
       if (mountedRef.current) {
         setAnnouncement(
           result.reused
-            ? 'نقشهٔ صفحات از قبل با همین ساختار ذخیره شده بود.'
-            : 'نقشهٔ صفحات با موفقیت ذخیره شد.',
+            ? 'نقشه و ترتیب مجازی صفحات از قبل با همین ساختار ذخیره شده بود.'
+            : 'نقشه و ترتیب مجازی صفحات با موفقیت ذخیره شد.',
         );
       }
       return true;
@@ -194,7 +220,7 @@ export function useExamPrepV4SourceMap(projectId: number) {
         setAnnouncement('نسخهٔ سرور تغییر کرده است؛ تغییرات محلی شما حفظ شد.');
       } else {
         setError(normalized.message);
-        setAnnouncement('ذخیرهٔ نقشهٔ صفحات انجام نشد.');
+        setAnnouncement('ذخیرهٔ نقشه و ترتیب مجازی صفحات انجام نشد.');
       }
       return false;
     } finally {
@@ -221,7 +247,7 @@ export function useExamPrepV4SourceMap(projectId: number) {
       pages: draftPages,
       initialPages,
       pageCount: selectedDocument.pageCount,
-      fingerprint: selectedDocument.sourceMapFingerprint,
+      fingerprint: selectedDocument.sourceMapFingerprint ?? '',
       isSaving,
       isConfirming,
       isConfirmed: selectedDocument.isTeacherConfirmed,
@@ -229,18 +255,19 @@ export function useExamPrepV4SourceMap(projectId: number) {
   }, [draftPages, initialPages, isConfirming, isSaving, selectedDocument]);
 
   const confirm = useCallback(async () => {
-    if (!selectedDocument || !canConfirm) return false;
+    const fingerprint = selectedDocument?.sourceMapFingerprint;
+    if (!selectedDocument || !fingerprint || !canConfirm) return false;
     setIsConfirming(true);
     setError(null);
     setConflict(null);
-    setAnnouncement('در حال تأیید نقشهٔ صفحات.');
+    setAnnouncement('در حال تأیید نقشه و ترتیب مجازی صفحات.');
     try {
       const result = await confirmExamPrepV4SourceMap(
         projectId,
         selectedDocument.id,
         {
           expectedRevision: selectedDocument.classificationRevision,
-          sourceMapFingerprint: selectedDocument.sourceMapFingerprint,
+          sourceMapFingerprint: fingerprint,
         },
       );
       if (!mountedRef.current) return false;
@@ -248,8 +275,8 @@ export function useExamPrepV4SourceMap(projectId: number) {
       if (mountedRef.current) {
         setAnnouncement(
           result.reused
-            ? 'این نسخه از نقشه قبلاً تأیید شده بود.'
-            : 'نقشهٔ صفحات با موفقیت تأیید شد.',
+            ? 'این نسخه از نقشه و ترتیب مجازی قبلاً تأیید شده بود.'
+            : 'نقشه و ترتیب مجازی صفحات با موفقیت تأیید شد.',
         );
       }
       return true;
@@ -262,7 +289,7 @@ export function useExamPrepV4SourceMap(projectId: number) {
         setAnnouncement('تأیید انجام نشد؛ نسخهٔ فعلی باید دوباره بررسی شود.');
       } else {
         setError(normalized.message);
-        setAnnouncement('تأیید نقشهٔ صفحات انجام نشد.');
+        setAnnouncement('تأیید نقشه و ترتیب مجازی صفحات انجام نشد.');
       }
       return false;
     } finally {
@@ -289,6 +316,8 @@ export function useExamPrepV4SourceMap(projectId: number) {
     selectDocument,
     changeRole,
     rotatePage,
+    movePageEarlier,
+    movePageLater,
     discardChanges,
     reloadCurrentServerMap,
     save,
