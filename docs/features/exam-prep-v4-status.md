@@ -6,8 +6,8 @@
 - **PR:** #4 — Draft
 - **Execution mode:** Critical Path Acceleration
 - **Current roadmap span:** Phase 4 → Phase 7 vertical extraction path
-- **Last completed slice:** fixed and validated the manual live OCR workflow syntax on `main`
-- **Active gate:** inspect failed live OCR run `30852221763`, establish exact failure step and provider-request count, then patch only that failure
+- **Last completed slice:** recovered and inspected failed live OCR run `30852221763`
+- **Active gate:** explain aggregate acceptance failure after eight completed requests, preserve failed aggregate evidence on future runs, and patch report delivery before any retry
 - **Validated feature checkpoint before live run:** `3bc8814726cf2218d3b8534ce6b0d74120e2c4f1`
 - **Focused verification workflow:** `30850414707`
 - **Focused backend job:** `91808774481`
@@ -16,7 +16,10 @@
 - **Manual live workflow on main:** `867817effb4df7669c4d1ec04f2775e25d615201`
 - **Failed live run:** `30852221763`
 - **Failed live job:** `91814702919`
-- **Exact external request count:** pending log inspection; rerun prohibited until recovered
+- **Exact external request count:** **8 completed**
+- **First failing step:** `Run exactly eight live OCR requests`
+- **Primary terminal error:** `AvalAI OCR smoke acceptance failed`
+- **Secondary reporting error:** PR comment POST returned GitHub `403 Forbidden`
 - **Last updated:** 2026-08-04
 
 ## Progress
@@ -58,7 +61,7 @@ No progress credit is added before measured private evidence closes a canonical 
 11. historical revisions remain auditable;
 12. production routing is not changed by a feasibility smoke;
 13. Phase 8 and rollout remain blocked until private evidence is recorded or explicitly waived;
-14. one live OCR workflow run at a time; no rerun until prior request count is known.
+14. no retry is allowed until failed aggregate evidence can be preserved even when acceptance is false.
 
 ## AvalAI documentation rule
 
@@ -91,28 +94,52 @@ hard external-request ceiling: 8
 credential: repository Actions secret AVALAI_API_KEY
 ```
 
-The complete PDF must never be sent to AvalAI. Only the two locally rendered bounded PNG images are authorized.
+The complete PDF was not sent to AvalAI. Only the two locally rendered bounded PNG images were used.
 
-## Current failed live run
+## Proven run evidence
+
+Run/job:
 
 ```text
-run: https://github.com/Emad211/front-for-ai-amooz/actions/runs/30852221763
-job: https://github.com/Emad211/front-for-ai-amooz/actions/runs/30852221763/job/91814702919
+run: 30852221763
+job: 91814702919
 ```
 
-Until logs are inspected:
+Successful before provider stage:
 
-- no rerun;
-- no production routing change;
-- no roadmap-credit increase;
-- no assumption of zero, partial, or eight provider requests.
+- authorization and secret validation;
+- V4 branch checkout;
+- sparse checkout of the selected PDF;
+- dependency installation;
+- PDF validation;
+- local rendering of physical pages 5 and 12.
+
+Provider stage:
+
+```text
+Exam Prep V4 AvalAI OCR smoke completed; requests=8; passed=False
+CommandError: AvalAI OCR smoke acceptance failed.
+```
+
+Therefore all eight planned requests completed, but at least one aggregate acceptance condition failed.
+
+The workflow skipped aggregate validation and artifact upload because the management command returned nonzero. It then tried to post the local report to PR #4, but GitHub returned `403 Forbidden`. Cleanup succeeded, so the local failed report is no longer recoverable from run `30852221763`.
+
+## Active implementation contract
+
+Only these changes are allowed next:
+
+1. inspect the smoke command/service acceptance criteria against current official AvalAI OCR response contracts;
+2. make the command persist/report aggregate results before returning nonzero;
+3. upload the aggregate report on both pass and fail;
+4. remove or make non-fatal the PR-comment step;
+5. add request-progress counters that remain aggregate-only;
+6. add tests for failed-live-report preservation;
+7. run focused CI;
+8. obtain explicit bounded retry approval because the first authorization budget of eight requests was fully consumed.
+
+No production routing change and no roadmap credit increase are allowed yet.
 
 ## Exact continuation point
 
-1. fetch job steps and complete logs for job `91814702919`;
-2. identify the first failing step;
-3. determine whether `smoke_exam_prep_v4_avalai_ocr` started;
-4. determine exact completed provider-request count;
-5. patch only the demonstrated failure;
-6. run focused/static verification;
-7. update this ledger and the OCR runbook before any retry.
+Read the OCR command, client, tests, and current AvalAI documentation. Identify which acceptance conditions can fail for legitimate OCR responses, patch evidence preservation/reporting, test the patch, update this ledger/runbook, and only then request one bounded retry authorization.
