@@ -7,7 +7,7 @@ changing production request behavior or persisting credentials/budget state.
 The guard is process-local and is intended only for the single-process Django
 management command. It temporarily wraps the provider symbols imported by the
 benchmark module, restores them in ``finally``, and fails before the next
-external call when the approved ceiling has been consumed.
+external call when its conservative request reservation cannot fit.
 """
 from __future__ import annotations
 
@@ -17,38 +17,58 @@ from typing import Any
 from apps.classes.services import exam_prep_v4_full_benchmark as benchmark
 
 
+# Every current V4 structured invocation uses provider_attempts=1 and
+# max_repair=1. In the worst case it may issue: JSON-mode request, one fallback
+# without response_format, and one repair request. Reserving all three slots
+# before the invocation makes the configured ceiling a true external-request
+# upper bound rather than an optimistic high-level call counter.
+MAX_EXTERNAL_REQUESTS_PER_INVOCATION = 3
+
+
 @dataclass(slots=True)
 class LiveProviderCallBudget:
-    """A strict, monotonic ceiling consumed immediately before provider calls."""
+    """Conservatively reserve a hard upper bound before provider invocations."""
 
     limit: int
-    used: int = 0
+    reserved: int = 0
+    pipeline_invocations: int = 0
 
     def __post_init__(self) -> None:
-        if isinstance(self.limit, bool) or int(self.limit) < 1:
+        if isinstance(self.limit, bool) or not isinstance(self.limit, int):
             raise benchmark.FullBenchmarkError(
-                'Live benchmark requires max_provider_calls >= 1.'
+                'Live benchmark max_provider_calls must be a positive integer.'
             )
-        self.limit = int(self.limit)
+        if self.limit < MAX_EXTERNAL_REQUESTS_PER_INVOCATION:
+            raise benchmark.FullBenchmarkError(
+                'Live benchmark max_provider_calls must allow at least one '
+                f'bounded invocation ({MAX_EXTERNAL_REQUESTS_PER_INVOCATION}).'
+            )
 
     @property
     def remaining(self) -> int:
-        return max(0, self.limit - self.used)
+        return max(0, self.limit - self.reserved)
 
-    def consume(self, stage: str) -> None:
+    def reserve(self, stage: str) -> None:
         stage_name = str(stage or 'unknown')[:100]
-        if self.used >= self.limit:
+        requested = MAX_EXTERNAL_REQUESTS_PER_INVOCATION
+        if self.reserved + requested > self.limit:
             raise benchmark.FullBenchmarkError(
                 'Live provider-call budget exhausted before '
-                f'{stage_name}; used={self.used}, limit={self.limit}.'
+                f'{stage_name}; reserved={self.reserved}, '
+                f'required={requested}, limit={self.limit}.'
             )
-        self.used += 1
+        self.reserved += requested
+        self.pipeline_invocations += 1
 
     def as_report(self) -> dict[str, int]:
         return {
             'limit': self.limit,
-            'used': self.used,
+            'reservedUpperBound': self.reserved,
             'remaining': self.remaining,
+            'pipelineInvocations': self.pipeline_invocations,
+            'maxExternalRequestsPerInvocation': (
+                MAX_EXTERNAL_REQUESTS_PER_INVOCATION
+            ),
         }
 
 
@@ -64,23 +84,23 @@ class _BudgetedExtractionProvider:
         return int(self._delegate.provider_calls)
 
     def detect_segment_blocks(self, **kwargs):
-        self._budget.consume('block_detection')
+        self._budget.reserve('block_detection')
         return self._delegate.detect_segment_blocks(**kwargs)
 
     def extract_questions_batch(self, **kwargs):
-        self._budget.consume('question_extraction')
+        self._budget.reserve('question_extraction')
         return self._delegate.extract_questions_batch(**kwargs)
 
     def extract_answer_solutions_batch(self, **kwargs):
-        self._budget.consume('answer_solution_extraction')
+        self._budget.reserve('answer_solution_extraction')
         return self._delegate.extract_answer_solutions_batch(**kwargs)
 
     def extract_question(self, **kwargs):
-        self._budget.consume('question_extraction')
+        self._budget.reserve('question_extraction')
         return self._delegate.extract_question(**kwargs)
 
     def extract_answer_solution(self, **kwargs):
-        self._budget.consume('answer_solution_extraction')
+        self._budget.reserve('answer_solution_extraction')
         return self._delegate.extract_answer_solution(**kwargs)
 
 
@@ -118,7 +138,7 @@ def run_bounded_full_pipeline_benchmark(
     original_provider_class = benchmark.StructuredLLMExamPrepV4Provider
 
     def budgeted_classifier(*args, **kwargs):
-        budget.consume('page_classification')
+        budget.reserve('page_classification')
         return original_classifier(*args, **kwargs)
 
     def budgeted_provider_factory(*args, **kwargs):
