@@ -82,9 +82,7 @@ def _owned_document_for_update(
 
 
 def _locked_complete_pages(document: ExamSourceDocument) -> list[ExamSourcePage]:
-    pages = list(
-        document.pages.select_for_update().order_by('page_number')
-    )
+    pages = list(document.pages.select_for_update().order_by('page_number'))
     if document.page_count < 1:
         raise SourceMapNotReady('Source page count is unavailable.')
     if len(pages) != document.page_count:
@@ -111,10 +109,7 @@ def _predictions_for_effective_map(
     pages: list[ExamSourcePage],
     normalized_map: tuple[dict[str, Any], ...],
 ) -> tuple[PagePrediction, ...]:
-    desired_by_number = {
-        item['pageNumber']: item
-        for item in normalized_map
-    }
+    desired_by_number = {item['pageNumber']: item for item in normalized_map}
     predictions: list[PagePrediction] = []
     for page in pages:
         desired = desired_by_number[page.page_number]
@@ -139,13 +134,13 @@ def _predictions_for_effective_map(
 def _history_entry(
     *,
     document: ExamSourceDocument,
-    pages: list[ExamSourcePage],
+    page_map: tuple[dict[str, Any], ...],
     fingerprint: str,
 ) -> dict[str, Any]:
     return {
         'revision': document.classification_revision,
         'fingerprint': fingerprint,
-        'pages': list(structural_page_map_from_models(pages)),
+        'pages': list(page_map),
         'supersededAt': timezone.now().isoformat(),
     }
 
@@ -181,13 +176,13 @@ def _classification_metadata_after_edit(
 def _current_fingerprint(
     *,
     document: ExamSourceDocument,
-    pages: list[ExamSourcePage],
+    page_map: tuple[dict[str, Any], ...],
 ) -> str:
     fingerprint = document.source_map_fingerprint
     if fingerprint:
         return fingerprint
     fingerprint = source_map_fingerprint(
-        structural_page_map_from_models(pages),
+        page_map,
         page_count=document.page_count,
     )
     document.source_map_fingerprint = fingerprint
@@ -238,6 +233,7 @@ def mutate_teacher_source_map(
         raise SourceMapNotReady('Source map is not ready for teacher editing.')
 
     model_pages = _locked_complete_pages(document)
+    previous_page_map = structural_page_map_from_models(model_pages)
     try:
         normalized = normalize_source_map_pages(
             pages,
@@ -252,11 +248,9 @@ def mutate_teacher_source_map(
     )
     current_fingerprint = _current_fingerprint(
         document=document,
-        pages=model_pages,
+        page_map=previous_page_map,
     )
 
-    # Exact same-map requests are idempotent both before a mutation and for the
-    # immediate network retry that still carries the previous expected revision.
     if desired_fingerprint == current_fingerprint and expected_revision in {
         document.classification_revision,
         document.classification_revision - 1,
@@ -274,6 +268,11 @@ def mutate_teacher_source_map(
     )
     proposals = build_segment_proposals(predictions)
     new_revision = document.classification_revision + 1
+    history = _history_entry(
+        document=document,
+        page_map=previous_page_map,
+        fingerprint=current_fingerprint,
+    )
 
     old_segments = list(
         document.segments.select_for_update().filter(
@@ -295,10 +294,7 @@ def mutate_teacher_source_map(
             ]
         )
 
-    desired_by_number = {
-        item['pageNumber']: item
-        for item in normalized
-    }
+    desired_by_number = {item['pageNumber']: item for item in normalized}
     for page in model_pages:
         desired = desired_by_number[page.page_number]
         page.teacher_role = (
@@ -332,11 +328,6 @@ def mutate_teacher_source_map(
         ]
     )
 
-    history = _history_entry(
-        document=document,
-        pages=model_pages,
-        fingerprint=current_fingerprint,
-    )
     document.classification_revision = new_revision
     document.classification_fingerprint = ''
     document.source_map_fingerprint = desired_fingerprint
@@ -443,10 +434,17 @@ def confirm_teacher_source_map(
         project_id=project_id,
         document_id=document_id,
     )
+    if document.status not in {
+        ExamSourceDocument.Status.AWAITING_CONFIRMATION,
+        ExamSourceDocument.Status.CONFIRMED,
+    }:
+        raise SourceMapNotReady('Source map is not ready for confirmation.')
+
     pages = _locked_complete_pages(document)
+    current_page_map = structural_page_map_from_models(pages)
     current_fingerprint = _current_fingerprint(
         document=document,
-        pages=pages,
+        page_map=current_page_map,
     )
 
     if expected_revision != document.classification_revision:
