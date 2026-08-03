@@ -36,7 +36,7 @@ def resolve_exam_scope(
     if study_group_id is not None:
         study_group = (
             StudyGroup.objects.select_related('organization')
-            .filter(id=study_group_id, is_active=True)
+            .filter(id=study_group_id, status=StudyGroup.Status.ACTIVE)
             .first()
         )
         if study_group is None:
@@ -50,7 +50,7 @@ def resolve_exam_scope(
 
     organization = Organization.objects.filter(
         id=organization_id,
-        is_active=True,
+        subscription_status=Organization.SubscriptionStatus.ACTIVE,
     ).first()
     if organization is None:
         raise ExamPrepV4ScopeError('Organization is unavailable.')
@@ -60,9 +60,9 @@ def resolve_exam_scope(
         OrganizationMembership.objects.filter(
             organization=organization,
             user=user,
-            is_active=True,
+            status=OrganizationMembership.MemberStatus.ACTIVE,
         )
-        .only('id', 'role')
+        .only('id', 'org_role')
         .first()
     )
     allowed_roles = {
@@ -70,16 +70,17 @@ def resolve_exam_scope(
         OrganizationMembership.OrgRole.DEPUTY,
         OrganizationMembership.OrgRole.TEACHER,
     }
-    if not is_owner and (membership is None or membership.role not in allowed_roles):
+    if not is_owner and (
+        membership is None or membership.org_role not in allowed_roles
+    ):
         raise ExamPrepV4ScopeError('Organization is unavailable.')
 
     if study_group is not None and not is_owner:
         assert membership is not None
-        if membership.role == OrganizationMembership.OrgRole.TEACHER:
+        if membership.org_role == OrganizationMembership.OrgRole.TEACHER:
             assigned = StudyGroupTeacher.objects.filter(
                 study_group=study_group,
                 teacher=user,
-                is_active=True,
             ).exists()
             if not assigned:
                 raise ExamPrepV4ScopeError('Study group is unavailable.')
