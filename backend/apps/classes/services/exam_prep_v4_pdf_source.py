@@ -13,7 +13,6 @@ import os
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
-from typing import BinaryIO
 
 from django.conf import settings
 from django.core.files import File
@@ -225,11 +224,7 @@ def _save_raw_source(
 ) -> None:
     if document.source_file:
         return
-    suffix = '.pdf'
-    object_name = (
-        f'{document.project_id}/{document.id}/'
-        f'{source_sha256}{suffix}'
-    )
+    object_name = f'{document.project_id}/{document.id}/{source_sha256}.pdf'
     with source_path.open('rb') as handle:
         document.source_file.save(object_name, File(handle), save=False)
 
@@ -388,6 +383,11 @@ def prepare_pdf_source_from_path(
                 update_fields=['status', 'error_code', 'error_detail', 'updated_at']
             )
             return _prepared_result(document, reused=False)
+    except V4PdfSourceConflict:
+        # A caller attempted to replace or mutate an already-bound source. This
+        # is a controlled conflict, not evidence that the valid stored document
+        # failed. Preserve its current status, metadata, and private objects.
+        raise
     except Exception as exc:
         ExamSourceDocument.objects.filter(id=document_id).update(
             status=ExamSourceDocument.Status.FAILED,
