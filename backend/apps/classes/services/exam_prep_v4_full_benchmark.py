@@ -44,6 +44,10 @@ from apps.classes.services.exam_prep_v4_pdf_source import (
     load_classification_page_inputs,
     prepare_pdf_source_from_path,
 )
+from apps.classes.services.exam_prep_v4_source_map_contract import (
+    source_map_fingerprint,
+    structural_page_map_from_models,
+)
 from apps.classes.services.exam_prep_v4_source_map_mutation import (
     confirm_teacher_source_map,
 )
@@ -142,8 +146,8 @@ class FullBenchmarkManifestSpec(BaseModel):
 
     @model_validator(mode='after')
     def validate_fixture_ids(self):
-        ids = [fixture.fixture_id for fixture in self.fixtures]
-        if len(ids) != len(set(ids)):
+        fixture_ids = [fixture.fixture_id for fixture in self.fixtures]
+        if len(fixture_ids) != len(set(fixture_ids)):
             raise ValueError('fixtureId values must be unique')
         return self
 
@@ -182,6 +186,7 @@ def load_full_benchmark_manifest(path: str | Path) -> FullBenchmarkManifest:
         raise FullBenchmarkManifestError(
             'Benchmark manifest is unavailable or invalid JSON.'
         ) from exc
+
     try:
         parsed = FullBenchmarkManifestSpec.model_validate(raw)
     except ValidationError as exc:
@@ -234,7 +239,7 @@ def load_full_benchmark_manifest(path: str | Path) -> FullBenchmarkManifest:
 
 
 class ManifestFakeExtractionProvider:
-    """Deterministic fake provider that still uses the real persistence runner."""
+    """Deterministic fake provider that uses the real persistence runner."""
 
     def __init__(self, fixture: FullBenchmarkFixture):
         self.fixture = fixture
@@ -247,11 +252,13 @@ class ManifestFakeExtractionProvider:
 
     @staticmethod
     def _boxes(numbers: Sequence[str], pages) -> list[dict[str, Any]]:
+        if not pages:
+            return []
         assignments: dict[int, list[str]] = defaultdict(list)
         for index, number in enumerate(numbers):
             assignments[index % len(pages)].append(number)
         result: list[dict[str, Any]] = []
-        order = 0
+        block_order = 0
         for page_index, page in enumerate(pages):
             page_numbers = assignments.get(page_index, [])
             count = max(1, len(page_numbers))
@@ -262,7 +269,7 @@ class ManifestFakeExtractionProvider:
                 )
                 result.append(
                     {
-                        'order': order,
+                        'order': block_order,
                         'printedNumber': number,
                         'confidence': 0.99,
                         'fragments': [
@@ -279,7 +286,7 @@ class ManifestFakeExtractionProvider:
                         ],
                     }
                 )
-                order += 1
+                block_order += 1
         return result
 
     def detect_segment_blocks(self, *, document, segment, pages, images):
@@ -378,7 +385,10 @@ def _benchmark_user():
     return user
 
 
-def _create_scope(teacher, fixture: FullBenchmarkFixture) -> ExamSourceDocument:
+def _create_scope(
+    teacher,
+    fixture: FullBenchmarkFixture,
+) -> ExamSourceDocument:
     project = ExamProject.objects.create(
         teacher=teacher,
         title=f'V4 full benchmark {fixture.fixture_id}',
@@ -396,7 +406,9 @@ def _create_scope(teacher, fixture: FullBenchmarkFixture) -> ExamSourceDocument:
     )
 
 
-def _expected_raw_classification(fixture: FullBenchmarkFixture) -> dict[str, Any]:
+def _expected_raw_classification(
+    fixture: FullBenchmarkFixture,
+) -> dict[str, Any]:
     role_map = {
         page_number: segment.role
         for segment in fixture.expected_segments
@@ -420,7 +432,7 @@ def _fake_classify(
     document: ExamSourceDocument,
     fixture: FullBenchmarkFixture,
 ) -> PersistedClassification:
-    fingerprint = hashlib.sha256(
+    provider_fingerprint = hashlib.sha256(
         json.dumps(
             {
                 'sourceSha256': document.source_sha256,
@@ -444,7 +456,7 @@ def _fake_classify(
     return persist_classification_result(
         document_id=document.id,
         expected_revision=document.classification_revision,
-        fingerprint=fingerprint,
+        fingerprint=provider_fingerprint,
         raw_output=_expected_raw_classification(fixture),
     )
 
@@ -498,24 +510,37 @@ def _classify_and_confirm(
         if not classifier_model:
             raise FullBenchmarkError('Live benchmark requires classifier model.')
         classification = _live_classify(document, classifier_model)
+
     document.refresh_from_db()
     mismatch_count = _validate_segments(fixture, classification)
     if mismatch_count:
         raise FullBenchmarkError(
             f'Fixture {fixture.fixture_id} source map has structural mismatches.'
         )
+
+    pages = list(
+        document.pages.order_by('display_order', 'page_number')
+    )
+    structural_map = structural_page_map_from_models(pages)
+    structural_fingerprint = source_map_fingerprint(
+        structural_map,
+        page_count=document.page_count,
+    )
     confirm_teacher_source_map(
         teacher=teacher,
         project_id=document.project_id,
         document_id=document.id,
         expected_revision=document.classification_revision,
-        expected_fingerprint=document.source_map_fingerprint,
+        expected_fingerprint=structural_fingerprint,
     )
     document.refresh_from_db()
     return classification, mismatch_count
 
 
-def _record_metrics(project, fixture: FullBenchmarkFixture) -> dict[str, Any]:
+def _record_metrics(
+    project: ExamProject,
+    fixture: FullBenchmarkFixture,
+) -> dict[str, Any]:
     questions = tuple(
         ExamQuestionRecord.objects.filter(
             project=project,
@@ -537,14 +562,16 @@ def _record_metrics(project, fixture: FullBenchmarkFixture) -> dict[str, Any]:
         ).order_by('order')
     )
     expected_start, expected_end = fixture.expected_question_numbers
-    expected_questions = {str(value) for value in range(expected_start, expected_end + 1)}
+    expected_questions = {
+        str(value) for value in range(expected_start, expected_end + 1)
+    }
     expected_out_of_scope = {
         str(value) for value in fixture.expected_out_of_scope_numbers
     }
     actual_questions = {record.printed_number for record in questions}
-    counts: dict[str, int] = defaultdict(int)
+    decision_counts: dict[str, int] = defaultdict(int)
     for decision in decisions:
-        counts[decision.decision] += 1
+        decision_counts[decision.decision] += 1
     actual_out_of_scope_numbers = {
         decision.normalized_number
         for decision in decisions
@@ -554,11 +581,11 @@ def _record_metrics(project, fixture: FullBenchmarkFixture) -> dict[str, Any]:
         'questionCount': len(questions),
         'answerSolutionCount': len(answers),
         'decisionCount': len(decisions),
-        'matchedCount': counts[ExamMatchDecision.Decision.MATCHED],
-        'outOfScopeCount': counts[ExamMatchDecision.Decision.OUT_OF_SCOPE],
-        'unresolvedCount': counts[ExamMatchDecision.Decision.UNRESOLVED],
-        'ambiguousCount': counts[ExamMatchDecision.Decision.AMBIGUOUS],
-        'conflictCount': counts[ExamMatchDecision.Decision.CONFLICT],
+        'matchedCount': decision_counts[ExamMatchDecision.Decision.MATCHED],
+        'outOfScopeCount': decision_counts[ExamMatchDecision.Decision.OUT_OF_SCOPE],
+        'unresolvedCount': decision_counts[ExamMatchDecision.Decision.UNRESOLVED],
+        'ambiguousCount': decision_counts[ExamMatchDecision.Decision.AMBIGUOUS],
+        'conflictCount': decision_counts[ExamMatchDecision.Decision.CONFLICT],
         'missingQuestionCount': len(expected_questions - actual_questions),
         'unexpectedQuestionCount': len(actual_questions - expected_questions),
         'missingExpectedOutOfScopeCount': len(
@@ -570,7 +597,10 @@ def _record_metrics(project, fixture: FullBenchmarkFixture) -> dict[str, Any]:
     }
 
 
-def _usage_metrics(document_id: int, started_at: datetime) -> dict[str, Any]:
+def _usage_metrics(
+    document_id: int,
+    started_at: datetime,
+) -> dict[str, Any]:
     rows = LLMUsageLog.objects.filter(
         feature=LLMUsageLog.Feature.PDF_EXTRACTION,
         context__source_document_id=document_id,
@@ -601,19 +631,26 @@ def _usage_metrics(document_id: int, started_at: datetime) -> dict[str, Any]:
             'inputTokens': int(values['inputTokens'] or 0),
             'outputTokens': int(values['outputTokens'] or 0),
             'totalTokens': int(values['totalTokens'] or 0),
-            'estimatedCostUsd': str(values['estimatedCostUsd'] or Decimal('0')),
+            'estimatedCostUsd': str(
+                values['estimatedCostUsd'] or Decimal('0')
+            ),
         }
     return {
         'requestCount': rows.count(),
         'inputTokens': int(totals['inputTokens'] or 0),
         'outputTokens': int(totals['outputTokens'] or 0),
         'totalTokens': int(totals['totalTokens'] or 0),
-        'estimatedCostUsd': str(totals['estimatedCostUsd'] or Decimal('0')),
+        'estimatedCostUsd': str(
+            totals['estimatedCostUsd'] or Decimal('0')
+        ),
         'byStage': by_detail,
     }
 
 
-def _acceptance(metrics: Mapping[str, Any], warm_provider_calls: int) -> dict[str, Any]:
+def _acceptance(
+    metrics: Mapping[str, Any],
+    warm_provider_calls: int,
+) -> dict[str, Any]:
     checks = {
         'questionInventoryExact': (
             metrics['missingQuestionCount'] == 0
@@ -654,7 +691,9 @@ def _assert_aggregate_report(report: Mapping[str, Any]) -> None:
     def walk(value: Any) -> None:
         if isinstance(value, dict):
             if set(value) & forbidden_keys:
-                raise FullBenchmarkError('Aggregate report contains a private key.')
+                raise FullBenchmarkError(
+                    'Aggregate report contains a private key.'
+                )
             for nested in value.values():
                 walk(nested)
         elif isinstance(value, list):
@@ -667,7 +706,9 @@ def _assert_aggregate_report(report: Mapping[str, Any]) -> None:
         or 'SYNTHETIC_QUESTION_' in rendered
         or 'SYNTHETIC_SOLUTION_' in rendered
     ):
-        raise FullBenchmarkError('Aggregate report contains private or synthetic content.')
+        raise FullBenchmarkError(
+            'Aggregate report contains private or synthetic content.'
+        )
 
 
 def _live_preflight(
@@ -690,7 +731,8 @@ def _live_preflight(
             missing.append(name)
     if missing:
         raise FullBenchmarkError(
-            'Live full-pipeline benchmark preflight failed: ' + ', '.join(missing)
+            'Live full-pipeline benchmark preflight failed: '
+            + ', '.join(missing)
         )
 
 
@@ -738,6 +780,7 @@ def run_full_pipeline_benchmark(
                 mode=mode,
                 classifier_model=classifier_model,
             )
+
             provider: ExamPrepV4ExtractionProvider
             if mode == 'fake_provider':
                 provider = ManifestFakeExtractionProvider(fixture)
@@ -751,7 +794,10 @@ def run_full_pipeline_benchmark(
                 document_id=document.id,
                 provider=provider,
             )
-            cold_latency_ms = round((time.monotonic() - cold_started) * 1000, 2)
+            cold_latency_ms = round(
+                (time.monotonic() - cold_started) * 1000,
+                2,
+            )
 
             if mode == 'fake_provider':
                 warm_provider: ExamPrepV4ExtractionProvider = (
@@ -768,7 +814,10 @@ def run_full_pipeline_benchmark(
                 document_id=document.id,
                 provider=warm_provider,
             )
-            warm_latency_ms = round((time.monotonic() - warm_started) * 1000, 2)
+            warm_latency_ms = round(
+                (time.monotonic() - warm_started) * 1000,
+                2,
+            )
             metrics = _record_metrics(document.project, fixture)
             acceptance = _acceptance(metrics, warm.provider_calls)
             fixture_reports.append(
@@ -784,7 +833,10 @@ def run_full_pipeline_benchmark(
                     'warmLatencyMs': warm_latency_ms,
                     'issueCount': len(cold.issues),
                     **metrics,
-                    'usage': _usage_metrics(document.id, benchmark_started),
+                    'usage': _usage_metrics(
+                        document.id,
+                        benchmark_started,
+                    ),
                     'acceptance': acceptance,
                 }
             )
@@ -821,23 +873,49 @@ def run_full_pipeline_benchmark(
             'projectCount': len(project_ids),
             'independentProjectCount': len(set(project_ids)),
             'models': {
-                'classifier': classifier_model if mode == 'live_provider' else 'fake-provider',
-                'block': block_model if mode == 'live_provider' else 'fake-provider',
-                'question': question_model if mode == 'live_provider' else 'fake-provider',
-                'answer': answer_model if mode == 'live_provider' else 'fake-provider',
+                'classifier': (
+                    classifier_model
+                    if mode == 'live_provider'
+                    else 'fake-provider'
+                ),
+                'block': (
+                    block_model
+                    if mode == 'live_provider'
+                    else 'fake-provider'
+                ),
+                'question': (
+                    question_model
+                    if mode == 'live_provider'
+                    else 'fake-provider'
+                ),
+                'answer': (
+                    answer_model
+                    if mode == 'live_provider'
+                    else 'fake-provider'
+                ),
             },
-            'totalLatencyMs': round((time.monotonic() - total_started) * 1000, 2),
+            'totalLatencyMs': round(
+                (time.monotonic() - total_started) * 1000,
+                2,
+            ),
             'fixtures': fixture_reports,
             'totals': dict(totals),
             'acceptance': {
                 'allFixturesPassed': all(
-                    item['acceptance']['passed'] for item in fixture_reports
+                    item['acceptance']['passed']
+                    for item in fixture_reports
                 ),
-                'allProjectsIndependent': len(set(project_ids)) == len(project_ids),
-                'warmRerunProviderCallsZero': totals['warmProviderCalls'] == 0,
+                'allProjectsIndependent': (
+                    len(set(project_ids)) == len(project_ids)
+                ),
+                'warmRerunProviderCallsZero': (
+                    totals['warmProviderCalls'] == 0
+                ),
             },
         }
-        report['acceptance']['passed'] = all(report['acceptance'].values())
+        report['acceptance']['passed'] = all(
+            report['acceptance'].values()
+        )
         _assert_aggregate_report(report)
         return FullBenchmarkRunResult(
             report=report,
