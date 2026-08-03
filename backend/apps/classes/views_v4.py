@@ -5,7 +5,7 @@ import logging
 import os
 
 from django.conf import settings
-from django.http import Http404
+from django.http import FileResponse, Http404
 from rest_framework import status
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.parsers import FormParser, MultiPartParser
@@ -13,7 +13,11 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from apps.classes.models_v4 import ExamProject, ExamSourceDocument
+from apps.classes.models_v4 import (
+    ExamProject,
+    ExamSourceDocument,
+    ExamSourcePage,
+)
 from apps.classes.permissions import IsTeacherUser
 from apps.classes.serializers_v4 import (
     ExamPrepV4BatchUploadControlSerializer,
@@ -35,6 +39,7 @@ from apps.classes.services.exam_prep_v4_source_map import (
 )
 from apps.classes.services.exam_prep_v4_uploads import persist_uploaded_pdf_batch
 from apps.classes.tasks_v4 import dispatch_exam_prep_v4_sources
+from core.storage_backends import open_answer_source_file
 
 logger = logging.getLogger(__name__)
 
@@ -234,3 +239,55 @@ class ExamPrepV4ProjectDetailView(APIView):
         except ExamProject.DoesNotExist:
             raise Http404
         return Response(payload, status=status.HTTP_200_OK)
+
+
+class ExamPrepV4PageThumbnailView(APIView):
+    """Stream one private page thumbnail to the owning teacher only."""
+
+    permission_classes = [IsAuthenticated, IsTeacherUser]
+
+    def get(
+        self,
+        request,
+        project_id: int,
+        document_id: int,
+        page_number: int,
+    ):
+        _require_v4()
+
+        # Resolve the complete ancestry in one query. Filtering from the page
+        # upward prevents any cross-project or cross-document identifier mix.
+        page = (
+            ExamSourcePage.objects.filter(
+                page_number=page_number,
+                document_id=document_id,
+                document__project_id=project_id,
+                document__project__teacher=request.user,
+            )
+            .only('id', 'page_number', 'thumbnail_file')
+            .first()
+        )
+        if page is None or not page.thumbnail_file:
+            raise Http404
+
+        try:
+            stream = open_answer_source_file(page.thumbnail_file)
+        except Exception:
+            # Missing/unavailable private objects are indistinguishable from an
+            # unknown page; never disclose the object name or storage backend.
+            raise Http404
+
+        response = FileResponse(stream, content_type='image/jpeg')
+        # Override FileResponse's filename inference so a private storage key or
+        # local temporary path can never enter Content-Disposition.
+        response['Content-Disposition'] = (
+            f'inline; filename="page-{page.page_number}.jpg"'
+        )
+        response['Cache-Control'] = 'private, no-store, max-age=0'
+        response['Pragma'] = 'no-cache'
+        response['Expires'] = '0'
+        response['Vary'] = 'Authorization, Cookie'
+        response['X-Content-Type-Options'] = 'nosniff'
+        response['Cross-Origin-Resource-Policy'] = 'same-origin'
+        response['Referrer-Policy'] = 'no-referrer'
+        return response
