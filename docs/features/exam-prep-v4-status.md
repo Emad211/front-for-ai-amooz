@@ -5,8 +5,8 @@
 
 - **Branch:** `feat/exam-prep-v4-source-aware`
 - **Draft PR:** #4
-- **Current phase:** Phase 1 — source-domain foundation
-- **State:** Implementation in progress; focused and repository CI validation pending
+- **Current phase:** Phase 2 — fast page classification and virtual split
+- **State:** Phase 1 complete; Phase 2 implementation started
 - **Last updated:** 2026-08-03
 
 ## Verified baseline
@@ -17,7 +17,7 @@
 - Existing V1/V2/V3 API and pipeline code has not been changed.
 - V4 remains disabled unless `EXAM_PREP_V4_ENABLED` is enabled through Django settings or environment configuration.
 
-## Implemented in Phase 1
+## Phase 1 — complete
 
 ### Source-domain schema
 
@@ -29,9 +29,9 @@ Added additive models under the existing `classes` app:
 - `ExamSourceSegment`
 - shared `ExamSourceRole`
 
-The initial schema stores ownership, organization scope, project revision, private source-object references, page metadata, classifier roles, teacher overrides, virtual page ranges, fingerprints, retention metadata, and processing status.
+The schema stores ownership, organization scope, project revision, private source-object references, page metadata, classifier roles, teacher overrides, virtual page ranges, fingerprints, retention metadata, and processing status.
 
-### Isolation rules implemented
+### Isolation rules
 
 - One PDF creates one independent project by default.
 - Several PDFs in one request create several projects.
@@ -50,16 +50,48 @@ The initial schema stores ownership, organization scope, project revision, priva
 
 ### Focused CI
 
-Added `.github/workflows/exam-prep-v4.yml` with a PostgreSQL 16 service and four explicit gates:
+`.github/workflows/exam-prep-v4.yml` validates V4 against PostgreSQL 16:
 
-1. install the production backend dependencies;
-2. run `python backend/manage.py check`;
-3. run `python backend/manage.py makemigrations classes --check --dry-run`;
-4. run only `test_exam_prep_v4_source_foundation.py` with real migrations and `--create-db`.
+1. production backend dependency installation;
+2. Django system check;
+3. classes migration drift check;
+4. focused V4 tests with real migrations.
 
-This focused workflow is additive and does not replace the repository-wide CI.
+## Phase 1 test evidence
 
-## Files added or changed
+Focused workflow run `30773563369`, job `91564811542`, completed successfully:
+
+```text
+System check identified no issues (0 silenced).
+No changes detected in app 'classes'.
+13 passed in 5.68s
+```
+
+Verified on PostgreSQL 16 with migration `0040` applied through pytest `--create-db`.
+The database also demonstrably enforced the invalid segment-range and classifier-confidence constraints used by the negative tests.
+
+Repository-wide frontend CI remains red on pre-existing files only:
+
+- `src/app/(admin)/admin/tickets/page.tsx`
+- `src/constants/mock/messages-data.ts`
+
+No V4 frontend file exists yet. The repository-wide backend suite was still running at the last observation and is not claimed as green.
+
+## Phase 2 scope now in progress
+
+The next implementation slice is intentionally independent of an LLM provider:
+
+- tolerant per-page classification records;
+- malformed sibling records must not invalidate valid pages;
+- missing pages become `unknown` rather than disappearing;
+- teacher role overrides remain authoritative;
+- deterministic conversion of page roles into contiguous virtual segments;
+- persistence bound to document classification revision and fingerprint;
+- structural tests for question-first, answer-first, and cover-in-the-middle patterns.
+
+The actual fast multimodal LLM adapter will be added only after this contract and persistence layer pass focused PostgreSQL tests.
+
+## Files added or changed so far
 
 - `.github/workflows/exam-prep-v4.yml`
 - `backend/apps/classes/models_v4.py`
@@ -68,46 +100,24 @@ This focused workflow is additive and does not replace the repository-wide CI.
 - `backend/apps/classes/services/exam_prep_v4_projects.py`
 - `backend/apps/classes/test_exam_prep_v4_source_foundation.py`
 
-## Test evidence
+## Current risks
 
-| Date | Commit | Command / environment | Result |
-|---|---|---|---|
-| 2026-08-03 | `888abdde` | Repository GitHub Actions run `30773375531` | Backend still running at observation time. Frontend failed on pre-existing admin-ticket and mock-message type errors; no V4 frontend file changed. |
-| 2026-08-03 | `e4312932` | Focused V4 workflow + repository workflow | Queued/pending; do not mark Phase 1 complete yet. |
+1. Repository-wide CI has unrelated baseline failures; focused V4 CI remains the authoritative signal for V4-only changes.
+2. Actual classifier latency and accuracy are unverified until a provider adapter and private benchmark runner exist.
+3. Page roles are not yet generated from PDFs; only the data foundation exists.
+4. Source-file upload and private page rendering are not yet exposed through V4 APIs.
 
-Targeted assertions added:
+## Phase 2 completion gate
 
-- models are registered under the `classes` app;
-- model state has no uncommitted `classes` migration drift;
-- feature flag defaults to disabled behavior;
-- three PDFs create three projects;
-- identical file hashes never merge projects;
-- network retry does not duplicate projects;
-- conflicting retry metadata is rejected;
-- owner scope excludes another teacher's project;
-- cross-project page deduplication is rejected;
-- teacher role overrides classifier role;
-- invalid segment ranges and confidence values are rejected.
-
-## Current risks under verification
-
-1. Registration of the isolated model module through `ClassesConfig.ready()` must pass Django system checks and migration autodetection.
-2. Migration `0040` must apply cleanly on PostgreSQL after the existing organization and V3 migrations.
-3. Constraint SQL must behave consistently on PostgreSQL.
-4. Repository-wide CI has known unrelated frontend and model-ENV failures; V4 failures must be separated from baseline failures.
-
-## Phase 1 completion gate
-
-Phase 1 is not complete until all of the following are evidenced:
-
-- migration applies on PostgreSQL;
-- `makemigrations --check --dry-run` reports no V4 drift;
-- targeted V4 tests pass;
-- Django system check passes;
-- owner/project isolation negative tests pass;
-- any CI failure is classified as V4-caused or pre-existing;
-- this ledger is updated with exact results.
+- page-classification contract accepts partial valid output;
+- malformed records are reported without deleting valid records;
+- every source page receives an explicit role, including `unknown`;
+- segment proposals preserve arbitrary internal ordering;
+- answer-first and cover-in-the-middle structures are represented correctly;
+- persistence is revision-safe and idempotent;
+- focused PostgreSQL tests pass;
+- private live classification benchmark remains explicitly unclaimed until executed.
 
 ## Next verified step
 
-Read the focused workflow triggered by commit `e4312932`. Fix any V4-caused migration, registry, constraint, or test failure before adding upload APIs or page classification.
+Implement and test the tolerant classification contract and deterministic segment builder before adding the LLM adapter.
