@@ -29,6 +29,7 @@ class ExamPrepV4BatchUploadControlSerializer(serializers.Serializer):
 
 class ExamPrepV4SourceMapPageSerializer(serializers.Serializer):
     pageNumber = serializers.IntegerField(min_value=1)
+    displayOrder = serializers.IntegerField(min_value=1)
     role = serializers.ChoiceField(choices=ExamSourceRole.values)
     orientation = serializers.ChoiceField(
         choices=ExamSourcePage.Orientation.values,
