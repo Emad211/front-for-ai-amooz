@@ -7,13 +7,13 @@
 - **Execution mode:** Critical Path Acceleration
 - **Current roadmap span:** Phase 4 → Phase 7 vertical extraction path
 - **Last completed slice:** measured two-page AvalAI OCR feasibility run and selected a bounded OCR evidence-proposal role
-- **Active gate:** implement an optional OCR evidence adapter with transient retry and deterministic fallback, then run the three private PDFs through the full V4 pipeline
+- **Active gate:** implement and verify the optional OCR evidence adapter with transient retry, authoritative validation, exact reuse, and deterministic fallback to the existing detector
 - **Second live run/job:** `30854537419` / `91822320489`
 - **Artifact:** `8871965000` — aggregate-only, one-day retention
 - **Second-run external requests:** 8 attempted
 - **Second-run result:** 6 passed, 2 transport failures
 - **One-shot workflow removal from main:** `2f457da65029c6c617dc4f1ab70c542096c4a563`
-- **Focused verification before live run:** `30853630677`; 236 backend tests passed; frontend focused validation passed
+- **Focused verification before adapter slice:** `30853630677`; 236 backend tests passed; frontend focused validation passed
 - **Last updated:** 2026-08-04
 
 ## Progress
@@ -26,7 +26,7 @@ Progress remains based on the 77 canonical roadmap deliverables.
 | Phase 1 | 6 | 7 | Read-only admin inspection remains deferred. |
 | Phase 2 | 8 | 9 | Real private classification benchmark remains open and uncredited. |
 | Phase 3 | 4 | 7 | Core Source Map works; split/group and browser validation remain open. |
-| Phase 4 | 3 | 8 | Real OCR block/bbox evidence now exists, but private layout/formula/continuation acceptance remains incomplete. |
+| Phase 4 | 3 | 8 | Real OCR block/bbox evidence exists; optional adapter/retry/fallback and private quality gates remain open. |
 | Phase 5 | 6 | 7 | Typed question path is verified; private precision/recall remains open. |
 | Phase 6 | 4 | 7 | Unified answer-solution path is verified; real heading/answer-key/inline accuracy remains open. |
 | Phase 7 | 6 | 7 | Deterministic matching is verified; complete consistency gate remains open. |
@@ -38,7 +38,7 @@ Progress remains based on the 77 canonical roadmap deliverables.
 - **Phase 6:** **4/7 = 57.1%**
 - **Phase 7:** **6/7 = 85.7%**
 
-No new canonical deliverable is credited from this smoke alone.
+No adapter credit is added until focused PostgreSQL and fallback/reuse evidence passes.
 
 ## AvalAI documentation rule
 
@@ -50,13 +50,16 @@ Before every AvalAI-dependent change or evidence interpretation:
 4. never infer retention, training, or residency guarantees;
 5. update `docs/runbooks/exam-prep-v4-avalai-ocr-smoke.md`.
 
-Official pages re-read for this result:
+Official/current evidence re-read before this slice:
 
 ```text
 https://docs.avalai.ir/fa/api-reference/ocr
 https://docs.avalai.ir/fa/examples/processing_documents_with_mistral_ocr
 https://docs.avalai.ir/fa/models/mistral-ocr-2512
+https://docs.avalai.org/en/providers/mistralai
 ```
+
+Current official provider documentation states that `mistral-ocr-latest` resolves to `mistral-ocr-4-0`, supports OCR4 blocks/annotations, and that the explicit versioned identifier is preferred for reproducible workflows. The adapter must therefore default to the versioned ID while retaining measured fallback behavior.
 
 ## Measured second-run evidence
 
@@ -90,55 +93,63 @@ Question page:
 
 - all four modes passed;
 - each successful response returned one page, 21 blocks, and 22 bboxes;
-- block types were `header`, `text`, `list`, `image`, and `footer`;
 - blocks mode returned page confidence `0.981177`;
-- document annotation was present in `document_annotation` mode;
-- one extracted image received a bbox annotation in `bbox_annotation` mode;
-- Markdown contained 2,299 RTL characters.
+- document annotation was present;
+- one extracted image received bbox annotation.
 
 Answer page:
 
 - `document_annotation` and `bbox_annotation` passed;
 - both successful responses returned one page, 25 blocks, and 25 bboxes;
-- block types were `title`, `header`, `text`, and `footer`;
-- document annotation was present in `document_annotation` mode;
-- no extracted images were returned;
-- Markdown contained 3,777 RTL characters;
-- standalone `markdown` and `blocks` calls failed with `AvalAIOCRTransportError`.
+- standalone `markdown` and `blocks` calls failed with `AvalAIOCRTransportError`;
+- later annotation calls on the same image succeeded, so transient provider/gateway failure is plausible but not proven.
 
-The exact HTTP status for the two transport failures was not recorded. Because later annotation calls on the same answer image succeeded, a transient provider/gateway failure is a plausible inference, not a proven cause.
+## Adapter contract for this slice
 
-## Evidence limitations
+The adapter is proposal-only and must not become the production authority.
 
-- aggregate-only reporting does not prove transcription correctness or RTL reading order;
-- zero formula/table signals may mean the selected pages lacked those structures or the current signal detector missed them;
-- the response reported the alias `mistral-ocr-latest`, not a resolved immutable model identifier;
-- exact authoritative cost was not retrieved;
-- transport reliability was 6/8 in this small sample, so single-attempt OCR cannot be authoritative.
+Required behavior:
 
-## Architecture decision
+1. use one `document_annotation` request as the primary page call because it returned Markdown, blocks, bboxes, and document annotation together on both measured pages;
+2. request `bbox_annotation` only when diagram/figure evidence is explicitly needed;
+3. retry only transient transport failures with a small bounded attempt count and deterministic backoff supplied/injected for tests;
+4. never retry schema/privacy/configuration failures;
+5. validate project/document/page/revision ownership before persistence;
+6. convert OCR blocks only into bounded SourceBlock proposals; existing SourceBlock persistence remains authoritative;
+7. reject empty, malformed, duplicate, out-of-range, or low-confidence proposals and fall back to the existing detector;
+8. preserve history and downstream invalidation semantics;
+9. cache accepted unchanged page evidence so a warm rerun makes zero provider calls;
+10. record aggregate provider calls, attempts, fallback reasons, latency, model and request IDs privately/audit-safely;
+11. never expose OCR Markdown, block content, annotations, source bytes, local paths, or raw responses through public APIs/logs;
+12. keep feature-disabled/default behavior identical to the current detector.
 
-**OCR4 is accepted as an optional evidence-proposal candidate, not as the production authority.**
+## Required focused tests
 
-The next adapter should use:
+- primary document-annotation success creates bounded deterministic proposals;
+- transient transport failure retries and then succeeds;
+- exhausted transient retries fall back exactly once to the existing detector;
+- response/schema/privacy/configuration errors do not retry and fall back safely;
+- low-confidence or empty OCR evidence falls back;
+- optional bbox call occurs only for explicitly diagram-relevant pages;
+- unchanged accepted evidence warm-rerun performs zero provider calls;
+- changed page/revision invalidates reuse;
+- project/document/page isolation is enforced;
+- no private OCR content enters aggregate/public output;
+- existing non-OCR detector path remains byte-stable when OCR is disabled.
 
-1. `document_annotation` as the primary call because it succeeded on both pages and returned Markdown, blocks, bboxes, and document annotation together;
-2. `bbox_annotation` only when figure/diagram evidence is needed;
-3. bounded retry only for transient transport failures;
-4. existing Source Map, SourceBlock, typed-record, revision, provenance, and matcher contracts as authoritative validators;
-5. the current vision detector as fallback for failed, low-confidence, ambiguous, formula-heavy, or layout-sensitive evidence;
-6. exact caching so accepted unchanged page evidence makes zero provider calls.
+## Current locked sequence
 
-No production-default switch is authorized yet.
-
-## Closed operational gate
-
-The one-shot workflow was removed from `main` after the artifact was secured. No further manual OCR smoke workflow remains on the default branch.
-
-## Next locked slice
-
-Implement only the optional OCR evidence adapter and retry/fallback policy, then execute the existing full-pipeline benchmark on all three private PDFs. The benchmark must record aggregate question/answer inventory, match precision, block coverage, provider calls, latency, warm reuse, and failures. Do not begin Phase 8 or rollout.
+1. inspect the existing detector, block persistence, page/revision fingerprints, provider abstractions and full-pipeline benchmark;
+2. implement the smallest optional adapter at the proposal boundary;
+3. add focused fake-transport retry/fallback/reuse/privacy tests;
+4. run full V4 PostgreSQL/frontend CI;
+5. update this ledger and canonical roadmap with exact evidence;
+6. only then define the bounded request ceiling for the three-private-PDF live full-pipeline benchmark.
 
 ## User action required
 
-No user decision is required for the adapter slice. A later full three-PDF live benchmark may require a new explicit request ceiling before execution.
+None for this adapter slice. Do not begin Phase 8, publication, rollout, or a live three-PDF run before the adapter gate is green.
+
+## Exact continuation point
+
+Read the current detector/persistence/benchmark code and implement only the optional OCR evidence adapter described above. Keep progress at 42/77 until focused evidence proves a canonical deliverable.
