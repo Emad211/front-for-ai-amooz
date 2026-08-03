@@ -392,6 +392,7 @@ def test_cross_segment_page_and_incompatible_kind_are_rejected_before_writes():
 def test_replacement_failure_rolls_back_supersession_and_new_rows(monkeypatch):
     _teacher_user, project, document, _segments = _confirmed_map()
     _persist(document)
+    project.refresh_from_db()
     original_status = project.status
 
     def fail_bulk_create(*args, **kwargs):
