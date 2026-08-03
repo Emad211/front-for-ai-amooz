@@ -5,6 +5,10 @@ from apps.classes.views_v4 import (
     ExamPrepV4PageThumbnailView,
     ExamPrepV4ProjectDetailView,
 )
+from apps.classes.views_v4_source_map import (
+    ExamPrepV4SourceMapConfirmationView,
+    ExamPrepV4SourceMapMutationView,
+)
 
 
 app_name = 'exam_prep_v4'
@@ -19,6 +23,22 @@ urlpatterns = [
         'projects/<int:project_id>/',
         ExamPrepV4ProjectDetailView.as_view(),
         name='project-source-map-detail',
+    ),
+    path(
+        (
+            'projects/<int:project_id>/documents/<int:document_id>/'
+            'source-map/'
+        ),
+        ExamPrepV4SourceMapMutationView.as_view(),
+        name='project-source-map-mutation',
+    ),
+    path(
+        (
+            'projects/<int:project_id>/documents/<int:document_id>/'
+            'source-map/confirm/'
+        ),
+        ExamPrepV4SourceMapConfirmationView.as_view(),
+        name='project-source-map-confirmation',
     ),
     path(
         (
