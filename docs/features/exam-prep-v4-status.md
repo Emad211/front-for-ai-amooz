@@ -6,10 +6,13 @@
 - **PR:** #4 — Draft
 - **Execution mode:** Critical Path Acceleration
 - **Current roadmap span:** Phase 4 → Phase 7 vertical extraction path
-- **Last completed slice:** isolated bounded AvalAI Mistral OCR 4 fake-response smoke gate
-- **Active gate:** choose the secure execution/input path for the authorized two-page private live OCR smoke
-- **Last fully validated implementation checkpoint:** `b29055d900d2ec6727d39be181567a554e0b336a`
-- **Last fully validated focused workflow:** `30846013026`
+- **Last completed slice:** guarded manual GitHub Actions orchestration for the two-page AvalAI OCR live smoke
+- **Active gate:** provide two short-lived signed page-image URLs as GitHub Actions secrets, then manually dispatch the bounded live smoke
+- **Validated implementation checkpoint:** `86d0ccbc312dd7adc725add4ef3ee671c574390a`
+- **Focused workflow:** `30849183611`
+- **Backend job:** `91804786818`
+- **Frontend job:** `91804786856`
+- **Validated PR merge ref:** `92d30fd1f4d96f3efc175cf15e3520118dd2c0f2`
 - **Last updated:** 2026-08-03
 
 ## Progress
@@ -47,7 +50,7 @@ No progress credit is added before measured private evidence closes a canonical 
 7. ambiguous evidence remains unresolved rather than guessed;
 8. malformed provider siblings remain isolated;
 9. accepted unchanged units are excluded from provider calls;
-10. private source content, paths, crops, OCR text, annotations, and raw provider output remain outside public serializers and aggregate reports;
+10. private source content, paths, crops, OCR text, annotations, and raw provider output remain outside public serializers, logs, and aggregate reports;
 11. historical revisions remain auditable;
 12. production routing is not changed by a feasibility smoke;
 13. Phase 8 and rollout remain blocked until private evidence is recorded or explicitly waived.
@@ -60,7 +63,7 @@ For every AvalAI-dependent turn:
 2. re-read the relevant current official AvalAI documentation;
 3. pin reproducible model identifiers instead of mutable aliases;
 4. separate documented behavior, inference, and measured behavior;
-5. never infer endpoint retention/training/residency guarantees;
+5. never infer endpoint retention, training, or residency guarantees;
 6. record reviewed documentation in the related runbook.
 
 Required official pages for this gate:
@@ -71,82 +74,74 @@ https://docs.avalai.ir/fa/examples/processing_documents_with_mistral_ocr
 https://docs.avalai.ir/fa/models/mistral-ocr-2512
 ```
 
-## Existing OCR feasibility implementation
+## Product-owner authorization and credential state
+
+The product owner approved:
+
+- transmission of exactly two selected private page images;
+- pinned model `mistral-ocr-4-0`;
+- hard ceiling of exactly eight OCR requests;
+- implementation-agent selection of one question page and one answer-solution/continuation page;
+- secret-based credential delivery.
+
+The user confirmed through the GitHub settings UI that repository Actions secret `AVALAI_API_KEY` is configured. The secret value is neither visible nor required by the implementation agent.
+
+This authorization does not permit complete PDFs, more than two images, more than eight requests, production routing changes, Phase 8, publication, or rollout.
+
+## Closed gate — guarded GitHub Actions workflow
+
+Implemented workflow:
 
 ```text
-backend/apps/classes/services/exam_prep_v4_avalai_ocr.py
-backend/apps/classes/management/commands/smoke_exam_prep_v4_avalai_ocr.py
-backend/apps/classes/test_exam_prep_v4_avalai_ocr.py
-docs/runbooks/exam-prep-v4-avalai-ocr-smoke.md
+.github/workflows/exam-prep-v4-avalai-ocr-live-smoke.yml
 ```
 
-The service remains isolated from production extraction routing.
+Safety contract:
 
-Supported modes:
+- `workflow_dispatch` only; no push, pull-request, schedule, or automatic trigger;
+- read-only repository contents permission;
+- explicit confirmation string `I_APPROVE_8_PRIVATE_OCR_REQUESTS`;
+- branch locked to `feat/exam-prep-v4-source-aware`;
+- pinned endpoint/model path through the existing command;
+- exactly two secret-backed HTTPS page-image URLs;
+- accepts only PNG or JPEG signatures;
+- each input is bounded to 12 MiB;
+- the two images must be byte-distinct;
+- exactly four smoke modes and a hard eight-request ceiling;
+- only `aggregate-report.json` is uploaded;
+- aggregate artifact retention is one day;
+- raw page images and local report are shredded/removed in an `always()` cleanup step;
+- no private image, OCR text, annotation, raw provider response, URL, or credential is uploaded as an artifact.
+
+Required secrets:
 
 ```text
-markdown
-blocks
-document_annotation
-bbox_annotation
+AVALAI_API_KEY
+OCR_QUESTION_PAGE_URL
+OCR_ANSWER_PAGE_URL
 ```
 
-The client uses bounded local PDF/image bytes as in-memory base64 data URLs, sets `include_image_base64=false`, enforces bounded input/response/page/annotation limits, and emits aggregate-only metrics.
+The URL secrets must point to short-lived signed HTTPS URLs for exactly two private page images. They must not point to full PDFs or public permanent files.
 
-## Product-owner authorization recorded
-
-The product owner approved on 2026-08-03:
-
-1. exactly two selected private page images may be transmitted to AvalAI/Mistral;
-2. pinned model `mistral-ocr-4-0`;
-3. a hard ceiling of exactly eight OCR requests;
-4. implementation-agent selection of one representative question page and one representative answer-solution/continuation page;
-5. use of an environment/secret credential without committing or pasting the key.
-
-This does not authorize complete PDFs, more than two page images, more than eight requests, production routing changes, Phase 8, publication, or rollout.
-
-## Credential deployment decision
-
-A GitHub Actions secret named `AVALAI_API_KEY` is an acceptable credential source. The key must be added through repository or, preferably, dedicated environment Actions secrets. It must never be committed to source, workflow YAML, `.env`, an issue, a PR comment, or chat.
-
-The assistant and workflow logs do not need to reveal the value. The workflow references it only as:
+## Workflow safety tests
 
 ```text
-${{ secrets.AVALAI_API_KEY }}
+backend/apps/classes/test_exam_prep_v4_avalai_ocr_workflow.py
 ```
 
-A dedicated environment such as `v4-live-ocr-smoke` is preferred because it can isolate the secret from ordinary CI jobs and may support deployment protection rules depending on repository/plan settings.
+The tests enforce:
 
-## Important remaining blocker
+- manual-only and read-only workflow behavior;
+- exact secret names;
+- pinned `mistral-ocr-4-0` model;
+- exact request ceiling `8`;
+- aggregate-only artifact path;
+- one-day artifact retention;
+- private input cleanup;
+- image signature and byte-size checks;
+- exact aggregate acceptance contract.
 
-The GitHub secret solves only credential delivery. A GitHub-hosted runner cannot access the user's local filesystem or the two local private page images.
-
-Do **not** commit those images or PDFs to Git history, even temporarily. Git history and workflow artifacts introduce additional retention/access surfaces.
-
-Permitted execution paths:
-
-### Path A — local execution (preferred and simplest)
-
-- keep `AVALAI_API_KEY` in the local environment;
-- keep both images local;
-- run the existing command locally;
-- return only the aggregate JSON report.
-
-### Path B — GitHub Actions execution
-
-Requires all of:
-
-- `AVALAI_API_KEY` as an Actions secret;
-- a manually triggered, dedicated workflow rather than ordinary PR CI;
-- a secure runner-accessible source for exactly two page images, preferably short-lived signed object-storage URLs passed as environment secrets;
-- no page/PDF commit;
-- no raw OCR output artifact;
-- only the aggregate report as an artifact, with minimum practical retention;
-- hard request ceiling `8` and explicit private-transmission flag.
-
-The two page images must not be placed directly into Actions secrets unless their encoded size fits GitHub's secret limit and image quality remains adequate; this is not the recommended path.
-
-## Current verification
+## Focused verification
 
 ```text
 Python 3.12
@@ -154,24 +149,34 @@ PostgreSQL 16
 Redis 7
 System check identified no issues (0 silenced).
 No changes detected in app 'classes'.
-231 passed, 47 warnings in 25.38s
+235 passed, 47 warnings in 26.63s
 Focused frontend TypeScript check: passed
 Source-map state-model tests: passed
 ```
 
+Warnings remain limited to the CI checkout lacking generated `backend/staticfiles/`. Expected negative PostgreSQL constraint logs are not suite failures.
+
 No live OCR request has been executed and no private image has been transmitted by this branch.
 
-## User decision required now
+## User action required now
 
-Choose one execution path:
+Add these two repository Actions secrets:
 
 ```text
-A) local execution — recommended
-B) GitHub Actions — requires a secure source for the two images in addition to the Actions secret
+OCR_QUESTION_PAGE_URL
+OCR_ANSWER_PAGE_URL
 ```
+
+Each value must be a short-lived signed HTTPS URL to one PNG/JPEG page image, maximum 12 MiB. Do not paste the URLs into chat, a PR, an issue, or the repository.
 
 ## Exact continuation point
 
-- If Path A is selected, provide exact local commands and process only the aggregate report.
-- If Path B is selected, add `AVALAI_API_KEY` as an Actions secret, define the secure two-image transport, then implement a manual workflow that produces only the aggregate report.
-- Do not change production OCR routing or the 42/77 score before measured evidence is recorded.
+After both URL secrets are confirmed:
+
+1. re-read the official AvalAI OCR pages;
+2. manually dispatch `exam-prep-v4-avalai-ocr-live-smoke` on branch `feat/exam-prep-v4-source-aware`;
+3. enter confirmation `I_APPROVE_8_PRIVATE_OCR_REQUESTS`;
+4. inspect the aggregate-only artifact and request IDs;
+5. record measured RTL, formula, table, blocks/bbox, annotation, latency, and cost evidence in this ledger and runbook;
+6. decide whether OCR should be OCR-first, transcription-only, diagram-only, or rejected;
+7. do not change production routing or the 42/77 score before that evidence is reviewed.
