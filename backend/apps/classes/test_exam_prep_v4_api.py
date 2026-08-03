@@ -183,7 +183,7 @@ def test_metadata_count_must_match_files(settings):
     )
 
     assert response.status_code == 400
-    assert 'metadata' in response.data
+    assert 'metadata' in response.data['errors']
 
 
 def test_same_ids_and_bytes_retry_same_project_without_new_blob(
