@@ -163,10 +163,13 @@ def test_another_teacher_gets_404_without_storage_access(
     settings.EXAM_PREP_V4_ENABLED = True
     _owner, project, document, page, _data = _source_page()
     opened = []
-    monkeypatch.setattr(
-        'apps.classes.views_v4.open_answer_source_file',
-        lambda _field: opened.append(True),
-    )
+    real_open = private_storage.open
+
+    def tracked_open(*args, **kwargs):
+        opened.append(args[0] if args else None)
+        return real_open(*args, **kwargs)
+
+    monkeypatch.setattr(private_storage, 'open', tracked_open)
 
     with django_assert_num_queries(1):
         response = _auth(_user()).get(
@@ -239,12 +242,11 @@ def test_storage_failure_is_indistinguishable_from_missing_page(
 ):
     settings.EXAM_PREP_V4_ENABLED = True
     teacher, project, document, page, _data = _source_page()
-    monkeypatch.setattr(
-        'apps.classes.views_v4.open_answer_source_file',
-        lambda _field: (_ for _ in ()).throw(
-            RuntimeError('s3://private-bucket/highly-secret-object.jpg')
-        ),
-    )
+
+    def failing_open(*_args, **_kwargs):
+        raise RuntimeError('s3://private-bucket/highly-secret-object.jpg')
+
+    monkeypatch.setattr(private_storage, 'open', failing_open)
 
     response = _auth(teacher).get(_url(project, document, page.page_number))
 
