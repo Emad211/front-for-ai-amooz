@@ -11,7 +11,7 @@
 - **Development/CI live-provider calls:** forbidden for this path
 - **Validated code head:** `d7b53393d77c50a53b81f0cba5e7d45367b6c6d8`
 - **Validated merge ref:** `fd137cf8779eff5318cea23ca68fb7dc29f4cdb3`
-- **Current documentation head before this ledger sync:** `95e67cdf053061f47bbf40f72b6908fad3affd88`
+- **Current documentation head before this final ledger sync:** `70cc01dbb59b5130d3d27f40fc85d939c2dfbbf5`
 - **Focused workflow:** `30862683847`
 - **Backend job:** `91847863122`
 - **Frontend job:** `91847863181`
