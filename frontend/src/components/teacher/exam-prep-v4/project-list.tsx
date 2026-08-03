@@ -23,7 +23,7 @@ const statusLabels: Record<string, string> = {
   uploading: 'در حال بارگذاری',
   classifying: 'در حال تشخیص صفحات',
   awaiting_source_confirmation: 'منتظر بررسی نقشه',
-  segmenting: 'نقشه تأیید شده',
+  segmenting: 'در حال تشخیص بلوک‌ها',
   extracting_questions: 'در حال استخراج سؤال',
   extracting_answers: 'در حال استخراج پاسخ',
   matching: 'در حال اتصال پاسخ‌ها',
@@ -68,11 +68,11 @@ export function ExamPrepV4ProjectList() {
               آماده‌سازی آزمون V4
             </h1>
             <Badge variant="outline" className="border-primary/30 bg-primary/10 text-primary">
-              Source Map
+              Source Map + Extraction
             </Badge>
           </div>
           <p className="max-w-3xl text-sm leading-6 text-muted-foreground">
-            نقشهٔ صفحات PDFهای پردازش‌شده را بررسی کنید. در این بخش فقط نقش و چرخش صفحات اصلاح و تأیید می‌شود؛ استخراج سؤال هنوز شروع نمی‌شود.
+            نقش، چرخش و ترتیب صفحات را بررسی کنید. با تأیید نقشه، استخراج سؤال، پاسخ و راه‌حل به‌صورت خودکار روی worker پروداکشن آغاز می‌شود و وضعیت آن با Run ID قابل پیگیری است.
           </p>
         </div>
 
@@ -93,7 +93,7 @@ export function ExamPrepV4ProjectList() {
             <div>
               <p className="font-bold">{projects.total} پروژهٔ مستقل</p>
               <p className="text-xs leading-5 text-muted-foreground">
-                هر PDF به‌صورت پیش‌فرض یک آزمون مستقل است.
+                پروژه‌های فعال هر چهار ثانیه به‌طور خودکار بروزرسانی می‌شوند.
               </p>
             </div>
           </div>
@@ -125,7 +125,7 @@ export function ExamPrepV4ProjectList() {
       ) : (
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
           {projects.projects.map((project) => {
-            const confirmed = project.status === 'segmenting';
+            const completed = ['awaiting_review', 'ready_to_publish', 'published'].includes(project.status);
             const failed = project.status === 'failed';
             return (
               <Card
@@ -146,11 +146,11 @@ export function ExamPrepV4ProjectList() {
                       variant="outline"
                       className={cn(
                         'shrink-0',
-                        confirmed && 'border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300',
+                        completed && 'border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300',
                         failed && 'border-destructive/30 bg-destructive/10 text-destructive',
                       )}
                     >
-                      {confirmed ? (
+                      {completed ? (
                         <CheckCircle2 className="ms-1 h-3.5 w-3.5" aria-hidden="true" />
                       ) : null}
                       {statusLabels[project.status] ?? project.status}
@@ -178,7 +178,7 @@ export function ExamPrepV4ProjectList() {
                   <Button asChild className="h-11 w-full rounded-xl">
                     <Link href={`/teacher/exam-prep-v4/${project.id}`}>
                       <ScanSearch className="ms-2 h-4 w-4" aria-hidden="true" />
-                      بررسی نقشهٔ صفحات
+                      بررسی نقشه و پردازش
                     </Link>
                   </Button>
                 </CardContent>
