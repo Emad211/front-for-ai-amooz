@@ -1,6 +1,14 @@
 'use client';
 
-import { AlertTriangle, Copy, ImageOff, RotateCw, Sparkles } from 'lucide-react';
+import {
+  AlertTriangle,
+  ArrowDown,
+  ArrowUp,
+  Copy,
+  ImageOff,
+  RotateCw,
+  Sparkles,
+} from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
@@ -42,6 +50,10 @@ export function SourcePageCard({
   editablePage,
   onRoleChange,
   onRotate,
+  onMoveEarlier,
+  onMoveLater,
+  canMoveEarlier,
+  canMoveLater,
   disabled,
 }: {
   projectId: number;
@@ -50,6 +62,10 @@ export function SourcePageCard({
   editablePage: EditableSourceMapPage;
   onRoleChange: (pageNumber: number, role: ExamPrepV4SourceRole) => void;
   onRotate: (pageNumber: number) => void;
+  onMoveEarlier: (pageNumber: number) => void;
+  onMoveLater: (pageNumber: number) => void;
+  canMoveEarlier: boolean;
+  canMoveLater: boolean;
   disabled: boolean;
 }) {
   const thumbnail = useExamPrepV4Thumbnail({
@@ -60,9 +76,9 @@ export function SourcePageCard({
   });
   const roleChanged = editablePage.role !== page.effectiveRole;
   const rotationChanged = editablePage.orientation !== page.orientation;
-  const hasLocalChange = roleChanged || rotationChanged;
+  const orderChanged = editablePage.displayOrder !== page.displayOrder;
+  const hasLocalChange = roleChanged || rotationChanged || orderChanged;
   const roleDescriptionId = `source-page-${documentId}-${page.pageNumber}-role-description`;
-  const controlsId = `source-page-${documentId}-${page.pageNumber}-controls`;
   const predictedPercent = roleConfidencePercent(page.predictedConfidence);
 
   return (
@@ -84,8 +100,11 @@ export function SourcePageCard({
                 id={`source-page-${documentId}-${page.pageNumber}-title`}
                 className="text-base font-black"
               >
-                صفحهٔ {page.pageNumber}
+                صفحهٔ منبع {page.pageNumber}
               </h3>
+              <Badge variant="secondary">
+                جایگاه مجازی {editablePage.displayOrder}
+              </Badge>
               {hasLocalChange ? (
                 <Badge variant="outline" className="border-primary/30 bg-primary/10 text-primary">
                   تغییر ذخیره‌نشده
@@ -99,7 +118,7 @@ export function SourcePageCard({
               ) : null}
             </div>
             <p className="mt-1 text-xs text-muted-foreground">
-              ابعاد ثبت‌شده: {page.width || '—'} × {page.height || '—'}
+              شمارهٔ منبع ثابت است؛ فقط جایگاه مجازی پردازش تغییر می‌کند. ابعاد: {page.width || '—'} × {page.height || '—'}
             </p>
           </div>
 
@@ -139,7 +158,7 @@ export function SourcePageCard({
             // eslint-disable-next-line @next/next/no-img-element
             <img
               src={thumbnail.url}
-              alt={`پیش‌نمایش صفحهٔ ${page.pageNumber} با نقش ${SOURCE_ROLE_LABELS[editablePage.role]}`}
+              alt={`پیش‌نمایش صفحهٔ منبع ${page.pageNumber} در جایگاه مجازی ${editablePage.displayOrder} با نقش ${SOURCE_ROLE_LABELS[editablePage.role]}`}
               className="max-h-full max-w-full object-contain transition-transform duration-200 motion-reduce:transition-none"
               style={{ transform: `rotate(${editablePage.orientation}deg)` }}
             />
@@ -155,7 +174,38 @@ export function SourcePageCard({
           )}
         </div>
 
-        <div id={controlsId} className="space-y-3">
+        <fieldset className="space-y-2">
+          <legend className="text-sm font-bold">ترتیب مجازی پردازش</legend>
+          <div className="grid grid-cols-2 gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              className="h-11 rounded-xl"
+              onClick={() => onMoveEarlier(page.pageNumber)}
+              disabled={disabled || !canMoveEarlier}
+              aria-label={`انتقال صفحهٔ منبع ${page.pageNumber} به جایگاه مجازی زودتر؛ جایگاه فعلی ${editablePage.displayOrder}`}
+            >
+              <ArrowUp className="ms-2 h-4 w-4" aria-hidden="true" />
+              زودتر
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              className="h-11 rounded-xl"
+              onClick={() => onMoveLater(page.pageNumber)}
+              disabled={disabled || !canMoveLater}
+              aria-label={`انتقال صفحهٔ منبع ${page.pageNumber} به جایگاه مجازی دیرتر؛ جایگاه فعلی ${editablePage.displayOrder}`}
+            >
+              <ArrowDown className="ms-2 h-4 w-4" aria-hidden="true" />
+              دیرتر
+            </Button>
+          </div>
+          <p className="text-xs leading-5 text-muted-foreground">
+            این کنترل فقط ترتیب نمایش و پردازش را تغییر می‌دهد؛ PDF و شمارهٔ منبع بازنویسی نمی‌شوند.
+          </p>
+        </fieldset>
+
+        <div className="space-y-3">
           <div className="space-y-1.5">
             <label
               htmlFor={`source-page-${documentId}-${page.pageNumber}-role`}
@@ -197,7 +247,7 @@ export function SourcePageCard({
             className="h-11 w-full rounded-xl"
             onClick={() => onRotate(page.pageNumber)}
             disabled={disabled}
-            aria-label={`چرخاندن صفحهٔ ${page.pageNumber}؛ زاویهٔ فعلی ${editablePage.orientation} درجه`}
+            aria-label={`چرخاندن صفحهٔ منبع ${page.pageNumber}؛ زاویهٔ فعلی ${editablePage.orientation} درجه`}
           >
             <RotateCw className="ms-2 h-4 w-4" aria-hidden="true" />
             چرخش ۹۰ درجه
