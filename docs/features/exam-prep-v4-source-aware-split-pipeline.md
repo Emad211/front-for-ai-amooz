@@ -143,17 +143,17 @@ Legend:
 
 ### Phase 3 — Teacher source-map confirmation and virtual tools
 
-- [ ] Build simple source-map UI.
-- [-] Support boundary changes and role changes. **Revision-safe backend and APIs complete; teacher UI pending.**
-- [-] Support ignore, rotate, and reorder metadata. **Ignore/rotation backend complete; reorder and UI pending.**
+- [x] Build simple source-map UI.
+- [x] Support boundary changes and role changes.
+- [-] Support ignore, rotate, and reorder metadata. **Ignore and rotation are complete end to end; virtual reorder remains open.**
 - [ ] Add explicit split-into-separate-exams action.
 - [ ] Add explicit group-documents action later behind a separate control.
 - [x] Persist revisions and invalidate stale classification.
-- [ ] Add accessibility and RTL tests.
+- [-] Add accessibility and RTL tests. **RTL/accessibility implementation, focused typecheck, and pure state tests pass; browser-level interaction/accessibility tests remain open.**
 
 **Exit gate:** A nontechnical teacher can correct each benchmark source map without opening an advanced editor.
 
-**Phase state:** 1/7 credited. Backend correction/confirmation foundation is verified; UI and remaining virtual tools are open.
+**Phase state:** 3/7 credited. Simple UI, role/boundary correction, and revision/invalidation are verified. Reorder, split/group, and browser-level accessibility gates remain open.
 
 ### Phase 4 — Page layout and block detection
 
@@ -264,7 +264,18 @@ Legend:
 - stale classification and confirmation invalidation;
 - exact revision/fingerprint confirmation;
 - owner-scoped mutation and confirmation endpoints;
-- transaction rollback, retry, stale-write, privacy, and confirmation tests.
+- transaction rollback, retry, stale-write, privacy, and confirmation tests;
+- teacher V4 project-list route;
+- teacher Source Map editor route;
+- freelancer and organization-teacher navigation entry;
+- centralized V4 frontend service layer;
+- revision-safe Source Map hook and private-thumbnail hook;
+- responsive RTL page-card grid;
+- separate prediction, teacher override, and effective-role display;
+- explicit role, ignore, rotation, save, discard, reload, and confirm controls;
+- dirty-state, before-unload, document-switch, and stale-conflict handling;
+- dark-mode semantic styling, visible focus, touch targets, reduced-motion classes, and screen-reader announcements;
+- focused V4 frontend typecheck and six pure state-model tests.
 
 ### Current endpoints
 
@@ -277,33 +288,63 @@ POST /api/classes/exam-prep-v4/projects/<project_id>/documents/<document_id>/sou
 GET  /api/classes/exam-prep-v4/projects/<project_id>/documents/<document_id>/pages/<page_number>/thumbnail/
 ```
 
+### Current teacher routes
+
+```text
+/teacher/exam-prep-v4
+/teacher/exam-prep-v4/<projectId>
+```
+
 ### Latest focused evidence
 
-- validated branch head: `3e65e7391feec798b9e893dae5071d7ec7c2e988`;
-- workflow run `30780894549`;
-- job `91585164044`;
-- PostgreSQL 16 and Redis 7;
-- system check clean;
-- migration drift clean;
-- `150 passed, 42 warnings in 12.74s`.
+- validated branch head: `49e485e5b71694b85c9051e1c7b33ea17ee4eea8`;
+- workflow run `30802787492`;
+- backend job `91651046345`;
+- frontend job `91651046449`.
 
-Warnings are limited to the CI checkout lacking generated `backend/staticfiles/` while API tests initialize Django handlers.
+Backend:
+
+```text
+System check identified no issues (0 silenced).
+No changes detected in app 'classes'.
+150 passed, 42 warnings in 13.28s
+```
+
+Frontend:
+
+```text
+Focused TypeScript check: passed
+Source-map state-model tests: 6 passed, 0 failed
+```
+
+The backend warnings are limited to the CI checkout lacking generated `backend/staticfiles/`. The native Node runner emits a non-failing package-module warning. `npm ci` also reports existing repository dependency-audit findings; this slice does not claim or alter a repository-wide dependency security audit.
 
 ### Progress
 
 The canonical roadmap contains 77 checklist deliverables:
 
-- credited: 20;
+- credited: 22;
 - total: 77;
-- **overall completion: 26.0%**;
+- **overall completion: 28.6%**;
 - **Phase 2: 88.9% (8/9), one item deferred**;
-- **Phase 3: 14.3% (1/7)**.
+- **Phase 3: 42.9% (3/7)**.
 
-Only the revision/invalidation deliverable receives new credit. Backend portions of role/boundary and ignore/rotation remain in progress until UI/reorder acceptance is satisfied.
+The new credits are the simple Source Map UI and end-to-end role/boundary correction. Ignore and rotation are implemented, but their combined roadmap item remains uncredited until virtual reorder is complete. Accessibility/RTL browser tests remain open.
+
+### Known limitations
+
+- no browser/E2E or visual-regression execution is recorded yet;
+- no automated keyboard, screen-reader, contrast, or RTL browser test is recorded yet;
+- no virtual page reorder metadata exists;
+- no split/group action exists;
+- no physical PDF rewrite exists;
+- no Phase 4 block detection or later extraction work has started;
+- the real private benchmark remains deferred and unmeasured;
+- unrelated baseline frontend failures mean the full repository is not claimed all-green.
 
 ### Next verified step
 
-Implement only the simple RTL/accessibility-conscious teacher source-map UI over the verified APIs. Do not begin Phase 4 block detection until the Phase 3 UI/correction flow passes its own tests and the status ledger is updated again.
+Implement only virtual page-order metadata and accessible reorder controls while preserving immutable source-page identity, complete-map optimistic updates, audit history, and exact confirmation binding. Do not begin split/group actions or Phase 4 block detection.
 
 ---
 
@@ -360,3 +401,7 @@ The product owner explicitly chose to continue development without running the l
 ### D-013 — Complete-map optimistic mutations and exact confirmation binding
 
 Teacher corrections replace the complete structural page map under an expected revision. Accepted edits create a new revision, preserve prior audit history, and invalidate stale state. Confirmation is valid only for the exact current revision and structural Source Map fingerprint.
+
+### D-014 — Source Map UI preserves complete-map and privacy boundaries
+
+The teacher UI keeps all network access in a centralized service, stores edits locally until explicit save, preserves local changes on stale conflicts, retrieves private thumbnails only as authenticated Blobs, and confirms only the currently saved revision/fingerprint. Responsive RTL and accessibility-oriented behavior are implemented without starting Phase 4.
