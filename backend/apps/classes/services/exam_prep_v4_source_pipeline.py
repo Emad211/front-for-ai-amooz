@@ -7,6 +7,10 @@ from pathlib import Path
 from django.db import transaction
 
 from apps.classes.models_v4 import ExamProject, ExamSourceDocument
+from apps.classes.services.exam_prep_v4_classification import (
+    ClassificationFingerprintConflict,
+    StaleClassificationRevision,
+)
 from apps.classes.services.exam_prep_v4_fast_classifier import (
     FastClassifierResult,
     build_contact_sheets,
@@ -14,12 +18,20 @@ from apps.classes.services.exam_prep_v4_fast_classifier import (
 )
 from apps.classes.services.exam_prep_v4_pdf_source import (
     PreparedDocument,
+    V4PdfSourceConflict,
     load_classification_page_inputs,
     prepare_pdf_source_from_path,
 )
 from apps.classes.services.exam_prep_v4_projects import (
     ExamPrepV4Disabled,
     exam_prep_v4_enabled,
+)
+
+
+_CONTROLLED_CONFLICTS = (
+    V4PdfSourceConflict,
+    ClassificationFingerprintConflict,
+    StaleClassificationRevision,
 )
 
 
@@ -61,6 +73,13 @@ def _mark_classifying(document_id: int) -> tuple[int, int]:
             ]
         )
         return project.id, document.classification_revision
+
+
+def _active_revision_without_status_regression(document_id: int) -> int:
+    document = ExamSourceDocument.objects.only(
+        'classification_revision',
+    ).get(id=document_id)
+    return document.classification_revision
 
 
 def _mark_failed(*, document_id: int, exc: Exception) -> None:
@@ -113,7 +132,15 @@ def prepare_and_classify_pdf_source(
             original_name=original_name,
             mime_type=mime_type,
         )
-        _project_id, revision = _mark_classifying(document_id)
+        document = ExamSourceDocument.objects.only(
+            'classification_fingerprint',
+            'classification_revision',
+        ).get(id=document_id)
+        revision = (
+            _active_revision_without_status_regression(document_id)
+            if document.classification_fingerprint
+            else _mark_classifying(document_id)[1]
+        )
         page_inputs = load_classification_page_inputs(document_id=document_id)
         sheets = build_contact_sheets(page_inputs)
         native_text_samples = {
@@ -129,6 +156,10 @@ def prepare_and_classify_pdf_source(
             model=model,
         )
         return SourcePipelineResult(prepared=prepared, classified=classified)
+    except _CONTROLLED_CONFLICTS:
+        # A stale retry or changed source/model must fail closed without turning
+        # a valid stored source or reviewed result into a failed workflow.
+        raise
     except Exception as exc:
         _mark_failed(document_id=document_id, exc=exc)
         raise
