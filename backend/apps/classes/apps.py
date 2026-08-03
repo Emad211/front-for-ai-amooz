@@ -13,5 +13,6 @@ class ClassesConfig(AppConfig):
         from . import models_v4_blocks  # noqa: F401
         from . import models_v4_records  # noqa: F401
         from . import models_v4_review  # noqa: F401
+        from . import models_v4_projection  # noqa: F401
         from . import signals  # noqa: F401
         from . import tasks_v4  # noqa: F401
