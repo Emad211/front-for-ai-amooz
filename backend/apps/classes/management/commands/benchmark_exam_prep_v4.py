@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import uuid
 from pathlib import Path
 
@@ -14,6 +15,9 @@ from apps.classes.services.exam_prep_v4_benchmark import (
     run_benchmark,
 )
 from apps.classes.services.exam_prep_v4_projects import exam_prep_v4_enabled
+
+
+_SAFE_FIXTURE_ID = re.compile(r'^[a-z0-9][a-z0-9_-]{0,63}$')
 
 
 class Command(BaseCommand):
@@ -78,6 +82,17 @@ class Command(BaseCommand):
             if temporary.exists():
                 temporary.unlink()
 
+    @staticmethod
+    def _validate_public_fixture_ids(manifest) -> None:
+        if any(
+            _SAFE_FIXTURE_ID.fullmatch(fixture.fixture_id) is None
+            for fixture in manifest.fixtures
+        ):
+            raise CommandError(
+                'fixtureId values must be anonymous lowercase identifiers using '
+                'letters, digits, hyphens, or underscores only.'
+            )
+
     def handle(self, *args, **options):
         if not exam_prep_v4_enabled():
             raise CommandError('Exam Prep V4 is disabled.')
@@ -86,6 +101,7 @@ class Command(BaseCommand):
             manifest = load_benchmark_manifest(options['manifest'])
         except BenchmarkManifestError as exc:
             raise CommandError(str(exc)) from exc
+        self._validate_public_fixture_ids(manifest)
 
         teacher = None
         temporary_teacher = False
