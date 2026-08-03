@@ -6,29 +6,48 @@
 - **Branch:** `feat/exam-prep-v4-source-aware`
 - **Draft PR:** #4
 - **Current phase:** Phase 2 — upload and fast source classification
-- **Completed slice:** Owner-scoped read-only source-map APIs
-- **Next slice:** Owner-scoped private page-thumbnail delivery
-- **State:** Intake, independent dispatch, source preparation, classification contracts, virtual split, and safe source-map reads are verified
+- **Current slice:** Owner-scoped private page-thumbnail delivery
+- **State:** Slice in progress; no Phase 3 mutation or Phase 4 extraction work is permitted
 - **Last updated:** 2026-08-03
-- **Verified checkpoint:** `b22661d235824a28c014554cce577775915600ca`
+- **Verified checkpoint before this slice:** `e11e8f9d45b6eb5c420666ff0a60cf8e65d3c85f`
+- **Focused evidence before this slice:** run `30776835064`, job `91573810334`, 104 tests passed
+
+## Overall progress calculation
+
+The overall percentage is calculated from the 77 explicit checklist deliverables in the canonical roadmap, not from commit count or lines of code.
+
+Current credited work before closing this thumbnail slice:
+
+| Phase | Credited deliverables | Total deliverables | Notes |
+|---|---:|---:|---|
+| Phase 0 | 5 | 6 | PR-level living-document enforcement remains open. |
+| Phase 1 | 6 | 7 | Read-only Django admin inspection remains deferred. |
+| Phase 2 | 8 | 9 | Core implementation is present; live private-fixture accuracy/latency evidence remains incomplete. |
+| Phases 3–10 | 0 | 55 | Not started by design. |
+
+**Credited total: 19 / 77 = 24.7%.**
+
+The product-level V4 roadmap is therefore **24.7% complete before this slice**. This is intentionally conservative: infrastructure and APIs are real, but the heavier block detection, extraction, matching, review, publication, and rollout phases remain ahead.
+
+The percentage will be recalculated only when a canonical roadmap deliverable or a formally recorded sub-deliverable is closed with tests and evidence.
 
 ## Roadmap guardrail
 
-Work remains in Phase 2. The next implementation turn may add only the private page-thumbnail read path required to inspect a source map.
+Work remains in Phase 2. This implementation turn may add only the private page-thumbnail read path required to inspect a source map.
 
-Allowed next work:
+Allowed work:
 
 1. one owner-scoped thumbnail-content endpoint beneath a V4 project/document/page path;
 2. feature-flag, teacher ownership, document ancestry, and page ancestry checks;
 3. private storage streaming without exposing an object key or generated storage URL;
-4. private cache headers, content type, content length when available, and download-safe disposition;
+4. private cache headers, content type, content length when available, and inline-safe disposition;
 5. negative tests for another teacher, wrong project/document/page combinations, disabled V4, missing blob, and generic `/media/` denial;
 6. bounded-query and no-content-leak tests;
 7. update this ledger with exact CI evidence.
 
-Explicitly out of scope for the next slice:
+Explicitly out of scope:
 
-- full-resolution page delivery unless a later roadmap decision requires it;
+- full-resolution page delivery;
 - page-role changes;
 - boundary changes;
 - rotate/reorder mutations;
@@ -67,8 +86,6 @@ Still deferred within Phase 1:
 
 - Django admin/read-only inspection support.
 
-This deferred item is not a prerequisite for the teacher source-map flow and remains explicitly tracked.
-
 ## Phase 2 — completed portions
 
 ### Private source preparation
@@ -106,147 +123,63 @@ This deferred item is not a prerequisite for the teacher source-map flow and rem
 
 ### Multi-PDF intake API — verified
 
-Endpoint:
-
 ```text
 POST /api/classes/exam-prep-v4/projects/
 ```
 
-Verified behavior:
-
-- teacher authentication is required;
-- disabled V4 returns 404;
-- accepts several multipart PDF files with one metadata record per file;
-- prevalidates the whole batch before database or blob writes;
-- creates one independent `ExamProject` and one `ExamSourceDocument` per PDF;
-- identical SHA-256 values still create independent projects;
-- validates organization membership and study-group teacher assignment;
-- retries with the same identifiers and bytes reuse the project, document, and valid blob;
-- retries restore a missing private blob;
-- same identifiers with different bytes return an idempotency conflict;
-- a ready classification is not regressed to uploading or dispatched again;
-- broker dispatch failure preserves the private source for retry;
-- retry after broker failure clears retryable failure state;
-- validation errors use the repository-standard error envelope.
-
-### Independent task dispatch — verified
-
-- Every document receives a separate Celery signature.
-- Tasks run on the `pipeline` queue.
-- A per-document cache lock suppresses duplicate concurrent execution.
-- Private source bytes are copied to a bounded temporary file.
-- Missing source objects are persisted as observable failures.
-- Controlled source/revision/fingerprint conflicts do not corrupt accepted workflow state.
-- Transient provider failures use bounded Celery retry behavior.
+- accepts several PDFs while creating one independent project per PDF;
+- prevalidates the whole batch before writes;
+- preserves idempotency and restores missing private blobs;
+- dispatches one independent task per source document;
+- validates owner, organization, and study-group scope;
+- preserves private sources across broker failures.
 
 ### Read-only source-map APIs — verified
-
-Endpoints:
 
 ```text
 GET /api/classes/exam-prep-v4/projects/
 GET /api/classes/exam-prep-v4/projects/<project_id>/
 ```
 
-Verified list behavior:
+- list and detail are owner-scoped;
+- another teacher receives 404;
+- current-revision pages and segments are returned in deterministic order;
+- private filenames, object keys, hashes, native text, raw model metadata, fingerprints, error details, and organization identities are excluded;
+- list and detail query counts are bounded.
 
-- only projects owned by the authenticated teacher are returned;
-- pagination uses the repository-wide page-number pagination contract;
-- ordering is newest updated project first;
-- each summary exposes only safe project metadata and document count;
-- list execution is bounded to two database queries in the tested shape;
-- organization IDs, study-group IDs, client request IDs, raw workflow state, and error details are absent.
+## Latest completed focused evidence
 
-Verified detail behavior:
-
-- another teacher receives 404 rather than project-existence leakage;
-- disabled V4 returns 404;
-- current document status, classification revision, issue codes, complete page-role map, and proposed segments are returned;
-- segment output is restricted to each document's current classification revision;
-- page order and segment order are deterministic;
-- teacher role override and effective role remain distinguishable;
-- duplicate-page state is exposed only as a boolean;
-- detail execution is bounded to four database queries in the tested populated shape;
-- a project without documents returns an empty source map safely.
-
-Privacy exclusions verified by adversarial response tests:
-
-- original filenames;
-- MIME/source object metadata;
-- source, page, thumbnail, or render storage keys;
-- source or page SHA-256 values;
-- perceptual hashes;
-- byte sizes;
-- native-text samples and lengths;
-- classifier reasons and printed-number raw metadata;
-- raw classifier payloads;
-- model names;
-- classification and segment fingerprints;
-- segment metadata and section keys;
-- issue details and raw record indexes;
-- project, document, or segment error details;
-- organization and study-group identities.
-
-Only review-safe structural fields cross the API boundary.
-
-## Focused CI evidence
-
-Latest focused workflow:
-
-- **Run:** `30776737653`
-- **Job:** `91573545689`
-- **Head:** `b22661d235824a28c014554cce577775915600ca`
+- **Run:** `30776835064`
+- **Job:** `91573810334`
+- **Head:** `e11e8f9d45b6eb5c420666ff0a60cf8e65d3c85f`
 - **Environment:** Python 3.12, PostgreSQL 16, Redis 7
 - **Result:** success
 
 ```text
 System check identified no issues (0 silenced).
 No changes detected in app 'classes'.
-104 passed, 23 warnings in 9.40s
+104 passed, 23 warnings in 8.90s
 ```
 
-All warnings are the existing CI-only warning that `backend/staticfiles/` has not been generated when API/private-media tests initialize Django handlers. No V4 test failed.
+Warnings are limited to the CI checkout lacking generated `backend/staticfiles/` when API/private-media tests initialize Django handlers.
 
-Previous intake checkpoint:
-
-- run `30776463102`;
-- job `91572774281`;
-- `94 passed, 13 warnings in 10.88s`.
-
-The source-map slice added ten passing tests covering authentication, role permission, feature flag, owner isolation, privacy exclusions, current-revision filtering, deterministic ordering, empty maps, 404 behavior, and exact query bounds.
-
-## Full repository status
-
-Focused V4 CI is authoritative for this slice and is green.
-The full repository workflow is not claimed as fully green because unrelated baseline frontend failures have existed outside V4. No V4 frontend code is present.
-
-## Not yet verified or implemented
-
-- no live provider classification has run;
-- the three private benchmark PDFs have not run through V4;
-- real classifier latency, cost, and accuracy are unknown;
-- no owner-scoped thumbnail-content endpoint exists yet;
-- no teacher source-map mutation or confirmation API exists;
-- no V4 frontend exists;
-- no block detector, extractor, matcher, exception review, projection, or publication path exists;
-- Phase 2 exit gate on private fixtures has not been met.
-
-## Next slice acceptance criteria
+## Current slice acceptance criteria
 
 The private thumbnail slice is complete only when all of these are proven:
 
-- the project, document, and page must all form one owner-scoped ancestry chain;
+- the project, document, and page form one owner-scoped ancestry chain;
 - another teacher receives 404;
 - wrong project/document/page combinations receive 404;
 - disabled V4 receives 404;
 - missing private blobs fail without revealing storage details;
 - the response streams bytes from private storage and never returns a storage URL or key;
 - content type is `image/jpeg` for stored thumbnails;
-- cache headers are private and do not authorize shared caches;
+- cache headers are private and shared caches cannot retain the response;
 - generic `/media/exam-prep-v4/...` remains denied;
-- query count is bounded;
+- the response includes no private object name in headers or body;
+- database query count is bounded;
 - focused PostgreSQL tests, system check, and migration drift check pass;
-- this ledger is updated with exact evidence.
+- this ledger is updated with exact evidence and the new percentage.
 
 ## Next verified step
 
@@ -256,4 +189,4 @@ Implement only:
 GET /api/classes/exam-prep-v4/projects/<project_id>/documents/<document_id>/pages/<page_number>/thumbnail/
 ```
 
-The endpoint must stream the existing private thumbnail after strict teacher/project/document/page ancestry validation. Do not add mutation, source confirmation, full-resolution delivery, Phase 3 UI, or Phase 4 block detection in the same slice.
+Do not add mutation, source confirmation, full-resolution delivery, Phase 3 UI, or Phase 4 block detection in this slice.
