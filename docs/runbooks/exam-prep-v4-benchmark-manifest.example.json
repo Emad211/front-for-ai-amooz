@@ -4,7 +4,7 @@
     {
       "fixtureId": "fixture-a",
       "pattern": "cover_questions_solutions",
-      "pdfPath": "/private/path/fixture-a.pdf",
+      "pdfPath": "/replace-with-local-private-path/fixture-a.pdf",
       "expectedPageCount": 16,
       "expectedSegments": [
         {"startPage": 1, "endPage": 1, "role": "cover"},
@@ -17,7 +17,7 @@
     {
       "fixtureId": "fixture-b",
       "pattern": "solutions_cover_questions",
-      "pdfPath": "/private/path/fixture-b.pdf",
+      "pdfPath": "/replace-with-local-private-path/fixture-b.pdf",
       "expectedPageCount": 27,
       "expectedSegments": [
         {"startPage": 1, "endPage": 11, "role": "answer_solutions"},
@@ -30,7 +30,7 @@
     {
       "fixtureId": "fixture-c",
       "pattern": "cover_questions_solutions_overlap",
-      "pdfPath": "/private/path/fixture-c.pdf",
+      "pdfPath": "/replace-with-local-private-path/fixture-c.pdf",
       "expectedPageCount": 15,
       "expectedSegments": [
         {"startPage": 1, "endPage": 1, "role": "cover"},
