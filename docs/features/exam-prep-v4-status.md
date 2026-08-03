@@ -6,12 +6,13 @@
 - **PR:** #4 — Draft
 - **Execution mode:** Critical Path Acceleration
 - **Current roadmap span:** Phase 4 → Phase 7 vertical extraction path
-- **Last completed slice:** transaction-safe downstream invalidation and bounded semantic provider batching
-- **Active gate:** private live-provider benchmark authorization and aggregate-only preflight
-- **Validated code checkpoint:** `b72dfc34a9995616052a0991dbc186a4f6c05a11`
-- **Focused workflow:** `30841604840`
-- **Backend job:** `91779735773`
-- **Frontend job:** `91779735590`
+- **Last completed slice:** transaction-safe invalidation, bounded semantic batching, and hard live-benchmark provider-call ceiling
+- **Active gate:** product-owner authorization for the first aggregate-only private live-provider benchmark
+- **Validated code checkpoint:** `df105aa9f62302b6914c430de5be9ee654acfdd9`
+- **Focused workflow:** `30842575840`
+- **Backend job:** `91782991966`
+- **Frontend job:** `91782991994`
+- **Validated PR merge ref:** `e87c67ec5c0913701ccc20138423feea98476f23`
 - **Last updated:** 2026-08-03
 
 ## Progress
@@ -36,7 +37,7 @@ Progress is counted only from the 77 canonical roadmap deliverables. A model, se
 - **Phase 6:** **4/7 = 57.1%**
 - **Phase 7:** **6/7 = 85.7%**
 
-No progress credit was added for the invalidation and batching prerequisites. They make a private live run trustworthy and affordable, but they do not prove private layout, OCR, formula, recall, precision, latency, or cost targets.
+No progress credit was added for invalidation, batching, or the benchmark call guard. They make a private live run safer and more affordable, but they do not prove private layout, OCR, formula, recall, precision, latency, or cost targets.
 
 ## Roadmap invariants still enforced
 
@@ -100,7 +101,7 @@ Verified behavior:
 - historical rows and evidence remain available for audit;
 - PostgreSQL row locking targets `ExamMatchDecision` directly through FK-id subqueries and no longer applies `FOR UPDATE` to the nullable side of an outer join.
 
-The final PostgreSQL-specific correction is commit:
+Final PostgreSQL correction:
 
 ```text
 8df84961b08268a6590877b10b4728dc090c2a7a
@@ -109,11 +110,9 @@ fix(exam-prep-v4): lock invalidated matches without nullable join
 
 ## Closed gate — bounded semantic provider batching
 
-Question extraction and answer-solution extraction now support bounded, stage-specific batches while retaining record-level authority and failure isolation.
+Question extraction and answer-solution extraction support bounded, stage-specific batches while retaining record-level authority and failure isolation.
 
 ### Payload bounds
-
-The live runner enforces three independent batch limits:
 
 ```text
 EXAM_PREP_V4_EXTRACTION_BATCH_MAX_BLOCKS   default 4
@@ -121,7 +120,7 @@ EXAM_PREP_V4_EXTRACTION_BATCH_MAX_IMAGES   default 12
 EXAM_PREP_V4_EXTRACTION_BATCH_MAX_BYTES    default 12 MiB
 ```
 
-The existing per-image byte ceiling remains active. An individual block that cannot fit inside the configured image/byte limits fails closed rather than bypassing the boundary.
+The existing per-image byte ceiling remains active. An individual block that cannot fit the configured image/byte limits fails closed rather than bypassing the boundary.
 
 ### Authoritative identity and prompts
 
@@ -147,15 +146,7 @@ The existing per-image byte ceiling remains active. An individual block that can
 
 ### Usage attribution
 
-Live structured calls retain usage attribution for:
-
-- project;
-- source document;
-- extraction stage;
-- model;
-- batch index and size;
-- authoritative block IDs and fingerprints;
-- prompt version.
+Live structured calls retain usage attribution for project, source document, stage, model, batch index and size, authoritative block IDs and fingerprints, and prompt version.
 
 The live provider retains a single-block compatibility path so later stronger-model escalation can remain block-specific. Model-selection and escalation policy are not yet credited as implemented product behavior.
 
@@ -170,6 +161,59 @@ feat(exam-prep-v4): version prompts for bounded block batches
 
 b72dfc34a9995616052a0991dbc186a4f6c05a11
 test(exam-prep-v4): prove bounded batching and partial recovery
+```
+
+## Closed gate — hard live-benchmark provider-call ceiling
+
+Live benchmark mode now requires an explicit `--max-provider-calls` value. Fake-provider mode remains unchanged and does not require or emit a live budget.
+
+### Why one pipeline invocation reserves three external requests
+
+The shared structured-output layer can issue at most:
+
+1. one JSON-mode request;
+2. one fallback request without `response_format` when the provider rejects JSON mode;
+3. one repair request when the returned object cannot be parsed or validated.
+
+Current V4 calls use `provider_attempts=1` and `max_repair=1`. The guard therefore reserves three external-request slots immediately before every classification, block-detection, question-batch, or answer-solution-batch invocation.
+
+This is intentionally conservative:
+
+- a normal first-attempt success may use only one actual request;
+- the report distinguishes the reserved upper bound from actual usage logs;
+- an invocation starts only when all three worst-case slots fit;
+- exhaustion fails before the next provider request path is entered;
+- the shared budget covers all three independent projects;
+- warm reruns consume no slots when accepted unchanged units are reused;
+- temporary benchmark provider wrappers are restored in `finally`;
+- the existing benchmark cleanup still deletes temporary projects and private artifacts on success or failure.
+
+The aggregate-only report adds only:
+
+```text
+providerCallBudget.limit
+providerCallBudget.reservedUpperBound
+providerCallBudget.remaining
+providerCallBudget.pipelineInvocations
+providerCallBudget.maxExternalRequestsPerInvocation
+```
+
+No credential, path, source text, raw payload, model response, question, answer, or solution enters this budget report.
+
+Call-guard commits:
+
+```text
+8a0148bfa088c9b85869030d9e1d3a6060464b64
+feat(exam-prep-v4): hard-cap live benchmark provider calls
+
+11ac514af76934d20039dfe95ac4735c3f04e20a
+feat(exam-prep-v4): require live benchmark call ceiling
+
+6e826a2491b6b05e272416b3d53c567a4ce13ad3
+fix(exam-prep-v4): reserve worst-case provider requests
+
+df105aa9f62302b6914c430de5be9ee654acfdd9
+test(exam-prep-v4): prove hard live provider-call ceiling
 ```
 
 ## Focused verification evidence
@@ -189,7 +233,7 @@ Backend result:
 ```text
 System check identified no issues (0 silenced).
 No changes detected in app 'classes'.
-211 passed, 47 warnings in 25.25s
+222 passed, 47 warnings in 25.47s
 ```
 
 Frontend result:
@@ -216,6 +260,13 @@ The focused V4 workflow is green. The repository-wide generic frontend workflow 
 - [x] accepted healthy units are excluded from partial retry calls;
 - [x] no answer-only batch creates a question;
 - [x] no batched match crosses a project boundary;
+- [x] live mode refuses to start without an explicit call ceiling;
+- [x] unsafe/non-integer call ceilings are rejected;
+- [x] worst-case fallback and repair requests are reserved before invocation;
+- [x] exhaustion prevents the next provider invocation;
+- [x] benchmark provider symbols are restored after success and failure;
+- [x] fake-provider mode remains budget-independent;
+- [x] no report is written when live budget preflight fails;
 - [x] migration drift is clean;
 - [x] all focused V4 PostgreSQL tests are green;
 - [x] focused frontend regression is green.
@@ -238,36 +289,36 @@ The focused V4 workflow is green. The repository-wide generic frontend workflow 
 - real cold/warm latency, usage, and cost measurements;
 - the real three-PDF live-provider benchmark.
 
-## Active gate — private live-provider authorization and preflight
+## Active gate — product-owner authorization for the private live benchmark
 
-The fake-provider prerequisites are closed. The next roadmap-preserving action is the first private live-provider benchmark. No private PDF has been sent to a provider in this branch.
+All code-side fake-provider prerequisites and the hard call ceiling are closed. No private PDF has been sent to a provider in this branch.
 
-Execution sequence after explicit authorization:
+Authorized execution sequence:
 
 ```text
-1. validate provider credential and selected model names without persisting them;
-2. validate the aggregate-only manifest and source availability;
-3. apply an explicit maximum-cost/call boundary;
+1. validate credential and exact model names without persisting them;
+2. validate the aggregate-only manifest and local source availability;
+3. require the approved hard external-request ceiling;
 4. run three independent cold projects through the production provider path;
-5. run unchanged warm reruns and require zero provider calls;
-6. emit only aggregate structural, recall, precision, matching, latency, usage, and cost metrics;
+5. run unchanged warm reruns and require zero provider invocations;
+6. emit only aggregate structural, recall, precision, matching, latency, actual usage, estimated cost, and call-budget metrics;
 7. clean benchmark-created rows and private artifacts;
-8. record evidence in this ledger before crediting any private-fixture deliverable.
+8. record evidence here before crediting any private-fixture deliverable.
 ```
 
 No Phase 8 exception-review implementation, publication work, Phase 9 hardening, or rollout work begins before this gate is resolved or explicitly waived with the retained risk documented.
 
 ## Product-owner authorization required
 
-Before the first private live call, the product owner must approve all four items:
+Before the first private live request, approve all four items:
 
 1. **provider and exact model names** for classification, block detection, question extraction, and answer-solution extraction;
 2. **credential source**, configured through repository/environment secrets and never committed or pasted into this ledger;
-3. **maximum permitted benchmark spend or provider-call budget**;
+3. **hard maximum external-provider-request ceiling**, as a positive integer of at least 3; every structured pipeline invocation conservatively reserves 3 slots;
 4. **permission to transmit the three private PDFs to the selected provider under that provider's data-handling terms**.
 
 The missing booklet containing questions 146–147 is requested only when those answers must be treated as in-scope rather than intentionally out-of-scope.
 
 ## Exact continuation point
 
-Obtain the four product-owner approvals above. Then implement only the bounded live-benchmark preflight/cost guard that is missing, rerun focused CI, execute the authorized aggregate-only private benchmark, and update this ledger with measured evidence before changing the 42/77 score.
+Obtain the four product-owner approvals above. Then execute only the bounded aggregate-only private cold/warm benchmark, inspect measured failures, and update this ledger with actual evidence before changing the 42/77 score or entering Phase 8.
