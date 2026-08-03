@@ -7,16 +7,16 @@
 - **Execution mode:** Critical Path Acceleration
 - **Current roadmap span:** Phase 4 → Phase 7 vertical extraction path
 - **Last completed slice:** fixed and validated the manual live OCR workflow syntax on `main`
-- **Active gate:** inspect the failed manual live OCR run, establish the exact failing step and executed request count, then patch only that failure
-- **Validated feature implementation checkpoint before live run:** `3bc8814726cf2218d3b8534ce6b0d74120e2c4f1`
-- **Focused workflow:** `30850414707`
-- **Backend job:** `91808774481`
-- **Frontend job:** `91808774469`
+- **Active gate:** inspect failed live OCR run `30852221763`, establish exact failure step and provider-request count, then patch only that failure
+- **Validated feature checkpoint before live run:** `3bc8814726cf2218d3b8534ce6b0d74120e2c4f1`
+- **Focused verification workflow:** `30850414707`
+- **Focused backend job:** `91808774481`
+- **Focused frontend job:** `91808774469`
 - **Focused result:** 235 backend tests passed; frontend focused validation passed
-- **Current manual live workflow on main:** `867817effb4df7669c4d1ec04f2775e25d615201`
-- **Latest manual run state reported by product owner:** failed
-- **Exact workflow run/job ID:** pending recovery
-- **Exact external request count:** unknown; rerun prohibited until recovered
+- **Manual live workflow on main:** `867817effb4df7669c4d1ec04f2775e25d615201`
+- **Failed live run:** `30852221763`
+- **Failed live job:** `91814702919`
+- **Exact external request count:** pending log inspection; rerun prohibited until recovered
 - **Last updated:** 2026-08-04
 
 ## Progress
@@ -58,20 +58,20 @@ No progress credit is added before measured private evidence closes a canonical 
 11. historical revisions remain auditable;
 12. production routing is not changed by a feasibility smoke;
 13. Phase 8 and rollout remain blocked until private evidence is recorded or explicitly waived;
-14. one live OCR workflow run at a time; no rerun until the prior request count is known.
+14. one live OCR workflow run at a time; no rerun until prior request count is known.
 
 ## AvalAI documentation rule
 
-For every AvalAI-dependent turn:
+Before any AvalAI-dependent implementation or retry:
 
-1. update this ledger before code or live execution;
-2. re-read the relevant current official AvalAI documentation;
-3. pin reproducible model identifiers instead of mutable aliases;
-4. separate documented behavior, inference, and measured behavior;
-5. never infer endpoint retention, training, or residency guarantees;
-6. record reviewed documentation in the related runbook.
+1. update this ledger;
+2. re-read the current official AvalAI documentation;
+3. pin reproducible model identifiers;
+4. separate documented, inferred, and measured behavior;
+5. never infer retention, training, or residency guarantees;
+6. update the OCR runbook with evidence.
 
-Official pages re-read for this gate:
+Official pages for this gate:
 
 ```text
 https://docs.avalai.ir/fa/api-reference/ocr
@@ -91,73 +91,28 @@ hard external-request ceiling: 8
 credential: repository Actions secret AVALAI_API_KEY
 ```
 
-The complete PDF is never sent to AvalAI. GitHub Actions reads the PDF, renders only pages 5 and 12 locally, and sends only those two bounded PNG images.
+The complete PDF must never be sent to AvalAI. Only the two locally rendered bounded PNG images are authorized.
 
-## Verified implementation and safety gate
-
-The feature-branch workflow and static tests verify:
-
-- `%PDF-` signature and exact 16-page count;
-- only physical pages 5 and 12 are rendered;
-- image size bounds and byte-distinctness;
-- four explicit modes and hard ceiling 8;
-- aggregate-only artifact with one-day retention;
-- cleanup of temporary PDF, PNGs, path files, and local report;
-- no additional image URL secrets;
-- no automatic live trigger.
+## Current failed live run
 
 ```text
-System check identified no issues (0 silenced).
-No changes detected in app 'classes'.
-235 passed, 47 warnings in 21.06s
-Focused frontend TypeScript check: passed
-Source-map state-model tests: passed
+run: https://github.com/Emad211/front-for-ai-amooz/actions/runs/30852221763
+job: https://github.com/Emad211/front-for-ai-amooz/actions/runs/30852221763/job/91814702919
 ```
 
-## Workflow syntax failure and correction
+Until logs are inspected:
 
-The first manual workflow revision failed validation because `runner.temp` was referenced inside job-level `env`, where that context was not recognized.
-
-Correction:
-
-```text
-PRIVATE_DIR: /tmp/exam-prep-v4-ocr-smoke
-REPORT_PATH: /tmp/exam-prep-v4-ocr-smoke/aggregate-report.json
-artifact path: ${{ env.REPORT_PATH }}
-```
-
-The same correction was applied to the feature-branch workflow and enforced by a static test that rejects `${{ runner.temp }}` in the workflow.
-
-The obsolete push marker was removed. No live OCR request was issued by the invalid workflow or the connector-generated push attempt.
-
-## Current failed manual run
-
-The product owner manually started the corrected workflow and reported a failure. No sanitized aggregate comment has appeared on PR #4, so the terminal stage and request count are not yet proven.
-
-Until the exact run/job is inspected:
-
-- do not rerun;
-- do not modify production routing;
-- do not increase roadmap credit;
-- do not assume zero or eight provider requests;
-- do not infer the error from the absence of a PR comment.
-
-## Active investigation contract
-
-Only this sequence is allowed:
-
-1. recover the manual workflow run URL/ID;
-2. fetch job steps and complete logs;
-3. identify the exact first failing step;
-4. determine whether the live command started and, if so, how many requests completed;
-5. patch only the demonstrated failure;
-6. run static/focused CI before any bounded retry;
-7. update this ledger and the OCR runbook with evidence.
-
-## User action required only if connector discovery is insufficient
-
-Provide only the GitHub Actions run URL from the browser address bar. Do not paste logs, the API key, PDF content, OCR output, or screenshots containing secrets.
+- no rerun;
+- no production routing change;
+- no roadmap-credit increase;
+- no assumption of zero, partial, or eight provider requests.
 
 ## Exact continuation point
 
-Recover and inspect the failed run. Then fix only the proven cause, update this ledger before retry, and keep the 42/77 score unchanged until measured OCR evidence is reviewed.
+1. fetch job steps and complete logs for job `91814702919`;
+2. identify the first failing step;
+3. determine whether `smoke_exam_prep_v4_avalai_ocr` started;
+4. determine exact completed provider-request count;
+5. patch only the demonstrated failure;
+6. run focused/static verification;
+7. update this ledger and the OCR runbook before any retry.
