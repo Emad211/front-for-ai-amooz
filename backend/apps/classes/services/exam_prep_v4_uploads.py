@@ -4,7 +4,6 @@ from __future__ import annotations
 import hashlib
 import uuid
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Any, Iterable
 
 from django.conf import settings
@@ -38,7 +37,10 @@ class UploadedExamProject:
     original_name: str
     source_sha256: str
     byte_size: int
+    project_status: str
+    document_status: str
     reused_source: bool
+    classification_already_available: bool
 
 
 @dataclass(frozen=True, slots=True)
@@ -216,10 +218,7 @@ def persist_uploaded_pdf_batch(
                         'The upload retry contains different PDF bytes.'
                     )
 
-                reused_source = bool(document.source_file)
-                if document.source_file:
-                    if not document.source_file.name:
-                        reused_source = False
+                reused_source = bool(document.source_file and document.source_file.name)
                 if not reused_source:
                     _rewind(item.upload)
                     document.source_file.save(
@@ -252,7 +251,12 @@ def persist_uploaded_pdf_batch(
                         original_name=document.original_name,
                         source_sha256=document.source_sha256,
                         byte_size=document.byte_size,
+                        project_status=project.status,
+                        document_status=document.status,
                         reused_source=reused_source,
+                        classification_already_available=bool(
+                            document.classification_fingerprint
+                        ),
                     )
                 )
             return tuple(results)
