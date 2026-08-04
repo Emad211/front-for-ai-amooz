@@ -29,14 +29,14 @@ from .views import (
 
 
 def _is_reviewable_page_first_session(session: ClassCreationSession) -> bool:
+    """Use durable workflow completion, not stale task metadata, as the gate."""
+
     workflow = session.workflow_state if isinstance(session.workflow_state, dict) else {}
     return bool(
         session.pipeline_type == ClassCreationSession.PipelineType.EXAM_PREP
-        and session.status == ClassCreationSession.Status.EXAM_TRANSCRIBED
         and workflow.get('engine') == 'page_first'
         and workflow.get('readyForReview') is True
-        and not session.celery_task_id
-        and not session.cancel_requested
+        and not session.is_published
     )
 
 
