@@ -70,6 +70,7 @@ def _page_first_session(
         workflow_state={
             'engine': 'page_first',
             'stage': 'ready_for_review',
+            'readyForReview': True,
             'publicationBlocked': True,
             'failedPageNumbers': failed_pages,
             'extractionAudit': {
