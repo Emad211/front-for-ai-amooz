@@ -10,6 +10,7 @@ from model_bakery import baker
 from PIL import Image
 from rest_framework.test import APIClient
 
+from apps.classes import tasks_exam_prep
 from apps.classes.models import ClassCreationSession, ExamPrepExtractionArtifact
 from apps.classes.models_v4 import ExamProject
 from apps.classes.services import exam_prep_pipeline
@@ -19,9 +20,12 @@ from apps.classes.services.exam_prep_page_records import (
     PageOption,
     PageRecord,
 )
-from apps.classes.services.exam_prep_pipeline import ExamPrepPipelineResult
-from apps.classes import tasks_exam_prep
+from apps.classes.services.exam_prep_pipeline import (
+    ExamPrepPipelineResult,
+    NoExamQuestionsFound,
+)
 from apps.classes.views_exam_prep import ExamPrepPdfStep1View
+from apps.commons.structured_llm import StructuredOutputError
 
 
 pytestmark = pytest.mark.django_db
@@ -73,6 +77,39 @@ def _upload(name='exam.pdf', page_count=2):
     )
 
 
+def _question_page(page_number=1, question_number=51):
+    return PageExtraction(
+        page_number=page_number,
+        records=[
+            PageRecord(
+                question_number=question_number,
+                record_type='question',
+                question_text_markdown='متن سؤال',
+                options=[
+                    PageOption(label='1', text_markdown='یک'),
+                    PageOption(label='2', text_markdown='دو'),
+                ],
+                confidence=0.95,
+            )
+        ],
+    )
+
+
+def _solution_page(page_number=2, question_number=51):
+    return PageExtraction(
+        page_number=page_number,
+        records=[
+            PageRecord(
+                question_number=question_number,
+                record_type='solution',
+                correct_option_label='2',
+                teacher_solution_markdown='حل',
+                confidence=0.9,
+            )
+        ],
+    )
+
+
 def _projection(question_number=51):
     return {
         'exam_prep': {
@@ -101,6 +138,18 @@ def _projection(question_number=51):
             ],
         }
     }
+
+
+def _session_with_pdf(*, page_count=2):
+    return ClassCreationSession.objects.create(
+        teacher=_teacher(),
+        title='آزمون زیست',
+        pipeline_type=ClassCreationSession.PipelineType.EXAM_PREP,
+        source_type=ClassCreationSession.SourceType.PDF,
+        source_file=_upload(page_count=page_count),
+        source_mime_type='application/pdf',
+        status=ClassCreationSession.Status.EXAM_TRANSCRIBING,
+    )
 
 
 def test_existing_step1_url_resolves_to_simple_intake():
@@ -230,15 +279,7 @@ def test_task_writes_projection_directly_to_existing_session(
     source_storage,
     monkeypatch,
 ):
-    session = ClassCreationSession.objects.create(
-        teacher=_teacher(),
-        title='آزمون زیست',
-        pipeline_type=ClassCreationSession.PipelineType.EXAM_PREP,
-        source_type=ClassCreationSession.SourceType.PDF,
-        source_file=_upload(page_count=2),
-        source_mime_type='application/pdf',
-        status=ClassCreationSession.Status.EXAM_TRANSCRIBING,
-    )
+    session = _session_with_pdf(page_count=2)
     fake_result = ExamPrepPipelineResult(
         projection=_projection(),
         issues=[],
@@ -263,8 +304,60 @@ def test_task_writes_projection_directly_to_existing_session(
     assert session.llm_model == 'vision-model'
     assert session.workflow_state['stage'] == 'ready_for_review'
     assert session.workflow_state['readyForReview'] is True
+    assert session.workflow_state['failedPageNumbers'] == []
     assert ExamPrepExtractionArtifact.objects.filter(session=session).count() == 0
     assert ExamProject.objects.filter(teacher=session.teacher).count() == 0
+
+
+def test_task_surfaces_failed_pages_without_failing_partial_result(
+    source_storage,
+    monkeypatch,
+):
+    session = _session_with_pdf(page_count=3)
+    fake_result = ExamPrepPipelineResult(
+        projection=_projection(),
+        issues=[],
+        page_count=3,
+        question_count=1,
+        questions_needing_review=0,
+        failed_page_numbers=[2],
+        model='vision-model',
+    )
+    monkeypatch.setattr(
+        tasks_exam_prep,
+        'run_exam_prep_pdf_pipeline',
+        lambda **_kwargs: fake_result,
+    )
+
+    result = tasks_exam_prep.process_exam_prep_pdf_session.run(session.id)
+
+    session.refresh_from_db()
+    assert result['status'] == 'ready_for_review'
+    assert result['failed_page_numbers'] == [2]
+    assert session.status == ClassCreationSession.Status.EXAM_STRUCTURED
+    assert session.workflow_state['failedPageNumbers'] == [2]
+    assert any('صفحه‌های 2' in item for item in session.workflow_state['warnings'])
+
+
+def test_task_terminal_pipeline_error_marks_db_and_raises_for_celery(
+    source_storage,
+    monkeypatch,
+):
+    session = _session_with_pdf(page_count=1)
+    monkeypatch.setattr(
+        tasks_exam_prep,
+        'run_exam_prep_pdf_pipeline',
+        lambda **_kwargs: (_ for _ in ()).throw(NoExamQuestionsFound('no questions')),
+    )
+
+    with pytest.raises(NoExamQuestionsFound):
+        tasks_exam_prep.process_exam_prep_pdf_session.run(session.id)
+
+    session.refresh_from_db()
+    assert session.status == ClassCreationSession.Status.FAILED
+    assert session.celery_task_id == ''
+    assert session.workflow_state['stage'] == 'failed'
+    assert 'no questions' in session.error_detail
 
 
 def test_task_honors_cancellation_before_provider(source_storage, monkeypatch):
@@ -310,34 +403,7 @@ def test_pipeline_calls_extractor_once_per_page_and_assembles(monkeypatch):
 
     def fake_extract(page, **kwargs):
         calls.append((page.page_number, kwargs))
-        if page.page_number == 1:
-            return PageExtraction(
-                page_number=1,
-                records=[
-                    PageRecord(
-                        question_number=51,
-                        record_type='question',
-                        question_text_markdown='متن سؤال',
-                        options=[
-                            PageOption(label='1', text_markdown='یک'),
-                            PageOption(label='2', text_markdown='دو'),
-                        ],
-                        confidence=0.95,
-                    )
-                ],
-            )
-        return PageExtraction(
-            page_number=2,
-            records=[
-                PageRecord(
-                    question_number=51,
-                    record_type='solution',
-                    correct_option_label='2',
-                    teacher_solution_markdown='حل',
-                    confidence=0.9,
-                )
-            ],
-        )
+        return _question_page(1) if page.page_number == 1 else _solution_page(2)
 
     monkeypatch.setattr(exam_prep_pipeline, 'extract_exam_prep_page', fake_extract)
     progress = []
@@ -352,4 +418,90 @@ def test_pipeline_calls_extractor_once_per_page_and_assembles(monkeypatch):
     assert all(kwargs['model'] == 'vision-model' for _number, kwargs in calls)
     assert progress == [(1, 2), (2, 2)]
     assert result.question_count == 1
+    assert result.failed_page_numbers == []
     assert result.projection['exam_prep']['questions'][0]['correct_option_label'] == '2'
+
+
+def test_pipeline_retries_only_the_invalid_page(monkeypatch):
+    rendered = [
+        RenderedExamPage(page_number=1, image=b'page-1'),
+        RenderedExamPage(page_number=2, image=b'page-2'),
+    ]
+    monkeypatch.setenv('EXAM_PREP_PAGE_EXTRACTION_ATTEMPTS', '2')
+    monkeypatch.setattr(exam_prep_pipeline, 'render_exam_prep_pdf', lambda _data: rendered)
+    calls = []
+
+    def fake_extract(page, **_kwargs):
+        calls.append(page.page_number)
+        if page.page_number == 1 and calls.count(1) == 1:
+            raise StructuredOutputError(
+                'invalid',
+                error_kind='validation_error',
+                validation_locations=('records.0.confidence:less_than_equal',),
+            )
+        return _question_page(1) if page.page_number == 1 else _solution_page(2)
+
+    monkeypatch.setattr(exam_prep_pipeline, 'extract_exam_prep_page', fake_extract)
+
+    result = exam_prep_pipeline.run_exam_prep_pdf_pipeline(
+        data=b'%PDF fake',
+        title='آزمون',
+        model='vision-model',
+    )
+
+    assert calls == [1, 1, 2]
+    assert result.question_count == 1
+    assert result.failed_page_numbers == []
+
+
+def test_pipeline_skips_exhausted_page_and_keeps_successful_pages(monkeypatch):
+    rendered = [
+        RenderedExamPage(page_number=1, image=b'page-1'),
+        RenderedExamPage(page_number=2, image=b'page-2'),
+        RenderedExamPage(page_number=3, image=b'page-3'),
+    ]
+    monkeypatch.setenv('EXAM_PREP_PAGE_EXTRACTION_ATTEMPTS', '2')
+    monkeypatch.setattr(exam_prep_pipeline, 'render_exam_prep_pdf', lambda _data: rendered)
+    calls = []
+
+    def fake_extract(page, **_kwargs):
+        calls.append(page.page_number)
+        if page.page_number == 2:
+            raise StructuredOutputError('invalid', error_kind='json_parse_error')
+        return _question_page(1) if page.page_number == 1 else _solution_page(3)
+
+    monkeypatch.setattr(exam_prep_pipeline, 'extract_exam_prep_page', fake_extract)
+    progress = []
+
+    result = exam_prep_pipeline.run_exam_prep_pdf_pipeline(
+        data=b'%PDF fake',
+        title='آزمون',
+        model='vision-model',
+        on_page_complete=lambda done, total: progress.append((done, total)),
+    )
+
+    assert calls == [1, 2, 2, 3]
+    assert progress == [(1, 3), (2, 3), (3, 3)]
+    assert result.question_count == 1
+    assert result.failed_page_numbers == [2]
+    assert result.projection['exam_prep']['questions'][0]['source_pages'] == [1, 3]
+
+
+def test_pipeline_fails_when_every_page_is_unusable(monkeypatch):
+    rendered = [RenderedExamPage(page_number=1, image=b'page-1')]
+    monkeypatch.setenv('EXAM_PREP_PAGE_EXTRACTION_ATTEMPTS', '2')
+    monkeypatch.setattr(exam_prep_pipeline, 'render_exam_prep_pdf', lambda _data: rendered)
+    monkeypatch.setattr(
+        exam_prep_pipeline,
+        'extract_exam_prep_page',
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            StructuredOutputError('invalid', error_kind='validation_error')
+        ),
+    )
+
+    with pytest.raises(NoExamQuestionsFound, match='Failed pages: \[1\]'):
+        exam_prep_pipeline.run_exam_prep_pdf_pipeline(
+            data=b'%PDF fake',
+            title='آزمون',
+            model='vision-model',
+        )
