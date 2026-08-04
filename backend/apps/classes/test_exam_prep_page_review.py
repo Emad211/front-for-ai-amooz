@@ -98,6 +98,15 @@ def test_canonical_projection_audit_detects_gaps_and_invalid_correct_option():
     assert audit['criticalIssueCount'] == 2
 
 
+def test_empty_projection_has_explicit_critical_issue():
+    audit = audit_page_first_projection(_projection([]))
+
+    assert audit['status'] == 'needs_review'
+    assert audit['questionCount'] == 0
+    assert audit['criticalIssueCount'] == 1
+    assert [issue['code'] for issue in audit['issues']] == ['no_questions']
+
+
 def test_failed_page_evidence_stays_critical_after_projection_is_valid():
     audit = audit_page_first_projection(_projection([_question(1)]))
 
@@ -181,7 +190,8 @@ def test_invalid_teacher_edit_stays_blocked_and_keeps_reviewable_output():
     assert session.workflow_state['publicationBlocked'] is True
     audit = session.workflow_state['extractionAudit']
     assert audit['status'] == 'needs_review'
-    assert audit['criticalIssueCount'] >= 2
+    assert audit['criticalIssueCount'] == 1
+    assert {issue['code'] for issue in audit['issues']} == {'no_questions'}
     assert json.loads(session.exam_prep_json) == invalid
 
 
