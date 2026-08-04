@@ -21,8 +21,11 @@ jobs:
           ref: hotfix/exam-prep-stuck-start
           fetch-depth: 0
 
-      - name: Apply hotfix
-        run: python .github/scripts/apply_exam_prep_stuck_hotfix.py
+      - name: Repair and apply hotfix
+        shell: bash
+        run: |
+          python .github/scripts/fix_exam_prep_hotfix_script.py
+          python .github/scripts/apply_exam_prep_stuck_hotfix.py
 
       - name: Commit generated hotfix
         shell: bash
