@@ -1,3 +1,5 @@
+import os
+
 from django.contrib import admin
 from django.urls import path, include
 from rest_framework_simplejwt.views import (
@@ -30,7 +32,19 @@ from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
 from apps.authentication.cookies import set_refresh_cookie, get_refresh_from_request
 from apps.core.views import HealthCheckView
 from apps.core.throttling import SafeScopedRateThrottle
+from apps.classes.views_exam_prep import ExamPrepPdfStep1View
 from apps.classes.views_v4_compat import ExamPrepSourceAwareStep1View
+
+
+_SIMPLE_EXAM_PREP_ENABLED = (
+    (os.getenv('EXAM_PREP_SIMPLE_PIPELINE_ENABLED') or 'True').strip().lower()
+    in {'1', 'true', 'yes', 'on'}
+)
+ExamPrepStep1IntakeView = (
+    ExamPrepPdfStep1View
+    if _SIMPLE_EXAM_PREP_ENABLED
+    else ExamPrepSourceAwareStep1View
+)
 
 
 @extend_schema_view(
@@ -103,12 +117,13 @@ urlpatterns = [
 
     path('api/accounts/', include('apps.accounts.urls')),
     path('api/auth/', include('apps.authentication.urls')),
-    # Keep the existing teacher form/API contract. Only the internal PDF engine
-    # changes, so the product does not expose a second exam-preparation entry.
+    # The product keeps one existing teacher endpoint. New intake creates a
+    # normal ClassCreationSession directly; the temporary switch is rollback-only
+    # and will be removed after legacy jobs are drained in Phase 4.
     path(
         'api/classes/exam-prep-sessions/step-1/',
-        ExamPrepSourceAwareStep1View.as_view(),
-        name='exam_prep_source_aware_step1',
+        ExamPrepStep1IntakeView.as_view(),
+        name='exam_prep_step1_intake',
     ),
     path('api/classes/exam-prep-v4/', include('apps.classes.urls_v4')),
     path('api/classes/', include('apps.classes.urls')),
