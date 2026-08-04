@@ -6,15 +6,16 @@ from django.core.files.storage import FileSystemStorage
 from django.core.files.uploadedfile import SimpleUploadedFile
 from model_bakery import baker
 from PIL import Image
-from rest_framework.test import APIClient
+from rest_framework.test import APIClient, APIRequestFactory, force_authenticate
 
 from apps.classes.models import ClassCreationSession
 from apps.classes.models_v4 import ExamProject, ExamSourceDocument
 from apps.classes.models_v4_bridge import ExamV4SessionBridge
+from apps.classes.views_v4_compat import ExamPrepSourceAwareStep1View
 
 
 pytestmark = pytest.mark.django_db
-STEP1_URL = '/api/classes/exam-prep-sessions/step-1/'
+LEGACY_V4_STEP1_PATH = '/internal-tests/exam-prep-v4-step-1/'
 
 
 @pytest.fixture
@@ -38,6 +39,18 @@ def _auth(user):
     return client
 
 
+def _post_legacy_v4(user, data):
+    """Exercise the retained V4 view without claiming the production route."""
+
+    request = APIRequestFactory().post(
+        LEGACY_V4_STEP1_PATH,
+        data,
+        format='multipart',
+    )
+    force_authenticate(request, user=user)
+    return ExamPrepSourceAwareStep1View.as_view()(request)
+
+
 def _pdf():
     image = Image.new('RGB', (320, 480), (240, 240, 240))
     output = io.BytesIO()
@@ -49,7 +62,7 @@ def _upload(name='exam.pdf'):
     return SimpleUploadedFile(name, _pdf(), content_type='application/pdf')
 
 
-def test_existing_step1_url_creates_source_aware_project_and_session(
+def test_legacy_v4_view_creates_source_aware_project_and_session(
     private_storage,
     monkeypatch,
     settings,
@@ -63,15 +76,14 @@ def test_existing_step1_url_creates_source_aware_project_and_session(
         lambda document_ids: dispatched.append(list(document_ids)) or 'group-1',
     )
 
-    response = _auth(teacher).post(
-        STEP1_URL,
+    response = _post_legacy_v4(
+        teacher,
         {
             'title': 'آمادگی زیست',
             'description': 'آزمون آزمایشی',
             'file': _upload(),
             'client_request_id': str(request_id),
         },
-        format='multipart',
     )
 
     assert response.status_code == 202
@@ -87,7 +99,7 @@ def test_existing_step1_url_creates_source_aware_project_and_session(
     assert dispatched == [[document.id]]
 
 
-def test_existing_step1_rejects_non_pdf(monkeypatch, settings):
+def test_legacy_v4_view_rejects_non_pdf(monkeypatch, settings):
     settings.EXAM_PREP_V4_ENABLED = True
     monkeypatch.setattr(
         'apps.classes.views_v4_compat.dispatch_exam_prep_v4_sources',
@@ -95,10 +107,9 @@ def test_existing_step1_rejects_non_pdf(monkeypatch, settings):
     )
     upload = SimpleUploadedFile('voice.mp3', b'audio', content_type='audio/mpeg')
 
-    response = _auth(_teacher()).post(
-        STEP1_URL,
+    response = _post_legacy_v4(
+        _teacher(),
         {'title': 'آزمون', 'file': upload},
-        format='multipart',
     )
 
     assert response.status_code == 400
@@ -106,7 +117,7 @@ def test_existing_step1_rejects_non_pdf(monkeypatch, settings):
     assert ClassCreationSession.objects.count() == 0
 
 
-def test_session_project_bridge_is_owner_scoped(
+def test_legacy_session_project_bridge_is_owner_scoped(
     private_storage,
     monkeypatch,
     settings,
@@ -118,10 +129,9 @@ def test_session_project_bridge_is_owner_scoped(
         'apps.classes.views_v4_compat.dispatch_exam_prep_v4_sources',
         lambda document_ids: 'group-1',
     )
-    created = _auth(teacher).post(
-        STEP1_URL,
+    created = _post_legacy_v4(
+        teacher,
         {'title': 'آزمون', 'file': _upload()},
-        format='multipart',
     )
     session_id = created.data['id']
 
@@ -138,7 +148,7 @@ def test_session_project_bridge_is_owner_scoped(
     assert denied.status_code == 404
 
 
-def test_project_progress_is_mirrored_into_existing_session(
+def test_legacy_project_progress_is_mirrored_into_existing_session(
     private_storage,
     monkeypatch,
     settings,
@@ -149,10 +159,9 @@ def test_project_progress_is_mirrored_into_existing_session(
         'apps.classes.views_v4_compat.dispatch_exam_prep_v4_sources',
         lambda document_ids: 'group-1',
     )
-    created = _auth(teacher).post(
-        STEP1_URL,
+    created = _post_legacy_v4(
+        teacher,
         {'title': 'آزمون', 'file': _upload()},
-        format='multipart',
     )
     session = ClassCreationSession.objects.get(id=created.data['id'])
     project = ExamProject.objects.get(teacher=teacher)
@@ -173,7 +182,7 @@ def test_project_progress_is_mirrored_into_existing_session(
     assert session.workflow_state['progressPercent'] == 80
 
 
-def test_existing_cancel_propagates_to_source_aware_project(
+def test_legacy_cancel_propagates_to_source_aware_project(
     private_storage,
     monkeypatch,
     settings,
@@ -188,10 +197,9 @@ def test_existing_cancel_propagates_to_source_aware_project(
         'apps.classes.services.exam_prep_v4_create_flow.current_app.control.revoke',
         lambda *_args, **_kwargs: None,
     )
-    created = _auth(teacher).post(
-        STEP1_URL,
+    created = _post_legacy_v4(
+        teacher,
         {'title': 'آزمون', 'file': _upload()},
-        format='multipart',
     )
     session = ClassCreationSession.objects.get(id=created.data['id'])
     project = ExamProject.objects.get(teacher=teacher)
@@ -207,8 +215,7 @@ def test_existing_cancel_propagates_to_source_aware_project(
     assert project.workflow_state['cancellationRequested'] is True
 
 
-
-def test_step1_dispatch_failure_returns_retryable_error_and_unlocks_session(
+def test_legacy_v4_dispatch_failure_returns_retryable_error_and_unlocks_session(
     private_storage,
     monkeypatch,
     settings,
@@ -224,14 +231,13 @@ def test_step1_dispatch_failure_returns_retryable_error_and_unlocks_session(
         fail_dispatch,
     )
 
-    response = _auth(teacher).post(
-        STEP1_URL,
+    response = _post_legacy_v4(
+        teacher,
         {
             'title': 'آزمون خطای صف',
             'file': _upload(),
             'client_request_id': str(uuid.uuid4()),
         },
-        format='multipart',
     )
 
     assert response.status_code == 503
