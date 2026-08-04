@@ -22,6 +22,7 @@ from .services.exam_prep_page_review import (
     audit_page_first_projection,
     parse_projection,
     render_projection_transcript,
+    retain_failed_page_evidence,
 )
 from .services.exam_prep_v4_create_flow import (
     cancel_source_aware_project_for_session,
@@ -174,6 +175,8 @@ def revalidate_page_first_teacher_edit(
 
     projection = parse_projection(instance.exam_prep_json)
     audit = audit_page_first_projection(projection)
+    failed_page_numbers = workflow.get('failedPageNumbers') or []
+    audit = retain_failed_page_evidence(audit, failed_page_numbers)
     passed = audit.get('status') == 'passed'
     warnings: list[str] = []
     critical_count = int(audit.get('criticalIssueCount') or 0)
@@ -188,6 +191,11 @@ def revalidate_page_first_teacher_edit(
     )
     if gap_count:
         warnings.append(f'{gap_count} شماره سؤال در توالی آزمون وجود ندارد.')
+    if audit.get('failedPageNumbers'):
+        pages = '، '.join(map(str, audit['failedPageNumbers']))
+        warnings.append(
+            f'صفحه‌های {pages} باید از روی فایل اصلی دوباره پردازش شوند.'
+        )
 
     new_workflow = {
         **workflow,
@@ -200,7 +208,7 @@ def revalidate_page_first_teacher_edit(
         'progressPercent': 100,
         'warnings': warnings,
         'readyForReview': True,
-        'failedPageNumbers': [],
+        'failedPageNumbers': list(audit.get('failedPageNumbers') or []),
         'extractionAudit': audit,
         'publicationBlocked': not passed,
     }
