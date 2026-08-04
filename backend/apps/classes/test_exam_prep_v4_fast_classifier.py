@@ -98,6 +98,7 @@ def test_fast_classifier_requires_env_selected_model(monkeypatch):
     _, document = _document(page_count=1)
     monkeypatch.delenv('EXAM_PREP_V4_CLASSIFICATION_MODEL', raising=False)
     monkeypatch.delenv('PDF_VISION_MODEL', raising=False)
+    monkeypatch.delenv('MODEL_NAME', raising=False)
 
     with pytest.raises(FastClassifierConfigurationError):
         classify_document_pages_fast(
@@ -105,6 +106,14 @@ def test_fast_classifier_requires_env_selected_model(monkeypatch):
             expected_revision=1,
             contact_sheets=_sheets(1),
         )
+
+
+def test_fast_classifier_falls_back_to_generic_model_env(monkeypatch):
+    monkeypatch.delenv('EXAM_PREP_V4_CLASSIFICATION_MODEL', raising=False)
+    monkeypatch.delenv('PDF_VISION_MODEL', raising=False)
+    monkeypatch.setenv('MODEL_NAME', 'models/generic-multimodal-model')
+
+    assert fast._select_model() == 'generic-multimodal-model'
 
 
 def test_fast_classifier_requires_complete_non_overlapping_sheet_coverage():

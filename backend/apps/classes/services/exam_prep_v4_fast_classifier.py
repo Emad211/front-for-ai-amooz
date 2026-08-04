@@ -77,10 +77,11 @@ def _select_model(explicit_model: str | None = None) -> str:
         (explicit_model or '').strip()
         or (os.getenv('EXAM_PREP_V4_CLASSIFICATION_MODEL') or '').strip()
         or (os.getenv('PDF_VISION_MODEL') or '').strip()
+        or (os.getenv('MODEL_NAME') or '').strip()
     )
     if not model:
         raise FastClassifierConfigurationError(
-            'Set EXAM_PREP_V4_CLASSIFICATION_MODEL or PDF_VISION_MODEL.'
+            'Set EXAM_PREP_V4_CLASSIFICATION_MODEL, PDF_VISION_MODEL, or MODEL_NAME.'
         )
     return model.removeprefix('models/')
 
