@@ -1,4 +1,4 @@
-"""Owner-scoped projection and publication endpoints for Exam Prep V4."""
+"""Owner-scoped projection and publication endpoints."""
 from __future__ import annotations
 
 from django.http import Http404
@@ -9,6 +9,7 @@ from rest_framework.views import APIView
 
 from apps.classes.models_v4 import ExamProject
 from apps.classes.permissions import IsTeacherUser
+from apps.classes.services.exam_prep_v4_create_flow import adopt_create_flow_projection
 from apps.classes.services.exam_prep_v4_projection import (
     ProjectionIntegrityError,
     ProjectionNotReady,
@@ -33,7 +34,7 @@ def _run(action, *, teacher, project_id: int):
         return Response(
             {
                 'code': 'projection_not_ready',
-                'detail': 'ابتدا استخراج و بازبینی استثناها را کامل کنید.',
+                'detail': 'ابتدا استخراج و بازبینی موارد نیازمند توجه را کامل کنید.',
             },
             status=status.HTTP_409_CONFLICT,
         )
@@ -41,7 +42,7 @@ def _run(action, *, teacher, project_id: int):
         return Response(
             {
                 'code': 'stale_projection',
-                'detail': 'رکوردهای مبنا تغییر کرده‌اند؛ projection را دوباره بسازید.',
+                'detail': 'رکوردهای مبنا تغییر کرده‌اند؛ نسخهٔ نهایی را دوباره بسازید.',
             },
             status=status.HTTP_409_CONFLICT,
         )
@@ -67,6 +68,10 @@ class ExamPrepV4ProjectionView(APIView):
         )
         if isinstance(result, Response):
             return result
+        result = adopt_create_flow_projection(
+            project_id=project_id,
+            projection_payload=result,
+        )
         return Response(result, status=status.HTTP_200_OK)
 
 
@@ -75,6 +80,17 @@ class ExamPrepV4PublishView(APIView):
 
     def post(self, request, project_id: int):
         _require_v4()
+        prepared = _run(
+            build_legacy_projection,
+            teacher=request.user,
+            project_id=project_id,
+        )
+        if isinstance(prepared, Response):
+            return prepared
+        adopt_create_flow_projection(
+            project_id=project_id,
+            projection_payload=prepared,
+        )
         result = _run(
             publish_legacy_projection,
             teacher=request.user,
@@ -82,4 +98,8 @@ class ExamPrepV4PublishView(APIView):
         )
         if isinstance(result, Response):
             return result
+        result = adopt_create_flow_projection(
+            project_id=project_id,
+            projection_payload=result,
+        )
         return Response(result, status=status.HTTP_200_OK)
