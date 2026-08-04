@@ -7,7 +7,7 @@ retain/drain/re-upload plan.
 from __future__ import annotations
 
 from collections import Counter, defaultdict
-from typing import Any, Iterable
+from typing import Any
 
 from django.db.models import QuerySet
 
@@ -190,6 +190,7 @@ def build_exam_prep_legacy_audit(*, include_ids: bool = False) -> dict[str, Any]
         ).order_by('id')
     )
 
+    sessions_by_id = {session.id: session for session in sessions}
     artifact_by_id = {artifact.id: artifact for artifact in artifacts}
     artifact_versions = {
         artifact.session_id: int(artifact.pipeline_version)
@@ -248,7 +249,7 @@ def build_exam_prep_legacy_audit(*, include_ids: bool = False) -> dict[str, Any]
     v4_project_ids_by_action: dict[str, list[int]] = defaultdict(list)
     for project in projects:
         session_id = v4_project_to_session.get(project.id)
-        linked_session = next((item for item in sessions if item.id == session_id), None)
+        linked_session = sessions_by_id.get(session_id)
         linked_question_count = (
             _valid_question_count(linked_session.exam_prep_json)
             if linked_session is not None
