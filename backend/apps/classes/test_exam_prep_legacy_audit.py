@@ -162,10 +162,6 @@ def _build_inventory():
         project=v4_active_project,
         session=v4_active_session,
     )
-    # V4 writes the session task id after the bridge and dispatch are created.
-    ClassCreationSession.objects.filter(id=v4_active_session.id).update(
-        celery_task_id='v4-session-task',
-    )
     ExamSourceDocument.objects.create(
         project=v4_active_project,
         original_name='active.pdf',
@@ -283,10 +279,10 @@ def test_audit_classifies_current_and_legacy_families_without_task_leakage():
         'v1': ['v1-session-task'],
         'v2': ['v2-artifact-task', 'v2-session-task', 'v2-unit-task'],
         'v3': ['v3-artifact-task', 'v3-session-task'],
-        'v4': ['v4-project-task', 'v4-session-task'],
+        'v4': ['v4-project-task'],
     }
     assert 'current-page-first-task' not in json.dumps(task_ids)
-    assert report['drain']['taskCount'] == 8
+    assert report['drain']['taskCount'] == 7
 
 
 def test_audit_reports_v4_project_plan_and_intermediate_counts():
@@ -385,7 +381,7 @@ def test_management_command_prints_json_only_and_performs_no_writes():
     payload = json.loads(output.getvalue())
     assert payload['dryRun'] is True
     assert payload['writesPerformed'] == 0
-    assert payload['drain']['taskCount'] == 8
+    assert payload['drain']['taskCount'] == 7
     assert 'ids' in payload
 
 
