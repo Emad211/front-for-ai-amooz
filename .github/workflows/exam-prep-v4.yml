@@ -8,15 +8,22 @@ on:
       - 'backend/apps/classes/apps.py'
       - 'backend/apps/classes/models_v4*.py'
       - 'backend/apps/classes/signals.py'
+      - 'backend/apps/classes/tasks_exam_prep.py'
       - 'backend/apps/classes/tasks_v4*.py'
+      - 'backend/apps/classes/views_exam_prep.py'
       - 'backend/apps/classes/views_v4*.py'
       - 'backend/apps/classes/serializers_v4*.py'
       - 'backend/apps/classes/urls_v4.py'
       - 'backend/apps/classes/management/commands/*exam_prep_v4*.py'
       - 'backend/apps/classes/migrations/004*_exam_prep_v4_*.py'
+      - 'backend/apps/classes/services/exam_prep_page*.py'
+      - 'backend/apps/classes/services/exam_prep_pipeline.py'
       - 'backend/apps/classes/services/exam_prep_v4_*.py'
+      - 'backend/apps/classes/test_exam_prep_page*.py'
+      - 'backend/apps/classes/test_exam_prep_simple_pipeline.py'
       - 'backend/apps/classes/test_exam_prep_v4_*.py'
       - 'backend/apps/commons/llm_prompts/__init__.py'
+      - 'backend/apps/commons/llm_prompts/exam_prep_page.py'
       - 'backend/apps/commons/llm_prompts/exam_prep_v4.py'
       - 'backend/core/storage_backends.py'
       - 'backend/core/urls.py'
@@ -34,13 +41,13 @@ on:
       - 'frontend/src/constants/navigation.ts'
       - 'frontend/package.json'
       - 'frontend/package-lock.json'
-      - 'docs/features/exam-prep-v4-*.md'
+      - 'docs/features/exam-prep-*.md'
       - 'docs/runbooks/exam-prep-v4-*.md'
   workflow_dispatch:
 
 jobs:
   backend:
-    name: v4 backend validation (postgres)
+    name: exam prep backend validation (postgres)
     runs-on: ubuntu-latest
 
     services:
@@ -70,9 +77,11 @@ jobs:
     env:
       DATABASE_URL: postgresql://ai_amooz:ai_amooz_password@localhost:5432/ai_amooz
       REDIS_URL: redis://localhost:6379/0
-      DJANGO_SECRET_KEY: ci-insecure-v4-test-key
+      DJANGO_SECRET_KEY: ci-insecure-exam-prep-test-key
       DEBUG: 'True'
+      EXAM_PREP_SIMPLE_PIPELINE_ENABLED: 'True'
       EXAM_PREP_V4_ENABLED: 'True'
+      MODEL_NAME: models/fake-ci-model
 
     steps:
       - uses: actions/checkout@v4
@@ -95,14 +104,16 @@ jobs:
       - name: Check classes migration drift
         run: python backend/manage.py makemigrations classes --check --dry-run
 
-      - name: Run all V4 tests on PostgreSQL
+      - name: Run focused exam prep tests on PostgreSQL
         run: |
           python -m pytest \
+            backend/apps/classes/test_exam_prep_page_*.py \
+            backend/apps/classes/test_exam_prep_simple_pipeline.py \
             backend/apps/classes/test_exam_prep_v4_*.py \
             -q --create-db
 
   frontend:
-    name: v4 teacher-flow frontend validation
+    name: exam prep teacher-flow frontend validation
     runs-on: ubuntu-latest
 
     steps:
