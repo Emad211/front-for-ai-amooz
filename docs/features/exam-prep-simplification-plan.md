@@ -1,7 +1,25 @@
 # Exam Prep simplification and legacy removal plan
 
-Status: Phase 1 in progress  
-Baseline: `main@4de0d248c8efdcf925f4f8ed0abc7af69d85a4fc`
+## Current checkpoint
+
+- Phase 1 — pure page-record contract: **completed** in PR #8  
+  Merge commit: `b354c6609e33f22dd8f7df5c3fecf4e13bda9c54`
+- Phase 2 — isolated one-page extractor: **completed** in PR #9  
+  Merge commit: `e9dd7610c22b15b65a1cf7b51e8b6919ab0a9d80`
+- Phase 3 — production intake cutover: **implemented and validated** in PR #10
+- Phase 4 — drain and freeze legacy drafts: **not started**
+- Phase 5 — remove legacy executable code: **not started**
+- Phase 6 — remove obsolete database structures: **not started**
+
+Phase 3 focused evidence on PostgreSQL:
+
+```text
+Django system check: passed
+classes migration drift: none
+focused backend tests: 294 passed
+focused frontend TypeScript/state tests: passed
+live provider/OCR calls: 0
+```
 
 ## Product decision
 
@@ -10,12 +28,13 @@ answer/solution section. The extraction engine therefore does not need page-role
 classification, Source Maps, block graphs, fragment graphs, or fuzzy matching as
 the primary path.
 
-The replacement pipeline is deliberately small:
+The only target pipeline is:
 
 ```text
 PDF
-  -> render pages
-  -> one structured LLM extraction per page
+  -> validate PDF
+  -> render one physical page at a time
+  -> one structured LLM extraction for that page
   -> PageExtraction records
   -> group by (scope_key, question_number)
   -> deterministic validation/review
@@ -23,7 +42,7 @@ PDF
   -> existing teacher publication and student exam flows
 ```
 
-There will be no V5. The final runtime name is simply `exam_prep`.
+There is no V5. The final runtime name is simply `exam_prep`.
 
 ## Non-negotiable preservation boundary
 
@@ -40,7 +59,7 @@ The cleanup must not change or delete these product contracts:
 - shared authentication, organization, object-storage, Celery, idempotency,
   cancellation, logging, and retention infrastructure.
 
-The canonical question fields that remain stable are:
+The stable question fields are:
 
 ```text
 question_id
@@ -54,23 +73,58 @@ confidence
 issues
 ```
 
-The simple assembler may add safe provenance fields such as `scope_key`,
-`source_question_number`, and `source_pages`; existing Pydantic/read contracts
-already allow additional fields.
+The new assembler also records safe provenance:
 
-## Current runtime inventory
+```text
+scope_key
+source_question_number
+source_pages
+```
 
-### Active production intake
+## Runtime after Phase 3
 
-`backend/core/urls.py` currently overrides
-`/api/classes/exam-prep-sessions/step-1/` with
-`ExamPrepSourceAwareStep1View` from `views_v4_compat.py`. New PDF intake therefore
-enters the V4 project/bridge path before the legacy `apps.classes.urls` route can
-handle it.
+The existing public teacher endpoint remains:
 
-### Legacy V1/V2/V3 runtime still present
+```text
+POST /api/classes/exam-prep-sessions/step-1/
+```
 
-The original two-step pipeline remains in `apps/classes`:
+New PDF intake now:
+
+1. validates a real PDF upload;
+2. creates a normal `ClassCreationSession` directly;
+3. stores a Celery task ID before dispatch;
+4. runs `process_exam_prep_pdf_session` on the `pipeline` queue;
+5. renders and extracts one page at a time;
+6. writes the assembled result directly to `exam_prep_json`;
+7. finishes in the existing `exam_structured` / ready-for-review state.
+
+New intake does **not** create:
+
+- `ExamProject`;
+- V4 bridge rows;
+- Source Maps;
+- blocks or fragments;
+- question/answer record tables;
+- legacy extraction artifacts or units;
+- projection rows.
+
+A temporary deployment rollback switch remains during Phase 3/4:
+
+```text
+EXAM_PREP_SIMPLE_PIPELINE_ENABLED=True
+```
+
+Setting it to false restores the old V4 intake view. This is a deployment
+rollback only, not another pipeline version. It must be removed after Phase 4.
+
+## Legacy runtime still present
+
+Cutover intentionally does not delete old code yet. The repository still
+contains V1/V2/V3 and V4 executable code and tables so existing drafts and queued
+jobs are not destroyed mid-run.
+
+### V1/V2/V3 candidates
 
 - `process_exam_prep_step1_transcription`;
 - `process_exam_prep_step2_structure`;
@@ -87,166 +141,110 @@ The original two-step pipeline remains in `apps/classes`:
 - version flags such as `EXAM_PREP_EXTRACTION_V2` and
   `EXAM_PREP_EXTRACTION_VERSION`.
 
-These are removal candidates only after cutover. They are not changed in Phase 1.
+### V4 candidates
 
-### V4 runtime still present
-
-V4 currently includes separate model modules, migrations, services, serializers,
-views, tasks, frontend components, API routes, runbooks, benchmarks, and CI. The
-runtime families include:
-
-- `models_v4*.py` and migrations `0038` through `0047` associated with V4;
+- `models_v4*.py` and associated migrations;
 - `tasks_v4.py` and `tasks_v4_recovery.py`;
 - `views_v4*.py`, `serializers_v4*.py`, and `urls_v4.py`;
-- `exam_prep_v4_*` services for PDF source preparation, classification, Source
-  Maps, blocks, records, matching, review, projection, bridge, OCR evidence,
-  invalidation, observability, benchmark, and publication;
-- frontend `exam-prep-v4` services, hooks, components, and the embedded
-  source-aware workspace;
+- `exam_prep_v4_*` source, classification, Source Map, block, matching, review,
+  projection, bridge, OCR, benchmark, and observability services;
+- frontend V4 services, hooks, components, and source-aware workspace;
 - V4 environment variables, workflows, benchmarks, and runbooks.
 
-These are removal candidates only after the simple engine owns new traffic and
-all active V4 drafts are resolved.
+None of these are removed before Phase 4 proves that no active work depends on
+them.
 
 ## Six safe phases
 
 ### Phase 1 — inventory, safety boundary, and pure contract
 
-Deliverables:
+Completed deliverables:
 
-- this canonical inventory and deletion plan;
-- a pure page-level schema;
+- canonical preservation/removal map;
+- pure `PageExtraction` schema;
 - deterministic assembly by `(scope_key, question_number)`;
-- tests for normal matching, repeated numbers across scopes, continuation,
-  conflicts, incomplete records, and duplicate pages;
-- no route, task, model, migration, database, frontend, or production behavior
-  change.
+- conflict and continuation handling;
+- no runtime side effects.
 
-Exit criteria:
+### Phase 2 — isolated page extractor
 
-- the page contract is explicit and tested;
-- preservation and removal boundaries are recorded;
-- branch diff contains no runtime cutover.
+Completed deliverables:
 
-### Phase 2 — page extractor behind no production route
-
-Implement one provider call per rendered page using the Phase 1 schema.
-
-Rules:
-
-- no page-role classifier;
-- no Source Map;
-- no block/fragment/segment model;
-- no fuzzy question matcher;
-- one configured multimodal model from environment;
-- bounded concurrency, retries, timeout, cancellation, and content-free logs;
-- golden fixture tests only unless the owner explicitly requests live calls.
-
-Exit criteria:
-
-- page images produce `PageExtraction` objects;
-- full fixture PDFs assemble into the existing `exam_prep_json` shape;
-- no production route points to the new engine yet.
+- one registered page-extraction prompt;
+- one configured multimodal request per rendered page;
+- strict page attribution and input validation;
+- fake-provider tests;
+- no production route.
 
 ### Phase 3 — cut over the existing teacher route
 
-Keep the current user-facing route and UI. Replace only its internal PDF
-implementation.
+Completed implementation:
 
-Deliverables:
+- the existing endpoint creates `ClassCreationSession` directly;
+- page images are rendered lazily, one page at a time;
+- output is written directly to `exam_prep_json`;
+- idempotency, queue failure, cancellation, retry, progress, and content-free
+  logging are covered;
+- V4 legacy tests call the retained V4 view directly instead of claiming the
+  production endpoint;
+- no model or migration change.
 
-- `/api/classes/exam-prep-sessions/step-1/` creates the existing
-  `ClassCreationSession` directly;
-- the simple page pipeline writes directly to `exam_prep_json`;
-- existing polling, cancellation, invitations, review, publish, and student
-  behavior remain unchanged;
-- new traffic no longer creates V4 projects or legacy extraction artifacts.
+Exit gate:
 
-Exit criteria:
-
-- one production path for new exam-prep PDFs;
-- rollback is one feature switch, not a version selector;
-- published exam and student regression tests pass.
+- merge PR #10 after focused CI remains green.
 
 ### Phase 4 — drain and freeze legacy drafts
 
-Deliverables:
+Required work:
 
-- stop dispatch of V1/V2/V3/V4 extraction tasks;
-- identify active queued/running jobs and drain or revoke them safely;
-- retain completed `exam_prep_json` projections;
-- mark incomplete legacy drafts for re-upload instead of building a complex
-  migration into the new intermediate format;
-- keep published exams and student attempts untouched.
+- inventory active V1/V2/V3/V4 sessions and queued/running task IDs;
+- stop all new legacy dispatch;
+- safely drain or revoke active legacy jobs;
+- retain completed sessions that already have valid `exam_prep_json`;
+- mark incomplete legacy drafts as requiring re-upload;
+- produce explicit counts for retained, cancelled, and re-upload-required data;
+- remove the temporary rollback switch only after zero active legacy work is
+  proven.
 
-Exit criteria:
-
-- zero active legacy extraction jobs;
-- zero new writes to legacy intermediate tables;
-- explicit counts for retained, cancelled, and re-upload-required drafts.
+No complex migration from old intermediate formats into the new intermediate
+format is allowed.
 
 ### Phase 5 — remove legacy executable code
 
-Delete runtime code no longer referenced after Phase 4:
+Only after Phase 4 reaches zero active legacy work:
 
-- V1/V2/V3 extraction services, task branches, review/unit/visual APIs, flags,
-  tests, and dead frontend behavior;
-- V4 models/services/tasks/views/serializers/routes/frontend/benchmarks/runbooks;
-- bridge and projection code;
-- old imports in `apps.py`, `signals.py`, `tasks.py`, `core/urls.py`, and frontend
-  navigation/services.
-
-Keep historical migrations until the database removal migration is deployed.
+- remove V1/V2/V3 task branches, services, APIs, flags, tests, and dead frontend;
+- remove V4 models/services/tasks/views/serializers/routes/frontend tooling;
+- remove bridge/projection code;
+- remove old imports from `apps.py`, `signals.py`, `tasks.py`, URLs, and frontend;
+- retain historical applied migration files until database removal is deployed.
 
 Exit criteria:
 
-- runtime source search has no versioned extraction path;
+- no versioned extraction runtime remains;
 - only `exam_prep` naming remains in executable code;
 - all preserved teacher/student contracts pass.
 
-### Phase 6 — database removal and migration squash later
+### Phase 6 — database removal and later migration squash
 
-Deliverables:
+Required work:
 
-- new migrations remove obsolete intermediate tables, columns, indexes, and
-  signals;
-- private obsolete artifacts are deleted according to retention rules;
-- deploy and verify the removal migration;
-- migration squashing is a separate later maintenance operation.
+- add migrations that remove obsolete intermediate tables, columns, indexes,
+  and signals;
+- delete obsolete private artifacts according to retention rules;
+- verify both an upgraded production database and a fresh install;
+- squash historical migrations only in a later maintenance operation.
 
 Historical applied migration files must not be deleted before a safe squash.
 
-Exit criteria:
-
-- obsolete tables are gone;
-- no orphan private artifacts remain;
-- fresh install and upgraded production database both migrate successfully.
-
-## Phase 1 implementation in this branch
-
-New isolated files:
-
-- `backend/apps/classes/services/exam_prep_page_records.py`
-- `backend/apps/classes/test_exam_prep_page_records.py`
-
-The module is pure and has no side effects. It does not import Django models,
-Celery, storage, provider clients, V2/V3/V4 code, or version flags.
-
-Load-bearing key:
-
-```python
-(scope_key, question_number)
-```
-
-The assembler never performs fuzzy matching. Conflicts are retained
-predictably and exposed through `issues` for later teacher review.
-
 ## Exact continuation point
 
-After Phase 1 is reviewed and merged, continue only with Phase 2:
+After PR #10 is merged, continue only with Phase 4:
 
-1. define the single page-extraction prompt;
-2. call the configured multimodal provider once per page;
-3. validate each response as `PageExtraction`;
-4. assemble fixture pages with `assemble_page_extractions`;
-5. do not change production routing yet.
+1. obtain database counts for every legacy active/terminal status;
+2. identify queued/running legacy Celery task IDs;
+3. add a dry-run management command that reports the drain plan without writes;
+4. verify completed `exam_prep_json` sessions remain publishable;
+5. only then implement the explicit drain/freeze operation.
+
+Do not delete legacy code or tables in Phase 4.
