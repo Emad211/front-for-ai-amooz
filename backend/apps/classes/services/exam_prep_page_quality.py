@@ -62,7 +62,11 @@ _MARKER_ONLY_RE = re.compile(
     flags=re.IGNORECASE,
 )
 _NATIVE_QUESTION_HEADING_RE = re.compile(
-    r"(?m)^\s*[-–—ـ]\s*(?P<number>[0-9۰-۹٠-٩]{1,3})\s+"
+    r"(?m)^\s*(?:"
+    r"[-–—ـ]\s*(?P<prefix_number>[0-9۰-۹٠-٩]{1,3})"
+    r"|"
+    r"(?P<suffix_number>[0-9۰-۹٠-٩]{1,3})\s*[-–—ـ]"
+    r")\s+"
 )
 _NATIVE_OPTION_START_RE = re.compile(
     r"(?m)^\s*(?P<label>[1-6۱-۶١-٦])\)\s*"
@@ -218,8 +222,16 @@ def parse_native_question_evidence(
     headings = list(_NATIVE_QUESTION_HEADING_RE.finditer(text))
     evidence: dict[int, NativeQuestionEvidence] = {}
     for index, heading in enumerate(headings):
-        number = int(_latin_digits(heading.group("number")))
-        block_end = headings[index + 1].start() if index + 1 < len(headings) else len(text)
+        raw_number = (
+            heading.group("prefix_number")
+            or heading.group("suffix_number")
+        )
+        number = int(_latin_digits(raw_number))
+        block_end = (
+            headings[index + 1].start()
+            if index + 1 < len(headings)
+            else len(text)
+        )
         block = text[heading.end():block_end].strip()
         option_starts = list(_NATIVE_OPTION_START_RE.finditer(block))
         options: list[tuple[str, str]] = []
@@ -267,7 +279,9 @@ def _options_differ_materially(
     if len(current) != len(native):
         return True
     for current_option, native_option in zip(current, native):
-        if _normalized_label(current_option.label) != _normalized_label(native_option.label):
+        if _normalized_label(current_option.label) != _normalized_label(
+            native_option.label
+        ):
             return True
         current_text = _normalized_text(current_option.text_markdown)
         native_text = _normalized_text(native_option.text_markdown)
@@ -287,7 +301,11 @@ def _provider_warning_issues(values: list[str]) -> list[str]:
         raw = clean_exam_markdown(value).strip()
         if not raw:
             continue
-        normalized = re.sub(r"[^a-z0-9_:-]+", "_", raw.casefold()).strip("_")
+        normalized = re.sub(
+            r"[^a-z0-9_:-]+",
+            "_",
+            raw.casefold(),
+        ).strip("_")
         canonical = _STRUCTURAL_ISSUE_ALIASES.get(normalized)
         if canonical in _CANONICAL_CRITICAL_CODES:
             # Structural issues are recomputed after deterministic repair.
@@ -311,7 +329,10 @@ def _question_issues(record: PageRecord) -> list[str]:
     labels = [_normalized_label(option.label) for option in options]
     if labels and len(labels) != len(set(labels)):
         issues.append("duplicate_option_label")
-    if options and any(not clean_exam_markdown(option.text_markdown).strip() for option in options):
+    if options and any(
+        not clean_exam_markdown(option.text_markdown).strip()
+        for option in options
+    ):
         issues.append("missing_option_text")
     if (
         options
@@ -334,15 +355,26 @@ def reconcile_page_extraction(
     *,
     native_text: str = "",
 ) -> PageExtraction:
-    """Repair deterministic option-shape failures and recompute issues."""
+    """Repair deterministic option-shape failures and recompute issues.
+
+    Preserve the original Pydantic object when reconciliation is a true no-op.
+    Besides avoiding needless allocations, this keeps callers that cache or
+    compare the validated page object from observing a false change.
+    """
 
     native_by_number = parse_native_question_evidence(native_text)
     reconciled: list[PageRecord] = []
+    changed = False
     for record in page.records:
         if record.record_type not in QUESTION_RECORD_TYPES:
-            reconciled.append(
-                record.model_copy(update={"issues": _provider_warning_issues(record.issues)})
-            )
+            normalized_issues = _provider_warning_issues(record.issues)
+            if normalized_issues == record.issues:
+                reconciled.append(record)
+            else:
+                reconciled.append(
+                    record.model_copy(update={"issues": normalized_issues})
+                )
+                changed = True
             continue
 
         options, collapsed = _collapse_interleaved_options(list(record.options))
@@ -369,10 +401,16 @@ def reconcile_page_extraction(
             # replace provider options. Ambiguous native text is ignored.
             options = native_options
 
-        updated = record.model_copy(update={"options": options, "issues": []})
-        updated = updated.model_copy(update={"issues": _question_issues(updated)})
-        reconciled.append(updated)
-    return page.model_copy(update={"records": reconciled})
+        candidate = record.model_copy(update={"options": options})
+        updated = candidate.model_copy(
+            update={"issues": _question_issues(candidate)}
+        )
+        if updated == record:
+            reconciled.append(record)
+        else:
+            reconciled.append(updated)
+            changed = True
+    return page.model_copy(update={"records": reconciled}) if changed else page
 
 
 def summarize_page_quality(page: PageExtraction) -> PageQualitySummary:
