@@ -30,6 +30,7 @@ from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
 from apps.authentication.cookies import set_refresh_cookie, get_refresh_from_request
 from apps.core.views import HealthCheckView
 from apps.core.throttling import SafeScopedRateThrottle
+from apps.classes.views_v4_compat import ExamPrepSourceAwareStep1View
 
 
 @extend_schema_view(
@@ -86,27 +87,29 @@ class TokenRefreshViewDocs(TokenRefreshView):
             raise InvalidToken(exc.args[0])
 
         response = Response(serializer.validated_data, status=status.HTTP_200_OK)
-        # Rotation returns a new refresh token → keep the cookie in sync.
         set_refresh_cookie(response, serializer.validated_data.get('refresh'))
         return response
 
 urlpatterns = [
     path('admin/', admin.site.urls),
-    # System
     path('api/health/', HealthCheckView.as_view(), name='health_check'),
-    
-    # Documentation
+
     path('api/schema/', SpectacularAPIView.as_view(), name='schema'),
     path('api/docs/', SpectacularSwaggerView.as_view(url_name='schema'), name='swagger-ui'),
     path('api/redoc/', SpectacularRedocView.as_view(url_name='schema'), name='redoc'),
 
     path('api/token/', TokenObtainPairViewDocs.as_view(), name='token_obtain_pair'),
     path('api/token/refresh/', TokenRefreshViewDocs.as_view(), name='token_refresh'),
-    
-    # New App Endpoints
+
     path('api/accounts/', include('apps.accounts.urls')),
     path('api/auth/', include('apps.authentication.urls')),
-    # Keep V4 intake isolated from the legacy classes URL module.
+    # Keep the existing teacher form/API contract. Only the internal PDF engine
+    # changes, so the product does not expose a second exam-preparation entry.
+    path(
+        'api/classes/exam-prep-sessions/step-1/',
+        ExamPrepSourceAwareStep1View.as_view(),
+        name='exam_prep_source_aware_step1',
+    ),
     path('api/classes/exam-prep-v4/', include('apps.classes.urls_v4')),
     path('api/classes/', include('apps.classes.urls')),
     path('api/notifications/', include('apps.notification.urls')),
@@ -119,8 +122,6 @@ from django.conf import settings
 from django.conf.urls.static import static
 from core.storage_backends import private_answer_source_media_view
 
-# Keep private student answer originals and all exam source artifacts out of
-# Django's DEBUG static-media helper as well as the production S3/media proxy.
 urlpatterns += [
     path(
         'media/exercises/answers/sources/<path:path>',
@@ -148,8 +149,6 @@ if settings.DEBUG:
     urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
     urlpatterns += static(settings.STATIC_URL, document_root=settings.STATIC_ROOT)
 
-# When S3 storage is active and no public custom domain is set,
-# serve media files through a Django proxy so URLs stay browser-reachable.
 if getattr(settings, '_USE_S3', False) and not getattr(settings, 'AWS_S3_CUSTOM_DOMAIN', ''):
     from core.storage_backends import media_proxy_view
     urlpatterns += [
