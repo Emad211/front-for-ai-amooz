@@ -31,6 +31,7 @@ def _workflow_state(
     progress: int,
     warnings: list[str] | None = None,
     ready: bool = False,
+    failed_page_numbers: list[int] | None = None,
 ) -> dict:
     return {
         'engine': PAGE_FIRST_ENGINE,
@@ -40,6 +41,7 @@ def _workflow_state(
         'warnings': list(warnings or [])[:6],
         'readyForReview': bool(ready),
         'pendingExercises': [],
+        'failedPageNumbers': sorted({int(value) for value in (failed_page_numbers or []) if int(value) > 0}),
     }
 
 
@@ -100,8 +102,9 @@ def process_exam_prep_pdf_session(self, session_id: int) -> dict:
         _mark_cancelled(session.id)
         return {'status': 'cancelled', 'session_id': session.id}
     if session.source_type != ClassCreationSession.SourceType.PDF or not session.source_file:
-        _mark_failed(session.id, 'A valid PDF source file is required.')
-        return {'status': 'failed', 'reason': 'source_pdf_missing'}
+        detail = 'A valid PDF source file is required.'
+        _mark_failed(session.id, detail)
+        raise RuntimeError(detail)
 
     set_current_user(session.teacher)
     logger.info(
@@ -161,6 +164,12 @@ def process_exam_prep_pdf_session(self, session_id: int) -> dict:
             warnings.append(
                 f'{result.questions_needing_review} سؤال نیازمند بازبینی است.'
             )
+        if result.failed_page_numbers:
+            page_list = '، '.join(str(value) for value in result.failed_page_numbers[:12])
+            suffix = ' و چند صفحهٔ دیگر' if len(result.failed_page_numbers) > 12 else ''
+            warnings.append(
+                f'استخراج صفحه‌های {page_list}{suffix} کامل نشد؛ محتوای نهایی را بازبینی کنید.'
+            )
 
         with transaction.atomic():
             locked = (
@@ -205,6 +214,7 @@ def process_exam_prep_pdf_session(self, session_id: int) -> dict:
                 progress=100,
                 warnings=warnings,
                 ready=True,
+                failed_page_numbers=result.failed_page_numbers,
             )
             locked.save(
                 update_fields=[
@@ -220,11 +230,12 @@ def process_exam_prep_pdf_session(self, session_id: int) -> dict:
             )
 
         logger.info(
-            'exam_prep.pipeline.completed sessionId=%s pageCount=%s questionCount=%s reviewCount=%s',
+            'exam_prep.pipeline.completed sessionId=%s pageCount=%s questionCount=%s reviewCount=%s failedPageCount=%s',
             session.id,
             result.page_count,
             result.question_count,
             result.questions_needing_review,
+            len(result.failed_page_numbers),
         )
         return {
             'status': 'ready_for_review',
@@ -232,6 +243,7 @@ def process_exam_prep_pdf_session(self, session_id: int) -> dict:
             'page_count': result.page_count,
             'question_count': result.question_count,
             'questions_needing_review': result.questions_needing_review,
+            'failed_page_numbers': result.failed_page_numbers,
         }
     except ExamPrepPipelineCancelled:
         _mark_cancelled(session.id)
@@ -261,8 +273,4 @@ def process_exam_prep_pdf_session(self, session_id: int) -> dict:
             session.id,
             type(exc).__name__,
         )
-        return {
-            'status': 'failed',
-            'session_id': session.id,
-            'error_code': type(exc).__name__,
-        }
+        raise
