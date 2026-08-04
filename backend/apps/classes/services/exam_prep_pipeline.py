@@ -27,8 +27,10 @@ from apps.classes.services.exam_prep_page_records import (
     PageAssemblyResult,
     PageExtraction,
     assemble_page_extractions,
-    build_page_first_audit,
-    render_page_first_transcript,
+)
+from apps.classes.services.exam_prep_page_output import (
+    build_strict_page_first_audit,
+    render_strict_page_first_transcript,
 )
 from apps.commons.structured_llm import StructuredOutputError
 
@@ -331,11 +333,11 @@ def run_exam_prep_pdf_pipeline(
             f"هیچ سؤال شماره‌داری در PDF تشخیص داده نشد.{failed_suffix}"
         )
 
-    audit = build_page_first_audit(
+    audit = build_strict_page_first_audit(
         assembled,
         failed_page_numbers=failed_page_numbers,
     )
-    transcript = render_page_first_transcript(
+    transcript = render_strict_page_first_transcript(
         assembled,
         failed_page_numbers=failed_page_numbers,
     )
