@@ -205,3 +205,39 @@ def test_existing_cancel_propagates_to_source_aware_project(
     project.refresh_from_db()
     assert project.cancel_requested is True
     assert project.workflow_state['cancellationRequested'] is True
+
+
+
+def test_step1_dispatch_failure_returns_retryable_error_and_unlocks_session(
+    private_storage,
+    monkeypatch,
+    settings,
+):
+    settings.EXAM_PREP_V4_ENABLED = True
+    teacher = _teacher()
+
+    def fail_dispatch(_document_ids):
+        raise RuntimeError('broker unavailable')
+
+    monkeypatch.setattr(
+        'apps.classes.views_v4_compat.dispatch_exam_prep_v4_sources',
+        fail_dispatch,
+    )
+
+    response = _auth(teacher).post(
+        STEP1_URL,
+        {
+            'title': 'آزمون خطای صف',
+            'file': _upload(),
+            'client_request_id': str(uuid.uuid4()),
+        },
+        format='multipart',
+    )
+
+    assert response.status_code == 503
+    assert response.data['code'] == 'source_dispatch_failed'
+    session = ClassCreationSession.objects.get(id=response.data['sessionId'])
+    project = ExamProject.objects.get(teacher=teacher)
+    assert session.status == ClassCreationSession.Status.FAILED
+    assert project.status == ExamProject.Status.FAILED
+    assert project.error_code == 'source_dispatch_failed'

@@ -1,6 +1,8 @@
 """Compatibility endpoints that keep the existing teacher create UI unchanged."""
 from __future__ import annotations
 
+import logging
+import time
 import uuid
 
 from django.db import transaction
@@ -39,6 +41,9 @@ from apps.classes.services.exam_prep_v4_uploads import persist_uploaded_pdf_batc
 from apps.classes.tasks_v4 import dispatch_exam_prep_v4_sources
 
 
+logger = logging.getLogger('apps.classes.exam_prep_v4')
+
+
 def _optional_int(value):
     if value in (None, '', 'none'):
         return None
@@ -59,6 +64,7 @@ class ExamPrepSourceAwareStep1View(APIView):
         if not exam_prep_v4_enabled():
             raise Http404
 
+        started_at = time.monotonic()
         serializer = Step1TranscribeRequestSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         payload = serializer.validated_data
@@ -97,6 +103,12 @@ class ExamPrepSourceAwareStep1View(APIView):
             file_count=1,
         )
 
+        persist_started_at = time.monotonic()
+        logger.info(
+            'exam_prep_v4.intake.persist_started userId=%s byteSize=%s',
+            request.user.id,
+            max(0, int(getattr(uploaded_file, 'size', 0) or 0)),
+        )
         try:
             uploaded = persist_uploaded_pdf_batch(
                 teacher=request.user,
@@ -105,6 +117,13 @@ class ExamPrepSourceAwareStep1View(APIView):
                 organization=scope.organization,
                 study_group=scope.study_group,
             )[0]
+            logger.info(
+                'exam_prep_v4.intake.persist_completed userId=%s projectId=%s documentId=%s elapsedMs=%s',
+                request.user.id,
+                uploaded.project_id,
+                uploaded.document_id,
+                round((time.monotonic() - persist_started_at) * 1000, 2),
+            )
         except (InvalidExamPrepV4Source, ExamPrepV4IdempotencyConflict) as exc:
             return Response(
                 {'file': [str(exc)]},
@@ -161,12 +180,72 @@ class ExamPrepSourceAwareStep1View(APIView):
                 )
 
         if not uploaded.classification_already_available:
-            task_id = dispatch_exam_prep_v4_sources([uploaded.document_id])
+            dispatch_started_at = time.monotonic()
+            logger.info(
+                'exam_prep_v4.intake.dispatch_started projectId=%s documentId=%s sessionId=%s',
+                project.id,
+                uploaded.document_id,
+                session.id,
+            )
+            try:
+                task_id = dispatch_exam_prep_v4_sources([uploaded.document_id])
+            except Exception:
+                logger.exception(
+                    'exam_prep_v4.intake.dispatch_failed projectId=%s documentId=%s sessionId=%s elapsedMs=%s',
+                    project.id,
+                    uploaded.document_id,
+                    session.id,
+                    round((time.monotonic() - dispatch_started_at) * 1000, 2),
+                )
+                ExamProject.objects.filter(id=project.id).update(
+                    status=ExamProject.Status.FAILED,
+                    error_code='source_dispatch_failed',
+                    error_detail='Source preparation task could not be queued.',
+                    workflow_state={
+                        'stage': 'failed',
+                        'message': 'ارسال پردازش به صف انجام نشد. دوباره تلاش کنید.',
+                        'progressPercent': 0,
+                    },
+                )
+                ClassCreationSession.objects.filter(id=session.id).update(
+                    status=ClassCreationSession.Status.FAILED,
+                    error_detail='ارسال پردازش به صف انجام نشد. دوباره تلاش کنید.',
+                    workflow_state={
+                        'stage': 'failed',
+                        'message': 'ارسال پردازش به صف انجام نشد. دوباره تلاش کنید.',
+                        'progressPercent': 0,
+                        'warnings': [],
+                        'readyForReview': False,
+                        'sourceAwareProjectId': project.id,
+                    },
+                )
+                return Response(
+                    {
+                        'code': 'source_dispatch_failed',
+                        'detail': 'فایل ذخیره شد، اما ارسال پردازش به صف انجام نشد. دوباره تلاش کنید.',
+                        'sessionId': session.id,
+                    },
+                    status=status.HTTP_503_SERVICE_UNAVAILABLE,
+                )
             ClassCreationSession.objects.filter(id=session.id).update(
                 celery_task_id=str(task_id)[:255],
             )
+            logger.info(
+                'exam_prep_v4.intake.dispatch_completed projectId=%s documentId=%s sessionId=%s elapsedMs=%s',
+                project.id,
+                uploaded.document_id,
+                session.id,
+                round((time.monotonic() - dispatch_started_at) * 1000, 2),
+            )
 
         session = sync_create_flow_session(project) or session
+        logger.info(
+            'exam_prep_v4.intake.response_ready projectId=%s documentId=%s sessionId=%s elapsedMs=%s',
+            project.id,
+            uploaded.document_id,
+            session.id,
+            round((time.monotonic() - started_at) * 1000, 2),
+        )
         return Response(
             Step1TranscribeResponseSerializer(session).data,
             status=status.HTTP_202_ACCEPTED,
