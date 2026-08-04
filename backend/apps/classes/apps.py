@@ -6,9 +6,8 @@ class ClassesConfig(AppConfig):
     name = 'apps.classes'
 
     def ready(self):
-        # Source-aware exam preparation is additive while the legacy classes
-        # model module remains stable. Importing here registers its models under
-        # the existing ``classes`` app before checks, migrations, and requests.
+        # Source-aware exam preparation remains registered only for existing
+        # drafts during the staged cleanup. New intake uses tasks_exam_prep.
         from . import models_v4  # noqa: F401
         from . import models_v4_blocks  # noqa: F401
         from . import models_v4_records  # noqa: F401
@@ -16,5 +15,6 @@ class ClassesConfig(AppConfig):
         from . import models_v4_projection  # noqa: F401
         from . import models_v4_bridge  # noqa: F401
         from . import signals  # noqa: F401
+        from . import tasks_exam_prep  # noqa: F401
         from . import tasks_v4  # noqa: F401
         from . import tasks_v4_recovery  # noqa: F401
