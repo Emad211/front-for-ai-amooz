@@ -1,9 +1,8 @@
 """Simple production coordinator for exam-preparation PDFs.
 
-The pipeline renders one PDF page at a time, extracts one ``PageExtraction``
-for that page, and deterministically assembles records by
-``(scope_key, question_number)``. A malformed structured response is retried for
-that page only and cannot discard successful pages.
+The pipeline renders one PDF page at a time, carries the PDF's own text layer as
+supporting evidence, extracts one ``PageExtraction`` for that page, and
+deterministically assembles records by ``(scope_key, question_number)``.
 """
 from __future__ import annotations
 
@@ -28,13 +27,15 @@ from apps.classes.services.exam_prep_page_records import (
     PageAssemblyResult,
     PageExtraction,
     assemble_page_extractions,
-    build_page_first_audit,
-    render_page_first_transcript,
+)
+from apps.classes.services.exam_prep_page_output import (
+    build_strict_page_first_audit,
+    render_strict_page_first_transcript,
 )
 from apps.commons.structured_llm import StructuredOutputError
 
 
-logger = logging.getLogger('apps.classes.exam_prep')
+logger = logging.getLogger("apps.classes.exam_prep")
 
 
 class ExamPrepPdfError(RuntimeError):
@@ -77,6 +78,7 @@ class ExamPrepPdfSource:
     page_count: int
     scale: float
     max_image_bytes: int
+    native_text_pages: tuple[str, ...]
 
     def __iter__(self) -> Iterator[RenderedExamPage]:
         return self.iter_pages()
@@ -96,7 +98,7 @@ class ExamPrepPdfSource:
                     png = _encode_png(image, max_bytes=self.max_image_bytes)
                 except Exception as exc:
                     raise ExamPrepPdfError(
-                        f'رندر صفحهٔ {index + 1} ناموفق بود.'
+                        f"رندر صفحهٔ {index + 1} ناموفق بود."
                     ) from exc
                 finally:
                     if image is not None:
@@ -105,19 +107,31 @@ class ExamPrepPdfSource:
                 yield RenderedExamPage(
                     page_number=index + 1,
                     image=png,
-                    mime_type='image/png',
+                    mime_type="image/png",
+                    native_text=(
+                        self.native_text_pages[index]
+                        if index < len(self.native_text_pages)
+                        else ""
+                    ),
                 )
         finally:
             document.close()
 
 
-def _encode_png(image: Image.Image, *, max_bytes: int) -> bytes:
-    rendered = image.convert('RGB')
+def _positive_int_env(name: str, default: int) -> int:
     try:
-        encoded = b''
+        return max(1, int(os.getenv(name, str(default))))
+    except (TypeError, ValueError):
+        return default
+
+
+def _encode_png(image: Image.Image, *, max_bytes: int) -> bytes:
+    rendered = image.convert("RGB")
+    try:
+        encoded = b""
         for _ in range(6):
             buffer = io.BytesIO()
-            rendered.save(buffer, format='PNG', optimize=True)
+            rendered.save(buffer, format="PNG", optimize=True)
             encoded = buffer.getvalue()
             if len(encoded) <= max_bytes or min(rendered.size) <= 320:
                 return encoded
@@ -133,52 +147,82 @@ def _encode_png(image: Image.Image, *, max_bytes: int) -> bytes:
         rendered.close()
 
 
+def _extract_native_text(page: Any, *, page_number: int) -> str:
+    """Read a digital text layer without making the PDF depend on it."""
+
+    try:
+        try:
+            value = page.extract_text(extraction_mode="layout")
+        except TypeError:
+            value = page.extract_text()
+    except Exception as exc:
+        logger.warning(
+            "exam_prep.page.native_text_failed pageNumber=%s errorCode=%s",
+            page_number,
+            type(exc).__name__,
+        )
+        return ""
+    return str(value or "")
+
+
 def render_exam_prep_pdf(data: bytes) -> ExamPrepPdfSource:
-    """Validate a PDF and return a lazy page renderer in physical order."""
+    """Validate a PDF and return native text plus a lazy image renderer."""
 
     from pypdf import PdfReader
 
-    if not data or not data.lstrip().startswith(b'%PDF'):
-        raise ExamPrepPdfError('فایل ارسالی یک PDF معتبر نیست.')
+    if not data or not data.lstrip().startswith(b"%PDF"):
+        raise ExamPrepPdfError("فایل ارسالی یک PDF معتبر نیست.")
 
     try:
         reader = PdfReader(io.BytesIO(data))
         if reader.is_encrypted:
             try:
-                if reader.decrypt('') == 0:
+                if reader.decrypt("") == 0:
                     raise ExamPrepPdfError(
-                        'PDF رمزگذاری‌شده است؛ نسخهٔ بدون رمز را بارگذاری کنید.'
+                        "PDF رمزگذاری‌شده است؛ نسخهٔ بدون رمز را بارگذاری کنید."
                     )
             except ExamPrepPdfError:
                 raise
             except Exception as exc:
                 raise ExamPrepPdfError(
-                    'PDF رمزگذاری‌شده است؛ نسخهٔ بدون رمز را بارگذاری کنید.'
+                    "PDF رمزگذاری‌شده است؛ نسخهٔ بدون رمز را بارگذاری کنید."
                 ) from exc
         page_count = len(reader.pages)
     except ExamPrepPdfError:
         raise
     except Exception as exc:
-        raise ExamPrepPdfError('خواندن PDF ناموفق بود.') from exc
+        raise ExamPrepPdfError("خواندن PDF ناموفق بود.") from exc
 
     if page_count < 1:
-        raise ExamPrepPdfError('PDF هیچ صفحه‌ای ندارد.')
-    max_pages = max(1, int(getattr(settings, 'PDF_MAX_PAGES', 200)))
+        raise ExamPrepPdfError("PDF هیچ صفحه‌ای ندارد.")
+    max_pages = max(1, int(getattr(settings, "PDF_MAX_PAGES", 200)))
     if page_count > max_pages:
         raise ExamPrepPdfError(
-            f'تعداد صفحات PDF از حداکثر مجاز {max_pages} بیشتر است.'
+            f"تعداد صفحات PDF از حداکثر مجاز {max_pages} بیشتر است."
         )
 
-    dpi = max(72, int(getattr(settings, 'PDF_RENDER_DPI', 150)))
-    max_image_bytes = max(
+    native_text_pages = tuple(
+        _extract_native_text(page, page_number=index)
+        for index, page in enumerate(reader.pages, start=1)
+    )
+    generic_dpi = max(72, int(getattr(settings, "PDF_RENDER_DPI", 150)))
+    # Dense exam pages contain small Persian text. Keep the simple full-page
+    # model, but use an accuracy-first render unless production overrides it.
+    dpi = _positive_int_env("EXAM_PREP_RENDER_DPI", max(200, generic_dpi))
+    generic_max_mb = max(
         1,
-        int(getattr(settings, 'PDF_MAX_IMAGE_BYTES_MB', 3)),
-    ) * 1024 * 1024
+        int(getattr(settings, "PDF_MAX_IMAGE_BYTES_MB", 3)),
+    )
+    max_image_mb = _positive_int_env(
+        "EXAM_PREP_RENDER_MAX_IMAGE_MB",
+        max(6, generic_max_mb),
+    )
     return ExamPrepPdfSource(
         data=data,
         page_count=page_count,
         scale=dpi / 72.0,
-        max_image_bytes=max_image_bytes,
+        max_image_bytes=max_image_mb * 1024 * 1024,
+        native_text_pages=native_text_pages,
     )
 
 
@@ -194,15 +238,21 @@ def _page_iterator(
 
 def _page_extraction_attempts() -> int:
     try:
-        return max(1, min(3, int(os.getenv('EXAM_PREP_PAGE_EXTRACTION_ATTEMPTS', '2'))))
+        return max(
+            1,
+            min(
+                3,
+                int(os.getenv("EXAM_PREP_PAGE_EXTRACTION_ATTEMPTS", "2")),
+            ),
+        )
     except (TypeError, ValueError):
         return 2
 
 
 def _safe_error_metadata(exc: Exception) -> tuple[str, tuple[str, ...]]:
     return (
-        str(getattr(exc, 'error_kind', type(exc).__name__))[:80],
-        tuple(getattr(exc, 'validation_locations', ())[:8]),
+        str(getattr(exc, "error_kind", type(exc).__name__))[:80],
+        tuple(getattr(exc, "validation_locations", ())[:8]),
     )
 
 
@@ -211,11 +261,11 @@ def run_exam_prep_pdf_pipeline(
     data: bytes,
     title: str,
     model: str | None = None,
-    scope_hint: str = 'default',
+    scope_hint: str = "default",
     on_page_complete: ProgressCallback | None = None,
     should_cancel: CancelCheck | None = None,
 ) -> ExamPrepPipelineResult:
-    """Render, extract, and assemble one PDF without legacy intermediates."""
+    """Render, extract, quality-check, and assemble one PDF."""
 
     source = render_exam_prep_pdf(data)
     selected_model = select_exam_prep_page_model(model)
@@ -226,7 +276,7 @@ def run_exam_prep_pdf_pipeline(
 
     for index, page in enumerate(pages, start=1):
         if should_cancel is not None and should_cancel():
-            raise ExamPrepPipelineCancelled('Cancellation requested.')
+            raise ExamPrepPipelineCancelled("Cancellation requested.")
 
         page_result: PageExtraction | None = None
         for attempt in range(1, attempts + 1):
@@ -240,7 +290,8 @@ def run_exam_prep_pdf_pipeline(
             except (StructuredOutputError, ExtractedPageNumberMismatch) as exc:
                 error_kind, locations = _safe_error_metadata(exc)
                 logger.warning(
-                    'exam_prep.page.invalid pageNumber=%s attempt=%s maxAttempts=%s errorKind=%s locations=%s',
+                    "exam_prep.page.invalid pageNumber=%s attempt=%s "
+                    "maxAttempts=%s errorKind=%s locations=%s",
                     page.page_number,
                     attempt,
                     attempts,
@@ -248,12 +299,14 @@ def run_exam_prep_pdf_pipeline(
                     locations,
                 )
                 if should_cancel is not None and should_cancel():
-                    raise ExamPrepPipelineCancelled('Cancellation requested.') from exc
+                    raise ExamPrepPipelineCancelled(
+                        "Cancellation requested."
+                    ) from exc
 
         if page_result is None:
             failed_page_numbers.append(page.page_number)
             logger.error(
-                'exam_prep.page.skipped pageNumber=%s attempts=%s',
+                "exam_prep.page.skipped pageNumber=%s attempts=%s",
                 page.page_number,
                 attempts,
             )
@@ -264,7 +317,7 @@ def run_exam_prep_pdf_pipeline(
             on_page_complete(index, total)
 
     if should_cancel is not None and should_cancel():
-        raise ExamPrepPipelineCancelled('Cancellation requested.')
+        raise ExamPrepPipelineCancelled("Cancellation requested.")
 
     assembled: PageAssemblyResult = assemble_page_extractions(
         extracted,
@@ -272,19 +325,19 @@ def run_exam_prep_pdf_pipeline(
     )
     if assembled.question_count < 1:
         failed_suffix = (
-            f' Failed pages: {failed_page_numbers}'
+            f" Failed pages: {failed_page_numbers}"
             if failed_page_numbers
-            else ''
+            else ""
         )
         raise NoExamQuestionsFound(
-            f'هیچ سؤال شماره‌داری در PDF تشخیص داده نشد.{failed_suffix}'
+            f"هیچ سؤال شماره‌داری در PDF تشخیص داده نشد.{failed_suffix}"
         )
 
-    audit = build_page_first_audit(
+    audit = build_strict_page_first_audit(
         assembled,
         failed_page_numbers=failed_page_numbers,
     )
-    transcript = render_page_first_transcript(
+    transcript = render_strict_page_first_transcript(
         assembled,
         failed_page_numbers=failed_page_numbers,
     )
@@ -298,7 +351,7 @@ def run_exam_prep_pdf_pipeline(
         orphan_answer_count=len(assembled.orphan_answers),
         question_number_gaps=assembled.question_number_gaps,
         failed_page_numbers=failed_page_numbers,
-        publication_ready=audit.get('status') == 'passed',
+        publication_ready=audit.get("status") == "passed",
         transcript_markdown=transcript,
         extraction_audit=audit,
         model=selected_model,
