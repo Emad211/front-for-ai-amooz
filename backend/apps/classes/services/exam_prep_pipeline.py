@@ -11,7 +11,7 @@ from dataclasses import dataclass
 import io
 import logging
 import os
-from typing import Callable, Iterator, Sequence
+from typing import Any, Callable, Iterator, Sequence
 
 from django.conf import settings
 from PIL import Image
@@ -28,6 +28,8 @@ from apps.classes.services.exam_prep_page_records import (
     PageAssemblyResult,
     PageExtraction,
     assemble_page_extractions,
+    build_page_first_audit,
+    render_page_first_transcript,
 )
 from apps.commons.structured_llm import StructuredOutputError
 
@@ -53,7 +55,13 @@ class ExamPrepPipelineResult(BaseModel):
     page_count: int
     question_count: int
     questions_needing_review: int
+    matched_answer_count: int = 0
+    orphan_answer_count: int = 0
+    question_number_gaps: dict[str, list[int]] = Field(default_factory=dict)
     failed_page_numbers: list[int] = Field(default_factory=list)
+    publication_ready: bool = False
+    transcript_markdown: str = ""
+    extraction_audit: dict[str, Any] = Field(default_factory=dict)
     model: str
 
 
@@ -272,12 +280,26 @@ def run_exam_prep_pdf_pipeline(
             f'هیچ سؤال شماره‌داری در PDF تشخیص داده نشد.{failed_suffix}'
         )
 
+    audit = build_page_first_audit(
+        assembled,
+        failed_page_numbers=failed_page_numbers,
+    )
+    transcript = render_page_first_transcript(
+        assembled,
+        failed_page_numbers=failed_page_numbers,
+    )
     return ExamPrepPipelineResult(
         projection=assembled.projection,
         issues=assembled.issues,
         page_count=total,
         question_count=assembled.question_count,
         questions_needing_review=assembled.questions_needing_review,
+        matched_answer_count=assembled.matched_answer_count,
+        orphan_answer_count=len(assembled.orphan_answers),
+        question_number_gaps=assembled.question_number_gaps,
         failed_page_numbers=failed_page_numbers,
+        publication_ready=audit.get('status') == 'passed',
+        transcript_markdown=transcript,
+        extraction_audit=audit,
         model=selected_model,
     )
