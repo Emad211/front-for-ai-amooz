@@ -14,6 +14,7 @@ from .exam_prep_utils import clean_exam_markdown
 
 CRITICAL_CODES = frozenset(
     {
+        'no_questions',
         'missing_question_id',
         'duplicate_question_id',
         'duplicate_question_number',
@@ -70,6 +71,9 @@ def audit_page_first_projection(projection: object) -> dict[str, Any]:
                 'sourcePages': list(pages or []),
             }
         )
+
+    if not questions:
+        add_issue('no_questions', scope='default', number=0)
 
     for index, question in enumerate(questions, start=1):
         scope = clean_exam_markdown(question.get('scope_key') or 'default').strip() or 'default'
