@@ -609,9 +609,10 @@ export function CreateClassPage() {
       : pipelineType === 'class'
         ? 'پیش‌نویس این کلاس آماده است و از صفحه کلاس‌ها قابل بازبینی و انتشار است.'
         : 'پیش‌نویس آمادگی آزمون آماده است و از صفحه آمادگی آزمون‌ها قابل بازبینی و انتشار است.';
-  // The initial request is abortable even before the server returns a session id.
-  const canCancelPipeline = currentIsPipelineStarting
-    || (currentIsPipelineRunning && Boolean(currentSessionId));
+  // Exam-prep intake is abortable before the server returns a session id.
+  const canCancelPipeline = (
+    pipelineType === 'exam_prep' && isExamPrepPipelineStarting
+  ) || (currentIsPipelineRunning && Boolean(currentSessionId));
 
   const startFullPipeline = async () => {
     if (!lessonFile) return;
@@ -723,10 +724,10 @@ export function CreateClassPage() {
             studyGroupId: selectedStudyGroupId !== 'none' ? Number(selectedStudyGroupId) : undefined,
           },
           {
-          onProgress: (p) => setUploadProgress(p),
-          signal: startController.signal,
-          processingTimeoutMs: 180_000,
-        },
+            onProgress: (p) => setUploadProgress(p),
+            signal: startController.signal,
+            processingTimeoutMs: 180_000,
+          },
         );
         setUploadProgress(null);
         setExamPrepOptimisticStatus(result.status);
