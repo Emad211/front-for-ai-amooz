@@ -204,15 +204,25 @@ def revalidate_page_first_teacher_edit(
         'extractionAudit': audit,
         'publicationBlocked': not passed,
     }
+    new_status = (
+        ClassCreationSession.Status.EXAM_STRUCTURED
+        if passed
+        else ClassCreationSession.Status.EXAM_TRANSCRIBED
+    )
+    new_transcript = render_projection_transcript(projection, audit)
+    now = timezone.now()
+
+    # Keep the object used by the current serializer response in sync with the
+    # database update, so the teacher sees the revalidated status immediately.
+    instance.status = new_status
+    instance.transcript_markdown = new_transcript
+    instance.workflow_state = new_workflow
+    instance.updated_at = now
     sender.objects.filter(pk=instance.pk).update(
-        status=(
-            ClassCreationSession.Status.EXAM_STRUCTURED
-            if passed
-            else ClassCreationSession.Status.EXAM_TRANSCRIBED
-        ),
-        transcript_markdown=render_projection_transcript(projection, audit),
+        status=new_status,
+        transcript_markdown=new_transcript,
         workflow_state=new_workflow,
-        updated_at=timezone.now(),
+        updated_at=now,
     )
 
 
