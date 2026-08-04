@@ -140,6 +140,19 @@ def _projection(question_number=51):
     }
 
 
+def _audit(*, status='passed', critical=0, failed_pages=None):
+    return {
+        'status': status,
+        'questionCount': 1,
+        'matchedAnswerCount': 1,
+        'outOfScopeAnswerCount': 0,
+        'criticalIssueCount': critical,
+        'issues': [],
+        'failedPageNumbers': list(failed_pages or []),
+        'questionNumberGaps': {},
+    }
+
+
 def _session_with_pdf(*, page_count=2):
     return ClassCreationSession.objects.create(
         teacher=_teacher(),
@@ -212,12 +225,16 @@ def test_step1_same_request_and_file_is_idempotent(source_storage, monkeypatch):
         lambda **kwargs: calls.append(kwargs),
     )
     request_id = uuid.uuid4()
-    payload = {
-        'title': 'آزمون زیست',
-        'file': _upload(),
-        'client_request_id': str(request_id),
-    }
-    first = _auth(teacher).post(STEP1_URL, payload, format='multipart')
+
+    first = _auth(teacher).post(
+        STEP1_URL,
+        {
+            'title': 'آزمون زیست',
+            'file': _upload(),
+            'client_request_id': str(request_id),
+        },
+        format='multipart',
+    )
     second = _auth(teacher).post(
         STEP1_URL,
         {
@@ -275,7 +292,7 @@ def test_step1_broker_failure_marks_session_terminal(source_storage, monkeypatch
     assert session.workflow_state['stage'] == 'failed'
 
 
-def test_task_writes_projection_directly_to_existing_session(
+def test_task_persists_publishable_projection_and_readable_transcript(
     source_storage,
     monkeypatch,
 ):
@@ -286,6 +303,10 @@ def test_task_writes_projection_directly_to_existing_session(
         page_count=2,
         question_count=1,
         questions_needing_review=0,
+        matched_answer_count=1,
+        publication_ready=True,
+        transcript_markdown='# آزمون زیست\n\n## سؤال 51',
+        extraction_audit=_audit(),
         model='vision-model',
     )
     monkeypatch.setattr(
@@ -298,18 +319,21 @@ def test_task_writes_projection_directly_to_existing_session(
 
     session.refresh_from_db()
     assert result['status'] == 'ready_for_review'
+    assert result['publication_ready'] is True
     assert session.status == ClassCreationSession.Status.EXAM_STRUCTURED
     assert json.loads(session.exam_prep_json) == _projection()
+    assert session.transcript_markdown.startswith('# آزمون زیست')
     assert session.source_page_count == 2
     assert session.llm_model == 'vision-model'
     assert session.workflow_state['stage'] == 'ready_for_review'
     assert session.workflow_state['readyForReview'] is True
-    assert session.workflow_state['failedPageNumbers'] == []
+    assert session.workflow_state['publicationBlocked'] is False
+    assert session.workflow_state['extractionAudit']['status'] == 'passed'
     assert ExamPrepExtractionArtifact.objects.filter(session=session).count() == 0
     assert ExamProject.objects.filter(teacher=session.teacher).count() == 0
 
 
-def test_task_surfaces_failed_pages_without_failing_partial_result(
+def test_task_blocks_publication_for_partial_result_but_keeps_output(
     source_storage,
     monkeypatch,
 ):
@@ -319,8 +343,12 @@ def test_task_surfaces_failed_pages_without_failing_partial_result(
         issues=[],
         page_count=3,
         question_count=1,
-        questions_needing_review=0,
+        questions_needing_review=1,
+        matched_answer_count=1,
         failed_page_numbers=[2],
+        publication_ready=False,
+        transcript_markdown='# آزمون زیست\n\n- صفحه‌های پردازش‌نشده: **2**',
+        extraction_audit=_audit(status='needs_review', critical=1, failed_pages=[2]),
         model='vision-model',
     )
     monkeypatch.setattr(
@@ -333,10 +361,15 @@ def test_task_surfaces_failed_pages_without_failing_partial_result(
 
     session.refresh_from_db()
     assert result['status'] == 'ready_for_review'
+    assert result['publication_ready'] is False
     assert result['failed_page_numbers'] == [2]
-    assert session.status == ClassCreationSession.Status.EXAM_STRUCTURED
+    assert session.status == ClassCreationSession.Status.EXAM_TRANSCRIBED
+    assert json.loads(session.exam_prep_json) == _projection()
+    assert 'صفحه‌های پردازش‌نشده' in session.transcript_markdown
     assert session.workflow_state['failedPageNumbers'] == [2]
-    assert any('صفحه‌های 2' in item for item in session.workflow_state['warnings'])
+    assert session.workflow_state['publicationBlocked'] is True
+    assert session.workflow_state['extractionAudit']['status'] == 'needs_review'
+    assert any('انتشار مسدود است' in item for item in session.workflow_state['warnings'])
 
 
 def test_task_terminal_pipeline_error_marks_db_and_raises_for_celery(
@@ -418,7 +451,11 @@ def test_pipeline_calls_extractor_once_per_page_and_assembles(monkeypatch):
     assert all(kwargs['model'] == 'vision-model' for _number, kwargs in calls)
     assert progress == [(1, 2), (2, 2)]
     assert result.question_count == 1
+    assert result.matched_answer_count == 1
     assert result.failed_page_numbers == []
+    assert result.publication_ready is True
+    assert result.extraction_audit['status'] == 'passed'
+    assert '## سؤال 51' in result.transcript_markdown
     assert result.projection['exam_prep']['questions'][0]['correct_option_label'] == '2'
 
 
@@ -452,9 +489,10 @@ def test_pipeline_retries_only_the_invalid_page(monkeypatch):
     assert calls == [1, 1, 2]
     assert result.question_count == 1
     assert result.failed_page_numbers == []
+    assert result.publication_ready is True
 
 
-def test_pipeline_skips_exhausted_page_and_keeps_successful_pages(monkeypatch):
+def test_pipeline_skips_exhausted_page_and_blocks_partial_publication(monkeypatch):
     rendered = [
         RenderedExamPage(page_number=1, image=b'page-1'),
         RenderedExamPage(page_number=2, image=b'page-2'),
@@ -484,6 +522,8 @@ def test_pipeline_skips_exhausted_page_and_keeps_successful_pages(monkeypatch):
     assert progress == [(1, 3), (2, 3), (3, 3)]
     assert result.question_count == 1
     assert result.failed_page_numbers == [2]
+    assert result.publication_ready is False
+    assert result.extraction_audit['status'] == 'needs_review'
     assert result.projection['exam_prep']['questions'][0]['source_pages'] == [1, 3]
 
 
