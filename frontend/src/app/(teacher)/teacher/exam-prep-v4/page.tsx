@@ -1,5 +1,5 @@
-import { ExamPrepV4ProjectList } from '@/components/teacher/exam-prep-v4/project-list';
+import { redirect } from 'next/navigation';
 
 export default function TeacherExamPrepV4ProjectsPage() {
-  return <ExamPrepV4ProjectList />;
+  redirect('/teacher/create-class');
 }
