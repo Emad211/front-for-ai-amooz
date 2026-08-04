@@ -634,8 +634,9 @@ def dispatch_exam_prep_v4_sources(document_ids: Iterable[int]) -> str:
     ids = [int(document_id) for document_id in document_ids]
     if not ids:
         raise ValueError('At least one document id is required for dispatch.')
-    result = group(
-        process_exam_prep_v4_source.s(document_id)
+    signatures = [
+        process_exam_prep_v4_source.s(document_id).set(queue='pipeline')
         for document_id in ids
-    ).apply_async()
+    ]
+    result = group(signatures).apply_async(retry=False)
     return str(result.id)

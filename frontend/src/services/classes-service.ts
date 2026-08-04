@@ -593,24 +593,94 @@ function uploadWithProgress(
   url: string,
   formData: FormData,
   token: string,
-  onProgress?: (p: UploadProgress) => void,
+  options?: {
+    onProgress?: (p: UploadProgress) => void;
+    signal?: AbortSignal;
+    processingTimeoutMs?: number;
+  },
 ): Promise<{ status: number; body: unknown }> {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
+    let settled = false;
+    let processingTimer: number | null = null;
+    const signal = options?.signal;
+
+    function cleanup() {
+      if (processingTimer !== null) {
+        window.clearTimeout(processingTimer);
+        processingTimer = null;
+      }
+      signal?.removeEventListener('abort', abortFromSignal);
+    }
+
+    function resolveOnce(value: { status: number; body: unknown }) {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      resolve(value);
+    }
+
+    function rejectOnce(error: Error) {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      reject(error);
+    }
+
+    function abortFromSignal() {
+      rejectOnce(new DOMException('درخواست شروع پردازش لغو شد.', 'AbortError'));
+      try {
+        xhr.abort();
+      } catch {
+        // The request may already be closed.
+      }
+    }
+
+    if (signal?.aborted) {
+      reject(new DOMException('درخواست شروع پردازش لغو شد.', 'AbortError'));
+      return;
+    }
+
     xhr.open('POST', url, true);
     xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+    signal?.addEventListener('abort', abortFromSignal, { once: true });
 
-    xhr.upload.addEventListener('progress', (e) => {
-      if (onProgress) {
-        const percent = e.lengthComputable ? Math.round((e.loaded / e.total) * 100) : -1;
-        onProgress({ percent, loaded: e.loaded, total: e.total, phase: 'uploading' });
-      }
+    xhr.upload.addEventListener('progress', (event) => {
+      const percent = event.lengthComputable
+        ? Math.round((event.loaded / event.total) * 100)
+        : -1;
+      options?.onProgress?.({
+        percent,
+        loaded: event.loaded,
+        total: event.total,
+        phase: 'uploading',
+      });
     });
 
     xhr.upload.addEventListener('load', () => {
-      // Upload done, now server is processing (saving to S3, creating session)
-      if (onProgress) {
-        onProgress({ percent: 100, loaded: 0, total: 0, phase: 'processing' });
+      options?.onProgress?.({
+        percent: 100,
+        loaded: 0,
+        total: 0,
+        phase: 'processing',
+      });
+      const processingTimeoutMs = Math.max(
+        0,
+        options?.processingTimeoutMs ?? 180_000,
+      );
+      if (processingTimeoutMs > 0) {
+        processingTimer = window.setTimeout(() => {
+          rejectOnce(
+            new Error(
+              'فایل ارسال شد، اما سرور در زمان مجاز پاسخ نداد. درخواست آزاد شد؛ با همان فایل دوباره تلاش کنید.',
+            ),
+          );
+          try {
+            xhr.abort();
+          } catch {
+            // The request may already be closed.
+          }
+        }, processingTimeoutMs);
       }
     });
 
@@ -621,11 +691,11 @@ function uploadWithProgress(
       } catch {
         body = xhr.responseText;
       }
-      resolve({ status: xhr.status, body });
+      resolveOnce({ status: xhr.status, body });
     });
 
     xhr.addEventListener('error', () => {
-      reject(
+      rejectOnce(
         new Error(
           `ارتباط با سرور برقرار نشد. (آدرس فعلی API: ${RAW_API_URL})` +
             ' معمولاً یکی از این‌هاست: بک‌اند اجرا نیست، آدرس/پورت اشتباه است، یا مرورگر به خاطر CORS/Mixed Content درخواست را بلاک کرده.',
@@ -634,14 +704,15 @@ function uploadWithProgress(
     });
 
     xhr.addEventListener('timeout', () => {
-      reject(new Error('درخواست آپلود به علت طولانی بودن زمان ارسال منقضی شد.'));
+      rejectOnce(new Error('درخواست آپلود به علت طولانی بودن زمان ارسال منقضی شد.'));
     });
 
     xhr.addEventListener('abort', () => {
-      reject(new Error('آپلود لغو شد.'));
+      rejectOnce(new DOMException('درخواست شروع پردازش لغو شد.', 'AbortError'));
     });
 
-    // 30 minute timeout for very large files over slow VPN
+    // Large uploads can take time. The shorter timer above covers only the
+    // server response phase after all bytes have left the browser.
     xhr.timeout = 30 * 60 * 1000;
     xhr.send(formData);
   });
@@ -673,7 +744,11 @@ export async function transcribeClassCreationStep1(
       }>;
     }>;
   },
-  options?: { onProgress?: (p: UploadProgress) => void },
+  options?: {
+    onProgress?: (p: UploadProgress) => void;
+    signal?: AbortSignal;
+    processingTimeoutMs?: number;
+  },
 ): Promise<Step1TranscribeResponse> {
   if (!RAW_API_URL) {
     throw new Error('NEXT_PUBLIC_API_URL تنظیم نشده است.');
@@ -730,7 +805,7 @@ export async function transcribeClassCreationStep1(
     url,
     formData,
     token,
-    options?.onProgress,
+    options,
   );
 
   if (status < 200 || status >= 300) {
@@ -948,7 +1023,11 @@ export async function transcribeExamPrepStep1(
     studyGroupId?: number;
     pendingExercises?: never[];
   },
-  options?: { onProgress?: (p: UploadProgress) => void },
+  options?: {
+    onProgress?: (p: UploadProgress) => void;
+    signal?: AbortSignal;
+    processingTimeoutMs?: number;
+  },
 ): Promise<ExamPrepStep1Response> {
   if (!RAW_API_URL) {
     throw new Error('NEXT_PUBLIC_API_URL تنظیم نشده است.');
@@ -978,7 +1057,7 @@ export async function transcribeExamPrepStep1(
     url,
     formData,
     token,
-    options?.onProgress,
+    options,
   );
 
   if (status < 200 || status >= 300) {

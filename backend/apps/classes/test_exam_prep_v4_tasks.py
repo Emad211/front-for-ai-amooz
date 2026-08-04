@@ -164,8 +164,9 @@ def test_dispatch_publishes_one_signature_per_document(monkeypatch):
         id = 'group-123'
 
     class FakeGroup:
-        def apply_async(self):
+        def apply_async(self, **kwargs):
             captured['applied'] = True
+            captured['apply_options'] = kwargs
             return FakeGroupResult()
 
     def fake_group(signatures):
@@ -178,6 +179,7 @@ def test_dispatch_publishes_one_signature_per_document(monkeypatch):
 
     assert result == 'group-123'
     assert captured['applied'] is True
+    assert captured['apply_options'] == {'retry': False}
     assert [signature.args for signature in captured['signatures']] == [
         (11,),
         (22,),
@@ -185,6 +187,10 @@ def test_dispatch_publishes_one_signature_per_document(monkeypatch):
     ]
     assert all(
         signature.task == tasks_v4.process_exam_prep_v4_source.name
+        for signature in captured['signatures']
+    )
+    assert all(
+        signature.options.get('queue') == 'pipeline'
         for signature in captured['signatures']
     )
 

@@ -32,6 +32,7 @@ import {
   type UploadProgress,
 } from '@/services/classes-service';
 import { PipelineTracker } from './pipeline-tracker';
+import { ExamPrepSourceAwareWorkspace } from './exam-prep-source-aware-workspace';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -202,6 +203,7 @@ export function CreateClassPage() {
   const pollTimer = useRef<number | null>(null);
   const pollFailures = useRef<number>(0);
   const pipelineSectionRef = useRef<HTMLDivElement | null>(null);
+  const examPrepStartAbortRef = useRef<AbortController | null>(null);
 
   const syncEmbeddedExercisesFromSession = (detail: ClassCreationSessionDetail) => {
     if (hasPersistedEmbeddedExercises(detail)) {
@@ -452,7 +454,11 @@ export function CreateClassPage() {
         loadDraft();
       }
     }
-    return () => stopPolling();
+    return () => {
+      stopPolling();
+      examPrepStartAbortRef.current?.abort();
+      examPrepStartAbortRef.current = null;
+    };
   }, []);
 
   useEffect(() => {
@@ -501,6 +507,8 @@ export function CreateClassPage() {
 
   const startNewDraft = () => {
     stopPolling();
+    examPrepStartAbortRef.current?.abort();
+    examPrepStartAbortRef.current = null;
     pollFailures.current = 0;
 
     setExpandedSections(['info', 'files', 'students']);
@@ -557,7 +565,14 @@ export function CreateClassPage() {
   const examPrepStatus = examPrepSessionDetail?.status ?? examPrepOptimisticStatus ?? null;
   const { message: examPrepPipelineMessage, isDone: isExamPrepPipelineDone, isFailed: isExamPrepPipelineFailed } = getExamPrepPipelineMessage(examPrepStatus);
   const isExamPrepPipelineRunning = Boolean(examPrepStatus && EXAM_PREP_PROCESSING_STATUSES.has(examPrepStatus));
-  const canStartExamPrepPipeline = Boolean(title.trim()) && Boolean(lessonFile) && !isExamPrepPipelineStarting && !isExamPrepPipelineRunning;
+  const isExamPrepPdf = Boolean(
+    lessonFile
+    && (
+      lessonFile.type === 'application/pdf'
+      || lessonFile.name.toLowerCase().endsWith('.pdf')
+    )
+  );
+  const canStartExamPrepPipeline = Boolean(title.trim()) && isExamPrepPdf && !isExamPrepPipelineStarting && !isExamPrepPipelineRunning;
 
   // Current pipeline state based on selected type
   const currentSessionId = pipelineType === 'class' ? sessionIdForActions : examPrepSessionIdForActions;
@@ -594,8 +609,10 @@ export function CreateClassPage() {
       : pipelineType === 'class'
         ? 'پیش‌نویس این کلاس آماده است و از صفحه کلاس‌ها قابل بازبینی و انتشار است.'
         : 'پیش‌نویس آمادگی آزمون آماده است و از صفحه آمادگی آزمون‌ها قابل بازبینی و انتشار است.';
-  // A running pipeline with a known session id is the only thing we can revoke.
-  const canCancelPipeline = currentIsPipelineRunning && Boolean(currentSessionId);
+  // Exam-prep intake is abortable before the server returns a session id.
+  const canCancelPipeline = (
+    pipelineType === 'exam_prep' && isExamPrepPipelineStarting
+  ) || (currentIsPipelineRunning && Boolean(currentSessionId));
 
   const startFullPipeline = async () => {
     if (!lessonFile) return;
@@ -691,6 +708,10 @@ export function CreateClassPage() {
       setExamPrepSessionDetail(null);
       setActiveExamPrepSessionId(null);
 
+      examPrepStartAbortRef.current?.abort();
+      const startController = new AbortController();
+      examPrepStartAbortRef.current = startController;
+
       try {
         const result = await transcribeExamPrepStep1(
           {
@@ -702,7 +723,11 @@ export function CreateClassPage() {
             organizationId: activeWorkspace?.id ?? undefined,
             studyGroupId: selectedStudyGroupId !== 'none' ? Number(selectedStudyGroupId) : undefined,
           },
-          { onProgress: (p) => setUploadProgress(p) },
+          {
+            onProgress: (p) => setUploadProgress(p),
+            signal: startController.signal,
+            processingTimeoutMs: 180_000,
+          },
         );
         setUploadProgress(null);
         setExamPrepOptimisticStatus(result.status);
@@ -721,18 +746,38 @@ export function CreateClassPage() {
         startExamPrepPolling(result.id);
         revealPipelineProgress('پردازش آمادگی آزمون شروع شد.');
       } catch (error) {
-        const msg = error instanceof Error ? error.message : 'خطا در ارتباط با سرور';
-        setExamPrepPipelineError(msg);
+        if (startController.signal.aborted) {
+          setExamPrepPipelineError(null);
+        } else {
+          const msg = error instanceof Error ? error.message : 'خطا در ارتباط با سرور';
+          setExamPrepPipelineError(msg);
+        }
         setUploadProgress(null);
       } finally {
+        if (examPrepStartAbortRef.current === startController) {
+          examPrepStartAbortRef.current = null;
+        }
         setIsExamPrepPipelineStarting(false);
       }
     }
   };
 
   const cancelPipeline = async () => {
-    // Guard: nothing running, or no session id to revoke.
     if (!canCancelPipeline) return;
+    if (
+      pipelineType === 'exam_prep'
+      && isExamPrepPipelineStarting
+      && !examPrepSessionIdForActions
+    ) {
+      examPrepStartAbortRef.current?.abort();
+      examPrepStartAbortRef.current = null;
+      setIsExamPrepPipelineStarting(false);
+      setUploadProgress(null);
+      setExamPrepPipelineError(null);
+      setCancelDialogOpen(false);
+      toast.success('درخواست شروع پردازش لغو شد.');
+      return;
+    }
     setIsCancelling(true);
     try {
       if (pipelineType === 'class') {
@@ -849,7 +894,7 @@ export function CreateClassPage() {
           <p className="text-xs text-muted-foreground">
             {pipelineType === 'class'
               ? 'برای ساخت کلاس آموزشی از این گزینه استفاده کنید. شامل ترنسکریپت، ساختاردهی، پیش‌نیازها، آموزش پیش‌نیازها و خلاصه.'
-              : 'برای استخراج سوالات و پاسخ‌ها از ویدیوی حل تست استفاده کنید. شامل ترنسکریپت، استخراج سوالات و دعوت دانش‌آموزان.'}
+              : 'فایل PDF سؤال‌ها، پاسخ‌نامه یا راه‌حل را بارگذاری کنید. ساختار صفحات بررسی می‌شود و سپس سؤال‌ها و پاسخ‌ها آماده می‌شوند.'}
           </p>
         </div>
       </Card>
@@ -891,10 +936,10 @@ export function CreateClassPage() {
 
       <div ref={pipelineSectionRef} className="scroll-mt-6">
         <FileUploadSection
-          title={pipelineType === 'class' ? 'بارگذاری فایل درسی' : 'بارگذاری فایل حل تست'}
+          title={pipelineType === 'class' ? 'بارگذاری فایل درسی' : 'بارگذاری فایل آزمون'}
           isExpanded={expandedSections.includes('files')}
           onToggle={() => toggleSection('files')}
-          accept="audio/*,video/*,image/*,application/pdf,.pdf"
+          accept={pipelineType === 'class' ? 'audio/*,video/*,image/*,application/pdf,.pdf' : 'application/pdf,.pdf'}
           multiple={false}
           onFilesSelected={(files) => {
             const file = files && files.length ? files[0] : null;
@@ -918,7 +963,11 @@ export function CreateClassPage() {
           <div className="mt-4 space-y-3">
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
               <div className="text-xs text-muted-foreground">
-                {lessonFile ? `فایل انتخاب‌شده: ${lessonFile.name}` : 'یک فایل صوتی، ویدیویی، تصویری یا PDF انتخاب کنید.'}
+                {lessonFile
+                  ? `فایل انتخاب‌شده: ${lessonFile.name}`
+                  : pipelineType === 'class'
+                    ? 'یک فایل صوتی، ویدیویی، تصویری یا PDF انتخاب کنید.'
+                    : 'یک فایل PDF سؤال‌ها، پاسخ‌نامه یا راه‌حل انتخاب کنید.'}
               </div>
             </div>
 
@@ -946,6 +995,10 @@ export function CreateClassPage() {
         </div>
         </FileUploadSection>
       </div>
+
+      {pipelineType === 'exam_prep' && examPrepSessionIdForActions ? (
+        <ExamPrepSourceAwareWorkspace sessionId={examPrepSessionIdForActions} />
+      ) : null}
 
       {pipelineType === 'class' ? (
         <Card className="overflow-hidden rounded-2xl border-border/40 bg-card/70 backdrop-blur" dir="rtl">
