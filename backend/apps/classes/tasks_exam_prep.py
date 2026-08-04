@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+from typing import Any
 
 from celery import shared_task
 from django.db import transaction
@@ -32,16 +33,22 @@ def _workflow_state(
     warnings: list[str] | None = None,
     ready: bool = False,
     failed_page_numbers: list[int] | None = None,
+    extraction_audit: dict[str, Any] | None = None,
+    publication_blocked: bool = False,
 ) -> dict:
     return {
         'engine': PAGE_FIRST_ENGINE,
         'stage': stage,
         'message': message,
         'progressPercent': max(0, min(100, int(progress))),
-        'warnings': list(warnings or [])[:6],
+        'warnings': list(warnings or [])[:8],
         'readyForReview': bool(ready),
         'pendingExercises': [],
-        'failedPageNumbers': sorted({int(value) for value in (failed_page_numbers or []) if int(value) > 0}),
+        'failedPageNumbers': sorted(
+            {int(value) for value in (failed_page_numbers or []) if int(value) > 0}
+        ),
+        'extractionAudit': dict(extraction_audit or {}),
+        'publicationBlocked': bool(publication_blocked),
     }
 
 
@@ -159,7 +166,7 @@ def process_exam_prep_pdf_session(self, session_id: int) -> dict:
         if should_cancel():
             raise ExamPrepPipelineCancelled('Cancellation requested after extraction.')
 
-        warnings = []
+        warnings: list[str] = []
         if result.questions_needing_review:
             warnings.append(
                 f'{result.questions_needing_review} سؤال نیازمند بازبینی است.'
@@ -168,8 +175,29 @@ def process_exam_prep_pdf_session(self, session_id: int) -> dict:
             page_list = '، '.join(str(value) for value in result.failed_page_numbers[:12])
             suffix = ' و چند صفحهٔ دیگر' if len(result.failed_page_numbers) > 12 else ''
             warnings.append(
-                f'استخراج صفحه‌های {page_list}{suffix} کامل نشد؛ محتوای نهایی را بازبینی کنید.'
+                f'استخراج صفحه‌های {page_list}{suffix} کامل نشد؛ انتشار مسدود است.'
             )
+        if result.question_number_gaps:
+            gap_count = sum(len(values) for values in result.question_number_gaps.values())
+            warnings.append(
+                f'{gap_count} شماره سؤال در توالی سؤال‌های استخراج‌شده وجود ندارد.'
+            )
+        if result.orphan_answer_count:
+            warnings.append(
+                f'{result.orphan_answer_count} پاسخ بدون صورت سؤال کنار گذاشته شد و سؤال جدید نساخت.'
+            )
+
+        publishable = bool(result.publication_ready)
+        final_status = (
+            ClassCreationSession.Status.EXAM_STRUCTURED
+            if publishable
+            else ClassCreationSession.Status.EXAM_TRANSCRIBED
+        )
+        final_message = (
+            'سؤال‌ها و پاسخ‌ها آمادهٔ بازبینی و انتشار هستند.'
+            if publishable
+            else 'استخراج انجام شد، اما تا رفع موارد بحرانی قابل انتشار نیست.'
+        )
 
         with transaction.atomic():
             locked = (
@@ -203,22 +231,26 @@ def process_exam_prep_pdf_session(self, session_id: int) -> dict:
                 result.projection,
                 ensure_ascii=False,
             )
+            locked.transcript_markdown = result.transcript_markdown
             locked.source_page_count = result.page_count
             locked.llm_model = result.model
-            locked.status = ClassCreationSession.Status.EXAM_STRUCTURED
+            locked.status = final_status
             locked.celery_task_id = ''
             locked.error_detail = ''
             locked.workflow_state = _workflow_state(
                 'ready_for_review',
-                message='سؤال‌ها و پاسخ‌ها آمادهٔ بازبینی هستند.',
+                message=final_message,
                 progress=100,
                 warnings=warnings,
                 ready=True,
                 failed_page_numbers=result.failed_page_numbers,
+                extraction_audit=result.extraction_audit,
+                publication_blocked=not publishable,
             )
             locked.save(
                 update_fields=[
                     'exam_prep_json',
+                    'transcript_markdown',
                     'source_page_count',
                     'llm_model',
                     'status',
@@ -230,20 +262,27 @@ def process_exam_prep_pdf_session(self, session_id: int) -> dict:
             )
 
         logger.info(
-            'exam_prep.pipeline.completed sessionId=%s pageCount=%s questionCount=%s reviewCount=%s failedPageCount=%s',
+            'exam_prep.pipeline.completed sessionId=%s pageCount=%s questionCount=%s matchedAnswerCount=%s orphanAnswerCount=%s reviewCount=%s criticalIssueCount=%s failedPageCount=%s publicationReady=%s',
             session.id,
             result.page_count,
             result.question_count,
+            result.matched_answer_count,
+            result.orphan_answer_count,
             result.questions_needing_review,
+            int(result.extraction_audit.get('criticalIssueCount') or 0),
             len(result.failed_page_numbers),
+            publishable,
         )
         return {
             'status': 'ready_for_review',
             'session_id': session.id,
             'page_count': result.page_count,
             'question_count': result.question_count,
+            'matched_answer_count': result.matched_answer_count,
+            'orphan_answer_count': result.orphan_answer_count,
             'questions_needing_review': result.questions_needing_review,
             'failed_page_numbers': result.failed_page_numbers,
+            'publication_ready': publishable,
         }
     except ExamPrepPipelineCancelled:
         _mark_cancelled(session.id)
