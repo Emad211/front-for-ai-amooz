@@ -36,11 +36,11 @@ def test_parse_structured_valid():
 
 def test_parse_structured_wrong_shape_raises_with_safe_locations():
     with pytest.raises(StructuredOutputError) as captured:
-        parse_structured('{"items": ["a"]}', _Model)
+        parse_structured('{"items": ["private-value"]}', _Model)
 
     assert captured.value.error_kind == "validation_error"
-    assert any(location.startswith("name:") for location in captured.value.validation_locations)
-    assert "a" not in " ".join(captured.value.validation_locations)
+    assert captured.value.validation_locations == ("name:missing",)
+    assert "private-value" not in str(captured.value)
 
 
 def test_parse_structured_non_json_raises():
