@@ -4,11 +4,13 @@ from __future__ import annotations
 from typing import Any
 
 from celery import current_app
+from django.db import transaction
 from django.utils import timezone
 
 from apps.classes.models import ClassCreationSession
 from apps.classes.models_v4 import ExamProject, ExamSourceDocument
 from apps.classes.models_v4_bridge import ExamV4SessionBridge
+from apps.classes.models_v4_projection import ExamV4Projection
 
 
 _ACTIVE_PROJECT_STATUSES = {
@@ -190,3 +192,73 @@ def bridge_payload(*, teacher, session_id: int) -> dict[str, Any]:
         'projectStatus': bridge.project.status,
         'sessionStatus': session.status,
     }
+
+
+@transaction.atomic
+def adopt_create_flow_projection(
+    *,
+    project_id: int,
+    projection_payload: dict[str, Any],
+) -> dict[str, Any]:
+    """Move a freshly built projection onto the draft already used by the form.
+
+    This preserves invites and keeps one visible exam-preparation item instead of
+    creating a second session after review.
+    """
+
+    bridge = (
+        ExamV4SessionBridge.objects.select_for_update()
+        .select_related('session')
+        .filter(project_id=project_id)
+        .first()
+    )
+    if bridge is None:
+        return projection_payload
+    projection = (
+        ExamV4Projection.objects.select_for_update()
+        .select_related('session')
+        .filter(project_id=project_id)
+        .first()
+    )
+    if projection is None or projection.session_id == bridge.session_id:
+        return {**projection_payload, 'sessionId': bridge.session_id}
+
+    target = ClassCreationSession.objects.select_for_update().get(id=bridge.session_id)
+    generated = projection.session
+    if target.is_published:
+        return projection_payload
+
+    copied_fields = [
+        'organization',
+        'study_group',
+        'title',
+        'description',
+        'pipeline_type',
+        'level',
+        'duration',
+        'scheduled_at',
+        'source_type',
+        'source_mime_type',
+        'source_original_name',
+        'source_page_count',
+        'status',
+        'transcript_markdown',
+        'workflow_state',
+        'structure_json',
+        'exam_prep_json',
+        'recap_markdown',
+        'llm_provider',
+        'llm_model',
+        'is_published',
+        'published_at',
+        'error_detail',
+        'cancel_requested',
+    ]
+    for field in copied_fields:
+        setattr(target, field, getattr(generated, field))
+    target.save(update_fields=[*copied_fields, 'updated_at'])
+
+    projection.session = target
+    projection.save(update_fields=['session', 'updated_at'])
+    generated.delete()
+    return {**projection_payload, 'sessionId': target.id}
