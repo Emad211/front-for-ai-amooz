@@ -6,6 +6,8 @@ from apps.classes.services.exam_prep_page_records import (
     PageOption,
     PageRecord,
     assemble_page_extractions,
+    build_page_first_audit,
+    render_page_first_transcript,
 )
 
 
@@ -66,6 +68,9 @@ def test_question_and_solution_join_by_scope_and_number():
 
     assert result.question_count == 1
     assert result.questions_needing_review == 0
+    assert result.matched_answer_count == 1
+    assert result.orphan_answers == []
+    assert result.publication_ready is True
     assert result.issues == []
     question = result.projection['exam_prep']['questions'][0]
     assert question['question_id'] == 'default-q-51'
@@ -94,6 +99,21 @@ def test_same_number_in_different_scopes_never_collides():
     assert result.question_count == 2
     assert [question['scope_key'] for question in questions] == ['آزمون-الف', 'آزمون-ب']
     assert len({question['question_id'] for question in questions}) == 2
+
+
+def test_answer_page_may_appear_before_question_page():
+    result = assemble_page_extractions(
+        [
+            PageExtraction(page_number=1, records=[_solution(8, correct='4')]),
+            PageExtraction(page_number=9, records=[_question(8)]),
+        ]
+    )
+
+    assert result.question_count == 1
+    assert result.orphan_answers == []
+    question = result.projection['exam_prep']['questions'][0]
+    assert question['correct_option_label'] == '4'
+    assert question['source_pages'] == [1, 9]
 
 
 def test_continuation_fragments_join_in_page_order():
@@ -137,21 +157,164 @@ def test_conflicting_answers_are_not_silently_overwritten():
     assert question['correct_option_label'] == '2'
     assert 'conflicting_correct_option' in question['issues']
     assert result.questions_needing_review == 1
+    assert result.publication_ready is False
     assert any(issue.code == 'conflicting_correct_option' for issue in result.issues)
 
 
-def test_answer_without_question_is_preserved_for_review():
+def test_answer_without_question_is_orphan_and_never_fabricates_question():
     result = assemble_page_extractions(
         [PageExtraction(page_number=9, records=[_solution(12)])]
     )
 
+    assert result.question_count == 0
+    assert result.projection['exam_prep']['questions'] == []
+    assert len(result.orphan_answers) == 1
+    orphan = result.orphan_answers[0]
+    assert orphan.question_number == 12
+    assert orphan.correct_option_label == '2'
+    assert orphan.source_pages == [9]
+    assert result.publication_ready is False
+
+
+def test_question_text_and_options_only_come_from_question_records():
+    answer_record = PageRecord.model_validate(
+        {
+            'question_number': 18,
+            'record_type': 'solution',
+            'question_text_markdown': '۱۸- گزینه «۳»',
+            'teacher_solution_markdown': 'هر چه کود بیشتری استفاده شود...',
+            'confidence': 95,
+        }
+    )
+    result = assemble_page_extractions(
+        [
+            PageExtraction(page_number=4, records=[_question(18, text='کدام گزینه درست است؟')]),
+            PageExtraction(page_number=11, records=[answer_record]),
+        ]
+    )
+
     question = result.projection['exam_prep']['questions'][0]
-    assert question['source_question_number'] == '12'
-    assert question['question_text_markdown'] == ''
-    assert 'missing_question_text' in question['issues']
-    assert 'missing_options' in question['issues']
-    assert 'missing_answer' not in question['issues']
-    assert result.questions_needing_review == 1
+    assert answer_record.question_text_markdown == ''
+    assert question['question_text_markdown'] == 'کدام گزینه درست است؟'
+    assert '۱۸- گزینه' not in question['question_text_markdown']
+    assert question['correct_option_label'] == '3'
+    assert question['teacher_solution_markdown'].startswith('هر چه کود')
+
+
+def test_provider_option_strings_and_mapping_are_normalized_before_validation():
+    page = PageExtraction.model_validate(
+        {
+            'page_number': '۶',
+            'records': [
+                {
+                    'question_number': '۳۲',
+                    'record_type': 'question',
+                    'question_text_markdown': 'صورت سؤال ۳۲',
+                    'options': [
+                        '۱) گزینه نخست',
+                        '۲) گزینه دوم',
+                        '۳) گزینه سوم',
+                        '۴) گزینه چهارم',
+                    ],
+                    'confidence': '96%',
+                },
+                {
+                    'question_number': 33,
+                    'record_type': 'question',
+                    'question_text_markdown': 'صورت سؤال ۳۳',
+                    'options': {
+                        '1': 'الف',
+                        '2': 'ب',
+                        '3': 'ج',
+                        '4': 'د',
+                    },
+                    'confidence': 0.9,
+                },
+            ],
+        }
+    )
+
+    assert page.page_number == 6
+    assert page.records[0].question_number == 32
+    assert page.records[0].confidence == 0.96
+    assert [option.label for option in page.records[0].options] == ['1', '2', '3', '4']
+    assert [option.text_markdown for option in page.records[0].options] == [
+        'گزینه نخست',
+        'گزینه دوم',
+        'گزینه سوم',
+        'گزینه چهارم',
+    ]
+    assert [option.label for option in page.records[1].options] == ['1', '2', '3', '4']
+
+
+def test_fifty_questions_ignore_answer_only_physics_tail():
+    question_pages = []
+    for page_number, start in enumerate(range(1, 51, 10), start=2):
+        records = [_question(number) for number in range(start, min(start + 10, 51))]
+        question_pages.append(PageExtraction(page_number=page_number, records=records))
+    answer_records = [_solution(number, correct=str((number % 4) + 1)) for number in range(1, 55)]
+
+    result = assemble_page_extractions(
+        question_pages + [PageExtraction(page_number=16, records=answer_records)]
+    )
+
+    assert result.question_count == 50
+    assert result.matched_answer_count == 50
+    assert [item.question_number for item in result.orphan_answers] == [51, 52, 53, 54]
+    assert result.question_number_gaps == {}
+    assert result.publication_ready is True
+    assert result.projection['exam_prep']['questions'][-1]['source_question_number'] == '50'
+
+
+def test_internal_question_number_gap_is_critical():
+    result = assemble_page_extractions(
+        [
+            PageExtraction(
+                page_number=2,
+                records=[_question(1), _solution(1), _question(3), _solution(3)],
+            )
+        ]
+    )
+
+    assert result.question_number_gaps == {'default': [2]}
+    assert result.publication_ready is False
+    audit = build_page_first_audit(result)
+    assert audit['status'] == 'needs_review'
+    assert any(issue['code'] == 'missing_question_number' for issue in audit['issues'])
+
+
+def test_failed_pages_block_publication_but_out_of_scope_answers_do_not():
+    result = assemble_page_extractions(
+        [
+            PageExtraction(page_number=2, records=[_question(1), _solution(1)]),
+            PageExtraction(page_number=10, records=[_solution(51)]),
+        ]
+    )
+
+    clean_audit = build_page_first_audit(result)
+    failed_audit = build_page_first_audit(result, failed_page_numbers=[6, 7, 8])
+    assert clean_audit['status'] == 'passed'
+    assert clean_audit['outOfScopeAnswerCount'] == 1
+    assert failed_audit['status'] == 'needs_review'
+    assert failed_audit['failedPageNumbers'] == [6, 7, 8]
+
+
+def test_readable_transcript_renders_canonical_dictionary_and_orphans():
+    result = assemble_page_extractions(
+        [
+            PageExtraction(page_number=2, records=[_question(18)]),
+            PageExtraction(page_number=11, records=[_solution(18, correct='3')]),
+            PageExtraction(page_number=16, records=[_solution(51, correct='1')]),
+        ],
+        title='دفترچه اول زیست',
+    )
+
+    transcript = render_page_first_transcript(result, failed_page_numbers=[8])
+    assert '# دفترچه اول زیست' in transcript
+    assert '## سؤال 18' in transcript
+    assert '**پاسخ صحیح:** گزینه 3' in transcript
+    assert 'سؤال 51، گزینه 1' in transcript
+    assert 'صفحه‌های پردازش‌نشده: **8**' in transcript
 
 
 def test_question_number_is_required_by_the_page_contract():

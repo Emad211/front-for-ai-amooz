@@ -1,6 +1,7 @@
 from django.db import transaction
 from django.db.models.signals import post_delete, post_save, pre_save
 from django.dispatch import receiver
+from django.utils import timezone
 
 from core.storage_backends import delete_answer_source_file
 
@@ -16,6 +17,12 @@ from .models_v4_records import (
     ExamAnswerSolutionRecord,
     ExamExtractionLifecycle,
     ExamQuestionRecord,
+)
+from .services.exam_prep_page_review import (
+    audit_page_first_projection,
+    parse_projection,
+    render_projection_transcript,
+    retain_failed_page_evidence,
 )
 from .services.exam_prep_v4_create_flow import (
     cancel_source_aware_project_for_session,
@@ -130,6 +137,101 @@ def propagate_existing_create_flow_cancel(
         and instance.status == ClassCreationSession.Status.CANCELLED
     ):
         cancel_source_aware_project_for_session(instance)
+
+
+@receiver(
+    post_save,
+    sender=ClassCreationSession,
+    dispatch_uid='exam_prep_page_first_revalidate_teacher_edit',
+)
+def revalidate_page_first_teacher_edit(
+    sender,
+    instance,
+    created,
+    update_fields,
+    **kwargs,
+):  # noqa: ARG001
+    """Re-audit only a teacher edit of canonical page-first exam JSON.
+
+    The page-first task saves ``exam_prep_json`` and ``transcript_markdown`` in
+    the same operation, so that save is intentionally ignored here. The normal
+    teacher PATCH updates ``exam_prep_json`` only; that edit is revalidated and
+    may move an incomplete draft to ``exam_structured`` once all critical issues
+    are fixed. QuerySet.update avoids recursive signals.
+    """
+
+    changed = set(update_fields or ())
+    if (
+        created
+        or 'exam_prep_json' not in changed
+        or 'transcript_markdown' in changed
+        or instance.pipeline_type != ClassCreationSession.PipelineType.EXAM_PREP
+        or instance.is_published
+    ):
+        return
+    workflow = instance.workflow_state if isinstance(instance.workflow_state, dict) else {}
+    if workflow.get('engine') != 'page_first':
+        return
+
+    projection = parse_projection(instance.exam_prep_json)
+    audit = audit_page_first_projection(projection)
+    failed_page_numbers = workflow.get('failedPageNumbers') or []
+    audit = retain_failed_page_evidence(audit, failed_page_numbers)
+    passed = audit.get('status') == 'passed'
+    warnings: list[str] = []
+    critical_count = int(audit.get('criticalIssueCount') or 0)
+    if critical_count:
+        warnings.append(
+            f'{critical_count} مورد بحرانی در محتوای ویرایش‌شده باقی مانده است.'
+        )
+    gap_count = sum(
+        len(values)
+        for values in (audit.get('questionNumberGaps') or {}).values()
+        if isinstance(values, list)
+    )
+    if gap_count:
+        warnings.append(f'{gap_count} شماره سؤال در توالی آزمون وجود ندارد.')
+    if audit.get('failedPageNumbers'):
+        pages = '، '.join(map(str, audit['failedPageNumbers']))
+        warnings.append(
+            f'صفحه‌های {pages} باید از روی فایل اصلی دوباره پردازش شوند.'
+        )
+
+    new_workflow = {
+        **workflow,
+        'stage': 'ready_for_review',
+        'message': (
+            'محتوای ویرایش‌شده کنترل شد و آماده انتشار است.'
+            if passed
+            else 'محتوای ویرایش‌شده هنوز خطای بحرانی دارد و قابل انتشار نیست.'
+        ),
+        'progressPercent': 100,
+        'warnings': warnings,
+        'readyForReview': True,
+        'failedPageNumbers': list(audit.get('failedPageNumbers') or []),
+        'extractionAudit': audit,
+        'publicationBlocked': not passed,
+    }
+    new_status = (
+        ClassCreationSession.Status.EXAM_STRUCTURED
+        if passed
+        else ClassCreationSession.Status.EXAM_TRANSCRIBED
+    )
+    new_transcript = render_projection_transcript(projection, audit)
+    now = timezone.now()
+
+    # Keep the object used by the current serializer response in sync with the
+    # database update, so the teacher sees the revalidated status immediately.
+    instance.status = new_status
+    instance.transcript_markdown = new_transcript
+    instance.workflow_state = new_workflow
+    instance.updated_at = now
+    sender.objects.filter(pk=instance.pk).update(
+        status=new_status,
+        transcript_markdown=new_transcript,
+        workflow_state=new_workflow,
+        updated_at=now,
+    )
 
 
 @receiver(
