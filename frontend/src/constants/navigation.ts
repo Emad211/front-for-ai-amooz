@@ -20,7 +20,6 @@ import {
   ClipboardList,
   UserCog,
   NotebookPen,
-  ScanSearch,
 } from 'lucide-react';
 import { NavSection, NavItem, OrgRole } from '@/types';
 
@@ -82,7 +81,6 @@ export const TEACHER_NAV_MENU: NavSection[] = [
       { label: 'ایجاد کلاس جدید', href: '/teacher/create-class', icon: PlusCircle },
       { label: 'کلاس‌های من', href: '/teacher/my-classes', icon: FolderOpen },
       { label: 'آزمون‌های من', href: '/teacher/my-exams', icon: FileQuestion },
-      { label: 'آماده‌سازی آزمون V4', href: '/teacher/exam-prep-v4', icon: ScanSearch },
       { label: 'دانش‌آموزان', href: '/teacher/students', icon: Users },
     ]
   },
@@ -101,12 +99,6 @@ export const TEACHER_NAV_MENU: NavSection[] = [
   },
 ];
 
-/**
- * Org-TEACHER (org_role=teacher) nav: TEACHING only — create/manage classes &
- * exams, comms, reports. Org MANAGEMENT lives in the separate /org panel (see
- * ORG_NAV_MENU), so there is no management section here. Used for the org
- * workspace inside the teacher chrome.
- */
 export const ORG_TEACHER_TEACHING_NAV_MENU: NavSection[] = [
   {
     title: 'مدیریت کلاس‌ها',
@@ -114,7 +106,6 @@ export const ORG_TEACHER_TEACHING_NAV_MENU: NavSection[] = [
       { label: 'ایجاد کلاس جدید', href: '/teacher/create-class', icon: PlusCircle },
       { label: 'کلاس‌های سازمان آموزشی', href: '/teacher/my-classes', icon: FolderOpen },
       { label: 'آزمون‌های سازمان آموزشی', href: '/teacher/my-exams', icon: FileQuestion },
-      { label: 'آماده‌سازی آزمون V4', href: '/teacher/exam-prep-v4', icon: ScanSearch },
       { label: 'دانش‌آموزان', href: '/teacher/students', icon: Users },
     ],
   },
@@ -133,12 +124,6 @@ export const ORG_TEACHER_TEACHING_NAV_MENU: NavSection[] = [
   },
 ];
 
-/**
- * Org MANAGER nav for the DEDICATED `/org` panel: management + oversight ONLY.
- * A manager does NOT create content (no "create class/exam" — that is a teacher
- * action). They manage members/groups/codes, oversee all the org's classes, and
- * watch AI costs. Managers live under their own `/org` route group — NOT /teacher.
- */
 export const ORG_NAV_MENU: NavSection[] = [
   {
     title: 'مدیریت سازمان آموزشی',
@@ -162,13 +147,10 @@ export const ORG_NAV_MENU: NavSection[] = [
   },
 ];
 
-/** Pick the TEACHER sidebar/header nav for the current workspace. Managers are
- * NOT served here anymore — they use ORG_NAV_MENU in the `/org` panel. */
 export function getTeacherNavMenu(
   isOrgMode: boolean,
   _orgRole?: OrgRole | null,
 ): NavSection[] {
   if (!isOrgMode) return TEACHER_NAV_MENU;
-  // Org workspace (org teacher) → teaching menu (no management section).
   return ORG_TEACHER_TEACHING_NAV_MENU;
 }
