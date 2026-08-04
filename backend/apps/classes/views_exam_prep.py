@@ -24,10 +24,17 @@ from apps.classes.tasks_exam_prep import process_exam_prep_pdf_session
 
 
 logger = logging.getLogger('apps.classes.exam_prep')
+PAGE_FIRST_ENGINE = 'page_first'
 _ACTIVE_STATUSES = {
     ClassCreationSession.Status.EXAM_TRANSCRIBING,
     ClassCreationSession.Status.EXAM_STRUCTURING,
 }
+
+
+def _page_first_workflow_state(stage: str, *, message: str) -> dict:
+    state = build_session_workflow_state(stage, message=message)
+    state['engine'] = PAGE_FIRST_ENGINE
+    return state
 
 
 def _same_uploaded_source(session: ClassCreationSession, upload) -> bool:
@@ -196,7 +203,7 @@ class ExamPrepPdfStep1View(APIView):
                     source_original_name=str(getattr(upload, 'name', '') or ''),
                     status=ClassCreationSession.Status.EXAM_TRANSCRIBING,
                     client_request_id=client_request_id,
-                    workflow_state=build_session_workflow_state(
+                    workflow_state=_page_first_workflow_state(
                         'queued',
                         message='PDF در صف پردازش قرار گرفت.',
                     ),
@@ -247,7 +254,7 @@ class ExamPrepPdfStep1View(APIView):
             session.status = ClassCreationSession.Status.FAILED
             session.celery_task_id = ''
             session.error_detail = 'ارسال پردازش به صف انجام نشد.'
-            session.workflow_state = build_session_workflow_state(
+            session.workflow_state = _page_first_workflow_state(
                 'failed',
                 message='ارسال پردازش به صف انجام نشد؛ دوباره تلاش کنید.',
             )
