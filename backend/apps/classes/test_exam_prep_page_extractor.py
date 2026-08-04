@@ -119,7 +119,8 @@ def test_extract_page_makes_one_structured_multimodal_request(monkeypatch):
     assert call['model'] == 'vision-model'
     assert call['feature'] == LLMUsageLog.Feature.PDF_EXTRACTION
     assert call['temperature'] == 0
-    assert call['max_repair'] == 0
+    assert call['max_repair'] == 1
+    assert call['strict_json_schema'] is True
     assert call['sensitive'] is True
     assert call['provider_attempts'] == 1
     assert call['detail'] == 'exam_prep_page_extraction'
@@ -134,6 +135,20 @@ def test_extract_page_makes_one_structured_multimodal_request(monkeypatch):
     assert 'SCOPE_HINT: exam-a' in user_parts[0]['text']
     assert user_parts[1]['type'] == 'image_url'
     assert user_parts[1]['image_url']['url'].startswith('data:image/jpeg;base64,')
+
+
+def test_page_repair_attempts_can_be_disabled(monkeypatch):
+    captured = []
+    monkeypatch.setenv('EXAM_PREP_PAGE_REPAIR_ATTEMPTS', '0')
+    monkeypatch.setattr(
+        extractor,
+        'generate_structured',
+        lambda **kwargs: captured.append(kwargs) or _question_page(1, 1),
+    )
+
+    extractor.extract_exam_prep_page(_page(1), model='vision-model')
+
+    assert captured[0]['max_repair'] == 0
 
 
 def test_extract_page_rejects_provider_page_number_mismatch(monkeypatch):

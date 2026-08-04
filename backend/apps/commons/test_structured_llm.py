@@ -1,4 +1,4 @@
-"""Tests for the central structured-output layer (apps.commons.structured_llm).
+"""Tests for the central structured-output layer.
 
 All LLM calls are mocked — no network, no tokens.
 """
@@ -8,7 +8,6 @@ from unittest.mock import patch
 import pytest
 from pydantic import BaseModel, ConfigDict, Field
 
-from apps.commons import structured_llm
 from apps.commons.structured_llm import (
     StructuredOutputError,
     generate_structured,
@@ -29,40 +28,37 @@ def _result(text: str):
     return SimpleNamespace(text=text, provider="test", model="m")
 
 
-# --------------------------------------------------------------------------
-# parse / validate (no LLM)
-# --------------------------------------------------------------------------
-
 def test_parse_structured_valid():
     m = parse_structured('{"name": "x", "items": ["a"]}', _Model)
     assert m.name == "x"
     assert m.items == ["a"]
 
 
-def test_parse_structured_wrong_shape_raises():
-    with pytest.raises(StructuredOutputError):
-        parse_structured('{"items": ["a"]}', _Model)  # missing required 'name'
+def test_parse_structured_wrong_shape_raises_with_safe_locations():
+    with pytest.raises(StructuredOutputError) as captured:
+        parse_structured('{"items": ["private-value"]}', _Model)
+
+    assert captured.value.error_kind == "validation_error"
+    assert captured.value.validation_locations == ("name:missing",)
+    assert "private-value" not in str(captured.value)
 
 
 def test_parse_structured_non_json_raises():
-    with pytest.raises(StructuredOutputError):
+    with pytest.raises(StructuredOutputError) as captured:
         parse_structured("I could not produce JSON, sorry.", _Model)
+    assert captured.value.error_kind == "json_parse_error"
 
 
 def test_validate_keep_dict_returns_original_dict():
     raw = '{"name": "x", "extra": 7, "items": ["a"]}'
     out = validate_keep_dict(raw, _Model)
-    assert out == {"name": "x", "extra": 7, "items": ["a"]}  # original, not normalized
+    assert out == {"name": "x", "extra": 7, "items": ["a"]}
 
 
 def test_validate_keep_dict_wrong_shape_raises():
     with pytest.raises(StructuredOutputError):
         validate_keep_dict('["not", "an", "object"]', _Model)
 
-
-# --------------------------------------------------------------------------
-# generate_structured (LLM mocked)
-# --------------------------------------------------------------------------
 
 def test_generate_structured_happy_path():
     with patch("apps.chatbot.services.llm_client.generate_text") as gt:
@@ -71,8 +67,50 @@ def test_generate_structured_happy_path():
     assert m.name == "ok"
     assert m.items == ["a", "b"]
     assert gt.call_count == 1
-    # JSON mode requested on the first attempt
     assert gt.call_args.kwargs.get("response_format") == {"type": "json_object"}
+
+
+def test_generate_structured_strict_schema_is_closed_and_all_fields_required():
+    with patch("apps.chatbot.services.llm_client.generate_text") as gt:
+        gt.return_value = _result('{"name": "ok", "items": []}')
+        generate_structured(
+            schema=_Model,
+            contents="make json",
+            feature="OTHER",
+            strict_json_schema=True,
+        )
+
+    response_format = gt.call_args.kwargs["response_format"]
+    assert response_format["type"] == "json_schema"
+    assert response_format["json_schema"]["strict"] is True
+    schema = response_format["json_schema"]["schema"]
+    assert schema["additionalProperties"] is False
+    assert schema["required"] == ["name", "items"]
+    assert "default" not in schema["properties"]["items"]
+
+
+def test_generate_structured_strict_schema_falls_back_to_json_object():
+    calls = []
+
+    def side_effect(**kwargs):
+        calls.append(kwargs)
+        response_format = kwargs.get("response_format")
+        if response_format and response_format.get("type") == "json_schema":
+            raise RuntimeError("400: response_format json_schema is not supported")
+        return _result('{"name": "ok", "items": []}')
+
+    with patch("apps.chatbot.services.llm_client.generate_text", side_effect=side_effect):
+        result = generate_structured(
+            schema=_Model,
+            contents="x",
+            feature="OTHER",
+            strict_json_schema=True,
+        )
+
+    assert result.name == "ok"
+    assert len(calls) == 2
+    assert calls[0]["response_format"]["type"] == "json_schema"
+    assert calls[1]["response_format"] == {"type": "json_object"}
 
 
 def test_generate_structured_forwards_temperature_to_all_calls():
@@ -96,7 +134,24 @@ def test_generate_structured_repairs_then_succeeds():
     with patch("apps.chatbot.services.llm_client.generate_text", side_effect=side_effect):
         m = generate_structured(schema=_Model, contents="x", feature="OTHER", max_repair=1)
     assert m.name == "fixed"
-    assert len(calls) == 2  # original + one repair round-trip
+    assert len(calls) == 2
+
+
+def test_generate_structured_sensitive_error_preserves_safe_metadata():
+    with patch("apps.chatbot.services.llm_client.generate_text") as gt:
+        gt.return_value = _result('{"items": []}')
+        with pytest.raises(StructuredOutputError) as captured:
+            generate_structured(
+                schema=_Model,
+                contents="x",
+                feature="OTHER",
+                max_repair=0,
+                sensitive=True,
+            )
+
+    assert captured.value.error_kind == "validation_error"
+    assert any(location.startswith("name:") for location in captured.value.validation_locations)
+    assert "items" not in str(captured.value)
 
 
 def test_generate_structured_raises_after_exhausting_repairs():
@@ -104,7 +159,7 @@ def test_generate_structured_raises_after_exhausting_repairs():
         gt.return_value = _result("never valid json")
         with pytest.raises(StructuredOutputError):
             generate_structured(schema=_Model, contents="x", feature="OTHER", max_repair=1)
-    assert gt.call_count == 2  # original + one repair, both bad -> raise
+    assert gt.call_count == 2
 
 
 def test_generate_structured_falls_back_when_response_format_unsupported():
@@ -116,7 +171,6 @@ def test_generate_structured_falls_back_when_response_format_unsupported():
     with patch("apps.chatbot.services.llm_client.generate_text", side_effect=side_effect) as gt:
         m = generate_structured(schema=_Model, contents="x", feature="OTHER")
     assert m.name == "ok"
-    # first call with json mode (raised), second without it (succeeded)
     assert gt.call_count == 2
     assert gt.call_args_list[0].kwargs.get("response_format") == {"type": "json_object"}
     assert gt.call_args_list[1].kwargs.get("response_format") is None
@@ -127,6 +181,4 @@ def test_generate_structured_does_not_swallow_unrelated_errors():
         gt.side_effect = RuntimeError("SSL: UNEXPECTED_EOF_WHILE_READING")
         with pytest.raises(RuntimeError):
             generate_structured(schema=_Model, contents="x", feature="OTHER")
-    # Only the first attempt; a genuine connection error is NOT treated as a
-    # response_format fallback, so no second call.
     assert gt.call_count == 1

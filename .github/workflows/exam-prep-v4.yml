@@ -25,6 +25,8 @@ on:
       - 'backend/apps/classes/test_exam_prep_page*.py'
       - 'backend/apps/classes/test_exam_prep_simple_pipeline.py'
       - 'backend/apps/classes/test_exam_prep_v4_*.py'
+      - 'backend/apps/commons/structured_llm.py'
+      - 'backend/apps/commons/test_structured_llm.py'
       - 'backend/apps/commons/llm_prompts/__init__.py'
       - 'backend/apps/commons/llm_prompts/exam_prep_page.py'
       - 'backend/apps/commons/llm_prompts/exam_prep_v4.py'
@@ -110,6 +112,7 @@ jobs:
       - name: Run focused exam prep tests on PostgreSQL
         run: |
           python -m pytest \
+            backend/apps/commons/test_structured_llm.py \
             backend/apps/classes/test_exam_prep_legacy_audit.py \
             backend/apps/classes/test_exam_prep_page_*.py \
             backend/apps/classes/test_exam_prep_simple_pipeline.py \

@@ -1,35 +1,15 @@
 """Central, robust LLM -> validated-JSON layer for the whole project.
 
-Why this exists
----------------
-Historically every pipeline step scraped free-text model output with
-``extract_json_object`` and either silently returned ``{}`` on failure or did
-ad-hoc ``obj.get(...)`` guessing. There was no schema validation and no use of
-the provider's JSON mode, even though Avalai (OpenAI-compatible) supports it.
-
-This module provides ONE tiered path:
-
-1. Ask the model with ``response_format={"type": "json_object"}`` (JSON mode).
-   gemini-via-avalai does not reliably honour *strict* ``json_schema``, so we use
-   the looser ``json_object`` mode as the baseline and validate ourselves. If the
-   provider/model rejects ``response_format`` at all, we transparently retry
-   without it.
-2. Parse with the canonical robust extractor (``extract_json_object``).
-3. Validate against a Pydantic model.
-4. On parse/validation failure, do ONE repair round-trip, then re-validate.
-5. If it still fails, RAISE ``StructuredOutputError`` — never return empty/garbage
-   that silently corrupts downstream steps.
-
-``validate_keep_dict`` is a lighter helper for migrating existing steps that must
-preserve the model's *exact* dict (e.g. the structure step, whose output is stored
-verbatim and consumed by other code): it validates the shape but returns the
-original parsed object unmutated.
+Structured callers can optionally request strict JSON Schema output. Providers
+that do not support it fall back safely to JSON-object mode and then to ordinary
+text, while Pydantic remains the final authority.
 """
 from __future__ import annotations
 
 import json
 import logging
 import os
+import re
 from typing import Any, Optional, Type, TypeVar
 
 from pydantic import BaseModel, ValidationError
@@ -44,7 +24,23 @@ _JSON_OBJECT_RESPONSE_FORMAT = {"type": "json_object"}
 
 
 class StructuredOutputError(RuntimeError):
-    """Raised when the model could not produce JSON matching the schema."""
+    """Raised when the model could not produce JSON matching the schema.
+
+    ``error_kind`` and ``validation_locations`` are content-free diagnostics.
+    They may be logged even for sensitive requests because they never contain
+    model output or field values.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        error_kind: str = "structured_output",
+        validation_locations: tuple[str, ...] = (),
+    ) -> None:
+        super().__init__(message)
+        self.error_kind = str(error_kind or "structured_output")[:80]
+        self.validation_locations = tuple(validation_locations[:8])
 
 
 def _json_object_mode_enabled() -> bool:
@@ -52,18 +48,15 @@ def _json_object_mode_enabled() -> bool:
 
 
 def _looks_like_response_format_unsupported(exc: Exception) -> bool:
-    """Heuristic: did the provider reject the ``response_format`` parameter?
+    """Heuristic: did the provider reject structured response formatting?"""
 
-    Different gateways/models surface this differently (400/422, or a message
-    about an unsupported/unknown parameter). We only fall back when the error
-    clearly references response_format / json mode, so genuine errors still bubble.
-    """
     msg = str(exc).lower()
     if "response_format" in msg or "response format" in msg:
         return True
-    if "json_object" in msg or "json mode" in msg:
+    if "json_object" in msg or "json object" in msg or "json mode" in msg:
         return True
-    # Some gateways say "unsupported parameter" / "unknown parameter".
+    if "json_schema" in msg or "json schema" in msg:
+        return True
     if ("unsupported" in msg or "unknown" in msg or "not supported" in msg) and "param" in msg:
         return True
     return False
@@ -89,39 +82,92 @@ def _repair_instruction(broken_text: str, error: Exception, schema: Type[BaseMod
     )
 
 
+def _validation_locations(exc: ValidationError) -> tuple[str, ...]:
+    locations: list[str] = []
+    for item in exc.errors(include_url=False)[:8]:
+        raw_location = item.get("loc") or ()
+        location = ".".join(str(part) for part in raw_location) or "root"
+        error_type = str(item.get("type") or "validation_error")
+        locations.append(f"{location}:{error_type}"[:180])
+    return tuple(locations)
+
+
+def _strict_schema_node(value: Any) -> Any:
+    """Convert a Pydantic schema into the strict OpenAI-compatible subset."""
+
+    if isinstance(value, list):
+        return [_strict_schema_node(item) for item in value]
+    if not isinstance(value, dict):
+        return value
+
+    result = {
+        key: _strict_schema_node(item)
+        for key, item in value.items()
+        if key != "default"
+    }
+    properties = result.get("properties")
+    if isinstance(properties, dict):
+        result["properties"] = {
+            key: _strict_schema_node(item)
+            for key, item in properties.items()
+        }
+        result["required"] = list(properties.keys())
+        result["additionalProperties"] = False
+    elif result.get("type") == "object":
+        result["additionalProperties"] = False
+    return result
+
+
+def _strict_response_format(schema: Type[BaseModel]) -> dict[str, Any]:
+    name = re.sub(r"[^A-Za-z0-9_-]+", "_", schema.__name__).strip("_")[:64]
+    return {
+        "type": "json_schema",
+        "json_schema": {
+            "name": name or "structured_output",
+            "strict": True,
+            "schema": _strict_schema_node(schema.model_json_schema()),
+        },
+    }
+
+
 def validate_obj(obj: Any, schema: Type[T]) -> T:
     """Validate an already-parsed object against ``schema`` (raises on mismatch)."""
+
     try:
         return schema.model_validate(obj)
     except ValidationError as exc:
+        locations = _validation_locations(exc)
         raise StructuredOutputError(
-            f"{schema.__name__} validation failed: {exc.errors(include_url=False)[:5]}"
+            f"{schema.__name__} validation failed at {list(locations)}",
+            error_kind="validation_error",
+            validation_locations=locations,
         ) from exc
 
 
 def parse_structured(text: str, schema: Type[T]) -> T:
-    """Extract JSON from ``text`` and validate it into ``schema``.
+    """Extract JSON from ``text`` and validate it into ``schema``."""
 
-    Raises ``StructuredOutputError`` if no JSON can be found or the shape is wrong.
-    """
     try:
         obj = extract_json_object(text)
     except Exception as exc:
-        raise StructuredOutputError(f"no parseable JSON for {schema.__name__}: {exc}") from exc
+        raise StructuredOutputError(
+            f"no parseable JSON for {schema.__name__}: {exc}",
+            error_kind="json_parse_error",
+        ) from exc
     return validate_obj(obj, schema)
 
 
 def validate_keep_dict(text: str, schema: Type[BaseModel]) -> Any:
-    """Validate ``text`` against ``schema`` but return the ORIGINAL parsed object.
+    """Validate ``text`` against ``schema`` but return the original parsed dict."""
 
-    Use when downstream code expects the model's exact dict (no Pydantic
-    normalization). The validation still runs as a gate and raises on mismatch.
-    """
     try:
         obj = extract_json_object(text)
     except Exception as exc:
-        raise StructuredOutputError(f"no parseable JSON for {schema.__name__}: {exc}") from exc
-    validate_obj(obj, schema)  # raises StructuredOutputError on mismatch
+        raise StructuredOutputError(
+            f"no parseable JSON for {schema.__name__}: {exc}",
+            error_kind="json_parse_error",
+        ) from exc
+    validate_obj(obj, schema)
     return obj
 
 
@@ -136,6 +182,7 @@ def generate_structured(
     temperature: Optional[float] = None,
     max_repair: int = 1,
     json_object_mode: Optional[bool] = None,
+    strict_json_schema: bool = False,
     sensitive: bool = False,
     max_output_tokens: Optional[int] = None,
     detail: str = "",
@@ -144,11 +191,11 @@ def generate_structured(
 ) -> T:
     """Call the LLM and return a validated Pydantic instance of ``schema``.
 
-    Tiered: JSON mode (with graceful fallback) -> robust parse -> validate ->
-    one repair round-trip -> validate. Raises ``StructuredOutputError`` on total
-    failure rather than returning empty data.
+    When ``strict_json_schema`` is enabled, the first request uses strict JSON
+    Schema. Unsupported providers fall back to JSON-object mode, then ordinary
+    output. Parse/validation failure may use bounded repair calls.
     """
-    # Imported lazily to avoid a hard import cycle at module load.
+
     from apps.chatbot.services.llm_client import generate_text
 
     base_messages = _build_messages(messages, contents)
@@ -168,20 +215,38 @@ def generate_structured(
             provider_attempts=provider_attempts,
         ).text
 
-    # --- First attempt (optionally in JSON mode, with graceful fallback) ---
-    try:
-        text = _call(base_messages, _JSON_OBJECT_RESPONSE_FORMAT if use_json_mode else None)
-    except Exception as exc:
-        if use_json_mode and _looks_like_response_format_unsupported(exc):
-            logger.warning(
-                "Provider rejected response_format=json_object; retrying without it: %s", exc
-            )
-            text = _call(base_messages, None)
-        else:
+    response_formats: list[Optional[dict]] = []
+    if use_json_mode:
+        if strict_json_schema:
+            response_formats.append(_strict_response_format(schema))
+        response_formats.append(_JSON_OBJECT_RESPONSE_FORMAT)
+    response_formats.append(None)
+
+    text: str | None = None
+    selected_response_format: Optional[dict] = None
+    for index, response_format in enumerate(response_formats):
+        try:
+            text = _call(base_messages, response_format)
+            selected_response_format = response_format
+            break
+        except Exception as exc:
+            has_fallback = index + 1 < len(response_formats)
+            if response_format is not None and has_fallback and _looks_like_response_format_unsupported(exc):
+                logger.warning(
+                    "Provider rejected structured response format; using fallback format: %s",
+                    type(exc).__name__,
+                )
+                continue
             raise
 
+    if text is None:
+        raise StructuredOutputError(
+            f"No provider response for {schema.__name__}",
+            error_kind="empty_provider_response",
+        )
+
     last_error: Optional[Exception] = None
-    for attempt in range(max_repair + 1):
+    for attempt in range(max(0, int(max_repair)) + 1):
         try:
             obj = extract_json_object(text)
             return validate_obj(obj, schema)
@@ -191,22 +256,33 @@ def generate_structured(
                 break
             if sensitive:
                 logger.warning(
-                    "%s parse/validate failed (attempt %d/%d); requesting repair",
-                    schema.__name__, attempt + 1, max_repair + 1,
+                    "%s parse/validate failed (attempt %d/%d); requesting repair kind=%s locations=%s",
+                    schema.__name__,
+                    attempt + 1,
+                    max_repair + 1,
+                    getattr(exc, "error_kind", type(exc).__name__),
+                    getattr(exc, "validation_locations", ()),
                 )
             else:
                 logger.warning(
                     "%s parse/validate failed (attempt %d/%d); requesting repair: %s",
-                    schema.__name__, attempt + 1, max_repair + 1, exc,
+                    schema.__name__,
+                    attempt + 1,
+                    max_repair + 1,
+                    exc,
                 )
             repair_messages = [{"role": "user", "content": _repair_instruction(text, exc, schema)}]
             try:
-                text = _call(repair_messages, None)
-            except Exception as call_exc:  # network/provider error on repair
+                text = _call(repair_messages, selected_response_format)
+            except Exception as call_exc:
                 last_error = call_exc
                 break
 
-    detail = '' if sensitive else f': {last_error}'
+    error_kind = getattr(last_error, "error_kind", type(last_error).__name__ if last_error else "unknown")
+    locations = getattr(last_error, "validation_locations", ())
+    error_detail = "" if sensitive else f": {last_error}"
     raise StructuredOutputError(
-        f"Failed to obtain valid {schema.__name__} after {max_repair + 1} attempt(s){detail}"
+        f"Failed to obtain valid {schema.__name__} after {max_repair + 1} attempt(s){error_detail}",
+        error_kind=error_kind,
+        validation_locations=tuple(locations),
     )
