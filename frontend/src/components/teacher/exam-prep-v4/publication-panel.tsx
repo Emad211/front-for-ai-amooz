@@ -63,13 +63,13 @@ export function ExamPrepV4PublicationPanel({ projectId }: { projectId: number })
             <div>
               <CardTitle className="text-lg font-black">نسخهٔ دانش‌آموز و انتشار</CardTitle>
               <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                خروجی V4 به قرارداد فعلی آزمون دانش‌آموز تبدیل می‌شود؛ پاسخ و راه‌حل در API سؤال‌های دانش‌آموز افشا نمی‌شود.
+                سؤال‌ها برای نمایش به دانش‌آموز آماده می‌شوند و پاسخ و راه‌حل پیش از ثبت پاسخ او نمایش داده نمی‌شود.
               </p>
             </div>
           </div>
           {projection ? (
             <Badge variant={projection.published ? 'default' : 'outline'}>
-              {projection.published ? 'منتشر شده' : 'projection آماده'}
+              {projection.published ? 'منتشر شده' : 'نسخه آماده'}
             </Badge>
           ) : null}
         </div>
@@ -84,20 +84,14 @@ export function ExamPrepV4PublicationPanel({ projectId }: { projectId: number })
         ) : null}
 
         {projection ? (
-          <div className="grid gap-2 text-sm sm:grid-cols-3">
+          <div className="grid gap-2 text-sm sm:grid-cols-2">
             <div className="rounded-xl border border-border/60 p-3">
-              <p className="text-xs text-muted-foreground">شناسه آزمون موجود</p>
+              <p className="text-xs text-muted-foreground">شناسه آزمون</p>
               <p className="mt-1 font-black">{projection.sessionId}</p>
             </div>
             <div className="rounded-xl border border-border/60 p-3">
               <p className="text-xs text-muted-foreground">تعداد سؤال</p>
               <p className="mt-1 font-black">{projection.questionCount}</p>
-            </div>
-            <div className="rounded-xl border border-border/60 p-3">
-              <p className="text-xs text-muted-foreground">اثر انگشت projection</p>
-              <code className="mt-1 block break-all font-mono text-[11px]">
-                {projection.projectionFingerprint.slice(0, 16)}…
-              </code>
             </div>
           </div>
         ) : null}
@@ -107,7 +101,7 @@ export function ExamPrepV4PublicationPanel({ projectId }: { projectId: number })
             <CheckCircle2 className="h-4 w-4" aria-hidden="true" />
             <AlertTitle>آزمون منتشر شد</AlertTitle>
             <AlertDescription>
-              اکنون می‌توانید دعوت دانش‌آموزان، جزئیات آزمون و نتایج را از جریان موجود مدیریت کنید.
+              اکنون می‌توانید دعوت دانش‌آموزان، جزئیات آزمون و نتایج را از بخش آزمون‌های من مدیریت کنید.
             </AlertDescription>
           </Alert>
         ) : null}
@@ -144,7 +138,7 @@ export function ExamPrepV4PublicationPanel({ projectId }: { projectId: number })
             <Button asChild variant="ghost" className="h-11 rounded-xl">
               <Link href={`/teacher/my-exams/${projection.sessionId}`}>
                 <ExternalLink className="ms-2 h-4 w-4" aria-hidden="true" />
-                مدیریت آزمون موجود
+                مدیریت آزمون
               </Link>
             </Button>
           ) : null}
