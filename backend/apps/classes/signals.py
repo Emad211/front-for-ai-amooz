@@ -5,16 +5,21 @@ from django.dispatch import receiver
 from core.storage_backends import delete_answer_source_file
 
 from .models import (
+    ClassCreationSession,
     ExamPrepExtractionArtifact,
     ExamPrepVisualAsset,
     StudentExerciseAnswerAsset,
 )
-from .models_v4 import ExamSourceDocument, ExamSourcePage
+from .models_v4 import ExamProject, ExamSourceDocument, ExamSourcePage
 from .models_v4_blocks import ExamSourceBlock
 from .models_v4_records import (
     ExamAnswerSolutionRecord,
     ExamExtractionLifecycle,
     ExamQuestionRecord,
+)
+from .services.exam_prep_v4_create_flow import (
+    cancel_source_aware_project_for_session,
+    sync_create_flow_session,
 )
 from .services.exam_prep_v4_invalidation import (
     supersede_document_semantic_outputs,
@@ -80,6 +85,51 @@ def delete_exam_v4_document_blob(sender, instance, **kwargs):  # noqa: ARG001
     name = instance.source_file.name if instance.source_file else ''
     if name:
         _delete_blobs_after_commit([name])
+
+
+@receiver(
+    post_save,
+    sender=ExamProject,
+    dispatch_uid='exam_prep_source_aware_sync_existing_create_flow',
+)
+def sync_source_aware_project_to_existing_draft(
+    sender,
+    instance,
+    **kwargs,
+):  # noqa: ARG001
+    sync_create_flow_session(instance)
+
+
+@receiver(
+    post_save,
+    sender=ExamSourceDocument,
+    dispatch_uid='exam_prep_source_aware_sync_document_progress',
+)
+def sync_source_aware_document_to_existing_draft(
+    sender,
+    instance,
+    **kwargs,
+):  # noqa: ARG001
+    project = ExamProject.objects.filter(id=instance.project_id).first()
+    if project is not None:
+        sync_create_flow_session(project)
+
+
+@receiver(
+    post_save,
+    sender=ClassCreationSession,
+    dispatch_uid='exam_prep_source_aware_propagate_existing_cancel',
+)
+def propagate_existing_create_flow_cancel(
+    sender,
+    instance,
+    **kwargs,
+):  # noqa: ARG001
+    if (
+        instance.pipeline_type == ClassCreationSession.PipelineType.EXAM_PREP
+        and instance.status == ClassCreationSession.Status.CANCELLED
+    ):
+        cancel_source_aware_project_for_session(instance)
 
 
 @receiver(
