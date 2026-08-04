@@ -1,9 +1,4 @@
-"""Isolated single-page extractor for the simplified exam-prep pipeline.
-
-This module accepts one already-rendered page and makes one structured provider
-request. It is not connected to any route, Celery task, Django model, or storage
-path yet.
-"""
+"""Single-page extractor for the simplified exam-preparation pipeline."""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -45,6 +40,13 @@ def _positive_int_env(name: str, default: int) -> int:
         return default
 
 
+def _non_negative_int_env(name: str, default: int) -> int:
+    try:
+        return max(0, int(os.getenv(name, str(default))))
+    except (TypeError, ValueError):
+        return default
+
+
 def _positive_float_env(name: str, default: float) -> float:
     try:
         return max(1.0, float(os.getenv(name, str(default))))
@@ -79,7 +81,7 @@ def _validate_page(page: RenderedExamPage) -> str:
         mime_type = "image/jpeg"
     if mime_type not in _SUPPORTED_IMAGE_TYPES:
         raise InvalidRenderedExamPage(
-            f"Unsupported rendered page MIME type: {mime_type or '(empty)'}."
+            f"Unsupported rendered page MIME type: {mime_type or '(empty)'} ."
         )
 
     max_bytes = _positive_int_env("EXAM_PREP_PAGE_MAX_IMAGE_BYTES", 10 * 1024 * 1024)
@@ -128,7 +130,8 @@ def extract_exam_prep_page(
         feature=LLMUsageLog.Feature.PDF_EXTRACTION,
         timeout=_positive_float_env("EXAM_PREP_PAGE_TIMEOUT_SECONDS", 180.0),
         temperature=0,
-        max_repair=0,
+        max_repair=_non_negative_int_env("EXAM_PREP_PAGE_REPAIR_ATTEMPTS", 1),
+        strict_json_schema=True,
         sensitive=True,
         max_output_tokens=_positive_int_env(
             "EXAM_PREP_PAGE_MAX_OUTPUT_TOKENS",
