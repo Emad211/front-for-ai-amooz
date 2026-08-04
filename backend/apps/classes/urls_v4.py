@@ -6,6 +6,7 @@ from apps.classes.views_v4 import (
     ExamPrepV4ProjectDetailView,
 )
 from apps.classes.views_v4_blocks import ExamPrepV4BlockListView
+from apps.classes.views_v4_compat import ExamPrepV4SessionProjectView
 from apps.classes.views_v4_extraction import (
     ExamPrepV4ExtractionCancelView,
     ExamPrepV4ExtractionRetryView,
@@ -30,6 +31,11 @@ from apps.classes.views_v4_source_map import (
 app_name = 'exam_prep_v4'
 
 urlpatterns = [
+    path(
+        'sessions/<int:session_id>/project/',
+        ExamPrepV4SessionProjectView.as_view(),
+        name='session-project-bridge',
+    ),
     path(
         'projects/',
         ExamPrepV4BatchUploadView.as_view(),
