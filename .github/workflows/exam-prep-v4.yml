@@ -10,7 +10,7 @@ on:
       - 'backend/apps/classes/signals.py'
       - 'backend/apps/classes/tasks_exam_prep.py'
       - 'backend/apps/classes/tasks_v4*.py'
-      - 'backend/apps/classes/views_exam_prep.py'
+      - 'backend/apps/classes/views_exam_prep*.py'
       - 'backend/apps/classes/views_v4*.py'
       - 'backend/apps/classes/serializers_v4*.py'
       - 'backend/apps/classes/urls_v4.py'
@@ -23,6 +23,7 @@ on:
       - 'backend/apps/classes/services/exam_prep_v4_*.py'
       - 'backend/apps/classes/test_exam_prep_legacy_audit.py'
       - 'backend/apps/classes/test_exam_prep_page*.py'
+      - 'backend/apps/classes/test_exam_prep_review_*.py'
       - 'backend/apps/classes/test_exam_prep_simple_pipeline.py'
       - 'backend/apps/classes/test_exam_prep_v4_*.py'
       - 'backend/apps/commons/structured_llm.py'
@@ -115,6 +116,7 @@ jobs:
             backend/apps/commons/test_structured_llm.py \
             backend/apps/classes/test_exam_prep_legacy_audit.py \
             backend/apps/classes/test_exam_prep_page_*.py \
+            backend/apps/classes/test_exam_prep_review_*.py \
             backend/apps/classes/test_exam_prep_simple_pipeline.py \
             backend/apps/classes/test_exam_prep_v4_*.py \
             -q --create-db
