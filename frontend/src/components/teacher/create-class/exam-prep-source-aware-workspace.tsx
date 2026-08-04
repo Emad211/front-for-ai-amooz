@@ -99,8 +99,14 @@ export function ExamPrepSourceAwareWorkspace({ sessionId }: { sessionId: number 
 
   if (!project || projectId === null) return null;
 
-  const hasSourceMap = project.documents.some((document) => document.hasSourceMap);
-  const shouldShowEditor = hasSourceMap || !['draft', 'uploading', 'classifying'].includes(project.status);
+  const allDocumentsClassified = project.documents.length > 0 && project.documents.every(
+    (document) => document.hasClassification
+      && document.hasSourceMap
+      && !['pending_upload', 'uploaded', 'rendering', 'classifying'].includes(document.status),
+  );
+  const sourcePreparationFailed = project.status === 'failed' && !allDocumentsClassified;
+  const shouldShowEditor = allDocumentsClassified
+    && !['draft', 'uploading', 'classifying'].includes(project.status);
   const shouldShowRuntime = EXTRACTION_STARTED.has(project.status);
   const shouldShowReview = ['awaiting_review', 'ready_to_publish', 'published'].includes(project.status);
   const shouldShowPublication = ['ready_to_publish', 'published'].includes(project.status);
@@ -129,7 +135,15 @@ export function ExamPrepSourceAwareWorkspace({ sessionId }: { sessionId: number 
         </Alert>
       ) : null}
 
-      {!shouldShowEditor ? (
+      {sourcePreparationFailed ? (
+        <Alert variant="destructive" className="rounded-2xl">
+          <TriangleAlert className="h-4 w-4" aria-hidden="true" />
+          <AlertTitle>تشخیص نقش صفحات کامل نشد</AlertTitle>
+          <AlertDescription>
+            پردازش اولیهٔ PDF متوقف شده است. یک پیش‌نویس جدید بسازید و فایل را دوباره ارسال کنید.
+          </AlertDescription>
+        </Alert>
+      ) : !shouldShowEditor ? (
         <Card className="rounded-2xl border-border/60">
           <CardContent className="flex items-center gap-3 p-4 text-sm text-muted-foreground">
             <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />

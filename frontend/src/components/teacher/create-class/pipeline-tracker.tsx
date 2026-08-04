@@ -4,7 +4,6 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { Progress } from '@/components/ui/progress';
 import type { UploadProgress } from '@/services/classes-service';
-import { ExamPrepSourceAwareWorkspace } from './exam-prep-source-aware-workspace';
 
 type PipelineTrackerProps = {
   pipelineType: 'class' | 'exam_prep';
@@ -240,9 +239,6 @@ export function PipelineTracker({
         <p className="text-[11px] tabular-nums text-muted-foreground/60">شناسه جلسه: {sessionId}</p>
       ) : null}
 
-      {pipelineType === 'exam_prep' && sessionId ? (
-        <ExamPrepSourceAwareWorkspace sessionId={sessionId} />
-      ) : null}
     </div>
   );
 }
