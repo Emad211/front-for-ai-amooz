@@ -14,11 +14,14 @@ on:
       - 'backend/apps/classes/views_v4*.py'
       - 'backend/apps/classes/serializers_v4*.py'
       - 'backend/apps/classes/urls_v4.py'
+      - 'backend/apps/classes/management/commands/audit_exam_prep_legacy.py'
       - 'backend/apps/classes/management/commands/*exam_prep_v4*.py'
       - 'backend/apps/classes/migrations/004*_exam_prep_v4_*.py'
+      - 'backend/apps/classes/services/exam_prep_legacy_audit.py'
       - 'backend/apps/classes/services/exam_prep_page*.py'
       - 'backend/apps/classes/services/exam_prep_pipeline.py'
       - 'backend/apps/classes/services/exam_prep_v4_*.py'
+      - 'backend/apps/classes/test_exam_prep_legacy_audit.py'
       - 'backend/apps/classes/test_exam_prep_page*.py'
       - 'backend/apps/classes/test_exam_prep_simple_pipeline.py'
       - 'backend/apps/classes/test_exam_prep_v4_*.py'
@@ -107,6 +110,7 @@ jobs:
       - name: Run focused exam prep tests on PostgreSQL
         run: |
           python -m pytest \
+            backend/apps/classes/test_exam_prep_legacy_audit.py \
             backend/apps/classes/test_exam_prep_page_*.py \
             backend/apps/classes/test_exam_prep_simple_pipeline.py \
             backend/apps/classes/test_exam_prep_v4_*.py \
