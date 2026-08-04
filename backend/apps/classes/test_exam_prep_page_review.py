@@ -8,6 +8,7 @@ from apps.classes.models import ClassCreationSession
 from apps.classes.services.exam_prep_page_review import (
     audit_page_first_projection,
     render_projection_transcript,
+    retain_failed_page_evidence,
 )
 
 
@@ -51,7 +52,14 @@ def _projection(questions):
     return {'exam_prep': {'title': 'آزمون زیست', 'questions': questions}}
 
 
-def _page_first_session(teacher, projection, *, status=ClassCreationSession.Status.EXAM_TRANSCRIBED):
+def _page_first_session(
+    teacher,
+    projection,
+    *,
+    status=ClassCreationSession.Status.EXAM_TRANSCRIBED,
+    failed_page_numbers=None,
+):
+    failed_pages = list(failed_page_numbers or [])
     return ClassCreationSession.objects.create(
         teacher=teacher,
         title='آزمون زیست',
@@ -63,7 +71,11 @@ def _page_first_session(teacher, projection, *, status=ClassCreationSession.Stat
             'engine': 'page_first',
             'stage': 'ready_for_review',
             'publicationBlocked': True,
-            'extractionAudit': {'status': 'needs_review'},
+            'failedPageNumbers': failed_pages,
+            'extractionAudit': {
+                'status': 'needs_review',
+                'failedPageNumbers': failed_pages,
+            },
         },
     )
 
@@ -83,6 +95,21 @@ def test_canonical_projection_audit_detects_gaps_and_invalid_correct_option():
     assert 'missing_question_number' in codes
     assert 'correct_option_not_in_options' in codes
     assert audit['criticalIssueCount'] == 2
+
+
+def test_failed_page_evidence_stays_critical_after_projection_is_valid():
+    audit = audit_page_first_projection(_projection([_question(1)]))
+
+    retained = retain_failed_page_evidence(audit, [8, 6, 8])
+
+    assert retained['status'] == 'needs_review'
+    assert retained['failedPageNumbers'] == [6, 8]
+    assert retained['criticalIssueCount'] == 2
+    assert [
+        issue['sourcePages']
+        for issue in retained['issues']
+        if issue['code'] == 'failed_chunk'
+    ] == [[6], [8]]
 
 
 def test_canonical_projection_transcript_is_readable():
@@ -119,6 +146,7 @@ def test_valid_teacher_edit_moves_page_first_session_to_publishable_status():
     )
 
     assert response.status_code == 200
+    assert response.data['status'] == ClassCreationSession.Status.EXAM_STRUCTURED
     session.refresh_from_db()
     assert session.status == ClassCreationSession.Status.EXAM_STRUCTURED
     assert session.workflow_state['publicationBlocked'] is False
@@ -146,6 +174,7 @@ def test_invalid_teacher_edit_stays_blocked_and_keeps_reviewable_output():
     )
 
     assert response.status_code == 200
+    assert response.data['status'] == ClassCreationSession.Status.EXAM_TRANSCRIBED
     session.refresh_from_db()
     assert session.status == ClassCreationSession.Status.EXAM_TRANSCRIBED
     assert session.workflow_state['publicationBlocked'] is True
@@ -153,6 +182,30 @@ def test_invalid_teacher_edit_stays_blocked_and_keeps_reviewable_output():
     assert audit['status'] == 'needs_review'
     assert audit['criticalIssueCount'] >= 2
     assert json.loads(session.exam_prep_json) == invalid
+
+
+def test_valid_manual_json_cannot_clear_failed_physical_page():
+    teacher = _teacher()
+    session = _page_first_session(
+        teacher,
+        _projection([_question(1)]),
+        failed_page_numbers=[6],
+    )
+
+    response = _auth(teacher).patch(
+        f'/api/classes/exam-prep-sessions/{session.id}/',
+        {'exam_prep_json': _projection([_question(1)])},
+        format='json',
+    )
+
+    assert response.status_code == 200
+    assert response.data['status'] == ClassCreationSession.Status.EXAM_TRANSCRIBED
+    session.refresh_from_db()
+    assert session.status == ClassCreationSession.Status.EXAM_TRANSCRIBED
+    assert session.workflow_state['publicationBlocked'] is True
+    assert session.workflow_state['failedPageNumbers'] == [6]
+    assert session.workflow_state['extractionAudit']['failedPageNumbers'] == [6]
+    assert 'صفحه‌های نیازمند بازپردازش: **6**' in session.transcript_markdown
 
 
 def test_publish_endpoint_rejects_page_first_session_with_critical_issues():
@@ -189,6 +242,7 @@ def test_publish_endpoint_accepts_page_first_session_after_valid_edit(monkeypatc
     )
 
     assert edit.status_code == 200
+    assert edit.data['status'] == ClassCreationSession.Status.EXAM_STRUCTURED
     assert publish.status_code == 200
     session.refresh_from_db()
     assert session.status == ClassCreationSession.Status.EXAM_STRUCTURED
