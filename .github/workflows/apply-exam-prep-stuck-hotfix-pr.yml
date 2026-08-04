@@ -21,22 +21,8 @@ jobs:
           ref: hotfix/exam-prep-stuck-start
           fetch-depth: 0
 
-      - name: Execute checked-in hotfix patch
-        shell: bash
-        run: |
-          python - <<'PY'
-          from pathlib import Path
-          import textwrap
-
-          workflow = Path('.github/workflows/apply-exam-prep-stuck-hotfix.yml')
-          text = workflow.read_text(encoding='utf-8')
-          marker = "          python - <<'PY'\n"
-          start = text.index(marker) + len(marker)
-          end = text.index("\n          PY\n\n      - name: Commit hotfix", start)
-          script = textwrap.dedent(text[start:end])
-          exec(compile(script, str(workflow), 'exec'), {'__name__': '__main__'})
-          Path('.github/workflows/apply-exam-prep-stuck-hotfix-pr.yml').unlink()
-          PY
+      - name: Apply hotfix
+        run: python .github/scripts/apply_exam_prep_stuck_hotfix.py
 
       - name: Commit generated hotfix
         shell: bash
