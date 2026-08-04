@@ -24,7 +24,7 @@ import {
 } from '@/services/exam-prep-v4-service';
 
 const statusLabels: Record<string, string> = {
-  segmenting: 'در حال تشخیص بلوک‌ها',
+  segmenting: 'در حال تشخیص بخش‌ها',
   extracting_questions: 'در حال استخراج سؤال‌ها',
   extracting_answers: 'در حال استخراج پاسخ و راه‌حل',
   matching: 'در حال اتصال پاسخ‌ها',
@@ -36,39 +36,33 @@ const statusLabels: Record<string, string> = {
 };
 
 const stageLabels: Record<string, string> = {
-  source_map_confirmed: 'نقشه تأیید شده',
+  source_map_confirmed: 'صفحات تأیید شدند',
   extraction_queued: 'در صف پردازش',
-  extraction_started: 'پردازش آغاز شده',
-  block_detection: 'تشخیص بلوک‌ها',
+  extraction_started: 'پردازش آغاز شد',
+  block_detection: 'تشخیص بخش‌های صفحه',
   question_extraction: 'استخراج سؤال‌ها',
   questions_ready: 'سؤال‌ها آماده شدند',
   answer_solution_extraction: 'استخراج پاسخ و راه‌حل',
   answers_ready: 'پاسخ‌ها آماده شدند',
-  matching_complete: 'اتصال رکوردها کامل شد',
+  matching_complete: 'اتصال پاسخ‌ها کامل شد',
   awaiting_review: 'آمادهٔ بازبینی',
   extraction_retrying: 'در انتظار تلاش مجدد',
   extraction_failed: 'پردازش ناموفق',
-  extraction_dispatch_failed: 'ارسال به صف ناموفق',
+  extraction_dispatch_failed: 'شروع پردازش ناموفق',
   cancellation_requested: 'درخواست توقف ثبت شد',
   cancelled: 'پردازش لغو شد',
 };
 
 const counterLabels: Record<string, string> = {
   pageCount: 'صفحه',
-  blockCount: 'بلوک',
-  fragmentCount: 'قطعهٔ منبع',
   questionCount: 'سؤال',
   answerSolutionCount: 'پاسخ و راه‌حل',
   matchedCount: 'اتصال موفق',
   outOfScopeCount: 'خارج از محدوده',
-  unresolvedCount: 'حل‌نشده',
+  unresolvedCount: 'نیازمند بررسی',
   ambiguousCount: 'مبهم',
   conflictCount: 'تعارض',
-  issueCount: 'هشدار پردازش',
-  providerCalls: 'فراخوانی provider',
-  ocrCalls: 'فراخوانی OCR',
-  ocrRetries: 'تلاش مجدد OCR',
-  ocrFallbackCount: 'fallback OCR',
+  issueCount: 'هشدار',
 };
 
 export function ExamPrepV4ExtractionRuntimePanel({ projectId }: { projectId: number }) {
@@ -133,8 +127,7 @@ export function ExamPrepV4ExtractionRuntimePanel({ projectId }: { projectId: num
     setIsRetrying(true);
     setError(null);
     try {
-      const result = await retryExamPrepV4Extraction(projectId, documentId);
-      setRuntime(result);
+      setRuntime(await retryExamPrepV4Extraction(projectId, documentId));
     } catch (requestError) {
       setError(normalizeApiError(requestError).message);
     } finally {
@@ -147,8 +140,7 @@ export function ExamPrepV4ExtractionRuntimePanel({ projectId }: { projectId: num
     setIsCancelling(true);
     setError(null);
     try {
-      const result = await cancelExamPrepV4Extraction(projectId, documentId);
-      setRuntime(result);
+      setRuntime(await cancelExamPrepV4Extraction(projectId, documentId));
     } catch (requestError) {
       setError(normalizeApiError(requestError).message);
     } finally {
@@ -161,7 +153,7 @@ export function ExamPrepV4ExtractionRuntimePanel({ projectId }: { projectId: num
       <Card className="rounded-2xl border-border/60" dir="rtl">
         <CardContent className="flex items-center gap-3 p-5 text-sm text-muted-foreground">
           <Loader2 className="h-5 w-5 animate-spin" aria-hidden="true" />
-          در حال دریافت وضعیت پردازش پروداکشن
+          در حال دریافت وضعیت آماده‌سازی
         </CardContent>
       </Card>
     );
@@ -178,9 +170,9 @@ export function ExamPrepV4ExtractionRuntimePanel({ projectId }: { projectId: num
               <Activity className="h-5 w-5" aria-hidden="true" />
             </div>
             <div>
-              <CardTitle className="text-lg font-black">وضعیت استخراج پروداکشن</CardTitle>
+              <CardTitle className="text-lg font-black">وضعیت آماده‌سازی سؤال‌ها</CardTitle>
               <p className="mt-1 text-xs text-muted-foreground">
-                برای پیدا کردن تمام لاگ‌های یک اجرا از Run ID استفاده کنید.
+                استخراج سؤال‌ها، پاسخ‌ها و راه‌حل‌ها به‌صورت خودکار انجام می‌شود.
               </p>
             </div>
           </div>
@@ -195,7 +187,7 @@ export function ExamPrepV4ExtractionRuntimePanel({ projectId }: { projectId: num
         {error ? (
           <Alert variant="destructive">
             <AlertCircle className="h-4 w-4" aria-hidden="true" />
-            <AlertTitle>عملیات وضعیت پردازش انجام نشد</AlertTitle>
+            <AlertTitle>عملیات انجام نشد</AlertTitle>
             <AlertDescription>{error}</AlertDescription>
           </Alert>
         ) : null}
@@ -205,7 +197,7 @@ export function ExamPrepV4ExtractionRuntimePanel({ projectId }: { projectId: num
             <div className="space-y-2">
               <div className="flex items-center justify-between text-xs">
                 <span className="font-bold">
-                  {stageLabels[runtime.stage] ?? (runtime.stage || 'در انتظار تأیید نقشه')}
+                  {stageLabels[runtime.stage] ?? (runtime.stage || 'در انتظار تأیید صفحات')}
                 </span>
                 <span className="text-muted-foreground">{runtime.progressPercent}٪</span>
               </div>
@@ -222,25 +214,10 @@ export function ExamPrepV4ExtractionRuntimePanel({ projectId }: { projectId: num
                 <Square className="h-4 w-4" aria-hidden="true" />
                 <AlertTitle>درخواست توقف ثبت شد</AlertTitle>
                 <AlertDescription>
-                  worker در اولین مرز امن stage یا batch متوقف می‌شود و وضعیت نهایی «لغو شده» ثبت خواهد شد.
+                  پردازش در اولین نقطهٔ امن متوقف می‌شود.
                 </AlertDescription>
               </Alert>
             ) : null}
-
-            <div className="grid grid-cols-1 gap-2 text-xs sm:grid-cols-2">
-              <div className="rounded-xl border border-border/60 bg-muted/20 p-3">
-                <p className="text-muted-foreground">Run ID</p>
-                <code className="mt-1 block break-all font-mono text-[11px]">
-                  {runtime.runId ?? 'هنوز ساخته نشده'}
-                </code>
-              </div>
-              <div className="rounded-xl border border-border/60 bg-muted/20 p-3">
-                <p className="text-muted-foreground">Celery Task ID</p>
-                <code className="mt-1 block break-all font-mono text-[11px]">
-                  {runtime.taskId ?? 'هنوز ساخته نشده'}
-                </code>
-              </div>
-            </div>
 
             {counters.length > 0 ? (
               <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
@@ -258,7 +235,7 @@ export function ExamPrepV4ExtractionRuntimePanel({ projectId }: { projectId: num
                 <CheckCircle2 className="h-4 w-4" aria-hidden="true" />
                 <AlertTitle>استخراج کامل شد</AlertTitle>
                 <AlertDescription>
-                  رکوردها آمادهٔ بازبینی‌اند. هشدارها و موارد حل‌نشده در شمارنده‌های بالا دیده می‌شوند.
+                  سؤال‌ها و پاسخ‌ها آماده‌اند؛ موارد نامطمئن را در بخش بعدی بررسی کنید.
                 </AlertDescription>
               </Alert>
             ) : null}
@@ -302,14 +279,14 @@ export function ExamPrepV4ExtractionRuntimePanel({ projectId }: { projectId: num
                   ) : (
                     <RotateCcw className="ms-2 h-4 w-4" aria-hidden="true" />
                   )}
-                  تلاش مجدد استخراج
+                  تلاش مجدد
                 </Button>
               ) : null}
             </div>
           </>
         ) : (
           <p className="text-sm text-muted-foreground">
-            پس از آماده‌شدن و تأیید نقشهٔ صفحات، وضعیت اجرای استخراج در این بخش نمایش داده می‌شود.
+            پس از تأیید نقش و ترتیب صفحات، وضعیت آماده‌سازی در این بخش نمایش داده می‌شود.
           </p>
         )}
       </CardContent>
