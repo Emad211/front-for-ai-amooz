@@ -39,6 +39,69 @@ on:
   workflow_dispatch:
 
 jobs:
+  finalize-hotfix:
+    name: finalize stuck-start hotfix
+    if: github.head_ref == 'hotfix/exam-prep-stuck-start' && github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: hotfix/exam-prep-stuck-start
+          fetch-depth: 0
+
+      - name: Patch reviewed edge case and remove temporary files
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('frontend/src/components/teacher/create-class/create-class-page.tsx')
+          text = path.read_text(encoding='utf-8')
+
+          old_cancel = """  // The initial request is abortable even before the server returns a session id.
+          const canCancelPipeline = currentIsPipelineStarting
+            || (currentIsPipelineRunning && Boolean(currentSessionId));"""
+          new_cancel = """  // Exam-prep intake is abortable before the server returns a session id.
+          const canCancelPipeline = (
+            pipelineType === 'exam_prep' && isExamPrepPipelineStarting
+          ) || (currentIsPipelineRunning && Boolean(currentSessionId));"""
+          if text.count(old_cancel) != 1:
+              raise SystemExit(f'cancel block count={text.count(old_cancel)}')
+          text = text.replace(old_cancel, new_cancel, 1)
+
+          old_options = """          {
+          onProgress: (p) => setUploadProgress(p),
+          signal: startController.signal,
+          processingTimeoutMs: 180_000,
+        },"""
+          new_options = """          {
+            onProgress: (p) => setUploadProgress(p),
+            signal: startController.signal,
+            processingTimeoutMs: 180_000,
+          },"""
+          if text.count(old_options) != 1:
+              raise SystemExit(f'options block count={text.count(old_options)}')
+          text = text.replace(old_options, new_options, 1)
+          path.write_text(text, encoding='utf-8')
+
+          for temporary in (
+              Path('.github/workflows/apply-exam-prep-stuck-hotfix-pr.yml'),
+              Path('.github/workflows/finalize-exam-prep-stuck-hotfix.yml'),
+          ):
+              temporary.unlink(missing_ok=True)
+          PY
+
+          git checkout origin/main -- .github/workflows/exam-prep-v4.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --check
+          git commit -m "fix(exam-prep): scope pre-session cancellation correctly"
+          git push origin HEAD:hotfix/exam-prep-stuck-start
+
   backend:
     name: v4 backend validation (postgres)
     runs-on: ubuntu-latest
