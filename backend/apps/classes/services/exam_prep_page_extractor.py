@@ -2,17 +2,25 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import logging
 import os
 import re
+import time
 
 from apps.chatbot.services.llm_client import part_from_bytes
+from apps.classes.services.exam_prep_page_quality import (
+    choose_better_page_extraction,
+    reconcile_page_extraction,
+    summarize_page_quality,
+)
 from apps.classes.services.exam_prep_page_records import PageExtraction, PageRecord
 from apps.classes.services.exam_prep_utils import clean_exam_markdown
 from apps.commons.llm_prompts import PROMPTS
 from apps.commons.models import LLMUsageLog
-from apps.commons.structured_llm import generate_structured
+from apps.commons.structured_llm import StructuredOutputError, generate_structured
 
 
+logger = logging.getLogger("apps.classes.exam_prep")
 _SUPPORTED_IMAGE_TYPES = frozenset({"image/png", "image/jpeg", "image/webp"})
 _DIGIT_TRANSLATION = str.maketrans(
     "۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩",
@@ -48,6 +56,7 @@ class RenderedExamPage:
     page_number: int
     image: bytes
     mime_type: str = "image/png"
+    native_text: str = ""
 
 
 def _positive_int_env(name: str, default: int) -> int:
@@ -57,9 +66,9 @@ def _positive_int_env(name: str, default: int) -> int:
         return default
 
 
-def _non_negative_int_env(name: str, default: int) -> int:
+def _bounded_non_negative_int_env(name: str, default: int, maximum: int) -> int:
     try:
-        return max(0, int(os.getenv(name, str(default))))
+        return max(0, min(maximum, int(os.getenv(name, str(default)))))
     except (TypeError, ValueError):
         return default
 
@@ -79,13 +88,7 @@ def _normalize_answer_label(value: str) -> str:
 
 
 def _sanitize_answer_only_records(result: PageExtraction) -> PageExtraction:
-    """Correct an obvious answer heading even when the model calls it a question.
-
-    This is intentionally narrow: it runs only when there are fewer than two
-    options and the text starts with a printed answer heading such as
-    ``18- گزینه 3``. Ordinary question stems containing the word ``گزینه`` are
-    untouched.
-    """
+    """Correct an obvious answer heading even when the model calls it a question."""
 
     sanitized: list[PageRecord] = []
     changed = False
@@ -162,12 +165,136 @@ def _validate_page(page: RenderedExamPage) -> str:
             f"Unsupported rendered page MIME type: {mime_type or '(empty)'} ."
         )
 
-    max_bytes = _positive_int_env("EXAM_PREP_PAGE_MAX_IMAGE_BYTES", 10 * 1024 * 1024)
+    max_bytes = _positive_int_env(
+        "EXAM_PREP_PAGE_MAX_IMAGE_BYTES",
+        10 * 1024 * 1024,
+    )
     if len(page.image) > max_bytes:
         raise InvalidRenderedExamPage(
             f"Rendered page image exceeds the {max_bytes}-byte limit."
         )
     return mime_type
+
+
+def _native_text_evidence(page: RenderedExamPage) -> str:
+    max_chars = _positive_int_env(
+        "EXAM_PREP_PAGE_NATIVE_TEXT_MAX_CHARS",
+        30_000,
+    )
+    return clean_exam_markdown(page.native_text)[:max_chars]
+
+
+def _page_messages(
+    *,
+    page: RenderedExamPage,
+    mime_type: str,
+    scope_hint: str,
+    quality_pass: int,
+    repair_codes: tuple[str, ...] = (),
+) -> list[dict]:
+    native_text = _native_text_evidence(page)
+    repair_instruction = ""
+    if quality_pass > 0:
+        codes = ", ".join(dict.fromkeys(repair_codes)) or "semantic_quality"
+        repair_instruction = (
+            "\nThis is a quality-repair pass. The previous schema-valid result "
+            f"failed these semantic checks: {codes}. Re-read the original page "
+            "and return a complete replacement for the whole page. Do not copy "
+            "placeholder option text or split option markers into separate options."
+        )
+    native_instruction = (
+        "\nNATIVE_TEXT_EVIDENCE_BEGIN\n"
+        f"{native_text}\n"
+        "NATIVE_TEXT_EVIDENCE_END\n"
+        "Use the native text as transcription evidence when it is coherent. "
+        "Use the image for columns, grouping, diagrams, and visual relationships. "
+        "Never turn a bare option marker into option text."
+        if native_text
+        else "\nNo usable native text layer was available; rely on the page image."
+    )
+    return [
+        {
+            "role": "system",
+            "content": PROMPTS["exam_prep_page_extraction"]["default"],
+        },
+        {
+            "role": "user",
+            "content": [
+                {
+                    "type": "text",
+                    "text": (
+                        f"PAGE_NUMBER: {page.page_number}\n"
+                        f"SCOPE_HINT: {scope_hint}\n"
+                        f"QUALITY_PASS: {quality_pass}\n"
+                        "Extract only records visibly supported by this page."
+                        f"{repair_instruction}"
+                        f"{native_instruction}"
+                    ),
+                },
+                part_from_bytes(data=page.image, mime_type=mime_type),
+            ],
+        },
+    ]
+
+
+def _generate_page(
+    *,
+    page: RenderedExamPage,
+    mime_type: str,
+    model: str,
+    scope_hint: str,
+    quality_pass: int,
+    repair_codes: tuple[str, ...] = (),
+) -> PageExtraction:
+    result = generate_structured(
+        schema=PageExtraction,
+        messages=_page_messages(
+            page=page,
+            mime_type=mime_type,
+            scope_hint=scope_hint,
+            quality_pass=quality_pass,
+            repair_codes=repair_codes,
+        ),
+        model=model,
+        feature=LLMUsageLog.Feature.PDF_EXTRACTION,
+        timeout=_positive_float_env("EXAM_PREP_PAGE_TIMEOUT_SECONDS", 180.0),
+        temperature=0,
+        max_repair=_bounded_non_negative_int_env(
+            "EXAM_PREP_PAGE_REPAIR_ATTEMPTS",
+            1,
+            2,
+        ),
+        strict_json_schema=True,
+        sensitive=True,
+        max_output_tokens=_positive_int_env(
+            "EXAM_PREP_PAGE_MAX_OUTPUT_TOKENS",
+            12_000,
+        ),
+        detail=(
+            "exam_prep_page_extraction"
+            if quality_pass == 0
+            else "exam_prep_page_quality_repair"
+        ),
+        tracking_context={
+            "stage": (
+                "page_extraction"
+                if quality_pass == 0
+                else "page_quality_repair"
+            ),
+            "page_number": page.page_number,
+            "quality_pass": quality_pass,
+        },
+        provider_attempts=1,
+    )
+    if result.page_number != page.page_number:
+        raise ExtractedPageNumberMismatch(
+            f"Expected page {page.page_number}, received page {result.page_number}."
+        )
+    sanitized = _sanitize_answer_only_records(result)
+    return reconcile_page_extraction(
+        sanitized,
+        native_text=page.native_text,
+    )
 
 
 def extract_exam_prep_page(
@@ -176,55 +303,66 @@ def extract_exam_prep_page(
     model: str | None = None,
     scope_hint: str = "default",
 ) -> PageExtraction:
-    """Extract every numbered record visible on exactly one rendered page."""
+    """Extract and semantically validate every numbered record on one page."""
 
+    started_at = time.monotonic()
     mime_type = _validate_page(page)
     selected_model = select_exam_prep_page_model(model)
     safe_scope_hint = str(scope_hint or "default").strip()[:160] or "default"
 
-    result = generate_structured(
-        schema=PageExtraction,
-        messages=[
-            {
-                "role": "system",
-                "content": PROMPTS["exam_prep_page_extraction"]["default"],
-            },
-            {
-                "role": "user",
-                "content": [
-                    {
-                        "type": "text",
-                        "text": (
-                            f"PAGE_NUMBER: {page.page_number}\n"
-                            f"SCOPE_HINT: {safe_scope_hint}\n"
-                            "Extract only records visibly supported by this page."
-                        ),
-                    },
-                    part_from_bytes(data=page.image, mime_type=mime_type),
-                ],
-            },
-        ],
+    result = _generate_page(
+        page=page,
+        mime_type=mime_type,
         model=selected_model,
-        feature=LLMUsageLog.Feature.PDF_EXTRACTION,
-        timeout=_positive_float_env("EXAM_PREP_PAGE_TIMEOUT_SECONDS", 180.0),
-        temperature=0,
-        max_repair=_non_negative_int_env("EXAM_PREP_PAGE_REPAIR_ATTEMPTS", 1),
-        strict_json_schema=True,
-        sensitive=True,
-        max_output_tokens=_positive_int_env(
-            "EXAM_PREP_PAGE_MAX_OUTPUT_TOKENS",
-            12_000,
-        ),
-        detail="exam_prep_page_extraction",
-        tracking_context={
-            "stage": "page_extraction",
-            "page_number": page.page_number,
-        },
-        provider_attempts=1,
+        scope_hint=safe_scope_hint,
+        quality_pass=0,
     )
+    quality = summarize_page_quality(result)
+    repair_calls = 0
+    max_quality_repairs = _bounded_non_negative_int_env(
+        "EXAM_PREP_PAGE_QUALITY_REPAIR_ATTEMPTS",
+        1,
+        2,
+    )
+    for quality_pass in range(1, max_quality_repairs + 1):
+        if quality.repairable_critical_count < 1:
+            break
+        try:
+            candidate = _generate_page(
+                page=page,
+                mime_type=mime_type,
+                model=selected_model,
+                scope_hint=safe_scope_hint,
+                quality_pass=quality_pass,
+                repair_codes=quality.repairable_critical_codes,
+            )
+        except (StructuredOutputError, ExtractedPageNumberMismatch) as exc:
+            logger.warning(
+                "exam_prep.page.quality_repair_failed pageNumber=%s pass=%s "
+                "errorKind=%s",
+                page.page_number,
+                quality_pass,
+                getattr(exc, "error_kind", type(exc).__name__),
+            )
+            break
+        repair_calls += 1
+        result = choose_better_page_extraction(result, candidate)
+        quality = summarize_page_quality(result)
 
-    if result.page_number != page.page_number:
-        raise ExtractedPageNumberMismatch(
-            f"Expected page {page.page_number}, received page {result.page_number}."
-        )
-    return _sanitize_answer_only_records(result)
+    duration_ms = int((time.monotonic() - started_at) * 1000)
+    logger.info(
+        "exam_prep.page.completed pageNumber=%s model=%s durationMs=%s "
+        "imageBytes=%s nativeTextChars=%s recordCount=%s questionCount=%s "
+        "criticalIssueCount=%s repairableCriticalCount=%s qualityRepairCalls=%s",
+        page.page_number,
+        selected_model,
+        duration_ms,
+        len(page.image),
+        len(page.native_text or ""),
+        len(result.records),
+        quality.question_count,
+        quality.critical_count,
+        quality.repairable_critical_count,
+        repair_calls,
+    )
+    return result
