@@ -192,7 +192,7 @@ def test_invalid_teacher_edit_stays_blocked_and_keeps_reviewable_output():
     assert audit['status'] == 'needs_review'
     assert audit['criticalIssueCount'] == 1
     assert {issue['code'] for issue in audit['issues']} == {'no_questions'}
-    assert json.loads(session.exam_prep_json) == invalid
+    assert json.loads(session.exam_prep_json) == _projection([])
 
 
 def test_valid_manual_json_cannot_clear_failed_physical_page():
