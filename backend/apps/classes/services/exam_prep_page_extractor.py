@@ -237,6 +237,24 @@ def _page_messages(
     ]
 
 
+def _tracking_context(
+    *,
+    page_number: int,
+    quality_pass: int,
+) -> dict[str, int | str]:
+    context: dict[str, int | str] = {
+        "stage": (
+            "page_extraction"
+            if quality_pass == 0
+            else "page_quality_repair"
+        ),
+        "page_number": page_number,
+    }
+    if quality_pass > 0:
+        context["quality_pass"] = quality_pass
+    return context
+
+
 def _generate_page(
     *,
     page: RenderedExamPage,
@@ -275,15 +293,10 @@ def _generate_page(
             if quality_pass == 0
             else "exam_prep_page_quality_repair"
         ),
-        tracking_context={
-            "stage": (
-                "page_extraction"
-                if quality_pass == 0
-                else "page_quality_repair"
-            ),
-            "page_number": page.page_number,
-            "quality_pass": quality_pass,
-        },
+        tracking_context=_tracking_context(
+            page_number=page.page_number,
+            quality_pass=quality_pass,
+        ),
         provider_attempts=1,
     )
     if result.page_number != page.page_number:
