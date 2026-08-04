@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import io
-from typing import Callable, Iterator
+from typing import Callable, Iterator, Sequence
 
 from django.conf import settings
 from PIL import Image
@@ -61,6 +61,9 @@ class ExamPrepPdfSource:
     page_count: int
     scale: float
     max_image_bytes: int
+
+    def __iter__(self) -> Iterator[RenderedExamPage]:
+        return self.iter_pages()
 
     def iter_pages(self) -> Iterator[RenderedExamPage]:
         """Yield one page image and release it before rendering the next page."""
@@ -163,6 +166,16 @@ def render_exam_prep_pdf(data: bytes) -> ExamPrepPdfSource:
     )
 
 
+def _page_iterator(
+    source: ExamPrepPdfSource | Sequence[RenderedExamPage],
+) -> tuple[int, Iterator[RenderedExamPage]]:
+    """Normalize the production lazy source and small in-memory test fixtures."""
+
+    if isinstance(source, ExamPrepPdfSource):
+        return source.page_count, source.iter_pages()
+    return len(source), iter(source)
+
+
 def run_exam_prep_pdf_pipeline(
     *,
     data: bytes,
@@ -177,9 +190,9 @@ def run_exam_prep_pdf_pipeline(
     source = render_exam_prep_pdf(data)
     selected_model = select_exam_prep_page_model(model)
     extracted: list[PageExtraction] = []
-    total = source.page_count
+    total, pages = _page_iterator(source)
 
-    for index, page in enumerate(source.iter_pages(), start=1):
+    for index, page in enumerate(pages, start=1):
         if should_cancel is not None and should_cancel():
             raise ExamPrepPipelineCancelled('Cancellation requested.')
         extracted.append(
