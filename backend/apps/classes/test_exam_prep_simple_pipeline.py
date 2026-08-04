@@ -499,7 +499,7 @@ def test_pipeline_fails_when_every_page_is_unusable(monkeypatch):
         ),
     )
 
-    with pytest.raises(NoExamQuestionsFound, match='Failed pages: \[1\]'):
+    with pytest.raises(NoExamQuestionsFound, match=r'Failed pages: \[1\]'):
         exam_prep_pipeline.run_exam_prep_pdf_pipeline(
             data=b'%PDF fake',
             title='آزمون',
