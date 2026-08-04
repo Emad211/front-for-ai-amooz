@@ -1,14 +1,15 @@
 """Simple production coordinator for exam-preparation PDFs.
 
-The pipeline renders every PDF page once, extracts one ``PageExtraction`` per
-page, and deterministically assembles records by ``(scope_key,
-question_number)``. It has no V1/V2/V3/V4 models or intermediate artifacts.
+The pipeline renders one PDF page at a time, extracts one ``PageExtraction``
+for that page, and deterministically assembles records by
+``(scope_key, question_number)``. It has no V1/V2/V3/V4 models or intermediate
+artifacts.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
 import io
-from typing import Callable
+from typing import Callable, Iterator
 
 from django.conf import settings
 from PIL import Image
@@ -52,29 +53,71 @@ ProgressCallback = Callable[[int, int], None]
 CancelCheck = Callable[[], bool]
 
 
+@dataclass(frozen=True, slots=True)
+class ExamPrepPdfSource:
+    """Validated PDF metadata with a lazy physical-page renderer."""
+
+    data: bytes
+    page_count: int
+    scale: float
+    max_image_bytes: int
+
+    def iter_pages(self) -> Iterator[RenderedExamPage]:
+        """Yield one page image and release it before rendering the next page."""
+
+        import pypdfium2 as pdfium
+
+        document = pdfium.PdfDocument(self.data)
+        try:
+            for index in range(self.page_count):
+                page = document[index]
+                image = None
+                try:
+                    image = page.render(scale=self.scale).to_pil()
+                    png = _encode_png(image, max_bytes=self.max_image_bytes)
+                except Exception as exc:
+                    raise ExamPrepPdfError(
+                        f'رندر صفحهٔ {index + 1} ناموفق بود.'
+                    ) from exc
+                finally:
+                    if image is not None:
+                        image.close()
+                    page.close()
+                yield RenderedExamPage(
+                    page_number=index + 1,
+                    image=png,
+                    mime_type='image/png',
+                )
+        finally:
+            document.close()
+
+
 def _encode_png(image: Image.Image, *, max_bytes: int) -> bytes:
     rendered = image.convert('RGB')
-    encoded = b''
-    for _ in range(6):
-        buffer = io.BytesIO()
-        rendered.save(buffer, format='PNG', optimize=True)
-        encoded = buffer.getvalue()
-        if len(encoded) <= max_bytes or min(rendered.size) <= 320:
-            return encoded
-        width, height = rendered.size
-        rendered = rendered.resize(
-            (max(320, int(width * 0.75)), max(320, int(height * 0.75))),
-            Image.Resampling.LANCZOS,
-        )
-    return encoded
+    try:
+        encoded = b''
+        for _ in range(6):
+            buffer = io.BytesIO()
+            rendered.save(buffer, format='PNG', optimize=True)
+            encoded = buffer.getvalue()
+            if len(encoded) <= max_bytes or min(rendered.size) <= 320:
+                return encoded
+            width, height = rendered.size
+            resized = rendered.resize(
+                (max(320, int(width * 0.75)), max(320, int(height * 0.75))),
+                Image.Resampling.LANCZOS,
+            )
+            rendered.close()
+            rendered = resized
+        return encoded
+    finally:
+        rendered.close()
 
 
-def render_exam_prep_pdf(data: bytes) -> list[RenderedExamPage]:
-    """Validate and render every page in physical PDF order."""
+def render_exam_prep_pdf(data: bytes) -> ExamPrepPdfSource:
+    """Validate a PDF and return a lazy page renderer in physical order."""
 
-    import pypdfium2 as pdfium
     from pypdf import PdfReader
-    from pypdf.errors import PdfReadError
 
     if not data or not data.lstrip().startswith(b'%PDF'):
         raise ExamPrepPdfError('فایل ارسالی یک PDF معتبر نیست.')
@@ -96,7 +139,7 @@ def render_exam_prep_pdf(data: bytes) -> list[RenderedExamPage]:
         page_count = len(reader.pages)
     except ExamPrepPdfError:
         raise
-    except (PdfReadError, Exception) as exc:
+    except Exception as exc:
         raise ExamPrepPdfError('خواندن PDF ناموفق بود.') from exc
 
     if page_count < 1:
@@ -108,33 +151,16 @@ def render_exam_prep_pdf(data: bytes) -> list[RenderedExamPage]:
         )
 
     dpi = max(72, int(getattr(settings, 'PDF_RENDER_DPI', 150)))
-    scale = dpi / 72.0
     max_image_bytes = max(
         1,
         int(getattr(settings, 'PDF_MAX_IMAGE_BYTES_MB', 3)),
     ) * 1024 * 1024
-
-    rendered_pages: list[RenderedExamPage] = []
-    document = pdfium.PdfDocument(data)
-    try:
-        for index in range(page_count):
-            try:
-                image = document[index].render(scale=scale).to_pil()
-                png = _encode_png(image, max_bytes=max_image_bytes)
-            except Exception as exc:
-                raise ExamPrepPdfError(
-                    f'رندر صفحهٔ {index + 1} ناموفق بود.'
-                ) from exc
-            rendered_pages.append(
-                RenderedExamPage(
-                    page_number=index + 1,
-                    image=png,
-                    mime_type='image/png',
-                )
-            )
-    finally:
-        document.close()
-    return rendered_pages
+    return ExamPrepPdfSource(
+        data=data,
+        page_count=page_count,
+        scale=dpi / 72.0,
+        max_image_bytes=max_image_bytes,
+    )
 
 
 def run_exam_prep_pdf_pipeline(
@@ -148,12 +174,12 @@ def run_exam_prep_pdf_pipeline(
 ) -> ExamPrepPipelineResult:
     """Render, extract, and assemble one PDF without legacy intermediates."""
 
-    pages = render_exam_prep_pdf(data)
+    source = render_exam_prep_pdf(data)
     selected_model = select_exam_prep_page_model(model)
     extracted: list[PageExtraction] = []
-    total = len(pages)
+    total = source.page_count
 
-    for index, page in enumerate(pages, start=1):
+    for index, page in enumerate(source.iter_pages(), start=1):
         if should_cancel is not None and should_cancel():
             raise ExamPrepPipelineCancelled('Cancellation requested.')
         extracted.append(
