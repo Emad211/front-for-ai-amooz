@@ -12,6 +12,7 @@ permissions:
 
 jobs:
   patch:
+    # This workflow exists only on the temporary hotfix branch and deletes itself.
     if: github.head_ref == 'hotfix/exam-prep-stuck-start' && github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     steps:
