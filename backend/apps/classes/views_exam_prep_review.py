@@ -20,12 +20,12 @@ from .serializers import (
     ExamPrepSessionDetailSerializer,
     ExamPrepSessionUpdateSerializer,
 )
+from .services.exam_prep_inventory import rebuild_audit_after_teacher_review
 from .services.exam_prep_utils import normalize_exam_prep_json
 from .views import (
     ExamPrepSessionDetailView,
     _teacher_exam_prep_sessions,
 )
-from .services.exam_prep_inventory_pipeline import rebuild_audit_after_teacher_review
 
 
 def _is_reviewable_page_first_session(session: ClassCreationSession) -> bool:
