@@ -61,6 +61,22 @@ def test_native_text_parser_extracts_clear_question_option_blocks():
     assert evidence[2].options[-1] == ('4', 'صفر')
 
 
+def test_native_text_parser_accepts_number_before_dash():
+    evidence = parse_native_question_evidence(
+        '''
+1- کدام عبارت درست است؟
+1) متن نخست
+2) متن دوم
+'''
+    )
+
+    assert evidence[1].question_text == 'کدام عبارت درست است؟'
+    assert evidence[1].options == (
+        ('1', 'متن نخست'),
+        ('2', 'متن دوم'),
+    )
+
+
 def test_native_text_replaces_marker_only_placeholder_options():
     page = PageExtraction(
         page_number=2,
@@ -214,10 +230,10 @@ def test_stale_provider_structural_issue_is_recomputed_and_removed():
                 record_type='question_answer',
                 question_text_markdown='کدام گزینه درست است؟',
                 options=[
-                    PageOption(label='1', text_markdown='الف'),
-                    PageOption(label='2', text_markdown='ب'),
-                    PageOption(label='3', text_markdown='ج'),
-                    PageOption(label='4', text_markdown='د'),
+                    PageOption(label='1', text_markdown='متن اول'),
+                    PageOption(label='2', text_markdown='متن دوم'),
+                    PageOption(label='3', text_markdown='متن سوم'),
+                    PageOption(label='4', text_markdown='متن چهارم'),
                 ],
                 correct_option_label='4',
                 confidence=0.9,
@@ -231,13 +247,34 @@ def test_stale_provider_structural_issue_is_recomputed_and_removed():
     assert repaired.records[0].issues == []
 
 
-def test_strict_audit_counts_extracted_and_usable_questions_separately():
-    good = _question(
-        1,
-        options=[
-            PageOption(label='1', text_markdown='الف'),
-            PageOption(label='2', text_markdown='ب'),
+def test_noop_reconciliation_preserves_page_identity():
+    page = PageExtraction(
+        page_number=3,
+        records=[
+            _question(
+                9,
+                options=[
+                    PageOption(label='1', text_markdown='متن اول'),
+                    PageOption(label='2', text_markdown='متن دوم'),
+                ],
+            )
         ],
+    )
+
+    assert reconcile_page_extraction(page) is page
+
+
+def test_strict_audit_counts_extracted_and_usable_questions_separately():
+    good = PageRecord(
+        question_number=1,
+        record_type='question_answer',
+        question_text_markdown='کدام گزینه درست است؟',
+        options=[
+            PageOption(label='1', text_markdown='متن واقعی اول'),
+            PageOption(label='2', text_markdown='متن واقعی دوم'),
+        ],
+        correct_option_label='1',
+        confidence=0.9,
     )
     bad = _question(
         2,
@@ -279,8 +316,8 @@ def test_better_candidate_prefers_fewer_semantic_failures():
                 _question(
                     1,
                     options=[
-                        PageOption(label='1', text_markdown='الف'),
-                        PageOption(label='2', text_markdown='ب'),
+                        PageOption(label='1', text_markdown='متن اول'),
+                        PageOption(label='2', text_markdown='متن دوم'),
                     ],
                 )
             ],
