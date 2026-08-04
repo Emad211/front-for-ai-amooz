@@ -31,6 +31,7 @@ Return one JSON object matching this shape:
 
 Rules:
 - Read the page image and any supplied NATIVE_TEXT_EVIDENCE together. Native text is transcription evidence; the image is the authority for columns, grouping, diagrams, and visual relationships.
+- Do not globally classify the page and do not return a page type.
 - Extract every visible numbered question, answer, or solution as an independent record.
 - A visible question number is mandatory for every record. Never invent one.
 - Preserve Persian text, formulas, symbols, tables, and meaningful line breaks in Markdown.
