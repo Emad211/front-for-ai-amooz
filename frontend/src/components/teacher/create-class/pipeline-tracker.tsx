@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { Progress } from '@/components/ui/progress';
 import type { UploadProgress } from '@/services/classes-service';
+import { ExamPrepSourceAwareWorkspace } from './exam-prep-source-aware-workspace';
 
 type PipelineTrackerProps = {
   pipelineType: 'class' | 'exam_prep';
@@ -71,16 +72,16 @@ const CLASS_STAGE_LABELS: Record<string, string> = {
 
 const EXAM_STAGE_LABELS: Record<string, string> = {
   queued: 'در صف',
-  reading_source: 'دریافت منبع',
+  reading_source: 'بررسی صفحات',
   transcribing: 'تبدیل به متن',
-  extracting_questions: 'استخراج سوال‌ها',
-  ready_for_review: 'پایان پردازش',
+  extracting_questions: 'استخراج سؤال و پاسخ',
+  ready_for_review: 'آمادهٔ بازبینی',
   failed: 'خطا',
   cancelled: 'متوقف‌شده',
 };
 
 const CLASS_FLOW = ['queued', 'reading_source', 'transcribing', 'structuring', 'extracting_prerequisites', 'teaching_prerequisites', 'building_recap', 'ready_for_review'];
-const EXAM_FLOW = ['queued', 'reading_source', 'transcribing', 'extracting_questions', 'ready_for_review'];
+const EXAM_FLOW = ['queued', 'reading_source', 'extracting_questions', 'ready_for_review'];
 
 export function PipelineTracker({
   pipelineType,
@@ -111,8 +112,8 @@ export function PipelineTracker({
   const cleanedWarnings = workflowWarnings.filter(Boolean).slice(0, 3);
   const hasTracker = Boolean(stage || isUploading || errorMessage || readyForReview);
   const warningIdRef = useRef(`pipeline-warnings-${Math.random().toString(36).slice(2)}`);
-  const reviewDestination = pipelineType === 'class' ? 'صفحه کلاس‌ها' : 'صفحه آمادگی آزمون‌ها';
-  const readyMessage = `پردازش کامل شد. برای بررسی نهایی و انتشار، از ${reviewDestination} وارد پیش‌نویس شوید.`;
+  const reviewDestination = pipelineType === 'class' ? 'صفحه کلاس‌ها' : 'همین بخش';
+  const readyMessage = `پردازش کامل شد. برای بررسی نهایی و انتشار، از ${reviewDestination} ادامه دهید.`;
 
   return (
     <div className="mt-4 space-y-4">
@@ -235,8 +236,12 @@ export function PipelineTracker({
         </div>
       )}
 
-      {sessionId ? (
+      {pipelineType === 'class' && sessionId ? (
         <p className="text-[11px] tabular-nums text-muted-foreground/60">شناسه جلسه: {sessionId}</p>
+      ) : null}
+
+      {pipelineType === 'exam_prep' && sessionId ? (
+        <ExamPrepSourceAwareWorkspace sessionId={sessionId} />
       ) : null}
     </div>
   );
