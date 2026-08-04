@@ -162,6 +162,10 @@ def _build_inventory():
         project=v4_active_project,
         session=v4_active_session,
     )
+    # V4 writes the session task id after the bridge and dispatch are created.
+    ClassCreationSession.objects.filter(id=v4_active_session.id).update(
+        celery_task_id='v4-session-task',
+    )
     ExamSourceDocument.objects.create(
         project=v4_active_project,
         original_name='active.pdf',
