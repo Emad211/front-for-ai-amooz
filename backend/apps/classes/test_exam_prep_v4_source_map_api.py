@@ -420,6 +420,36 @@ def test_detail_with_no_documents_returns_empty_source_map(settings):
     assert response.data['documents'] == []
 
 
+def test_rendered_unknown_pages_are_not_exposed_as_source_map_before_classification(settings):
+    settings.EXAM_PREP_V4_ENABLED = True
+    teacher = _user()
+    project = _project(teacher, status=ExamProject.Status.CLASSIFYING)
+    document = ExamSourceDocument.objects.create(
+        project=project,
+        original_name='private.pdf',
+        page_count=2,
+        status=ExamSourceDocument.Status.CLASSIFYING,
+        classification_fingerprint='',
+    )
+    for page_number in (1, 2):
+        ExamSourcePage.objects.create(
+            document=document,
+            page_number=page_number,
+            display_order=page_number,
+            predicted_role=ExamSourceRole.UNKNOWN,
+            predicted_confidence=Decimal('0.0000'),
+        )
+
+    response = _client(teacher).get(_detail_url(project.id))
+
+    assert response.status_code == 200
+    source = response.data['documents'][0]
+    assert source['hasClassification'] is False
+    assert source['hasSourceMap'] is False
+    assert source['sourceMapFingerprint'] is None
+    assert len(source['pages']) == 2
+
+
 def test_nonexistent_project_returns_404(settings):
     settings.EXAM_PREP_V4_ENABLED = True
     response = _client(_user()).get(_detail_url(999999))

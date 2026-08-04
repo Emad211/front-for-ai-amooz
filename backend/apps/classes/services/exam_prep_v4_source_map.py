@@ -217,6 +217,10 @@ def _safe_source_map_fingerprint(
     document: ExamSourceDocument,
     pages: list[ExamSourcePage],
 ) -> str | None:
+    # Rendered page rows exist before the multimodal classifier has completed.
+    # Do not advertise those default UNKNOWN rows as a usable Source Map.
+    if not document.classification_fingerprint:
+        return None
     if document.source_map_fingerprint:
         return document.source_map_fingerprint
     if document.page_count < 1 or len(pages) != document.page_count:
