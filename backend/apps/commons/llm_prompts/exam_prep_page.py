@@ -43,7 +43,7 @@ Rules:
 - A page may contain mixed record types. Extract what is visible rather than forcing one role on the whole page.
 - If a record visibly begins before this page, set continues_from_previous_page=true.
 - If a record visibly continues after this page, set continues_on_next_page=true.
-- Use the supplied scope hint unless a clearly printed local subject/section heading changes (for example Biology to Physics); then use a short stable scope key for that printed section.
+- Keep the supplied scope hint for ordinary subject or chapter headings. Change `scope_key` only when the document clearly starts an independent exam/section whose question numbering restarts; use the same printed stable identifier on its question and answer pages.
 - Ignore headers, footers, advertisements, channel names, watermarks, page decorations, and page numbers that are not question numbers.
 - In multi-column pages, use printed question numbers to keep records separate; do not merge adjacent columns.
 - Do not infer missing question text, options, answer, or solution. Leave missing fields empty and add a short machine-readable issue code.
