@@ -18,6 +18,7 @@ from apps.commons.token_tracker import set_current_user
 
 
 logger = logging.getLogger('apps.classes.exam_prep')
+PAGE_FIRST_ENGINE = 'page_first'
 TASK_SOFT_LIMIT = int(os.getenv('EXAM_PREP_TASK_SOFT_LIMIT_SECONDS', '3300'))
 TASK_HARD_LIMIT = int(os.getenv('EXAM_PREP_TASK_HARD_LIMIT_SECONDS', '3600'))
 TASK_MAX_RETRIES = int(os.getenv('EXAM_PREP_TASK_MAX_RETRIES', '2'))
@@ -32,6 +33,7 @@ def _workflow_state(
     ready: bool = False,
 ) -> dict:
     return {
+        'engine': PAGE_FIRST_ENGINE,
         'stage': stage,
         'message': message,
         'progressPercent': max(0, min(100, int(progress))),
