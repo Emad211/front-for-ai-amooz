@@ -2,20 +2,23 @@
 
 The pipeline renders one PDF page at a time, extracts one ``PageExtraction``
 for that page, and deterministically assembles records by
-``(scope_key, question_number)``. It has no V1/V2/V3/V4 models or intermediate
-artifacts.
+``(scope_key, question_number)``. A malformed structured response is retried for
+that page only and cannot discard successful pages.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
 import io
+import logging
+import os
 from typing import Callable, Iterator, Sequence
 
 from django.conf import settings
 from PIL import Image
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from apps.classes.services.exam_prep_page_extractor import (
+    ExtractedPageNumberMismatch,
     RenderedExamPage,
     extract_exam_prep_page,
     select_exam_prep_page_model,
@@ -26,6 +29,10 @@ from apps.classes.services.exam_prep_page_records import (
     PageExtraction,
     assemble_page_extractions,
 )
+from apps.commons.structured_llm import StructuredOutputError
+
+
+logger = logging.getLogger('apps.classes.exam_prep')
 
 
 class ExamPrepPdfError(RuntimeError):
@@ -46,6 +53,7 @@ class ExamPrepPipelineResult(BaseModel):
     page_count: int
     question_count: int
     questions_needing_review: int
+    failed_page_numbers: list[int] = Field(default_factory=list)
     model: str
 
 
@@ -176,6 +184,20 @@ def _page_iterator(
     return len(source), iter(source)
 
 
+def _page_extraction_attempts() -> int:
+    try:
+        return max(1, min(3, int(os.getenv('EXAM_PREP_PAGE_EXTRACTION_ATTEMPTS', '2'))))
+    except (TypeError, ValueError):
+        return 2
+
+
+def _safe_error_metadata(exc: Exception) -> tuple[str, tuple[str, ...]]:
+    return (
+        str(getattr(exc, 'error_kind', type(exc).__name__))[:80],
+        tuple(getattr(exc, 'validation_locations', ())[:8]),
+    )
+
+
 def run_exam_prep_pdf_pipeline(
     *,
     data: bytes,
@@ -190,18 +212,46 @@ def run_exam_prep_pdf_pipeline(
     source = render_exam_prep_pdf(data)
     selected_model = select_exam_prep_page_model(model)
     extracted: list[PageExtraction] = []
+    failed_page_numbers: list[int] = []
     total, pages = _page_iterator(source)
+    attempts = _page_extraction_attempts()
 
     for index, page in enumerate(pages, start=1):
         if should_cancel is not None and should_cancel():
             raise ExamPrepPipelineCancelled('Cancellation requested.')
-        extracted.append(
-            extract_exam_prep_page(
-                page,
-                model=selected_model,
-                scope_hint=scope_hint,
+
+        page_result: PageExtraction | None = None
+        for attempt in range(1, attempts + 1):
+            try:
+                page_result = extract_exam_prep_page(
+                    page,
+                    model=selected_model,
+                    scope_hint=scope_hint,
+                )
+                break
+            except (StructuredOutputError, ExtractedPageNumberMismatch) as exc:
+                error_kind, locations = _safe_error_metadata(exc)
+                logger.warning(
+                    'exam_prep.page.invalid pageNumber=%s attempt=%s maxAttempts=%s errorKind=%s locations=%s',
+                    page.page_number,
+                    attempt,
+                    attempts,
+                    error_kind,
+                    locations,
+                )
+                if should_cancel is not None and should_cancel():
+                    raise ExamPrepPipelineCancelled('Cancellation requested.') from exc
+
+        if page_result is None:
+            failed_page_numbers.append(page.page_number)
+            logger.error(
+                'exam_prep.page.skipped pageNumber=%s attempts=%s',
+                page.page_number,
+                attempts,
             )
-        )
+        else:
+            extracted.append(page_result)
+
         if on_page_complete is not None:
             on_page_complete(index, total)
 
@@ -213,8 +263,13 @@ def run_exam_prep_pdf_pipeline(
         title=title,
     )
     if assembled.question_count < 1:
+        failed_suffix = (
+            f' Failed pages: {failed_page_numbers}'
+            if failed_page_numbers
+            else ''
+        )
         raise NoExamQuestionsFound(
-            'هیچ سؤال شماره‌داری در PDF تشخیص داده نشد.'
+            f'هیچ سؤال شماره‌داری در PDF تشخیص داده نشد.{failed_suffix}'
         )
 
     return ExamPrepPipelineResult(
@@ -223,5 +278,6 @@ def run_exam_prep_pdf_pipeline(
         page_count=total,
         question_count=assembled.question_count,
         questions_needing_review=assembled.questions_needing_review,
+        failed_page_numbers=failed_page_numbers,
         model=selected_model,
     )
