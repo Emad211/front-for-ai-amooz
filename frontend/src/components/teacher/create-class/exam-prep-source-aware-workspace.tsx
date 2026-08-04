@@ -137,7 +137,7 @@ export function ExamPrepSourceAwareWorkspace({ sessionId }: { sessionId: number 
           </CardContent>
         </Card>
       ) : (
-        <div className="[&_header_a:first-child]:hidden">
+        <div className="[&_a]:hidden">
           <ExamPrepV4SourceMapEditor projectId={projectId} />
         </div>
       )}
