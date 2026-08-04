@@ -194,8 +194,9 @@ def test_question_text_and_options_only_come_from_question_records():
     )
 
     question = result.projection['exam_prep']['questions'][0]
+    assert answer_record.question_text_markdown == ''
     assert question['question_text_markdown'] == 'کدام گزینه درست است؟'
-    assert 'گزینه' not in question['question_text_markdown']
+    assert '۱۸- گزینه' not in question['question_text_markdown']
     assert question['correct_option_label'] == '3'
     assert question['teacher_solution_markdown'].startswith('هر چه کود')
 
