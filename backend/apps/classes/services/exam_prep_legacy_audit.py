@@ -7,6 +7,7 @@ retain/drain/re-upload plan.
 from __future__ import annotations
 
 from collections import Counter, defaultdict
+import json
 from typing import Any
 
 from django.db.models import QuerySet
@@ -20,7 +21,6 @@ from apps.classes.models import (
 from apps.classes.models_v4 import ExamProject, ExamSourceDocument
 from apps.classes.models_v4_bridge import ExamV4SessionBridge
 from apps.classes.models_v4_projection import ExamV4Projection
-from apps.classes.services.exam_prep_utils import parse_exam_prep_json
 
 
 PAGE_FIRST_ENGINE = 'page_first'
@@ -68,8 +68,17 @@ def _clean_id(value: Any) -> str | None:
     return text[:255] if text else None
 
 
-def _valid_question_count(raw: str) -> int:
-    payload = parse_exam_prep_json(raw)
+def _valid_question_count(raw: object) -> int:
+    if isinstance(raw, dict):
+        payload = raw
+    elif isinstance(raw, str) and raw.strip():
+        try:
+            payload = json.loads(raw)
+        except (TypeError, ValueError, json.JSONDecodeError):
+            return 0
+    else:
+        return 0
+
     exam = payload.get('exam_prep') if isinstance(payload, dict) else None
     questions = exam.get('questions') if isinstance(exam, dict) else None
     if not isinstance(questions, list):
