@@ -1,8 +1,8 @@
-"""Project-boundary services for Exam Prep V4.
+"""Project-boundary services for the source-aware Exam Prep engine.
 
-This module owns the product invariant that every uploaded PDF becomes an
-independent exam project unless a future, explicit grouping command is used.
-No classifier or extractor may infer cross-document project membership.
+Every uploaded PDF creates an independent exam project unless a future,
+explicit grouping command is used. No classifier or extractor may infer
+cross-document project membership.
 """
 from __future__ import annotations
 
@@ -51,12 +51,12 @@ class NewExamPdf:
 
 
 def exam_prep_v4_enabled() -> bool:
-    """Return the explicit rollout flag; V4 is off unless configured."""
+    """Return the rollout flag; enabled by default with explicit rollback support."""
 
     value = getattr(
         settings,
         'EXAM_PREP_V4_ENABLED',
-        os.getenv('EXAM_PREP_V4_ENABLED', 'False'),
+        os.getenv('EXAM_PREP_V4_ENABLED', 'True'),
     )
     if isinstance(value, bool):
         return value
@@ -69,7 +69,7 @@ def _validate_source(source: NewExamPdf) -> None:
     if not name:
         raise InvalidExamPrepV4Source('Source filename is required.')
     if content_type != 'application/pdf' and not name.lower().endswith('.pdf'):
-        raise InvalidExamPrepV4Source('Exam Prep V4 currently accepts PDF sources only.')
+        raise InvalidExamPrepV4Source('The exam-preparation engine currently accepts PDF sources only.')
     if source.byte_size < 0 or source.page_count < 0:
         raise InvalidExamPrepV4Source('Source sizes and page counts cannot be negative.')
     if source.source_sha256 and len(source.source_sha256) != 64:
@@ -134,7 +134,7 @@ def create_independent_exam_projects(
     """
 
     if not exam_prep_v4_enabled():
-        raise ExamPrepV4Disabled('Exam Prep V4 is not enabled.')
+        raise ExamPrepV4Disabled('The source-aware exam-preparation engine is disabled.')
 
     source_list = list(sources)
     if not source_list:
@@ -179,6 +179,6 @@ def create_independent_exam_projects(
 
 
 def teacher_exam_projects(teacher):
-    """Owner-scoped base queryset for all future V4 teacher endpoints."""
+    """Owner-scoped base queryset for teacher endpoints."""
 
     return ExamProject.objects.filter(teacher=teacher)
