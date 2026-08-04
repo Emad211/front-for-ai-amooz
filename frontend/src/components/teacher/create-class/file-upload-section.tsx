@@ -26,6 +26,14 @@ export function FileUploadSection({
   onFilesSelected,
   children,
 }: FileUploadSectionProps) {
+  const isExamPreparation = title.includes('حل تست') || title.includes('آزمون');
+  const visibleTitle = isExamPreparation ? 'بارگذاری فایل آزمون' : title;
+  const visibleDescription = isExamPreparation
+    ? 'فایل PDF سؤال‌ها، پاسخ‌نامه یا راه‌حل را بارگذاری کنید.'
+    : description;
+  const effectiveAccept = isExamPreparation ? 'application/pdf,.pdf' : accept;
+  const effectiveMultiple = isExamPreparation ? false : (multiple ?? true);
+
   return (
     <Card className="border-border/40 rounded-2xl overflow-hidden bg-card/70 backdrop-blur">
       <CardHeader
@@ -38,8 +46,8 @@ export function FileUploadSection({
               <Upload className="h-5 w-5 text-primary" />
             </div>
             <div>
-              <CardTitle className="text-lg">{title}</CardTitle>
-              {description && <p className="text-xs text-muted-foreground mt-0.5">{description}</p>}
+              <CardTitle className="text-lg">{visibleTitle}</CardTitle>
+              {visibleDescription && <p className="text-xs text-muted-foreground mt-0.5">{visibleDescription}</p>}
             </div>
           </div>
           <ChevronDown className={cn(
@@ -59,18 +67,18 @@ export function FileUploadSection({
                 <FileText className="h-6 w-6 text-primary" />
               </div>
               <p className="text-xs sm:text-sm text-muted-foreground">
-                فایل‌ها را بکشید و رها کنید یا <span className="text-primary font-medium">کلیک کنید</span>
+                فایل را بکشید و رها کنید یا <span className="text-primary font-medium">کلیک کنید</span>
               </p>
               <p className="text-[10px] sm:text-xs text-muted-foreground">
-                صوت / ویدیو / تصویر / PDF
+                {isExamPreparation ? 'PDF' : 'صوت / ویدیو / تصویر / PDF'}
               </p>
             </div>
             <input
               id="dropzone-lesson"
               type="file"
               className="hidden"
-              accept={accept}
-              multiple={multiple ?? true}
+              accept={effectiveAccept}
+              multiple={effectiveMultiple}
               onChange={(e) => onFilesSelected?.(e.target.files)}
             />
           </label>
