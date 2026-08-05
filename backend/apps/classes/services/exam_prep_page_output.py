@@ -36,6 +36,10 @@ CRITICAL_ISSUE_CODES = frozenset(
         "targeted_repair_unresolved",
         "targeted_repair_failed",
         "targeted_repair_no_source_page",
+        "source_verification_failed",
+        "table_incomplete",
+        "count_answer_unresolved",
+        "visual_attachment_missing",
         "failed_chunk",
     }
 )
@@ -162,7 +166,7 @@ def render_strict_page_first_transcript(
         result,
         failed_page_numbers=failed_page_numbers,
     )
-    repair_stats = dict(targeted_repair_stats or {})
+    verification = dict(targeted_repair_stats or {})
     exam = result.projection.get("exam_prep") or {}
     title = clean_exam_markdown(exam.get("title") or "آمادگی آزمون")
     lines = [
@@ -179,12 +183,16 @@ def render_strict_page_first_transcript(
         f"- پاسخ‌های بدون صورت سؤال که کنار گذاشته شدند: **{len(result.orphan_answers)}**",
         f"- خطاهای بحرانی: **{audit['criticalIssueCount']}**",
     ]
-    if repair_stats:
+    if verification:
         lines.extend(
             [
-                f"- بازبینی هدفمند انجام‌شده: **{int(repair_stats.get('attempted', 0))}**",
-                f"- بازبینی هدفمند موفق: **{int(repair_stats.get('repaired', 0))}**",
-                f"- بازبینی هدفمند حل‌نشده: **{int(repair_stats.get('unresolved', 0))}**",
+                f"- سؤال‌های بررسی‌شده با منبع: **{int(verification.get('attempted', 0))}**",
+                f"- سؤال‌های تأییدشده: **{int(verification.get('verified', 0))}**",
+                f"- سؤال‌های اصلاح‌شده از روی منبع: **{int(verification.get('repaired', 0))}**",
+                f"- تلاش‌های مجدد: **{int(verification.get('retried', 0))}**",
+                f"- بررسی‌های حل‌نشده: **{int(verification.get('unresolved', 0))}**",
+                f"- تصاویر منبع متصل‌شده: **{int(verification.get('visuals_attached', 0))}**",
+                f"- جدول‌های کامل تأییدشده: **{int(verification.get('tables_verified', 0))}**",
             ]
         )
     if audit["failedPageNumbers"]:
@@ -221,6 +229,8 @@ def render_strict_page_first_transcript(
             text = clean_exam_markdown(option.get("text_markdown") or "")
             if label and text:
                 lines.append(f"{label}) {text}")
+            elif label and question.get("visuals"):
+                lines.append(f"{label}) _گزینه در تصویر منبع نمایش داده شده است._")
         correct = clean_exam_markdown(question.get("correct_option_label") or "")
         if correct:
             lines.extend(["", f"**پاسخ صحیح:** گزینه {correct}"])
@@ -230,11 +240,13 @@ def render_strict_page_first_transcript(
         source_pages = question.get("source_pages") or []
         if source_pages:
             lines.extend(["", f"_صفحات منبع: {', '.join(map(str, source_pages))}_"])
-        if "visual_evidence_required" in issue_codes:
+        if question.get("visuals"):
+            lines.extend(["", "_تصویر اصلی مرتبط با سؤال از صفحهٔ منبع متصل شده است._"])
+        elif "visual_evidence_required" in issue_codes or "visual_attachment_missing" in issue_codes:
             lines.extend(
                 [
                     "",
-                    "_این سؤال به شکل، نمودار یا تصویر صفحهٔ منبع وابسته است و تا اتصال تصویر قابل انتشار نیست._",
+                    "_این سؤال به شکل، نمودار یا تصویر وابسته است و تصویر منبع آن متصل نشده است._",
                 ]
             )
         if issue_codes:
