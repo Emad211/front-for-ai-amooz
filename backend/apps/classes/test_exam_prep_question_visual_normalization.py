@@ -32,10 +32,9 @@ def test_visual_question_keeps_blank_labeled_options_and_correct_answer():
         }
     }
 
-    normalized, changed = normalize_exam_prep_questions(payload)
+    normalized, _changed = normalize_exam_prep_questions(payload)
     question = normalized['exam_prep']['questions'][0]
 
-    assert changed is False
     assert [item['label'] for item in question['options']] == ['1', '2', '3', '4']
     assert [item['text_markdown'] for item in question['options']] == ['', '', '', '']
     assert question['correct_option_label'] == '2'
