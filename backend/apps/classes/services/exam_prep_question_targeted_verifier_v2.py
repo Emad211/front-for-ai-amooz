@@ -48,12 +48,15 @@ class TargetedVerificationCancelled(RuntimeError):
 
 def _raise_if_cancelled(should_cancel: CancelCheck | None) -> None:
     if should_cancel is not None and should_cancel():
+        logger.info("exam_prep.question.cancelled_before_next_call")
         raise TargetedVerificationCancelled(
             "Cancellation requested during targeted verification."
         )
 
 
-def _prepare_v2(raw_question: dict[str, Any]) -> tuple[dict[str, Any], bool, bool]:
+def _prepare_v2(
+    raw_question: dict[str, Any],
+) -> tuple[dict[str, Any], bool, bool]:
     question, changed, required = _prepare_question(raw_question)
     codes = {
         clean_exam_markdown(code).strip()
@@ -94,6 +97,17 @@ def _without_non_concrete_failure(issues: list[str]) -> list[str]:
     return [code for code in issues if code not in _NON_CONCRETE_FAILURE_CODES]
 
 
+def _clear_recomputed_integrity_codes(question: dict[str, Any]) -> None:
+    """Drop pre-audit integrity markers; the final integrity pass re-derives them."""
+
+    question["issues"] = [
+        clean_exam_markdown(code).strip()
+        for code in (question.get("issues") or [])
+        if clean_exam_markdown(code).strip()
+        and clean_exam_markdown(code).strip() not in _NEW_TARGETED_CODES
+    ]
+
+
 def verify_suspicious_questions(
     result: PageAssemblyResult,
     *,
@@ -118,7 +132,6 @@ def verify_suspicious_questions(
     )
     attempted = verified_count = repaired = unresolved = 0
     visuals_attached = tables_verified = skipped = selected = 0
-    cancelled_before_call = 0
     output: list[dict[str, Any]] = []
 
     for raw_question in questions:
@@ -185,9 +198,6 @@ def verify_suspicious_questions(
                 crops=crops,
                 model=model,
             )
-        except TargetedVerificationCancelled:
-            cancelled_before_call += 1
-            raise
         except Exception as exc:
             logger.warning(
                 "exam_prep.question.audit_failed questionNumber=%s attempt=1 "
@@ -222,6 +232,7 @@ def verify_suspicious_questions(
 
         _raise_if_cancelled(should_cancel)
         question = _apply_audit(question, audit)
+        _clear_recomputed_integrity_codes(question)
         metadata = dict(question.get("verification_metadata") or {})
         metadata.update(
             {
@@ -284,5 +295,5 @@ def verify_suspicious_questions(
         "visuals_attached": visuals_attached,
         "tables_verified": tables_verified,
         "skipped": skipped,
-        "cancelled_before_call": cancelled_before_call,
+        "cancelled_before_call": 0,
     }
