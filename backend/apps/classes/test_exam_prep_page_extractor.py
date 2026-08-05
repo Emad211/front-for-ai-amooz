@@ -14,11 +14,12 @@ from apps.commons.models import LLMUsageLog
 pytestmark = pytest.mark.unit
 
 
-def _page(number: int = 1, *, mime_type: str = 'image/png'):
+def _page(number: int = 1, *, mime_type: str = 'image/png', **kwargs):
     return extractor.RenderedExamPage(
         page_number=number,
         image=b'\x89PNG\r\npage-bytes',
         mime_type=mime_type,
+        **kwargs,
     )
 
 
@@ -70,9 +71,10 @@ def test_page_prompt_is_registered_and_record_first():
 
     assert 'exactly ONE rendered PDF page' in prompt
     assert 'Extract every visible numbered question' in prompt
-    assert 'Do not globally classify the page' in prompt
     assert 'question_number' in prompt
     assert 'continues_on_next_page' in prompt
+    assert 'CONTINUATION_HINT' in prompt
+    assert 'context-only' in prompt
 
 
 def test_page_model_uses_explicit_then_specific_then_shared_env(monkeypatch):
@@ -107,9 +109,16 @@ def test_extract_page_makes_one_structured_multimodal_request(monkeypatch):
     monkeypatch.setattr(extractor, 'generate_structured', fake_generate_structured)
 
     result = extractor.extract_exam_prep_page(
-        _page(7, mime_type='image/jpg'),
+        _page(
+            7,
+            mime_type='image/jpg',
+            native_text='متن همین صفحه',
+            previous_native_text='انتهای صفحه قبل',
+            next_native_text='ابتدای صفحه بعد',
+        ),
         model='models/vision-model',
         scope_hint='exam-a',
+        continuation_hint=50,
     )
 
     assert result is expected
@@ -127,12 +136,19 @@ def test_extract_page_makes_one_structured_multimodal_request(monkeypatch):
     assert call['tracking_context'] == {
         'stage': 'page_extraction',
         'page_number': 7,
+        'region': 'full_page',
     }
 
     user_parts = call['messages'][1]['content']
     assert user_parts[0]['type'] == 'text'
-    assert 'PAGE_NUMBER: 7' in user_parts[0]['text']
-    assert 'SCOPE_HINT: exam-a' in user_parts[0]['text']
+    prompt = user_parts[0]['text']
+    assert 'PAGE_NUMBER: 7' in prompt
+    assert 'REGION: full_page' in prompt
+    assert 'SCOPE_HINT: exam-a' in prompt
+    assert 'CONTINUATION_HINT: 50' in prompt
+    assert 'متن همین صفحه' in prompt
+    assert 'انتهای صفحه قبل' in prompt
+    assert 'ابتدای صفحه بعد' in prompt
     assert user_parts[1]['type'] == 'image_url'
     assert user_parts[1]['image_url']['url'].startswith('data:image/jpeg;base64,')
 
