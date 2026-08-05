@@ -188,14 +188,15 @@ def process_exam_prep_pdf_session(self, session_id: int) -> dict:
             )
 
         publishable = bool(result.publication_ready)
-        # Completion state and publication eligibility are separate concerns.
-        # A pipeline that produced a reviewable draft is always terminal/structured,
-        # even when publication remains blocked by extraction issues.
-        final_status = ClassCreationSession.Status.EXAM_STRUCTURED
+        final_status = (
+            ClassCreationSession.Status.EXAM_STRUCTURED
+            if publishable
+            else ClassCreationSession.Status.EXAM_TRANSCRIBED
+        )
         final_message = (
             'سؤال‌ها و پاسخ‌ها آمادهٔ بازبینی و انتشار هستند.'
             if publishable
-            else 'استخراج انجام شد؛ پیش‌نویس آمادهٔ بازبینی است، اما تا رفع موارد بحرانی قابل انتشار نیست.'
+            else 'استخراج انجام شد، اما تا رفع موارد بحرانی قابل انتشار نیست.'
         )
 
         with transaction.atomic():
