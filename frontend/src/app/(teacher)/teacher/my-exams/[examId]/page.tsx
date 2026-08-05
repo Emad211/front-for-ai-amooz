@@ -86,15 +86,13 @@ export default function TeacherExamDetailPage({ params }: PageProps) {
         setExamPrep(data);
         setError(null);
 
-        // Fetch invites
         try {
           const inviteData = await listExamPrepInvites(sessionId);
           setInvites(inviteData);
         } catch {
-          // Ignore invite fetch errors
+          // Ignore invite fetch errors.
         }
 
-        // Start polling if processing
         if (['exam_transcribing', 'exam_structuring'].includes(data.status)) {
           startPolling(sessionId);
         }
@@ -179,7 +177,7 @@ export default function TeacherExamDetailPage({ params }: PageProps) {
   const extractionReviewConfirmed =
     !examPrep.teacherReviewRequired || Boolean(examPrep.teacherReviewedAt);
   const canPublish =
-    isReviewReady
+    examPrep.status === 'exam_structured'
     && !examPrep.is_published
     && questions.length > 0
     && extractionPassed
@@ -196,8 +194,10 @@ export default function TeacherExamDetailPage({ params }: PageProps) {
             ? 'ابتدا خطاهای استخراج را در بخش بازبینی برطرف کنید.'
             : !extractionReviewConfirmed
               ? 'ابتدا بازبینی استخراج را تأیید کنید.'
-              : !isReviewReady
-                ? 'پیش‌نویس آزمون هنوز آماده انتشار نیست.'
+              : examPrep.status !== 'exam_structured'
+                ? isReviewReady
+                  ? 'پیش‌نویس آماده بازبینی است؛ ابتدا موارد مسدودکننده انتشار را برطرف کنید.'
+                  : 'پیش‌نویس آزمون هنوز آماده انتشار نیست.'
                 : null;
   const publishButtonLabel = examPrep.is_published
     ? 'منتشر شده'
@@ -220,7 +220,6 @@ export default function TeacherExamDetailPage({ params }: PageProps) {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div className="flex items-center gap-3 sm:gap-4">
           <Button variant="ghost" size="icon" onClick={() => router.back()} className="rounded-full shrink-0">
@@ -274,9 +273,7 @@ export default function TeacherExamDetailPage({ params }: PageProps) {
       />
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6">
-        {/* Main Content */}
         <div className="md:col-span-2 space-y-6">
-          {/* Pipeline Output */}
           <Card className="p-4 md:p-6 rounded-3xl border border-border/60">
             <div className="flex flex-col gap-3" dir="rtl">
               <div className="flex items-center justify-between">
@@ -371,7 +368,6 @@ export default function TeacherExamDetailPage({ params }: PageProps) {
             </div>
           </Card>
 
-          {/* Description */}
           {examPrep.description && (
             <Card className="rounded-2xl border-border/60">
               <CardHeader>
@@ -383,7 +379,6 @@ export default function TeacherExamDetailPage({ params }: PageProps) {
             </Card>
           )}
 
-          {/* Student Invite Section */}
           <StudentInviteSection
             isExpanded={isInviteExpanded}
             onToggle={() => setIsInviteExpanded((p) => !p)}
@@ -393,9 +388,7 @@ export default function TeacherExamDetailPage({ params }: PageProps) {
           <ClassAnnouncementsCard sessionId={examPrep.id} sessionType="exam_prep" />
         </div>
 
-        {/* Sidebar */}
         <div className="md:col-span-1 space-y-4">
-          {/* Stats Card */}
           <Card>
             <CardHeader>
               <CardTitle className="text-base">آمار کلی</CardTitle>
@@ -447,7 +440,6 @@ export default function TeacherExamDetailPage({ params }: PageProps) {
             </CardContent>
           </Card>
 
-          {/* Publication Status */}
           <Card>
             <CardHeader>
               <CardTitle className="text-base flex items-center gap-2">
