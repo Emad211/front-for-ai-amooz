@@ -30,8 +30,9 @@ _OPTION_MARKER_RE = re.compile(
     flags=re.IGNORECASE,
 )
 _COVER_HINT_RE = re.compile(
-    r"(?:دفترچه|آزمون|پاسخنامه|پاسخ\s*نامه|نام\s*و\s*نام\s*خانوادگی|"
-    r"شماره\s*داوطلب|رشته|پایه|مدت\s*پاسخگویی|تعداد\s*سوال|کانون|قلم\s*چی|"
+    r"(?:جلد|صفحه\s*عنوان|دفترچه|آزمون|پاسخنامه|پاسخ\s*نامه|"
+    r"نام\s*و\s*نام\s*خانوادگی|شماره\s*داوطلب|رشته|پایه|"
+    r"مدت\s*پاسخگویی|تعداد\s*س[ؤو]ال|کانون|قلم\s*چی|"
     r"راهنما|دستورالعمل|فهرست)",
     flags=re.IGNORECASE,
 )
@@ -110,7 +111,6 @@ def classify_exam_page(
     cover_hint = bool(_COVER_HINT_RE.search(text))
     ink_ratio, center_white, right_ink, left_ink = _image_metrics(image)
 
-    reasons: list[str] = []
     if ink_ratio < 0.0015:
         return PageLayoutDecision(
             content_class="non_content",
@@ -121,27 +121,20 @@ def classify_exam_page(
             center_whitespace_ratio=center_white,
         )
 
-    # Skip only with positive local evidence. Scanned pages with no native text
-    # remain content/uncertain so a real question page is never silently lost.
+    # A short or sparse page may be a required diagram/continuation page. Never
+    # skip it merely because it has little text. Non-blank pages are skipped only
+    # when explicit cover/instruction language and absence of exam records agree.
     if text and not has_numbered_content and option_markers < 2:
         title_like = len(lines) <= 16 and len(text) <= 1800
         if cover_hint and title_like:
-            reasons.extend(("cover_or_instruction_terms", "no_numbered_exam_records"))
             return PageLayoutDecision(
                 content_class="non_content",
                 layout="none",
                 confidence=0.96,
-                reasons=tuple(reasons),
-                ink_ratio=ink_ratio,
-                center_whitespace_ratio=center_white,
-            )
-        if len(text) <= 180 and len(lines) <= 5:
-            reasons.extend(("very_low_text_content", "no_numbered_exam_records"))
-            return PageLayoutDecision(
-                content_class="non_content",
-                layout="none",
-                confidence=0.90,
-                reasons=tuple(reasons),
+                reasons=(
+                    "cover_or_instruction_terms",
+                    "no_numbered_exam_records",
+                ),
                 ink_ratio=ink_ratio,
                 center_whitespace_ratio=center_white,
             )
