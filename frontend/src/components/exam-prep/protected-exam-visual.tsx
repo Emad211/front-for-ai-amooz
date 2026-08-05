@@ -12,10 +12,16 @@ interface ProtectedExamVisualProps {
 }
 
 export function ProtectedExamVisual({ url, alt, className }: ProtectedExamVisualProps) {
-  const [objectUrl, setObjectUrl] = useState('');
+  const isInline = url.startsWith('data:image/');
+  const [objectUrl, setObjectUrl] = useState(isInline ? url : '');
   const [failed, setFailed] = useState(false);
 
   useEffect(() => {
+    if (isInline) {
+      setObjectUrl(url);
+      setFailed(false);
+      return;
+    }
     const controller = new AbortController();
     let nextUrl = '';
     setObjectUrl('');
@@ -33,7 +39,7 @@ export function ProtectedExamVisual({ url, alt, className }: ProtectedExamVisual
       controller.abort();
       if (nextUrl) URL.revokeObjectURL(nextUrl);
     };
-  }, [url]);
+  }, [isInline, url]);
 
   if (!objectUrl) {
     return (
