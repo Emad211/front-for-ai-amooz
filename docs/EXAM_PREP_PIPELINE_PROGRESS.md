@@ -48,3 +48,38 @@ Exact continuation point after merge:
    no raw serialized options reach output, questions 21–23 have gradable labels, and
    question 8/44 are either source-corrected or explicitly review-blocked.
 5. Record the real `totalProviderCalls` and address only evidence-backed remaining gaps.
+
+## 2026-08-05 — Completion actions and persistent publication UX
+
+Problem found after the first merged live run:
+
+- A completed but publication-blocked Exam Prep draft was persisted with
+  `status=exam_transcribed` even though `workflow_state.stage=ready_for_review`.
+- The create flow treated only `exam_structured` as terminal, so its primary processing
+  button remained visible instead of switching to the two completion actions.
+- The exam detail page rendered the publish button only when publication was already
+  allowed, so the action disappeared completely while processing, blocked, failed, or
+  already published.
+
+Decision and implementation:
+
+1. Pipeline completion and publication eligibility are separate state dimensions.
+2. Every successful run that produced a reviewable draft ends with
+   `status=exam_structured` and `workflow_state.stage=ready_for_review`.
+3. Publication blocking remains explicit in `workflow_state.publicationBlocked` and in
+   the extraction audit; changing the terminal status does not bypass the publish gate.
+4. The existing create-flow terminal UI therefore switches to:
+   - `ساخت آمادگی آزمون جدید`
+   - `رفتن به آزمون‌های من`
+5. The exam detail page always renders the publication action.
+6. When publishing is not allowed, the button is disabled and a precise reason is shown.
+7. Existing legacy `exam_transcribed + readyForReview` drafts are recognized as
+   review-ready on the exam detail page so their publication UX remains correct.
+8. Published exams keep a disabled `منتشر شده` action as a stable visible state.
+
+Focused verification targets:
+
+- A publishable completed draft is terminal and publish-enabled.
+- A review-blocked completed draft is terminal but publish-disabled.
+- Processing, failed, empty, review-required, and published states all retain a visible
+  publication button with the correct disabled reason or final label.
