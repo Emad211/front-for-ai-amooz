@@ -15,6 +15,11 @@ from .exam_prep_page_records import (
     PageOption,
     PageRecord,
 )
+from .exam_prep_page_source import (
+    SourcePageExtraction,
+    SourcePageRecord,
+    ensure_source_extraction,
+)
 from .exam_prep_text_quality import has_broken_persian_text
 from .exam_prep_utils import clean_exam_markdown
 
@@ -25,6 +30,8 @@ class ColumnCrop:
     image: bytes
     native_text: str
     reading_order: int
+    page_x0: float
+    page_x1: float
 
 
 def split_vertical_columns(
@@ -34,7 +41,7 @@ def split_vertical_columns(
     left_native_text: str = "",
     overlap_ratio: float = 0.035,
 ) -> tuple[ColumnCrop, ColumnCrop]:
-    """Return Persian reading order: right column, then left column."""
+    """Return Persian reading order and full-page x coordinates."""
 
     with Image.open(io.BytesIO(image_bytes)) as source:
         image = source.convert("RGB")
@@ -42,8 +49,10 @@ def split_vertical_columns(
         width, height = image.size
         overlap = max(8, int(width * max(0.0, min(0.1, overlap_ratio))))
         middle = width // 2
-        right = image.crop((max(0, middle - overlap), 0, width, height))
-        left = image.crop((0, 0, min(width, middle + overlap), height))
+        right_start = max(0, middle - overlap)
+        left_end = min(width, middle + overlap)
+        right = image.crop((right_start, 0, width, height))
+        left = image.crop((0, 0, left_end, height))
         try:
             right_buffer = io.BytesIO()
             left_buffer = io.BytesIO()
@@ -55,12 +64,16 @@ def split_vertical_columns(
                     image=right_buffer.getvalue(),
                     native_text=right_native_text,
                     reading_order=0,
+                    page_x0=right_start / width,
+                    page_x1=1.0,
                 ),
                 ColumnCrop(
                     region="left_column",
                     image=left_buffer.getvalue(),
                     native_text=left_native_text,
                     reading_order=1,
+                    page_x0=0.0,
+                    page_x1=left_end / width,
                 ),
             )
         finally:
@@ -108,7 +121,21 @@ def _best_options(records: list[PageRecord]) -> list[PageOption]:
     return list(best.options) if best is not None else []
 
 
-def _merge_record_candidates(records: list[PageRecord]) -> PageRecord:
+def _best_bbox(records: list[PageRecord]):
+    candidates = [
+        getattr(item, "source_bbox", None)
+        for item in records
+        if getattr(item, "source_bbox", None) is not None
+    ]
+    if not candidates:
+        return None
+    return max(
+        candidates,
+        key=lambda bbox: (bbox.x1 - bbox.x0) * (bbox.y1 - bbox.y0),
+    )
+
+
+def _merge_record_candidates(records: list[PageRecord]) -> SourcePageRecord:
     base = max(
         records,
         key=lambda item: (
@@ -118,6 +145,7 @@ def _merge_record_candidates(records: list[PageRecord]) -> PageRecord:
             item.confidence,
         ),
     )
+    source_base = SourcePageRecord.model_validate(base.model_dump())
     role = _role_group(base)
     record_type = (
         "question_answer"
@@ -141,7 +169,7 @@ def _merge_record_candidates(records: list[PageRecord]) -> PageRecord:
         for code in item.issues:
             if code not in issues:
                 issues.append(code)
-    return base.model_copy(
+    return source_base.model_copy(
         update={
             "record_type": record_type,
             "question_text_markdown": _best_text(
@@ -166,6 +194,7 @@ def _merge_record_candidates(records: list[PageRecord]) -> PageRecord:
             ),
             "confidence": max(item.confidence for item in records),
             "issues": issues,
+            "source_bbox": _best_bbox(records),
         }
     )
 
@@ -173,14 +202,18 @@ def _merge_record_candidates(records: list[PageRecord]) -> PageRecord:
 def merge_page_region_extractions(
     full_page: PageExtraction,
     region_pages: Iterable[PageExtraction],
-) -> PageExtraction:
+) -> SourcePageExtraction:
     """Merge full-page fallback with ordered column reads by number and role."""
 
     candidates: OrderedDict[
         tuple[str, int, str],
         list[PageRecord],
     ] = OrderedDict()
-    for page in [*region_pages, full_page]:
+    pages = [
+        *(ensure_source_extraction(page) for page in region_pages),
+        ensure_source_extraction(full_page),
+    ]
+    for page in pages:
         for record in page.records:
             key = (
                 clean_exam_markdown(record.scope_key).casefold() or "default",
@@ -192,7 +225,7 @@ def merge_page_region_extractions(
         _merge_record_candidates(items)
         for items in candidates.values()
     ]
-    return PageExtraction(
+    return SourcePageExtraction(
         page_number=full_page.page_number,
         records=merged,
     )
