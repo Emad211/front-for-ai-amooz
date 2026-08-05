@@ -4,10 +4,7 @@ from __future__ import annotations
 from collections import defaultdict
 from typing import Any
 
-from .exam_prep_page_records import (
-    DEFAULT_SCOPE_KEY,
-    PageAssemblyResult,
-)
+from .exam_prep_page_records import DEFAULT_SCOPE_KEY, PageAssemblyResult
 from .exam_prep_utils import clean_exam_markdown
 
 
@@ -17,6 +14,7 @@ CRITICAL_ISSUE_CODES = frozenset(
         "missing_options",
         "missing_option_text",
         "missing_options_text",
+        "missing_solution_text",
         "placeholder_option_text",
         "unexpected_option_count",
         "duplicate_option_label",
@@ -28,6 +26,12 @@ CRITICAL_ISSUE_CODES = frozenset(
         "correct_option_not_in_options",
         "missing_question_number",
         "visual_evidence_required",
+        "broken_persian_text",
+        "duplicate_mixed_text",
+        "solution_semantic_mismatch_candidate",
+        "targeted_repair_unresolved",
+        "targeted_repair_failed",
+        "targeted_repair_no_source_page",
         "failed_chunk",
     }
 )
@@ -41,13 +45,31 @@ def is_critical_page_issue(code: object) -> bool:
     )
 
 
+def _question_counts(result: PageAssemblyResult) -> tuple[int, int]:
+    answer_keys = 0
+    worked_solutions = 0
+    for question in (result.projection.get("exam_prep") or {}).get("questions") or []:
+        if not isinstance(question, dict):
+            continue
+        if any(
+            clean_exam_markdown(question.get(field) or "")
+            for field in (
+                "correct_option_label",
+                "correct_option_text_markdown",
+                "final_answer_markdown",
+            )
+        ):
+            answer_keys += 1
+        if len(clean_exam_markdown(question.get("teacher_solution_markdown") or "")) >= 24:
+            worked_solutions += 1
+    return answer_keys, worked_solutions
+
+
 def build_strict_page_first_audit(
     result: PageAssemblyResult,
     *,
     failed_page_numbers: list[int] | None = None,
 ) -> dict[str, Any]:
-    """Audit semantic usability rather than only JSON/schema validity."""
-
     failed_pages = sorted(
         {
             int(number)
@@ -58,11 +80,7 @@ def build_strict_page_first_audit(
     issues = [
         {
             "code": issue.code,
-            "severity": (
-                "critical"
-                if is_critical_page_issue(issue.code)
-                else "warning"
-            ),
+            "severity": "critical" if is_critical_page_issue(issue.code) else "warning",
             "scopeKey": issue.scope_key,
             "questionNumber": issue.question_number,
             "sourcePages": issue.source_pages,
@@ -93,25 +111,20 @@ def build_strict_page_first_audit(
     critical_question_keys = {
         (str(issue.get("scopeKey") or DEFAULT_SCOPE_KEY), int(issue.get("questionNumber") or 0))
         for issue in issues
-        if issue.get("severity") == "critical"
-        and int(issue.get("questionNumber") or 0) > 0
+        if issue.get("severity") == "critical" and int(issue.get("questionNumber") or 0) > 0
     }
-    critical_count = sum(
-        issue.get("severity") == "critical"
-        for issue in issues
-    )
+    critical_count = sum(issue.get("severity") == "critical" for issue in issues)
     questions_needing_review = len(critical_question_keys)
     usable_questions = max(0, result.question_count - questions_needing_review)
+    answer_key_count, solution_count = _question_counts(result)
     return {
-        "status": (
-            "passed"
-            if result.question_count > 0 and critical_count == 0
-            else "needs_review"
-        ),
+        "status": "passed" if result.question_count > 0 and critical_count == 0 else "needs_review",
         "questionCount": result.question_count,
         "usableQuestionCount": usable_questions,
         "questionsNeedingReview": questions_needing_review,
-        "matchedAnswerCount": result.matched_answer_count,
+        "matchedAnswerCount": answer_key_count,
+        "matchedSolutionCount": solution_count,
+        "answerKeyOnlyCount": max(0, answer_key_count - solution_count),
         "outOfScopeAnswerCount": len(result.orphan_answers),
         "criticalIssueCount": critical_count,
         "issues": issues,
@@ -139,13 +152,13 @@ def render_strict_page_first_transcript(
     result: PageAssemblyResult,
     *,
     failed_page_numbers: list[int] | None = None,
+    targeted_repair_stats: dict[str, int] | None = None,
 ) -> str:
-    """Render the canonical projection without calling broken records valid."""
-
     audit = build_strict_page_first_audit(
         result,
         failed_page_numbers=failed_page_numbers,
     )
+    repair_stats = dict(targeted_repair_stats or {})
     exam = result.projection.get("exam_prep") or {}
     title = clean_exam_markdown(exam.get("title") or "آمادگی آزمون")
     lines = [
@@ -156,27 +169,30 @@ def render_strict_page_first_transcript(
         f"- سؤال‌های استخراج‌شده: **{result.question_count}**",
         f"- سؤال‌های آمادهٔ استفاده: **{audit['usableQuestionCount']}**",
         f"- سؤال‌های نیازمند بازبینی: **{audit['questionsNeedingReview']}**",
-        f"- پاسخ‌های پیدا‌شده: **{result.matched_answer_count}**",
+        f"- کلید پاسخ متصل‌شده: **{audit['matchedAnswerCount']}**",
+        f"- راه‌حل تشریحی متصل‌شده: **{audit['matchedSolutionCount']}**",
+        f"- سؤال‌های دارای فقط کلید پاسخ: **{audit['answerKeyOnlyCount']}**",
         f"- پاسخ‌های بدون صورت سؤال که کنار گذاشته شدند: **{len(result.orphan_answers)}**",
         f"- خطاهای بحرانی: **{audit['criticalIssueCount']}**",
     ]
+    if repair_stats:
+        lines.extend(
+            [
+                f"- بازبینی هدفمند انجام‌شده: **{int(repair_stats.get('attempted', 0))}**",
+                f"- بازبینی هدفمند موفق: **{int(repair_stats.get('repaired', 0))}**",
+                f"- بازبینی هدفمند حل‌نشده: **{int(repair_stats.get('unresolved', 0))}**",
+            ]
+        )
     if audit["failedPageNumbers"]:
         pages = "، ".join(str(number) for number in audit["failedPageNumbers"])
         lines.append(f"- صفحه‌های پردازش‌نشده: **{pages}**")
     if audit["status"] != "passed":
-        lines.extend(
-            [
-                "",
-                "> این خروجی تا رفع خطاهای بحرانی قابل انتشار نیست.",
-            ]
-        )
+        lines.extend(["", "> این خروجی تا رفع خطاهای بحرانی قابل انتشار نیست."])
     lines.extend(["", "---", ""])
 
     grouped_issues = _issues_by_question(audit)
     for question in exam.get("questions") or []:
-        number_text = clean_exam_markdown(
-            question.get("source_question_number") or "؟"
-        )
+        number_text = clean_exam_markdown(question.get("source_question_number") or "؟")
         try:
             number = int(number_text)
         except (TypeError, ValueError):
@@ -204,16 +220,12 @@ def render_strict_page_first_transcript(
         correct = clean_exam_markdown(question.get("correct_option_label") or "")
         if correct:
             lines.extend(["", f"**پاسخ صحیح:** گزینه {correct}"])
-        solution = clean_exam_markdown(
-            question.get("teacher_solution_markdown") or ""
-        )
+        solution = clean_exam_markdown(question.get("teacher_solution_markdown") or "")
         if solution:
             lines.extend(["", "**راه‌حل تشریحی:**", "", solution])
         source_pages = question.get("source_pages") or []
         if source_pages:
-            lines.extend(
-                ["", f"_صفحات منبع: {', '.join(map(str, source_pages))}_"]
-            )
+            lines.extend(["", f"_صفحات منبع: {', '.join(map(str, source_pages))}_"])
         if "visual_evidence_required" in issue_codes:
             lines.extend(
                 [
@@ -222,12 +234,7 @@ def render_strict_page_first_transcript(
                 ]
             )
         if issue_codes:
-            lines.extend(
-                [
-                    "",
-                    f"_نیازمند بازبینی: {', '.join(issue_codes)}_",
-                ]
-            )
+            lines.extend(["", f"_نیازمند بازبینی: {', '.join(issue_codes)}_"])
         lines.extend(["", "---", ""])
 
     if result.orphan_answers:
