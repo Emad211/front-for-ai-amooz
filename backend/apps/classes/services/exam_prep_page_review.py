@@ -15,6 +15,22 @@ _DIGIT_TRANSLATION = str.maketrans(
     "01234567890123456789",
 )
 
+# These codes describe an uncertain source/model judgement rather than a
+# deterministic malformed question. A teacher can explicitly acknowledge them.
+# Structural checks are always recomputed and cannot be bypassed by the UI.
+_TEACHER_OVERRIDABLE_CODES = frozenset(
+    {
+        "source_verification_failed",
+        "targeted_repair_unresolved",
+        "targeted_repair_failed",
+        "targeted_repair_no_source_page",
+        "solution_semantic_mismatch_candidate",
+        "duplicate_solution_across_questions",
+        "table_incomplete",
+        "count_answer_unresolved",
+    }
+)
+
 
 def _questions(projection: object) -> list[dict[str, Any]]:
     if not isinstance(projection, dict):
@@ -48,6 +64,44 @@ def _source_pages(question: dict[str, Any]) -> list[int]:
         if page > 0 and page not in pages:
             pages.append(page)
     return pages
+
+
+def _teacher_reviewed_codes(question: dict[str, Any]) -> set[str]:
+    raw = question.get("teacher_reviewed_issue_codes")
+    if not isinstance(raw, list):
+        return set()
+    return {
+        code
+        for value in raw
+        if (code := clean_exam_markdown(value).strip())
+    }
+
+
+def _has_question_visual(question: dict[str, Any]) -> bool:
+    return any(
+        isinstance(item, dict)
+        and item.get("role") != "solution"
+        and (item.get("id") or item.get("dataUrl"))
+        for item in (question.get("visuals") or [])
+    )
+
+
+def _teacher_can_override(
+    code: str,
+    *,
+    question: dict[str, Any],
+    reviewed_codes: set[str],
+) -> bool:
+    if code not in reviewed_codes:
+        return False
+    if code == "visual_evidence_required":
+        return _has_question_visual(question)
+    if code == "count_answer_unresolved":
+        return bool(
+            clean_exam_markdown(question.get("correct_option_label") or "")
+            or clean_exam_markdown(question.get("final_answer_markdown") or "")
+        )
+    return code in _TEACHER_OVERRIDABLE_CODES
 
 
 def audit_page_first_projection(projection: object) -> dict[str, Any]:
@@ -89,6 +143,7 @@ def audit_page_first_projection(projection: object) -> dict[str, Any]:
         scope = clean_exam_markdown(question.get("scope_key") or "default").strip() or "default"
         number = _question_number(question) or index
         pages = _source_pages(question)
+        reviewed_codes = _teacher_reviewed_codes(question)
         question_id = clean_exam_markdown(question.get("question_id") or "").strip()
         if question_id:
             ids[question_id] += 1
@@ -100,6 +155,14 @@ def audit_page_first_projection(projection: object) -> dict[str, Any]:
             numbers_by_scope[scope].append(parsed_number)
 
         for code in canonical_question_issues(question):
+            if _teacher_can_override(
+                code,
+                question=question,
+                reviewed_codes=reviewed_codes,
+            ):
+                continue
+            if code == "visual_evidence_required" and _has_question_visual(question):
+                continue
             add_issue(code, scope=scope, number=number, pages=pages)
 
         if any(
