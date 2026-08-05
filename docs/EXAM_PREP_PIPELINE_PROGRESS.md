@@ -48,3 +48,45 @@ Exact continuation point after merge:
    no raw serialized options reach output, questions 21–23 have gradable labels, and
    question 8/44 are either source-corrected or explicitly review-blocked.
 5. Record the real `totalProviderCalls` and address only evidence-backed remaining gaps.
+
+## 2026-08-05 — Completion actions and persistent publication UX
+
+Problem found after the first merged live run:
+
+- A completed but publication-blocked Exam Prep draft was persisted with
+  `status=exam_transcribed` even though `workflow_state.stage=ready_for_review` and
+  `readyForReview=true` correctly showed that processing had finished.
+- The create flow treated only `exam_structured` as terminal, so its primary processing
+  button remained visible instead of switching to the two completion actions.
+- The exam detail page rendered the publish button only when publication was already
+  allowed, so the action disappeared completely while processing, blocked, failed, or
+  already published.
+
+Final decision and implementation:
+
+1. Backend publication safety remains fail-closed and its status contract is unchanged.
+2. A publishable completed draft uses `status=exam_structured`.
+3. A completed draft with unresolved critical issues can remain `status=exam_transcribed`,
+   while `workflowStage=ready_for_review`, `readyForReview=true`, and
+   `publicationBlocked=true` identify it as finished but not publishable.
+4. The create UI determines Exam Prep completion from workflow readiness, not from the
+   status field alone, and polling stops as soon as the draft is ready for review.
+5. The terminal create-flow actions are exactly:
+   - `ساخت آمادگی آزمون جدید`
+   - `رفتن به آزمون‌های من`
+6. The exam detail page always renders the publication action in both the header and the
+   publication card.
+7. When publishing is not allowed, the button remains visible but disabled and a precise
+   reason is shown; no frontend state bypasses the backend publication gate.
+8. Existing `exam_transcribed + readyForReview` drafts are handled correctly without a
+   database migration or status rewrite.
+9. Published exams keep a disabled `منتشر شده` action as a stable visible state.
+
+Focused verification targets:
+
+- A publishable completed draft is terminal and publish-enabled.
+- A review-blocked completed draft is terminal but publish-disabled.
+- A bare intermediate `exam_transcribed` state without workflow readiness is not treated
+  as publishable.
+- Processing, failed, empty, review-required, and published states all retain a visible
+  publication button with the correct disabled reason or final label.

@@ -165,6 +165,15 @@ function hasPersistedEmbeddedExercises(detail: ClassCreationSessionDetail | null
   return Boolean(detail?.pendingExercises?.length);
 }
 
+function isExamPrepReviewReady(detail: ExamPrepSessionDetail | null): boolean {
+  if (!detail) return false;
+  return Boolean(
+    detail.status === 'exam_structured'
+    || detail.readyForReview
+    || detail.workflowStage === 'ready_for_review'
+  );
+}
+
 export function CreateClassPage() {
   const { activeWorkspace } = useWorkspace();
   const [studyGroups, setStudyGroups] = useState<StudyGroup[]>([]);
@@ -356,7 +365,7 @@ export function CreateClassPage() {
           return;
         }
 
-        if (detail.status === 'exam_structured') {
+        if (isExamPrepReviewReady(detail)) {
           stopPolling();
           return;
         }
@@ -386,7 +395,11 @@ export function CreateClassPage() {
       setTitle(detail.title);
       setDescription(clampDescription(detail.description));
 
-      if (detail.status !== 'failed' && detail.status !== 'cancelled' && detail.status !== 'exam_structured') {
+      if (
+        detail.status !== 'failed'
+        && detail.status !== 'cancelled'
+        && !isExamPrepReviewReady(detail)
+      ) {
         startExamPrepPolling(sessionId);
       }
     } catch {
@@ -596,19 +609,23 @@ export function CreateClassPage() {
   const currentIsTerminalSession = Boolean(currentSessionId) && (
     pipelineType === 'class'
       ? currentStatus === 'failed' || currentStatus === 'cancelled' || (currentStatus === 'recapped' && !currentHasActiveEmbeddedExercises)
-      : currentStatus === 'failed' || currentStatus === 'cancelled' || currentStatus === 'exam_structured'
+      : currentStatus === 'failed'
+        || currentStatus === 'cancelled'
+        || currentStatus === 'exam_structured'
+        || currentReadyForReview
+        || currentWorkflowStage === 'ready_for_review'
   );
   const currentCanSubmitNewPipeline = currentCanStartPipeline && !currentSessionId;
   const destinationHref = pipelineType === 'class' ? '/teacher/my-classes' : '/teacher/my-exams';
   const newDraftLabel = pipelineType === 'class' ? 'ساخت کلاس جدید' : 'ساخت آمادگی آزمون جدید';
-  const destinationLabel = pipelineType === 'class' ? 'رفتن به کلاس‌ها' : 'رفتن به آمادگی آزمون‌ها';
+  const destinationLabel = pipelineType === 'class' ? 'رفتن به کلاس‌ها' : 'رفتن به آزمون‌های من';
   const terminalActionCopy = currentStatus === 'failed'
     ? 'پردازش این مورد با خطا متوقف شده است. می‌توانید فرم را برای ساخت مورد جدید خالی کنید.'
     : currentStatus === 'cancelled'
       ? 'پردازش این مورد لغو شده است. برای شروع دوباره، فرم را از نو بسازید.'
       : pipelineType === 'class'
         ? 'پیش‌نویس این کلاس آماده است و از صفحه کلاس‌ها قابل بازبینی و انتشار است.'
-        : 'پیش‌نویس آمادگی آزمون آماده است و از صفحه آمادگی آزمون‌ها قابل بازبینی و انتشار است.';
+        : 'پیش‌نویس آمادگی آزمون آماده است و از صفحه آزمون‌های من قابل بازبینی و انتشار است.';
   // Exam-prep intake is abortable before the server returns a session id.
   const canCancelPipeline = (
     pipelineType === 'exam_prep' && isExamPrepPipelineStarting
@@ -853,9 +870,9 @@ export function CreateClassPage() {
             </div>
           ) : (
             <div className="flex flex-wrap gap-2 text-xs md:text-sm text-muted-foreground">
-              <span className={cn("px-3 py-1 rounded-full", (!examPrepStatus || examPrepStatus.includes('trans')) ? "bg-primary/10 text-primary" : "bg-muted")}>ثبت اطلاعات</span>
-              <span className={cn("px-3 py-1 rounded-full", examPrepStatus === 'exam_structuring' ? "bg-primary/10 text-primary" : "bg-muted")}>پردازش خودکار</span>
-              <span className={cn("px-3 py-1 rounded-full", examPrepStatus === 'exam_structured' ? "bg-primary/10 text-primary" : "bg-muted")}>بازبینی در آزمون‌ها</span>
+              <span className={cn("px-3 py-1 rounded-full", !examPrepStatus ? "bg-primary/10 text-primary" : "bg-muted")}>ثبت اطلاعات</span>
+              <span className={cn("px-3 py-1 rounded-full", isExamPrepPipelineRunning ? "bg-primary/10 text-primary" : "bg-muted")}>پردازش خودکار</span>
+              <span className={cn("px-3 py-1 rounded-full", isExamPrepReviewReady(examPrepSessionDetail) ? "bg-primary/10 text-primary" : "bg-muted")}>بازبینی در آزمون‌ها</span>
             </div>
           )}
         </div>
