@@ -363,9 +363,11 @@ def test_task_blocks_publication_for_partial_result_but_keeps_output(
     assert result['status'] == 'ready_for_review'
     assert result['publication_ready'] is False
     assert result['failed_page_numbers'] == [2]
-    assert session.status == ClassCreationSession.Status.EXAM_TRANSCRIBED
+    assert session.status == ClassCreationSession.Status.EXAM_STRUCTURED
     assert json.loads(session.exam_prep_json) == _projection()
     assert 'صفحه‌های پردازش‌نشده' in session.transcript_markdown
+    assert session.workflow_state['stage'] == 'ready_for_review'
+    assert session.workflow_state['readyForReview'] is True
     assert session.workflow_state['failedPageNumbers'] == [2]
     assert session.workflow_state['publicationBlocked'] is True
     assert session.workflow_state['extractionAudit']['status'] == 'needs_review'
