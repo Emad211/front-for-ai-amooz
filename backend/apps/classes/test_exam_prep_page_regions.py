@@ -8,6 +8,7 @@ from apps.classes.services.exam_prep_page_records import (
     PageRecord,
 )
 from apps.classes.services.exam_prep_page_regions import (
+    last_record_number,
     merge_page_region_extractions,
     split_vertical_columns,
 )
@@ -73,3 +74,30 @@ def test_column_solution_replaces_short_full_page_answer():
     assert record.record_type == 'solution'
     assert record.correct_option_label == '4'
     assert record.teacher_solution_markdown == 'راه‌حل تشریحی کامل سؤال ۹'
+
+
+def test_continuation_hint_requires_explicit_next_page_flag():
+    ordinary = PageExtraction(
+        page_number=10,
+        records=[
+            PageRecord(
+                question_number=18,
+                record_type='solution',
+                teacher_solution_markdown='راه‌حل کامل شده است.',
+            )
+        ],
+    )
+    continuing = PageExtraction(
+        page_number=10,
+        records=[
+            PageRecord(
+                question_number=18,
+                record_type='solution',
+                teacher_solution_markdown='راه‌حل در ستون بعد ادامه دارد...',
+                continues_on_next_page=True,
+            )
+        ],
+    )
+
+    assert last_record_number(ordinary) is None
+    assert last_record_number(continuing) == 18
