@@ -82,7 +82,10 @@ _STOP_WORDS = frozenset(
         "میشود",
     }
 )
-_MARKER_ONLY_RE = re.compile(r"^\s*(?:گزین[ههۀ]\s*)?[«»\"'()\[\]]*\s*[1-6۱-۶١-٦]\s*[«»\"'()\[\].:،-]*\s*$")
+_MARKER_ONLY_RE = re.compile(
+    r"^\s*(?:گزین[ههۀ]\s*)?[«»\"'()\[\]]*\s*"
+    r"[1-6۱-۶١-٦]\s*[«»\"'()\[\].:،-]*\s*$"
+)
 
 
 class VerifiedQuestionRepair(BaseModel):
@@ -140,7 +143,10 @@ def solution_mismatch_candidate(question: dict[str, Any]) -> bool:
     if len(source_tokens) < 5 or len(solution_tokens) < 5:
         return False
     overlap = len(source_tokens & solution_tokens)
-    return overlap < 2 and overlap / max(1, min(len(source_tokens), len(solution_tokens))) < 0.05
+    return (
+        overlap < 2
+        and overlap / max(1, min(len(source_tokens), len(solution_tokens))) < 0.05
+    )
 
 
 def canonical_question_issues(question: dict[str, Any]) -> list[str]:
@@ -150,7 +156,11 @@ def canonical_question_issues(question: dict[str, Any]) -> list[str]:
         if clean_exam_markdown(code).strip()
     ]
     text = clean_exam_markdown(question.get("question_text_markdown") or "")
-    options = [item for item in (question.get("options") or []) if isinstance(item, dict)]
+    options = [
+        item
+        for item in (question.get("options") or [])
+        if isinstance(item, dict)
+    ]
     labels = [clean_exam_markdown(item.get("label") or "") for item in options]
     issues: list[str] = [
         code
@@ -165,11 +175,19 @@ def canonical_question_issues(question: dict[str, Any]) -> list[str]:
         issues.append("unexpected_option_count")
     if labels and len(labels) != len(set(labels)):
         issues.append("duplicate_option_label")
-    if options and any(not clean_exam_markdown(item.get("text_markdown") or "") for item in options):
+    if options and any(
+        not clean_exam_markdown(item.get("text_markdown") or "")
+        for item in options
+    ):
         issues.append("missing_option_text")
     if (
         options
-        and all(_MARKER_ONLY_RE.fullmatch(clean_exam_markdown(item.get("text_markdown") or "")) for item in options)
+        and all(
+            _MARKER_ONLY_RE.fullmatch(
+                clean_exam_markdown(item.get("text_markdown") or "")
+            )
+            for item in options
+        )
         and _COUNT_QUESTION_RE.search(text) is None
     ):
         issues.append("placeholder_option_text")
@@ -181,7 +199,10 @@ def canonical_question_issues(question: dict[str, Any]) -> list[str]:
         issues.append("missing_solution_text")
     text_values = [
         text,
-        *(clean_exam_markdown(item.get("text_markdown") or "") for item in options),
+        *(
+            clean_exam_markdown(item.get("text_markdown") or "")
+            for item in options
+        ),
         solution,
         clean_exam_markdown(question.get("final_answer_markdown") or ""),
     ]
@@ -191,13 +212,16 @@ def canonical_question_issues(question: dict[str, Any]) -> list[str]:
         issues.append("duplicate_mixed_text")
     if _VISUAL_REFERENCE_RE.search(text):
         issues.append("visual_evidence_required")
-    if solution_mismatch_candidate(question):
+    if not question.get("source_verified") and solution_mismatch_candidate(question):
         issues.append("solution_semantic_mismatch_candidate")
     return list(dict.fromkeys(issues))
 
 
 def question_needs_targeted_repair(question: dict[str, Any]) -> bool:
-    return bool(set(canonical_question_issues(question)) & _REPAIRABLE_QUESTION_CODES)
+    return bool(
+        set(canonical_question_issues(question))
+        & _REPAIRABLE_QUESTION_CODES
+    )
 
 
 def _page_parts(pages: Iterable[RenderedExamPage]) -> list[dict[str, Any]]:
@@ -215,7 +239,9 @@ def _page_parts(pages: Iterable[RenderedExamPage]) -> list[dict[str, Any]]:
                 ),
             }
         )
-        parts.append(part_from_bytes(data=page.image, mime_type=page.mime_type))
+        parts.append(
+            part_from_bytes(data=page.image, mime_type=page.mime_type)
+        )
     return parts
 
 
@@ -255,12 +281,17 @@ def verify_and_repair_question(
         ],
         model=model,
         feature=LLMUsageLog.Feature.PDF_EXTRACTION,
-        timeout=float(os.getenv("EXAM_PREP_QUESTION_REPAIR_TIMEOUT_SECONDS", "180")),
+        timeout=float(
+            os.getenv("EXAM_PREP_QUESTION_REPAIR_TIMEOUT_SECONDS", "180")
+        ),
         temperature=0,
         max_repair=1,
         strict_json_schema=True,
         sensitive=True,
-        max_output_tokens=_positive_int_env("EXAM_PREP_QUESTION_REPAIR_MAX_OUTPUT_TOKENS", 12_000),
+        max_output_tokens=_positive_int_env(
+            "EXAM_PREP_QUESTION_REPAIR_MAX_OUTPUT_TOKENS",
+            12_000,
+        ),
         detail="exam_prep_question_source_repair",
         tracking_context={
             "stage": "question_source_repair",
@@ -277,26 +308,64 @@ def verify_and_repair_question(
     return result
 
 
-def _apply_repair(question: dict[str, Any], repair: VerifiedQuestionRepair) -> dict[str, Any]:
+def _apply_repair(
+    question: dict[str, Any],
+    repair: VerifiedQuestionRepair,
+) -> dict[str, Any]:
     if not repair.source_supported or repair.confidence < 0.72:
         return {
             **question,
-            "issues": list(dict.fromkeys([*canonical_question_issues(question), "targeted_repair_unresolved"])),
+            "issues": list(
+                dict.fromkeys(
+                    [
+                        *canonical_question_issues(question),
+                        "targeted_repair_unresolved",
+                    ]
+                )
+            ),
         }
     updated = {
         **question,
-        "question_text_markdown": clean_exam_markdown(repair.question_text_markdown) or question.get("question_text_markdown", ""),
-        "options": [item.model_dump() for item in repair.options] or question.get("options", []),
-        "correct_option_label": clean_exam_markdown(repair.correct_option_label) or question.get("correct_option_label"),
-        "teacher_solution_markdown": clean_exam_markdown(repair.teacher_solution_markdown) or question.get("teacher_solution_markdown", ""),
-        "final_answer_markdown": clean_exam_markdown(repair.final_answer_markdown) or question.get("final_answer_markdown", ""),
-        "confidence": max(float(question.get("confidence") or 0.0), repair.confidence),
+        "question_text_markdown": (
+            clean_exam_markdown(repair.question_text_markdown)
+            or question.get("question_text_markdown", "")
+        ),
+        "options": (
+            [item.model_dump() for item in repair.options]
+            or question.get("options", [])
+        ),
+        "correct_option_label": (
+            clean_exam_markdown(repair.correct_option_label)
+            or question.get("correct_option_label")
+        ),
+        "teacher_solution_markdown": (
+            clean_exam_markdown(repair.teacher_solution_markdown)
+            or question.get("teacher_solution_markdown", "")
+        ),
+        "final_answer_markdown": (
+            clean_exam_markdown(repair.final_answer_markdown)
+            or question.get("final_answer_markdown", "")
+        ),
+        "confidence": max(
+            float(question.get("confidence") or 0.0),
+            repair.confidence,
+        ),
+        "source_verified": True,
     }
-    updated["issues"] = list(dict.fromkeys([*canonical_question_issues(updated), *repair.issues]))
+    updated["issues"] = list(
+        dict.fromkeys(
+            [
+                *canonical_question_issues(updated),
+                *repair.issues,
+            ]
+        )
+    )
     return updated
 
 
-def rebuild_assembly_quality(result: PageAssemblyResult) -> PageAssemblyResult:
+def rebuild_assembly_quality(
+    result: PageAssemblyResult,
+) -> PageAssemblyResult:
     projection = dict(result.projection)
     exam = dict(projection.get("exam_prep") or {})
     questions = []
@@ -305,11 +374,18 @@ def rebuild_assembly_quality(result: PageAssemblyResult) -> PageAssemblyResult:
     for question in exam.get("questions") or []:
         if not isinstance(question, dict):
             continue
-        updated = {**question, "issues": canonical_question_issues(question)}
+        updated = {
+            **question,
+            "issues": canonical_question_issues(question),
+        }
         questions.append(updated)
         number = _number(updated)
         scope = str(updated.get("scope_key") or "default")
-        pages = [int(value) for value in (updated.get("source_pages") or []) if str(value).isdigit()]
+        pages = [
+            int(value)
+            for value in (updated.get("source_pages") or [])
+            if str(value).isdigit()
+        ]
         for code in updated["issues"]:
             issues.append(
                 AssemblyIssue(
@@ -341,8 +417,14 @@ def rebuild_assembly_quality(result: PageAssemblyResult) -> PageAssemblyResult:
             )
     exam["questions"] = questions
     projection["exam_prep"] = exam
-    review_count = sum(bool(question.get("issues")) for question in questions)
-    publication_ready = bool(questions) and not any(is_critical_page_issue(issue.code) for issue in issues)
+    review_count = sum(
+        bool(question.get("issues"))
+        for question in questions
+    )
+    publication_ready = bool(questions) and not any(
+        is_critical_page_issue(issue.code)
+        for issue in issues
+    )
     return result.model_copy(
         update={
             "projection": projection,
@@ -363,15 +445,30 @@ def repair_suspicious_questions(
 ) -> tuple[PageAssemblyResult, dict[str, int]]:
     projection = dict(result.projection)
     exam = dict(projection.get("exam_prep") or {})
-    questions = [item for item in (exam.get("questions") or []) if isinstance(item, dict)]
-    maximum = _positive_int_env("EXAM_PREP_MAX_TARGETED_QUESTION_REPAIRS", 30)
+    questions = [
+        item
+        for item in (exam.get("questions") or [])
+        if isinstance(item, dict)
+    ]
+    maximum = _positive_int_env(
+        "EXAM_PREP_MAX_TARGETED_QUESTION_REPAIRS",
+        30,
+    )
     repaired = 0
     unresolved = 0
     attempted = 0
     updated_questions: list[dict[str, Any]] = []
     for question in questions:
-        if not question_needs_targeted_repair(question) or attempted >= maximum:
-            updated_questions.append({**question, "issues": canonical_question_issues(question)})
+        if (
+            not question_needs_targeted_repair(question)
+            or attempted >= maximum
+        ):
+            updated_questions.append(
+                {
+                    **question,
+                    "issues": canonical_question_issues(question),
+                }
+            )
             continue
         page_numbers = []
         for value in question.get("source_pages") or []:
@@ -379,28 +476,55 @@ def repair_suspicious_questions(
                 page_number = int(value)
             except (TypeError, ValueError):
                 continue
-            if page_number not in page_numbers and page_number in source_pages_by_number:
+            if (
+                page_number not in page_numbers
+                and page_number in source_pages_by_number
+            ):
                 page_numbers.append(page_number)
-        pages = [source_pages_by_number[number] for number in page_numbers[:2]]
+        pages = [
+            source_pages_by_number[number]
+            for number in page_numbers[:2]
+        ]
         if not pages:
             updated_questions.append(
                 {
                     **question,
-                    "issues": list(dict.fromkeys([*canonical_question_issues(question), "targeted_repair_no_source_page"])),
+                    "issues": list(
+                        dict.fromkeys(
+                            [
+                                *canonical_question_issues(question),
+                                "targeted_repair_no_source_page",
+                            ]
+                        )
+                    ),
                 }
             )
             unresolved += 1
             continue
         attempted += 1
         try:
-            repair = verify_and_repair_question(question, source_pages=pages, model=model)
+            repair = verify_and_repair_question(
+                question,
+                source_pages=pages,
+                model=model,
+            )
             updated = _apply_repair(question, repair)
         except Exception:
             updated = {
                 **question,
-                "issues": list(dict.fromkeys([*canonical_question_issues(question), "targeted_repair_failed"])),
+                "issues": list(
+                    dict.fromkeys(
+                        [
+                            *canonical_question_issues(question),
+                            "targeted_repair_failed",
+                        ]
+                    )
+                ),
             }
-        remaining = set(canonical_question_issues(updated)) & _REPAIRABLE_QUESTION_CODES
+        remaining = (
+            set(canonical_question_issues(updated))
+            & _REPAIRABLE_QUESTION_CODES
+        )
         if remaining:
             unresolved += 1
         else:
@@ -408,7 +532,9 @@ def repair_suspicious_questions(
         updated_questions.append(updated)
     exam["questions"] = updated_questions
     projection["exam_prep"] = exam
-    rebuilt = rebuild_assembly_quality(result.model_copy(update={"projection": projection}))
+    rebuilt = rebuild_assembly_quality(
+        result.model_copy(update={"projection": projection})
+    )
     return rebuilt, {
         "attempted": attempted,
         "repaired": repaired,
