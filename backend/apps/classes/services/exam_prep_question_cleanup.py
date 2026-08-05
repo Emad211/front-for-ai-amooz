@@ -127,7 +127,15 @@ def strip_duplicated_option_lines(
 
 
 def _extract_letter_labels(value: str) -> tuple[str, ...]:
-    return tuple(dict.fromkeys(re.findall(_LETTER_LABEL_PATTERN, value)))
+    """Parse Persian statement labels without counting conjunction «و» as a label."""
+
+    parts = re.split(
+        r"(?:\s*[،,]\s*|\s+و\s+)",
+        normalize_persian_layout_text(value),
+    )
+    allowed = {"الف", "ب", "ج", "د", "ه", "و"}
+    labels = [part.strip() for part in parts if part.strip() in allowed]
+    return tuple(dict.fromkeys(labels))
 
 
 def _letters_from_answer_phrase(value: str) -> tuple[str, ...]:
