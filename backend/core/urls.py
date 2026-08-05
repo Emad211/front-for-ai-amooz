@@ -33,8 +33,8 @@ from apps.authentication.cookies import set_refresh_cookie, get_refresh_from_req
 from apps.core.views import HealthCheckView
 from apps.core.throttling import SafeScopedRateThrottle
 from apps.classes.views_exam_prep import ExamPrepPdfStep1View
+from apps.classes.views_exam_prep_inline_visual import InlineOrStoredExamVisualContentView
 from apps.classes.views_exam_prep_review import PageFirstExamPrepSessionDetailView
-from apps.classes.views_exam_prep_student_inline import StudentExamPrepInlineDetailView
 from apps.classes.views_v4_compat import ExamPrepSourceAwareStep1View
 
 
@@ -135,12 +135,12 @@ urlpatterns = [
         PageFirstExamPrepSessionDetailView.as_view(),
         name='exam_prep_session_detail_page_first',
     ),
-    # Keep the existing student URL while allowing verified source crops stored
-    # directly in the canonical question JSON to be returned as safe data URLs.
+    # Preserve the existing visual URL. Numeric IDs still stream legacy DB
+    # assets; inline-* IDs stream verified source crops from canonical JSON.
     path(
-        'api/classes/student/exam-preps/<int:session_id>/',
-        StudentExamPrepInlineDetailView.as_view(),
-        name='student_exam_prep_detail_inline_visuals',
+        'api/classes/exam-prep-sessions/<int:session_id>/visuals/<str:asset_id>/content/',
+        InlineOrStoredExamVisualContentView.as_view(),
+        name='exam_prep_inline_or_stored_visual_content',
     ),
     path('api/classes/exam-prep-v4/', include('apps.classes.urls_v4')),
     path('api/classes/', include('apps.classes.urls')),
