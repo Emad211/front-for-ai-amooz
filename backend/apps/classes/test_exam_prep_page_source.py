@@ -24,6 +24,81 @@ def test_bbox_accepts_list_and_rejects_negative_area():
         SourceBBox(x0=0.8, y0=0.2, x1=0.1, y1=0.9)
 
 
+@pytest.mark.parametrize(
+    ('raw_bbox', 'expected'),
+    [
+        (
+            '{"x0":"0.10","y0":"0.20","x1":"0.90","y1":"0.80"}',
+            {'x0': 0.1, 'y0': 0.2, 'x1': 0.9, 'y1': 0.8},
+        ),
+        (
+            {'left': '10%', 'top': '20%', 'right': '90%', 'bottom': '80%'},
+            {'x0': 0.1, 'y0': 0.2, 'x1': 0.9, 'y1': 0.8},
+        ),
+        (
+            '10, 20, 90, 80',
+            {'x0': 0.1, 'y0': 0.2, 'x1': 0.9, 'y1': 0.8},
+        ),
+    ],
+)
+def test_bbox_accepts_common_real_provider_shapes(raw_bbox, expected):
+    page = SourcePageExtraction.model_validate(
+        {
+            'page_number': 2,
+            'records': [
+                {
+                    'question_number': '18',
+                    'record_type': 'question',
+                    'source_bbox': raw_bbox,
+                    'question_text_markdown': 'کدام گزینه درست است؟',
+                    'options': [
+                        {'label': '1', 'text_markdown': 'اول'},
+                        {'label': '2', 'text_markdown': 'دوم'},
+                    ],
+                }
+            ],
+        }
+    )
+
+    assert page.records[0].question_number == 18
+    assert page.records[0].source_bbox is not None
+    assert page.records[0].source_bbox.model_dump() == expected
+
+
+@pytest.mark.parametrize(
+    'raw_bbox',
+    [
+        'not a bounding box',
+        {'x0': 0.8, 'y0': 0.2, 'x1': 0.1, 'y1': 0.9},
+        {'x0': 1000, 'y0': 20, 'x1': 1900, 'y1': 80},
+        {'unexpected': 'shape'},
+    ],
+)
+def test_invalid_bbox_is_dropped_without_dropping_question_record(raw_bbox):
+    page = SourcePageExtraction.model_validate(
+        {
+            'page_number': 3,
+            'records': [
+                {
+                    'question_number': '19',
+                    'record_type': 'question',
+                    'source_bbox': raw_bbox,
+                    'question_text_markdown': 'صورت سؤال سالم',
+                    'options': [
+                        {'label': '1', 'text_markdown': 'گزینه اول'},
+                        {'label': '2', 'text_markdown': 'گزینه دوم'},
+                    ],
+                }
+            ],
+        }
+    )
+
+    assert len(page.records) == 1
+    assert page.records[0].question_number == 19
+    assert page.records[0].question_text_markdown == 'صورت سؤال سالم'
+    assert page.records[0].source_bbox is None
+
+
 def test_column_bbox_maps_back_to_full_page():
     page = SourcePageExtraction(
         page_number=10,
