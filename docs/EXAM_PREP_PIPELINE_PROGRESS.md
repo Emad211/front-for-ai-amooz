@@ -90,3 +90,33 @@ Focused verification targets:
   as publishable.
 - Processing, failed, empty, review-required, and published states all retain a visible
   publication button with the correct disabled reason or final label.
+
+## 2026-08-05 — Actionable question review queue
+
+Problem confirmed from the teacher edit page:
+
+- All extracted questions looked identical, so a teacher could not tell which questions
+  blocked publication.
+- The stored audit and per-question issue codes already contained the evidence, but the
+  edit UI did not map them back to the corresponding question.
+- There was no filter, reason text, navigation, or durable teacher decision.
+
+Final review contract:
+
+1. Existing exams are supported immediately; no reprocessing or data migration is needed.
+2. The edit page maps both `question.issues` and `extractionAudit.issues` using question id,
+   source question number, normalized section key, and page-first question number.
+3. Questions with issues receive a visible badge, severity, Persian explanation, source
+   page numbers, and an expanded detail panel.
+4. The teacher can switch between all questions and only questions needing review, jump
+   to the first item, and proceed through the review queue.
+5. `teacher_reviewed_issue_codes` stores an explicit per-question teacher decision.
+6. Teacher acknowledgement can suppress only judgement-based issues such as failed source
+   verification or a suspected solution mismatch.
+7. Deterministic structural defects are re-audited after save and cannot be bypassed:
+   empty question/option text, missing answer keys, invalid option labels, and similar
+   defects return until the content is actually corrected.
+8. A referenced visual is considered present only when a real non-solution visual is
+   attached to the question.
+9. Global issues such as a failed physical page remain separate and cannot be incorrectly
+   assigned to one question or cleared by a question-level decision.

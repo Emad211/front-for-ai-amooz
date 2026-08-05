@@ -1,9 +1,23 @@
-import { useState } from 'react';
-import { Save, Loader2, Plus, Trash2, HelpCircle, CheckCircle2 } from 'lucide-react';
+'use client';
+
+import { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  AlertTriangle,
+  CheckCircle2,
+  ChevronLeft,
+  HelpCircle,
+  ListFilter,
+  Loader2,
+  Plus,
+  Save,
+  ShieldCheck,
+  Trash2,
+} from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
+import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
   Select,
@@ -12,8 +26,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Separator } from '@/components/ui/separator';
-import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from '@/components/ui/accordion';
 import { CLASS_TITLE_MAX_LENGTH } from '@/constants/teacher-limits';
 import type {
   ExamPrepSessionDetail,
@@ -22,6 +40,10 @@ import type {
   ExamPrepSessionUpdatePayload,
 } from '@/services/classes-service';
 import { ProtectedExamVisual } from '@/components/exam-prep/protected-exam-visual';
+import {
+  buildExamReviewSummary,
+  type ExamQuestionReviewState,
+} from './exam-review-utils';
 
 interface ExamEditFormProps {
   examDetail: ExamPrepSessionDetail;
@@ -29,11 +51,23 @@ interface ExamEditFormProps {
   isSaving?: boolean;
 }
 
+type ReviewFilter = 'all' | 'needs_review';
+
 const levelOptions = [
   { value: 'مبتدی', label: 'مبتدی' },
   { value: 'متوسط', label: 'متوسط' },
   { value: 'پیشرفته', label: 'پیشرفته' },
 ];
+
+function initialExamData(examDetail: ExamPrepSessionDetail): ExamPrepData {
+  return examDetail.exam_prep_data || {
+    exam_prep: { title: examDetail.title, questions: [] },
+  };
+}
+
+function questionValue(question: ExamPrepQuestion, index: number): string {
+  return question.question_id || `q-${index + 1}`;
+}
 
 export function ExamEditForm({ examDetail, onSave, isSaving }: ExamEditFormProps) {
   const [formData, setFormData] = useState({
@@ -42,15 +76,64 @@ export function ExamEditForm({ examDetail, onSave, isSaving }: ExamEditFormProps
     level: examDetail.level || 'مبتدی' as const,
     duration: examDetail.duration || '',
   });
+  const [examData, setExamData] = useState<ExamPrepData>(() => initialExamData(examDetail));
+  const [reviewFilter, setReviewFilter] = useState<ReviewFilter>('all');
+  const [openQuestionIds, setOpenQuestionIds] = useState<string[]>([]);
+  const questionRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
-  const [examData, setExamData] = useState<ExamPrepData>(
-    examDetail.exam_prep_data || {
-      exam_prep: { title: examDetail.title, questions: [] },
-    }
+  const reviewSummary = useMemo(
+    () => buildExamReviewSummary({
+      exam_prep_data: examData,
+      extractionAudit: examDetail.extractionAudit,
+    }),
+    [examData, examDetail.extractionAudit],
   );
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  useEffect(() => {
+    const nextExamData = initialExamData(examDetail);
+    const nextSummary = buildExamReviewSummary({
+      exam_prep_data: nextExamData,
+      extractionAudit: examDetail.extractionAudit,
+    });
+    setFormData({
+      title: examDetail.title,
+      description: examDetail.description,
+      level: examDetail.level || 'مبتدی',
+      duration: examDetail.duration || '',
+    });
+    setExamData(nextExamData);
+    setReviewFilter(nextSummary.reviewQuestionIds.length > 0 ? 'needs_review' : 'all');
+    setOpenQuestionIds(nextSummary.reviewQuestionIds.slice(0, 1));
+  }, [examDetail.id, examDetail.updated_at, examDetail.extractionAudit]);
+
+  const visibleQuestions = useMemo(
+    () => examData.exam_prep.questions
+      .map((question, index) => ({
+        question,
+        index,
+        value: questionValue(question, index),
+        review: reviewSummary.questions[index],
+      }))
+      .filter((item) => reviewFilter === 'all' || item.review?.needsReview),
+    [examData.exam_prep.questions, reviewFilter, reviewSummary.questions],
+  );
+
+  const canAcknowledgeQuestionIssues = (examDetail.extractionVersion ?? 1) <= 1;
+
+  const goToQuestion = (questionId: string) => {
+    setOpenQuestionIds((current) => (
+      current.includes(questionId) ? current : [...current, questionId]
+    ));
+    window.setTimeout(() => {
+      questionRefs.current[questionId]?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'center',
+      });
+    }, 80);
+  };
+
+  const handleSubmit = async (event: React.FormEvent) => {
+    event.preventDefault();
     await onSave({
       title: formData.title,
       description: formData.description,
@@ -74,91 +157,118 @@ export function ExamEditForm({ examDetail, onSave, isSaving }: ExamEditFormProps
       correct_option_text_markdown: '',
       teacher_solution_markdown: '',
       final_answer_markdown: '',
-      confidence: 1.0,
+      confidence: 1,
+      issues: [],
+      teacher_reviewed_issue_codes: [],
     };
 
-    setExamData((prev) => ({
-      ...prev,
+    setReviewFilter('all');
+    setExamData((previous) => ({
+      ...previous,
       exam_prep: {
-        ...prev.exam_prep,
-        questions: [...prev.exam_prep.questions, newQuestion],
+        ...previous.exam_prep,
+        questions: [...previous.exam_prep.questions, newQuestion],
       },
     }));
+    setOpenQuestionIds((current) => [...current, newQuestion.question_id]);
   };
 
   const removeQuestion = (index: number) => {
-    setExamData((prev) => ({
-      ...prev,
+    setExamData((previous) => ({
+      ...previous,
       exam_prep: {
-        ...prev.exam_prep,
-        questions: prev.exam_prep.questions.filter((_, i) => i !== index),
+        ...previous.exam_prep,
+        questions: previous.exam_prep.questions.filter((_, itemIndex) => itemIndex !== index),
       },
     }));
   };
 
-  const updateQuestion = (index: number, updates: Partial<ExamPrepQuestion>) => {
-    setExamData((prev) => {
-      const newQuestions = [...prev.exam_prep.questions];
-      newQuestions[index] = { ...newQuestions[index], ...updates };
-      
-      // Update correct_option_text_markdown if correct_option_label changed
+  const updateQuestion = (
+    index: number,
+    updates: Partial<ExamPrepQuestion>,
+    options: { preserveReviewDecision?: boolean } = {},
+  ) => {
+    setExamData((previous) => {
+      const questions = [...previous.exam_prep.questions];
+      const current = questions[index];
+      const next: ExamPrepQuestion = {
+        ...current,
+        ...updates,
+        teacher_reviewed_issue_codes: options.preserveReviewDecision
+          ? updates.teacher_reviewed_issue_codes ?? current.teacher_reviewed_issue_codes
+          : [],
+      };
+
       if ('correct_option_label' in updates || 'options' in updates) {
-        const q = newQuestions[index];
-        const correctOpt = q.options.find(o => o.label === q.correct_option_label);
-        q.correct_option_text_markdown = correctOpt ? correctOpt.text_markdown : null;
+        const correctOption = next.options.find(
+          (option) => option.label === next.correct_option_label,
+        );
+        next.correct_option_text_markdown = correctOption?.text_markdown ?? null;
       }
+      questions[index] = next;
 
       return {
-        ...prev,
+        ...previous,
         exam_prep: {
-          ...prev.exam_prep,
-          questions: newQuestions,
+          ...previous.exam_prep,
+          questions,
         },
       };
     });
   };
 
-  const updateOption = (qIndex: number, oIndex: number, text: string) => {
-    setExamData((prev) => {
-      const newQuestions = [...prev.exam_prep.questions];
-      const newOptions = [...newQuestions[qIndex].options];
-      newOptions[oIndex] = { ...newOptions[oIndex], text_markdown: text };
-      newQuestions[qIndex] = { ...newQuestions[qIndex], options: newOptions };
-
-      // Update correct_option_text_markdown if this was the correct option
-      const q = newQuestions[qIndex];
-      if (q.correct_option_label === newOptions[oIndex].label) {
-        q.correct_option_text_markdown = text;
-      }
-
-      return {
-        ...prev,
-        exam_prep: {
-          ...prev.exam_prep,
-          questions: newQuestions,
-        },
-      };
-    });
+  const updateOption = (questionIndex: number, optionIndex: number, text: string) => {
+    const question = examData.exam_prep.questions[questionIndex];
+    const options = [...question.options];
+    options[optionIndex] = { ...options[optionIndex], text_markdown: text };
+    updateQuestion(questionIndex, { options });
   };
+
+  const acknowledgeQuestion = (
+    questionIndex: number,
+    review: ExamQuestionReviewState,
+  ) => {
+    const question = examData.exam_prep.questions[questionIndex];
+    const reviewedCodes = Array.from(new Set([
+      ...(question.teacher_reviewed_issue_codes ?? []),
+      ...review.issues.map((issue) => issue.code),
+    ]));
+    const currentPosition = reviewSummary.reviewQuestionIds.indexOf(review.questionId);
+    const nextQuestionId = currentPosition >= 0
+      ? reviewSummary.reviewQuestionIds[currentPosition + 1]
+      : undefined;
+
+    updateQuestion(
+      questionIndex,
+      { teacher_reviewed_issue_codes: reviewedCodes },
+      { preserveReviewDecision: true },
+    );
+    if (nextQuestionId) {
+      window.setTimeout(() => goToQuestion(nextQuestionId), 80);
+    }
+  };
+
+  const reviewCount = reviewSummary.reviewQuestionIds.length;
+  const totalQuestions = examData.exam_prep.questions.length;
 
   return (
-    <div className="space-y-8 pb-8">
+    <form onSubmit={handleSubmit} className="space-y-8 pb-8" dir="rtl">
       <Card>
         <CardHeader>
           <CardTitle className="text-lg">اطلاعات کلی</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="space-y-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 md:gap-6">
               <div className="space-y-2">
                 <Label htmlFor="title">عنوان آزمون (الزامی)</Label>
                 <Input
                   id="title"
                   value={formData.title}
                   maxLength={CLASS_TITLE_MAX_LENGTH}
-                  onChange={(e) => setFormData((prev) => ({
-                    ...prev,
-                    title: e.target.value.slice(0, CLASS_TITLE_MAX_LENGTH),
+                  onChange={(event) => setFormData((previous) => ({
+                    ...previous,
+                    title: event.target.value.slice(0, CLASS_TITLE_MAX_LENGTH),
                   }))}
                   placeholder="عنوان آزمون را وارد کنید"
                 />
@@ -173,16 +283,15 @@ export function ExamEditForm({ examDetail, onSave, isSaving }: ExamEditFormProps
                 <Select
                   value={formData.level}
                   onValueChange={(value: 'مبتدی' | 'متوسط' | 'پیشرفته') =>
-                    setFormData((prev) => ({ ...prev, level: value }))
-                  }
+                    setFormData((previous) => ({ ...previous, level: value }))}
                 >
                   <SelectTrigger>
                     <SelectValue placeholder="انتخاب سطح" />
                   </SelectTrigger>
                   <SelectContent>
-                    {levelOptions.map((opt) => (
-                      <SelectItem key={opt.value} value={opt.value}>
-                        {opt.label}
+                    {levelOptions.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -194,7 +303,10 @@ export function ExamEditForm({ examDetail, onSave, isSaving }: ExamEditFormProps
                 <Input
                   id="duration"
                   value={formData.duration}
-                  onChange={(e) => setFormData((prev) => ({ ...prev, duration: e.target.value }))}
+                  onChange={(event) => setFormData((previous) => ({
+                    ...previous,
+                    duration: event.target.value,
+                  }))}
                   placeholder="مثلاً ۱ ساعت یا ۳۰ دقیقه"
                 />
               </div>
@@ -205,7 +317,10 @@ export function ExamEditForm({ examDetail, onSave, isSaving }: ExamEditFormProps
               <Textarea
                 id="description"
                 value={formData.description}
-                onChange={(e) => setFormData((prev) => ({ ...prev, description: e.target.value }))}
+                onChange={(event) => setFormData((previous) => ({
+                  ...previous,
+                  description: event.target.value,
+                }))}
                 placeholder="توضیحات آزمون را وارد کنید"
                 rows={4}
               />
@@ -214,163 +329,353 @@ export function ExamEditForm({ examDetail, onSave, isSaving }: ExamEditFormProps
         </CardContent>
       </Card>
 
+      <Card className={reviewCount > 0 ? 'border-amber-500/50 bg-amber-500/5' : 'border-emerald-500/40 bg-emerald-500/5'}>
+        <CardContent className="space-y-4 p-5">
+          <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-center">
+            <div className="flex items-start gap-3">
+              <div className={reviewCount > 0 ? 'rounded-xl bg-amber-500/15 p-2 text-amber-600' : 'rounded-xl bg-emerald-500/15 p-2 text-emerald-600'}>
+                {reviewCount > 0 ? <AlertTriangle className="h-5 w-5" /> : <ShieldCheck className="h-5 w-5" />}
+              </div>
+              <div className="space-y-1">
+                <h2 className="font-bold">
+                  {reviewCount > 0
+                    ? `${reviewCount} سؤال نیازمند بازبینی است`
+                    : 'همه سؤال‌ها از کنترل فعلی عبور کرده‌اند'}
+                </h2>
+                <p className="text-sm leading-6 text-muted-foreground">
+                  {reviewCount > 0
+                    ? 'سؤال را باز کنید، دلیل را ببینید، اصلاح لازم را انجام دهید و سپس «تأیید و کنترل مجدد» را بزنید. در پایان همه تغییرات را ذخیره کنید.'
+                    : 'در حال حاضر خطای سؤال‌محور حل‌نشده‌ای در audit ذخیره‌شده دیده نمی‌شود.'}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              <Button
+                type="button"
+                variant={reviewFilter === 'needs_review' ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => setReviewFilter('needs_review')}
+                disabled={reviewCount === 0}
+              >
+                <ListFilter className="h-4 w-4" />
+                فقط نیازمند بازبینی ({reviewCount})
+              </Button>
+              <Button
+                type="button"
+                variant={reviewFilter === 'all' ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => setReviewFilter('all')}
+              >
+                همه سؤال‌ها ({totalQuestions})
+              </Button>
+              {reviewCount > 0 && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => goToQuestion(reviewSummary.reviewQuestionIds[0])}
+                >
+                  رفتن به اولین مورد
+                  <ChevronLeft className="h-4 w-4" />
+                </Button>
+              )}
+            </div>
+          </div>
+
+          <div className="flex flex-wrap gap-2 text-xs">
+            {reviewSummary.criticalQuestionCount > 0 && (
+              <Badge variant="destructive">
+                {reviewSummary.criticalQuestionCount} سؤال با خطای بحرانی
+              </Badge>
+            )}
+            {reviewSummary.warningQuestionCount > 0 && (
+              <Badge variant="outline" className="border-amber-500/50 text-amber-700 dark:text-amber-300">
+                {reviewSummary.warningQuestionCount} سؤال با هشدار
+              </Badge>
+            )}
+          </div>
+
+          {reviewSummary.globalIssues.length > 0 && (
+            <div className="rounded-xl border border-destructive/40 bg-destructive/5 p-4">
+              <p className="mb-2 text-sm font-bold text-destructive">
+                {reviewSummary.globalIssues.length} مشکل کلی به سؤال مشخصی متصل نشده است
+              </p>
+              <div className="space-y-2">
+                {reviewSummary.globalIssues.map((issue, index) => (
+                  <div key={`${issue.code}-${index}`} className="text-sm">
+                    <span className="font-semibold">{issue.label}</span>
+                    <span className="text-muted-foreground"> — {issue.description}</span>
+                    {issue.sourcePages.length > 0 && (
+                      <span className="mr-2 text-xs text-muted-foreground">
+                        صفحه {issue.sourcePages.join('، ')}
+                      </span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
       <div className="space-y-4">
-        <div className="flex items-center justify-between">
-          <h2 className="text-xl font-bold flex items-center gap-2">
+        <div className="flex items-center justify-between gap-3">
+          <h2 className="flex items-center gap-2 text-xl font-bold">
             <HelpCircle className="h-5 w-5 text-primary" />
-            سوالات و پاسخ‌ها
+            سؤالات و پاسخ‌ها
           </h2>
-          <Button onClick={addQuestion} variant="outline" size="sm" className="gap-2">
+          <Button type="button" onClick={addQuestion} variant="outline" size="sm" className="gap-2">
             <Plus className="h-4 w-4" />
-            افزودن سوال جدید
+            افزودن سؤال جدید
           </Button>
         </div>
 
-        <Accordion type="multiple" className="space-y-4">
-          {examData.exam_prep.questions.map((q, qIndex) => (
-            <AccordionItem 
-              key={q.question_id || qIndex} 
-              value={q.question_id || `q-${qIndex}`}
-              className="border border-border/60 rounded-xl bg-card overflow-hidden"
+        {reviewFilter === 'needs_review' && visibleQuestions.length === 0 && totalQuestions > 0 && (
+          <div className="rounded-xl border border-emerald-500/40 bg-emerald-500/5 p-6 text-center">
+            <CheckCircle2 className="mx-auto mb-2 h-8 w-8 text-emerald-600" />
+            <p className="font-semibold">موردی در صف بازبینی باقی نمانده است.</p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              اکنون «ذخیره تمام تغییرات آزمون» را بزنید تا سرور دوباره کنترل کند.
+            </p>
+          </div>
+        )}
+
+        <Accordion
+          type="multiple"
+          value={openQuestionIds}
+          onValueChange={setOpenQuestionIds}
+          className="space-y-4"
+        >
+          {visibleQuestions.map(({ question, index: questionIndex, value, review }) => (
+            <div
+              key={value}
+              ref={(element) => { questionRefs.current[value] = element; }}
+              className="scroll-mt-28"
             >
-              <div className="relative group/title">
-                <AccordionTrigger className="px-4 py-4 hover:bg-muted/30 transition-colors hover:no-underline">
-                  <div className="flex items-center gap-3 text-right">
-                    <span className="bg-primary/10 text-primary w-6 h-6 rounded-full flex items-center justify-center text-xs shrink-0">
-                      {qIndex + 1}
-                    </span>
-                    <span className="font-bold text-sm flex-1 min-w-0 truncate">
-                      {q.question_text_markdown ? q.question_text_markdown.split('\n')[0] : 'سؤال جدید'}
-                    </span>
-                  </div>
-                </AccordionTrigger>
-                
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="absolute left-12 top-1/2 -translate-y-1/2 text-destructive opacity-0 group-hover/title:opacity-100 transition-opacity z-10"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    removeQuestion(qIndex);
-                  }}
-                >
-                  <Trash2 className="h-4 w-4" />
-                </Button>
-              </div>
-
-              <AccordionContent className="px-4 pt-4 pb-6 space-y-6">
-                {(q.visuals?.length ?? 0) > 0 && (
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    {q.visuals?.map((visual) => (
-                      <ProtectedExamVisual
-                        key={visual.id}
-                        url={`/api/classes/exam-prep-sessions/${examDetail.id}/visuals/${visual.id}/content/`}
-                        alt={visual.altText || 'تصویر مرتبط با سؤال'}
-                        className="h-48 w-full rounded-md border object-contain"
-                      />
-                    ))}
-                  </div>
-                )}
-                <div className="space-y-2">
-                  <Label>متن اصلی سوال (صورت سوال)</Label>
-                  <Textarea
-                    value={q.question_text_markdown || ''}
-                    onChange={(e) => updateQuestion(qIndex, { question_text_markdown: e.target.value })}
-                    placeholder="صورت سوال را به همراه فرمول‌های LaTeX جانمایی کنید"
-                    rows={3}
-                    className="font-mono text-sm"
-                  />
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {q.options.map((opt, oIndex) => (
-                    <div key={opt.label} className="space-y-1">
-                      <div className="flex items-center justify-between">
-                        <Label className="text-xs text-muted-foreground">گزینه {opt.label}</Label>
-                        {q.correct_option_label === opt.label && (
-                          <span className="text-[10px] bg-green-100 text-green-700 px-1.5 rounded-full flex items-center gap-1">
-                            <CheckCircle2 className="h-2 w-2" />
-                            پاسخ صحیح
-                          </span>
-                        )}
-                      </div>
-                      <Input
-                        value={opt.text_markdown || ''}
-                        onChange={(e) => updateOption(qIndex, oIndex, e.target.value)}
-                        placeholder={`متن گزینه ${opt.label}`}
-                      />
+              <AccordionItem
+                value={value}
+                className={review?.needsReview
+                  ? 'overflow-hidden rounded-xl border border-amber-500/50 bg-card'
+                  : 'overflow-hidden rounded-xl border border-border/60 bg-card'}
+              >
+                <div className="group/title relative">
+                  <AccordionTrigger className="px-4 py-4 transition-colors hover:bg-muted/30 hover:no-underline">
+                    <div className="flex min-w-0 flex-1 items-center gap-3 text-right">
+                      <span className={review?.criticalCount
+                        ? 'flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-destructive/15 text-xs font-bold text-destructive'
+                        : review?.needsReview
+                          ? 'flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-amber-500/15 text-xs font-bold text-amber-700 dark:text-amber-300'
+                          : 'flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs text-primary'}
+                      >
+                        {review?.questionNumber || questionIndex + 1}
+                      </span>
+                      <span className="min-w-0 flex-1 truncate text-sm font-bold">
+                        {question.question_text_markdown
+                          ? question.question_text_markdown.split('\n')[0]
+                          : 'سؤال جدید'}
+                      </span>
+                      {review?.needsReview && (
+                        <Badge
+                          variant={review.criticalCount > 0 ? 'destructive' : 'outline'}
+                          className={review.criticalCount > 0 ? '' : 'border-amber-500/50 text-amber-700 dark:text-amber-300'}
+                        >
+                          نیازمند بازبینی · {review.issues.length}
+                        </Badge>
+                      )}
                     </div>
-                  ))}
+                  </AccordionTrigger>
+
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="absolute left-12 top-1/2 z-10 -translate-y-1/2 text-destructive opacity-0 transition-opacity group-hover/title:opacity-100"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      removeQuestion(questionIndex);
+                    }}
+                    aria-label={`حذف سؤال ${questionIndex + 1}`}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
-                  <div className="space-y-2">
-                    <Label>انتخاب گزینه صحیح</Label>
-                    <Select
-                      value={q.correct_option_label || ''}
-                      onValueChange={(val) => updateQuestion(qIndex, { correct_option_label: val })}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="پاسخ صحیح را انتخاب کنید" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {q.options.map((opt) => (
-                          <SelectItem key={opt.label} value={opt.label}>
-                            گزینه {opt.label}
-                          </SelectItem>
+                <AccordionContent className="space-y-6 px-4 pb-6 pt-4">
+                  {review?.needsReview && (
+                    <div className="space-y-4 rounded-xl border border-amber-500/50 bg-amber-500/5 p-4">
+                      <div className="flex items-center gap-2">
+                        <AlertTriangle className="h-5 w-5 text-amber-600" />
+                        <p className="font-bold">چرا این سؤال نیازمند بازبینی است؟</p>
+                      </div>
+                      <div className="space-y-3">
+                        {review.issues.map((issue) => (
+                          <div key={issue.code} className="rounded-lg border border-border/60 bg-background/70 p-3">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <Badge variant={issue.severity === 'critical' ? 'destructive' : 'outline'}>
+                                {issue.severity === 'critical' ? 'بحرانی' : 'هشدار'}
+                              </Badge>
+                              <span className="text-sm font-semibold">{issue.label}</span>
+                              {issue.sourcePages.length > 0 && (
+                                <span className="text-xs text-muted-foreground">
+                                  صفحه منبع: {issue.sourcePages.join('، ')}
+                                </span>
+                              )}
+                            </div>
+                            <p className="mt-2 text-sm leading-6 text-muted-foreground">
+                              {issue.description}
+                            </p>
+                          </div>
                         ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
+                      </div>
+                      <div className="flex flex-col justify-between gap-3 border-t border-amber-500/20 pt-3 sm:flex-row sm:items-center">
+                        <p className="text-xs leading-5 text-muted-foreground">
+                          تأیید معلم فقط خطاهای قضاوتی را رفع می‌کند؛ گزینه خالی، نبود پاسخ و سایر خطاهای قطعی پس از ذخیره دوباره برمی‌گردند.
+                        </p>
+                        <Button
+                          type="button"
+                          size="sm"
+                          onClick={() => acknowledgeQuestion(questionIndex, review)}
+                          disabled={!canAcknowledgeQuestionIssues}
+                        >
+                          <ShieldCheck className="h-4 w-4" />
+                          تأیید و کنترل مجدد
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+
+                  {(question.visuals?.length ?? 0) > 0 && (
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      {question.visuals?.map((visual) => (
+                        <ProtectedExamVisual
+                          key={visual.id}
+                          url={`/api/classes/exam-prep-sessions/${examDetail.id}/visuals/${visual.id}/content/`}
+                          alt={visual.altText || 'تصویر مرتبط با سؤال'}
+                          className="h-48 w-full rounded-md border object-contain"
+                        />
+                      ))}
+                    </div>
+                  )}
 
                   <div className="space-y-2">
-                    <Label>خروجی نهایی (نتیجه)</Label>
-                    <Input
-                      value={q.final_answer_markdown || ''}
-                      onChange={(e) => updateQuestion(qIndex, { final_answer_markdown: e.target.value })}
-                      placeholder="مثلاً: گزینه ب یا x=5"
+                    <Label>متن اصلی سؤال (صورت سؤال)</Label>
+                    <Textarea
+                      value={question.question_text_markdown || ''}
+                      onChange={(event) => updateQuestion(questionIndex, {
+                        question_text_markdown: event.target.value,
+                      })}
+                      placeholder="صورت سؤال را به همراه فرمول‌های LaTeX وارد کنید"
+                      rows={3}
+                      className="font-mono text-sm"
                     />
                   </div>
-                </div>
 
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <Label>تحلیل و راه حل مدرس (ارتجاعی - قابل تغییر اندازه)</Label>
+                  <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                    {question.options.map((option, optionIndex) => (
+                      <div key={`${option.label}-${optionIndex}`} className="space-y-1">
+                        <div className="flex items-center justify-between">
+                          <Label className="text-xs text-muted-foreground">
+                            گزینه {option.label}
+                          </Label>
+                          {question.correct_option_label === option.label && (
+                            <span className="flex items-center gap-1 rounded-full bg-green-100 px-1.5 text-[10px] text-green-700">
+                              <CheckCircle2 className="h-2 w-2" />
+                              پاسخ صحیح
+                            </span>
+                          )}
+                        </div>
+                        <Input
+                          value={option.text_markdown || ''}
+                          onChange={(event) => updateOption(
+                            questionIndex,
+                            optionIndex,
+                            event.target.value,
+                          )}
+                          placeholder={`متن گزینه ${option.label}`}
+                        />
+                      </div>
+                    ))}
                   </div>
-                  <Textarea
-                    value={q.teacher_solution_markdown || ''}
-                    onChange={(e) => updateQuestion(qIndex, { teacher_solution_markdown: e.target.value })}
-                    placeholder="توضیحات و راه حل تشریحی مدرس را اینجا وارد کنید"
-                    rows={6}
-                    className="bg-muted/30 resize-none md:resize-y min-h-[150px]"
-                  />
-                </div>
-              </AccordionContent>
-            </AccordionItem>
+
+                  <div className="grid grid-cols-1 gap-4 md:grid-cols-2 md:gap-6">
+                    <div className="space-y-2">
+                      <Label>انتخاب گزینه صحیح</Label>
+                      <Select
+                        value={question.correct_option_label || ''}
+                        onValueChange={(value) => updateQuestion(questionIndex, {
+                          correct_option_label: value,
+                        })}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="پاسخ صحیح را انتخاب کنید" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {question.options.map((option) => (
+                            <SelectItem key={option.label} value={option.label}>
+                              گزینه {option.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label>خروجی نهایی (نتیجه)</Label>
+                      <Input
+                        value={question.final_answer_markdown || ''}
+                        onChange={(event) => updateQuestion(questionIndex, {
+                          final_answer_markdown: event.target.value,
+                        })}
+                        placeholder="مثلاً: گزینه ب یا x=5"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label>تحلیل و راه‌حل مدرس</Label>
+                    <Textarea
+                      value={question.teacher_solution_markdown || ''}
+                      onChange={(event) => updateQuestion(questionIndex, {
+                        teacher_solution_markdown: event.target.value,
+                      })}
+                      placeholder="توضیحات و راه‌حل تشریحی مدرس را اینجا وارد کنید"
+                      rows={6}
+                      className="min-h-[150px] resize-none bg-muted/30 md:resize-y"
+                    />
+                  </div>
+                </AccordionContent>
+              </AccordionItem>
+            </div>
           ))}
         </Accordion>
 
-        {examData.exam_prep.questions.length === 0 && (
-          <div className="text-center py-10 bg-muted/20 rounded-lg border-2 border-dashed border-muted">
-            <HelpCircle className="h-10 w-10 text-muted-foreground mx-auto mb-3" />
-            <p className="text-muted-foreground">هنوز هیچ سوالی برای این آزمون ثبت نشده است.</p>
-            <Button onClick={addQuestion} variant="link" className="mt-2">
-              ایجاد اولین سوال
+        {totalQuestions === 0 && (
+          <div className="rounded-lg border-2 border-dashed border-muted bg-muted/20 py-10 text-center">
+            <HelpCircle className="mx-auto mb-3 h-10 w-10 text-muted-foreground" />
+            <p className="text-muted-foreground">هنوز هیچ سؤالی برای این آزمون ثبت نشده است.</p>
+            <Button type="button" onClick={addQuestion} variant="link" className="mt-2">
+              ایجاد اولین سؤال
             </Button>
           </div>
         )}
       </div>
 
-      <div className="sticky bottom-0 left-0 right-0 z-40 border-t bg-background/95 backdrop-blur p-4 flex justify-end gap-2">
-        <Button onClick={handleSubmit} disabled={isSaving} size="lg" className="shadow-lg px-8">
+      <div className="sticky bottom-0 left-0 right-0 z-40 flex flex-col items-stretch justify-between gap-3 border-t bg-background/95 p-4 backdrop-blur sm:flex-row sm:items-center">
+        <p className="text-xs text-muted-foreground">
+          {reviewCount > 0
+            ? `${reviewCount} سؤال هنوز در صف بازبینی است.`
+            : 'پس از ذخیره، وضعیت انتشار و audit دوباره محاسبه می‌شود.'}
+        </p>
+        <Button type="submit" disabled={isSaving} size="lg" className="px-8 shadow-lg">
           {isSaving ? (
-            <Loader2 className="h-5 w-5 animate-spin ml-2" />
+            <Loader2 className="ml-2 h-5 w-5 animate-spin" />
           ) : (
-            <Save className="h-5 w-5 ml-2" />
+            <Save className="ml-2 h-5 w-5" />
           )}
           ذخیره تمام تغییرات آزمون
         </Button>
       </div>
-    </div>
+    </form>
   );
 }
