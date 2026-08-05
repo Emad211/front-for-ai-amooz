@@ -10,6 +10,10 @@ from .exam_prep_utils import clean_exam_markdown
 
 CRITICAL_ISSUE_CODES = frozenset(
     {
+        "no_questions",
+        "missing_question_id",
+        "duplicate_question_id",
+        "duplicate_question_number",
         "missing_question_text",
         "missing_options",
         "missing_option_text",
