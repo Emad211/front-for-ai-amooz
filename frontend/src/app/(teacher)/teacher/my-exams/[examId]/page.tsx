@@ -32,7 +32,7 @@ interface PageProps {
 const statusLabels: Record<string, string> = {
   pending: 'در انتظار',
   exam_transcribing: 'در حال رونویسی',
-  exam_transcribed: 'رونویسی شده',
+  exam_transcribed: 'آماده بازبینی',
   exam_structuring: 'در حال استخراج سوالات',
   exam_structured: 'تکمیل شده',
   failed: 'خطا',
@@ -166,16 +166,41 @@ export default function TeacherExamDetailPage({ params }: PageProps) {
 
   const questions = examPrep.exam_prep_data?.exam_prep?.questions ?? [];
   const isProcessing = ['exam_transcribing', 'exam_structuring'].includes(examPrep.status);
+  const isReviewReady =
+    examPrep.status === 'exam_structured'
+    || examPrep.status === 'exam_transcribed'
+    || examPrep.readyForReview
+    || examPrep.workflowStage === 'ready_for_review';
   const extractionPassed =
     !examPrep.extractionAudit || examPrep.extractionAudit.status === 'passed';
   const extractionReviewConfirmed =
     !examPrep.teacherReviewRequired || Boolean(examPrep.teacherReviewedAt);
   const canPublish =
-    examPrep.status === 'exam_structured'
+    isReviewReady
     && !examPrep.is_published
     && questions.length > 0
     && extractionPassed
     && extractionReviewConfirmed;
+  const publishDisabledReason = examPrep.is_published
+    ? 'این آزمون قبلاً منتشر شده است.'
+    : isProcessing
+      ? 'پس از پایان پردازش می‌توانید آزمون را منتشر کنید.'
+      : examPrep.status === 'failed'
+        ? 'پردازش آزمون با خطا متوقف شده است.'
+        : questions.length === 0
+          ? 'برای انتشار باید حداقل یک سؤال وجود داشته باشد.'
+          : !extractionPassed
+            ? 'ابتدا خطاهای استخراج را در بخش بازبینی برطرف کنید.'
+            : !extractionReviewConfirmed
+              ? 'ابتدا بازبینی استخراج را تأیید کنید.'
+              : !isReviewReady
+                ? 'پیش‌نویس آزمون هنوز آماده انتشار نیست.'
+                : null;
+  const publishButtonLabel = examPrep.is_published
+    ? 'منتشر شده'
+    : isPublishing
+      ? 'در حال انتشار'
+      : 'انتشار آزمون';
 
   const getStatusBadge = () => {
     if (examPrep.is_published) {
@@ -223,16 +248,19 @@ export default function TeacherExamDetailPage({ params }: PageProps) {
               </Link>
             </Button>
           )}
-          {canPublish && (
-            <Button size="sm" onClick={handlePublish} disabled={isPublishing}>
-              {isPublishing ? (
-                <Loader2 className="h-4 w-4 animate-spin sm:ml-2" />
-              ) : (
-                <CheckCircle className="h-4 w-4 sm:ml-2" />
-              )}
-              <span className="hidden sm:inline">انتشار آزمون</span>
-            </Button>
-          )}
+          <Button
+            size="sm"
+            onClick={handlePublish}
+            disabled={!canPublish || isPublishing}
+            title={publishDisabledReason ?? 'انتشار آزمون برای دانش‌آموزان'}
+          >
+            {isPublishing ? (
+              <Loader2 className="h-4 w-4 animate-spin sm:ml-2" />
+            ) : (
+              <CheckCircle className="h-4 w-4 sm:ml-2" />
+            )}
+            <span>{publishButtonLabel}</span>
+          </Button>
         </div>
       </div>
 
@@ -424,7 +452,7 @@ export default function TeacherExamDetailPage({ params }: PageProps) {
                 وضعیت انتشار
               </CardTitle>
             </CardHeader>
-            <CardContent>
+            <CardContent className="space-y-3">
               {examPrep.is_published ? (
                 <div className="space-y-2">
                   <div className="flex items-center gap-2 text-emerald-600">
@@ -437,28 +465,23 @@ export default function TeacherExamDetailPage({ params }: PageProps) {
                     </p>
                   )}
                 </div>
-              ) : isProcessing ? (
-                <div className="flex items-center gap-2 text-amber-600">
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  <span className="text-sm">در حال پردازش...</span>
-                </div>
-              ) : canPublish ? (
-                <div className="space-y-3">
-                  <p className="text-sm text-muted-foreground">
-                    آزمون آماده انتشار است. پس از انتشار، دانش‌آموزان می‌توانند به آن دسترسی داشته باشند.
-                  </p>
-                  <Button className="w-full" size="sm" onClick={handlePublish} disabled={isPublishing}>
-                    {isPublishing && <Loader2 className="h-4 w-4 ml-2 animate-spin" />}
-                    انتشار آزمون
-                  </Button>
-                </div>
               ) : (
                 <p className="text-sm text-muted-foreground">
-                  {examPrep.status === 'failed'
-                    ? 'خطایی در پردازش رخ داده است.'
-                    : 'آزمون هنوز آماده انتشار نیست.'}
+                  {canPublish
+                    ? 'آزمون آماده انتشار است. پس از انتشار، دانش‌آموزان می‌توانند به آن دسترسی داشته باشند.'
+                    : publishDisabledReason}
                 </p>
               )}
+              <Button
+                className="w-full"
+                size="sm"
+                onClick={handlePublish}
+                disabled={!canPublish || isPublishing}
+                title={publishDisabledReason ?? 'انتشار آزمون برای دانش‌آموزان'}
+              >
+                {isPublishing && <Loader2 className="h-4 w-4 ml-2 animate-spin" />}
+                {publishButtonLabel}
+              </Button>
             </CardContent>
           </Card>
         </div>
