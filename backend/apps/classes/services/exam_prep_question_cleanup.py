@@ -23,21 +23,23 @@ _ARABIC_TO_PERSIAN = str.maketrans({
     "ى": "ی",
     "ۀ": "هٔ",
 })
+_LETTER_LABEL_PATTERN = r"(?:الف|ب|ج|د|ه|و)"
 _OPTION_LINE_RE = re.compile(
-    r"^\s*[\(\[]?\s*(?P<label>[1-6۱-۶١-٦الفبجدهو])\s*"
+    rf"^\s*[\(\[]?\s*(?P<label>[1-6۱-۶١-٦]|{_LETTER_LABEL_PATTERN})\s*"
     r"[\)\].:：،\-–—]\s*(?P<text>.+?)\s*$",
     flags=re.IGNORECASE,
 )
 _STATEMENT_LINE_RE = re.compile(
-    r"(?m)^\s*(?P<label>[الفبجدهو])\s*[\)\].:：،\-–—]\s*",
+    rf"(?m)^\s*(?P<label>{_LETTER_LABEL_PATTERN})\s*[\)\].:：،\-–—]\s*",
 )
 _COUNT_QUESTION_RE = re.compile(
     r"(?:چند\s+(?:مورد|عبارت|گزینه)|تعداد\s+(?:موارد|عبارت|گزینه))",
     flags=re.IGNORECASE,
 )
 _ANSWER_LEAK_RE = re.compile(
-    r"(?:موارد?|عبارت(?:‌|\s)?های?)\s*[«\"']?\s*"
-    r"(?P<letters>[الفبجدهو](?:[\s،,و]+[الفبجدهو]){0,5})"
+    rf"(?:موارد?|عبارت(?:‌|\s)?های?)\s*[«\"']?\s*"
+    rf"(?P<letters>{_LETTER_LABEL_PATTERN}(?:(?:\s*[،,]\s*|\s+و\s+)"
+    rf"{_LETTER_LABEL_PATTERN}){{0,5}})"
     r"\s*[»\"']?\s*(?:درست|صحیح)\s*(?:هستند|است|می[‌\s]?باشند)",
     flags=re.IGNORECASE,
 )
@@ -124,19 +126,22 @@ def strip_duplicated_option_lines(
     return cleaned, True
 
 
+def _extract_letter_labels(value: str) -> tuple[str, ...]:
+    return tuple(dict.fromkeys(re.findall(_LETTER_LABEL_PATTERN, value)))
+
+
 def _letters_from_answer_phrase(value: str) -> tuple[str, ...]:
     match = _ANSWER_LEAK_RE.search(value)
     if match is None:
         return ()
-    letters = re.findall(r"[الفبجدهو]", match.group("letters"))
-    return tuple(dict.fromkeys(letters))
+    return _extract_letter_labels(match.group("letters"))
 
 
 def remove_answer_leak(text: str) -> tuple[str, tuple[str, ...], bool]:
     match = _ANSWER_LEAK_RE.search(text)
     if match is None:
         return text, (), False
-    letters = tuple(dict.fromkeys(re.findall(r"[الفبجدهو]", match.group("letters"))))
+    letters = _extract_letter_labels(match.group("letters"))
     cleaned = (text[: match.start()] + text[match.end() :]).strip(" \t\r\n.؛،-")
     cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
     return cleaned, letters, True
