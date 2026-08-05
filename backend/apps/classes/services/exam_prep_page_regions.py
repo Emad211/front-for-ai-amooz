@@ -94,8 +94,14 @@ def _best_text(values: Iterable[str]) -> str:
 
 def _best_options(records: list[PageRecord]) -> list[PageOption]:
     def rank(record: PageRecord) -> tuple[int, int, int]:
-        option_text = sum(len(clean_exam_markdown(item.text_markdown)) for item in record.options)
-        broken = sum(has_broken_persian_text(item.text_markdown) for item in record.options)
+        option_text = sum(
+            len(clean_exam_markdown(item.text_markdown))
+            for item in record.options
+        )
+        broken = sum(
+            has_broken_persian_text(item.text_markdown)
+            for item in record.options
+        )
         return (-broken, len(record.options), option_text)
 
     best = max(records, key=rank, default=None)
@@ -170,7 +176,10 @@ def merge_page_region_extractions(
 ) -> PageExtraction:
     """Merge full-page fallback with ordered column reads by number and role."""
 
-    candidates: OrderedDict[tuple[str, int, str], list[PageRecord]] = OrderedDict()
+    candidates: OrderedDict[
+        tuple[str, int, str],
+        list[PageRecord],
+    ] = OrderedDict()
     for page in [*region_pages, full_page]:
         for record in page.records:
             key = (
@@ -179,12 +188,23 @@ def merge_page_region_extractions(
                 _role_group(record),
             )
             candidates.setdefault(key, []).append(record)
-    merged = [_merge_record_candidates(items) for items in candidates.values()]
-    return PageExtraction(page_number=full_page.page_number, records=merged)
+    merged = [
+        _merge_record_candidates(items)
+        for items in candidates.values()
+    ]
+    return PageExtraction(
+        page_number=full_page.page_number,
+        records=merged,
+    )
 
 
 def last_record_number(page: PageExtraction) -> int | None:
+    """Return a continuation hint only when the source explicitly continues."""
+
     for record in reversed(page.records):
-        if record.question_number > 0:
+        if (
+            record.question_number > 0
+            and record.continues_on_next_page
+        ):
             return record.question_number
     return None
