@@ -10,10 +10,21 @@ import time
 from apps.chatbot.services.llm_client import part_from_bytes
 from apps.classes.services.exam_prep_page_quality import (
     choose_better_page_extraction,
+    page_is_answer_heavy,
     reconcile_page_extraction,
     summarize_page_quality,
 )
 from apps.classes.services.exam_prep_page_records import PageExtraction, PageRecord
+from apps.classes.services.exam_prep_page_regions import (
+    last_record_number,
+    merge_page_region_extractions,
+    split_vertical_columns,
+)
+from apps.classes.services.exam_prep_text_quality import (
+    context_head,
+    context_tail,
+    native_text_for_model,
+)
 from apps.classes.services.exam_prep_utils import clean_exam_markdown
 from apps.commons.llm_prompts import PROMPTS
 from apps.commons.models import LLMUsageLog
@@ -57,6 +68,10 @@ class RenderedExamPage:
     image: bytes
     mime_type: str = "image/png"
     native_text: str = ""
+    previous_native_text: str = ""
+    next_native_text: str = ""
+    right_column_native_text: str = ""
+    left_column_native_text: str = ""
 
 
 def _positive_int_env(name: str, default: int) -> int:
@@ -78,6 +93,13 @@ def _positive_float_env(name: str, default: float) -> float:
         return max(1.0, float(os.getenv(name, str(default))))
     except (TypeError, ValueError):
         return default
+
+
+def _truthy_env(name: str, default: bool = True) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
 
 
 def _normalize_answer_label(value: str) -> str:
@@ -115,11 +137,7 @@ def _sanitize_answer_only_records(result: PageExtraction) -> PageExtraction:
         solution = clean_exam_markdown(record.teacher_solution_markdown)
         if not solution and remainder:
             solution = remainder
-        record_type = (
-            "solution"
-            if solution or record.final_answer_markdown
-            else "answer"
-        )
+        record_type = "solution" if solution or record.final_answer_markdown else "answer"
         sanitized.append(
             record.model_copy(
                 update={
@@ -136,8 +154,6 @@ def _sanitize_answer_only_records(result: PageExtraction) -> PageExtraction:
 
 
 def select_exam_prep_page_model(explicit_model: str | None = None) -> str:
-    """Select one multimodal model from environment without a hardcoded model."""
-
     model = (
         (explicit_model or "").strip()
         or (os.getenv("EXAM_PREP_PAGE_MODEL") or "").strip()
@@ -156,7 +172,6 @@ def _validate_page(page: RenderedExamPage) -> str:
         raise InvalidRenderedExamPage("page_number must be one-based.")
     if not isinstance(page.image, bytes) or not page.image:
         raise InvalidRenderedExamPage("Rendered page image bytes are required.")
-
     mime_type = (page.mime_type or "").strip().lower()
     if mime_type == "image/jpg":
         mime_type = "image/jpeg"
@@ -164,7 +179,6 @@ def _validate_page(page: RenderedExamPage) -> str:
         raise InvalidRenderedExamPage(
             f"Unsupported rendered page MIME type: {mime_type or '(empty)'} ."
         )
-
     max_bytes = _positive_int_env(
         "EXAM_PREP_PAGE_MAX_IMAGE_BYTES",
         10 * 1024 * 1024,
@@ -177,11 +191,10 @@ def _validate_page(page: RenderedExamPage) -> str:
 
 
 def _native_text_evidence(page: RenderedExamPage) -> str:
-    max_chars = _positive_int_env(
-        "EXAM_PREP_PAGE_NATIVE_TEXT_MAX_CHARS",
-        30_000,
+    return native_text_for_model(
+        page.native_text,
+        max_chars=_positive_int_env("EXAM_PREP_PAGE_NATIVE_TEXT_MAX_CHARS", 30_000),
     )
-    return clean_exam_markdown(page.native_text)[:max_chars]
 
 
 def _page_messages(
@@ -191,27 +204,38 @@ def _page_messages(
     scope_hint: str,
     quality_pass: int,
     repair_codes: tuple[str, ...] = (),
+    region: str = "full_page",
+    continuation_hint: int | None = None,
 ) -> list[dict]:
     native_text = _native_text_evidence(page)
+    previous_context = context_tail(page.previous_native_text)
+    next_context = context_head(page.next_native_text)
     repair_instruction = ""
     if quality_pass > 0:
         codes = ", ".join(dict.fromkeys(repair_codes)) or "semantic_quality"
         repair_instruction = (
             "\nThis is a quality-repair pass. The previous schema-valid result "
-            f"failed these semantic checks: {codes}. Re-read the original page "
-            "and return a complete replacement for the whole page. Do not copy "
-            "placeholder option text or split option markers into separate options."
+            f"failed these semantic checks: {codes}. Re-read the original source "
+            "and return a complete replacement. Do not copy poisoned native text."
         )
     native_instruction = (
         "\nNATIVE_TEXT_EVIDENCE_BEGIN\n"
         f"{native_text}\n"
         "NATIVE_TEXT_EVIDENCE_END\n"
-        "Use the native text as transcription evidence when it is coherent. "
-        "Use the image for columns, grouping, diagrams, and visual relationships. "
-        "Never turn a bare option marker into option text."
+        "Use this only when coherent; the image controls columns and grouping."
         if native_text
-        else "\nNo usable native text layer was available; rely on the page image."
+        else "\nNo trustworthy native text was available; rely on the image."
     )
+    neighbor_instruction = (
+        "\nPREVIOUS_PAGE_CONTEXT_BEGIN\n"
+        f"{previous_context}\n"
+        "PREVIOUS_PAGE_CONTEXT_END\n"
+        "NEXT_PAGE_CONTEXT_BEGIN\n"
+        f"{next_context}\n"
+        "NEXT_PAGE_CONTEXT_END\n"
+        "Neighbor context is only for continuation detection. Never extract a new record from it."
+    )
+    hint = str(continuation_hint) if continuation_hint else "none"
     return [
         {
             "role": "system",
@@ -224,11 +248,12 @@ def _page_messages(
                     "type": "text",
                     "text": (
                         f"PAGE_NUMBER: {page.page_number}\n"
+                        f"REGION: {region}\n"
                         f"SCOPE_HINT: {scope_hint}\n"
+                        f"CONTINUATION_HINT: {hint}\n"
                         f"QUALITY_PASS: {quality_pass}\n"
-                        "Extract only records visibly supported by this page."
-                        f"{repair_instruction}"
-                        f"{native_instruction}"
+                        "Extract only records visibly supported by the current image region."
+                        f"{repair_instruction}{native_instruction}{neighbor_instruction}"
                     ),
                 },
                 part_from_bytes(data=page.image, mime_type=mime_type),
@@ -241,14 +266,12 @@ def _tracking_context(
     *,
     page_number: int,
     quality_pass: int,
+    region: str,
 ) -> dict[str, int | str]:
     context: dict[str, int | str] = {
-        "stage": (
-            "page_extraction"
-            if quality_pass == 0
-            else "page_quality_repair"
-        ),
+        "stage": "page_extraction" if quality_pass == 0 else "page_quality_repair",
         "page_number": page_number,
+        "region": region,
     }
     if quality_pass > 0:
         context["quality_pass"] = quality_pass
@@ -263,6 +286,8 @@ def _generate_page(
     scope_hint: str,
     quality_pass: int,
     repair_codes: tuple[str, ...] = (),
+    region: str = "full_page",
+    continuation_hint: int | None = None,
 ) -> PageExtraction:
     result = generate_structured(
         schema=PageExtraction,
@@ -272,6 +297,8 @@ def _generate_page(
             scope_hint=scope_hint,
             quality_pass=quality_pass,
             repair_codes=repair_codes,
+            region=region,
+            continuation_hint=continuation_hint,
         ),
         model=model,
         feature=LLMUsageLog.Feature.PDF_EXTRACTION,
@@ -290,12 +317,15 @@ def _generate_page(
         ),
         detail=(
             "exam_prep_page_extraction"
+            if region == "full_page" and quality_pass == 0
+            else "exam_prep_page_region_extraction"
             if quality_pass == 0
             else "exam_prep_page_quality_repair"
         ),
         tracking_context=_tracking_context(
             page_number=page.page_number,
             quality_pass=quality_pass,
+            region=region,
         ),
         provider_attempts=1,
     )
@@ -304,10 +334,61 @@ def _generate_page(
             f"Expected page {page.page_number}, received page {result.page_number}."
         )
     sanitized = _sanitize_answer_only_records(result)
-    return reconcile_page_extraction(
-        sanitized,
-        native_text=page.native_text,
+    return reconcile_page_extraction(sanitized, native_text=page.native_text)
+
+
+def _extract_answer_columns(
+    page: RenderedExamPage,
+    *,
+    full_page_result: PageExtraction,
+    model: str,
+    scope_hint: str,
+    continuation_hint: int | None,
+) -> tuple[PageExtraction, int]:
+    if not _truthy_env("EXAM_PREP_SPLIT_ANSWER_COLUMNS_ENABLED", True):
+        return full_page_result, 0
+    if not page_is_answer_heavy(full_page_result, native_text=page.native_text):
+        return full_page_result, 0
+    crops = split_vertical_columns(
+        page.image,
+        right_native_text=page.right_column_native_text,
+        left_native_text=page.left_column_native_text,
     )
+    region_results: list[PageExtraction] = []
+    hint = continuation_hint
+    for crop in crops:
+        region_page = RenderedExamPage(
+            page_number=page.page_number,
+            image=crop.image,
+            mime_type="image/png",
+            native_text=crop.native_text,
+            previous_native_text=(page.previous_native_text if crop.region == "right_column" else ""),
+            next_native_text=(page.next_native_text if crop.region == "left_column" else ""),
+        )
+        try:
+            region_result = _generate_page(
+                page=region_page,
+                mime_type="image/png",
+                model=model,
+                scope_hint=scope_hint,
+                quality_pass=0,
+                region=crop.region,
+                continuation_hint=hint,
+            )
+        except (StructuredOutputError, ExtractedPageNumberMismatch) as exc:
+            logger.warning(
+                "exam_prep.page.column_failed pageNumber=%s region=%s errorKind=%s",
+                page.page_number,
+                crop.region,
+                getattr(exc, "error_kind", type(exc).__name__),
+            )
+            continue
+        region_results.append(region_result)
+        hint = last_record_number(region_result) or hint
+    if not region_results:
+        return full_page_result, 0
+    merged = merge_page_region_extractions(full_page_result, region_results)
+    return reconcile_page_extraction(merged, native_text=page.native_text), len(region_results)
 
 
 def extract_exam_prep_page(
@@ -315,8 +396,9 @@ def extract_exam_prep_page(
     *,
     model: str | None = None,
     scope_hint: str = "default",
+    continuation_hint: int | None = None,
 ) -> PageExtraction:
-    """Extract and semantically validate every numbered record on one page."""
+    """Extract one page with small neighbor context and targeted column reads."""
 
     started_at = time.monotonic()
     mime_type = _validate_page(page)
@@ -329,6 +411,14 @@ def extract_exam_prep_page(
         model=selected_model,
         scope_hint=safe_scope_hint,
         quality_pass=0,
+        continuation_hint=continuation_hint,
+    )
+    result, column_calls = _extract_answer_columns(
+        page,
+        full_page_result=result,
+        model=selected_model,
+        scope_hint=safe_scope_hint,
+        continuation_hint=continuation_hint,
     )
     quality = summarize_page_quality(result)
     repair_calls = 0
@@ -348,11 +438,11 @@ def extract_exam_prep_page(
                 scope_hint=safe_scope_hint,
                 quality_pass=quality_pass,
                 repair_codes=quality.repairable_critical_codes,
+                continuation_hint=continuation_hint,
             )
         except (StructuredOutputError, ExtractedPageNumberMismatch) as exc:
             logger.warning(
-                "exam_prep.page.quality_repair_failed pageNumber=%s pass=%s "
-                "errorKind=%s",
+                "exam_prep.page.quality_repair_failed pageNumber=%s pass=%s errorKind=%s",
                 page.page_number,
                 quality_pass,
                 getattr(exc, "error_kind", type(exc).__name__),
@@ -364,9 +454,9 @@ def extract_exam_prep_page(
 
     duration_ms = int((time.monotonic() - started_at) * 1000)
     logger.info(
-        "exam_prep.page.completed pageNumber=%s model=%s durationMs=%s "
-        "imageBytes=%s nativeTextChars=%s recordCount=%s questionCount=%s "
-        "criticalIssueCount=%s repairableCriticalCount=%s qualityRepairCalls=%s",
+        "exam_prep.page.completed pageNumber=%s model=%s durationMs=%s imageBytes=%s "
+        "nativeTextChars=%s recordCount=%s questionCount=%s criticalIssueCount=%s "
+        "repairableCriticalCount=%s qualityRepairCalls=%s columnCalls=%s",
         page.page_number,
         selected_model,
         duration_ms,
@@ -377,5 +467,6 @@ def extract_exam_prep_page(
         quality.critical_count,
         quality.repairable_critical_count,
         repair_calls,
+        column_calls,
     )
     return result
