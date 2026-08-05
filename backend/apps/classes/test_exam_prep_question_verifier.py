@@ -116,4 +116,4 @@ def test_targeted_repair_updates_only_suspicious_question(monkeypatch):
     assert stats == {'attempted': 1, 'repaired': 1, 'unresolved': 0}
     assert question['teacher_solution_markdown'].startswith('راه‌حل کامل')
     assert 'missing_solution_text' not in question['issues']
-    assert 'source_verified' in question['issues']
+    assert question['source_verified'] is True
