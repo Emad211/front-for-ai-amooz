@@ -1,4 +1,4 @@
-"""Single-page extractor for the simplified exam-preparation pipeline."""
+"""Single-page extractor for the simple page-first exam-prep pipeline."""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -6,6 +6,8 @@ import logging
 import os
 import re
 import time
+
+from PIL import UnidentifiedImageError
 
 from apps.chatbot.services.llm_client import part_from_bytes
 from apps.classes.services.exam_prep_page_quality import (
@@ -51,7 +53,7 @@ _ANSWER_ONLY_HEADING_RE = re.compile(
 
 
 class ExamPrepPageConfigurationError(RuntimeError):
-    """Raised when the page extractor has no configured multimodal model."""
+    """Raised when no multimodal model is configured."""
 
 
 class InvalidRenderedExamPage(ValueError):
@@ -59,7 +61,7 @@ class InvalidRenderedExamPage(ValueError):
 
 
 class ExtractedPageNumberMismatch(RuntimeError):
-    """Raised when the model attributes a response to a different page."""
+    """Raised when a provider attributes output to another page."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -81,7 +83,11 @@ def _positive_int_env(name: str, default: int) -> int:
         return default
 
 
-def _bounded_non_negative_int_env(name: str, default: int, maximum: int) -> int:
+def _bounded_non_negative_int_env(
+    name: str,
+    default: int,
+    maximum: int,
+) -> int:
     try:
         return max(0, min(maximum, int(os.getenv(name, str(default)))))
     except (TypeError, ValueError):
@@ -104,44 +110,42 @@ def _truthy_env(name: str, default: bool = True) -> bool:
 
 def _normalize_answer_label(value: str) -> str:
     text = clean_exam_markdown(value).translate(_DIGIT_TRANSLATION).strip()
-    if text.isdigit():
-        return str(int(text))
-    return text[:32]
+    return str(int(text)) if text.isdigit() else text[:32]
 
 
 def _sanitize_answer_only_records(result: PageExtraction) -> PageExtraction:
-    """Correct an obvious answer heading even when the model calls it a question."""
+    """Convert a printed answer heading misclassified as a question."""
 
-    sanitized: list[PageRecord] = []
+    records: list[PageRecord] = []
     changed = False
     for record in result.records:
         text = clean_exam_markdown(record.question_text_markdown)
         if len(record.options) >= 2 or not text:
-            sanitized.append(record)
+            records.append(record)
             continue
         match = _ANSWER_ONLY_HEADING_RE.match(text)
         if match is None:
-            sanitized.append(record)
+            records.append(record)
             continue
         printed_number = match.group("number")
         if printed_number:
-            normalized_number = int(printed_number.translate(_DIGIT_TRANSLATION))
-            if normalized_number != record.question_number:
-                sanitized.append(record)
+            number = int(printed_number.translate(_DIGIT_TRANSLATION))
+            if number != record.question_number:
+                records.append(record)
                 continue
-
         label = _normalize_answer_label(match.group("label"))
         remainder = clean_exam_markdown(match.group("remainder")).lstrip(
             " \t\r\n:：-–—"
         )
-        solution = clean_exam_markdown(record.teacher_solution_markdown)
-        if not solution and remainder:
-            solution = remainder
-        record_type = "solution" if solution or record.final_answer_markdown else "answer"
-        sanitized.append(
+        solution = clean_exam_markdown(record.teacher_solution_markdown) or remainder
+        records.append(
             record.model_copy(
                 update={
-                    "record_type": record_type,
+                    "record_type": (
+                        "solution"
+                        if solution or record.final_answer_markdown
+                        else "answer"
+                    ),
                     "question_text_markdown": "",
                     "options": [],
                     "correct_option_label": record.correct_option_label or label,
@@ -150,7 +154,7 @@ def _sanitize_answer_only_records(result: PageExtraction) -> PageExtraction:
             )
         )
         changed = True
-    return result.model_copy(update={"records": sanitized}) if changed else result
+    return result.model_copy(update={"records": records}) if changed else result
 
 
 def select_exam_prep_page_model(explicit_model: str | None = None) -> str:
@@ -193,7 +197,10 @@ def _validate_page(page: RenderedExamPage) -> str:
 def _native_text_evidence(page: RenderedExamPage) -> str:
     return native_text_for_model(
         page.native_text,
-        max_chars=_positive_int_env("EXAM_PREP_PAGE_NATIVE_TEXT_MAX_CHARS", 30_000),
+        max_chars=_positive_int_env(
+            "EXAM_PREP_PAGE_NATIVE_TEXT_MAX_CHARS",
+            30_000,
+        ),
     )
 
 
@@ -233,7 +240,8 @@ def _page_messages(
         "NEXT_PAGE_CONTEXT_BEGIN\n"
         f"{next_context}\n"
         "NEXT_PAGE_CONTEXT_END\n"
-        "Neighbor context is only for continuation detection. Never extract a new record from it."
+        "Neighbor context is only for continuation detection. "
+        "Never extract a new record from it."
     )
     hint = str(continuation_hint) if continuation_hint else "none"
     return [
@@ -252,8 +260,10 @@ def _page_messages(
                         f"SCOPE_HINT: {scope_hint}\n"
                         f"CONTINUATION_HINT: {hint}\n"
                         f"QUALITY_PASS: {quality_pass}\n"
-                        "Extract only records visibly supported by the current image region."
-                        f"{repair_instruction}{native_instruction}{neighbor_instruction}"
+                        "Extract only records visibly supported by the current "
+                        "image region."
+                        f"{repair_instruction}{native_instruction}"
+                        f"{neighbor_instruction}"
                     ),
                 },
                 part_from_bytes(data=page.image, mime_type=mime_type),
@@ -269,7 +279,11 @@ def _tracking_context(
     region: str,
 ) -> dict[str, int | str]:
     context: dict[str, int | str] = {
-        "stage": "page_extraction" if quality_pass == 0 else "page_quality_repair",
+        "stage": (
+            "page_extraction"
+            if quality_pass == 0
+            else "page_quality_repair"
+        ),
         "page_number": page_number,
         "region": region,
     }
@@ -302,7 +316,10 @@ def _generate_page(
         ),
         model=model,
         feature=LLMUsageLog.Feature.PDF_EXTRACTION,
-        timeout=_positive_float_env("EXAM_PREP_PAGE_TIMEOUT_SECONDS", 180.0),
+        timeout=_positive_float_env(
+            "EXAM_PREP_PAGE_TIMEOUT_SECONDS",
+            180.0,
+        ),
         temperature=0,
         max_repair=_bounded_non_negative_int_env(
             "EXAM_PREP_PAGE_REPAIR_ATTEMPTS",
@@ -333,8 +350,22 @@ def _generate_page(
         raise ExtractedPageNumberMismatch(
             f"Expected page {page.page_number}, received page {result.page_number}."
         )
-    sanitized = _sanitize_answer_only_records(result)
-    return reconcile_page_extraction(sanitized, native_text=page.native_text)
+    return reconcile_page_extraction(
+        _sanitize_answer_only_records(result),
+        native_text=page.native_text,
+    )
+
+
+def _has_explicit_answer_content(page: PageExtraction) -> bool:
+    explicit = sum(
+        record.record_type in {"answer", "solution"}
+        for record in page.records
+    )
+    rich_solution = any(
+        len(clean_exam_markdown(record.teacher_solution_markdown)) >= 24
+        for record in page.records
+    )
+    return explicit >= 2 or rich_solution
 
 
 def _extract_answer_columns(
@@ -347,13 +378,24 @@ def _extract_answer_columns(
 ) -> tuple[PageExtraction, int]:
     if not _truthy_env("EXAM_PREP_SPLIT_ANSWER_COLUMNS_ENABLED", True):
         return full_page_result, 0
+    if not _has_explicit_answer_content(full_page_result):
+        return full_page_result, 0
     if not page_is_answer_heavy(full_page_result, native_text=page.native_text):
         return full_page_result, 0
-    crops = split_vertical_columns(
-        page.image,
-        right_native_text=page.right_column_native_text,
-        left_native_text=page.left_column_native_text,
-    )
+    try:
+        crops = split_vertical_columns(
+            page.image,
+            right_native_text=page.right_column_native_text,
+            left_native_text=page.left_column_native_text,
+        )
+    except (UnidentifiedImageError, OSError, ValueError) as exc:
+        logger.warning(
+            "exam_prep.page.column_crop_failed pageNumber=%s errorCode=%s",
+            page.page_number,
+            type(exc).__name__,
+        )
+        return full_page_result, 0
+
     region_results: list[PageExtraction] = []
     hint = continuation_hint
     for crop in crops:
@@ -362,8 +404,16 @@ def _extract_answer_columns(
             image=crop.image,
             mime_type="image/png",
             native_text=crop.native_text,
-            previous_native_text=(page.previous_native_text if crop.region == "right_column" else ""),
-            next_native_text=(page.next_native_text if crop.region == "left_column" else ""),
+            previous_native_text=(
+                page.previous_native_text
+                if crop.region == "right_column"
+                else ""
+            ),
+            next_native_text=(
+                page.next_native_text
+                if crop.region == "left_column"
+                else ""
+            ),
         )
         try:
             region_result = _generate_page(
@@ -377,7 +427,8 @@ def _extract_answer_columns(
             )
         except (StructuredOutputError, ExtractedPageNumberMismatch) as exc:
             logger.warning(
-                "exam_prep.page.column_failed pageNumber=%s region=%s errorKind=%s",
+                "exam_prep.page.column_failed pageNumber=%s region=%s "
+                "errorKind=%s",
                 page.page_number,
                 crop.region,
                 getattr(exc, "error_kind", type(exc).__name__),
@@ -387,8 +438,14 @@ def _extract_answer_columns(
         hint = last_record_number(region_result) or hint
     if not region_results:
         return full_page_result, 0
-    merged = merge_page_region_extractions(full_page_result, region_results)
-    return reconcile_page_extraction(merged, native_text=page.native_text), len(region_results)
+    merged = merge_page_region_extractions(
+        full_page_result,
+        region_results,
+    )
+    return (
+        reconcile_page_extraction(merged, native_text=page.native_text),
+        len(region_results),
+    )
 
 
 def extract_exam_prep_page(
@@ -422,12 +479,12 @@ def extract_exam_prep_page(
     )
     quality = summarize_page_quality(result)
     repair_calls = 0
-    max_quality_repairs = _bounded_non_negative_int_env(
+    maximum_repairs = _bounded_non_negative_int_env(
         "EXAM_PREP_PAGE_QUALITY_REPAIR_ATTEMPTS",
         1,
         2,
     )
-    for quality_pass in range(1, max_quality_repairs + 1):
+    for quality_pass in range(1, maximum_repairs + 1):
         if quality.repairable_critical_count < 1:
             break
         try:
@@ -442,7 +499,8 @@ def extract_exam_prep_page(
             )
         except (StructuredOutputError, ExtractedPageNumberMismatch) as exc:
             logger.warning(
-                "exam_prep.page.quality_repair_failed pageNumber=%s pass=%s errorKind=%s",
+                "exam_prep.page.quality_repair_failed pageNumber=%s pass=%s "
+                "errorKind=%s",
                 page.page_number,
                 quality_pass,
                 getattr(exc, "error_kind", type(exc).__name__),
@@ -452,14 +510,14 @@ def extract_exam_prep_page(
         result = choose_better_page_extraction(result, candidate)
         quality = summarize_page_quality(result)
 
-    duration_ms = int((time.monotonic() - started_at) * 1000)
     logger.info(
-        "exam_prep.page.completed pageNumber=%s model=%s durationMs=%s imageBytes=%s "
-        "nativeTextChars=%s recordCount=%s questionCount=%s criticalIssueCount=%s "
-        "repairableCriticalCount=%s qualityRepairCalls=%s columnCalls=%s",
+        "exam_prep.page.completed pageNumber=%s model=%s durationMs=%s "
+        "imageBytes=%s nativeTextChars=%s recordCount=%s questionCount=%s "
+        "criticalIssueCount=%s repairableCriticalCount=%s "
+        "qualityRepairCalls=%s columnCalls=%s",
         page.page_number,
         selected_model,
-        duration_ms,
+        int((time.monotonic() - started_at) * 1000),
         len(page.image),
         len(page.native_text or ""),
         len(result.records),
