@@ -1,8 +1,8 @@
-"""Simple production coordinator for exam-preparation PDFs.
+"""Cost-bounded production coordinator for exam-preparation PDFs.
 
-Each model call remains local: one page/column, or one suspicious assembled
-question with at most one question crop and one answer crop. No whole-PDF prompt
-exists.
+Routing is local and deterministic: non-content pages make zero model calls,
+single-column pages make one, double-column pages make two, and uncertain pages
+make one multi-image call. Only suspicious assembled questions are source-audited.
 """
 from __future__ import annotations
 
@@ -19,7 +19,6 @@ from pydantic import BaseModel, Field
 from apps.classes.services.exam_prep_page_extractor import (
     ExtractedPageNumberMismatch,
     RenderedExamPage,
-    extract_exam_prep_page,
     select_exam_prep_page_model,
 )
 from apps.classes.services.exam_prep_page_output import (
@@ -28,13 +27,22 @@ from apps.classes.services.exam_prep_page_output import (
 )
 from apps.classes.services.exam_prep_page_records import (
     AssemblyIssue,
-    PageAssemblyResult,
     PageExtraction,
     assemble_page_extractions,
 )
 from apps.classes.services.exam_prep_page_regions import last_record_number
+from apps.classes.services.exam_prep_page_routed_extractor import (
+    consume_page_runtime_stats,
+    extract_exam_prep_page,
+)
 from apps.classes.services.exam_prep_page_source import attach_source_regions
-from apps.classes.services.exam_prep_question_targeted_verifier import (
+from apps.classes.services.exam_prep_projection_integrity import (
+    apply_projection_integrity,
+    augment_transcript_summary,
+    promote_integrity_audit,
+)
+from apps.classes.services.exam_prep_question_targeted_verifier_v2 import (
+    TargetedVerificationCancelled,
     targeted_source_page_numbers,
     verify_suspicious_questions,
 )
@@ -50,7 +58,7 @@ class ExamPrepPdfError(RuntimeError):
 
 
 class ExamPrepPipelineCancelled(RuntimeError):
-    """Raised at a page boundary when the teacher requested cancellation."""
+    """Raised whenever the teacher requested cooperative cancellation."""
 
 
 class NoExamQuestionsFound(RuntimeError):
@@ -67,6 +75,7 @@ class ExamPrepPipelineResult(BaseModel):
     orphan_answer_count: int = 0
     question_number_gaps: dict[str, list[int]] = Field(default_factory=dict)
     failed_page_numbers: list[int] = Field(default_factory=list)
+    non_content_page_count: int = 0
     publication_ready: bool = False
     transcript_markdown: str = ""
     extraction_audit: dict[str, Any] = Field(default_factory=dict)
@@ -114,8 +123,14 @@ class ExamPrepPdfSource:
             native_text=self._text(self.native_text_pages, index),
             previous_native_text=self._text(self.native_text_pages, index - 1),
             next_native_text=self._text(self.native_text_pages, index + 1),
-            right_column_native_text=self._text(self.right_column_text_pages, index),
-            left_column_native_text=self._text(self.left_column_text_pages, index),
+            right_column_native_text=self._text(
+                self.right_column_text_pages,
+                index,
+            ),
+            left_column_native_text=self._text(
+                self.left_column_text_pages,
+                index,
+            ),
         )
 
     def iter_pages(self) -> Iterator[RenderedExamPage]:
@@ -128,9 +143,10 @@ class ExamPrepPdfSource:
         finally:
             document.close()
 
-    def render_selected_pages(self, page_numbers: set[int]) -> dict[int, RenderedExamPage]:
-        """Re-render each unique source page once for targeted crop verification."""
-
+    def render_selected_pages(
+        self,
+        page_numbers: set[int],
+    ) -> dict[int, RenderedExamPage]:
         import pypdfium2 as pdfium
 
         selected = sorted(
@@ -196,8 +212,6 @@ def _extract_native_text_bundle(
     *,
     fallback_pages: Sequence[Any],
 ) -> tuple[tuple[str, ...], tuple[str, ...], tuple[str, ...]]:
-    """Extract full/right/left text; failure falls back to pypdf full text."""
-
     try:
         import pdfplumber
 
@@ -222,8 +236,7 @@ def _extract_native_text_bundle(
             type(exc).__name__,
         )
         full = tuple(
-            _extract_text(page, layout=False)
-            for page in fallback_pages
+            _extract_text(page, layout=False) for page in fallback_pages
         )
         empty = tuple("" for _ in full)
         return full, empty, empty
@@ -262,13 +275,19 @@ def render_exam_prep_pdf(data: bytes) -> ExamPrepPdfSource:
             f"تعداد صفحات PDF از حداکثر مجاز {max_pages} بیشتر است."
         )
 
-    native_text_pages, right_text_pages, left_text_pages = _extract_native_text_bundle(
+    native, right, left = _extract_native_text_bundle(
         data,
         fallback_pages=reader.pages,
     )
     generic_dpi = max(72, int(getattr(settings, "PDF_RENDER_DPI", 150)))
-    dpi = _positive_int_env("EXAM_PREP_RENDER_DPI", max(200, generic_dpi))
-    generic_max_mb = max(1, int(getattr(settings, "PDF_MAX_IMAGE_BYTES_MB", 3)))
+    dpi = _positive_int_env(
+        "EXAM_PREP_RENDER_DPI",
+        max(200, generic_dpi),
+    )
+    generic_max_mb = max(
+        1,
+        int(getattr(settings, "PDF_MAX_IMAGE_BYTES_MB", 3)),
+    )
     max_image_mb = _positive_int_env(
         "EXAM_PREP_RENDER_MAX_IMAGE_MB",
         max(6, generic_max_mb),
@@ -278,9 +297,9 @@ def render_exam_prep_pdf(data: bytes) -> ExamPrepPdfSource:
         page_count=page_count,
         scale=dpi / 72.0,
         max_image_bytes=max_image_mb * 1024 * 1024,
-        native_text_pages=native_text_pages,
-        right_column_text_pages=right_text_pages,
-        left_column_text_pages=left_text_pages,
+        native_text_pages=native,
+        right_column_text_pages=right,
+        left_column_text_pages=left,
     )
 
 
@@ -296,7 +315,10 @@ def _page_extraction_attempts() -> int:
     try:
         return max(
             1,
-            min(3, int(os.getenv("EXAM_PREP_PAGE_EXTRACTION_ATTEMPTS", "2"))),
+            min(
+                2,
+                int(os.getenv("EXAM_PREP_PAGE_EXTRACTION_ATTEMPTS", "2")),
+            ),
         )
     except (TypeError, ValueError):
         return 2
@@ -307,6 +329,11 @@ def _safe_error_metadata(exc: Exception) -> tuple[str, tuple[str, ...]]:
         str(getattr(exc, "error_kind", type(exc).__name__))[:80],
         tuple(getattr(exc, "validation_locations", ())[:8]),
     )
+
+
+def _cancel(should_cancel: CancelCheck | None) -> None:
+    if should_cancel is not None and should_cancel():
+        raise ExamPrepPipelineCancelled("Cancellation requested.")
 
 
 def run_exam_prep_pdf_pipeline(
@@ -326,15 +353,16 @@ def run_exam_prep_pdf_pipeline(
     attempts = _page_extraction_attempts()
     continuation_hint: int | None = None
     fixture_pages: dict[int, RenderedExamPage] = {}
+    page_stats: list[dict[str, Any]] = []
 
     for index, page in enumerate(pages, start=1):
-        if should_cancel is not None and should_cancel():
-            raise ExamPrepPipelineCancelled("Cancellation requested.")
+        _cancel(should_cancel)
         if not isinstance(source, ExamPrepPdfSource):
             fixture_pages[page.page_number] = page
 
         page_result: PageExtraction | None = None
         for attempt in range(1, attempts + 1):
+            latest_stats: list[dict[str, Any]] = []
             try:
                 page_result = extract_exam_prep_page(
                     page,
@@ -346,15 +374,24 @@ def run_exam_prep_pdf_pipeline(
             except (StructuredOutputError, ExtractedPageNumberMismatch) as exc:
                 error_kind, locations = _safe_error_metadata(exc)
                 logger.warning(
-                    "exam_prep.page.invalid pageNumber=%s attempt=%s maxAttempts=%s errorKind=%s locations=%s",
+                    "exam_prep.page.invalid pageNumber=%s attempt=%s "
+                    "maxAttempts=%s errorKind=%s locations=%s",
                     page.page_number,
                     attempt,
                     attempts,
                     error_kind,
                     locations,
                 )
-                if should_cancel is not None and should_cancel():
-                    raise ExamPrepPipelineCancelled("Cancellation requested.") from exc
+                _cancel(should_cancel)
+            finally:
+                latest_stats = consume_page_runtime_stats(page.page_number)
+                page_stats.extend(latest_stats)
+            # The double-column route already retries only the failed column.
+            if (
+                latest_stats
+                and latest_stats[-1].get("layoutDecision") == "double"
+            ):
+                break
 
         if page_result is None:
             failed_page_numbers.append(page.page_number)
@@ -365,42 +402,81 @@ def run_exam_prep_pdf_pipeline(
             )
         else:
             extracted.append(page_result)
-            # Never retain a stale hint beyond the immediately continuing block.
             continuation_hint = last_record_number(page_result)
 
         if on_page_complete is not None:
             on_page_complete(index, total)
 
-    if should_cancel is not None and should_cancel():
-        raise ExamPrepPipelineCancelled("Cancellation requested.")
-
+    _cancel(should_cancel)
     assembled = assemble_page_extractions(extracted, title=title)
     assembled = attach_source_regions(assembled, pages=extracted)
     assembled = rebuild_assembly_quality(assembled)
+    assembled, integrity_stats = apply_projection_integrity(assembled)
     if assembled.question_count < 1:
-        failed_suffix = f" Failed pages: {failed_page_numbers}" if failed_page_numbers else ""
+        failed_suffix = (
+            f" Failed pages: {failed_page_numbers}"
+            if failed_page_numbers
+            else ""
+        )
         raise NoExamQuestionsFound(
             f"هیچ سؤال شماره‌داری در PDF تشخیص داده نشد.{failed_suffix}"
         )
 
-    needed_pages = targeted_source_page_numbers(assembled)
-    if isinstance(source, ExamPrepPdfSource):
-        source_page_map = source.render_selected_pages(needed_pages)
-    else:
-        source_page_map = {
-            number: fixture_pages[number]
-            for number in needed_pages
-            if number in fixture_pages
-        }
-    assembled, verification_stats = verify_suspicious_questions(
-        assembled,
-        source_pages_by_number=source_page_map,
-        model=selected_model,
-    )
+    try:
+        _cancel(should_cancel)
+        needed_pages = targeted_source_page_numbers(
+            assembled,
+            should_cancel=should_cancel,
+        )
+        _cancel(should_cancel)
+        if isinstance(source, ExamPrepPdfSource):
+            source_page_map = source.render_selected_pages(needed_pages)
+        else:
+            source_page_map = {
+                number: fixture_pages[number]
+                for number in needed_pages
+                if number in fixture_pages
+            }
+        _cancel(should_cancel)
+        assembled, verification_stats = verify_suspicious_questions(
+            assembled,
+            source_pages_by_number=source_page_map,
+            model=selected_model,
+            should_cancel=should_cancel,
+        )
+    except TargetedVerificationCancelled as exc:
+        raise ExamPrepPipelineCancelled(str(exc)) from exc
 
+    # Recompute deterministic issues after a source-backed correction.
+    assembled, final_integrity_stats = apply_projection_integrity(assembled)
+    integrity_stats = {
+        key: (
+            max(
+                int(integrity_stats.get(key, 0)),
+                int(final_integrity_stats.get(key, 0)),
+            )
+            if key == "serializedOptionsFixed"
+            else int(final_integrity_stats.get(key, 0))
+        )
+        for key in set(integrity_stats) | set(final_integrity_stats)
+    }
+
+    non_content_count = sum(
+        bool(item.get("skippedNonContent")) for item in page_stats
+    )
+    total_provider_calls = sum(
+        int(item.get("providerCallCount") or 0) for item in page_stats
+    )
+    page_retry_calls = sum(
+        int(item.get("retryCalls") or 0) for item in page_stats
+    )
     audit = build_strict_page_first_audit(
         assembled,
         failed_page_numbers=failed_page_numbers,
+    )
+    audit = promote_integrity_audit(
+        audit,
+        integrity_stats=integrity_stats,
     )
     audit.update(
         {
@@ -409,9 +485,31 @@ def run_exam_prep_pdf_pipeline(
             "verificationRepaired": verification_stats.get("repaired", 0),
             "verificationRetried": verification_stats.get("retried", 0),
             "verificationUnresolved": verification_stats.get("unresolved", 0),
-            "verificationSkippedByCostCap": verification_stats.get("skipped", 0),
-            "visualAttachments": verification_stats.get("visuals_attached", 0),
+            "verificationSkippedByCostCap": verification_stats.get(
+                "skipped",
+                0,
+            ),
+            "verificationCancelledBeforeCall": verification_stats.get(
+                "cancelled_before_call",
+                0,
+            ),
+            "visualAttachments": verification_stats.get(
+                "visuals_attached",
+                0,
+            ),
             "tablesVerified": verification_stats.get("tables_verified", 0),
+            "nonContentPageCount": non_content_count,
+            "contentPageCount": max(0, total - non_content_count),
+            "pageExtractionCalls": total_provider_calls,
+            "pageRetryCalls": page_retry_calls,
+            "targetedVerificationCalls": verification_stats.get(
+                "attempted",
+                0,
+            ),
+            "totalProviderCalls": (
+                total_provider_calls
+                + int(verification_stats.get("attempted", 0))
+            ),
         }
     )
     transcript = render_strict_page_first_transcript(
@@ -419,29 +517,46 @@ def run_exam_prep_pdf_pipeline(
         failed_page_numbers=failed_page_numbers,
         targeted_repair_stats=verification_stats,
     )
+    transcript = augment_transcript_summary(transcript, integrity_stats)
+
     logger.info(
-        "exam_prep.pipeline.quality_summary questionCount=%s reviewCount=%s verificationAttempted=%s verificationSucceeded=%s verificationRepaired=%s verificationRetried=%s verificationUnresolved=%s verificationSkipped=%s visualAttachments=%s tablesVerified=%s",
+        "exam_prep.pipeline.quality_summary questionCount=%s reviewCount=%s "
+        "nonContentPageCount=%s pageExtractionCalls=%s pageRetryCalls=%s "
+        "verificationAttempted=%s verificationSucceeded=%s "
+        "verificationRepaired=%s verificationRetried=%s "
+        "verificationUnresolved=%s verificationSkipped=%s "
+        "gradableAnswerKeyCount=%s missingCorrectOptionCount=%s "
+        "visualAttachments=%s tablesVerified=%s totalProviderCalls=%s",
         assembled.question_count,
-        assembled.questions_needing_review,
+        audit.get("questionsNeedingReview", assembled.questions_needing_review),
+        non_content_count,
+        total_provider_calls,
+        page_retry_calls,
         verification_stats.get("attempted", 0),
         verification_stats.get("verified", 0),
         verification_stats.get("repaired", 0),
         verification_stats.get("retried", 0),
         verification_stats.get("unresolved", 0),
         verification_stats.get("skipped", 0),
+        integrity_stats.get("gradableAnswerKeyCount", 0),
+        integrity_stats.get("missingCorrectOptionCount", 0),
         verification_stats.get("visuals_attached", 0),
         verification_stats.get("tables_verified", 0),
+        audit.get("totalProviderCalls", 0),
     )
     return ExamPrepPipelineResult(
         projection=assembled.projection,
         issues=assembled.issues,
         page_count=total,
         question_count=assembled.question_count,
-        questions_needing_review=assembled.questions_needing_review,
+        questions_needing_review=int(
+            audit.get("questionsNeedingReview") or 0
+        ),
         matched_answer_count=assembled.matched_answer_count,
         orphan_answer_count=len(assembled.orphan_answers),
         question_number_gaps=assembled.question_number_gaps,
         failed_page_numbers=failed_page_numbers,
+        non_content_page_count=non_content_count,
         publication_ready=audit.get("status") == "passed",
         transcript_markdown=transcript,
         extraction_audit=audit,
