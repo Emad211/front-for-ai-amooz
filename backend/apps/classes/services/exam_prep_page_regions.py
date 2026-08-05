@@ -129,10 +129,14 @@ def _best_bbox(records: list[PageRecord]):
     ]
     if not candidates:
         return None
-    return max(
-        candidates,
-        key=lambda bbox: (bbox.x1 - bbox.x0) * (bbox.y1 - bbox.y0),
-    )
+
+    def area(bbox) -> float:
+        return (bbox.x1 - bbox.x0) * (bbox.y1 - bbox.y0)
+
+    # Region reads normally provide a tighter box than the full-page fallback.
+    # Ignore implausibly tiny marker-only boxes when a complete alternative exists.
+    complete = [bbox for bbox in candidates if area(bbox) >= 0.005]
+    return min(complete or candidates, key=area)
 
 
 def _merge_record_candidates(records: list[PageRecord]) -> SourcePageRecord:
