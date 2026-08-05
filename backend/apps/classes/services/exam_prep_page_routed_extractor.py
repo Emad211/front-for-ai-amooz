@@ -227,7 +227,11 @@ def _generate_once(
         timeout=_positive_float_env("EXAM_PREP_PAGE_TIMEOUT_SECONDS", 180.0),
         temperature=0,
         max_repair=0,
-        strict_json_schema=True,
+        # Loose Any-typed records intentionally use ordinary text JSON. Disabling
+        # response_format prevents a hidden schema/json-object fallback request,
+        # so one wrapper invocation is exactly one provider request.
+        json_object_mode=False,
+        strict_json_schema=False,
         sensitive=True,
         max_output_tokens=_positive_int_env(
             "EXAM_PREP_PAGE_MAX_OUTPUT_TOKENS",
