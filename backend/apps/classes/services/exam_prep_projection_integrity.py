@@ -13,10 +13,16 @@ from .exam_prep_utils import clean_exam_markdown
 
 
 _DIGITS = str.maketrans("۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩", "01234567890123456789")
+_OPTION_WORD = r"گزین(?:ه(?:\u0654)?|ۀ)"
 _OPTION_ANSWER_RE = re.compile(
-    r"(?:پاسخ\s*(?:صحیح|درست)?\s*[:：\-–—]*\s*)?"
-    r"گزین(?:ه(?:\u0654)?|ۀ)\s*[«\"'()\[\]]*\s*"
+    rf"(?:پاسخ\s*(?:صحیح|درست)?\s*[:：\-–—]*\s*)?"
+    rf"{_OPTION_WORD}\s*[«\"'()\[\]]*\s*"
     r"(?P<label>[0-9۰-۹٠-٩]+|[الفبجده])",
+    flags=re.IGNORECASE,
+)
+_OPTION_LABEL_PREFIX_RE = re.compile(
+    rf"^(?:پاسخ\s*(?:صحیح|درست)?\s*[:：\-–—]*\s*)?"
+    rf"{_OPTION_WORD}\s*",
     flags=re.IGNORECASE,
 )
 _INTEGRITY_CRITICAL_CODES = {
@@ -37,8 +43,22 @@ _OWN_CODES = {
 
 def _normalize_label(value: Any) -> str:
     text = clean_exam_markdown(value or "").translate(_DIGITS).strip()
+    text = _OPTION_LABEL_PREFIX_RE.sub("", text)
     text = text.strip(" «»\"'()[]{}.:：،,-–—")
     return str(int(text)) if text.isdigit() else text
+
+
+def _looks_serialized_payload(value: Any) -> bool:
+    if not isinstance(value, str):
+        return False
+    text = value.strip()
+    return bool(
+        len(text) >= 2
+        and (
+            (text.startswith("{") and text.endswith("}"))
+            or (text.startswith("[") and text.endswith("]"))
+        )
+    )
 
 
 def _decoded_option_payload(value: Any) -> dict[str, Any] | None:
@@ -54,15 +74,18 @@ def _decoded_option_payload(value: Any) -> dict[str, Any] | None:
     return parsed if isinstance(parsed, dict) else None
 
 
-def _normalize_options(question: dict[str, Any]) -> tuple[list[dict[str, str]], bool]:
-    changed = False
+def _normalize_options(
+    question: dict[str, Any],
+) -> tuple[list[dict[str, str]], int, bool]:
+    serialized_fixed = 0
+    unresolved_serialized = False
     output: list[dict[str, str]] = []
     for index, raw in enumerate(question.get("options") or [], start=1):
         if not isinstance(raw, dict):
             text = clean_exam_markdown(raw)
             if text:
                 output.append({"label": str(index), "text_markdown": text})
-            changed = True
+            unresolved_serialized = unresolved_serialized or _looks_serialized_payload(text)
             continue
         label = _normalize_label(raw.get("label") or index) or str(index)
         text = clean_exam_markdown(raw.get("text_markdown") or "")
@@ -80,9 +103,13 @@ def _normalize_options(question: dict[str, Any]) -> tuple[list[dict[str, str]], 
             if nested_text:
                 text = nested_text
                 label = nested_label or label
-                changed = True
+                serialized_fixed += 1
+            else:
+                unresolved_serialized = True
+        elif _looks_serialized_payload(text):
+            unresolved_serialized = True
         output.append({"label": label, "text_markdown": text})
-    return output, changed
+    return output, serialized_fixed, unresolved_serialized
 
 
 def _infer_correct_label(question: dict[str, Any], labels: set[str]) -> str | None:
@@ -107,10 +134,14 @@ def _normalized_similarity_text(value: Any) -> str:
 
 def _apply_duplicate_solution_issues(questions: list[dict[str, Any]]) -> None:
     for index, question in enumerate(questions):
-        solution = _normalized_similarity_text(question.get("teacher_solution_markdown"))
+        solution = _normalized_similarity_text(
+            question.get("teacher_solution_markdown")
+        )
         if len(solution) < 180:
             continue
-        q_text = _normalized_similarity_text(question.get("question_text_markdown"))
+        q_text = _normalized_similarity_text(
+            question.get("question_text_markdown")
+        )
         for previous in questions[:index]:
             previous_solution = _normalized_similarity_text(
                 previous.get("teacher_solution_markdown")
@@ -119,7 +150,9 @@ def _apply_duplicate_solution_issues(questions: list[dict[str, Any]]) -> None:
                 continue
             if SequenceMatcher(None, solution, previous_solution).ratio() < 0.93:
                 continue
-            previous_q = _normalized_similarity_text(previous.get("question_text_markdown"))
+            previous_q = _normalized_similarity_text(
+                previous.get("question_text_markdown")
+            )
             if SequenceMatcher(None, q_text, previous_q).ratio() >= 0.70:
                 continue
             issues = list(question.get("issues") or [])
@@ -136,23 +169,22 @@ def apply_projection_integrity(
 
     questions: list[dict[str, Any]] = []
     serialized_fixed = inferred_keys = 0
-    for raw_question in (result.projection.get("exam_prep") or {}).get("questions") or []:
+    for raw_question in (result.projection.get("exam_prep") or {}).get(
+        "questions"
+    ) or []:
         if not isinstance(raw_question, dict):
             continue
         question = dict(raw_question)
         issues = [
             clean_exam_markdown(code).strip()
             for code in (question.get("issues") or [])
-            if clean_exam_markdown(code).strip() and clean_exam_markdown(code).strip() not in _OWN_CODES
+            if clean_exam_markdown(code).strip()
+            and clean_exam_markdown(code).strip() not in _OWN_CODES
         ]
-        options, changed = _normalize_options(question)
+        options, fixed_count, unresolved_serialized = _normalize_options(question)
         question["options"] = options
-        serialized_fixed += int(changed)
-        if any(
-            isinstance(item, dict)
-            and _decoded_option_payload(item.get("text_markdown")) is not None
-            for item in options
-        ):
+        serialized_fixed += fixed_count
+        if unresolved_serialized:
             issues.append("serialized_option_payload")
 
         labels = {
@@ -161,7 +193,7 @@ def apply_projection_integrity(
             if isinstance(item, dict) and _normalize_label(item.get("label"))
         }
         correct = _normalize_label(question.get("correct_option_label"))
-        if not correct:
+        if not correct or (labels and correct not in labels):
             inferred = _infer_correct_label(question, labels)
             if inferred:
                 correct = inferred
@@ -182,10 +214,21 @@ def apply_projection_integrity(
         for question in questions
         if len(question.get("options") or []) >= 2
     )
-    missing = sum("missing_correct_option_label" in (question.get("issues") or []) for question in questions)
-    duplicates = sum("duplicate_solution_across_questions" in (question.get("issues") or []) for question in questions)
+    missing = sum(
+        "missing_correct_option_label" in (question.get("issues") or [])
+        for question in questions
+    )
+    duplicates = sum(
+        "duplicate_solution_across_questions" in (question.get("issues") or [])
+        for question in questions
+    )
+    unresolved_serialized_count = sum(
+        "serialized_option_payload" in (question.get("issues") or [])
+        for question in questions
+    )
     return rebuilt, {
         "serializedOptionsFixed": serialized_fixed,
+        "serializedOptionsUnresolved": unresolved_serialized_count,
         "inferredCorrectOptionCount": inferred_keys,
         "gradableAnswerKeyCount": gradable,
         "missingCorrectOptionCount": missing,
@@ -198,40 +241,63 @@ def promote_integrity_audit(
     *,
     integrity_stats: dict[str, int],
 ) -> dict[str, Any]:
-    critical_codes = _INTEGRITY_CRITICAL_CODES
     output = dict(audit)
     issues = []
     for raw in audit.get("issues") or []:
         issue = dict(raw) if isinstance(raw, dict) else {}
-        if issue.get("code") in critical_codes:
+        if issue.get("code") in _INTEGRITY_CRITICAL_CODES:
             issue["severity"] = "critical"
         issues.append(issue)
     output["issues"] = issues
-    critical_count = sum(issue.get("severity") == "critical" for issue in issues)
+    critical_count = sum(
+        issue.get("severity") == "critical" for issue in issues
+    )
     critical_questions = {
-        (str(issue.get("scopeKey") or "default"), int(issue.get("questionNumber") or 0))
+        (
+            str(issue.get("scopeKey") or "default"),
+            int(issue.get("questionNumber") or 0),
+        )
         for issue in issues
-        if issue.get("severity") == "critical" and int(issue.get("questionNumber") or 0) > 0
+        if issue.get("severity") == "critical"
+        and int(issue.get("questionNumber") or 0) > 0
     }
     question_count = int(output.get("questionCount") or 0)
     output["criticalIssueCount"] = critical_count
     output["questionsNeedingReview"] = len(critical_questions)
-    output["usableQuestionCount"] = max(0, question_count - len(critical_questions))
-    output["status"] = "passed" if question_count > 0 and critical_count == 0 else "needs_review"
+    output["usableQuestionCount"] = max(
+        0,
+        question_count - len(critical_questions),
+    )
+    output["status"] = (
+        "passed"
+        if question_count > 0 and critical_count == 0
+        else "needs_review"
+    )
     output.update(integrity_stats)
     return output
 
 
-def augment_transcript_summary(transcript: str, integrity_stats: dict[str, int]) -> str:
+def augment_transcript_summary(
+    transcript: str,
+    integrity_stats: dict[str, int],
+) -> str:
     marker = "- کلید پاسخ متصل‌شده:"
     lines = transcript.splitlines()
-    insert_at = next((index + 1 for index, line in enumerate(lines) if line.startswith(marker)), None)
+    insert_at = next(
+        (
+            index + 1
+            for index, line in enumerate(lines)
+            if line.startswith(marker)
+        ),
+        None,
+    )
     if insert_at is None:
         return transcript
     extra = [
         f"- کلیدهای قابل نمره‌دهی: **{int(integrity_stats.get('gradableAnswerKeyCount', 0))}**",
         f"- سؤال‌های فاقد کلید قابل نمره‌دهی: **{int(integrity_stats.get('missingCorrectOptionCount', 0))}**",
         f"- گزینه‌های JSON اصلاح‌شده: **{int(integrity_stats.get('serializedOptionsFixed', 0))}**",
+        f"- گزینه‌های JSON حل‌نشده: **{int(integrity_stats.get('serializedOptionsUnresolved', 0))}**",
         f"- راه‌حل‌های تکراری مشکوک: **{int(integrity_stats.get('duplicateSolutionCount', 0))}**",
     ]
     lines[insert_at:insert_at] = extra
