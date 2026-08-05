@@ -7,6 +7,9 @@ attaches those regions to the canonical assembled question JSON.
 from __future__ import annotations
 
 from collections import defaultdict
+import json
+import math
+import re
 from typing import Any, Iterable
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -19,6 +22,75 @@ from .exam_prep_page_records import (
     PageRecord,
 )
 from .exam_prep_utils import clean_exam_markdown
+
+
+_BBOX_NUMBER_RE = re.compile(r"[-+]?\d+(?:\.\d+)?")
+
+
+def _bbox_number(value: Any) -> tuple[float, bool] | None:
+    """Parse one coordinate and remember whether it was an explicit percent."""
+
+    if isinstance(value, bool):
+        return None
+    percent = isinstance(value, str) and value.strip().endswith("%")
+    text = value.strip().rstrip("%").strip() if isinstance(value, str) else value
+    try:
+        number = float(text)
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(number):
+        return None
+    return (number / 100.0 if percent else number, percent)
+
+
+def _coerce_bbox_shape(raw: Any) -> dict[str, float] | None:
+    """Accept common provider bbox shapes and return normalized coordinates.
+
+    Bounding boxes are optional metadata. Any unsupported or unsafe shape becomes
+    ``None`` instead of invalidating the surrounding question record.
+    """
+
+    if raw in (None, "", []):
+        return None
+    if isinstance(raw, BaseModel):
+        raw = raw.model_dump()
+    if isinstance(raw, str):
+        text = raw.strip()
+        try:
+            raw = json.loads(text)
+        except (TypeError, ValueError, json.JSONDecodeError):
+            numbers = _BBOX_NUMBER_RE.findall(text)
+            raw = numbers if len(numbers) == 4 else None
+    if isinstance(raw, (list, tuple)) and len(raw) == 4:
+        raw = {"x0": raw[0], "y0": raw[1], "x1": raw[2], "y1": raw[3]}
+    if not isinstance(raw, dict):
+        return None
+
+    values = [
+        raw.get("x0", raw.get("left")),
+        raw.get("y0", raw.get("top")),
+        raw.get("x1", raw.get("right")),
+        raw.get("y1", raw.get("bottom")),
+    ]
+    parsed = [_bbox_number(value) for value in values]
+    if any(value is None for value in parsed):
+        return None
+    coordinates = [value[0] for value in parsed if value is not None]
+    used_explicit_percent = any(value[1] for value in parsed if value is not None)
+
+    # Models commonly return 10..90 instead of 0.10..0.90. Normalize that one
+    # harmless variation only when all values safely fit the percentage range.
+    if not used_explicit_percent and any(value > 1.0 for value in coordinates):
+        if not all(0.0 <= value <= 100.0 for value in coordinates):
+            return None
+        coordinates = [value / 100.0 for value in coordinates]
+
+    x0, y0, x1, y1 = coordinates
+    if not all(0.0 <= value <= 1.0 for value in coordinates):
+        return None
+    if x1 <= x0 or y1 <= y0:
+        return None
+    return {"x0": x0, "y0": y0, "x1": x1, "y1": y1}
 
 
 class SourceBBox(BaseModel):
@@ -34,20 +106,7 @@ class SourceBBox(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def normalize_shape(cls, raw: Any) -> Any:
-        if raw in (None, "", []):
-            return raw
-        if isinstance(raw, BaseModel):
-            raw = raw.model_dump()
-        if isinstance(raw, (list, tuple)) and len(raw) == 4:
-            raw = {"x0": raw[0], "y0": raw[1], "x1": raw[2], "y1": raw[3]}
-        if not isinstance(raw, dict):
-            return raw
-        return {
-            "x0": raw.get("x0", raw.get("left", 0.0)),
-            "y0": raw.get("y0", raw.get("top", 0.0)),
-            "x1": raw.get("x1", raw.get("right", 1.0)),
-            "y1": raw.get("y1", raw.get("bottom", 1.0)),
-        }
+        return _coerce_bbox_shape(raw)
 
     @model_validator(mode="after")
     def validate_area(self) -> "SourceBBox":
@@ -65,6 +124,16 @@ class SourceBBox(BaseModel):
         )
 
 
+def _safe_source_bbox(raw: Any) -> dict[str, float] | None:
+    normalized = _coerce_bbox_shape(raw)
+    if normalized is None:
+        return None
+    try:
+        return SourceBBox.model_validate(normalized).model_dump()
+    except (TypeError, ValueError):
+        return None
+
+
 class SourcePageRecord(PageRecord):
     """Page record plus the visible block that supports it."""
 
@@ -78,8 +147,10 @@ class SourcePageRecord(PageRecord):
         if not isinstance(raw, dict):
             return raw
         data = dict(raw)
+        bbox = data.get("source_bbox")
         if "source_bbox" not in data:
-            data["source_bbox"] = data.get("sourceBBox", data.get("bbox"))
+            bbox = data.get("sourceBBox", data.get("bbox"))
+        data["source_bbox"] = _safe_source_bbox(bbox)
         return data
 
 
