@@ -50,9 +50,9 @@ def test_broken_persian_and_missing_solution_are_repairable():
 def test_unrelated_long_solution_is_marked_as_mismatch_candidate():
     question = _question_dict(
         solution=(
-            'این توضیح درباره بیماری ایدز و ویروس HIV و لنفوسیت کمک‌کننده '
-            'و تشخیص افراد آلوده و علائم بیماری نوشته شده است و هیچ ارتباطی '
-            'با تولید انسولین و زنجیره‌های پلی‌پپتیدی ندارد.'
+            'عامل بیماری ایدز نوعی ویروس است و یاخته‌های دستگاه ایمنی و '
+            'لنفوسیت کمک‌کننده را آلوده می‌کند. تشخیص افراد آلوده پیش از بروز '
+            'علائم با بررسی ماده وراثتی ویروس انجام می‌شود و واکسن مؤثری ندارد.'
         )
     )
 
@@ -116,3 +116,4 @@ def test_targeted_repair_updates_only_suspicious_question(monkeypatch):
     assert stats == {'attempted': 1, 'repaired': 1, 'unresolved': 0}
     assert question['teacher_solution_markdown'].startswith('راه‌حل کامل')
     assert 'missing_solution_text' not in question['issues']
+    assert 'source_verified' in question['issues']
