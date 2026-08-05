@@ -1,7 +1,8 @@
 """Simple production coordinator for exam-preparation PDFs.
 
-Each model call remains local: one page/column, or one assembled question with
-at most one question crop and one answer crop. No whole-PDF prompt exists.
+Each model call remains local: one page/column, or one suspicious assembled
+question with at most one question crop and one answer crop. No whole-PDF prompt
+exists.
 """
 from __future__ import annotations
 
@@ -33,7 +34,10 @@ from apps.classes.services.exam_prep_page_records import (
 )
 from apps.classes.services.exam_prep_page_regions import last_record_number
 from apps.classes.services.exam_prep_page_source import attach_source_regions
-from apps.classes.services.exam_prep_question_full_verifier import verify_all_questions
+from apps.classes.services.exam_prep_question_targeted_verifier import (
+    targeted_source_page_numbers,
+    verify_suspicious_questions,
+)
 from apps.classes.services.exam_prep_question_verifier import rebuild_assembly_quality
 from apps.commons.structured_llm import StructuredOutputError
 
@@ -125,7 +129,7 @@ class ExamPrepPdfSource:
             document.close()
 
     def render_selected_pages(self, page_numbers: set[int]) -> dict[int, RenderedExamPage]:
-        """Re-render each unique source page once for question crop verification."""
+        """Re-render each unique source page once for targeted crop verification."""
 
         import pypdfium2 as pdfium
 
@@ -305,30 +309,6 @@ def _safe_error_metadata(exc: Exception) -> tuple[str, tuple[str, ...]]:
     )
 
 
-def _all_source_page_numbers(result: PageAssemblyResult) -> set[int]:
-    numbers: set[int] = set()
-    for question in (result.projection.get("exam_prep") or {}).get("questions") or []:
-        if not isinstance(question, dict):
-            continue
-        for region in question.get("source_regions") or []:
-            if not isinstance(region, dict):
-                continue
-            try:
-                value = int(region.get("page_number") or 0)
-            except (TypeError, ValueError):
-                continue
-            if value > 0:
-                numbers.add(value)
-        for raw in question.get("source_pages") or []:
-            try:
-                value = int(raw)
-            except (TypeError, ValueError):
-                continue
-            if value > 0:
-                numbers.add(value)
-    return numbers
-
-
 def run_exam_prep_pdf_pipeline(
     *,
     data: bytes,
@@ -403,7 +383,7 @@ def run_exam_prep_pdf_pipeline(
             f"هیچ سؤال شماره‌داری در PDF تشخیص داده نشد.{failed_suffix}"
         )
 
-    needed_pages = _all_source_page_numbers(assembled)
+    needed_pages = targeted_source_page_numbers(assembled)
     if isinstance(source, ExamPrepPdfSource):
         source_page_map = source.render_selected_pages(needed_pages)
     else:
@@ -412,7 +392,7 @@ def run_exam_prep_pdf_pipeline(
             for number in needed_pages
             if number in fixture_pages
         }
-    assembled, verification_stats = verify_all_questions(
+    assembled, verification_stats = verify_suspicious_questions(
         assembled,
         source_pages_by_number=source_page_map,
         model=selected_model,
@@ -429,6 +409,7 @@ def run_exam_prep_pdf_pipeline(
             "verificationRepaired": verification_stats.get("repaired", 0),
             "verificationRetried": verification_stats.get("retried", 0),
             "verificationUnresolved": verification_stats.get("unresolved", 0),
+            "verificationSkippedByCostCap": verification_stats.get("skipped", 0),
             "visualAttachments": verification_stats.get("visuals_attached", 0),
             "tablesVerified": verification_stats.get("tables_verified", 0),
         }
@@ -439,7 +420,7 @@ def run_exam_prep_pdf_pipeline(
         targeted_repair_stats=verification_stats,
     )
     logger.info(
-        "exam_prep.pipeline.quality_summary questionCount=%s reviewCount=%s verificationAttempted=%s verificationSucceeded=%s verificationRepaired=%s verificationRetried=%s verificationUnresolved=%s visualAttachments=%s tablesVerified=%s",
+        "exam_prep.pipeline.quality_summary questionCount=%s reviewCount=%s verificationAttempted=%s verificationSucceeded=%s verificationRepaired=%s verificationRetried=%s verificationUnresolved=%s verificationSkipped=%s visualAttachments=%s tablesVerified=%s",
         assembled.question_count,
         assembled.questions_needing_review,
         verification_stats.get("attempted", 0),
@@ -447,6 +428,7 @@ def run_exam_prep_pdf_pipeline(
         verification_stats.get("repaired", 0),
         verification_stats.get("retried", 0),
         verification_stats.get("unresolved", 0),
+        verification_stats.get("skipped", 0),
         verification_stats.get("visuals_attached", 0),
         verification_stats.get("tables_verified", 0),
     )

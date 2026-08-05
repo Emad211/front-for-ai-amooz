@@ -16,10 +16,10 @@ _PAGE_ONLY_PIPELINE_TESTS = {
 def _isolate_page_only_pipeline_tests(request, monkeypatch):
     """Keep old tests scoped to page extraction/assembly.
 
-    Full per-question verification has dedicated source-crop tests. These two
+    Targeted source verification has dedicated source-crop tests. These two
     pre-existing tests use fake non-image bytes and intentionally assert only
     page call order and page-level retry behavior, so they receive a deterministic
-    verified result rather than attempting a provider call.
+    verification result rather than attempting a provider call.
     """
 
     if request.node.name not in _PAGE_ONLY_PIPELINE_TESTS:
@@ -35,6 +35,7 @@ def _isolate_page_only_pipeline_tests(request, monkeypatch):
             'unresolved': 0,
             'visuals_attached': 0,
             'tables_verified': 0,
+            'skipped': 0,
         }
 
-    monkeypatch.setattr(exam_prep_pipeline, 'verify_all_questions', verified)
+    monkeypatch.setattr(exam_prep_pipeline, 'verify_suspicious_questions', verified)
