@@ -32,7 +32,7 @@ interface PageProps {
 const statusLabels: Record<string, string> = {
   pending: 'در انتظار',
   exam_transcribing: 'در حال رونویسی',
-  exam_transcribed: 'آماده بازبینی',
+  exam_transcribed: 'رونویسی شده',
   exam_structuring: 'در حال استخراج سوالات',
   exam_structured: 'تکمیل شده',
   failed: 'خطا',
@@ -168,9 +168,12 @@ export default function TeacherExamDetailPage({ params }: PageProps) {
   const isProcessing = ['exam_transcribing', 'exam_structuring'].includes(examPrep.status);
   const isReviewReady =
     examPrep.status === 'exam_structured'
-    || examPrep.status === 'exam_transcribed'
     || examPrep.readyForReview
     || examPrep.workflowStage === 'ready_for_review';
+  const currentStatusLabel =
+    isReviewReady && examPrep.status === 'exam_transcribed'
+      ? 'آماده بازبینی'
+      : statusLabels[examPrep.status] || examPrep.status;
   const extractionPassed =
     !examPrep.extractionAudit || examPrep.extractionAudit.status === 'passed';
   const extractionReviewConfirmed =
@@ -207,12 +210,12 @@ export default function TeacherExamDetailPage({ params }: PageProps) {
       return <Badge className="bg-emerald-500/10 text-emerald-600 border-emerald-500/20">منتشر شده</Badge>;
     }
     if (isProcessing) {
-      return <Badge className="bg-amber-500/10 text-amber-600 border-amber-500/20">{statusLabels[examPrep.status]}</Badge>;
+      return <Badge className="bg-amber-500/10 text-amber-600 border-amber-500/20">{currentStatusLabel}</Badge>;
     }
     if (examPrep.status === 'failed') {
       return <Badge className="bg-red-500/10 text-red-600 border-red-500/20">خطا</Badge>;
     }
-    return <Badge variant="outline">{statusLabels[examPrep.status] || examPrep.status}</Badge>;
+    return <Badge variant="outline">{currentStatusLabel}</Badge>;
   };
 
   return (
@@ -279,7 +282,7 @@ export default function TeacherExamDetailPage({ params }: PageProps) {
               <div className="flex items-center justify-between">
                 <h2 className="text-base md:text-lg font-black">خروجی پایپ‌لاین</h2>
                 <span className="text-xs text-muted-foreground">
-                  وضعیت: {statusLabels[examPrep.status] || examPrep.status}
+                  وضعیت: {currentStatusLabel}
                 </span>
               </div>
 
