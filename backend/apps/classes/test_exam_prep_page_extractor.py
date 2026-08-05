@@ -7,6 +7,7 @@ from apps.classes.services.exam_prep_page_records import (
     PageRecord,
     assemble_page_extractions,
 )
+from apps.classes.services.exam_prep_page_source import SourcePageExtraction
 from apps.commons.llm_prompts import PROMPTS
 from apps.commons.models import LLMUsageLog
 
@@ -72,6 +73,7 @@ def test_page_prompt_is_registered_and_record_first():
     assert 'exactly ONE rendered PDF page' in prompt
     assert 'Extract every visible numbered question' in prompt
     assert 'question_number' in prompt
+    assert 'source_bbox' in prompt
     assert 'continues_on_next_page' in prompt
     assert 'CONTINUATION_HINT' in prompt
     assert 'context-only' in prompt
@@ -121,10 +123,14 @@ def test_extract_page_makes_one_structured_multimodal_request(monkeypatch):
         continuation_hint=50,
     )
 
-    assert result is expected
+    assert isinstance(result, SourcePageExtraction)
+    assert result.page_number == expected.page_number
+    assert len(result.records) == 1
+    assert result.records[0].model_dump(exclude={'source_bbox'}) == expected.records[0].model_dump()
+    assert result.records[0].source_bbox is None
     assert len(captured) == 1
     call = captured[0]
-    assert call['schema'] is PageExtraction
+    assert call['schema'] is SourcePageExtraction
     assert call['model'] == 'vision-model'
     assert call['feature'] == LLMUsageLog.Feature.PDF_EXTRACTION
     assert call['temperature'] == 0

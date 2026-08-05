@@ -40,7 +40,12 @@ def clean_exam_markdown(value: Any) -> str:
     return sanitize_llm_markdown(text)
 
 
-def _normalize_option(raw: Any, index: int) -> dict[str, str] | None:
+def _normalize_option(
+    raw: Any,
+    index: int,
+    *,
+    allow_empty_text: bool = False,
+) -> dict[str, str] | None:
     fallback_label = _OPTION_LABELS[index] if index < len(_OPTION_LABELS) else str(index + 1)
     if isinstance(raw, dict):
         label = clean_exam_markdown(raw.get("label")) or fallback_label
@@ -50,7 +55,9 @@ def _normalize_option(raw: Any, index: int) -> dict[str, str] | None:
     else:
         label = fallback_label
         text = clean_exam_markdown(raw)
-    return {"label": label, "text_markdown": text} if text else None
+    if not text and not allow_empty_text:
+        return None
+    return {"label": label, "text_markdown": text}
 
 
 def _flexible_text_pattern(value: str) -> str:
@@ -72,7 +79,7 @@ def _strip_complete_option_suffix(question_text: str, options: list[dict[str, st
     Requiring ordered labels/numbers plus exact option text avoids deleting a
     legitimate mention such as ``گزینه الف`` from the question stem.
     """
-    if len(options) < 2:
+    if len(options) < 2 or any(not option["text_markdown"] for option in options):
         return question_text
 
     first = options[0]
@@ -109,11 +116,21 @@ def normalize_exam_prep_question(raw: Any, *, index: int) -> dict[str, Any] | No
     if not question_text:
         return None
 
+    has_question_visual = any(
+        isinstance(item, dict)
+        and item.get("role") != "solution"
+        and (item.get("id") or item.get("dataUrl"))
+        for item in (raw.get("visuals") or [])
+    )
     options: list[dict[str, str]] = []
     raw_options = raw.get("options")
     if isinstance(raw_options, list):
         for option_index, option in enumerate(raw_options):
-            normalized = _normalize_option(option, option_index)
+            normalized = _normalize_option(
+                option,
+                option_index,
+                allow_empty_text=has_question_visual,
+            )
             if normalized:
                 options.append(normalized)
     question_text = _strip_complete_option_suffix(question_text, options)

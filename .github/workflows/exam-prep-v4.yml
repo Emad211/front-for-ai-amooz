@@ -6,6 +6,7 @@ on:
       - '.github/workflows/exam-prep-v4.yml'
       - '.github/workflows/exam-prep-v4-avalai-ocr-live-smoke.yml'
       - 'backend/apps/classes/apps.py'
+      - 'backend/apps/classes/conftest.py'
       - 'backend/apps/classes/models_v4*.py'
       - 'backend/apps/classes/signals.py'
       - 'backend/apps/classes/tasks_exam_prep.py'
@@ -23,6 +24,7 @@ on:
       - 'backend/apps/classes/services/exam_prep_question*.py'
       - 'backend/apps/classes/services/exam_prep_text_quality.py'
       - 'backend/apps/classes/services/exam_prep_v4_*.py'
+      - 'backend/apps/classes/test_exam_prep_inline_*.py'
       - 'backend/apps/classes/test_exam_prep_legacy_audit.py'
       - 'backend/apps/classes/test_exam_prep_page*.py'
       - 'backend/apps/classes/test_exam_prep_question_*.py'
@@ -34,12 +36,14 @@ on:
       - 'backend/apps/commons/test_structured_llm.py'
       - 'backend/apps/commons/llm_prompts/__init__.py'
       - 'backend/apps/commons/llm_prompts/exam_prep_page.py'
+      - 'backend/apps/commons/llm_prompts/exam_prep_question_audit.py'
       - 'backend/apps/commons/llm_prompts/exam_prep_question_repair.py'
       - 'backend/apps/commons/llm_prompts/exam_prep_v4.py'
       - 'backend/core/storage_backends.py'
       - 'backend/core/urls.py'
       - 'backend/.env.production.example'
       - 'frontend/tsconfig.exam-prep-v4.json'
+      - 'frontend/src/components/exam-prep/protected-exam-visual.tsx'
       - 'frontend/src/features/exam-prep-v4/**'
       - 'frontend/src/services/exam-prep-v4*.ts'
       - 'frontend/src/services/exam-prep-source-aware-service.ts'
@@ -119,6 +123,7 @@ jobs:
         run: |
           python -m pytest \
             backend/apps/commons/test_structured_llm.py \
+            backend/apps/classes/test_exam_prep_inline_*.py \
             backend/apps/classes/test_exam_prep_legacy_audit.py \
             backend/apps/classes/test_exam_prep_page_*.py \
             backend/apps/classes/test_exam_prep_question_*.py \

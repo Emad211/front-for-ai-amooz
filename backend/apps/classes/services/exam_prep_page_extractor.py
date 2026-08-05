@@ -22,6 +22,11 @@ from apps.classes.services.exam_prep_page_regions import (
     merge_page_region_extractions,
     split_vertical_columns,
 )
+from apps.classes.services.exam_prep_page_source import (
+    SourcePageExtraction,
+    ensure_source_extraction,
+    remap_extraction_bboxes,
+)
 from apps.classes.services.exam_prep_text_quality import (
     context_head,
     context_tail,
@@ -302,9 +307,9 @@ def _generate_page(
     repair_codes: tuple[str, ...] = (),
     region: str = "full_page",
     continuation_hint: int | None = None,
-) -> PageExtraction:
+) -> SourcePageExtraction:
     result = generate_structured(
-        schema=PageExtraction,
+        schema=SourcePageExtraction,
         messages=_page_messages(
             page=page,
             mime_type=mime_type,
@@ -346,14 +351,16 @@ def _generate_page(
         ),
         provider_attempts=1,
     )
-    if result.page_number != page.page_number:
+    source_result = ensure_source_extraction(result)
+    if source_result.page_number != page.page_number:
         raise ExtractedPageNumberMismatch(
-            f"Expected page {page.page_number}, received page {result.page_number}."
+            f"Expected page {page.page_number}, received page {source_result.page_number}."
         )
-    return reconcile_page_extraction(
-        _sanitize_answer_only_records(result),
+    reconciled = reconcile_page_extraction(
+        _sanitize_answer_only_records(source_result),
         native_text=page.native_text,
     )
+    return ensure_source_extraction(reconciled)
 
 
 def _has_explicit_answer_content(page: PageExtraction) -> bool:
@@ -371,11 +378,11 @@ def _has_explicit_answer_content(page: PageExtraction) -> bool:
 def _extract_answer_columns(
     page: RenderedExamPage,
     *,
-    full_page_result: PageExtraction,
+    full_page_result: SourcePageExtraction,
     model: str,
     scope_hint: str,
     continuation_hint: int | None,
-) -> tuple[PageExtraction, int]:
+) -> tuple[SourcePageExtraction, int]:
     if not _truthy_env("EXAM_PREP_SPLIT_ANSWER_COLUMNS_ENABLED", True):
         return full_page_result, 0
     if not _has_explicit_answer_content(full_page_result):
@@ -396,7 +403,7 @@ def _extract_answer_columns(
         )
         return full_page_result, 0
 
-    region_results: list[PageExtraction] = []
+    region_results: list[SourcePageExtraction] = []
     hint = continuation_hint
     for crop in crops:
         region_page = RenderedExamPage(
@@ -425,6 +432,11 @@ def _extract_answer_columns(
                 region=crop.region,
                 continuation_hint=hint,
             )
+            region_result = remap_extraction_bboxes(
+                region_result,
+                region_x0=crop.page_x0,
+                region_x1=crop.page_x1,
+            )
         except (StructuredOutputError, ExtractedPageNumberMismatch) as exc:
             logger.warning(
                 "exam_prep.page.column_failed pageNumber=%s region=%s "
@@ -443,7 +455,9 @@ def _extract_answer_columns(
         region_results,
     )
     return (
-        reconcile_page_extraction(merged, native_text=page.native_text),
+        ensure_source_extraction(
+            reconcile_page_extraction(merged, native_text=page.native_text)
+        ),
         len(region_results),
     )
 
@@ -454,8 +468,8 @@ def extract_exam_prep_page(
     model: str | None = None,
     scope_hint: str = "default",
     continuation_hint: int | None = None,
-) -> PageExtraction:
-    """Extract one page with small neighbor context and targeted column reads."""
+) -> SourcePageExtraction:
+    """Extract one page with small neighbor context and record source boxes."""
 
     started_at = time.monotonic()
     mime_type = _validate_page(page)
@@ -507,14 +521,16 @@ def extract_exam_prep_page(
             )
             break
         repair_calls += 1
-        result = choose_better_page_extraction(result, candidate)
+        result = ensure_source_extraction(
+            choose_better_page_extraction(result, candidate)
+        )
         quality = summarize_page_quality(result)
 
     logger.info(
         "exam_prep.page.completed pageNumber=%s model=%s durationMs=%s "
         "imageBytes=%s nativeTextChars=%s recordCount=%s questionCount=%s "
         "criticalIssueCount=%s repairableCriticalCount=%s "
-        "qualityRepairCalls=%s columnCalls=%s",
+        "qualityRepairCalls=%s columnCalls=%s bboxCount=%s",
         page.page_number,
         selected_model,
         int((time.monotonic() - started_at) * 1000),
@@ -526,5 +542,6 @@ def extract_exam_prep_page(
         quality.repairable_critical_count,
         repair_calls,
         column_calls,
+        sum(record.source_bbox is not None for record in result.records),
     )
     return result

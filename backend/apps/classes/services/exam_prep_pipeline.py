@@ -1,7 +1,7 @@
 """Simple production coordinator for exam-preparation PDFs.
 
-Each model call remains local: one page/column, or one suspicious assembled
-question with at most two of its own source pages. No whole-PDF prompt exists.
+Each model call remains local: one page/column, or one assembled question with
+at most one question crop and one answer crop. No whole-PDF prompt exists.
 """
 from __future__ import annotations
 
@@ -32,11 +32,9 @@ from apps.classes.services.exam_prep_page_records import (
     assemble_page_extractions,
 )
 from apps.classes.services.exam_prep_page_regions import last_record_number
-from apps.classes.services.exam_prep_question_verifier import (
-    question_needs_targeted_repair,
-    rebuild_assembly_quality,
-    repair_suspicious_questions,
-)
+from apps.classes.services.exam_prep_page_source import attach_source_regions
+from apps.classes.services.exam_prep_question_full_verifier import verify_all_questions
+from apps.classes.services.exam_prep_question_verifier import rebuild_assembly_quality
 from apps.commons.structured_llm import StructuredOutputError
 
 
@@ -69,6 +67,7 @@ class ExamPrepPipelineResult(BaseModel):
     transcript_markdown: str = ""
     extraction_audit: dict[str, Any] = Field(default_factory=dict)
     targeted_repair_stats: dict[str, int] = Field(default_factory=dict)
+    verification_stats: dict[str, int] = Field(default_factory=dict)
     model: str
 
 
@@ -126,7 +125,7 @@ class ExamPrepPdfSource:
             document.close()
 
     def render_selected_pages(self, page_numbers: set[int]) -> dict[int, RenderedExamPage]:
-        """Re-render only source pages needed by targeted question verification."""
+        """Re-render each unique source page once for question crop verification."""
 
         import pypdfium2 as pdfium
 
@@ -306,23 +305,27 @@ def _safe_error_metadata(exc: Exception) -> tuple[str, tuple[str, ...]]:
     )
 
 
-def _repair_source_page_numbers(result: PageAssemblyResult) -> set[int]:
-    maximum = _positive_int_env("EXAM_PREP_MAX_TARGETED_QUESTION_REPAIRS", 30)
+def _all_source_page_numbers(result: PageAssemblyResult) -> set[int]:
     numbers: set[int] = set()
-    count = 0
     for question in (result.projection.get("exam_prep") or {}).get("questions") or []:
-        if not isinstance(question, dict) or not question_needs_targeted_repair(question):
+        if not isinstance(question, dict):
             continue
-        if count >= maximum:
-            break
-        count += 1
-        for value in (question.get("source_pages") or [])[:2]:
+        for region in question.get("source_regions") or []:
+            if not isinstance(region, dict):
+                continue
             try:
-                page_number = int(value)
+                value = int(region.get("page_number") or 0)
             except (TypeError, ValueError):
                 continue
-            if page_number > 0:
-                numbers.add(page_number)
+            if value > 0:
+                numbers.add(value)
+        for raw in question.get("source_pages") or []:
+            try:
+                value = int(raw)
+            except (TypeError, ValueError):
+                continue
+            if value > 0:
+                numbers.add(value)
     return numbers
 
 
@@ -382,7 +385,8 @@ def run_exam_prep_pdf_pipeline(
             )
         else:
             extracted.append(page_result)
-            continuation_hint = last_record_number(page_result) or continuation_hint
+            # Never retain a stale hint beyond the immediately continuing block.
+            continuation_hint = last_record_number(page_result)
 
         if on_page_complete is not None:
             on_page_complete(index, total)
@@ -390,16 +394,16 @@ def run_exam_prep_pdf_pipeline(
     if should_cancel is not None and should_cancel():
         raise ExamPrepPipelineCancelled("Cancellation requested.")
 
-    assembled = rebuild_assembly_quality(
-        assemble_page_extractions(extracted, title=title)
-    )
+    assembled = assemble_page_extractions(extracted, title=title)
+    assembled = attach_source_regions(assembled, pages=extracted)
+    assembled = rebuild_assembly_quality(assembled)
     if assembled.question_count < 1:
         failed_suffix = f" Failed pages: {failed_page_numbers}" if failed_page_numbers else ""
         raise NoExamQuestionsFound(
             f"هیچ سؤال شماره‌داری در PDF تشخیص داده نشد.{failed_suffix}"
         )
 
-    needed_pages = _repair_source_page_numbers(assembled)
+    needed_pages = _all_source_page_numbers(assembled)
     if isinstance(source, ExamPrepPdfSource):
         source_page_map = source.render_selected_pages(needed_pages)
     else:
@@ -408,7 +412,7 @@ def run_exam_prep_pdf_pipeline(
             for number in needed_pages
             if number in fixture_pages
         }
-    assembled, repair_stats = repair_suspicious_questions(
+    assembled, verification_stats = verify_all_questions(
         assembled,
         source_pages_by_number=source_page_map,
         model=selected_model,
@@ -420,23 +424,31 @@ def run_exam_prep_pdf_pipeline(
     )
     audit.update(
         {
-            "targetedRepairAttempted": repair_stats.get("attempted", 0),
-            "targetedRepairSucceeded": repair_stats.get("repaired", 0),
-            "targetedRepairUnresolved": repair_stats.get("unresolved", 0),
+            "verificationAttempted": verification_stats.get("attempted", 0),
+            "verificationSucceeded": verification_stats.get("verified", 0),
+            "verificationRepaired": verification_stats.get("repaired", 0),
+            "verificationRetried": verification_stats.get("retried", 0),
+            "verificationUnresolved": verification_stats.get("unresolved", 0),
+            "visualAttachments": verification_stats.get("visuals_attached", 0),
+            "tablesVerified": verification_stats.get("tables_verified", 0),
         }
     )
     transcript = render_strict_page_first_transcript(
         assembled,
         failed_page_numbers=failed_page_numbers,
-        targeted_repair_stats=repair_stats,
+        targeted_repair_stats=verification_stats,
     )
     logger.info(
-        "exam_prep.pipeline.quality_summary questionCount=%s reviewCount=%s repairAttempted=%s repairSucceeded=%s repairUnresolved=%s",
+        "exam_prep.pipeline.quality_summary questionCount=%s reviewCount=%s verificationAttempted=%s verificationSucceeded=%s verificationRepaired=%s verificationRetried=%s verificationUnresolved=%s visualAttachments=%s tablesVerified=%s",
         assembled.question_count,
         assembled.questions_needing_review,
-        repair_stats.get("attempted", 0),
-        repair_stats.get("repaired", 0),
-        repair_stats.get("unresolved", 0),
+        verification_stats.get("attempted", 0),
+        verification_stats.get("verified", 0),
+        verification_stats.get("repaired", 0),
+        verification_stats.get("retried", 0),
+        verification_stats.get("unresolved", 0),
+        verification_stats.get("visuals_attached", 0),
+        verification_stats.get("tables_verified", 0),
     )
     return ExamPrepPipelineResult(
         projection=assembled.projection,
@@ -451,6 +463,7 @@ def run_exam_prep_pdf_pipeline(
         publication_ready=audit.get("status") == "passed",
         transcript_markdown=transcript,
         extraction_audit=audit,
-        targeted_repair_stats=repair_stats,
+        targeted_repair_stats=verification_stats,
+        verification_stats=verification_stats,
         model=selected_model,
     )
