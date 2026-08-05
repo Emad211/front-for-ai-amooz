@@ -1,9 +1,8 @@
 """Semantic quality gate for the simple page-first exam-prep pipeline.
 
-The multimodal provider remains responsible for reading the page, but schema
-validity alone is not enough. This module uses the PDF's own text layer as
-supporting evidence, repairs a small set of deterministic option-shape failures,
-and recomputes canonical integrity issues without trusting provider issue codes.
+Schema validity is necessary but not sufficient. This module performs small,
+deterministic repairs, rejects poisoned native Persian text, recomputes canonical
+issues, and decides whether a second source-reading pass is warranted.
 """
 from __future__ import annotations
 
@@ -12,10 +11,16 @@ import re
 from typing import Any
 
 from .exam_prep_page_records import (
+    ANSWER_RECORD_TYPES,
     QUESTION_RECORD_TYPES,
     PageExtraction,
     PageOption,
     PageRecord,
+)
+from .exam_prep_text_quality import (
+    has_broken_persian_text,
+    has_duplicate_clean_and_broken_text,
+    native_text_for_model,
 )
 from .exam_prep_utils import clean_exam_markdown
 
@@ -32,6 +37,8 @@ _STRUCTURAL_ISSUE_ALIASES = {
     "missing_question": "missing_question_text",
     "missing_question_text": "missing_question_text",
     "missing_answer": "missing_answer",
+    "missing_solution": "missing_solution_text",
+    "missing_solution_text": "missing_solution_text",
     "correct_option_not_in_options": "correct_option_not_in_options",
     "invalid_correct_option": "correct_option_not_in_options",
     "placeholder_options": "placeholder_option_text",
@@ -39,17 +46,23 @@ _STRUCTURAL_ISSUE_ALIASES = {
     "unexpected_option_count": "unexpected_option_count",
     "duplicate_option_label": "duplicate_option_label",
     "visual_evidence_required": "visual_evidence_required",
+    "broken_persian_text": "broken_persian_text",
+    "broken_rtl_text": "broken_persian_text",
+    "duplicate_mixed_text": "duplicate_mixed_text",
 }
 _CANONICAL_CRITICAL_CODES = frozenset(
     {
         "missing_question_text",
         "missing_options",
         "missing_option_text",
+        "missing_solution_text",
         "placeholder_option_text",
         "unexpected_option_count",
         "duplicate_option_label",
         "correct_option_not_in_options",
         "visual_evidence_required",
+        "broken_persian_text",
+        "duplicate_mixed_text",
     }
 )
 _REPAIRABLE_CRITICAL_CODES = _CANONICAL_CRITICAL_CODES - {
@@ -71,10 +84,15 @@ _NATIVE_QUESTION_HEADING_RE = re.compile(
 _NATIVE_OPTION_START_RE = re.compile(
     r"(?m)^\s*(?P<label>[1-6۱-۶١-٦])\)\s*"
 )
+# Only deictic references that require a nearby visual are critical. Generic
+# mentions such as "تصویر کاریوتیپ" are not enough.
 _VISUAL_REFERENCE_RE = re.compile(
-    r"(?:شکل\s*(?:رو\s*به\s*رو|مقابل|زیر|بالا)?|"
-    r"نمودار|طیف\s+طول\s+موج|تصویر\s*(?:مقابل|زیر)?|"
-    r"با\s+توجه\s+به\s+شکل)",
+    r"(?:"
+    r"(?:با\s+توجه\s+به|مطابق|براساس)\s+(?:شکل|نمودار|تصویر)\s*(?:مقابل|زیر|بالا|رو\s*به\s*رو)?"
+    r"|شکل\s*(?:مقابل|زیر|بالا|رو\s*به\s*رو)"
+    r"|نمودار\s+(?:مقابل|زیر|بالا|نشان\s+داده\s+شده)"
+    r"|طیف\s+طول\s+موج\s+(?:مرئی\s+)?(?:مقابل|نمایش\s+داده\s+شده)"
+    r")",
     flags=re.IGNORECASE,
 )
 _COUNT_QUESTION_RE = re.compile(
@@ -86,6 +104,10 @@ _BROKEN_PREFIX_RE = re.compile(
 )
 _FOOTER_RE = re.compile(
     r"(?m)^\s*(?:Telegram\s*:|www\.|@konkur|صفحه\s*:).*$",
+    flags=re.IGNORECASE,
+)
+_SOLUTION_PAGE_RE = re.compile(
+    r"(?:پاسخ\s*تشریحی|بررسی\s+(?:سایر\s+)?گزینه|گزینه\s*[«\"']?\d+[»\"']?\s*[:：])",
     flags=re.IGNORECASE,
 )
 
@@ -104,6 +126,7 @@ class PageQualitySummary:
     warning_codes: tuple[str, ...]
     question_count: int
     option_character_count: int
+    solution_character_count: int
 
     @property
     def critical_count(self) -> int:
@@ -114,12 +137,13 @@ class PageQualitySummary:
         return len(self.repairable_critical_codes)
 
     @property
-    def rank(self) -> tuple[int, int, int, int]:
-        """Lower is better, except richer option text and records break ties."""
+    def rank(self) -> tuple[int, int, int, int, int]:
+        """Lower is better, richer complete output breaks ties."""
 
         return (
             self.critical_count,
             self.repairable_critical_count,
+            -self.solution_character_count,
             -self.option_character_count,
             -self.question_count,
         )
@@ -208,30 +232,18 @@ def _collapse_interleaved_options(
 def parse_native_question_evidence(
     native_text: str,
 ) -> dict[int, NativeQuestionEvidence]:
-    """Extract clear numbered question/option blocks from the PDF text layer.
+    """Extract only clear line-oriented question/option blocks."""
 
-    The parser is intentionally conservative. When the text layer does not
-    contain line-oriented option markers, it returns no options rather than
-    guessing. The page image remains the final layout authority.
-    """
-
-    text = clean_exam_markdown(native_text)
+    text = native_text_for_model(native_text)
     if not text:
         return {}
     text = _FOOTER_RE.sub("", text)
     headings = list(_NATIVE_QUESTION_HEADING_RE.finditer(text))
     evidence: dict[int, NativeQuestionEvidence] = {}
     for index, heading in enumerate(headings):
-        raw_number = (
-            heading.group("prefix_number")
-            or heading.group("suffix_number")
-        )
+        raw_number = heading.group("prefix_number") or heading.group("suffix_number")
         number = int(_latin_digits(raw_number))
-        block_end = (
-            headings[index + 1].start()
-            if index + 1 < len(headings)
-            else len(text)
-        )
+        block_end = headings[index + 1].start() if index + 1 < len(headings) else len(text)
         block = text[heading.end():block_end].strip()
         option_starts = list(_NATIVE_OPTION_START_RE.finditer(block))
         options: list[tuple[str, str]] = []
@@ -245,9 +257,7 @@ def parse_native_question_evidence(
                     else len(block)
                 )
                 label = _normalized_label(option_start.group("label"))
-                option_text = clean_exam_markdown(
-                    block[option_start.end():value_end]
-                ).strip()
+                option_text = clean_exam_markdown(block[option_start.end():value_end]).strip()
                 if label and option_text:
                     options.append((label, option_text))
         labels = tuple(label for label, _value in options)
@@ -261,35 +271,23 @@ def parse_native_question_evidence(
     return evidence
 
 
-def _native_options(
-    evidence: NativeQuestionEvidence | None,
-) -> list[PageOption]:
+def _native_options(evidence: NativeQuestionEvidence | None) -> list[PageOption]:
     if evidence is None:
         return []
-    return [
-        PageOption(label=label, text_markdown=text)
-        for label, text in evidence.options
-    ]
+    return [PageOption(label=label, text_markdown=text) for label, text in evidence.options]
 
 
-def _options_differ_materially(
-    current: list[PageOption],
-    native: list[PageOption],
-) -> bool:
+def _options_differ_materially(current: list[PageOption], native: list[PageOption]) -> bool:
     if len(current) != len(native):
         return True
     for current_option, native_option in zip(current, native):
-        if _normalized_label(current_option.label) != _normalized_label(
-            native_option.label
-        ):
+        if _normalized_label(current_option.label) != _normalized_label(native_option.label):
             return True
         current_text = _normalized_text(current_option.text_markdown)
         native_text = _normalized_text(native_option.text_markdown)
         if not current_text or not native_text:
             return True
-        if current_text == native_text:
-            continue
-        if current_text in native_text or native_text in current_text:
+        if current_text == native_text or current_text in native_text or native_text in current_text:
             continue
         return True
     return False
@@ -301,19 +299,45 @@ def _provider_warning_issues(values: list[str]) -> list[str]:
         raw = clean_exam_markdown(value).strip()
         if not raw:
             continue
-        normalized = re.sub(
-            r"[^a-z0-9_:-]+",
-            "_",
-            raw.casefold(),
-        ).strip("_")
+        normalized = re.sub(r"[^a-z0-9_:-]+", "_", raw.casefold()).strip("_")
         canonical = _STRUCTURAL_ISSUE_ALIASES.get(normalized)
         if canonical in _CANONICAL_CRITICAL_CODES:
-            # Structural issues are recomputed after deterministic repair.
             continue
         warning = f"provider_warning:{normalized or 'unspecified'}"
         if warning not in warnings:
             warnings.append(warning)
     return warnings
+
+
+def _text_fields(record: PageRecord) -> tuple[str, ...]:
+    return (
+        record.question_text_markdown,
+        *(option.text_markdown for option in record.options),
+        record.correct_option_text_markdown,
+        record.teacher_solution_markdown,
+        record.final_answer_markdown,
+    )
+
+
+def page_expects_solutions(page: PageExtraction, *, native_text: str = "") -> bool:
+    reliable_native = native_text_for_model(native_text)
+    if reliable_native and _SOLUTION_PAGE_RE.search(reliable_native):
+        return True
+    return any(
+        record.record_type in ANSWER_RECORD_TYPES
+        and len(clean_exam_markdown(record.teacher_solution_markdown)) >= 80
+        for record in page.records
+    )
+
+
+def page_is_answer_heavy(page: PageExtraction, *, native_text: str = "") -> bool:
+    answer_count = sum(record.record_type in ANSWER_RECORD_TYPES for record in page.records)
+    question_count = sum(record.record_type in QUESTION_RECORD_TYPES for record in page.records)
+    if answer_count >= 3 and answer_count >= question_count * 2:
+        return True
+    reliable_native = native_text_for_model(native_text)
+    heading_count = len(re.findall(r"(?m)^\s*\d{1,3}\s*[-–—.:)]\s*گزین[ههۀ]", reliable_native))
+    return heading_count >= 3
 
 
 def _question_issues(record: PageRecord) -> list[str]:
@@ -329,22 +353,33 @@ def _question_issues(record: PageRecord) -> list[str]:
     labels = [_normalized_label(option.label) for option in options]
     if labels and len(labels) != len(set(labels)):
         issues.append("duplicate_option_label")
-    if options and any(
-        not clean_exam_markdown(option.text_markdown).strip()
-        for option in options
-    ):
+    if options and any(not clean_exam_markdown(option.text_markdown).strip() for option in options):
         issues.append("missing_option_text")
-    if (
-        options
-        and _options_are_placeholders(options)
-        and _COUNT_QUESTION_RE.search(text) is None
-    ):
+    if options and _options_are_placeholders(options) and _COUNT_QUESTION_RE.search(text) is None:
         issues.append("placeholder_option_text")
     if _VISUAL_REFERENCE_RE.search(text):
         issues.append("visual_evidence_required")
     correct = _normalized_label(record.correct_option_label)
     if correct and labels and correct not in labels:
         issues.append("correct_option_not_in_options")
+    if any(has_broken_persian_text(value) for value in _text_fields(record)):
+        issues.append("broken_persian_text")
+    if any(has_duplicate_clean_and_broken_text(value) for value in _text_fields(record)):
+        issues.append("duplicate_mixed_text")
+    if record.confidence < 0.55:
+        issues.append("low_confidence")
+    return list(dict.fromkeys(issues))
+
+
+def _answer_issues(record: PageRecord, *, expect_solution: bool) -> list[str]:
+    issues = _provider_warning_issues(record.issues)
+    solution = clean_exam_markdown(record.teacher_solution_markdown)
+    if expect_solution and record.correct_option_label and len(solution) < 24:
+        issues.append("missing_solution_text")
+    if any(has_broken_persian_text(value) for value in _text_fields(record)):
+        issues.append("broken_persian_text")
+    if any(has_duplicate_clean_and_broken_text(value) for value in _text_fields(record)):
+        issues.append("duplicate_mixed_text")
     if record.confidence < 0.55:
         issues.append("low_confidence")
     return list(dict.fromkeys(issues))
@@ -355,26 +390,25 @@ def reconcile_page_extraction(
     *,
     native_text: str = "",
 ) -> PageExtraction:
-    """Repair deterministic option-shape failures and recompute issues.
-
-    Preserve the original Pydantic object when reconciliation is a true no-op.
-    Besides avoiding needless allocations, this keeps callers that cache or
-    compare the validated page object from observing a false change.
-    """
+    """Repair deterministic shape failures and recompute canonical issues."""
 
     native_by_number = parse_native_question_evidence(native_text)
+    expect_solution = page_expects_solutions(page, native_text=native_text)
     reconciled: list[PageRecord] = []
     changed = False
     for record in page.records:
+        if record.record_type in ANSWER_RECORD_TYPES and record.record_type not in QUESTION_RECORD_TYPES:
+            updated = record.model_copy(
+                update={"issues": _answer_issues(record, expect_solution=expect_solution)}
+            )
+            reconciled.append(updated)
+            changed = changed or updated != record
+            continue
         if record.record_type not in QUESTION_RECORD_TYPES:
             normalized_issues = _provider_warning_issues(record.issues)
-            if normalized_issues == record.issues:
-                reconciled.append(record)
-            else:
-                reconciled.append(
-                    record.model_copy(update={"issues": normalized_issues})
-                )
-                changed = True
+            updated = record if normalized_issues == record.issues else record.model_copy(update={"issues": normalized_issues})
+            reconciled.append(updated)
+            changed = changed or updated != record
             continue
 
         options, collapsed = _collapse_interleaved_options(list(record.options))
@@ -388,28 +422,16 @@ def reconcile_page_extraction(
             or _has_broken_option_prefix(options)
             or (
                 _options_are_placeholders(options)
-                and _COUNT_QUESTION_RE.search(
-                    clean_exam_markdown(record.question_text_markdown)
-                )
-                is None
+                and _COUNT_QUESTION_RE.search(clean_exam_markdown(record.question_text_markdown)) is None
             )
         )
-        if native_options and (
-            suspect or _options_differ_materially(options, native_options)
-        ):
-            # Only a clear, line-oriented native option block is allowed to
-            # replace provider options. Ambiguous native text is ignored.
+        if native_options and (suspect or _options_differ_materially(options, native_options)):
             options = native_options
 
         candidate = record.model_copy(update={"options": options})
-        updated = candidate.model_copy(
-            update={"issues": _question_issues(candidate)}
-        )
-        if updated == record:
-            reconciled.append(record)
-        else:
-            reconciled.append(updated)
-            changed = True
+        updated = candidate.model_copy(update={"issues": _question_issues(candidate)})
+        reconciled.append(updated)
+        changed = changed or updated != record
     return page.model_copy(update={"records": reconciled}) if changed else page
 
 
@@ -419,13 +441,15 @@ def summarize_page_quality(page: PageExtraction) -> PageQualitySummary:
     warnings: list[str] = []
     question_count = 0
     option_character_count = 0
+    solution_character_count = 0
     for record in page.records:
         if record.record_type in QUESTION_RECORD_TYPES:
             question_count += 1
             option_character_count += sum(
-                len(clean_exam_markdown(option.text_markdown))
-                for option in record.options
+                len(clean_exam_markdown(option.text_markdown)) for option in record.options
             )
+        if record.record_type in ANSWER_RECORD_TYPES:
+            solution_character_count += len(clean_exam_markdown(record.teacher_solution_markdown))
         for code in record.issues:
             if code in _CANONICAL_CRITICAL_CODES:
                 critical.append(code)
@@ -439,13 +463,11 @@ def summarize_page_quality(page: PageExtraction) -> PageQualitySummary:
         warning_codes=tuple(warnings),
         question_count=question_count,
         option_character_count=option_character_count,
+        solution_character_count=solution_character_count,
     )
 
 
-def choose_better_page_extraction(
-    current: PageExtraction,
-    candidate: PageExtraction,
-) -> PageExtraction:
+def choose_better_page_extraction(current: PageExtraction, candidate: PageExtraction) -> PageExtraction:
     current_quality = summarize_page_quality(current)
     candidate_quality = summarize_page_quality(candidate)
     return candidate if candidate_quality.rank < current_quality.rank else current

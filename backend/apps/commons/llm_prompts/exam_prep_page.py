@@ -3,7 +3,7 @@
 EXAM_PREP_PAGE_PROMPTS = {
     "exam_prep_page_extraction": {
         "default": """
-You extract structured exam records from exactly ONE rendered PDF page.
+You extract structured exam records from exactly ONE rendered PDF page or one explicitly cropped column of that page.
 
 Return one JSON object matching this shape:
 {
@@ -30,29 +30,31 @@ Return one JSON object matching this shape:
 }
 
 Rules:
-- Read the page image and any supplied NATIVE_TEXT_EVIDENCE together. Native text is transcription evidence; the image is the authority for columns, grouping, diagrams, and visual relationships.
-- Do not globally classify the page and do not return a page type.
-- Extract every visible numbered question, answer, or solution as an independent record.
-- A visible question number is mandatory for every record. Never invent one.
-- Preserve Persian text, formulas, symbols, tables, and meaningful line breaks in Markdown.
-- Preserve option labels exactly as printed and ALWAYS return each option as one object with `label` and the complete `text_markdown`; never return option strings.
-- A printed marker such as `1`, `۲`, `الف`, or `گزینه 3` is a label, not option text. Never emit `["1", "real option", "2", "real option"]` and never use `{"label":"1","text_markdown":"1"}` unless the source genuinely presents the numeric value 1 as the whole answer choice in a counting question.
-- Do not split a Persian word at an option boundary. Text such as `د) ر ...`, `ا) ینترفرون`, or `ه) ر کدام` is invalid; recover the complete word from the image/native evidence.
-- Keep substatements such as `الف)`, `ب)`, `ج)`, and `د)` inside `question_text_markdown` when they belong to the stem. They are not answer choices unless the page explicitly presents them as choices.
-- `record_type=question`: use only when the page visibly contains the question stem or its options. Put only the actual stem in `question_text_markdown`.
-- `record_type=answer`: use for a short answer key or a heading such as `18- گزینه 3`. Put `3` in `correct_option_label`; never copy the heading into `question_text_markdown`.
-- `record_type=solution`: use for a worked explanation. Put the explanation in `teacher_solution_markdown`, the short result in `final_answer_markdown`, and the printed correct option in `correct_option_label`.
-- `record_type=question_answer`: use only when the same visible block truly contains both the question and its answer/solution.
-- Text such as `سؤال 18 - گزینه 3`, author names, references, or `بررسی سایر گزینه‌ها` is answer/solution metadata, not question text.
-- A page may contain mixed record types. Extract what is visible rather than forcing one role on the whole page.
-- If a question or its options depend on a source figure, graph, spectrum, table image, or diagram that cannot be represented faithfully as text, add `visual_evidence_required` to `issues`. Never replace a visual option with the bare text `1`, `2`, `3`, or `4`.
-- If a record visibly begins before this page, set continues_from_previous_page=true.
-- If a record visibly continues after this page, set continues_on_next_page=true.
-- Keep the supplied scope hint for ordinary subject or chapter headings. Change `scope_key` only when the document clearly starts an independent exam/section whose question numbering restarts; use the same printed stable identifier on its question and answer pages.
-- Ignore headers, footers, advertisements, channel names, watermarks, page decorations, and page numbers that are not question numbers.
-- In multi-column pages, use printed question numbers to keep records separate; do not merge adjacent columns.
-- Do not infer missing question text, options, answer, or solution. Leave missing fields empty and use only these structural issue codes when applicable: `missing_question_text`, `missing_options`, `missing_option_text`, `visual_evidence_required`, `low_confidence`.
-- confidence must be between 0 and 1 and reflect only what is visibly supported by this page.
+- Read only the current image/REGION. The full page or column name is supplied explicitly.
+- NATIVE_TEXT_EVIDENCE belongs only to the current region. Use it only when coherent; the image is authoritative for columns, grouping, diagrams, and visual relationships.
+- PREVIOUS_PAGE_CONTEXT and NEXT_PAGE_CONTEXT are context-only. Never create a record from text visible only inside those context blocks.
+- Extract every visible numbered question, answer, or solution in the current image as an independent record.
+- Normally a printed question number is mandatory. The only exception is a top-of-region continuation with no printed number: use CONTINUATION_HINT only when the image clearly begins mid-sentence/mid-solution, set continues_from_previous_page=true, and never apply the hint to a new heading or unrelated text.
+- Never invent or renumber a record.
+- In right_column or left_column mode, never read across the center divider into the adjacent column.
+- Persian answer pages normally read right column first, then left column. Keep numbered solution boundaries separate.
+- Preserve readable Persian text, formulas, symbols, tables, and meaningful line breaks in Markdown.
+- Never copy Arabic Presentation Forms, visual-order Persian, or reversed text such as `؟تسا`. Re-read the image instead.
+- Preserve option labels exactly as printed and ALWAYS return each option as one object with `label` and complete `text_markdown`; never return option strings.
+- A printed marker such as `1`, `۲`, `الف`, or `گزینه 3` is a label, not option text. Never emit `["1", "real option", "2", "real option"]` and never use `{"label":"1","text_markdown":"1"}` unless the source genuinely presents numeric count choices.
+- Do not split a Persian word at an option boundary. Text such as `د) ر ...`, `ا) ینترفرون`, or `ه) ر کدام` is invalid.
+- Keep substatements such as `الف)`, `ب)`, `ج)`, and `د)` inside the stem when they belong to the question.
+- `record_type=question`: only for a visible question stem or options.
+- `record_type=answer`: for a short answer key such as `18- گزینه 3`; put `3` in correct_option_label.
+- `record_type=solution`: for a worked explanation. Capture the complete visible explanation, not only the key.
+- `record_type=question_answer`: only when the same visible block truly contains both.
+- A page may contain mixed record types. Do not force one role on the whole page.
+- Add `visual_evidence_required` only for an actual deictic dependency such as `شکل مقابل`, `شکل روبه‌رو`, `نمودار نشان داده شده`, or `با توجه به شکل`. A generic conceptual mention such as `تصویر کاریوتیپ` is not enough.
+- If a record visibly continues after this region, set continues_on_next_page=true.
+- Keep the supplied scope hint unless a clearly independent exam restarts numbering.
+- Ignore headers, footers, advertisements, watermarks, and page numbers that are not question numbers.
+- Do not infer missing content. Leave unsupported fields empty and use only: `missing_question_text`, `missing_options`, `missing_option_text`, `missing_solution_text`, `visual_evidence_required`, `low_confidence`.
+- confidence must be between 0 and 1 and reflect only visible support.
 - Return JSON only. No prose and no Markdown code fence.
 """.strip(),
     },
