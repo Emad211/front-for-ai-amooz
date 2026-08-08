@@ -343,6 +343,27 @@ def _transport_result(response: Any) -> OCRHTTPResponse:
     )
 
 
+def _retry_delay(
+    *,
+    headers: Mapping[str, Any],
+    config: SourceFirstOCRConfig,
+    attempt: int,
+    random_value: Callable[[], float],
+) -> float:
+    """Honor a bounded provider Retry-After before local exponential backoff."""
+
+    for key, value in headers.items():
+        if str(key).lower() != "retry-after":
+            continue
+        try:
+            return max(0.0, min(60.0, float(str(value).strip())))
+        except (TypeError, ValueError):
+            break
+    delay = float(config.retry_backoff_seconds) * attempt
+    delay += float(config.retry_jitter_seconds) * float(random_value())
+    return max(0.0, min(60.0, delay))
+
+
 def _invoke_transport(
     transport: Callable[..., Any],
     endpoint: str,
@@ -415,6 +436,7 @@ def _request_chunk(
     }
     last_status: int | None = None
     last_body: bytes = b""
+    last_headers: Mapping[str, Any] = {}
     started = time.monotonic()
     for attempt in range(1, int(config.max_attempts) + 1):
         try:
@@ -428,6 +450,7 @@ def _request_chunk(
             parsed_response = _transport_result(response)
             last_status = parsed_response.status_code
             last_body = parsed_response.body
+            last_headers = parsed_response.headers
         except request_exception as exc:
             classification = classify_avalai_ocr_failure(status_code=None, body=None)
             if attempt >= int(config.max_attempts):
@@ -437,8 +460,12 @@ def _request_chunk(
                     attempts=attempt,
                     classification=classification,
                 ) from exc
-            delay = float(config.retry_backoff_seconds) * attempt
-            delay += float(config.retry_jitter_seconds) * float(random_value())
+            delay = _retry_delay(
+                headers={},
+                config=config,
+                attempt=attempt,
+                random_value=random_value,
+            )
             if delay:
                 sleeper(delay)
             continue
@@ -452,8 +479,12 @@ def _request_chunk(
                 classification.get("retryable")
             )
             if retryable and attempt < int(config.max_attempts):
-                delay = float(config.retry_backoff_seconds) * attempt
-                delay += float(config.retry_jitter_seconds) * float(random_value())
+                delay = _retry_delay(
+                    headers=last_headers,
+                    config=config,
+                    attempt=attempt,
+                    random_value=random_value,
+                )
                 if delay:
                     sleeper(delay)
                 continue

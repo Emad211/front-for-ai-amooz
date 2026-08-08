@@ -161,6 +161,30 @@ def test_conflict_status_is_not_retried_as_a_paid_duplicate():
     assert len(calls) == 1
 
 
+def test_retry_after_header_is_honored_and_bounded():
+    chunk = OCR4Chunk(index=1, physical_pages=(1,), data=b"pdf", sha256="sha")
+    calls = []
+    delays = []
+
+    def transport(_endpoint, **_kwargs):
+        calls.append(1)
+        if len(calls) == 1:
+            response = _chunk_response(1, status=429)
+            response.headers["Retry-After"] = "999"
+            return response
+        return _chunk_response(1)
+
+    result = _request_chunk(
+        chunk,
+        config=SourceFirstOCRConfig(max_attempts=2),
+        api_key="key",
+        transport=transport,
+        sleeper=delays.append,
+    )
+    assert result.retry_count == 1
+    assert delays == [60.0]
+
+
 def test_merge_rejects_duplicate_or_missing_physical_pages():
     root = {"pages": [{"index": 0, "markdown": "x"}]}
     chunk = SimpleNamespace(index=1, physical_pages=(1,), data=b"x", sha256="x")
