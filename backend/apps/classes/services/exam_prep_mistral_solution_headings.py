@@ -39,18 +39,13 @@ def _integer(value: Any) -> int | None:
 
 
 def is_solution_content_page(page: Mapping[str, Any]) -> bool:
-    """Return true only for worked-answer pages, not the answer-booklet cover.
-
-    In the examined Kانون document every worked-solution page exposes a provider
-    header containing ``پاسخ``. The answer-booklet cover has no provider header,
-    so this deliberately avoids treating its title/table blocks as solution text.
-    """
+    """Return true only for worked-answer pages, not the answer-booklet cover."""
 
     return bool(_SOLUTION_PAGE_HEADER_RE.search(str(page.get("header") or "")))
 
 
 def parse_solution_heading(text: str) -> dict[str, Any] | None:
-    """Parse the two real OCR heading orders observed in the source document."""
+    """Parse both real OCR heading orders observed in the source document."""
 
     value = str(text or "").strip()
     for format_name, pattern in (
@@ -73,7 +68,7 @@ def parse_solution_heading(text: str) -> dict[str, Any] | None:
 
 
 def normalize_solution_option_label(raw: int | None) -> tuple[int | None, bool, bool]:
-    """Normalize the provider's recurring 10/20/30/40 rendering of options 1..4."""
+    """Normalize only the observed 10/20/30/40 rendering of options 1..4."""
 
     if raw in {1, 2, 3, 4}:
         return raw, False, True
@@ -112,10 +107,6 @@ def _ordered_solution_blocks(page: Mapping[str, Any]) -> list[LayoutBlock]:
     blocks = normalize_page_blocks(page)
     if not is_rtl_double_column(blocks):
         return sorted(blocks, key=lambda block: (block.bbox[1], block.bbox[0]))
-
-    # Persian worked solutions read top-to-bottom in the right column, then in
-    # the left column. Spanning blocks are metadata/section labels and are not
-    # solution headings in this document, but keep them first deterministically.
     span = sorted(
         (block for block in blocks if block.column == "span"),
         key=lambda block: (block.bbox[1], block.bbox[0]),
@@ -157,19 +148,6 @@ def solution_heading_candidates(
     return candidates
 
 
-def _same_page_raw_number_later(
-    candidates: Sequence[SolutionHeadingCandidate],
-    index: int,
-    raw_number: int,
-) -> bool:
-    page = candidates[index].physical_page_number
-    return any(
-        candidate.physical_page_number == page
-        and candidate.raw_question_number == raw_number
-        for candidate in candidates[index + 1 :]
-    )
-
-
 def align_solution_headings(
     candidates: Sequence[SolutionHeadingCandidate],
     *,
@@ -178,9 +156,9 @@ def align_solution_headings(
 ) -> dict[str, Any]:
     """Align OCR solution headings against the monotonic printed sequence.
 
-    The function never invents a missing region. It only repairs a printed number
-    when surrounding anchors make the intended number deterministic. Missing
-    headings remain explicit gaps for a later source-backed boundary verifier.
+    A number is recovered only when neighboring anchors make that correction
+    deterministic. Provider duplicates and missing headings remain explicit;
+    geometry alone never fabricates a missing solution boundary.
     """
 
     expected = max(1, int(first_expected_question))
@@ -209,9 +187,6 @@ def align_solution_headings(
             question = expected
             recovery_reason = "lost_leading_digits"
         elif raw == expected - 1:
-            # If the next anchor is exactly the expected number, this is a real
-            # duplicate OCR heading. Otherwise the repeated previous number is
-            # the only plausible rendering of the expected sequential heading.
             if next_raw == expected:
                 duplicate_candidates.append(
                     {
@@ -224,17 +199,8 @@ def align_solution_headings(
             question = expected
             recovery_reason = "repeated_previous_number"
         elif next_raw == expected + 1 and raw != expected:
-            # Example from the real document: expected 94, OCR says 97, then 95.
             question = expected
             recovery_reason = "next_anchor_confirms_expected"
-        elif (
-            raw == expected + 1
-            and _same_page_raw_number_later(candidates, index, raw)
-        ):
-            # Example from the real document: the first 31 on the page is
-            # geometrically question 30; a second 31 anchor exists later.
-            question = expected
-            recovery_reason = "same_page_duplicate_confirms_expected"
         elif raw > expected:
             missing_numbers.extend(range(expected, raw))
             question = raw
@@ -281,10 +247,9 @@ def align_solution_headings(
     if last_expected_question is not None and expected <= last_expected_question:
         missing_numbers.extend(range(expected, last_expected_question + 1))
 
-    missing_numbers = sorted(set(missing_numbers))
     return {
         "accepted": accepted,
-        "missingQuestionNumbers": missing_numbers,
+        "missingQuestionNumbers": sorted(set(missing_numbers)),
         "duplicateCandidates": duplicate_candidates,
         "recoveries": recoveries,
         "nextExpectedQuestion": expected,
@@ -347,7 +312,6 @@ def audit_solution_headings(
             {"candidateCount": 0, "acceptedCount": 0},
         )["acceptedCount"] += 1
 
-    normalized_options = sum(item.option_label_normalized for item in accepted)
     return {
         "schemaVersion": 1,
         "contentFree": True,
@@ -364,7 +328,9 @@ def audit_solution_headings(
         ],
         "recoveryCount": len(aligned["recoveries"]),
         "duplicateCandidateCount": len(aligned["duplicateCandidates"]),
-        "normalizedOptionLabelCount": normalized_options,
+        "normalizedOptionLabelCount": sum(
+            item.option_label_normalized for item in accepted
+        ),
         "invalidOptionLabels": invalid_options,
         "perPage": [
             {"physicalPageNumber": page, **counts}
