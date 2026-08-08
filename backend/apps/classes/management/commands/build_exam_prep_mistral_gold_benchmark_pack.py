@@ -10,13 +10,11 @@ from zipfile import BadZipFile, ZipFile
 from django.core.management.base import BaseCommand, CommandError
 from PIL import Image
 
-from apps.classes.services.exam_prep_mistral_fidelity_benchmark import (
-    find_target_regions,
-    padded_pixel_box,
-)
+from apps.classes.services.exam_prep_mistral_fidelity_benchmark import padded_pixel_box
 from apps.classes.services.exam_prep_mistral_gold_benchmark import (
     boundary_recovery_questions,
     gold_targets,
+    resolve_gold_target_regions,
     validate_gold_target_spec,
 )
 from apps.classes.services.exam_prep_mistral_layout_analysis import analyze_ocr_document
@@ -58,13 +56,7 @@ def _original_pages(manifest: Mapping[str, Any]) -> list[int]:
 
 
 def _gold_region_targets():
-    """Return the frozen offline gold targets without the paid-probe 40-item cap.
-
-    ``parse_fidelity_targets`` intentionally caps live fidelity probes at 40 to
-    bound paid provider work. This builder makes zero provider calls and owns a
-    separately validated 48-region frozen spec, so applying that paid-run cap here
-    would couple unrelated safety policies and break the offline pack.
-    """
+    """Return the frozen offline gold targets without the paid-probe 40-item cap."""
 
     validate_gold_target_spec()
     return gold_targets()
@@ -116,7 +108,7 @@ class Command(BaseCommand):
         try:
             analysis = analyze_ocr_document(root, original_page_numbers=_original_pages(manifest))
             try:
-                selected = find_target_regions(analysis, targets)
+                selected = resolve_gold_target_regions(analysis, targets=targets)
             except ValueError as exc:
                 raise CommandError(f"Gold target resolution failed: {exc}") from exc
             if len(selected) != 48:
@@ -193,7 +185,7 @@ class Command(BaseCommand):
             json.dumps(public_items, ensure_ascii=False, indent=2), encoding="utf-8"
         )
         manifest_out = {
-            "schemaVersion": 1,
+            "schemaVersion": 2,
             "contentFree": True,
             "privateDiagnosticBundle": True,
             "productionPipelineChanged": False,
@@ -202,6 +194,7 @@ class Command(BaseCommand):
             "regionCount": len(public_items),
             "questionRegionCount": sum(row["kind"] == "question" for row in public_items),
             "solutionRegionCount": sum(row["kind"] == "solution" for row in public_items),
+            "sourceSpecificPageConstraints": True,
             "boundaryRecoveryQuestionNumbers": list(boundary_recovery_questions()),
             "annotationStatus": "empty_template",
             "blinding": {
@@ -216,7 +209,9 @@ class Command(BaseCommand):
             "AI-AMOOZ OCR GOLD BENCHMARK PACK\n"
             "providerRequestCount=0\n"
             "Annotate source crops BEFORE opening mistral-candidates.private.json.\n"
-            "The 48 regions are frozen and mix ordinary plus adversarial material.\n"
+            "The 48 source-valid regions are frozen and mix ordinary plus adversarial material.\n"
+            "Question targets are constrained to the source question-booklet pages; solution targets "
+            "are constrained to worked-solution pages so numbered lists cannot create false duplicates.\n"
             "For source-font corruption such as solution 57, set sourceReadable=false if the crop "
             "itself is not legible and do not invent ground truth.\n",
             encoding="utf-8",
