@@ -35,10 +35,11 @@ def _load_bundle(path: Path) -> tuple[Mapping[str, Any], Mapping[str, Any]]:
 
 
 def _selected_pages(request: Mapping[str, Any]) -> list[int] | None:
-    source = request.get("source")
-    if not isinstance(source, Mapping):
-        return None
-    values = source.get("selectedOriginalPages")
+    values = request.get("selectedOriginalPages")
+    if not isinstance(values, list):
+        source = request.get("source")
+        source = source if isinstance(source, Mapping) else {}
+        values = source.get("selectedOriginalPages")
     if not isinstance(values, list):
         return None
     try:
@@ -50,7 +51,7 @@ def _selected_pages(request: Mapping[str, Any]) -> list[int] | None:
 class Command(BaseCommand):
     help = (
         "Compare two private Mistral OCR diagnostic runs without emitting source text. "
-        "Use this to measure run-to-run markdown/formula instability."
+        "Measures markdown, formula, block-label, and bbox geometry stability."
     )
 
     def add_arguments(self, parser):
@@ -88,6 +89,7 @@ class Command(BaseCommand):
                 "Mistral OCR run comparison completed: "
                 f"pages={report['pageCount']}, "
                 f"formulaInstabilityPages={report['pagesWithFormulaInstability']}, "
+                f"geometryInstabilityPages={report['pagesWithGeometryInstability']}, "
                 f"highConfidenceChangedWords={report['highConfidenceChangedWordCount']}, "
                 f"report={output}"
             )
