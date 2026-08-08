@@ -10,8 +10,29 @@ from django.core.management.base import BaseCommand, CommandError
 from apps.classes.services.exam_prep_mistral_run_comparison import compare_ocr_runs
 
 
+def _failure_message(failure: Mapping[str, Any]) -> str:
+    pages = failure.get("failedOriginalPages")
+    page_text = ""
+    if isinstance(pages, list) and pages:
+        page_text = f", pages={pages[0]}-{pages[-1]}"
+    return (
+        "OCR failure bundle: "
+        f"chunk={failure.get('failedChunkIndex')}, "
+        f"httpStatus={failure.get('httpStatus')}, "
+        f"reason={failure.get('reason')}{page_text}"
+    )
+
+
 def _load_bundle(path: Path) -> tuple[Mapping[str, Any], Mapping[str, Any]]:
     if path.is_dir():
+        failure_path = path / "failure.json"
+        if failure_path.is_file() and not (path / "response.raw.json").is_file():
+            failure = json.loads(failure_path.read_text(encoding="utf-8"))
+            failure = failure if isinstance(failure, Mapping) else {}
+            raise CommandError(
+                _failure_message(failure)
+                + ". A completed OCR run is required for comparison."
+            )
         raw_path = path / "response.raw.json"
         request_path = path / "request.safe.json"
         if not raw_path.is_file() or not request_path.is_file():
@@ -26,10 +47,20 @@ def _load_bundle(path: Path) -> tuple[Mapping[str, Any], Mapping[str, Any]]:
         raise CommandError("Bundle must be a ZIP file or extracted bundle directory.")
     try:
         with zipfile.ZipFile(path) as archive:
+            names = set(archive.namelist())
+            if "failure.json" in names and "response.raw.json" not in names:
+                failure = json.loads(archive.read("failure.json").decode("utf-8"))
+                failure = failure if isinstance(failure, Mapping) else {}
+                raise CommandError(
+                    _failure_message(failure)
+                    + ". A completed OCR run is required for comparison."
+                )
             return (
                 json.loads(archive.read("response.raw.json").decode("utf-8")),
                 json.loads(archive.read("request.safe.json").decode("utf-8")),
             )
+    except CommandError:
+        raise
     except (KeyError, ValueError, zipfile.BadZipFile) as exc:
         raise CommandError("Bundle ZIP is invalid or incomplete.") from exc
 
