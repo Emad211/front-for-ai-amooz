@@ -235,13 +235,20 @@ def _sha256(data: bytes) -> str:
 
 
 def _atomic_json(path: Path, value: Mapping[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
+    path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
     temporary = path.with_name(f".{path.name}.{os.getpid()}.tmp")
     temporary.write_text(
         json.dumps(value, ensure_ascii=False, indent=2, default=str),
         encoding="utf-8",
     )
+    os.chmod(temporary, 0o600)
     temporary.replace(path)
+
+
+def _private_bytes(path: Path, data: bytes) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    path.write_bytes(data)
+    os.chmod(path, 0o600)
 
 
 def _read_pdf(path: Path) -> tuple[PdfReader, bytes]:
@@ -1167,11 +1174,11 @@ def write_source_first_bundle(
         raise SourceFirstConfigurationError("render_dpi must be between 96 and 300.")
     path = Path(pdf_path).expanduser().resolve()
     output = Path(output_dir).expanduser().resolve()
-    output.mkdir(parents=True, exist_ok=True)
+    output.mkdir(parents=True, exist_ok=True, mode=0o700)
     pages_dir = output / "pages"
     items_dir = output / "items"
-    pages_dir.mkdir(exist_ok=True)
-    items_dir.mkdir(exist_ok=True)
+    pages_dir.mkdir(exist_ok=True, mode=0o700)
+    items_dir.mkdir(exist_ok=True, mode=0o700)
 
     raw_root = _normalized_page_root(result)
     _atomic_json(output / "response.raw.json", raw_root)
@@ -1185,7 +1192,7 @@ def write_source_first_bundle(
         for physical in range(1, result.page_count + 1):
             data = _render_page_jpeg(path, physical, dpi=int(render_dpi))
             rendered[physical] = data
-            (pages_dir / f"page-{physical:03d}.jpg").write_bytes(data)
+            _private_bytes(pages_dir / f"page-{physical:03d}.jpg", data)
 
     analysis_pages = {
         int(page.get("originalPageNumber") or 0): page
@@ -1219,7 +1226,7 @@ def write_source_first_bundle(
             if write_page_images and len(bbox) == 4 and physical in rendered:
                 crop = _crop_jpeg(rendered[physical], bbox)
                 crop_file = items_dir / f"{item_id}.source.jpg"
-                crop_file.write_bytes(crop)
+                _private_bytes(crop_file, crop)
                 crop_path = str(crop_file.relative_to(output))
             issues = sorted({str(value) for value in region.get("issues") or []})
             visual_required = bool(

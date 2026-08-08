@@ -381,6 +381,10 @@ class Command(BaseCommand):
             import shutil
 
             archive = shutil.make_archive(str(output_dir), "zip", root_dir=output_dir)
+            try:
+                os.chmod(archive, 0o600)
+            except OSError:
+                pass
         self.stdout.write(
             self.style.SUCCESS(
                 "Source-first OCR4 completed: "
