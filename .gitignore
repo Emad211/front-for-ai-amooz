@@ -80,3 +80,4 @@ firestore-debug.log
 /backend/ocr_probe_output.zip
 /mistral_ocr_probe/
 /mistral_ocr_probe.zip
+*mistral*.analysis.json
