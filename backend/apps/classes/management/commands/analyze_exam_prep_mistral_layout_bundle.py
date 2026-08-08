@@ -42,6 +42,23 @@ def _json_member(archive: ZipFile, name: str) -> Mapping[str, Any]:
     return payload
 
 
+def _original_page_mapping(manifest: Mapping[str, Any]) -> list[int]:
+    selected = manifest.get('selectedOriginalPages')
+    if isinstance(selected, list):
+        try:
+            return [int(value) for value in selected]
+        except (TypeError, ValueError):
+            return []
+    if manifest.get('fullDocumentSingleRequest') is True:
+        try:
+            page_count = int(manifest.get('pageCount') or 0)
+        except (TypeError, ValueError):
+            page_count = 0
+        if page_count > 0:
+            return list(range(1, page_count + 1))
+    return []
+
+
 def analyze_bundle(bundle_path: Path) -> dict[str, Any]:
     try:
         archive = ZipFile(bundle_path)
@@ -56,12 +73,7 @@ def analyze_bundle(bundle_path: Path) -> dict[str, Any]:
             )
         manifest = _json_member(archive, 'manifest.json')
         root = _json_member(archive, 'response.raw.json')
-        selected = manifest.get('selectedOriginalPages')
-        selected_pages = (
-            [int(value) for value in selected]
-            if isinstance(selected, list)
-            else []
-        )
+        selected_pages = _original_page_mapping(manifest)
         analysis = analyze_ocr_document(
             root,
             original_page_numbers=selected_pages,
@@ -107,6 +119,7 @@ def analyze_bundle(bundle_path: Path) -> dict[str, Any]:
             'retryCount': manifest.get('retryCount'),
             'selectedOriginalPages': selected_pages,
             'resolvedModel': manifest.get('resolvedModel'),
+            'fullDocumentSingleRequest': manifest.get('fullDocumentSingleRequest'),
         }
         return analysis
 
