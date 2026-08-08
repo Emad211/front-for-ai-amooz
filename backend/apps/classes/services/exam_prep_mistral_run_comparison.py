@@ -91,6 +91,83 @@ def _score_summary(values: Sequence[float]) -> dict[str, Any]:
     }
 
 
+def _bbox(record: Mapping[str, Any]) -> tuple[float, float, float, float] | None:
+    nested = record.get("bbox")
+    source = nested if isinstance(nested, Mapping) else record
+    if all(key in source for key in ("x", "y", "width", "height")):
+        try:
+            x = float(source["x"])
+            y = float(source["y"])
+            width = float(source["width"])
+            height = float(source["height"])
+        except (TypeError, ValueError):
+            return None
+        if width > 0 and height > 0:
+            return (x, y, x + width, y + height)
+    for keys in (
+        ("top_left_x", "top_left_y", "bottom_right_x", "bottom_right_y"),
+        ("x0", "y0", "x1", "y1"),
+    ):
+        if not all(key in source for key in keys):
+            continue
+        try:
+            x0, y0, x1, y1 = (float(source[key]) for key in keys)
+        except (TypeError, ValueError):
+            continue
+        if x1 > x0 and y1 > y0:
+            return (x0, y0, x1, y1)
+    return None
+
+
+def _bbox_iou(
+    first: tuple[float, float, float, float],
+    second: tuple[float, float, float, float],
+) -> float:
+    x0 = max(first[0], second[0])
+    y0 = max(first[1], second[1])
+    x1 = min(first[2], second[2])
+    y1 = min(first[3], second[3])
+    intersection = max(0.0, x1 - x0) * max(0.0, y1 - y0)
+    first_area = max(0.0, first[2] - first[0]) * max(0.0, first[3] - first[1])
+    second_area = max(0.0, second[2] - second[0]) * max(0.0, second[3] - second[1])
+    union = first_area + second_area - intersection
+    return intersection / union if union > 0 else 0.0
+
+
+def _geometry_summary(
+    first_records: Sequence[Any],
+    second_records: Sequence[Any],
+) -> dict[str, Any]:
+    first = [item for item in first_records if isinstance(item, Mapping)]
+    second = [item for item in second_records if isinstance(item, Mapping)]
+    comparable = min(len(first), len(second))
+    ious: list[float] = []
+    for index in range(comparable):
+        first_box = _bbox(first[index])
+        second_box = _bbox(second[index])
+        if first_box is None or second_box is None:
+            continue
+        ious.append(_bbox_iou(first_box, second_box))
+    return {
+        "firstCount": len(first),
+        "secondCount": len(second),
+        "comparableCount": len(ious),
+        "meanIoU": round(mean(ious), 6) if ious else None,
+        "minimumIoU": round(min(ious), 6) if ious else None,
+        "atLeast95": sum(value >= 0.95 for value in ious),
+        "below90": sum(value < 0.90 for value in ious),
+    }
+
+
+def _geometry_is_unstable(summary: Mapping[str, Any]) -> bool:
+    if int(summary.get("firstCount") or 0) != int(summary.get("secondCount") or 0):
+        return True
+    if int(summary.get("below90") or 0):
+        return True
+    mean_iou = summary.get("meanIoU")
+    return isinstance(mean_iou, (int, float)) and float(mean_iou) < 0.98
+
+
 def _block_type_counts(page: Mapping[str, Any]) -> dict[str, int]:
     counts: dict[str, int] = {}
     for raw in page.get("blocks") or []:
@@ -137,6 +214,14 @@ def compare_page_runs(
     ).ratio()
     first_blocks = _block_type_counts(first_page)
     second_blocks = _block_type_counts(second_page)
+    block_geometry = _geometry_summary(
+        first_page.get("blocks") or [],
+        second_page.get("blocks") or [],
+    )
+    image_geometry = _geometry_summary(
+        first_page.get("images") or [],
+        second_page.get("images") or [],
+    )
     changed_summary = _score_summary(changed_scores)
     changed_formula_summary = _score_summary(changed_formula_scores)
     risk_codes: list[str] = []
@@ -148,6 +233,10 @@ def compare_page_runs(
         risk_codes.append("high_confidence_instability")
     if first_blocks != second_blocks:
         risk_codes.append("block_structure_instability")
+    if _geometry_is_unstable(block_geometry):
+        risk_codes.append("block_geometry_instability")
+    if _geometry_is_unstable(image_geometry):
+        risk_codes.append("image_geometry_instability")
 
     return {
         "markdownSimilarity": round(similarity, 6),
@@ -155,6 +244,8 @@ def compare_page_runs(
         "secondMarkdownCharacters": len(second_markdown),
         "firstBlockTypeCounts": first_blocks,
         "secondBlockTypeCounts": second_blocks,
+        "blockGeometry": block_geometry,
+        "imageGeometry": image_geometry,
         "changedWordConfidence": changed_summary,
         "stableWordConfidence": _score_summary(stable_scores),
         "changedFormulaWordConfidence": changed_formula_summary,
@@ -192,6 +283,7 @@ def compare_ocr_runs(
     pages: list[dict[str, Any]] = []
     total_high_confidence_changed = 0
     formula_instability_pages = 0
+    geometry_instability_pages = 0
     for position, provider_index in enumerate(common):
         comparison = compare_page_runs(
             first_pages[provider_index],
@@ -202,6 +294,10 @@ def compare_ocr_runs(
         )
         formula_instability_pages += int(
             "formula_instability" in comparison["riskCodes"]
+        )
+        geometry_instability_pages += int(
+            "block_geometry_instability" in comparison["riskCodes"]
+            or "image_geometry_instability" in comparison["riskCodes"]
         )
         pages.append(
             {
@@ -215,7 +311,7 @@ def compare_ocr_runs(
 
     similarities = [float(page["markdownSimilarity"]) for page in pages]
     return {
-        "schemaVersion": 1,
+        "schemaVersion": 2,
         "contentFree": True,
         "pageCount": len(pages),
         "minimumMarkdownSimilarity": min(similarities) if similarities else None,
@@ -223,6 +319,7 @@ def compare_ocr_runs(
             round(mean(similarities), 6) if similarities else None
         ),
         "pagesWithFormulaInstability": formula_instability_pages,
+        "pagesWithGeometryInstability": geometry_instability_pages,
         "highConfidenceChangedWordCount": total_high_confidence_changed,
         "pages": pages,
     }
