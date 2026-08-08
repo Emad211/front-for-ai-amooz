@@ -34,7 +34,7 @@ _DEFAULT_TARGET_TOKENS = (
     "solution:55",
     "solution:56",
     "solution:57",
-    "solution:73",
+    "solution:72",
     "solution:93",
     "solution:133",
     "solution:150",
