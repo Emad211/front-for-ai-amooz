@@ -1,6 +1,10 @@
+import pytest
+
 from apps.classes.management.commands.build_exam_prep_mistral_gold_benchmark_pack import (
     _annotation_row,
+    _gold_region_targets,
 )
+from apps.classes.services.exam_prep_mistral_fidelity_benchmark import parse_fidelity_targets
 from apps.classes.services.exam_prep_mistral_gold_benchmark import (
     boundary_recovery_questions,
     gold_target_tokens,
@@ -21,6 +25,14 @@ def test_gold_target_spec_is_frozen_balanced_and_unique():
     assert "chemistry_structure" in strata
     assert "solution_source_font_corruption" in strata
     assert "solution_geometry" in strata
+
+
+def test_offline_gold_pack_keeps_48_targets_without_weakening_paid_probe_cap():
+    assert len(_gold_region_targets()) == 48
+
+    paid_probe_tokens = ",".join(f"question:{number}" for number in range(1, 42))
+    with pytest.raises(ValueError, match="capped at 40"):
+        parse_fidelity_targets(paid_probe_tokens)
 
 
 def test_boundary_recovery_set_matches_evidence():
