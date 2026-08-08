@@ -94,7 +94,7 @@ def test_alignment_uses_next_anchor_for_97_to_94_case():
     assert report["accepted"][0].recovery_reason == "next_anchor_confirms_expected"
 
 
-def test_same_page_duplicate_can_confirm_misread_previous_heading():
+def test_ambiguous_duplicate_does_not_fabricate_missing_heading():
     candidates = [
         _candidate(37, 1, 31, 3),
         _candidate(37, 2, 32, 3),
@@ -107,10 +107,9 @@ def test_same_page_duplicate_can_confirm_misread_previous_heading():
     ]
 
     report = align_solution_headings(candidates, first_expected_question=30)
-    accepted = report["accepted"]
 
-    assert [item.question_number for item in accepted] == list(range(30, 38))
-    assert accepted[0].recovery_reason == "same_page_duplicate_confirms_expected"
+    assert [item.question_number for item in report["accepted"]] == list(range(31, 38))
+    assert report["missingQuestionNumbers"] == [30]
     assert report["duplicateCandidates"][-1]["rawQuestionNumber"] == 31
 
 
