@@ -42,6 +42,24 @@ def _json_member(archive: ZipFile, name: str) -> Mapping[str, Any]:
     return payload
 
 
+def _raise_if_failure_bundle(archive: ZipFile, names: set[str]) -> None:
+    if 'failure.json' not in names:
+        return
+    failure = _json_member(archive, 'failure.json')
+    status = failure.get('httpStatus')
+    chunk = failure.get('failedChunkIndex')
+    reason = failure.get('reason')
+    pages = failure.get('failedOriginalPages')
+    page_text = ''
+    if isinstance(pages, list) and pages:
+        page_text = f', pages={pages[0]}-{pages[-1]}'
+    raise CommandError(
+        'This is an OCR failure bundle, not a completed layout bundle: '
+        f'chunk={chunk}, httpStatus={status}, reason={reason}{page_text}. '
+        'Inspect/retry the failed chunk; do not run layout analysis on it.'
+    )
+
+
 def _original_page_mapping(manifest: Mapping[str, Any]) -> list[int]:
     selected = manifest.get('selectedOriginalPages')
     if isinstance(selected, list):
@@ -66,6 +84,7 @@ def analyze_bundle(bundle_path: Path) -> dict[str, Any]:
         raise CommandError('The supplied bundle is not a readable ZIP archive.') from exc
     with archive:
         names = _safe_members(archive)
+        _raise_if_failure_bundle(archive, names)
         missing = sorted(_REQUIRED_BUNDLE_FILES - names)
         if missing:
             raise CommandError(
@@ -89,6 +108,12 @@ def analyze_bundle(bundle_path: Path) -> dict[str, Any]:
             temp = Path(temp_dir)
             uncovered_total = 0
             for page_analysis in analysis.get('pages') or []:
+                # Covers contain large repeated decorative/template ink. They are
+                # not question evidence and should never inflate the residual-
+                # graphics attention count.
+                if page_analysis.get('pageRole') == 'booklet_cover':
+                    page_analysis['uncoveredGraphics'] = []
+                    continue
                 provider_index = int(page_analysis.get('providerPageIndex') or 0)
                 original_page = int(
                     page_analysis.get('originalPageNumber')
@@ -119,6 +144,7 @@ def analyze_bundle(bundle_path: Path) -> dict[str, Any]:
             'retryCount': manifest.get('retryCount'),
             'selectedOriginalPages': selected_pages,
             'resolvedModel': manifest.get('resolvedModel'),
+            'resolvedModels': manifest.get('resolvedModels'),
             'fullDocumentSingleRequest': manifest.get('fullDocumentSingleRequest'),
         }
         return analysis
