@@ -1327,6 +1327,12 @@ def write_source_first_bundle(
         ],
         "pages": page_records,
         "items": items,
+        # This manifest is explicitly private.  Keep the deterministic
+        # analysis alongside the per-item projection so a private bundle is
+        # self-contained even when a region is filtered from ``items`` by its
+        # page-role safety gate.  ``manifest.safe.json`` below intentionally
+        # does not include this field (or any OCR text).
+        "analysis": dict(analysis),
         "metrics": {
             "questionRegions": int(totals.get("questionRegions") or 0),
             "solutionRegions": int(totals.get("solutionRegions") or 0),
