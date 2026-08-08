@@ -190,6 +190,9 @@ class Command(BaseCommand):
         output_dir.mkdir(parents=True, exist_ok=True)
 
         try:
+            raw_word_confidence = (
+                os.getenv("EXAM_PREP_SOURCE_FIRST_WORD_CONFIDENCE", "1") or "1"
+            )
             config = SourceFirstOCRConfig(
                 model=str(options["model"] or "").strip(),
                 endpoint=(os.getenv("AVALAI_OCR_ENDPOINT") or "https://api.avalai.ir/v1/ocr").strip(),
@@ -198,7 +201,8 @@ class Command(BaseCommand):
                 max_response_bytes=int(options["max_response_bytes"]),
                 timeout_seconds=float(options["timeout_seconds"]),
                 max_attempts=int(options["max_attempts"]),
-                word_confidence=True,
+                word_confidence=raw_word_confidence.strip().lower()
+                in {"1", "true", "yes", "on"},
             )
             config.validate()
             chunks = plan_pdf_chunks(
@@ -226,6 +230,7 @@ class Command(BaseCommand):
             "plannedCostUnitUpperBound": format(planned_cost, "f"),
             "sourceSha256": source_sha,
             "model": config.model,
+            "wordConfidence": config.word_confidence,
             "contractFingerprint": config.contract_fingerprint,
         }
         _atomic_json(output_dir / "plan.safe.json", plan)
