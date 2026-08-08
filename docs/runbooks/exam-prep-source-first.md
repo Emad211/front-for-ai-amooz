@@ -74,7 +74,7 @@ python "$ROOT/backend/manage.py" extract_exam_prep_source_first \
   --max-response-bytes 125829120 \
   --timeout-seconds 600 \
   --max-attempts 1 \
-  --max-planned-cost-unit 0.50 \
+  --max-planned-cost-unit 0.30 \
   --render-dpi 200 \
   --archive \
   --allow-private-transmission
@@ -88,7 +88,7 @@ python "$ROOT/backend/manage.py" extract_exam_prep_source_first \
   --max-response-bytes 125829120 \
   --timeout-seconds 600 \
   --max-attempts 1 \
-  --max-planned-cost-unit 0.50 \
+  --max-planned-cost-unit 0.30 \
   --render-dpi 200 \
   --archive \
   --allow-private-transmission
@@ -128,7 +128,13 @@ PY
 python backend/manage.py extract_exam_prep_source_first \
   --pdf "/private/12T-Kanoon-Jame-20Tir1404-[konkur.in].pdf" \
   --output-dir "/private/source-first/t1404" \
+  --model mistral-ocr-4-0 \
+  --max-pages-per-request 30 \
+  --max-chunk-bytes 29360128 \
+  --max-response-bytes 125829120 \
+  --timeout-seconds 600 \
   --max-attempts 2 \
+  --max-planned-cost-unit 0.50 \
   --resume \
   --allow-private-transmission
 ```
