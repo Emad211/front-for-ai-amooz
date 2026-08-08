@@ -15,10 +15,10 @@ import requests
 from apps.chatbot.services.llm_client import part_from_bytes
 from apps.classes.management.commands.probe_exam_prep_mistral_fidelity_single_item_calibration import (
     _base_url,
-    _cost_meta,
     _load_success_bundle,
     _preflight,
     _provider_content,
+    _response_meta,
     _safe_filename,
     _selected_pages,
 )
@@ -177,7 +177,7 @@ def _call_once(
     meta = {
         "model": model,
         "itemId": item_id,
-        **_cost_meta(root, status_code=response.status_code, latency_ms=latency_ms),
+        **_response_meta(root, status_code=response.status_code, latency_ms=latency_ms),
     }
     (output_dir / f"{prefix}.response.safe.json").write_text(
         json.dumps(meta, ensure_ascii=False, indent=2),
