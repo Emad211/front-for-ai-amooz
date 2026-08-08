@@ -19,6 +19,9 @@
 - retry پیش‌فرض صفر است (`--max-attempts 1`) تا خطای transient باعث هزینهٔ تکراری
   نشود. پس از بررسی failure می‌توان همان output را با `--resume` و حداکثر یک
   attempt اضافه ادامه داد.
+- `EXAM_PREP_SOURCE_FIRST_WORD_CONFIDENCE=1` فقط برای مشاهدهٔ سیگنال confidence است؛
+  confidence معیار correctness نیست. برای پاسخ کوچک‌تر می‌توان آن را `0` کرد،
+  بدون اینکه متن یا crop مرجع عوض شود.
 
 ## پیش‌نیاز
 
