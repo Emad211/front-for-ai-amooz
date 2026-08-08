@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 import re
 import shutil
@@ -9,6 +10,7 @@ from zipfile import BadZipFile, ZipFile
 
 from django.core.management.base import BaseCommand, CommandError
 from PIL import Image
+import requests
 
 from apps.chatbot.services.llm_client import part_from_bytes
 from apps.classes.services.exam_prep_mistral_fidelity_benchmark import (
@@ -27,6 +29,7 @@ from apps.commons.structured_llm import generate_structured
 
 
 _DEFAULT_MODELS = ("gpt-5.5", "gemini-3.1-pro-preview")
+_DEFAULT_AVALAI_BASE_URL = "https://api.avalai.ir/v1"
 
 
 def _safe_filename(value: str) -> str:
@@ -86,13 +89,16 @@ def _system_prompt() -> str:
         "You are an OCR fidelity auditor for Persian high-school exam material. "
         "The IMAGE is the source of truth. Do NOT solve the question and do NOT infer "
         "what the author probably intended. Compare the supplied OCR candidate against "
-        "only what is visibly present in the corresponding image. Check Persian words, "
-        "digits, decimal marks, signs, units, option labels, equations/LaTeX semantics, "
-        "chemical formulae, omissions, hallucinated text, reading order, and whether a "
-        "diagram/table must remain a source visual. Harmless whitespace or equivalent "
-        "Markdown formatting is not an error. A changed digit, operator, exponent, "
-        "variable, chemical symbol, answer option, or omitted meaningful clause is major "
-        "or critical. Return one review for every requested item_id."
+        "only what is visibly present for the TARGET item. The crop can contain a small "
+        "amount of the neighboring question/solution because of safety padding; ignore "
+        "neighboring material that belongs to another printed question number and do not "
+        "penalize the candidate for excluding it. Check Persian words, digits, decimal "
+        "marks, signs, units, option labels, equations/LaTeX semantics, chemical formulae, "
+        "omissions, hallucinated text, reading order, and whether a diagram/table must "
+        "remain a source visual. Harmless whitespace or equivalent Markdown formatting is "
+        "not an error. A changed digit, operator, exponent, variable, chemical symbol, "
+        "answer option, or omitted meaningful clause is major or critical. Return one "
+        "review for every requested item_id."
     )
 
 
@@ -101,10 +107,10 @@ def _batch_messages(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
         {
             "type": "text",
             "text": (
-                "Audit each item below. For errors, quote only the shortest fragment "
+                "Audit each target below. For errors, quote only the shortest fragment "
                 "needed to identify the discrepancy. Do not reproduce the entire source "
                 "unless necessary. Use verdict=exact only when the candidate preserves "
-                "all semantically meaningful visible text/formulas."
+                "all semantically meaningful visible text/formulas for the target item."
             ),
         }
     ]
@@ -114,7 +120,7 @@ def _batch_messages(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 "type": "text",
                 "text": (
                     f"\nITEM {item['itemId']}\n"
-                    f"kind={item['kind']} question={item['questionNumber']} "
+                    f"TARGET kind={item['kind']} question_number={item['questionNumber']} "
                     f"physical_page={item['physicalPageNumber']}\n"
                     "OCR_CANDIDATE_BEGIN\n"
                     f"{item['candidateText']}\n"
@@ -128,6 +134,34 @@ def _batch_messages(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
         {"role": "system", "content": _system_prompt()},
         {"role": "user", "content": content},
     ]
+
+
+def _model_preflight(*, models: tuple[str, ...], api_key: str) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for model in models:
+        try:
+            response = requests.get(
+                f"https://api.avalai.ir/v1/models/{model}",
+                headers={"Authorization": f"Bearer {api_key}"},
+                timeout=30,
+            )
+            rows.append(
+                {
+                    "model": model,
+                    "statusCode": response.status_code,
+                    "accessible": bool(response.ok),
+                }
+            )
+        except requests.RequestException as exc:
+            rows.append(
+                {
+                    "model": model,
+                    "statusCode": None,
+                    "accessible": False,
+                    "transportError": type(exc).__name__,
+                }
+            )
+    return rows
 
 
 class Command(BaseCommand):
@@ -156,6 +190,12 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         if not options.get("allow_private_transmission"):
             raise CommandError("Live verifier benchmark requires --allow-private-transmission.")
+        api_key = (os.getenv("AVALAI_API_KEY") or "").strip()
+        if not api_key:
+            raise CommandError("AVALAI_API_KEY is required in this PowerShell session.")
+        if not (os.getenv("AVALAI_BASE_URL") or "").strip():
+            os.environ["AVALAI_BASE_URL"] = _DEFAULT_AVALAI_BASE_URL
+
         bundle = Path(options["bundle"]).expanduser().resolve()
         if not bundle.is_file():
             raise CommandError("--bundle must point to an existing successful ZIP.")
@@ -173,6 +213,32 @@ class Command(BaseCommand):
         if not 1 <= batch_size <= 5:
             raise CommandError("--batch-size must be between 1 and 5.")
         timeout = max(30.0, float(options.get("timeout_seconds") or 600.0))
+
+        preflight = _model_preflight(models=models, api_key=api_key)
+        (output_dir / "model-preflight.safe.json").write_text(
+            json.dumps(preflight, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+        inaccessible = [row for row in preflight if not row.get("accessible")]
+        if inaccessible:
+            (output_dir / "failure.json").write_text(
+                json.dumps(
+                    {
+                        "privateDiagnosticBundle": True,
+                        "productionPipelineChanged": False,
+                        "stage": "model_preflight",
+                        "models": preflight,
+                    },
+                    ensure_ascii=False,
+                    indent=2,
+                ),
+                encoding="utf-8",
+            )
+            archive_path = shutil.make_archive(str(output_dir), "zip", root_dir=output_dir)
+            raise CommandError(
+                "One or more verifier models are not accessible; no source crop was sent. "
+                f"bundle={archive_path}"
+            )
 
         manifest, root, archive = _load_success_bundle(bundle)
         try:
@@ -252,25 +318,27 @@ class Command(BaseCommand):
 
         reviews_by_model: dict[str, list[dict[str, Any]]] = {}
         batch_counts: dict[str, int] = {}
+        current_model = ""
+        current_batch_ids: list[str] = []
         try:
             for model in models:
+                current_model = model
                 model_reviews: list[dict[str, Any]] = []
                 batch_count = 0
                 for batch in chunks(private_items, batch_size):
                     batch_list = list(batch)
                     expected_ids = [str(item["itemId"]) for item in batch_list]
+                    current_batch_ids = expected_ids
                     review = generate_structured(
                         schema=FidelityBatchReview,
                         messages=_batch_messages(batch_list),
                         model=model,
                         feature=LLMUsageLog.Feature.PDF_EXTRACTION,
                         timeout=timeout,
-                        temperature=0.0,
                         max_repair=1,
                         json_object_mode=True,
                         strict_json_schema=False,
                         sensitive=True,
-                        max_output_tokens=8000,
                         detail="exam_prep_mistral_fidelity_benchmark",
                         tracking_context={
                             "diagnostic": "mistral_fidelity",
@@ -287,6 +355,7 @@ class Command(BaseCommand):
                         raise CommandError(f"Verifier {model} returned invalid item mapping: {exc}") from exc
                     model_reviews.extend(normalized)
                     batch_count += 1
+                    current_batch_ids = []
                 reviews_by_model[model] = model_reviews
                 batch_counts[model] = batch_count
                 (output_dir / f"verifier.{_safe_filename(model)}.private.json").write_text(
@@ -299,8 +368,11 @@ class Command(BaseCommand):
                     {
                         "privateDiagnosticBundle": True,
                         "productionPipelineChanged": False,
+                        "stage": "verifier",
                         "errorType": type(exc).__name__,
                         "error": str(exc)[:800],
+                        "failedModel": current_model,
+                        "failedBatchItemIds": current_batch_ids,
                         "modelsCompleted": list(reviews_by_model),
                         "batchCounts": batch_counts,
                     },
@@ -328,10 +400,13 @@ class Command(BaseCommand):
             "productionPipelineChanged": False,
             "sourceBundle": bundle.name,
             "models": list(models),
+            "modelPreflight": preflight,
+            "llmBaseUrl": (os.getenv("AVALAI_BASE_URL") or "").strip(),
             "itemCount": len(private_items),
             "batchSize": batch_size,
             "batchCounts": batch_counts,
             "providerRetryPerCall": 0,
+            "structuredRepairBudgetPerBatch": 1,
             "autoRepairCandidateText": False,
             "consensusFile": "consensus.json",
             "acceptance": {
