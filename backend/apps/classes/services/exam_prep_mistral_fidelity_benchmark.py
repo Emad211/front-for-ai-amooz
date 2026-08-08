@@ -25,15 +25,17 @@ _DEFAULT_TARGET_TOKENS = (
     "question:122",
     "question:129",
     "question:150",
-    # Solution-side: known formula-heavy / OCR-fragile worked solutions.
+    # Solution-side: only regions that are already unique in the base full-run
+    # analysis. Boundary-recovered 74/94 are deliberately excluded so this
+    # benchmark measures transcription rather than boundary reconstruction.
     "solution:45",
     "solution:46",
     "solution:50",
     "solution:55",
     "solution:56",
     "solution:57",
-    "solution:74",
-    "solution:94",
+    "solution:73",
+    "solution:93",
     "solution:133",
     "solution:150",
 )
@@ -299,11 +301,13 @@ def summarize_verifier_consensus(
         any_categories = sorted(set.union(*category_sets)) if category_sets else []
         consensus_critical = all(critical_flags)
         consensus_unusable = all(unusable_flags)
+        category_signatures = {tuple(sorted(values)) for values in category_sets}
         verifier_disagreement = (
             len(set(verdicts)) > 1
             or len(set(critical_flags)) > 1
             or len(set(unusable_flags)) > 1
             or len(set(max_severities)) > 1
+            or len(category_signatures) > 1
         )
         items.append(
             {
