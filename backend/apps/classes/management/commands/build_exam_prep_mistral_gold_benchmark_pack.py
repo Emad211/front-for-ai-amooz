@@ -13,11 +13,9 @@ from PIL import Image
 from apps.classes.services.exam_prep_mistral_fidelity_benchmark import (
     find_target_regions,
     padded_pixel_box,
-    parse_fidelity_targets,
 )
 from apps.classes.services.exam_prep_mistral_gold_benchmark import (
     boundary_recovery_questions,
-    gold_target_tokens,
     gold_targets,
     validate_gold_target_spec,
 )
@@ -59,6 +57,19 @@ def _original_pages(manifest: Mapping[str, Any]) -> list[int]:
     return list(range(1, page_count + 1)) if page_count else []
 
 
+def _gold_region_targets():
+    """Return the frozen offline gold targets without the paid-probe 40-item cap.
+
+    ``parse_fidelity_targets`` intentionally caps live fidelity probes at 40 to
+    bound paid provider work. This builder makes zero provider calls and owns a
+    separately validated 48-region frozen spec, so applying that paid-run cap here
+    would couple unrelated safety policies and break the offline pack.
+    """
+
+    validate_gold_target_spec()
+    return gold_targets()
+
+
 def _annotation_row(*, item: Mapping[str, Any], stratum: str, crop_file: str) -> dict[str, Any]:
     return {
         "itemId": str(item["itemId"]),
@@ -91,7 +102,7 @@ class Command(BaseCommand):
         parser.add_argument("--output-dir", required=True)
 
     def handle(self, *args, **options):
-        validate_gold_target_spec()
+        targets = _gold_region_targets()
         bundle_path = Path(options["bundle"]).expanduser().resolve()
         if not bundle_path.is_file():
             raise CommandError("--bundle must point to an existing successful full-document ZIP.")
@@ -104,7 +115,6 @@ class Command(BaseCommand):
         manifest, root, archive = _load_success_bundle(bundle_path)
         try:
             analysis = analyze_ocr_document(root, original_page_numbers=_original_pages(manifest))
-            targets = parse_fidelity_targets(",".join(gold_target_tokens()))
             try:
                 selected = find_target_regions(analysis, targets)
             except ValueError as exc:
@@ -112,7 +122,7 @@ class Command(BaseCommand):
             if len(selected) != 48:
                 raise CommandError(f"Expected 48 resolved gold regions; got {len(selected)}.")
 
-            stratum_by_id = {target.item_id: target.stratum for target in gold_targets()}
+            stratum_by_id = {target.item_id: target.stratum for target in targets}
             annotations: list[dict[str, Any]] = []
             candidates: list[dict[str, Any]] = []
             public_items: list[dict[str, Any]] = []
