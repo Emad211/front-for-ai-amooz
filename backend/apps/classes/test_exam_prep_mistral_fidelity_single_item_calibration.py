@@ -1,6 +1,9 @@
+from pathlib import Path
+
 from apps.classes.management.commands.probe_exam_prep_mistral_fidelity_single_item_calibration import (
     _CALIBRATION_MODELS,
     _CALIBRATION_TARGETS,
+    _artifact,
     _messages,
     _parse_single_review,
 )
@@ -53,3 +56,10 @@ def test_single_review_parser_does_not_require_echoed_item_id():
     assert parsed["itemId"] == "s-133"
     assert parsed["verdict"] == "major_error"
     assert parsed["errors"][0]["sourceReading"] == "x^2"
+
+
+def test_artifact_suffix_is_appended_without_losing_dotted_item_name():
+    prefix = Path("verifier.gpt-5.4-mini.q-065")
+    assert _artifact(prefix, ".provider.private.json").name == (
+        "verifier.gpt-5.4-mini.q-065.provider.private.json"
+    )
