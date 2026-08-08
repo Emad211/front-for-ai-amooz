@@ -14,6 +14,9 @@ from PIL import Image
 import pypdfium2 as pdfium
 import requests
 
+from apps.classes.services.exam_prep_avalai_ocr_errors import (
+    classify_avalai_ocr_failure,
+)
 from apps.classes.services.exam_prep_mistral_solution_headings import (
     normalize_solution_option_label,
     parse_solution_heading,
@@ -34,7 +37,7 @@ _DEFAULT_SPECS = (
     (36, 'left'),
     (37, 'right'),
     (40, 'left'),
-    (43, 'left'),
+    (43, 'right'),
 )
 
 
@@ -267,7 +270,27 @@ class Command(BaseCommand):
                 timeout=limits.timeout_seconds,
             )
         except requests.RequestException as exc:
-            raise CommandError('Targeted solution-gap OCR transport failed; no retry was attempted.') from exc
+            failure = classify_avalai_ocr_failure(status_code=None, body=None)
+            failure.update(
+                {
+                    'privateDiagnosticBundle': True,
+                    'productionPipelineChanged': False,
+                    'cropSpecs': [
+                        {'physicalPageNumber': page, 'column': side}
+                        for page, side in specs
+                    ],
+                    'reason': type(exc).__name__,
+                }
+            )
+            (output_dir / 'failure.json').write_text(
+                json.dumps(failure, ensure_ascii=False, indent=2),
+                encoding='utf-8',
+            )
+            archive = shutil.make_archive(str(output_dir), 'zip', root_dir=output_dir)
+            raise CommandError(
+                'Targeted solution-gap OCR transport failed; '
+                f'retryable={failure["retryable"]}; bundle={archive}'
+            ) from exc
         latency_ms = round((time.monotonic() - started) * 1000, 2)
         (output_dir / 'response.raw.json').write_bytes(response.content)
         (output_dir / 'response.headers.safe.json').write_text(
@@ -283,10 +306,33 @@ class Command(BaseCommand):
             encoding='utf-8',
         )
         if not response.ok:
+            failure = classify_avalai_ocr_failure(
+                status_code=response.status_code,
+                body=response.content,
+            )
+            failure.update(
+                {
+                    'privateDiagnosticBundle': True,
+                    'productionPipelineChanged': False,
+                    'latencyMs': latency_ms,
+                    'requestedModel': model,
+                    'cropPdfBytes': len(crop_pdf),
+                    'cropPdfSha256': crop_sha,
+                    'cropSpecs': [
+                        {'physicalPageNumber': page, 'column': side}
+                        for page, side in specs
+                    ],
+                }
+            )
+            (output_dir / 'failure.json').write_text(
+                json.dumps(failure, ensure_ascii=False, indent=2),
+                encoding='utf-8',
+            )
             archive = shutil.make_archive(str(output_dir), 'zip', root_dir=output_dir)
             raise CommandError(
                 f'Targeted solution-gap OCR returned HTTP {response.status_code}; '
-                f'bundle={archive}'
+                f'code={failure.get("providerErrorCode") or "unknown"}; '
+                f'retryable={failure["retryable"]}; bundle={archive}'
             )
         try:
             root = response.json()
