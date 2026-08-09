@@ -8,7 +8,9 @@ This module applies production safety policy around them:
 * region-level visual ambiguity makes every affected crop review-only;
 * significant ink touching a supposedly padded crop edge is treated as clipping;
 * a precise-crop encoding failure falls back to a whole-page review asset rather
-  than silently dropping the source evidence.
+  than silently dropping the source evidence;
+* rendered-page graphic discovery uses a bounded local mask while keeping all
+  candidate bboxes normalized to the authoritative physical page.
 
 No LLM call is made here.
 """
@@ -16,7 +18,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 import copy
-import io
+import os
 from typing import Any, Mapping, Sequence
 
 from PIL import Image
@@ -39,6 +41,75 @@ VisualPipelineConfig = v.VisualPipelineConfig
 VisualPipelineStats = v.VisualPipelineStats
 VisualPlan = v.VisualPlan
 VisualSeed = v.VisualSeed
+
+
+def _detector_max_dimension() -> int:
+    try:
+        value = int(os.getenv("EXAM_PREP_VISUAL_DETECTOR_MAX_DIMENSION", "1000"))
+    except (TypeError, ValueError):
+        value = 1000
+    return max(600, min(1400, value))
+
+
+def _bounded_detector_page(
+    image: Image.Image,
+    raw_page: Mapping[str, Any],
+) -> tuple[bytes, dict[str, Any]]:
+    """Build a bounded rendered mask with normalized OCR coverage boxes.
+
+    ``detect_uncovered_graphics`` is intentionally a pure-Python connected
+    component detector. Running it at the provider's full OCR pixel dimensions
+    across a large document is unnecessarily expensive. We downsample only the
+    discovery mask, normalize every OCR block first, and keep the returned
+    candidate coordinates in 0..1 page space. Final crops are still rendered
+    separately at the configured high crop DPI.
+    """
+
+    max_dimension = _detector_max_dimension()
+    width, height = image.size
+    ratio = min(1.0, max_dimension / max(1, max(width, height)))
+    target = (
+        max(1, round(width * ratio)),
+        max(1, round(height * ratio)),
+    )
+    if target == image.size:
+        rendered = image.copy()
+    else:
+        rendered = image.resize(target, Image.Resampling.BILINEAR)
+    try:
+        payload = v._encode_png(rendered)
+    finally:
+        rendered.close()
+
+    blocks = normalize_page_blocks(raw_page)
+    detector_page = {
+        "dimensions": {"width": target[0], "height": target[1]},
+        "blocks": [
+            {
+                "x0": block.bbox[0],
+                "y0": block.bbox[1],
+                "x1": block.bbox[2],
+                "y1": block.bbox[3],
+            }
+            for block in blocks
+        ],
+    }
+    return payload, detector_page
+
+
+def _detect_uncovered_graphics_bounded(
+    image: Image.Image,
+    raw_page: Mapping[str, Any],
+) -> list[dict[str, Any]]:
+    payload, detector_page = _bounded_detector_page(image, raw_page)
+    return detect_uncovered_graphics(
+        image_bytes=payload,
+        page=detector_page,
+        padding_px=2,
+        min_width_px=9,
+        min_height_px=7,
+        min_ink_pixels=12,
+    )
 
 
 def _without_heading(
@@ -104,7 +175,11 @@ def _grouped_option_plan(
                     cluster=list(seeds),
                     config=config,
                 ),
-                *[str(code) for code in issues if str(code) in VISUAL_CRITICAL_ISSUE_CODES],
+                *[
+                    str(code)
+                    for code in issues
+                    if str(code) in VISUAL_CRITICAL_ISSUE_CODES
+                ],
             ]
         )
     )
@@ -162,10 +237,6 @@ def _harden_region_plans(
             }
         )
         if not explicit_complete or geometry_inferred or binding_problem:
-            # Do not persist a guessed option->image mapping. A single grouped
-            # crop is source-faithful and keeps every visual together while the
-            # binding remains reviewable. It is publish-safe only when all four
-            # printed option labels are explicitly observed in source blocks.
             grouped_issues = [
                 code
                 for code in issues
@@ -174,7 +245,10 @@ def _harden_region_plans(
             if labels != {"1", "2", "3", "4"}:
                 grouped_issues = list(
                     dict.fromkeys(
-                        [*grouped_issues, "visual_option_binding_unresolved"]
+                        [
+                            *grouped_issues,
+                            "visual_option_binding_unresolved",
+                        ]
                     )
                 )
             else:
@@ -199,11 +273,11 @@ def _harden_region_plans(
             plans = [grouped] if grouped is not None else []
             issues = grouped_issues
 
-    # Region-level failures (caption mismatch, residual graphic, unresolved
-    # binding) apply to every asset produced for that region. Without this,
-    # an incomplete crop could look "passed" in the JSON while the question is
-    # correctly blocked at the audit layer.
-    critical = [code for code in issues if code in VISUAL_CRITICAL_ISSUE_CODES]
+    critical = [
+        code
+        for code in issues
+        if code in VISUAL_CRITICAL_ISSUE_CODES
+    ]
     if critical:
         hardened: list[VisualPlan] = []
         for plan in plans:
@@ -233,13 +307,22 @@ def _edge_ink_ratio(
     width, height = image.size
     left = max(0, min(width - 1, int(box[0] * width)))
     top = max(0, min(height - 1, int(box[1] * height)))
-    right = max(left + 1, min(width, int(box[2] * width + 0.9999)))
-    bottom = max(top + 1, min(height, int(box[3] * height + 0.9999)))
+    right = max(
+        left + 1,
+        min(width, int(box[2] * width + 0.9999)),
+    )
+    bottom = max(
+        top + 1,
+        min(height, int(box[3] * height + 0.9999)),
+    )
     crop = image.crop((left, top, right, bottom)).convert("L")
     try:
         if crop.width < 12 or crop.height < 12:
             return 1.0
-        band = max(1, min(band_px, crop.width // 4, crop.height // 4))
+        band = max(
+            1,
+            min(band_px, crop.width // 4, crop.height // 4),
+        )
         pixels = crop.load()
         dark = total = 0
         for y in range(crop.height):
@@ -263,22 +346,31 @@ def _raster_harden_plan(
 ) -> VisualPlan:
     if plan.mode == "whole_page_review_fallback":
         return plan
-    # Padding should normally leave white space around the educational object.
-    # A material amount of dark ink on the outer 3px indicates that the crop is
-    # probably clipped or the region boundary was already too tight.
     if _edge_ink_ratio(image, plan.bbox) < 0.018:
         return plan
     issues = tuple(
-        dict.fromkeys([*plan.sanity_issues, "visual_crop_clipped"])
+        dict.fromkeys(
+            [*plan.sanity_issues, "visual_crop_clipped"]
+        )
     )
-    return replace(plan, sanity_issues=issues, review_only=True)
+    return replace(
+        plan,
+        sanity_issues=issues,
+        review_only=True,
+    )
 
 
-def _fallback_after_precise_failure(plan: VisualPlan) -> VisualPlan:
+def _fallback_after_precise_failure(
+    plan: VisualPlan,
+) -> VisualPlan:
     fallback = v._fallback_plan(
         page_number=plan.page_number,
         question_number=plan.question_number,
-        kind="solution" if plan.role == "solution" else "question",
+        kind=(
+            "solution"
+            if plan.role == "solution"
+            else "question"
+        ),
     )
     return replace(
         fallback,
@@ -331,7 +423,10 @@ def reconcile_mistral_source_visuals(
         ) from exc
 
     fingerprints: dict[tuple[Any, ...], list[str]] = {}
-    seed_cache: dict[tuple[int, int, str], list[VisualSeed]] = {}
+    seed_cache: dict[
+        tuple[int, int, str],
+        list[VisualSeed],
+    ] = {}
     local_count = 0
     ocr_count = 0
     document = pdfium.PdfDocument(pdf_data)
@@ -344,9 +439,9 @@ def reconcile_mistral_source_visuals(
             )
             try:
                 raw_page = ocr_by_page[page_number]
-                uncovered = detect_uncovered_graphics(
-                    image_bytes=v._encode_png(image),
-                    page=raw_page,
+                uncovered = _detect_uncovered_graphics_bounded(
+                    image,
+                    raw_page,
                 )
                 local_count += len(uncovered)
                 analysis_page = analysis_pages[page_number]
@@ -357,8 +452,13 @@ def reconcile_mistral_source_visuals(
                 for region in analysis_page.get("regions") or []:
                     if not isinstance(region, Mapping):
                         continue
-                    number = v._number(region.get("questionNumber")) or 0
-                    kind = str(region.get("kind") or "question")
+                    number = (
+                        v._number(region.get("questionNumber"))
+                        or 0
+                    )
+                    kind = str(
+                        region.get("kind") or "question"
+                    )
                     seeds = v._region_seeds(
                         page_number,
                         region,
@@ -367,7 +467,9 @@ def reconcile_mistral_source_visuals(
                         seed.source_kind.startswith("ocr_")
                         for seed in seeds
                     )
-                    seed_cache[(page_number, number, kind)] = seeds
+                    seed_cache[
+                        (page_number, number, kind)
+                    ] = seeds
                     for seed in seeds:
                         x0, y0, x1, y1 = seed.bbox
                         signature = (
@@ -375,11 +477,15 @@ def reconcile_mistral_source_visuals(
                             round((y0 + y1) / 2.0, 2),
                             round(x1 - x0, 2),
                             round(y1 - y0, 2),
-                            v._fingerprint(image, seed.bbox),
+                            v._fingerprint(
+                                image,
+                                seed.bbox,
+                            ),
                         )
-                        fingerprints.setdefault(signature, []).append(
-                            seed.seed_id
-                        )
+                        fingerprints.setdefault(
+                            signature,
+                            [],
+                        ).append(seed.seed_id)
             finally:
                 image.close()
     finally:
@@ -401,9 +507,12 @@ def reconcile_mistral_source_visuals(
         )
         for seed_id in seed_ids:
             seed = seed_by_id.get(seed_id)
-            if seed is not None and v._decorative_candidate(
-                seed,
-                repeated,
+            if (
+                seed is not None
+                and v._decorative_candidate(
+                    seed,
+                    repeated,
+                )
             ):
                 decorative_ids.add(seed_id)
 
@@ -411,12 +520,17 @@ def reconcile_mistral_source_visuals(
     issues_by_question: dict[int, list[str]] = {}
     unresolved_regions: list[dict[str, Any]] = []
     for page_number in relevant_pages:
-        blocks = normalize_page_blocks(ocr_by_page[page_number])
+        blocks = normalize_page_blocks(
+            ocr_by_page[page_number]
+        )
         analysis_page = analysis_pages[page_number]
         for region in analysis_page.get("regions") or []:
             if not isinstance(region, Mapping):
                 continue
-            number = v._number(region.get("questionNumber")) or 0
+            number = (
+                v._number(region.get("questionNumber"))
+                or 0
+            )
             kind = str(region.get("kind") or "question")
             if number < 1:
                 continue
@@ -440,7 +554,9 @@ def reconcile_mistral_source_visuals(
                 )
             else:
                 plans = []
-                region_issues = ["visual_precise_crop_unresolved"]
+                region_issues = [
+                    "visual_precise_crop_unresolved"
+                ]
             if not plans:
                 plans = [
                     v._fallback_plan(
@@ -454,20 +570,31 @@ def reconcile_mistral_source_visuals(
                         "pageNumber": page_number,
                         "questionNumber": number,
                         "role": kind,
-                        "reason": "visual_precise_crop_unresolved",
+                        "reason": (
+                            "visual_precise_crop_unresolved"
+                        ),
                     }
                 )
-            plans_by_page.setdefault(page_number, []).extend(plans)
-            issues_by_question.setdefault(number, []).extend(
-                region_issues
-            )
+            plans_by_page.setdefault(
+                page_number,
+                [],
+            ).extend(plans)
+            issues_by_question.setdefault(
+                number,
+                [],
+            ).extend(region_issues)
 
-    assets_by_question: dict[int, list[dict[str, Any]]] = {}
+    assets_by_question: dict[
+        int,
+        list[dict[str, Any]],
+    ] = {}
     storage_failures = 0
     fallback_keys: set[tuple[int, int, str]] = set()
     document = pdfium.PdfDocument(pdf_data)
     try:
-        for page_number, raw_plans in sorted(plans_by_page.items()):
+        for page_number, raw_plans in sorted(
+            plans_by_page.items()
+        ):
             image = v._render_page(
                 document,
                 page_number,
@@ -515,7 +642,9 @@ def reconcile_mistral_source_visuals(
                         if fallback_key in fallback_keys:
                             continue
                         fallback_keys.add(fallback_key)
-                        plan = _fallback_after_precise_failure(plan)
+                        plan = _fallback_after_precise_failure(
+                            plan
+                        )
                         try:
                             payload = v._crop_bytes(
                                 image,
@@ -540,12 +669,13 @@ def reconcile_mistral_source_visuals(
                             [],
                         ).append("visual_storage_failed")
                         continue
-                    # Post-raster safety metadata must be visible in the JSON.
                     if plan.sanity_issues:
                         asset["reviewOnly"] = True
                         asset["sanity"] = {
                             "status": "needs_review",
-                            "issues": list(plan.sanity_issues),
+                            "issues": list(
+                                plan.sanity_issues
+                            ),
                         }
                         issues_by_question.setdefault(
                             plan.question_number,
@@ -563,11 +693,13 @@ def reconcile_mistral_source_visuals(
     for plans in plans_by_page.values():
         for plan in plans:
             if any(
-                asset.get("sourcePage") == plan.page_number
+                asset.get("sourcePage")
+                == plan.page_number
                 and asset.get("role") == plan.role
                 and (
                     plan.option_label is None
-                    or asset.get("optionLabel") == plan.option_label
+                    or asset.get("optionLabel")
+                    == plan.option_label
                 )
                 for asset in assets_by_question.get(
                     plan.question_number,
@@ -618,13 +750,14 @@ def reconcile_mistral_source_visuals(
             for asset in all_assets
         ),
         grouped_visuals=sum(
-            str(asset.get("visualMode") or "").startswith(
-                "grouped_"
-            )
+            str(
+                asset.get("visualMode") or ""
+            ).startswith("grouped_")
             for asset in all_assets
         ),
         table_visuals=sum(
-            "ocr_table" in (asset.get("sourceKinds") or [])
+            "ocr_table"
+            in (asset.get("sourceKinds") or [])
             for asset in all_assets
         ),
         whole_page_fallbacks=sum(
@@ -659,6 +792,9 @@ def reconcile_mistral_source_visuals(
             "geometryOnlyOptionBindingAccepted": False,
             "wholePageFallbackPublishSafe": False,
             "sourceAndSolutionDeduplicated": False,
+            "localDetectorMaxDimension": (
+                _detector_max_dimension()
+            ),
         },
     }
     return updated, stats.as_dict(), audit
