@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from collections import Counter, defaultdict
 import json
-from typing import Any
+from typing import Any, Mapping
 
 from .exam_prep_mistral_visual_review import (
     VISUAL_CRITICAL_ISSUE_CODES,
@@ -108,10 +108,27 @@ def _teacher_can_override(
     return code in _TEACHER_OVERRIDABLE_CODES
 
 
-def audit_page_first_projection(projection: object) -> dict[str, Any]:
-    """Re-audit normalized teacher JSON with production semantic/visual rules."""
+def audit_page_first_projection(
+    projection: object,
+    *,
+    visual_source_contracts: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Re-audit normalized teacher JSON with production semantic/visual rules.
+
+    ``visual_source_contracts`` comes from the server-maintained extraction audit
+    and is authoritative over any editable copy embedded in the projection.
+    """
 
     questions = _questions(projection)
+    source_contracts = (
+        {
+            str(key): dict(value)
+            for key, value in visual_source_contracts.items()
+            if str(key) and isinstance(value, Mapping)
+        }
+        if isinstance(visual_source_contracts, Mapping)
+        else {}
+    )
     issues: list[dict[str, Any]] = []
     seen: set[tuple[str, str, int, tuple[int, ...]]] = set()
     ids: Counter[str] = Counter()
@@ -158,13 +175,20 @@ def audit_page_first_projection(projection: object) -> dict[str, Any]:
             ids[question_id] += 1
         else:
             add_issue("missing_question_id", scope=scope, number=number, pages=pages)
+        source_contract = source_contracts.get(question_id) if question_id else None
 
         parsed_number = _question_number(question)
         if parsed_number is not None:
             numbers_by_scope[scope].append(parsed_number)
 
-        visual_codes = visual_metadata_issue_codes(question)
-        complete_visual_options = visual_options_complete(question)
+        visual_codes = visual_metadata_issue_codes(
+            question,
+            source_contract=source_contract,
+        )
+        complete_visual_options = visual_options_complete(
+            question,
+            source_contract=source_contract,
+        )
         derived_codes = list(
             dict.fromkeys(
                 [
@@ -186,7 +210,11 @@ def audit_page_first_projection(projection: object) -> dict[str, Any]:
                 and not visual_codes
             ):
                 continue
-            if code == "missing_option_text" and complete_visual_options and not visual_codes:
+            if (
+                code == "missing_option_text"
+                and complete_visual_options
+                and not visual_codes
+            ):
                 continue
             add_issue(code, scope=scope, number=number, pages=pages)
 
@@ -257,6 +285,7 @@ def audit_page_first_projection(projection: object) -> dict[str, Any]:
         "issues": issues,
         "failedPageNumbers": [],
         "questionNumberGaps": gaps,
+        "visualSourceContracts": source_contracts,
     }
 
 
