@@ -48,8 +48,6 @@ def _source_contract_mismatch(
 ) -> bool:
     contract = question.get("visualSourceContract")
     if not isinstance(contract, Mapping):
-        # Old/legacy questions are valid without a Stage-3 contract. New Stage-3
-        # assets, however, must carry it so required evidence cannot disappear.
         return bool(stage3)
     if int(contract.get("schemaVersion") or 0) != 1:
         return True
@@ -122,15 +120,54 @@ def _source_contract_mismatch(
     return bool(required_grouped and not required_grouped.issubset(current_grouped))
 
 
+def _stage3_visuals(question: Mapping[str, Any]) -> list[Mapping[str, Any]]:
+    return [
+        item
+        for item in (question.get("visuals") or [])
+        if isinstance(item, Mapping) and _stage3_asset(item)
+    ]
+
+
+def visual_options_complete(question: Mapping[str, Any]) -> bool:
+    """True only when source metadata supports a complete visual-only 1..4 set."""
+
+    stage3 = _stage3_visuals(question)
+    if not stage3 or _source_contract_mismatch(question, stage3):
+        return False
+
+    grouped = [
+        asset
+        for asset in stage3
+        if str(asset.get("visualMode") or "") == "grouped_options"
+        and asset.get("reviewOnly") is not True
+        and isinstance(asset.get("sanity"), Mapping)
+        and str(asset["sanity"].get("status") or "") == "passed"
+    ]
+    if any(
+        {
+            str(value)
+            for value in (asset.get("groupedOptionLabels") or [])
+        }
+        == {"1", "2", "3", "4"}
+        for asset in grouped
+    ):
+        return True
+
+    labels = {
+        str(asset.get("optionLabel") or "")
+        for asset in stage3
+        if str(asset.get("role") or "") == "option"
+        and asset.get("reviewOnly") is not True
+        and isinstance(asset.get("sanity"), Mapping)
+        and str(asset["sanity"].get("status") or "") == "passed"
+    }
+    return labels == {"1", "2", "3", "4"}
+
+
 def visual_metadata_issue_codes(question: Mapping[str, Any]) -> list[str]:
     """Return deterministic Stage-3 visual blockers derived from asset metadata."""
 
-    assets = [
-        item
-        for item in (question.get("visuals") or [])
-        if isinstance(item, Mapping)
-    ]
-    stage3 = [item for item in assets if _stage3_asset(item)]
+    stage3 = _stage3_visuals(question)
     contract = question.get("visualSourceContract")
     if not stage3 and not isinstance(contract, Mapping):
         return []
@@ -212,4 +249,5 @@ def visual_metadata_issue_codes(question: Mapping[str, Any]) -> list[str]:
 __all__ = [
     "VISUAL_CRITICAL_ISSUE_CODES",
     "visual_metadata_issue_codes",
+    "visual_options_complete",
 ]
