@@ -40,7 +40,13 @@ def _result(*, text="متن خراب", issues=None, visuals=None):
     )
 
 
-def _decision(*, suspicious=True, hard_math=False, candidate_text="متن خراب\n1) الف\n2) ب\n3) ج\n4) د"):
+def _decision(
+    *,
+    suspicious=True,
+    hard_math=False,
+    candidate_text="متن خراب\n1) الف\n2) ب\n3) ج\n4) د",
+    signals=None,
+):
     return RegionRiskDecision(
         question_number=1,
         kind="question",
@@ -49,13 +55,19 @@ def _decision(*, suspicious=True, hard_math=False, candidate_text="متن خرا
         score=70 if suspicious else 10,
         suspicious=suspicious,
         hard_math=hard_math,
-        signals=("source_corruption",) if suspicious else (),
+        signals=tuple(signals if signals is not None else (("source_corruption",) if suspicious else ())),
         region_issues=(),
         candidate_text=candidate_text,
     )
 
 
-def _transcript(text: str, *, model="gemini-3-flash-preview", uncertain=False):
+def _transcript(
+    text: str,
+    *,
+    model="gemini-3-flash-preview",
+    uncertain=False,
+    source_visual_required=False,
+):
     return RegionTranscriptionResult(
         kind="question",
         question_number=1,
@@ -63,8 +75,8 @@ def _transcript(text: str, *, model="gemini-3-flash-preview", uncertain=False):
         model=model,
         transcript={
             "transcriptionMarkdown": text,
-            "sourceVisualRequired": False,
-            "visualType": "none",
+            "sourceVisualRequired": source_visual_required,
+            "visualType": "diagram" if source_visual_required else "none",
             "transcriptionUncertain": uncertain,
             "uncertainFragments": ["؟"] if uncertain else [],
         },
@@ -123,6 +135,31 @@ def test_non_math_source_repair_preserves_visual_evidence(monkeypatch):
     assert audit["stats"]["secondaryCalls"] == 0
 
 
+def test_non_hard_numeric_disagreement_repairs_from_primary_without_gpt(monkeypatch):
+    decision = _decision(
+        hard_math=False,
+        candidate_text="جرم؟\n1) 10 g\n2) 20 g\n3) 30 g\n4) 40 g",
+    )
+    monkeypatch.setattr(stage4, "score_region_risks", lambda **_kwargs: [decision])
+    monkeypatch.setattr(stage4, "_render_crop", lambda *_args, **_kwargs: b"png")
+    calls = []
+
+    def fake_call(**kwargs):
+        calls.append(kwargs["model"])
+        return _transcript("جرم؟\n1) 11 g\n2) 20 g\n3) 30 g\n4) 40 g", model=kwargs["model"])
+
+    monkeypatch.setattr(stage4, "transcribe_source_region", fake_call)
+    monkeypatch.setattr(stage4, "primary_model", lambda: "gemini-3-flash-preview")
+    monkeypatch.setattr(stage4, "secondary_model", lambda: "gpt-5.4-mini")
+
+    updated, audit = stage4.verify_and_repair_risky_regions(
+        _result(), pdf_data=b"%PDF-fake", layout={}
+    )
+    assert calls == ["gemini-3-flash-preview"]
+    assert audit["stats"]["secondaryCalls"] == 0
+    assert updated.projection["exam_prep"]["questions"][0]["options"][0]["text_markdown"] == "11 g"
+
+
 def test_hard_math_disagreement_uses_one_secondary_opinion(monkeypatch):
     decision = _decision(
         hard_math=True,
@@ -174,6 +211,33 @@ def test_uncertain_non_math_source_fails_closed_without_paid_second_opinion(monk
     assert audit["stats"]["unresolved"] == 1
 
 
+def test_visual_only_risk_does_not_add_duplicate_stage4_blocker(monkeypatch):
+    decision = _decision(
+        hard_math=False,
+        signals=("visual_anomaly",),
+        candidate_text="مطابق شکل پاسخ دهید",
+    )
+    monkeypatch.setattr(stage4, "score_region_risks", lambda **_kwargs: [decision])
+    monkeypatch.setattr(stage4, "_render_crop", lambda *_args, **_kwargs: b"png")
+    monkeypatch.setattr(
+        stage4,
+        "transcribe_source_region",
+        lambda **_kwargs: _transcript(
+            "مطابق شکل پاسخ دهید",
+            source_visual_required=True,
+        ),
+    )
+
+    updated, audit = stage4.verify_and_repair_risky_regions(
+        _result(issues=["visual_crop_clipped"]),
+        pdf_data=b"%PDF-fake",
+        layout={},
+    )
+    question = updated.projection["exam_prep"]["questions"][0]
+    assert "stage4_verification_unresolved" not in question["issues"]
+    assert audit["stats"]["unresolved"] == 0
+
+
 def test_stage4_metadata_contains_policy_but_not_provider_transcription(monkeypatch):
     monkeypatch.setattr(stage4, "score_region_risks", lambda **_kwargs: [_decision()])
     monkeypatch.setattr(stage4, "_render_crop", lambda *_args, **_kwargs: b"png")
@@ -187,6 +251,7 @@ def test_stage4_metadata_contains_policy_but_not_provider_transcription(monkeypa
     )
     assert audit["policy"]["candidateMistralShown"] is False
     assert audit["policy"]["oneRegionOneImageOneCall"] is True
+    assert audit["policy"]["secondaryOnlyForHardMath"] is True
     assert audit["policy"]["modelConfidenceAuthority"] is False
     assert audit["policy"]["visualEvidenceMutableByVerifier"] is False
     serialized = str(updated.projection["exam_prep"]["questions"][0].get("stage4_verification"))
