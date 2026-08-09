@@ -3,6 +3,7 @@
 The underlying page-batch orchestrator is kept compact and stable. This wrapper
 installs deterministic production guards before exposing it:
 
+* use lexical-only JSON normalization that preserves raw LaTeX source text;
 * compare exactly the canonical candidate field-set rather than a flattened blob;
 * never let an LLM overwrite a label locked by trusted native PDF evidence;
 * do not broaden an option-only OCR disagreement into a stem replacement;
@@ -18,11 +19,18 @@ from dataclasses import replace
 import os
 from typing import Any, Mapping
 
+from . import exam_prep_mistral_page_batch_transcriber as _page_transport
 from . import exam_prep_mistral_stage4_page_batch as _impl
 from . import exam_prep_mistral_stage4 as _legacy
+from .exam_prep_mistral_json_lexical import decode_structured_json_text
 from .exam_prep_mistral_page_batch_transcriber import PageBatchEnvelopeError
 from .exam_prep_mistral_risk_engine_v2 import score_region_risks as _score
 from .exam_prep_utils import clean_exam_markdown
+
+
+# ``transcribe_page_batch`` resolves its decoder from the transport module's
+# globals at call time. Install the hardened lexical decoder once at runtime.
+_page_transport._decode_structured_text = decode_structured_json_text
 
 
 def _number(value: Any) -> int:
