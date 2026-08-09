@@ -1,8 +1,8 @@
 """Stable production facade for the researched Mistral OCR4 Exam Prep engine.
 
 Stage 2 remains frozen in ``exam_prep_mistral_stage2_core``. This facade keeps
-its deterministic OCR/numbering/solution-recovery logic, applies the narrow
-parser compatibility overlay, runs source-precise Stage 3 visual reconciliation,
+its deterministic OCR/numbering/solution-recovery logic, adds compatibility for
+disjoint booklet ranges, applies source-precise Stage 3 visual reconciliation,
 and then Stage 4 deterministic risk scoring plus source-only targeted repair.
 
 No Exam Prep V4 module, benchmark helper, management command or broad per-page /
@@ -10,12 +10,20 @@ per-question LLM pass is a production dependency here.
 """
 from __future__ import annotations
 
+from decimal import Decimal, InvalidOperation
 import io
+import os
 from typing import Any, Mapping, Sequence
 
 from . import exam_prep_mistral_stage2_core as core
 from . import exam_prep_page_output
 from .exam_prep_mistral_booklet_ranges import extract_booklet_ranges
+from .exam_prep_mistral_disjoint_ranges import (
+    aligned_solutions_for_intervals,
+    build_page_extractions_disjoint,
+    declared_question_intervals,
+    scope_key_for_question,
+)
 from .exam_prep_mistral_layout_analysis import analyze_ocr_document
 from .exam_prep_mistral_ocr_transport import (
     MistralOCR4Config,
@@ -53,7 +61,7 @@ from .exam_prep_utils import clean_exam_markdown
 ProgressCallback = core.ProgressCallback
 CancelCheck = core.CancelCheck
 MistralDocumentEvidence = core.MistralDocumentEvidence
-PRODUCTION_ENGINE = "mistral_ocr4_document_visuals_risk_v3"
+PRODUCTION_ENGINE = "mistral_ocr4_document_visuals_risk_v4"
 PRODUCTION_ENTRYPOINT = (
     "apps.classes.services.exam_prep_mistral_production."
     "run_exam_prep_mistral_pipeline"
@@ -90,7 +98,6 @@ core.parse_question_region_text = parse_question_region_text
 
 _question_anchor_counts = core._question_anchor_counts
 _question_numbers = core._question_numbers
-_aligned_solutions = core._aligned_solutions
 _target_crop_specs = core._target_crop_specs
 _render_target_crop_pdf = core._render_target_crop_pdf
 _heading_lines = core._heading_lines
@@ -98,7 +105,6 @@ _collect_crop_headings = core._collect_crop_headings
 _resolve_target_headings = core._resolve_target_headings
 _targeted_recovery = core._targeted_recovery
 _column_bbox = core._column_bbox
-_build_page_extractions = core._build_page_extractions
 _booklet_contract_issues = core._booklet_contract_issues
 
 _OWN_CRITICAL_CODES = frozenset(
@@ -106,6 +112,15 @@ _OWN_CRITICAL_CODES = frozenset(
     | set(VISUAL_CRITICAL_ISSUE_CODES)
     | {_STAGE4_BLOCKER}
 )
+
+
+def _total_budget_usd() -> Decimal:
+    raw = (os.getenv("EXAM_PREP_TOTAL_PDF_BUDGET_USD") or "0.30").strip()
+    try:
+        value = Decimal(raw)
+    except (InvalidOperation, ValueError):
+        value = Decimal("0.30")
+    return max(Decimal("0"), min(Decimal("2.00"), value))
 
 
 def analyze_mistral_document_evidence(
@@ -239,10 +254,10 @@ def run_exam_prep_mistral_pipeline(
             "هیچ سؤال شماره‌داری در PDF تشخیص داده نشد."
         )
 
-    accepted, missing, invalid = _aligned_solutions(
+    intervals = declared_question_intervals(evidence, question_numbers)
+    accepted, missing, invalid = aligned_solutions_for_intervals(
         ocr_result,
-        first_expected=min(question_numbers),
-        last_expected=max(question_numbers),
+        intervals,
     )
     recovered_targets, targeted_result = _targeted_recovery(
         data,
@@ -256,10 +271,11 @@ def run_exam_prep_mistral_pipeline(
         (set(missing) | set(invalid)) - set(recovered_targets)
     )
 
-    page_extractions = _build_page_extractions(
+    page_extractions = build_page_extractions_disjoint(
         result=ocr_result,
         evidence=evidence,
         recovered_targets=recovered_targets,
+        intervals=intervals,
     )
     assembled = assemble_page_extractions(page_extractions, title=title)
     assembled = attach_source_regions(assembled, pages=page_extractions)
@@ -273,6 +289,13 @@ def run_exam_prep_mistral_pipeline(
         source_sha256=ocr_result.source_sha256,
     )
 
+    total_budget = _total_budget_usd()
+    targeted_cost = (
+        targeted_result.estimated_cost_unit if targeted_result is not None else Decimal("0")
+    )
+    spent_before_stage4 = ocr_result.estimated_cost_unit + targeted_cost
+    remaining_stage4 = max(Decimal("0"), total_budget - spent_before_stage4)
+
     assembled, stage4_audit = verify_and_repair_risky_regions(
         assembled,
         pdf_data=data,
@@ -280,6 +303,7 @@ def run_exam_prep_mistral_pipeline(
         recovered_solution_targets=set(recovered_targets),
         unresolved_solution_targets=set(unresolved_targets),
         should_cancel=should_cancel,
+        max_cost_usd=float(remaining_stage4),
     )
     stage4_stats = dict(stage4_audit.get("stats") or {})
     stage4_resolved_solutions = _stage4_resolved_solution_numbers(stage4_audit)
@@ -301,7 +325,7 @@ def run_exam_prep_mistral_pipeline(
                 {
                     "code": "mistral_duplicate_question_anchor",
                     "severity": "critical",
-                    "scopeKey": "default",
+                    "scopeKey": scope_key_for_question(intervals, number),
                     "questionNumber": number,
                     "sourcePages": [],
                 }
@@ -311,7 +335,7 @@ def run_exam_prep_mistral_pipeline(
             {
                 "code": "mistral_solution_heading_unresolved",
                 "severity": "critical",
-                "scopeKey": "default",
+                "scopeKey": scope_key_for_question(intervals, number),
                 "questionNumber": number,
                 "sourcePages": [],
             }
@@ -323,6 +347,8 @@ def run_exam_prep_mistral_pipeline(
     stage4_primary_calls = int(stage4_stats.get("primaryCalls") or 0)
     stage4_secondary_calls = int(stage4_stats.get("secondaryCalls") or 0)
     stage4_calls = stage4_primary_calls + stage4_secondary_calls
+    stage4_cost = Decimal(str(stage4_stats.get("totalLlmCostUsd") or "0"))
+    total_estimated_cost = spent_before_stage4 + stage4_cost
 
     audit.update(
         {
@@ -339,6 +365,16 @@ def run_exam_prep_mistral_pipeline(
             "targetedSolutionHeadingRetries": targeted_retries,
             "targetedSolutionHeadingRecovered": len(recovered_targets),
             "targetedSolutionHeadingUnresolved": remaining_unresolved_targets,
+            "questionIntervals": [
+                {"start": start, "end": end, "scopeKey": scope_key_for_question(intervals, start)}
+                for start, end in intervals
+            ],
+            "totalPdfBudgetUsd": format(total_budget, "f"),
+            "spentBeforeStage4Usd": format(spent_before_stage4, "f"),
+            "stage4BudgetUsd": format(remaining_stage4, "f"),
+            "stage4EstimatedCostUsd": format(stage4_cost, "f"),
+            "totalEstimatedCostUsd": format(total_estimated_cost, "f"),
+            "budgetWithinLimit": total_estimated_cost <= total_budget,
             "visualPipeline": visual_audit,
             "visualSourceContracts": _server_visual_source_contracts(assembled.projection),
             "visualAssetsAttached": int(visual_stats.get("assetsAttached", 0)),
@@ -416,7 +452,7 @@ def run_exam_prep_mistral_pipeline(
             "attempted": stage4_primary_calls,
             "verified": int(stage4_stats.get("verified") or 0),
             "repaired": int(stage4_stats.get("repaired") or 0),
-            "retried": 0,
+            "retried": int(stage4_stats.get("splitCalls") or 0),
             "unresolved": int(stage4_stats.get("unresolved") or 0),
             "visuals_attached": int(visual_stats.get("assetsAttached", 0)),
             "tables_verified": int(visual_stats.get("tableVisuals", 0)),
