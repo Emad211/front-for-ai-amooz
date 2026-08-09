@@ -21,6 +21,14 @@ class ClassesConfig(AppConfig):
         from . import models_v4_projection  # noqa: F401
         from . import models_v4_bridge  # noqa: F401
         from . import signals  # noqa: F401
+
+        # Broken PDF font/text mappings can yield U+0000 from pypdf. Install
+        # the PostgreSQL-safe native-text seam before task modules import the
+        # source-preparation pipeline.
+        from .services.exam_prep_v4_nul_safety import install as install_nul_safety
+
+        install_nul_safety()
+
         from . import tasks_exam_prep  # noqa: F401
         from . import tasks_v4  # noqa: F401
         from . import tasks_v4_recovery  # noqa: F401
