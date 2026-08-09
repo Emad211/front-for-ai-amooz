@@ -5,8 +5,9 @@ Each crop remains an independent source image and is explicitly labeled with its
 target id; the previous Mistral candidate is never sent.
 
 The transport uses AvalAI's native Gemini generateContent endpoint so Gemini's
-native JSON response schema can be enforced.  There is no automatic retry or
-paid repair pass.
+native JSON response schema can be enforced. There is no automatic same-batch
+retry or paid JSON repair pass. Item validation is deliberately partial: one bad
+item can never discard valid sibling items from the same provider response.
 """
 from __future__ import annotations
 
@@ -18,10 +19,9 @@ import re
 from typing import Any, Literal, Mapping, Sequence
 
 import requests
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 
 from .exam_prep_mistral_risk_engine import RegionRiskDecision
-from .exam_prep_utils import clean_exam_markdown
 
 
 DEFAULT_MODEL = "gemini-3-flash-preview"
@@ -32,6 +32,22 @@ _VISUAL_TYPES = (
     "chemical_structure",
     "table",
     "spatial_layout",
+    "other",
+)
+_UNCERTAIN_FIELDS = (
+    "question_text_markdown",
+    "option_1",
+    "option_2",
+    "option_3",
+    "option_4",
+    "correct_option_label",
+    "teacher_solution_markdown",
+)
+_UNCERTAIN_REASONS = (
+    "unreadable_glyph",
+    "cropped",
+    "absent",
+    "ambiguous_layout",
     "other",
 )
 
@@ -66,6 +82,26 @@ class BatchOption(BaseModel):
     text_markdown: str = Field(max_length=4000)
 
 
+class BatchUncertainSpan(BaseModel):
+    field: Literal[
+        "question_text_markdown",
+        "option_1",
+        "option_2",
+        "option_3",
+        "option_4",
+        "correct_option_label",
+        "teacher_solution_markdown",
+    ]
+    fragment: str = Field(default="", max_length=240)
+    reason: Literal[
+        "unreadable_glyph",
+        "cropped",
+        "absent",
+        "ambiguous_layout",
+        "other",
+    ]
+
+
 class BatchItem(BaseModel):
     target_id: str = Field(max_length=80)
     kind: Literal["question", "solution"]
@@ -85,11 +121,27 @@ class BatchItem(BaseModel):
         "other",
     ]
     transcription_uncertain: bool
+    uncertain_spans: list[BatchUncertainSpan] = Field(default_factory=list, max_length=16)
+    # Kept for checkpoint compatibility with the first page-batch schema.
     uncertain_fragments: list[str] = Field(default_factory=list, max_length=12)
 
 
-class BatchResponse(BaseModel):
-    items: list[BatchItem] = Field(min_length=1, max_length=12)
+class PageBatchEnvelopeError(ValueError):
+    """The provider response cannot be safely decomposed into independent items."""
+
+    def __init__(
+        self,
+        reason_code: str,
+        *,
+        usage: Mapping[str, int] | None = None,
+        estimated_cost: Mapping[str, float] | None = None,
+        request_id: str = "",
+    ):
+        super().__init__(reason_code)
+        self.reason_code = reason_code
+        self.usage = dict(usage or {})
+        self.estimated_cost = dict(estimated_cost or {})
+        self.request_id = str(request_id or "")
 
 
 def _response_schema() -> dict[str, Any]:
@@ -123,6 +175,18 @@ def _response_schema() -> dict[str, Any]:
                         "source_visual_required": {"type": "boolean"},
                         "visual_type": {"type": "string", "enum": list(_VISUAL_TYPES)},
                         "transcription_uncertain": {"type": "boolean"},
+                        "uncertain_spans": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "field": {"type": "string", "enum": list(_UNCERTAIN_FIELDS)},
+                                    "fragment": {"type": "string"},
+                                    "reason": {"type": "string", "enum": list(_UNCERTAIN_REASONS)},
+                                },
+                                "required": ["field", "fragment", "reason"],
+                            },
+                        },
                         "uncertain_fragments": {"type": "array", "items": {"type": "string"}},
                     },
                     "required": [
@@ -136,6 +200,7 @@ def _response_schema() -> dict[str, Any]:
                         "source_visual_required",
                         "visual_type",
                         "transcription_uncertain",
+                        "uncertain_spans",
                         "uncertain_fragments",
                     ],
                 },
@@ -147,21 +212,21 @@ def _response_schema() -> dict[str, Any]:
 
 def _system_prompt() -> str:
     return (
-        "You are a source-faithful transcription engine for Persian high-school exam material. "
-        "Every image in this request is an exact crop from ONE physical source page and has an "
-        "explicit TARGET_ID immediately before it. The images are the only source of truth. A "
-        "previous OCR candidate exists but is intentionally hidden. Never solve, infer, normalize "
-        "from subject knowledge, or guess unreadable glyphs. Return one result for every requested "
-        "TARGET_ID and no extra targets. For kind=question, copy the visible question text and the "
-        "four visible answer choices into question_text_markdown/options; if choices depend on a "
-        "diagram, keep their visible labels/text and set source_visual_required=true. For "
-        "kind=solution, copy the printed correct option label when visible and the worked solution "
+        "You are a literal source transcription engine for Persian high-school exam material. "
+        "Every image is an exact crop from ONE physical source page and has an explicit TARGET_ID "
+        "immediately before it. The image pixels are the only authority. A previous OCR candidate "
+        "exists but is intentionally hidden. NEVER solve the problem, complete a sentence from "
+        "subject knowledge, infer a chemical species, infer a number, or repair an unreadable glyph. "
+        "If even one requested glyph is unreadable, copy only what is visibly supported, place [?] "
+        "at that exact spot, set transcription_uncertain=true, and add an uncertain_spans entry for "
+        "the affected canonical field. Do not silently turn a square/tofu glyph into a plausible word. "
+        "Return at most one item per requested TARGET_ID and no extra targets. For kind=question, copy "
+        "the visible question text and four visible answer choices into question_text_markdown/options. "
+        "For kind=solution, copy the printed correct-option label when visible and the worked solution "
         "into teacher_solution_markdown. Preserve digits, decimal marks, signs, units, Latin letters "
-        "and equations faithfully with Markdown/LaTeX. Do not include author names or book/page "
-        "citations unless they are part of the mathematical/scientific solution itself. If a glyph "
-        "or requested target is genuinely unreadable or absent, set transcription_uncertain=true "
-        "and list only short uncertain fragments. A visual flag never authorizes removing an "
-        "existing source visual."
+        "and equations faithfully with Markdown/LaTeX. Do not include author names, solver names, "
+        "book/page citations, URLs, or invented Markdown image links. A visual flag never authorizes "
+        "removing an existing source visual."
     )
 
 
@@ -185,17 +250,17 @@ def _image_part(payload: bytes) -> dict[str, Any]:
 def _response_text(root: Mapping[str, Any]) -> str:
     candidates = root.get("candidates")
     if not isinstance(candidates, list) or not candidates or not isinstance(candidates[0], Mapping):
-        raise ValueError("Gemini batch response has no candidate.")
+        raise PageBatchEnvelopeError("no_candidate")
     content = candidates[0].get("content")
     if not isinstance(content, Mapping):
-        raise ValueError("Gemini batch response has no candidate content.")
+        raise PageBatchEnvelopeError("no_candidate_content")
     parts = content.get("parts")
     if not isinstance(parts, list):
-        raise ValueError("Gemini batch response has no content parts.")
+        raise PageBatchEnvelopeError("no_content_parts")
     values = [str(part.get("text") or "") for part in parts if isinstance(part, Mapping)]
     text = "".join(values).strip()
     if not text:
-        raise ValueError("Gemini batch response contains no text.")
+        raise PageBatchEnvelopeError("empty_content")
     return text
 
 
@@ -230,18 +295,63 @@ class PageBatchResult:
     request_id: str
     usage: dict[str, int]
     estimated_cost: dict[str, float]
+    requested_target_ids: tuple[str, ...] = ()
+    missing_target_ids: tuple[str, ...] = ()
+    invalid_target_ids: tuple[str, ...] = ()
 
     def safe_dict(self) -> dict[str, Any]:
+        requested = self.requested_target_ids or tuple(item.target_id for item in self.items)
         return {
             "pageNumber": self.page_number,
             "model": self.model,
-            "targetCount": len(self.items),
-            "targetIds": [item.target_id for item in self.items],
+            "targetCount": len(requested),
+            "returnedTargetCount": len(self.items),
+            "targetIds": list(requested),
+            "missingTargetIds": list(self.missing_target_ids),
+            "invalidTargetIds": list(self.invalid_target_ids),
+            "partial": bool(self.missing_target_ids or self.invalid_target_ids),
             "requestId": self.request_id,
             **self.usage,
             "estimatedCostUnit": float(self.estimated_cost.get("unit") or 0),
             "estimatedCostIrt": float(self.estimated_cost.get("irt") or 0),
         }
+
+
+def _validate_items(
+    raw: Any,
+    *,
+    decisions: Sequence[RegionRiskDecision],
+) -> tuple[tuple[BatchItem, ...], tuple[str, ...], tuple[str, ...]]:
+    if not isinstance(raw, Mapping) or not isinstance(raw.get("items"), list):
+        raise PageBatchEnvelopeError("invalid_items_envelope")
+    expected = {item.target_id: item for item in decisions}
+    returned: dict[str, BatchItem] = {}
+    invalid: set[str] = set()
+    for raw_item in raw.get("items") or []:
+        if not isinstance(raw_item, Mapping):
+            continue
+        target_id = str(raw_item.get("target_id") or "").strip()
+        decision = expected.get(target_id)
+        if not target_id or decision is None or target_id in returned:
+            # Unexpected/duplicate content cannot poison valid expected siblings.
+            continue
+        try:
+            item = BatchItem.model_validate(raw_item)
+        except ValidationError:
+            invalid.add(target_id)
+            continue
+        if item.kind != decision.kind or item.question_number != decision.question_number:
+            invalid.add(target_id)
+            continue
+        returned[target_id] = item
+    ordered = tuple(returned[item.target_id] for item in decisions if item.target_id in returned)
+    missing = tuple(
+        item.target_id
+        for item in decisions
+        if item.target_id not in returned and item.target_id not in invalid
+    )
+    invalid_ids = tuple(item.target_id for item in decisions if item.target_id in invalid)
+    return ordered, missing, invalid_ids
 
 
 def transcribe_page_batch(
@@ -250,7 +360,7 @@ def transcribe_page_batch(
     targets: Sequence[tuple[RegionRiskDecision, bytes]],
     model: str | None = None,
 ) -> PageBatchResult:
-    """Make exactly one Gemini request for all suspicious crops on one page."""
+    """Make exactly one Gemini request and preserve every independently valid item."""
 
     if page_number < 1 or not targets:
         raise ValueError("A positive page and at least one batch target are required.")
@@ -266,8 +376,8 @@ def transcribe_page_batch(
     parts: list[dict[str, Any]] = [
         {
             "text": (
-                f"Physical source page {page_number}. Return exactly {len(targets)} items, "
-                "one for each TARGET_ID below. Keep target ids exactly as supplied."
+                f"Physical source page {page_number}. Return one independent item for each "
+                f"of these {len(targets)} TARGET_ID values. Keep ids exactly as supplied."
             )
         }
     ]
@@ -275,7 +385,9 @@ def transcribe_page_batch(
         parts.append({"text": _target_instruction(decision)})
         parts.append(_image_part(payload))
 
-    maximum = max(5000, min(12000, 2500 + 1400 * len(targets)))
+    # Field-level output is materially shorter than free transcription. Keeping
+    # this bounded also constrains the maximum cost of a malformed verbose reply.
+    maximum = max(3200, min(9000, 1600 + 1050 * len(targets)))
     body = {
         "systemInstruction": {"parts": [{"text": _system_prompt()}]},
         "contents": [{"role": "user", "parts": parts}],
@@ -302,42 +414,45 @@ def transcribe_page_batch(
     try:
         root = response.json()
     except ValueError as exc:
-        raise ValueError("Gemini page-batch provider root is not JSON.") from exc
+        raise PageBatchEnvelopeError("provider_root_not_json", request_id=request_id) from exc
     if not isinstance(root, Mapping):
-        raise ValueError("Gemini page-batch provider root is not an object.")
+        raise PageBatchEnvelopeError("provider_root_not_object", request_id=request_id)
     try:
-        parsed = BatchResponse.model_validate(json.loads(_response_text(root)))
-    except (ValueError, json.JSONDecodeError) as exc:
-        raise ValueError("Gemini page-batch structured response is invalid.") from exc
+        decoded = json.loads(_response_text(root))
+    except PageBatchEnvelopeError as exc:
+        raise PageBatchEnvelopeError(
+            exc.reason_code,
+            usage=_usage(root),
+            estimated_cost=_estimated_cost(root),
+            request_id=request_id,
+        ) from exc
+    except json.JSONDecodeError as exc:
+        raise PageBatchEnvelopeError(
+            "structured_json_invalid",
+            usage=_usage(root),
+            estimated_cost=_estimated_cost(root),
+            request_id=request_id,
+        ) from exc
+    items, missing, invalid = _validate_items(decoded, decisions=decisions)
 
-    expected = {item.target_id: item for item in decisions}
-    returned: dict[str, BatchItem] = {}
-    for item in parsed.items:
-        if item.target_id in returned:
-            raise ValueError("Gemini page-batch returned a duplicate target id.")
-        decision = expected.get(item.target_id)
-        if decision is None:
-            raise ValueError("Gemini page-batch returned an unexpected target id.")
-        if item.kind != decision.kind or item.question_number != decision.question_number:
-            raise ValueError("Gemini page-batch target identity mismatch.")
-        returned[item.target_id] = item
-    if set(returned) != set(expected):
-        raise ValueError("Gemini page-batch did not return every requested target.")
-
-    ordered = tuple(returned[item.target_id] for item in decisions)
     return PageBatchResult(
         page_number=page_number,
         model=selected_model,
-        items=ordered,
+        items=items,
         request_id=request_id,
         usage=_usage(root),
         estimated_cost=_estimated_cost(root),
+        requested_target_ids=tuple(item.target_id for item in decisions),
+        missing_target_ids=missing,
+        invalid_target_ids=invalid,
     )
 
 
 __all__ = [
     "BatchItem",
     "BatchOption",
+    "BatchUncertainSpan",
+    "PageBatchEnvelopeError",
     "PageBatchResult",
     "transcribe_page_batch",
 ]
