@@ -1,8 +1,9 @@
 """Stable production facade for the researched Mistral OCR4 Exam Prep engine.
 
-Stage 2 is frozen byte-for-byte in ``exam_prep_mistral_stage2_core``. This
-facade keeps that deterministic OCR/numbering/solution-recovery logic and adds
-Stage 3 local visual reconciliation before the final integrity audit.
+Stage 2 remains frozen in ``exam_prep_mistral_stage2_core``. This facade keeps
+its deterministic OCR/numbering/solution-recovery logic, applies a narrow parser
+compatibility overlay discovered by regression testing, and runs the source-
+precise Stage 3 visual reconciler before final integrity.
 
 No Exam Prep V4 module, benchmark helper, management command or general LLM is
 a production dependency here.
@@ -22,7 +23,7 @@ from .exam_prep_mistral_ocr_transport import (
     fetch_ocr4_document,
 )
 from .exam_prep_mistral_solution_headings import audit_solution_headings
-from .exam_prep_mistral_visuals import (
+from .exam_prep_mistral_visual_reconcile import (
     VISUAL_CRITICAL_ISSUE_CODES,
     reconcile_mistral_source_visuals,
 )
@@ -44,18 +45,54 @@ from .exam_prep_projection_integrity import (
     promote_integrity_audit,
 )
 from .exam_prep_question_verifier import rebuild_assembly_quality
+from .exam_prep_utils import clean_exam_markdown
 
 
 ProgressCallback = core.ProgressCallback
 CancelCheck = core.CancelCheck
 MistralDocumentEvidence = core.MistralDocumentEvidence
-PRODUCTION_ENGINE = "mistral_ocr4_document_visuals"
+PRODUCTION_ENGINE = "mistral_ocr4_document_visuals_v2"
 PRODUCTION_ENTRYPOINT = (
     "apps.classes.services.exam_prep_mistral_production."
     "run_exam_prep_mistral_pipeline"
 )
 
-parse_question_region_text = core.parse_question_region_text
+_ORIGINAL_PARSE_QUESTION_REGION = core.parse_question_region_text
+
+
+def parse_question_region_text(value: Any) -> tuple[str, list[dict[str, str]], str]:
+    """Stage-2-compatible parser plus one proven suffix-option correction.
+
+    OCR4 sometimes emits a one-line form such as::
+
+        77- جرم چند است؟ 250 (1) 500 (2) 25 (3) 50 (4)
+
+    The frozen parser correctly recognizes value-before-label suffix options but
+    treats ``جرم چند است؟ 250`` as option 1 and leaves the stem empty. Split the
+    first suffix at the last question mark only when that exact failure shape is
+    present; all other Stage-2 behavior remains untouched.
+    """
+
+    stem, options, style = _ORIGINAL_PARSE_QUESTION_REGION(value)
+    if stem or style != "parenthesized_suffix" or len(options) != 4:
+        return stem, options, style
+    first = clean_exam_markdown(options[0].get("text_markdown") or "")
+    split_at = max(first.rfind("؟"), first.rfind("?"))
+    if split_at < 0:
+        return stem, options, style
+    recovered_stem = clean_exam_markdown(first[: split_at + 1])
+    first_value = clean_exam_markdown(first[split_at + 1 :])
+    if not recovered_stem or not first_value:
+        return stem, options, style
+    corrected = [dict(item) for item in options]
+    corrected[0]["text_markdown"] = first_value
+    return recovered_stem, corrected, style
+
+
+# Keep the Stage-2 file frozen while ensuring its internal _question_record path
+# uses the same production compatibility parser as public callers and replays.
+core.parse_question_region_text = parse_question_region_text
+
 _question_anchor_counts = core._question_anchor_counts
 _question_numbers = core._question_numbers
 _aligned_solutions = core._aligned_solutions
@@ -79,8 +116,6 @@ def analyze_mistral_document_evidence(
     *,
     original_page_numbers: Sequence[int] | None = None,
 ) -> MistralDocumentEvidence:
-    """Keep the public evidence seam local so monkeypatch tests stay explicit."""
-
     mapping = list(original_page_numbers or []) or None
     return MistralDocumentEvidence(
         layout=analyze_ocr_document(root, original_page_numbers=mapping),
@@ -130,8 +165,6 @@ def _promote_own_critical(
 def _server_visual_source_contracts(
     projection: Mapping[str, Any],
 ) -> dict[str, dict[str, Any]]:
-    """Capture immutable contracts in server workflow audit, keyed by question id."""
-
     exam = projection.get("exam_prep")
     questions = exam.get("questions") if isinstance(exam, Mapping) else []
     output: dict[str, dict[str, Any]] = {}
@@ -154,7 +187,7 @@ def run_exam_prep_mistral_pipeline(
     on_page_complete: ProgressCallback | None = None,
     should_cancel: CancelCheck | None = None,
 ) -> ExamPrepPipelineResult:
-    """Run OCR4 Stage 2 plus deterministic Stage 3 source-visual fidelity."""
+    """Run deterministic OCR4 core plus source-precise Stage 3 visuals."""
 
     del model, scope_hint
     core._cancel(should_cancel)
