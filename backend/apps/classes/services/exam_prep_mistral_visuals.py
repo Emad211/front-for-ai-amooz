@@ -10,7 +10,9 @@ Production policies layered here are deliberately conservative:
 - axis/tick numbers inside a graph are never accepted as option labels;
 - repeated body graphics are never discarded merely because they repeat;
 - nearby caption/legend/axis/equation evidence must fit inside the crop set;
-- every stored asset identity includes source page + semantic role.
+- every stored asset identity includes source page + semantic role;
+- each question keeps a source-visual contract so an edit cannot silently drop
+  required Stage-3 evidence.
 
 This module intentionally contains no LLM dependency.
 """
@@ -61,7 +63,6 @@ _should_group = _p._should_group
 _visual_required = _p._visual_required
 _fallback_plan = _p._fallback_plan
 _asset_alt = _p._asset_alt
-_rebuild_projection_quality = _p._rebuild_projection_quality
 
 _OPTION_MARKER_ONLY_RE = re.compile(
     r"^\s*(?:گزین[ههۀ]\s*)?[\(\[]?\s*(?P<label>[1-4۱-۴١-٤])"
@@ -363,6 +364,97 @@ def _asset_from_payload(
             "issues": list(plan.sanity_issues),
         },
     }
+
+
+def _source_contract(assets: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
+    ids = sorted(
+        {
+            str(asset.get("id") or "")
+            for asset in assets
+            if str(asset.get("id") or "")
+        }
+    )
+    role_counts = {
+        role: sum(str(asset.get("role") or "") == role for asset in assets)
+        for role in ("question", "option", "solution")
+    }
+    option_labels = sorted(
+        {
+            str(asset.get("optionLabel") or "")
+            for asset in assets
+            if str(asset.get("role") or "") == "option"
+            and str(asset.get("optionLabel") or "") in {"1", "2", "3", "4"}
+        }
+    )
+    grouped_labels = sorted(
+        {
+            str(label)
+            for asset in assets
+            if str(asset.get("visualMode") or "") == "grouped_options"
+            for label in (asset.get("groupedOptionLabels") or [])
+            if str(label) in {"1", "2", "3", "4"}
+        }
+    )
+    source_pages = sorted(
+        {
+            int(asset.get("sourcePage") or 0)
+            for asset in assets
+            if int(asset.get("sourcePage") or 0) > 0
+        }
+    )
+    payload = {
+        "schemaVersion": 1,
+        "requiredAssetIds": ids,
+        "roleCounts": role_counts,
+        "optionLabels": option_labels,
+        "groupedOptionLabels": grouped_labels,
+        "sourcePages": source_pages,
+    }
+    canonical = repr(
+        (
+            tuple(ids),
+            tuple(sorted(role_counts.items())),
+            tuple(option_labels),
+            tuple(grouped_labels),
+            tuple(source_pages),
+        )
+    ).encode("utf-8")
+    payload["fingerprint"] = hashlib.sha256(canonical).hexdigest()
+    return payload
+
+
+def _rebuild_projection_quality(
+    result: Any,
+    *,
+    assets_by_question: Mapping[int, Sequence[dict[str, Any]]],
+    issues_by_question: Mapping[int, Sequence[str]],
+):
+    """Rebuild canonical quality and persist the immutable source-visual contract."""
+
+    updated = _p._rebuild_projection_quality(
+        result,
+        assets_by_question=assets_by_question,
+        issues_by_question=issues_by_question,
+    )
+    projection = dict(updated.projection)
+    exam = dict(projection.get("exam_prep") or {})
+    questions: list[dict[str, Any]] = []
+    for raw in exam.get("questions") or []:
+        if not isinstance(raw, dict):
+            continue
+        question = dict(raw)
+        number = _number(question.get("source_question_number")) or 0
+        assets = [
+            asset
+            for asset in assets_by_question.get(number, ())
+            if isinstance(asset, Mapping)
+        ]
+        if assets:
+            question["visualSourceContract"] = _source_contract(assets)
+        questions.append(question)
+    exam["questions"] = questions
+    projection["exam_prep"] = exam
+    return updated.model_copy(update={"projection": projection})
 
 
 def _augment_unresolved_audit(
