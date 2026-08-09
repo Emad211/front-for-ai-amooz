@@ -16,7 +16,21 @@ def test_numeric_order_only_difference_is_not_a_hard_conflict():
         "y=3 و x=2",
     )
     assert agreement.numeric_equal is True
+    assert agreement.keyed_numeric_compared is True
+    assert agreement.keyed_numeric_equal is True
     assert agreement.critical_conflict is False
+
+
+def test_same_numbers_with_swapped_variable_bindings_remain_a_conflict():
+    agreement = compare_field(
+        "teacher_solution_markdown",
+        "x=2 و y=3",
+        "x=3 و y=2",
+    )
+    assert agreement.numeric_equal is True
+    assert agreement.keyed_numeric_compared is True
+    assert agreement.keyed_numeric_equal is False
+    assert agreement.critical_conflict is True
 
 
 def test_real_numeric_difference_remains_a_hard_conflict():
