@@ -17,7 +17,7 @@ from apps.classes.services import exam_prep_mistral_stage2_core as stage2
 from apps.classes.services.exam_prep_mistral_production import (
     analyze_mistral_document_evidence,
 )
-from apps.classes.services.exam_prep_mistral_risk_engine import score_region_risks
+from apps.classes.services.exam_prep_mistral_risk_engine_v2 import score_region_risks
 from apps.classes.services.exam_prep_mistral_stage4 import _render_crop
 from apps.classes.services.exam_prep_mistral_visual_reconcile import (
     VisualPipelineConfig,
@@ -153,7 +153,7 @@ class Command(BaseCommand):
                 signal_counts[signal] = signal_counts.get(signal, 0) + 1
         hard_math = sum(item.hard_math for item in suspicious)
         manifest_out = {
-            "schemaVersion": 1,
+            "schemaVersion": 2,
             "privateDiagnosticBundle": True,
             "providerRequests": 0,
             "sourcePdfSha256": result.source_sha256,
@@ -163,7 +163,7 @@ class Command(BaseCommand):
             "suspiciousRegionCount": len(suspicious),
             "hardMathSuspiciousCount": hard_math,
             "potentialPrimaryCalls": len(suspicious),
-            "potentialSecondaryCallsUpperBound": hard_math,
+            "potentialSecondaryCallsUpperBound": min(hard_math, 6),
             "signalCounts": dict(sorted(signal_counts.items())),
             "recoveredSolutionTargets": sorted(recovered),
             "unresolvedSolutionTargets": sorted(unresolved),
