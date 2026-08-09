@@ -26,8 +26,10 @@ class ClassesConfig(AppConfig):
         from . import tasks_v4_recovery  # noqa: F401
 
         # Deadline-focused release hardening: conservative OCR4 answer-label
-        # evidence + teacher-curated semantic projection edits.  The installer
-        # patches existing service seams after their modules are loaded.
-        from .services.exam_prep_v4_deployment_hardening import install
+        # evidence + teacher-curated semantic projection edits.  The installers
+        # extend existing service seams without changing database schema.
+        from .services.exam_prep_v4_deployment_hardening import install as install_hardening
+        from .services.exam_prep_v4_metadata_sync import install as install_metadata_sync
 
-        install()
+        install_hardening()
+        install_metadata_sync()
