@@ -1,12 +1,12 @@
 """Stable production facade for the researched Mistral OCR4 Exam Prep engine.
 
 Stage 2 remains frozen in ``exam_prep_mistral_stage2_core``. This facade keeps
-its deterministic OCR/numbering/solution-recovery logic, applies a narrow parser
-compatibility overlay discovered by regression testing, and runs the source-
-precise Stage 3 visual reconciler before final integrity.
+its deterministic OCR/numbering/solution-recovery logic, applies the narrow
+parser compatibility overlay, runs source-precise Stage 3 visual reconciliation,
+and then Stage 4 deterministic risk scoring plus source-only targeted repair.
 
-No Exam Prep V4 module, benchmark helper, management command or general LLM is
-a production dependency here.
+No Exam Prep V4 module, benchmark helper, management command or broad per-page /
+per-question LLM pass is a production dependency here.
 """
 from __future__ import annotations
 
@@ -14,6 +14,7 @@ import io
 from typing import Any, Mapping, Sequence
 
 from . import exam_prep_mistral_stage2_core as core
+from . import exam_prep_page_output
 from .exam_prep_mistral_booklet_ranges import extract_booklet_ranges
 from .exam_prep_mistral_layout_analysis import analyze_ocr_document
 from .exam_prep_mistral_ocr_transport import (
@@ -23,6 +24,7 @@ from .exam_prep_mistral_ocr_transport import (
     fetch_ocr4_document,
 )
 from .exam_prep_mistral_solution_headings import audit_solution_headings
+from .exam_prep_mistral_stage4 import verify_and_repair_risky_regions
 from .exam_prep_mistral_visual_reconcile import (
     VISUAL_CRITICAL_ISSUE_CODES,
     reconcile_mistral_source_visuals,
@@ -51,27 +53,26 @@ from .exam_prep_utils import clean_exam_markdown
 ProgressCallback = core.ProgressCallback
 CancelCheck = core.CancelCheck
 MistralDocumentEvidence = core.MistralDocumentEvidence
-PRODUCTION_ENGINE = "mistral_ocr4_document_visuals_v2"
+PRODUCTION_ENGINE = "mistral_ocr4_document_visuals_risk_v3"
 PRODUCTION_ENTRYPOINT = (
     "apps.classes.services.exam_prep_mistral_production."
     "run_exam_prep_mistral_pipeline"
+)
+_STAGE4_BLOCKER = "stage4_verification_unresolved"
+
+# Production audit must treat an unresolved suspicious region as a machine
+# blocker. Stage-5 review/publish hardening will re-derive the same contract in
+# the web process; this mutation ensures the current production runner already
+# fails closed today.
+exam_prep_page_output.CRITICAL_ISSUE_CODES = frozenset(
+    set(exam_prep_page_output.CRITICAL_ISSUE_CODES) | {_STAGE4_BLOCKER}
 )
 
 _ORIGINAL_PARSE_QUESTION_REGION = core.parse_question_region_text
 
 
 def parse_question_region_text(value: Any) -> tuple[str, list[dict[str, str]], str]:
-    """Stage-2-compatible parser plus one proven suffix-option correction.
-
-    OCR4 sometimes emits a one-line form such as::
-
-        77- جرم چند است؟ 250 (1) 500 (2) 25 (3) 50 (4)
-
-    The frozen parser correctly recognizes value-before-label suffix options but
-    treats ``جرم چند است؟ 250`` as option 1 and leaves the stem empty. Split the
-    first suffix at the last question mark only when that exact failure shape is
-    present; all other Stage-2 behavior remains untouched.
-    """
+    """Stage-2-compatible parser plus one proven suffix-option correction."""
 
     stem, options, style = _ORIGINAL_PARSE_QUESTION_REGION(value)
     if stem or style != "parenthesized_suffix" or len(options) != 4:
@@ -89,8 +90,6 @@ def parse_question_region_text(value: Any) -> tuple[str, list[dict[str, str]], s
     return recovered_stem, corrected, style
 
 
-# Keep the Stage-2 file frozen while ensuring its internal _question_record path
-# uses the same production compatibility parser as public callers and replays.
 core.parse_question_region_text = parse_question_region_text
 
 _question_anchor_counts = core._question_anchor_counts
@@ -107,7 +106,9 @@ _build_page_extractions = core._build_page_extractions
 _booklet_contract_issues = core._booklet_contract_issues
 
 _OWN_CRITICAL_CODES = frozenset(
-    set(core._OWN_CRITICAL_CODES) | set(VISUAL_CRITICAL_ISSUE_CODES)
+    set(core._OWN_CRITICAL_CODES)
+    | set(VISUAL_CRITICAL_ISSUE_CODES)
+    | {_STAGE4_BLOCKER}
 )
 
 
@@ -178,6 +179,23 @@ def _server_visual_source_contracts(
     return output
 
 
+def _stage4_resolved_solution_numbers(stage4_audit: Mapping[str, Any]) -> set[int]:
+    resolved: set[int] = set()
+    for row in stage4_audit.get("regions") or []:
+        if not isinstance(row, Mapping) or str(row.get("kind") or "") != "solution":
+            continue
+        status = str(row.get("status") or "")
+        if not (status.startswith("verified") or status.startswith("repaired")):
+            continue
+        try:
+            number = int(row.get("questionNumber") or 0)
+        except (TypeError, ValueError):
+            continue
+        if number > 0:
+            resolved.add(number)
+    return resolved
+
+
 def run_exam_prep_mistral_pipeline(
     *,
     data: bytes,
@@ -187,7 +205,7 @@ def run_exam_prep_mistral_pipeline(
     on_page_complete: ProgressCallback | None = None,
     should_cancel: CancelCheck | None = None,
 ) -> ExamPrepPipelineResult:
-    """Run deterministic OCR4 core plus source-precise Stage 3 visuals."""
+    """Run OCR4 + precise visuals + risk-gated source verification."""
 
     del model, scope_hint
     core._cancel(should_cancel)
@@ -250,12 +268,30 @@ def run_exam_prep_mistral_pipeline(
     assembled = assemble_page_extractions(page_extractions, title=title)
     assembled = attach_source_regions(assembled, pages=page_extractions)
     assembled = rebuild_assembly_quality(assembled)
+
+    # Stage 3: local/source-authoritative visuals. No LLM.
     assembled, visual_stats, visual_audit = reconcile_mistral_source_visuals(
         assembled,
         pdf_data=data,
         ocr_pages=ocr_result.pages,
         layout=evidence.layout,
         source_sha256=ocr_result.source_sha256,
+    )
+
+    # Stage 4: every region gets a free risk score; only suspicious regions
+    # receive a one-image source-only transcription call.
+    assembled, stage4_audit = verify_and_repair_risky_regions(
+        assembled,
+        pdf_data=data,
+        layout=evidence.layout,
+        recovered_solution_targets=set(recovered_targets),
+        unresolved_solution_targets=set(unresolved_targets),
+        should_cancel=should_cancel,
+    )
+    stage4_stats = dict(stage4_audit.get("stats") or {})
+    stage4_resolved_solutions = _stage4_resolved_solution_numbers(stage4_audit)
+    remaining_unresolved_targets = sorted(
+        set(unresolved_targets) - stage4_resolved_solutions
     )
 
     assembled, integrity_stats = apply_projection_integrity(assembled)
@@ -277,7 +313,7 @@ def run_exam_prep_mistral_pipeline(
                     "sourcePages": [],
                 }
             )
-    for number in unresolved_targets:
+    for number in remaining_unresolved_targets:
         extra_issues.append(
             {
                 "code": "mistral_solution_heading_unresolved",
@@ -289,10 +325,12 @@ def run_exam_prep_mistral_pipeline(
         )
     audit = _promote_own_critical(audit, extra_issues)
 
-    targeted_calls = (
-        targeted_result.provider_call_count if targeted_result else 0
-    )
+    targeted_calls = targeted_result.provider_call_count if targeted_result else 0
     targeted_retries = targeted_result.retry_count if targeted_result else 0
+    stage4_primary_calls = int(stage4_stats.get("primaryCalls") or 0)
+    stage4_secondary_calls = int(stage4_stats.get("secondaryCalls") or 0)
+    stage4_calls = stage4_primary_calls + stage4_secondary_calls
+
     audit.update(
         {
             "engine": PRODUCTION_ENGINE,
@@ -303,18 +341,13 @@ def run_exam_prep_mistral_pipeline(
             "ocrCheckpointReusedChunks": ocr_result.checkpoint_reuse_count,
             "ocrRequestIds": list(ocr_result.request_ids),
             "ocrResolvedModels": list(ocr_result.resolved_models),
-            "ocrEstimatedCostUnit": format(
-                ocr_result.estimated_cost_unit,
-                "f",
-            ),
+            "ocrEstimatedCostUnit": format(ocr_result.estimated_cost_unit, "f"),
             "targetedSolutionHeadingCalls": targeted_calls,
             "targetedSolutionHeadingRetries": targeted_retries,
             "targetedSolutionHeadingRecovered": len(recovered_targets),
-            "targetedSolutionHeadingUnresolved": unresolved_targets,
+            "targetedSolutionHeadingUnresolved": remaining_unresolved_targets,
             "visualPipeline": visual_audit,
-            "visualSourceContracts": _server_visual_source_contracts(
-                assembled.projection
-            ),
+            "visualSourceContracts": _server_visual_source_contracts(assembled.projection),
             "visualAssetsAttached": int(visual_stats.get("assetsAttached", 0)),
             "visualQuestionAssets": int(visual_stats.get("questionVisuals", 0)),
             "visualOptionAssets": int(visual_stats.get("optionVisuals", 0)),
@@ -322,19 +355,33 @@ def run_exam_prep_mistral_pipeline(
             "visualReviewOnlyAssets": int(visual_stats.get("reviewOnlyAssets", 0)),
             "visualWholePageFallbacks": int(visual_stats.get("wholePageFallbacks", 0)),
             "visualSanityFailures": int(visual_stats.get("sanityFailures", 0)),
+            "riskEngine": stage4_audit,
+            "riskRegionCount": int(stage4_stats.get("regions") or 0),
+            "riskSuspiciousRegionCount": int(stage4_stats.get("suspicious") or 0),
+            "targetedRegionPrimaryCalls": stage4_primary_calls,
+            "targetedRegionSecondOpinionCalls": stage4_secondary_calls,
+            "targetedRegionLlmCalls": stage4_calls,
+            "targetedRegionVerified": int(stage4_stats.get("verified") or 0),
+            "targetedRegionRepaired": int(stage4_stats.get("repaired") or 0),
+            "targetedRegionUnresolved": int(stage4_stats.get("unresolved") or 0),
+            "targetedRegionDeferred": int(stage4_stats.get("deferred") or 0),
             "generalLlmCalls": 0,
             "totalProviderCalls": (
-                ocr_result.provider_call_count + targeted_calls
+                ocr_result.provider_call_count + targeted_calls + stage4_calls
             ),
         }
     )
 
     transcript_stats = {
-        "attempted": targeted_calls,
-        "verified": len(recovered_targets),
-        "repaired": len(recovered_targets),
+        "attempted": stage4_primary_calls,
+        "verified": int(stage4_stats.get("verified") or 0),
+        "repaired": int(stage4_stats.get("repaired") or 0),
         "retried": ocr_result.retry_count + targeted_retries,
-        "unresolved": len(unresolved_targets),
+        "unresolved": (
+            int(stage4_stats.get("unresolved") or 0)
+            + int(stage4_stats.get("deferred") or 0)
+            + len(remaining_unresolved_targets)
+        ),
         "visuals_attached": int(visual_stats.get("assetsAttached", 0)),
         "tables_verified": int(visual_stats.get("tableVisuals", 0)),
     }
@@ -350,9 +397,7 @@ def run_exam_prep_mistral_pipeline(
         issues=assembled.issues,
         page_count=ocr_result.page_count,
         question_count=assembled.question_count,
-        questions_needing_review=int(
-            audit.get("questionsNeedingReview") or 0
-        ),
+        questions_needing_review=int(audit.get("questionsNeedingReview") or 0),
         matched_answer_count=assembled.matched_answer_count,
         orphan_answer_count=len(assembled.orphan_answers),
         question_number_gaps=assembled.question_number_gaps,
@@ -361,8 +406,7 @@ def run_exam_prep_mistral_pipeline(
             0,
             ocr_result.page_count
             - sum(
-                str(page.get("pageRole") or "")
-                in {"question", "solution", "mixed"}
+                str(page.get("pageRole") or "") in {"question", "solution", "mixed"}
                 for page in (evidence.layout.get("pages") or [])
                 if isinstance(page, Mapping)
             ),
@@ -373,17 +417,17 @@ def run_exam_prep_mistral_pipeline(
         targeted_repair_stats={
             "attempted": targeted_calls,
             "repaired": len(recovered_targets),
-            "unresolved": len(unresolved_targets),
+            "unresolved": len(remaining_unresolved_targets),
         },
         verification_stats={
-            "attempted": 0,
-            "verified": 0,
-            "repaired": 0,
+            "attempted": stage4_primary_calls,
+            "verified": int(stage4_stats.get("verified") or 0),
+            "repaired": int(stage4_stats.get("repaired") or 0),
             "retried": 0,
-            "unresolved": int(visual_stats.get("unresolvedRegions", 0)),
+            "unresolved": int(stage4_stats.get("unresolved") or 0),
             "visuals_attached": int(visual_stats.get("assetsAttached", 0)),
             "tables_verified": int(visual_stats.get("tableVisuals", 0)),
-            "skipped": 0,
+            "skipped": int(stage4_stats.get("deferred") or 0),
             "cancelled_before_call": 0,
         },
         model=",".join(ocr_result.resolved_models) or config.model,
