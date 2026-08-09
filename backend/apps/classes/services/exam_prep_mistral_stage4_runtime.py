@@ -1,22 +1,23 @@
 """Production-safe Stage-4 facade preserving Stage-3 visual authority.
 
-This facade has three narrow responsibilities around the source verifier:
+Production Stage 4 now groups all suspicious source crops from the same physical
+page into one Gemini request.  This facade then re-applies the two publication
+safety rules that remain independent of provider transport:
 
-1. install the calibrated full-document risk selector (v2) and a bounded primary
-   call cap that can actually cover the intended suspicious set;
-2. remove visual-only issue codes reintroduced by the legacy text-quality helper
+1. remove visual-only issue codes reintroduced by legacy text-quality helpers
    when the immutable Stage-3 visual contract proves the evidence is healthy;
-3. recompute the Stage-4 machine blocker from *all* region statuses of a question
-   so a later successful repair cannot erase an earlier unresolved region.
+2. recompute the Stage-4 machine blocker from all region statuses of a question
+   so a successful repair cannot hide another unresolved region.
 """
 from __future__ import annotations
 
 from collections import defaultdict
-import os
 from typing import Any, Mapping
 
-from . import exam_prep_mistral_stage4 as _impl
-from .exam_prep_mistral_risk_engine_v2 import score_region_risks as _calibrated_score_region_risks
+from .exam_prep_mistral_stage4_page_batch import (
+    PageBatchStats,
+    verify_and_repair_risky_regions_page_batched,
+)
 from .exam_prep_mistral_visual_review import (
     visual_metadata_issue_codes,
     visual_options_complete,
@@ -47,28 +48,13 @@ _STAGE4_FAILURE_STATUSES = frozenset(
         "deferred_cost_cap",
         "provider_failed",
         "source_uncertain",
+        "primary_invalid",
         "unresolved",
         "secondary_failed",
         "secondary_uncertain",
         "second_opinion_disagreement",
     }
 )
-
-
-def _primary_cap() -> int:
-    """Bound cost while covering the calibrated full-exam suspicious set."""
-
-    try:
-        value = int(os.getenv("EXAM_PREP_STAGE4_MAX_PRIMARY_CALLS", "56"))
-    except (TypeError, ValueError):
-        value = 56
-    return max(1, min(80, value))
-
-
-# The implementation imports its selector/cap by name. Install the production
-# policies here rather than duplicating the verifier/merge machinery.
-_impl.score_region_risks = _calibrated_score_region_risks
-_impl._primary_cap = _primary_cap
 
 
 def _number(value: Any) -> int:
@@ -147,10 +133,10 @@ def _restore_visual_authority(result: PageAssemblyResult) -> PageAssemblyResult:
 
 
 def verify_and_repair_risky_regions(*args, **kwargs):
-    result, audit = _impl.verify_and_repair_risky_regions(*args, **kwargs)
+    result, audit = verify_and_repair_risky_regions_page_batched(*args, **kwargs)
     return _restore_authority(result, audit=audit), audit
 
 
-Stage4Stats = _impl.Stage4Stats
+Stage4Stats = PageBatchStats
 
 __all__ = ["Stage4Stats", "verify_and_repair_risky_regions"]
