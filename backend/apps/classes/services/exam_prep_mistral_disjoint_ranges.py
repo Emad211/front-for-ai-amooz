@@ -1,0 +1,225 @@
+"""Compatibility for exams with multiple disjoint question-number ranges.
+
+Stage 2's original research document had one contiguous 1..N numbering range.
+Some Kانون PDFs combine independent booklets in one file (for example 1..105 and
+251..290). This module keeps the frozen Stage-2 core intact while using declared
+booklet tables to align solution headings inside each real interval and to assign
+separate scope keys only when a document is genuinely disjoint.
+"""
+from __future__ import annotations
+
+from typing import Any, Mapping, Sequence
+
+from . import exam_prep_mistral_stage2_core as core
+from .exam_prep_mistral_ocr_transport import OCR4DocumentResult
+from .exam_prep_mistral_solution_headings import (
+    AlignedSolutionHeading,
+    align_solution_headings,
+    solution_heading_candidates,
+)
+from .exam_prep_page_source import SourcePageExtraction
+from .exam_prep_utils import clean_exam_markdown
+
+
+def declared_question_intervals(
+    evidence: core.MistralDocumentEvidence,
+    question_numbers: Sequence[int],
+) -> tuple[tuple[int, int], ...]:
+    """Return merged contiguous declared ranges, falling back to observed min/max."""
+
+    rows = [
+        item
+        for item in (evidence.booklet_ranges.get("ranges") or [])
+        if isinstance(item, Mapping) and item.get("countMatchesRange") is True
+    ]
+    ranges: list[tuple[int, int]] = []
+    for item in rows:
+        start = core._integer(item.get("start"))
+        end = core._integer(item.get("end"))
+        if start is not None and end is not None and 1 <= start <= end:
+            ranges.append((start, end))
+    ranges.sort()
+    merged: list[list[int]] = []
+    for start, end in ranges:
+        if not merged or start > merged[-1][1] + 1:
+            merged.append([start, end])
+        else:
+            merged[-1][1] = max(merged[-1][1], end)
+
+    observed = sorted({int(value) for value in question_numbers if int(value) > 0})
+    if not merged:
+        return ((min(observed), max(observed)),) if observed else ()
+
+    observed_set = set(observed)
+    relevant = [
+        (start, end)
+        for start, end in merged
+        if any(start <= value <= end for value in observed_set)
+    ]
+    return tuple(relevant or [(min(observed), max(observed))]) if observed else tuple(relevant)
+
+
+def scope_key_for_question(
+    intervals: Sequence[tuple[int, int]],
+    question_number: int,
+) -> str:
+    if len(intervals) <= 1:
+        return "default"
+    for start, end in intervals:
+        if start <= question_number <= end:
+            return f"range-{start}-{end}"
+    return "default"
+
+
+def aligned_solutions_for_intervals(
+    result: OCR4DocumentResult,
+    intervals: Sequence[tuple[int, int]],
+) -> tuple[list[AlignedSolutionHeading], list[int], list[int]]:
+    """Align ordered solution headings without fabricating intentional range gaps."""
+
+    candidates = []
+    for page in result.pages:
+        physical = int(page.get("sourcePhysicalPage") or int(page.get("index") or 0) + 1)
+        candidates.extend(solution_heading_candidates(page, physical_page_number=physical))
+
+    if not intervals:
+        return [], [], []
+    ordered_ranges = sorted((int(start), int(end)) for start, end in intervals)
+    cursor = 0
+    accepted: list[AlignedSolutionHeading] = []
+    missing: set[int] = set()
+    invalid: set[int] = set()
+
+    for index, (start, end) in enumerate(ordered_ranges):
+        next_start = ordered_ranges[index + 1][0] if index + 1 < len(ordered_ranges) else None
+        selected = []
+        while cursor < len(candidates):
+            candidate = candidates[cursor]
+            raw = int(candidate.raw_question_number)
+            if next_start is not None and raw >= next_start and raw > end:
+                break
+            selected.append(candidate)
+            cursor += 1
+        aligned = align_solution_headings(
+            selected,
+            first_expected_question=start,
+            last_expected_question=end,
+        )
+        accepted.extend(aligned.get("accepted") or [])
+        missing.update(int(value) for value in (aligned.get("missingQuestionNumbers") or []))
+        invalid.update(
+            item.question_number
+            for item in (aligned.get("accepted") or [])
+            if not item.option_label_valid
+        )
+
+    # Trailing candidates after the last declared interval are not silently
+    # attached to another booklet; range-integrity checks expose them separately.
+    return accepted, sorted(missing), sorted(invalid)
+
+
+def build_page_extractions_disjoint(
+    *,
+    result: OCR4DocumentResult,
+    evidence: core.MistralDocumentEvidence,
+    recovered_targets: Mapping[int, tuple[str, int, str]],
+    intervals: Sequence[tuple[int, int]],
+) -> list[SourcePageExtraction]:
+    """Stage-2 assembly with range-aware solution alignment and scope keys."""
+
+    records_by_page: dict[int, list[dict[str, Any]]] = {}
+    pages = core._analysis_pages(evidence)
+    question_numbers: list[int] = []
+
+    for page_number, page in sorted(pages.items()):
+        if str(page.get("pageRole") or "") != "question":
+            continue
+        for region in page.get("regions") or []:
+            if not isinstance(region, Mapping) or str(region.get("kind") or "") != "question":
+                continue
+            record = core._question_record(region)
+            if record is None:
+                continue
+            number = int(record["question_number"])
+            record["scope_key"] = scope_key_for_question(intervals, number)
+            question_numbers.append(number)
+            records_by_page.setdefault(page_number, []).append(record)
+
+    if not question_numbers:
+        return []
+    accepted, _missing, _invalid = aligned_solutions_for_intervals(result, intervals)
+    accepted_numbers: set[int] = set()
+    for heading in accepted:
+        accepted_numbers.add(heading.question_number)
+        page = pages.get(heading.physical_page_number)
+        region = core._solution_region(page, heading)
+        recovered = recovered_targets.get(heading.question_number)
+        if recovered is not None:
+            label = recovered[0]
+        elif heading.option_label_valid and heading.option_label in {1, 2, 3, 4}:
+            label = str(heading.option_label)
+        else:
+            label = None
+        issues = [
+            str(code)
+            for code in ((region.get("issues") or []) if isinstance(region, Mapping) else [])
+            if str(code).strip()
+        ]
+        if heading.question_number_recovered:
+            issues.append("solution_heading_number_recovered")
+        if recovered is not None:
+            issues.append("targeted_solution_heading_recovered")
+        if label is None:
+            issues.append("mistral_solution_heading_unresolved")
+        records_by_page.setdefault(heading.physical_page_number, []).append(
+            {
+                "scope_key": scope_key_for_question(intervals, heading.question_number),
+                "question_number": heading.question_number,
+                "record_type": "solution",
+                "correct_option_label": label,
+                "teacher_solution_markdown": (
+                    clean_exam_markdown(region.get("text") or "")
+                    if isinstance(region, Mapping)
+                    else ""
+                ),
+                "final_answer_markdown": f"گزینه {label}" if label else "",
+                "confidence": 0.0,
+                "issues": list(dict.fromkeys(issues)),
+                "source_bbox": (
+                    core._normalized_bbox(region.get("bbox"))
+                    if isinstance(region, Mapping)
+                    else core._column_bbox(heading.column)
+                ),
+            }
+        )
+
+    for question_number, (label, page_number, side) in recovered_targets.items():
+        if question_number in accepted_numbers:
+            continue
+        records_by_page.setdefault(page_number, []).append(
+            {
+                "scope_key": scope_key_for_question(intervals, question_number),
+                "question_number": question_number,
+                "record_type": "answer",
+                "correct_option_label": label,
+                "final_answer_markdown": f"گزینه {label}",
+                "confidence": 0.0,
+                "issues": ["targeted_solution_heading_recovered"],
+                "source_bbox": core._column_bbox(side),
+            }
+        )
+
+    return [
+        SourcePageExtraction.model_validate(
+            {"page_number": page_number, "records": records}
+        )
+        for page_number, records in sorted(records_by_page.items())
+    ]
+
+
+__all__ = [
+    "aligned_solutions_for_intervals",
+    "build_page_extractions_disjoint",
+    "declared_question_intervals",
+    "scope_key_for_question",
+]
