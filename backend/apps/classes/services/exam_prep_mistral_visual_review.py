@@ -1,9 +1,9 @@
 """Recompute Stage-3 visual blockers from immutable visual metadata.
 
-Teacher review must not trust a stale or edited ``question.issues`` list.  This
-module derives the critical visual state again from the stored Stage-3 asset
-contract so review refresh and publication cannot accidentally forget a clipped,
-review-only, missing-option, or whole-page fallback visual.
+Teacher review must not trust a stale or edited ``question.issues`` list. This
+module derives critical visual state again from the stored Stage-3 asset contract
+so review refresh and publication cannot accidentally forget a clipped,
+review-only, missing-option, deleted, or whole-page fallback visual.
 """
 from __future__ import annotations
 
@@ -42,6 +42,86 @@ def _stage3_asset(value: object) -> bool:
     )
 
 
+def _source_contract_mismatch(
+    question: Mapping[str, Any],
+    stage3: list[Mapping[str, Any]],
+) -> bool:
+    contract = question.get("visualSourceContract")
+    if not isinstance(contract, Mapping):
+        # Old/legacy questions are valid without a Stage-3 contract. New Stage-3
+        # assets, however, must carry it so required evidence cannot disappear.
+        return bool(stage3)
+    if int(contract.get("schemaVersion") or 0) != 1:
+        return True
+
+    current_ids = {
+        str(asset.get("id") or "")
+        for asset in stage3
+        if str(asset.get("id") or "")
+    }
+    required_ids = {
+        str(value)
+        for value in (contract.get("requiredAssetIds") or [])
+        if str(value)
+    }
+    if not required_ids or not required_ids.issubset(current_ids):
+        return True
+
+    role_counts = contract.get("roleCounts")
+    if not isinstance(role_counts, Mapping):
+        return True
+    for role in _VALID_ROLES:
+        try:
+            required_count = int(role_counts.get(role) or 0)
+        except (TypeError, ValueError):
+            return True
+        current_count = sum(str(asset.get("role") or "") == role for asset in stage3)
+        if current_count < required_count:
+            return True
+
+    required_pages = {
+        int(value)
+        for value in (contract.get("sourcePages") or [])
+        if str(value).isdigit() and int(value) > 0
+    }
+    current_pages = {
+        int(asset.get("sourcePage") or 0)
+        for asset in stage3
+        if str(asset.get("sourcePage") or "").isdigit()
+        and int(asset.get("sourcePage") or 0) > 0
+    }
+    if required_pages and not required_pages.issubset(current_pages):
+        return True
+
+    required_options = {
+        str(value)
+        for value in (contract.get("optionLabels") or [])
+        if str(value) in {"1", "2", "3", "4"}
+    }
+    current_options = {
+        str(asset.get("optionLabel") or "")
+        for asset in stage3
+        if str(asset.get("role") or "") == "option"
+        and str(asset.get("optionLabel") or "") in {"1", "2", "3", "4"}
+    }
+    if required_options and not required_options.issubset(current_options):
+        return True
+
+    required_grouped = {
+        str(value)
+        for value in (contract.get("groupedOptionLabels") or [])
+        if str(value) in {"1", "2", "3", "4"}
+    }
+    current_grouped = {
+        str(value)
+        for asset in stage3
+        if str(asset.get("visualMode") or "") == "grouped_options"
+        for value in (asset.get("groupedOptionLabels") or [])
+        if str(value) in {"1", "2", "3", "4"}
+    }
+    return bool(required_grouped and not required_grouped.issubset(current_grouped))
+
+
 def visual_metadata_issue_codes(question: Mapping[str, Any]) -> list[str]:
     """Return deterministic Stage-3 visual blockers derived from asset metadata."""
 
@@ -51,10 +131,14 @@ def visual_metadata_issue_codes(question: Mapping[str, Any]) -> list[str]:
         if isinstance(item, Mapping)
     ]
     stage3 = [item for item in assets if _stage3_asset(item)]
-    if not stage3:
+    contract = question.get("visualSourceContract")
+    if not stage3 and not isinstance(contract, Mapping):
         return []
 
     issues: list[str] = []
+    if _source_contract_mismatch(question, stage3):
+        issues.append("visual_precise_crop_unresolved")
+
     option_assets: list[Mapping[str, Any]] = []
     grouped_option_safe = False
 
@@ -95,8 +179,6 @@ def visual_metadata_issue_codes(question: Mapping[str, Any]) -> list[str]:
             if not any(code in VISUAL_CRITICAL_ISSUE_CODES for code in sanity_issues):
                 issues.append("visual_precise_crop_unresolved")
         elif sanity_status != "passed":
-            # A publishable Stage-3 visual must positively carry the local sanity
-            # result; silently missing metadata is not accepted.
             issues.append("visual_precise_crop_unresolved")
 
         if role == "option":
