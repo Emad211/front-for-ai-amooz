@@ -3,7 +3,8 @@
 This module has no provider calls. It keeps Stage 4 conservative:
 - source text is sanitized before it can enter the canonical projection;
 - comparisons happen per canonical field instead of one flattened blob;
-- numeric/math comparison tolerates harmless RTL/order variation;
+- numeric/math comparison tolerates harmless RTL/order variation without losing
+  variable-to-value bindings;
 - model uncertainty is attached to the exact field it affects.
 """
 from __future__ import annotations
@@ -28,14 +29,15 @@ _AUTHOR_PREFIX_RE = re.compile(
     r"^\s*(?:مؤلف|مولف|نویسنده|حل\s*کننده|حل‌کننده|پاسخگو|طراح)\s*[:：\-–—]",
     re.IGNORECASE,
 )
-# Kانون solutions commonly append a standalone line such as
-# "(فیزیک ۳، صفحه‌های ۴۰ تا ۴۵)".  Removing that line is safe; removing an
-# inline scientific occurrence of the word صفحه is not.
 _PAGE_META_RE = re.compile(
     r"^\s*[\[(].{0,100}(?:صفحه(?:‌|\s)?های?|صفحات)\s*[:：]?\s*[0-9۰-۹٠-٩]",
     re.IGNORECASE,
 )
 _MATH_TOKEN_RE = re.compile(r"\\?[A-Za-z][A-Za-z0-9_]*|[Α-Ωα-ω]+|[=+\-*/^<>≤≥]")
+_KEYED_NUMERIC_RE = re.compile(
+    r"(?P<key>\\?[A-Za-zΑ-Ωα-ω][A-Za-z0-9_Α-Ωα-ω]*)\s*=\s*"
+    r"(?P<number>[+\-]?\d+(?:[./]\d+)?(?:[eE][+\-]?\d+)?)"
+)
 _IGNORED_MATH_TOKENS = frozenset(
     {
         "frac",
@@ -59,6 +61,8 @@ _IGNORED_MATH_TOKENS = frozenset(
 class FieldAgreement:
     field: str
     numeric_equal: bool
+    keyed_numeric_compared: bool
+    keyed_numeric_equal: bool
     math_token_similarity: float
     text_similarity: float
     critical_conflict: bool
@@ -67,6 +71,8 @@ class FieldAgreement:
         return {
             "field": self.field,
             "numericEqual": self.numeric_equal,
+            "keyedNumericCompared": self.keyed_numeric_compared,
+            "keyedNumericEqual": self.keyed_numeric_equal,
             "mathTokenSimilarity": round(self.math_token_similarity, 6),
             "textSimilarity": round(self.text_similarity, 6),
             "criticalConflict": self.critical_conflict,
@@ -108,13 +114,22 @@ def uncertain_fields(item: Any) -> frozenset[str]:
         if field:
             fields.add(field)
     if bool(getattr(item, "transcription_uncertain", False)) and not fields:
-        # Legacy/coarse uncertainty has unknown scope, therefore fail closed.
         fields.add("*")
     return frozenset(fields)
 
 
 def _numeric_counter(value: Any) -> Counter[str]:
     return Counter(numeric_signature(str(value or "")))
+
+
+def _keyed_numeric_counter(value: Any) -> Counter[tuple[str, str]]:
+    text = clean_exam_markdown(value or "").translate(_DIGITS)
+    output: Counter[tuple[str, str]] = Counter()
+    for match in _KEYED_NUMERIC_RE.finditer(text):
+        key = match.group("key").lstrip("\\").lower()
+        number = match.group("number")
+        output[(key, number)] += 1
+    return output
 
 
 def _math_counter(value: Any) -> Counter[str]:
@@ -128,7 +143,7 @@ def _math_counter(value: Any) -> Counter[str]:
     return output
 
 
-def _counter_similarity(left: Counter[str], right: Counter[str]) -> float:
+def _counter_similarity(left: Counter, right: Counter) -> float:
     if not left and not right:
         return 1.0
     if not left or not right:
@@ -140,13 +155,17 @@ def _counter_similarity(left: Counter[str], right: Counter[str]) -> float:
 
 
 def compare_field(field: str, left: Any, right: Any) -> FieldAgreement:
-    """Compare one semantic field without depending on RTL serialization order."""
+    """Compare one semantic field without depending on harmless RTL ordering."""
 
     a = clean_exam_markdown(left or "").translate(_DIGITS)
     b = clean_exam_markdown(right or "").translate(_DIGITS)
     numeric_left = _numeric_counter(a)
     numeric_right = _numeric_counter(b)
     numeric_equal = numeric_left == numeric_right
+    keyed_left = _keyed_numeric_counter(a)
+    keyed_right = _keyed_numeric_counter(b)
+    keyed_compared = bool(keyed_left and keyed_right)
+    keyed_equal = keyed_left == keyed_right if keyed_compared else True
     math_left = _math_counter(a)
     math_right = _math_counter(b)
     math_similarity = _counter_similarity(math_left, math_right)
@@ -155,7 +174,7 @@ def compare_field(field: str, left: Any, right: Any) -> FieldAgreement:
     if bool(a) != bool(b):
         conflict = True
     elif numeric_left or numeric_right:
-        conflict = not numeric_equal
+        conflict = (not numeric_equal) or (keyed_compared and not keyed_equal)
     elif math_left or math_right:
         conflict = math_similarity < 0.72
     else:
@@ -164,6 +183,8 @@ def compare_field(field: str, left: Any, right: Any) -> FieldAgreement:
     return FieldAgreement(
         field=field,
         numeric_equal=numeric_equal,
+        keyed_numeric_compared=keyed_compared,
+        keyed_numeric_equal=keyed_equal,
         math_token_similarity=math_similarity,
         text_similarity=similarity,
         critical_conflict=conflict,
