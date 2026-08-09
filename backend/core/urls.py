@@ -35,9 +35,8 @@ from apps.classes.views_exam_prep_inline_visual import InlineOrStoredExamVisualC
 from apps.classes.views_exam_prep_review import PageFirstExamPrepSessionDetailView
 
 
-# The public Exam Prep intake stays simple and non-versioned. The engine behind
-# this endpoint is selected inside the normal Celery task; V4 page/source-map
-# confirmation is not part of new Exam Prep creation.
+# New Exam Prep always uses the simple non-versioned product flow. The actual
+# extraction engine is the OCR4 document engine bound to its Celery task.
 ExamPrepStep1IntakeView = ExamPrepPdfStep1View
 
 
@@ -126,9 +125,6 @@ urlpatterns = [
         InlineOrStoredExamVisualContentView.as_view(),
         name='exam_prep_inline_or_stored_visual_content',
     ),
-    # Keep legacy V4 APIs reachable only for already-created V4 data/admin
-    # compatibility. New Exam Prep intake above never routes through them.
-    path('api/classes/exam-prep-v4/', include('apps.classes.urls_v4')),
     path('api/classes/', include('apps.classes.urls')),
     path('api/notifications/', include('apps.notification.urls')),
     path('api/admin/', include('apps.commons.urls')),
@@ -155,11 +151,6 @@ urlpatterns += [
         'media/exam-prep/visuals/<path:path>',
         private_answer_source_media_view,
         name='private_exam_visual_media',
-    ),
-    path(
-        'media/exam-prep-v4/<path:path>',
-        private_answer_source_media_view,
-        name='private_exam_v4_media',
     ),
 ]
 
