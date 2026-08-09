@@ -6,8 +6,8 @@ installs deterministic production guards before exposing it:
 * compare exactly the canonical candidate field-set rather than a flattened blob;
 * do not broaden an option-only OCR disagreement into a stem replacement;
 * treat absent provider fields as unavailable evidence;
-* split a failed page batch only when the provider returned an unusable structured
-  envelope. Network/HTTP/timeouts are never converted into automatic retries;
+* split a failed page batch only when the provider explicitly reports output
+  truncation. STOP+malformed JSON, network, HTTP and timeouts are never retried;
 * reserve budget by crop-count before a primary call instead of applying one
   wasteful fixed reserve to every page batch.
 """
@@ -150,8 +150,6 @@ def _sanitize_item_with_absence(item):
 
 
 def _primary_reserve(target_count: int) -> float:
-    """Bound the next primary call using crop count and prior measured replay costs."""
-
     base = _float_env(
         "EXAM_PREP_STAGE4_PRIMARY_RESERVE_BASE_USD",
         0.0028,
@@ -175,7 +173,6 @@ def _budget_reserve(kind: str) -> float:
             low=0.001,
             high=0.03,
         )
-    # Kept for callers outside _call_primary_budgeted; primary uses crop count.
     return _primary_reserve(2)
 
 
@@ -192,6 +189,13 @@ def _call_primary_budgeted(*, page_number, targets, spent, budget):
         return None, exc, spent
 
 
+def _is_truncation_error(error: Any) -> bool:
+    if not isinstance(error, PageBatchEnvelopeError):
+        return False
+    finish = str(getattr(error, "finish_reason", "") or "").strip().upper()
+    return finish in {"MAX_TOKENS", "LENGTH", "MAX_OUTPUT_TOKENS"}
+
+
 def _page_results_with_structured_split_only(
     *,
     page_number,
@@ -199,7 +203,7 @@ def _page_results_with_structured_split_only(
     spent,
     budget,
 ):
-    """One normal call; only an unusable structured envelope may split once."""
+    """One normal call; only explicit output truncation may split once."""
 
     requested = {decision.target_id for decision, _ in rendered}
     audits = []
@@ -221,35 +225,24 @@ def _page_results_with_structured_split_only(
 
     if isinstance(error, RuntimeError) and str(error) == "stage4_cost_budget":
         audits.append(
-            {
-                "pageNumber": page_number,
-                "status": "budget_blocked",
-                "targetCount": len(rendered),
-            }
+            {"pageNumber": page_number, "status": "budget_blocked", "targetCount": len(rendered)}
         )
         return results, requested, audits, spent, primary_calls, split_calls
 
     primary_calls += 1
     reason = getattr(error, "reason_code", type(error).__name__ if error else "unknown")
-    if not isinstance(error, PageBatchEnvelopeError):
-        audits.append(
-            {
-                "pageNumber": page_number,
-                "status": "provider_failed_no_retry",
-                "targetCount": len(rendered),
-                "reason": str(reason),
-            }
-        )
+    finish_reason = str(getattr(error, "finish_reason", "") or "")
+    base_audit = {
+        "pageNumber": page_number,
+        "targetCount": len(rendered),
+        "reason": str(reason),
+        "finishReason": finish_reason,
+    }
+    if not _is_truncation_error(error):
+        audits.append({**base_audit, "status": "provider_failed_no_retry"})
         return results, requested, audits, spent, primary_calls, split_calls
 
-    audits.append(
-        {
-            "pageNumber": page_number,
-            "status": "envelope_failed",
-            "targetCount": len(rendered),
-            "reason": str(reason),
-        }
-    )
+    audits.append({**base_audit, "status": "truncated_envelope_split"})
     if len(rendered) <= 1:
         return results, requested, audits, spent, primary_calls, split_calls
 
@@ -283,6 +276,7 @@ def _page_results_with_structured_split_only(
                     "splitPart": part_index,
                     "targetCount": len(part),
                     "reason": str(child_reason),
+                    "finishReason": str(getattr(child_error, "finish_reason", "") or ""),
                 }
             )
             continue
@@ -291,14 +285,10 @@ def _page_results_with_structured_split_only(
         results.append(child)
         failed.update(child.missing_target_ids)
         failed.update(child.invalid_target_ids)
-        audits.append(
-            {**child.safe_dict(), "status": "split_success", "splitPart": part_index}
-        )
+        audits.append({**child.safe_dict(), "status": "split_success", "splitPart": part_index})
     return results, failed, audits, spent, primary_calls, split_calls
 
 
-# The orchestrator resolves these helpers from its module namespace. Install the
-# corrected deterministic views without copying its main orchestration.
 _impl.score_region_risks = _normalized_score_region_risks
 _impl._needed_fields = _needed_fields
 _impl._sanitize_item = _sanitize_item_with_absence
@@ -306,9 +296,7 @@ _impl._budget_reserve = _budget_reserve
 _impl._call_primary = _call_primary_budgeted
 _impl._page_results_with_one_split = _page_results_with_structured_split_only
 
-verify_and_repair_risky_regions_page_batched = (
-    _impl.verify_and_repair_risky_regions_page_batched
-)
+verify_and_repair_risky_regions_page_batched = _impl.verify_and_repair_risky_regions_page_batched
 PageBatchStats = _impl.PageBatchStats
 
 __all__ = [
