@@ -43,6 +43,12 @@ def test_real_numeric_difference_remains_a_hard_conflict():
     assert agreement.critical_conflict is True
 
 
+def test_answer_label_disagreement_is_not_a_hard_math_conflict():
+    agreement = compare_field("correct_option_label", "1", "3")
+    assert agreement.numeric_equal is False
+    assert agreement.critical_conflict is False
+
+
 def test_sanitizer_strips_fake_visual_url_author_and_page_metadata():
     value = (
         "راه حل واقعی\n"
