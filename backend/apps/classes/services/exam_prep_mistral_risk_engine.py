@@ -50,14 +50,18 @@ _HEADING_ISSUES = frozenset(
         "mistral_solution_heading_unresolved",
     }
 )
-_OCR_DISAGREEMENT_ISSUES = frozenset(
+_QUESTION_DISAGREEMENT_ISSUES = frozenset(
     {
         "mistral_question_option_parse_failed",
+        "duplicate_mixed_text",
+        "serialized_option_payload",
+    }
+)
+_SOLUTION_DISAGREEMENT_ISSUES = frozenset(
+    {
         "conflicting_correct_option",
         "conflicting_correct_option_text",
         "correct_option_not_in_options",
-        "duplicate_mixed_text",
-        "serialized_option_payload",
     }
 )
 _MISSING_ANSWER_ISSUES = frozenset(
@@ -95,6 +99,14 @@ def _bbox(value: Any) -> tuple[float, float, float, float] | None:
     return x0, y0, x1, y1
 
 
+def _codes(values: Sequence[Any]) -> set[str]:
+    return {
+        clean_exam_markdown(code).strip()
+        for code in values
+        if clean_exam_markdown(code).strip()
+    }
+
+
 def _question_map(projection: Mapping[str, Any]) -> dict[int, dict[str, Any]]:
     exam = projection.get("exam_prep")
     questions = exam.get("questions") if isinstance(exam, Mapping) else []
@@ -118,8 +130,6 @@ def _candidate_text(question: Mapping[str, Any], kind: str) -> str:
             text = clean_exam_markdown(option.get("text_markdown") or "")
             values.append(f"{label}) {text}".strip())
         return "\n".join(value for value in values if value)
-    # Compare source-only solution transcription with the worked-solution body,
-    # not with the separate synthetic final-answer field.
     return clean_exam_markdown(question.get("teacher_solution_markdown") or "")
 
 
@@ -192,10 +202,9 @@ def score_region_risks(
 ) -> list[RegionRiskDecision]:
     """Assign a score to every numbered question/solution region.
 
-    Simple formulas/digits/scientific prose intentionally stay below threshold on
-    their own. A call is triggered by complex math or by stronger evidence such
-    as source corruption, parser/heading conflict, invalid answers, or visual
-    uncertainty.
+    Formula/digit/scientific signals alone stay below threshold unless the math
+    is genuinely dense. Strong defects are region-specific so a question option
+    parse issue cannot accidentally trigger a second call for its clean solution.
     """
 
     questions = _question_map(projection)
@@ -223,11 +232,8 @@ def score_region_risks(
             raw_text = clean_exam_markdown(region.get("text") or "")
             candidate = _candidate_text(question, kind)
             combined = "\n".join(value for value in (raw_text, candidate) if value)
-            issue_codes = {
-                clean_exam_markdown(code).strip()
-                for code in [*(region.get("issues") or []), *(question.get("issues") or [])]
-                if clean_exam_markdown(code).strip()
-            }
+            region_codes = _codes(list(region.get("issues") or []))
+            question_codes = _codes(list(question.get("issues") or []))
             signals: list[str] = []
             score = 0
 
@@ -242,17 +248,13 @@ def score_region_risks(
                 score += 5
                 signals.append("scientific_terminology")
 
-            visual_critical = (
-                bool(issue_codes & VISUAL_CRITICAL_ISSUE_CODES)
-                or _visual_critical_for_kind(question, kind)
-            )
-            if visual_critical:
+            if bool(region_codes & VISUAL_CRITICAL_ISSUE_CODES) or _visual_critical_for_kind(question, kind):
                 score += 50
                 signals.append("visual_anomaly")
 
             if kind == "solution":
                 label = clean_exam_markdown(question.get("correct_option_label") or "").translate(_DIGITS)
-                if label not in {"1", "2", "3", "4"} or bool(issue_codes & _MISSING_ANSWER_ISSUES):
+                if label not in {"1", "2", "3", "4"} or bool(question_codes & _MISSING_ANSWER_ISSUES):
                     score += 55
                     signals.append("missing_invalid_answer")
             elif len([item for item in (question.get("options") or []) if isinstance(item, Mapping)]) != 4:
@@ -260,27 +262,28 @@ def score_region_risks(
                 signals.append("missing_invalid_answer")
 
             heading_conflict = (
-                bool(issue_codes & _HEADING_ISSUES)
+                bool(region_codes & _HEADING_ISSUES)
                 or bool(region.get("numberRecoveredFromSequence"))
                 or number in recovered
                 or number in unresolved
             )
             if heading_conflict:
-                # A recovered heading is already evidence that the primary OCR
-                # disagreed with the source sequence. Verify it once even if the
-                # surrounding prose is otherwise simple.
                 score += 50 if number in unresolved else 40
                 signals.append("heading_conflict")
 
-            if bool(issue_codes & _OCR_DISAGREEMENT_ISSUES):
+            if kind == "question":
+                disagreement = bool(question_codes & _QUESTION_DISAGREEMENT_ISSUES)
+            else:
+                disagreement = bool(question_codes & _SOLUTION_DISAGREEMENT_ISSUES)
+            if disagreement:
                 score += 35
                 signals.append("ocr_disagreement")
 
+            corruption_text = "\n".join(value for value in (raw_text, candidate) if value)
             corrupted = (
-                has_broken_persian_text(raw_text)
-                or has_duplicate_clean_and_broken_text(raw_text)
-                or _SOURCE_CORRUPTION_RE.search(raw_text) is not None
-                or "broken_persian_text" in issue_codes
+                has_broken_persian_text(corruption_text)
+                or has_duplicate_clean_and_broken_text(corruption_text)
+                or _SOURCE_CORRUPTION_RE.search(corruption_text) is not None
             )
             if corrupted:
                 score += 50
@@ -297,7 +300,7 @@ def score_region_risks(
                     suspicious=score >= threshold,
                     hard_math=hard_math,
                     signals=tuple(dict.fromkeys(signals)),
-                    region_issues=tuple(sorted(issue_codes)),
+                    region_issues=tuple(sorted(region_codes)),
                     candidate_text=candidate,
                 )
             )
