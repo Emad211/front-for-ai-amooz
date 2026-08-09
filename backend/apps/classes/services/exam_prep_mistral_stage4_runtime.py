@@ -14,7 +14,7 @@ from __future__ import annotations
 from collections import defaultdict
 from typing import Any, Mapping
 
-from .exam_prep_mistral_stage4_page_batch import (
+from .exam_prep_mistral_stage4_page_batch_runtime import (
     PageBatchStats,
     verify_and_repair_risky_regions_page_batched,
 )
