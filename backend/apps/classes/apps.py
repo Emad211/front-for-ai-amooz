@@ -1,5 +1,3 @@
-import os
-
 from django.apps import AppConfig
 
 
@@ -8,12 +6,8 @@ class ClassesConfig(AppConfig):
     name = 'apps.classes'
 
     def ready(self):
-        # Source-aware V4 is the production path. OCR4 source-first geometry is
-        # enabled unless the deployment explicitly opts out. This is set before
-        # importing tasks_v4 so web/worker processes share the same default.
-        # Emergency rollback: EXAM_PREP_V4_SOURCE_FIRST_ENABLED=0.
-        os.environ.setdefault('EXAM_PREP_V4_SOURCE_FIRST_ENABLED', '1')
-
+        # Keep V4 model/task registration for already-created legacy V4 data,
+        # but it is not the new Exam Prep intake or production engine.
         from . import models_v4  # noqa: F401
         from . import models_v4_blocks  # noqa: F401
         from . import models_v4_records  # noqa: F401
@@ -21,25 +15,17 @@ class ClassesConfig(AppConfig):
         from . import models_v4_projection  # noqa: F401
         from . import models_v4_bridge  # noqa: F401
         from . import signals  # noqa: F401
-
-        # Broken PDF font/text mappings can yield U+0000 from pypdf. Install
-        # the PostgreSQL-safe native-text seam before task modules import the
-        # source-preparation pipeline.
-        from .services.exam_prep_v4_nul_safety import install as install_nul_safety
-
-        install_nul_safety()
-
-        from . import tasks_exam_prep  # noqa: F401
+        from . import tasks_exam_prep
         from . import tasks_v4  # noqa: F401
         from . import tasks_v4_recovery  # noqa: F401
 
-        # Deadline-focused release hardening: conservative OCR4 answer-label
-        # evidence + teacher-curated semantic projection edits.  The installers
-        # extend existing service seams without changing database schema.
-        from .services.exam_prep_v4_deployment_hardening import install as install_hardening
-        from .services.exam_prep_v4_answer_label_fix import install as install_answer_label_fix
-        from .services.exam_prep_v4_metadata_sync import install as install_metadata_sync
+        # New Exam Prep creation stays on the simple ClassCreationSession task,
+        # but its extraction engine is the researched full-document Mistral
+        # OCR4 pipeline (not V4 source-map/page-confirmation).
+        from .services.exam_prep_mistral_document_pipeline import (
+            run_exam_prep_mistral_document_pipeline,
+        )
 
-        install_hardening()
-        install_answer_label_fix()
-        install_metadata_sync()
+        tasks_exam_prep.run_exam_prep_pdf_pipeline = (
+            run_exam_prep_mistral_document_pipeline
+        )
