@@ -26,8 +26,15 @@ class ClassesConfig(AppConfig):
 
         def source_aware_question_record(region):
             record = original_question_record(region)
-            if record is not None and mistral_engine._question_visual_required(region):
-                issues = list(record.get('issues') or [])
+            if record is None:
+                return None
+            issues = list(record.get('issues') or [])
+            needs_source_crop = (
+                mistral_engine._question_visual_required(region)
+                or 'unexpected_option_count' in issues
+                or len(record.get('options') or []) != 4
+            )
+            if needs_source_crop:
                 # The document engine satisfies this with the authoritative PDF
                 # source crop and removes the temporary blocker afterward.
                 if 'visual_evidence_required' not in issues:
