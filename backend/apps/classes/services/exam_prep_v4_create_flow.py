@@ -1,13 +1,14 @@
 """Compatibility helpers for the existing teacher exam-preparation create flow."""
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from celery import current_app
 from django.db import transaction
 from django.utils import timezone
 
-from apps.classes.models import ClassCreationSession
+from apps.classes.models import ClassCreationSession, ExamPrepExtractionArtifact
 from apps.classes.models_v4 import ExamProject, ExamSourceDocument
 from apps.classes.models_v4_bridge import ExamV4SessionBridge
 from apps.classes.models_v4_projection import ExamV4Projection
@@ -23,6 +24,64 @@ _ACTIVE_PROJECT_STATUSES = {
     ExamProject.Status.EXTRACTING_ANSWERS,
     ExamProject.Status.MATCHING,
 }
+
+
+class CreateFlowProjectionConflict(RuntimeError):
+    """The V4 projection cannot be adopted without changing published data."""
+
+
+def _published_session_can_adopt(
+    *,
+    target: ClassCreationSession,
+    generated: ClassCreationSession,
+) -> None:
+    """Fail closed unless adopting a generated payload is lossless.
+
+    A legacy publish can happen before the V4 projection is built.  In that
+    ordering the bridge target is already public while ``build_legacy_projection``
+    creates a temporary session.  Rebinding is safe only when the target does
+    not contain a different published exam (or student state that would be
+    attached to it).  Invites deliberately are *not* considered a conflict:
+    they belong to the bridge target and must survive the rebind.
+    """
+
+    if generated.is_published:
+        raise CreateFlowProjectionConflict(
+            'Both the bridge session and generated V4 session are already published.'
+        )
+    if target.exam_prep_attempts.exists() or target.enrollments.exists():
+        raise CreateFlowProjectionConflict(
+            'The published bridge session already has student state.'
+        )
+    if ExamPrepExtractionArtifact.objects.filter(session=target).exists():
+        raise CreateFlowProjectionConflict(
+            'The published bridge session already has a legacy extraction artifact.'
+        )
+    if (
+        generated.invites.exists()
+        or generated.exam_prep_attempts.exists()
+        or generated.enrollments.exists()
+        or ExamPrepExtractionArtifact.objects.filter(session=generated).exists()
+    ):
+        raise CreateFlowProjectionConflict(
+            'The generated V4 session already has public or student state.'
+        )
+
+    target_json = (target.exam_prep_json or '').strip()
+    if not target_json:
+        return
+    generated_json = (generated.exam_prep_json or '').strip()
+    try:
+        target_payload = json.loads(target_json)
+        generated_payload = json.loads(generated_json)
+    except (TypeError, ValueError) as exc:
+        raise CreateFlowProjectionConflict(
+            'The published bridge session contains an unreadable exam payload.'
+        ) from exc
+    if target_payload != generated_payload:
+        raise CreateFlowProjectionConflict(
+            'The published bridge session contains a different exam payload.'
+        )
 
 
 def _project_state(project: ExamProject) -> dict[str, Any]:
@@ -229,8 +288,22 @@ def adopt_create_flow_projection(
 
     target = ClassCreationSession.objects.select_for_update().get(id=bridge.session_id)
     generated = projection.session
+    if (
+        ExamV4Projection.objects.filter(session_id=target.id)
+        .exclude(id=projection.id)
+        .exists()
+    ):
+        raise CreateFlowProjectionConflict(
+            'The bridge session is already bound to another V4 projection.'
+        )
+    target_was_published = bool(target.is_published)
     if target.is_published:
-        return projection_payload
+        # The bridge target owns invitations and any public URLs.  Rebinding a
+        # generated projection onto it is safe only when it cannot replace a
+        # different published exam or discard student state.
+        _published_session_can_adopt(target=target, generated=generated)
+
+    preserved_published_at = target.published_at
 
     copied_fields = [
         'organization',
@@ -258,8 +331,19 @@ def adopt_create_flow_projection(
         'error_detail',
         'cancel_requested',
     ]
+    if target_was_published:
+        # Never copy the generated draft's private publication flags over the
+        # already-public bridge session.  Invites/attempts are separate rows
+        # and remain attached to ``target`` throughout the rebind.
+        copied_fields = [
+            field for field in copied_fields if field not in {'is_published', 'published_at'}
+        ]
     for field in copied_fields:
         setattr(target, field, getattr(generated, field))
+    if target_was_published:
+        target.is_published = True
+        target.published_at = preserved_published_at or timezone.now()
+        copied_fields.extend(['is_published', 'published_at'])
     target.save(update_fields=[*copied_fields, 'updated_at'])
 
     projection.session = target

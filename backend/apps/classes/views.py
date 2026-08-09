@@ -3965,24 +3965,56 @@ class ExamPrepSessionPublishView(APIView):
             # bridge may legitimately be ``exam_transcribed`` rather than
             # ``exam_structured``.  This keeps project, projection and
             # session publication flags atomic and makes crop URLs usable.
+            from .models_v4_bridge import ExamV4SessionBridge
             from .models_v4_projection import ExamV4Projection
+            from .services.exam_prep_v4_create_flow import (
+                CreateFlowProjectionConflict,
+                adopt_create_flow_projection,
+            )
             from .services.exam_prep_v4_projection import (
                 ProjectionIntegrityError,
                 ProjectionNotReady,
                 StaleProjection,
+                build_legacy_projection,
                 publish_legacy_projection,
             )
 
+            bridge_project_id = (
+                ExamV4SessionBridge.objects.filter(
+                    session_id=session.id,
+                    project__teacher=request.user,
+                )
+                .values_list('project_id', flat=True)
+                .first()
+            )
             v4_projection = (
                 ExamV4Projection.objects.select_related('project')
                 .filter(session=session, project__teacher=request.user)
                 .first()
             )
-            if v4_projection is not None:
+            v4_project_id = bridge_project_id or (
+                v4_projection.project_id if v4_projection is not None else None
+            )
+            if v4_project_id is not None:
                 try:
+                    prepared = build_legacy_projection(
+                        teacher=request.user,
+                        project_id=v4_project_id,
+                    )
+                    adopt_create_flow_projection(
+                        project_id=v4_project_id,
+                        projection_payload=prepared,
+                    )
                     publish_legacy_projection(
                         teacher=request.user,
-                        project_id=v4_projection.project_id,
+                        project_id=v4_project_id,
+                    )
+                    # Publication may create/rebind a projection in the
+                    # compatibility path; keep the bridge session as the
+                    # response/publication target.
+                    adopt_create_flow_projection(
+                        project_id=v4_project_id,
+                        projection_payload=prepared,
                     )
                 except ProjectionNotReady as exc:
                     return Response(
@@ -3997,6 +4029,11 @@ class ExamPrepSessionPublishView(APIView):
                 except ProjectionIntegrityError as exc:
                     return Response(
                         {'detail': str(exc), 'code': 'projection_integrity_error'},
+                        status=status.HTTP_409_CONFLICT,
+                    )
+                except CreateFlowProjectionConflict as exc:
+                    return Response(
+                        {'detail': str(exc), 'code': 'projection_session_conflict'},
                         status=status.HTTP_409_CONFLICT,
                     )
                 session.refresh_from_db()
