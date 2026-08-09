@@ -159,6 +159,26 @@ def _recalibrated_score(
     return min(100, score), tuple(dict.fromkeys(signals))
 
 
+def _duplicate_quality(item: RegionRiskDecision) -> tuple[int, int, float]:
+    """Prefer a stable anchor over a noisier recovered duplicate.
+
+    The v2 dry run exposed one costly failure: ``s-097-p046`` had two OCR
+    regions with the same target id. The higher-risk region carried
+    ``heading_sequence_gap`` and rendered source question 94, while the clean
+    duplicate was the stable region. Paying for the higher score would send the
+    wrong source crop. Heading reliability therefore precedes risk/area when
+    deduplicating one physical target.
+    """
+
+    heading_unstable = (
+        "heading_conflict" in item.signals
+        or "heading_sequence_gap" in item.region_issues
+        or "mistral_question_number_unverified" in item.region_issues
+    )
+    area = (item.bbox[2] - item.bbox[0]) * (item.bbox[3] - item.bbox[1])
+    return (0 if heading_unstable else 1, item.score, area)
+
+
 def score_region_risks(
     *,
     projection: Mapping[str, Any],
@@ -206,16 +226,12 @@ def score_region_risks(
 
     # Provider target IDs must be unique. Duplicate OCR headings on the same
     # physical page are layout evidence, not justification for duplicate paid
-    # calls. Keep the higher-risk/larger source region deterministically.
+    # calls. Prefer the region with a stable heading; only then use risk/area as
+    # deterministic tie-breakers.
     deduped: dict[str, RegionRiskDecision] = {}
     for item in output:
         previous = deduped.get(item.target_id)
-        if previous is None:
-            deduped[item.target_id] = item
-            continue
-        area = (item.bbox[2] - item.bbox[0]) * (item.bbox[3] - item.bbox[1])
-        old_area = (previous.bbox[2] - previous.bbox[0]) * (previous.bbox[3] - previous.bbox[1])
-        if (item.score, area) > (previous.score, old_area):
+        if previous is None or _duplicate_quality(item) > _duplicate_quality(previous):
             deduped[item.target_id] = item
 
     return sorted(
