@@ -24,7 +24,7 @@ from .exam_prep_mistral_ocr_transport import (
     fetch_ocr4_document,
 )
 from .exam_prep_mistral_solution_headings import audit_solution_headings
-from .exam_prep_mistral_stage4 import verify_and_repair_risky_regions
+from .exam_prep_mistral_stage4_runtime import verify_and_repair_risky_regions
 from .exam_prep_mistral_visual_reconcile import (
     VISUAL_CRITICAL_ISSUE_CODES,
     reconcile_mistral_source_visuals,
@@ -60,10 +60,6 @@ PRODUCTION_ENTRYPOINT = (
 )
 _STAGE4_BLOCKER = "stage4_verification_unresolved"
 
-# Production audit must treat an unresolved suspicious region as a machine
-# blocker. Stage-5 review/publish hardening will re-derive the same contract in
-# the web process; this mutation ensures the current production runner already
-# fails closed today.
 exam_prep_page_output.CRITICAL_ISSUE_CODES = frozenset(
     set(exam_prep_page_output.CRITICAL_ISSUE_CODES) | {_STAGE4_BLOCKER}
 )
@@ -269,7 +265,6 @@ def run_exam_prep_mistral_pipeline(
     assembled = attach_source_regions(assembled, pages=page_extractions)
     assembled = rebuild_assembly_quality(assembled)
 
-    # Stage 3: local/source-authoritative visuals. No LLM.
     assembled, visual_stats, visual_audit = reconcile_mistral_source_visuals(
         assembled,
         pdf_data=data,
@@ -278,8 +273,6 @@ def run_exam_prep_mistral_pipeline(
         source_sha256=ocr_result.source_sha256,
     )
 
-    # Stage 4: every region gets a free risk score; only suspicious regions
-    # receive a one-image source-only transcription call.
     assembled, stage4_audit = verify_and_repair_risky_regions(
         assembled,
         pdf_data=data,
