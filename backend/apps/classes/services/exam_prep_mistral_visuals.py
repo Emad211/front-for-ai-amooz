@@ -5,9 +5,11 @@ The actual production policy is loaded lazily from
 ``exam_prep_mistral_visual_runtime`` so option binding and fallback behavior stay
 fail-closed without creating import cycles.
 
-This facade also narrows option-marker detection for production: a marker must be
-a tiny standalone 1..4 label immediately outside an OCR visual block. Numbers
-inside graphs/axes are therefore not accepted as option labels.
+Production option markers are deliberately narrow: a marker must be a tiny
+standalone 1..4 label immediately outside an OCR visual block. Numbers inside
+graphs/axes are therefore not accepted as option labels. A second completeness
+pass also rejects crops that leave a nearby caption, legend, axis label, equation
+or other short visual annotation outside all final crop boxes.
 
 This module intentionally contains no LLM dependency.
 """
@@ -115,6 +117,42 @@ def _safe_option_markers(
 _option_markers = _safe_option_markers
 
 
+def _auxiliary_completeness_issues(
+    *,
+    region: Mapping[str, Any],
+    seeds: Sequence[VisualSeed],
+    blocks: Sequence[_p.LayoutBlock],
+    plans: Sequence[VisualPlan],
+    config: VisualPipelineConfig,
+) -> list[str]:
+    """Reject a crop set that leaves nearby visual annotations behind."""
+
+    if not plans or not seeds:
+        return []
+    region_box = _bbox(region.get("bbox"))
+    seed_box = _union(seed.bbox for seed in seeds)
+    if region_box is None or seed_box is None:
+        return []
+    heading = region.get("headingProviderIndex")
+    heading_index = int(heading) if isinstance(heading, int) else None
+    audit_gap = min(0.065, max(config.auxiliary_gap, config.auxiliary_gap * 1.7))
+    for block in blocks:
+        if heading_index is not None and block.provider_index == heading_index:
+            continue
+        if not _is_auxiliary(
+            block,
+            seed_box,
+            region_box,
+            heading_index,
+            audit_gap,
+        ):
+            continue
+        if any(_coverage(block.bbox, plan.bbox) >= 0.90 for plan in plans):
+            continue
+        return ["visual_residual_graphics"]
+    return []
+
+
 def _plans_for_region(
     *,
     page_number: int,
@@ -126,13 +164,23 @@ def _plans_for_region(
     """Use explicit source labels for separate option assets; never axis ticks."""
 
     if str(region.get("visualOptionMode") or "") != "separate_candidates":
-        return _p._plans_for_region(
+        plans, issues = _p._plans_for_region(
             page_number=page_number,
             region=region,
             seeds=seeds,
             blocks=blocks,
             config=config,
         )
+        issues.extend(
+            _auxiliary_completeness_issues(
+                region=region,
+                seeds=seeds,
+                blocks=blocks,
+                plans=plans,
+                config=config,
+            )
+        )
+        return plans, list(dict.fromkeys(issues))
 
     region_box = _bbox(region.get("bbox"))
     question_number = _number(region.get("questionNumber")) or 0
@@ -211,6 +259,15 @@ def _plans_for_region(
                 ),
             )
         )
+    issues.extend(
+        _auxiliary_completeness_issues(
+            region=region,
+            seeds=seeds,
+            blocks=blocks,
+            plans=plans,
+            config=config,
+        )
+    )
     return plans, list(dict.fromkeys(issues))
 
 
