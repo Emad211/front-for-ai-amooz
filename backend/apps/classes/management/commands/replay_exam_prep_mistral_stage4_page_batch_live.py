@@ -526,7 +526,7 @@ class Command(BaseCommand):
             "stage3CriticalIssueCodes": list(visual_audit.get("criticalIssueCodes") or []),
         }
         (output_dir / "manifest.json").write_text(
-            json.dumps(manifest_out, ensure_ascii=False, indent=2), encoding="utf-8"
+            json.dumps(manifest_out, ensure_ascii=False, indent=2, default=str), encoding="utf-8"
         )
         archive = shutil.make_archive(str(output_dir), "zip", root_dir=output_dir)
         self.stdout.write(
