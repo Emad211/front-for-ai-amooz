@@ -815,7 +815,14 @@ def build_segment_blocks(
     # OCR proposal: the V4 pipeline treats returned blocks as a complete
     # segment proposal.  In that case the caller must use its existing
     # structured detector for the whole segment.
-    candidates: list[tuple[int, float, float, Mapping[str, Any], int]] = []
+    # ``analyze_ocr_document`` has already established the provider reading
+    # order (including right-column-before-left-column for Persian RTL pages).
+    # Keep that order only for pages explicitly classified as RTL double
+    # column.  Single-column pages still use the geometric fallback below,
+    # because a provider's raw block order is not a reliable layout order.
+    candidates: list[
+        tuple[int, float, float, int, bool, Mapping[str, Any], int]
+    ] = []
     candidate_keys: set[tuple[str, int]] = set()
     records: list[dict[str, Any]] = []
     for page in analysis.get("pages") or []:
@@ -824,7 +831,8 @@ def build_segment_blocks(
         physical = int(page.get("originalPageNumber") or 0)
         if physical not in allowed_pages:
             continue
-        for region in page.get("regions") or []:
+        rtl_double_column = bool(page.get("rtlDoubleColumn"))
+        for region_index, region in enumerate(page.get("regions") or []):
             if not isinstance(region, Mapping):
                 continue
             kind = _region_kind_for_role(role, str(region.get("kind") or ""))
@@ -855,11 +863,27 @@ def build_segment_blocks(
                     page_rank.get(physical, 10**9),
                     region_y0,
                     region_x0,
+                    region_index,
+                    rtl_double_column,
                     region,
                     physical,
                 )
             )
-    for _page_order, _y0, _x0, region, physical in sorted(candidates, key=lambda item: item[:3]):
+
+    def _candidate_sort_key(
+        item: tuple[int, float, float, int, bool, Mapping[str, Any], int],
+    ) -> tuple[Any, ...]:
+        page_order, y0, x0, region_order, rtl, _region, _physical = item
+        if rtl:
+            # The layout analyzer's sequence is the authoritative reading
+            # order here.  It deliberately emits span, right, then left for
+            # Persian two-column pages; using x/y would reverse the columns.
+            return (page_order, 0, region_order)
+        return (page_order, 1, y0, x0, region_order)
+
+    for _page_order, _y0, _x0, _region_order, _rtl, region, physical in sorted(
+        candidates, key=_candidate_sort_key
+    ):
         kind = _region_kind_for_role(role, str(region.get("kind") or ""))
         box = region.get("bbox")
         if kind is None or not isinstance(box, (list, tuple)) or len(box) != 4:
@@ -903,7 +927,7 @@ def build_segment_blocks(
             }
         )
     if not records or {
-        physical for _rank, _y, _x, _region, physical in candidates
+        physical for _rank, _y, _x, _region_order, _rtl, _region, physical in candidates
     } != allowed_pages:
         return {"blocks": []}
     return {"blocks": records}
