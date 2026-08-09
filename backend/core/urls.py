@@ -38,13 +38,16 @@ from apps.classes.views_exam_prep_review import PageFirstExamPrepSessionDetailVi
 from apps.classes.views_v4_compat import ExamPrepSourceAwareStep1View
 
 
-_SIMPLE_EXAM_PREP_ENABLED = (
-    (os.getenv('EXAM_PREP_SIMPLE_PIPELINE_ENABLED') or 'True').strip().lower()
+# Source-aware V4 is now the production default.  The old page-first intake is
+# retained only as an emergency rollback path so a deployment can recover
+# without reverting code.
+_FORCE_SIMPLE_EXAM_PREP = (
+    (os.getenv('EXAM_PREP_FORCE_SIMPLE_PIPELINE') or 'False').strip().lower()
     in {'1', 'true', 'yes', 'on'}
 )
 ExamPrepStep1IntakeView = (
     ExamPrepPdfStep1View
-    if _SIMPLE_EXAM_PREP_ENABLED
+    if _FORCE_SIMPLE_EXAM_PREP
     else ExamPrepSourceAwareStep1View
 )
 
@@ -119,9 +122,8 @@ urlpatterns = [
 
     path('api/accounts/', include('apps.accounts.urls')),
     path('api/auth/', include('apps.authentication.urls')),
-    # The product keeps one existing teacher endpoint. New intake creates a
-    # normal ClassCreationSession directly; the temporary switch is rollback-only
-    # and will be removed after legacy jobs are drained in Phase 4.
+    # Keep the public URL stable while source-aware V4 is the default engine.
+    # EXAM_PREP_FORCE_SIMPLE_PIPELINE=True is the emergency rollback switch.
     path(
         'api/classes/exam-prep-sessions/step-1/',
         ExamPrepStep1IntakeView.as_view(),
@@ -129,7 +131,8 @@ urlpatterns = [
     ),
     # The URL is unchanged. This more-specific route only opens PATCH for a
     # completed page-first draft that is explicitly ready for teacher review;
-    # GET and DELETE inherit the existing behavior.
+    # GET and DELETE inherit the existing behavior. V4 projections also use
+    # this endpoint for safe teacher curation after source review.
     path(
         'api/classes/exam-prep-sessions/<int:session_id>/',
         PageFirstExamPrepSessionDetailView.as_view(),
