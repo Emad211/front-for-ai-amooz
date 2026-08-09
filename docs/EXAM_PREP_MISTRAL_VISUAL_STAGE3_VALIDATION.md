@@ -12,8 +12,10 @@ From `backend/`:
 python -m pytest `
   apps/classes/test_exam_prep_mistral_visuals.py `
   apps/classes/test_exam_prep_mistral_visual_runtime_hardening.py `
+  apps/classes/test_exam_prep_mistral_visual_detector.py `
   apps/classes/test_exam_prep_mistral_visual_review.py `
   apps/classes/test_exam_prep_mistral_visual_only_options.py `
+  apps/classes/test_exam_prep_mistral_visual_server_contract.py `
   apps/classes/test_exam_prep_mistral_visual_content.py `
   apps/classes/test_exam_prep_mistral_visual_boundary.py `
   apps/classes/test_exam_prep_mistral_visual_replay.py `
@@ -26,7 +28,8 @@ Provider calls: **0**.
 
 The suite covers Smart Union, decorative suppression, grouped options,
 independent option binding, graph-axis false positives, residual annotations,
-table border risk, raster clipping, source-visual contracts, review/publish
+table border risk, raster clipping, bounded detector cost with normalized source
+geometry, immutable server-side source-visual contracts, review/publish
 persistence, private streaming and Stage 2/3 architecture boundaries.
 
 ## 2. Full local replay from the existing OCR bundle
@@ -58,6 +61,13 @@ bundles. The final terminal line explicitly reports:
 ```text
 providerRequests=0, pages=55, assets=..., reviewOnly=..., unresolved=...
 ```
+
+The local uncovered-graphics detector uses a bounded discovery mask (default
+maximum dimension 1000 px via `EXAM_PREP_VISUAL_DETECTOR_MAX_DIMENSION`) so the
+pure-Python connected-component pass remains bounded on a 55-page PDF. OCR block
+coordinates are normalized before that downsample, and final source crops are
+still rendered separately at the higher crop DPI; detector optimization must not
+change source bbox geometry.
 
 ## 3. Replay artifacts
 
@@ -143,7 +153,10 @@ Stage 3 can be considered empirically closed when:
 - no legitimate repeated body diagram is suppressed as decoration;
 - visual-only options survive teacher re-audit without `missing_option_text` only
   when the source visual contract proves a complete safe option set;
-- deleting/losing a required Stage-3 asset makes review fail closed;
+- deleting/losing a required Stage-3 asset makes review fail closed even if the
+  editable JSON contract or issue list is removed; the server copy in extraction
+  audit is authoritative;
+- bounded detector dimensions do not change normalized source bboxes;
 - the live Celery runner remains unchanged until later rollout stages.
 
 If the replay exposes a false positive/negative, fix the deterministic visual
