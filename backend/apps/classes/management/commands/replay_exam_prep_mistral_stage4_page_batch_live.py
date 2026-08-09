@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from decimal import Decimal, InvalidOperation
 import hashlib
 import json
@@ -21,6 +22,7 @@ from apps.classes.management.commands.replay_exam_prep_mistral_visual_stage3 imp
     _diagnostic_result,
     _load_bundle_root,
 )
+from apps.classes.services import exam_prep_mistral_stage2_core as stage2
 from apps.classes.services import exam_prep_mistral_stage4_page_batch as stage4_page
 from apps.classes.services import exam_prep_mistral_region_transcriber as region_transcriber
 from apps.classes.services.exam_prep_mistral_disjoint_ranges import (
@@ -29,6 +31,7 @@ from apps.classes.services.exam_prep_mistral_disjoint_ranges import (
     declared_question_intervals,
     scope_key_for_question,
 )
+from apps.classes.services.exam_prep_mistral_ocr_transport import MistralOCR4Config
 from apps.classes.services.exam_prep_mistral_page_batch_transcriber import (
     BatchItem,
     PageBatchEnvelopeError,
@@ -37,6 +40,7 @@ from apps.classes.services.exam_prep_mistral_page_batch_transcriber import (
 )
 from apps.classes.services.exam_prep_mistral_production import (
     _question_numbers,
+    _targeted_recovery_budget_plan,
     analyze_mistral_document_evidence,
 )
 from apps.classes.services.exam_prep_mistral_risk_engine_v2 import score_region_risks
@@ -213,9 +217,9 @@ def _cached_page_batch(
 
 class Command(BaseCommand):
     help = (
-        "Replay calibrated Stage 4 with suspicious crops page-batched into native "
-        "Gemini structured-output requests. OCR is reused from a bundle, but its "
-        "recorded cost still counts toward the total PDF budget."
+        "Replay production-shaped targeted heading recovery plus page-batched Stage 4. "
+        "The full OCR document is reused from a bundle; any targeted OCR/Gemini/GPT "
+        "requests made now are charged against the same total PDF budget."
     )
 
     def add_arguments(self, parser):
@@ -225,7 +229,7 @@ class Command(BaseCommand):
         parser.add_argument("--title", default="Stage 4 page-batch live replay")
         parser.add_argument("--recovered-solution-targets", default="")
         parser.add_argument("--unresolved-solution-targets", default="")
-        parser.add_argument("--max-page-batches", type=int, default=24)
+        parser.add_argument("--max-page-batches", type=int, default=30)
         parser.add_argument("--max-secondary-calls", type=int, default=6)
         parser.add_argument("--total-budget-usd", type=float, default=0.30)
         parser.add_argument("--prior-provider-cost-usd", type=float, default=None)
@@ -248,11 +252,11 @@ class Command(BaseCommand):
             raise CommandError("--output-dir is non-empty; use --resume or a new directory.")
         output_dir.mkdir(parents=True, exist_ok=True)
 
-        maximum_pages = max(1, min(40, int(options.get("max_page_batches") or 24)))
+        maximum_pages = max(1, min(40, int(options.get("max_page_batches") or 30)))
         maximum_secondary = max(0, min(12, int(options.get("max_secondary_calls") or 6)))
-        recovered = _number_set(options.get("recovered_solution_targets") or "")
+        manual_recovered = _number_set(options.get("recovered_solution_targets") or "")
         manual_unresolved = _number_set(options.get("unresolved_solution_targets") or "")
-        if recovered & manual_unresolved:
+        if manual_recovered & manual_unresolved:
             raise CommandError("A target cannot be both recovered and unresolved.")
 
         try:
@@ -281,10 +285,9 @@ class Command(BaseCommand):
             if explicit_prior is not None
             else _decimal(bundle_manifest.get("estimatedCostUnit"))
         )
-        remaining_stage4_budget = max(Decimal("0"), total_budget - prior_cost)
-        if remaining_stage4_budget <= 0:
+        if prior_cost >= total_budget:
             raise CommandError(
-                f"No Stage-4 budget remains: prior={prior_cost}, total={total_budget}."
+                f"No live-repair budget remains: prior={prior_cost}, total={total_budget}."
             )
 
         result = _diagnostic_result(pdf_data=pdf_data, root=root, page_count=page_count)
@@ -296,17 +299,56 @@ class Command(BaseCommand):
         )
         question_numbers = _question_numbers(evidence)
         intervals = declared_question_intervals(evidence, question_numbers)
-        _accepted, detected_missing, detected_invalid = aligned_solutions_for_intervals(
+        accepted, detected_missing, detected_invalid = aligned_solutions_for_intervals(
             result,
             intervals,
         )
+
+        targeted_plan = _targeted_recovery_budget_plan(
+            accepted=accepted,
+            missing=detected_missing,
+            invalid=detected_invalid,
+            ocr_cost_usd=prior_cost,
+            total_budget_usd=total_budget,
+        )
+        auto_recovered: dict[int, tuple[str, int, str]] = {}
+        targeted_result = None
+        if targeted_plan.get("allowed"):
+            targeted_config = replace(
+                MistralOCR4Config.from_env(),
+                max_attempts=1,
+                word_confidence=False,
+                checkpoint_enabled=False,
+            )
+            auto_recovered, targeted_result = stage2._targeted_recovery(
+                pdf_data,
+                accepted=accepted,
+                missing=detected_missing,
+                invalid=detected_invalid,
+                config=targeted_config,
+                should_cancel=None,
+            )
+
+        targeted_cost = (
+            targeted_result.estimated_cost_unit if targeted_result is not None else Decimal("0")
+        )
+        targeted_calls = targeted_result.provider_call_count if targeted_result is not None else 0
+        spent_before_stage4 = prior_cost + targeted_cost
+        remaining_stage4_budget = max(Decimal("0"), total_budget - spent_before_stage4)
+        if remaining_stage4_budget <= 0:
+            raise CommandError(
+                f"No Stage-4 budget remains after targeted recovery: "
+                f"spent={spent_before_stage4}, total={total_budget}."
+            )
+
+        recovered_numbers = set(manual_recovered) | set(auto_recovered)
         detected_unresolved = set(detected_missing) | set(detected_invalid)
-        unresolved = (detected_unresolved | manual_unresolved) - recovered
+        unresolved = (detected_unresolved | manual_unresolved) - recovered_numbers
 
         page_extractions = build_page_extractions_disjoint(
             result=result,
             evidence=evidence,
-            recovered_targets={},
+            recovered_targets=auto_recovered,
             intervals=intervals,
         )
         assembled = assemble_page_extractions(
@@ -330,7 +372,7 @@ class Command(BaseCommand):
         decisions = score_region_risks(
             projection=assembled.projection,
             layout=evidence.layout,
-            recovered_solution_targets=recovered,
+            recovered_solution_targets=recovered_numbers,
             unresolved_solution_targets=unresolved,
         )
         suspicious = [item for item in decisions if item.suspicious]
@@ -394,7 +436,7 @@ class Command(BaseCommand):
                 assembled,
                 pdf_data=pdf_data,
                 layout=evidence.layout,
-                recovered_solution_targets=recovered,
+                recovered_solution_targets=recovered_numbers,
                 unresolved_solution_targets=unresolved,
                 max_cost_usd=float(remaining_stage4_budget),
             )
@@ -414,11 +456,11 @@ class Command(BaseCommand):
         counters["networkSecondaryRequests"] = int(secondary_counter.get("networkRequests") or 0)
         counters["secondaryCacheHits"] = int(secondary_counter.get("cacheHits") or 0)
         stats = dict(stage4_audit.get("stats") or {})
-        provider_requests_this_run = int(counters.get("networkPageRequests") or 0) + int(
+        provider_requests_this_run = targeted_calls + int(counters.get("networkPageRequests") or 0) + int(
             counters.get("networkSecondaryRequests") or 0
         )
         stage4_cost = _decimal(stats.get("totalLlmCostUsd"))
-        total_estimated_cost = prior_cost + stage4_cost
+        total_estimated_cost = spent_before_stage4 + stage4_cost
 
         (output_dir / "stage4.audit.safe.json").write_text(
             json.dumps(stage4_audit, ensure_ascii=False, indent=2), encoding="utf-8"
@@ -427,9 +469,10 @@ class Command(BaseCommand):
             json.dumps(updated.projection, ensure_ascii=False, indent=2), encoding="utf-8"
         )
         manifest_out = {
-            "schemaVersion": 4,
+            "schemaVersion": 5,
             "privateDiagnosticBundle": True,
             "ocrProviderRequests": 0,
+            "targetedOcrProviderRequestsThisRun": targeted_calls,
             "providerRequestsThisRun": provider_requests_this_run,
             "networkPageBatchRequestsThisRun": int(counters.get("networkPageRequests") or 0),
             "networkSecondaryRequestsThisRun": int(counters.get("networkSecondaryRequests") or 0),
@@ -441,6 +484,7 @@ class Command(BaseCommand):
             "estimatedPrimaryCostIrtThisRun": round(
                 float(counters.get("networkEstimatedCostIrt") or 0), 2
             ),
+            "targetedOcrCostUsdThisRun": format(targeted_cost, "f"),
             "sourcePdfSha256": result.source_sha256,
             "pageCount": page_count,
             "questionCount": len(question_numbers),
@@ -467,9 +511,12 @@ class Command(BaseCommand):
             "deferred": int(stats.get("deferred") or 0),
             "detectedMissingSolutionTargets": sorted(detected_missing),
             "detectedInvalidSolutionTargets": sorted(detected_invalid),
+            "targetedRecoveryBudgetPlan": targeted_plan,
+            "targetedSolutionHeadingRecovered": sorted(auto_recovered),
             "unresolvedSolutionTargets": sorted(unresolved),
-            "recoveredSolutionTargetsRiskHintOnly": sorted(recovered),
+            "manualRecoveredSolutionTargetsRiskHintOnly": sorted(manual_recovered),
             "priorProviderCostUsd": format(prior_cost, "f"),
+            "spentBeforeStage4Usd": format(spent_before_stage4, "f"),
             "totalBudgetUsd": format(total_budget, "f"),
             "stage4BudgetUsd": format(remaining_stage4_budget, "f"),
             "stage4EstimatedCostUsd": format(stage4_cost, "f"),
@@ -484,8 +531,9 @@ class Command(BaseCommand):
         archive = shutil.make_archive(str(output_dir), "zip", root_dir=output_dir)
         self.stdout.write(
             self.style.SUCCESS(
-                "Stage 4 page-batch replay completed: ocrProviderRequests=0, "
-                f"targets={len(suspicious)}, pages={len(suspicious_pages)}, "
+                "Stage 4 page-batch replay completed: fullOcrProviderRequests=0, "
+                f"targetedOcrRequests={targeted_calls}, targets={len(suspicious)}, "
+                f"pages={len(suspicious_pages)}, "
                 f"newPageRequests={int(counters.get('networkPageRequests') or 0)}, "
                 f"newSecondaryRequests={int(counters.get('networkSecondaryRequests') or 0)}, "
                 f"repaired={int(stats.get('repaired') or 0)}, "
