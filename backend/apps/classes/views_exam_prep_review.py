@@ -168,9 +168,16 @@ def _refresh_page_first_review_state(
         return session
 
     workflow = _workflow(session)
+    previous_audit = workflow.get('extractionAudit')
+    previous_audit = previous_audit if isinstance(previous_audit, dict) else {}
+    visual_contracts = previous_audit.get('visualSourceContracts')
+    visual_contracts = visual_contracts if isinstance(visual_contracts, dict) else {}
     projection = parse_projection(session.exam_prep_json)
     audit = _downgrade_intentional_number_gaps(
-        audit_page_first_projection(projection)
+        audit_page_first_projection(
+            projection,
+            visual_source_contracts=visual_contracts,
+        )
     )
     remaining_failed_pages = _failed_pages_that_still_contain_content(
         session,
@@ -327,9 +334,6 @@ class PageFirstExamPrepSessionDetailView(ExamPrepSessionDetailView):
                 session.exam_prep_json = normalized_json or ''
             session.save(update_fields=[*updated_fields, 'updated_at'])
 
-            # Preserve the existing V2/V3 review behavior. Page-first sessions
-            # have no artifact and are revalidated by the dedicated post-save
-            # signal, then normalized once more below with teacher-curation rules.
             artifact = ExamPrepExtractionArtifact.objects.select_for_update().filter(
                 session=session
             ).first()
