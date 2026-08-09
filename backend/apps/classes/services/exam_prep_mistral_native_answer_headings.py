@@ -9,7 +9,9 @@ The contract is deliberately fail-closed. Native labels are authoritative only
 when answer-like pages contain anchored heading rows, every question number is
 unique, labels are 1..4, and the resulting question-number set exactly matches
 the OCR question anchors supplied by the caller. Geometry is overlaid per heading
-only when that exact number fragment has one unambiguous PDF coordinate.
+only when that exact number fragment has one unambiguous PDF coordinate. If every
+heading on one page has unique coordinates, all OCR answer headings on that page
+are replaced so an OCR-misnumbered heading cannot survive beside native evidence.
 """
 from __future__ import annotations
 
@@ -144,9 +146,6 @@ def extract_native_answer_evidence(pdf_data: bytes) -> NativeAnswerEvidence:
         for question, option in pairs:
             side = None
             x = y = None
-            # Coordinate trust is per heading. One ambiguous small number on the
-            # page must not prevent another unique missing heading from being
-            # inserted at its exact source position.
             if len(coordinates.get(question) or []) == 1:
                 x, y = coordinates[question][0]
                 if page_width > 0:
@@ -196,6 +195,7 @@ def overlay_native_solution_heading_blocks(
         return output
 
     reader = PdfReader(io.BytesIO(pdf_data))
+    complete_pages = set(evidence.coordinate_complete_pages)
     by_page: dict[int, list[NativeAnswerHeading]] = {}
     for item in evidence.headings:
         by_page.setdefault(item.physical_page_number, []).append(item)
@@ -214,6 +214,7 @@ def overlay_native_solution_heading_blocks(
             dict(block) for block in (page.get("blocks") or []) if isinstance(block, Mapping)
         ]
         native_by_number = {item.question_number: item for item in native}
+        full_rebuild = physical_page in complete_pages
         replaced_numbers: set[int] = set()
         blocks: list[dict[str, Any]] = []
 
@@ -222,17 +223,18 @@ def overlay_native_solution_heading_blocks(
             if not parsed:
                 blocks.append(block)
                 continue
+            if full_rebuild:
+                # Every native answer heading is geometrically known, therefore
+                # any OCR-parsed answer heading on this page is redundant/noisy.
+                continue
             number = int(parsed["rawQuestionNumber"])
             item = native_by_number.get(number)
             if item is None:
                 blocks.append(block)
                 continue
             if item.x is not None and item.y is not None and item.side in {"left", "right"}:
-                # A unique native coordinate will replace this OCR heading below.
                 replaced_numbers.add(number)
                 continue
-            # Geometry ambiguous: keep the provider bbox/order but replace only
-            # the source-authoritative label.
             block["content"] = f"{number} - گزینه {item.option_label}"
             block["nativeAnswerLabelOverride"] = True
             replaced_numbers.add(number)
@@ -260,6 +262,7 @@ def overlay_native_solution_heading_blocks(
 
         page["blocks"] = blocks
         page["nativeAnswerHeadingOverlay"] = True
+        page["nativeAnswerHeadingFullPageRebuild"] = full_rebuild
         page["nativeAnswerHeadingInjectedCount"] = injected
         page["nativeAnswerHeadingCoveredNumbers"] = sorted(replaced_numbers)
 
