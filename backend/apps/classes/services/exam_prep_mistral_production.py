@@ -10,6 +10,7 @@ per-question LLM pass is a production dependency here.
 """
 from __future__ import annotations
 
+from dataclasses import replace
 from decimal import Decimal, InvalidOperation
 import io
 import os
@@ -114,13 +115,64 @@ _OWN_CRITICAL_CODES = frozenset(
 )
 
 
-def _total_budget_usd() -> Decimal:
-    raw = (os.getenv("EXAM_PREP_TOTAL_PDF_BUDGET_USD") or "0.30").strip()
+def _decimal_env(name: str, default: str, *, maximum: str = "2.00") -> Decimal:
+    raw = (os.getenv(name) or default).strip()
     try:
         value = Decimal(raw)
     except (InvalidOperation, ValueError):
-        value = Decimal("0.30")
-    return max(Decimal("0"), min(Decimal("2.00"), value))
+        value = Decimal(default)
+    return max(Decimal("0"), min(Decimal(maximum), value))
+
+
+def _total_budget_usd() -> Decimal:
+    return _decimal_env("EXAM_PREP_TOTAL_PDF_BUDGET_USD", "0.30")
+
+
+def _targeted_ocr_reserve_per_page_usd() -> Decimal:
+    # OCR4 public list price is below this reserve; targeted recovery also runs
+    # with max_attempts=1, so the reserve is a hard pre-call budget guard rather
+    # than an expected-cost estimate.
+    return _decimal_env(
+        "EXAM_PREP_TARGETED_OCR_RESERVE_PER_PAGE_USD",
+        "0.0065",
+        maximum="0.05",
+    )
+
+
+def _minimum_stage4_reserve_usd() -> Decimal:
+    # Preserve enough room for at least one small primary verification and a
+    # possible bounded second opinion instead of spending the last cents on a
+    # duplicate targeted OCR pass.
+    return _decimal_env(
+        "EXAM_PREP_STAGE4_MINIMUM_RESERVE_USD",
+        "0.0065",
+        maximum="0.05",
+    )
+
+
+def _targeted_recovery_budget_plan(
+    *,
+    accepted,
+    missing: Sequence[int],
+    invalid: Sequence[int],
+    ocr_cost_usd: Decimal,
+    total_budget_usd: Decimal,
+) -> dict[str, Any]:
+    targets = sorted(set(int(value) for value in missing) | set(int(value) for value in invalid))
+    specs = _target_crop_specs(accepted, targets) if targets else []
+    reserve = _targeted_ocr_reserve_per_page_usd() * len(specs)
+    stage4_reserve = _minimum_stage4_reserve_usd() if specs else Decimal("0")
+    allowed = bool(
+        specs
+        and ocr_cost_usd + reserve + stage4_reserve <= total_budget_usd
+    )
+    return {
+        "targetCount": len(targets),
+        "cropPageCount": len(specs),
+        "reserveUsd": reserve,
+        "minimumStage4ReserveUsd": stage4_reserve,
+        "allowed": allowed,
+    }
 
 
 def analyze_mistral_document_evidence(
@@ -254,19 +306,37 @@ def run_exam_prep_mistral_pipeline(
             "هیچ سؤال شماره‌داری در PDF تشخیص داده نشد."
         )
 
+    total_budget = _total_budget_usd()
     intervals = declared_question_intervals(evidence, question_numbers)
     accepted, missing, invalid = aligned_solutions_for_intervals(
         ocr_result,
         intervals,
     )
-    recovered_targets, targeted_result = _targeted_recovery(
-        data,
+    targeted_budget = _targeted_recovery_budget_plan(
         accepted=accepted,
         missing=missing,
         invalid=invalid,
-        config=config,
-        should_cancel=should_cancel,
+        ocr_cost_usd=ocr_result.estimated_cost_unit,
+        total_budget_usd=total_budget,
     )
+    targeted_skipped_budget = bool(
+        targeted_budget["cropPageCount"] and not targeted_budget["allowed"]
+    )
+    if targeted_budget["allowed"]:
+        # Targeted recovery is deliberately single-attempt. Retrying this optional
+        # duplicate OCR path can never be allowed to consume the Stage-4 reserve.
+        targeted_config = replace(config, max_attempts=1)
+        recovered_targets, targeted_result = _targeted_recovery(
+            data,
+            accepted=accepted,
+            missing=missing,
+            invalid=invalid,
+            config=targeted_config,
+            should_cancel=should_cancel,
+        )
+    else:
+        recovered_targets, targeted_result = {}, None
+
     unresolved_targets = sorted(
         (set(missing) | set(invalid)) - set(recovered_targets)
     )
@@ -289,7 +359,6 @@ def run_exam_prep_mistral_pipeline(
         source_sha256=ocr_result.source_sha256,
     )
 
-    total_budget = _total_budget_usd()
     targeted_cost = (
         targeted_result.estimated_cost_unit if targeted_result is not None else Decimal("0")
     )
@@ -365,8 +434,22 @@ def run_exam_prep_mistral_pipeline(
             "targetedSolutionHeadingRetries": targeted_retries,
             "targetedSolutionHeadingRecovered": len(recovered_targets),
             "targetedSolutionHeadingUnresolved": remaining_unresolved_targets,
+            "targetedSolutionHeadingSkippedBudget": targeted_skipped_budget,
+            "targetedSolutionHeadingBudgetPlan": {
+                "targetCount": int(targeted_budget["targetCount"]),
+                "cropPageCount": int(targeted_budget["cropPageCount"]),
+                "reserveUsd": format(targeted_budget["reserveUsd"], "f"),
+                "minimumStage4ReserveUsd": format(
+                    targeted_budget["minimumStage4ReserveUsd"], "f"
+                ),
+                "allowed": bool(targeted_budget["allowed"]),
+            },
             "questionIntervals": [
-                {"start": start, "end": end, "scopeKey": scope_key_for_question(intervals, start)}
+                {
+                    "start": start,
+                    "end": end,
+                    "scopeKey": scope_key_for_question(intervals, start),
+                }
                 for start, end in intervals
             ],
             "totalPdfBudgetUsd": format(total_budget, "f"),
