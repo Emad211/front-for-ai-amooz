@@ -22,6 +22,7 @@ from apps.classes.models_v4_records import (
 from apps.classes.models_v4_review import ExamReviewDecision
 from apps.classes.services.exam_prep_v4_observability import emit_v4_event
 from apps.classes.services.exam_prep_v4_source_crops import source_crop_url
+from apps.classes.services.exam_prep_utils import normalize_exam_prep_questions
 
 
 class ProjectionNotReady(RuntimeError):
@@ -45,6 +46,17 @@ def _hash_payload(payload: Any) -> str:
             separators=(',', ':'),
         ).encode('utf-8')
     ).hexdigest()
+
+
+def _normalized_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    """Canonicalize legacy JSON the same way the edit/student serializers do."""
+
+    # ``normalize_exam_prep_questions`` mutates its input.  Round-tripping
+    # through JSON keeps the immutable projection payload and the stored
+    # session payload independent while guaranteeing JSON-compatible values.
+    cloned = json.loads(json.dumps(payload, ensure_ascii=False))
+    normalized, _changed = normalize_exam_prep_questions(cloned)
+    return normalized if isinstance(normalized, dict) else cloned
 
 
 def _owned_project(*, teacher, project_id: int, for_update: bool = False) -> ExamProject:
@@ -429,11 +441,34 @@ def build_legacy_projection(*, teacher, project_id: int) -> dict[str, Any]:
         .filter(project=project)
         .first()
     )
+    current_session_payload = (
+        (projection.session.exam_prep_json or '').strip()
+        if projection is not None
+        else ''
+    )
+    if projection is not None and current_session_payload:
+        try:
+            current_payload = json.loads(current_session_payload)
+        except (TypeError, ValueError) as exc:
+            raise ProjectionIntegrityError(
+                'The existing legacy projection payload is not valid JSON.'
+            ) from exc
+        if not isinstance(current_payload, dict):
+            raise ProjectionIntegrityError(
+                'The existing legacy projection payload must be an object.'
+            )
+        if _hash_payload(_normalized_payload(current_payload)) != _hash_payload(
+            _normalized_payload(payload)
+        ):
+            raise ProjectionIntegrityError(
+                'The legacy projection was edited after V4 review; rebuild it before publishing.'
+            )
     if projection is not None and (
         projection.projection_fingerprint == projection_fingerprint
         and projection.question_set_fingerprint == question_set
         and projection.answer_set_fingerprint == answer_set
         and projection.review_set_fingerprint == review_set_fingerprint
+        and bool(current_session_payload)
     ):
         return {
             'projectId': project.id,

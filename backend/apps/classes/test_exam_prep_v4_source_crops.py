@@ -21,7 +21,10 @@ from apps.classes.services.exam_prep_v4_create_flow import (
     adopt_create_flow_projection,
 )
 from apps.classes.services.exam_prep_v4_live_pipeline import run_document_extraction_pipeline
-from apps.classes.services.exam_prep_v4_projection import build_legacy_projection
+from apps.classes.services.exam_prep_v4_projection import (
+    ProjectionIntegrityError,
+    build_legacy_projection,
+)
 from apps.classes.services.exam_prep_v4_source_crops import render_source_crop
 from apps.classes.test_exam_prep_v4_full_pipeline import (
     FakeFullPipelineProvider,
@@ -176,6 +179,47 @@ def test_legacy_publish_repairs_half_published_v4_bridge(monkeypatch):
     assert project.is_published is True
     assert project.status == ExamProject.Status.PUBLISHED
     assert projection.status == ExamV4Projection.Status.PUBLISHED
+
+
+def test_edited_projection_payload_is_not_overwritten_on_publish():
+    teacher, project, session, _question, _solution = _prepare_projection()
+    payload = json.loads(session.exam_prep_json)
+    payload['exam_prep']['questions'][0]['question_text_markdown'] = 'اصلاح معلم'
+    session.exam_prep_json = json.dumps(payload, ensure_ascii=False)
+    session.save(update_fields=['exam_prep_json', 'updated_at'])
+
+    response = _auth(teacher).post(
+        f'/api/classes/exam-prep-sessions/{session.id}/publish/'
+    )
+
+    session.refresh_from_db()
+    assert response.status_code == 409
+    assert response.data['code'] == 'projection_integrity_error'
+    assert 'اصلاح معلم' in session.exam_prep_json
+    with pytest.raises(ProjectionIntegrityError):
+        build_legacy_projection(teacher=teacher, project_id=project.id)
+
+
+def test_normalizer_only_projection_edit_remains_publishable(monkeypatch):
+    teacher, _project, session, _question, _solution = _prepare_projection()
+    payload = json.loads(session.exam_prep_json)
+    payload['exam_prep']['questions'][0]['confidence'] = None
+    payload['exam_prep']['questions'][0]['issues'] = []
+    session.exam_prep_json = json.dumps(payload, ensure_ascii=False)
+    session.save(update_fields=['exam_prep_json', 'updated_at'])
+    monkeypatch.setattr(
+        'apps.classes.services.exam_prep_v4_projection.transaction.on_commit',
+        lambda _callback: None,
+    )
+
+    response = _auth(teacher).post(
+        f'/api/classes/exam-prep-sessions/{session.id}/publish/'
+    )
+
+    assert response.status_code == 200
+    session.refresh_from_db()
+    assert session.is_published is True
+    assert session.exam_prep_json
 
 
 def test_owner_can_stream_both_crops_and_student_only_question(settings):

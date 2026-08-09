@@ -28,7 +28,12 @@ export function resolveExamVisualUrl(
   sessionId?: string | number,
 ): string | null {
   const direct = visual.url?.trim();
-  if (direct) return direct;
+  if (direct) {
+    if (direct.startsWith('data:')) {
+      return /^data:image\/(?:png|jpe?g|webp);base64,/.test(direct) ? direct : null;
+    }
+    return direct;
+  }
   const inline = visual.dataUrl?.trim();
   if (inline && /^data:image\/(?:png|jpe?g|webp);base64,/.test(inline)) return inline;
 

@@ -178,8 +178,14 @@ export default function TeacherExamDetailPage({ params }: PageProps) {
     !examPrep.extractionAudit || examPrep.extractionAudit.status === 'passed';
   const extractionReviewConfirmed =
     !examPrep.teacherReviewRequired || Boolean(examPrep.teacherReviewedAt);
+  const isSourceAwareProjection = questions.some((question) =>
+    String(question.question_id || '').startsWith('v4-'),
+  );
   const canPublish =
-    examPrep.status === 'exam_structured'
+    (
+      examPrep.status === 'exam_structured'
+      || (isReviewReady && isSourceAwareProjection)
+    )
     && !examPrep.is_published
     && questions.length > 0
     && extractionPassed
