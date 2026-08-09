@@ -129,9 +129,6 @@ def _total_budget_usd() -> Decimal:
 
 
 def _targeted_ocr_reserve_per_page_usd() -> Decimal:
-    # OCR4 public list price is below this reserve; targeted recovery also runs
-    # with max_attempts=1, so the reserve is a hard pre-call budget guard rather
-    # than an expected-cost estimate.
     return _decimal_env(
         "EXAM_PREP_TARGETED_OCR_RESERVE_PER_PAGE_USD",
         "0.0065",
@@ -140,9 +137,6 @@ def _targeted_ocr_reserve_per_page_usd() -> Decimal:
 
 
 def _minimum_stage4_reserve_usd() -> Decimal:
-    # Preserve enough room for at least one small primary verification and a
-    # possible bounded second opinion instead of spending the last cents on a
-    # duplicate targeted OCR pass.
     return _decimal_env(
         "EXAM_PREP_STAGE4_MINIMUM_RESERVE_USD",
         "0.0065",
@@ -272,7 +266,10 @@ def run_exam_prep_mistral_pipeline(
 
     del model, scope_hint
     core._cancel(should_cancel)
-    config = MistralOCR4Config.from_env()
+    # Paid OCR retries are disabled in the production path. A transient provider
+    # failure is cheaper and safer to surface than silently buying a second large
+    # OCR chunk and breaking the per-PDF budget.
+    config = replace(MistralOCR4Config.from_env(), max_attempts=1)
     completed = 0
 
     def chunk_done(chunk_result) -> None:
@@ -323,8 +320,6 @@ def run_exam_prep_mistral_pipeline(
         targeted_budget["cropPageCount"] and not targeted_budget["allowed"]
     )
     if targeted_budget["allowed"]:
-        # Targeted recovery is deliberately single-attempt. Retrying this optional
-        # duplicate OCR path can never be allowed to consume the Stage-4 reserve.
         targeted_config = replace(config, max_attempts=1)
         recovered_targets, targeted_result = _targeted_recovery(
             data,
@@ -426,6 +421,7 @@ def run_exam_prep_mistral_pipeline(
             "ocrSourceChunks": len(ocr_result.chunks),
             "ocrProviderCalls": ocr_result.provider_call_count,
             "ocrRetries": ocr_result.retry_count,
+            "ocrAutomaticPaidRetryAllowed": False,
             "ocrCheckpointReusedChunks": ocr_result.checkpoint_reuse_count,
             "ocrRequestIds": list(ocr_result.request_ids),
             "ocrResolvedModels": list(ocr_result.resolved_models),
