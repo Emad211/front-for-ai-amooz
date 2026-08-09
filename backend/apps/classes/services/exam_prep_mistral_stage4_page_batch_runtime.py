@@ -4,6 +4,7 @@ The underlying page-batch orchestrator is kept compact and stable. This wrapper
 installs deterministic production guards before exposing it:
 
 * compare exactly the canonical candidate field-set rather than a flattened blob;
+* never let an LLM overwrite a label locked by trusted native PDF evidence;
 * do not broaden an option-only OCR disagreement into a stem replacement;
 * treat absent provider fields as unavailable evidence;
 * split a failed page batch only when the provider explicitly reports output
@@ -70,7 +71,7 @@ def _normalized_score_region_risks(*, projection, **kwargs):
 
 
 def _needed_fields(decision, question, payload):
-    """Return all fields that need source repair, even when provider omitted one."""
+    """Return source fields that are actually allowed to change."""
 
     issues = {str(code) for code in (question.get("issues") or []) if str(code)}
     issues.update(str(code) for code in decision.region_issues if str(code))
@@ -105,8 +106,11 @@ def _needed_fields(decision, question, payload):
         return needed
 
     needed: set[str] = set()
+    native_label_locked = "native_pdf_answer_label_authority" in issues
     existing_label = _impl._normalize_label(question.get("correct_option_label"))
-    if existing_label not in {"1", "2", "3", "4"} or issues & _impl._LABEL_ISSUES:
+    if not native_label_locked and (
+        existing_label not in {"1", "2", "3", "4"} or issues & _impl._LABEL_ISSUES
+    ):
         needed.add("correct_option_label")
     if (
         not clean_exam_markdown(question.get("teacher_solution_markdown") or "")
@@ -117,8 +121,10 @@ def _needed_fields(decision, question, payload):
         needed.add("teacher_solution_markdown")
     if "ocr_disagreement" in signals:
         needed.update(available)
-    if signals & {"missing_invalid_answer", "heading_conflict"}:
+    if not native_label_locked and signals & {"missing_invalid_answer", "heading_conflict"}:
         needed.add("correct_option_label")
+    if native_label_locked:
+        needed.discard("correct_option_label")
     return needed
 
 
@@ -126,8 +132,6 @@ _ORIGINAL_SANITIZE_ITEM = _impl._sanitize_item
 
 
 def _sanitize_item_with_absence(item):
-    """An omitted canonical field is unavailable source evidence, not success."""
-
     payload, blocked, flags = _ORIGINAL_SANITIZE_ITEM(item)
     blocked = set(blocked)
     if item.kind == "question":
@@ -151,10 +155,7 @@ def _sanitize_item_with_absence(item):
 
 def _primary_reserve(target_count: int) -> float:
     base = _float_env(
-        "EXAM_PREP_STAGE4_PRIMARY_RESERVE_BASE_USD",
-        0.0028,
-        low=0.001,
-        high=0.02,
+        "EXAM_PREP_STAGE4_PRIMARY_RESERVE_BASE_USD", 0.0028, low=0.001, high=0.02
     )
     per_extra = _float_env(
         "EXAM_PREP_STAGE4_PRIMARY_RESERVE_PER_EXTRA_TARGET_USD",
@@ -168,10 +169,7 @@ def _primary_reserve(target_count: int) -> float:
 def _budget_reserve(kind: str) -> float:
     if kind == "secondary":
         return _float_env(
-            "EXAM_PREP_STAGE4_SECONDARY_RESERVE_USD",
-            0.0045,
-            low=0.001,
-            high=0.03,
+            "EXAM_PREP_STAGE4_SECONDARY_RESERVE_USD", 0.0045, low=0.001, high=0.03
         )
     return _primary_reserve(2)
 
@@ -197,14 +195,8 @@ def _is_truncation_error(error: Any) -> bool:
 
 
 def _page_results_with_structured_split_only(
-    *,
-    page_number,
-    rendered,
-    spent,
-    budget,
+    *, page_number, rendered, spent, budget
 ):
-    """One normal call; only explicit output truncation may split once."""
-
     requested = {decision.target_id for decision, _ in rendered}
     audits = []
     results = []
@@ -252,10 +244,7 @@ def _page_results_with_structured_split_only(
         if not part:
             continue
         child, child_error, spent = _impl._call_primary(
-            page_number=page_number,
-            targets=part,
-            spent=spent,
-            budget=budget,
+            page_number=page_number, targets=part, spent=spent, budget=budget
         )
         if child is None:
             if isinstance(child_error, RuntimeError) and str(child_error) == "stage4_cost_budget":
@@ -299,7 +288,4 @@ _impl._page_results_with_one_split = _page_results_with_structured_split_only
 verify_and_repair_risky_regions_page_batched = _impl.verify_and_repair_risky_regions_page_batched
 PageBatchStats = _impl.PageBatchStats
 
-__all__ = [
-    "PageBatchStats",
-    "verify_and_repair_risky_regions_page_batched",
-]
+__all__ = ["PageBatchStats", "verify_and_repair_risky_regions_page_batched"]
