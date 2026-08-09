@@ -1,13 +1,13 @@
 """Production wrapper for page-batched Stage 4 candidate comparisons.
 
 The underlying page-batch orchestrator is kept compact and stable. This wrapper
-installs three deterministic production guards before exposing it:
+installs deterministic production guards before exposing it:
 
-* compare exactly the canonical candidate field-set rather than a flattened
-  answer blob;
+* compare exactly the canonical candidate field-set rather than a flattened blob;
 * do not broaden an option-only OCR disagreement into a stem replacement;
-* treat absent provider fields as unavailable evidence, so a missing required
-  field fails closed instead of being counted as a successful verification.
+* treat absent provider fields as unavailable evidence;
+* split a failed page batch only when the provider returned an unusable structured
+  envelope. Network/HTTP/timeouts are never converted into automatic retries.
 """
 from __future__ import annotations
 
@@ -16,6 +16,7 @@ from typing import Any, Mapping
 
 from . import exam_prep_mistral_stage4_page_batch as _impl
 from . import exam_prep_mistral_stage4 as _legacy
+from .exam_prep_mistral_page_batch_transcriber import PageBatchEnvelopeError
 from .exam_prep_mistral_risk_engine_v2 import score_region_risks as _score
 from .exam_prep_utils import clean_exam_markdown
 
@@ -89,9 +90,6 @@ def _needed_fields(decision, question, payload):
         if signals & _impl._CORRUPTION_SIGNALS:
             needed.update(available)
         elif "ocr_disagreement" in signals and not (issues & _impl._OPTION_ISSUES):
-            # A parser failure confined to options is not permission to replace a
-            # source-clean stem. For broad OCR disagreement, all available fields
-            # remain eligible.
             needed.update(available)
         return needed
 
@@ -140,11 +138,117 @@ def _sanitize_item_with_absence(item):
     return payload, blocked, flags
 
 
+def _page_results_with_structured_split_only(
+    *,
+    page_number,
+    rendered,
+    spent,
+    budget,
+):
+    """One normal call; only an unusable structured envelope may split once."""
+
+    requested = {decision.target_id for decision, _ in rendered}
+    audits = []
+    results = []
+    primary_calls = split_calls = 0
+
+    first, error, spent = _impl._call_primary(
+        page_number=page_number,
+        targets=rendered,
+        spent=spent,
+        budget=budget,
+    )
+    if first is not None:
+        primary_calls += 1
+        results.append(first)
+        audits.append({**first.safe_dict(), "status": "success"})
+        failed = set(first.missing_target_ids) | set(first.invalid_target_ids)
+        return results, failed, audits, spent, primary_calls, split_calls
+
+    if isinstance(error, RuntimeError) and str(error) == "stage4_cost_budget":
+        audits.append(
+            {
+                "pageNumber": page_number,
+                "status": "budget_blocked",
+                "targetCount": len(rendered),
+            }
+        )
+        return results, requested, audits, spent, primary_calls, split_calls
+
+    primary_calls += 1
+    reason = getattr(error, "reason_code", type(error).__name__ if error else "unknown")
+    if not isinstance(error, PageBatchEnvelopeError):
+        audits.append(
+            {
+                "pageNumber": page_number,
+                "status": "provider_failed_no_retry",
+                "targetCount": len(rendered),
+                "reason": str(reason),
+            }
+        )
+        return results, requested, audits, spent, primary_calls, split_calls
+
+    audits.append(
+        {
+            "pageNumber": page_number,
+            "status": "envelope_failed",
+            "targetCount": len(rendered),
+            "reason": str(reason),
+        }
+    )
+    if len(rendered) <= 1:
+        return results, requested, audits, spent, primary_calls, split_calls
+
+    midpoint = max(1, len(rendered) // 2)
+    failed: set[str] = set()
+    for part_index, part in enumerate((rendered[:midpoint], rendered[midpoint:]), start=1):
+        if not part:
+            continue
+        child, child_error, spent = _impl._call_primary(
+            page_number=page_number,
+            targets=part,
+            spent=spent,
+            budget=budget,
+        )
+        if child is None:
+            if isinstance(child_error, RuntimeError) and str(child_error) == "stage4_cost_budget":
+                child_reason = "cost_budget"
+            else:
+                primary_calls += 1
+                split_calls += 1
+                child_reason = getattr(
+                    child_error,
+                    "reason_code",
+                    type(child_error).__name__ if child_error else "unknown",
+                )
+            failed.update(decision.target_id for decision, _ in part)
+            audits.append(
+                {
+                    "pageNumber": page_number,
+                    "status": "split_failed",
+                    "splitPart": part_index,
+                    "targetCount": len(part),
+                    "reason": str(child_reason),
+                }
+            )
+            continue
+        primary_calls += 1
+        split_calls += 1
+        results.append(child)
+        failed.update(child.missing_target_ids)
+        failed.update(child.invalid_target_ids)
+        audits.append(
+            {**child.safe_dict(), "status": "split_success", "splitPart": part_index}
+        )
+    return results, failed, audits, spent, primary_calls, split_calls
+
+
 # The orchestrator resolves these helpers from its module namespace. Install the
-# corrected deterministic views without copying its provider/cost orchestration.
+# corrected deterministic views without copying its main orchestration.
 _impl.score_region_risks = _normalized_score_region_risks
 _impl._needed_fields = _needed_fields
 _impl._sanitize_item = _sanitize_item_with_absence
+_impl._page_results_with_one_split = _page_results_with_structured_split_only
 
 verify_and_repair_risky_regions_page_batched = (
     _impl.verify_and_repair_risky_regions_page_batched
