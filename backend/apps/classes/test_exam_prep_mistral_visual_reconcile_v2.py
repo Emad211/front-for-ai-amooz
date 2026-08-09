@@ -2,10 +2,14 @@ from __future__ import annotations
 
 from PIL import Image, ImageDraw
 
+# Import the stable facade first; it installs the shared normalized clamp used by
+# the lower-level v2 helper module without changing its policy.
+from apps.classes.services import exam_prep_mistral_visual_reconcile as stable
 from apps.classes.services import exam_prep_mistral_visual_reconcile_v2 as policy
 from apps.classes.services.exam_prep_mistral_layout_analysis import LayoutBlock
-from apps.classes.services.exam_prep_mistral_visual_reconcile import VisualPipelineConfig
 from apps.classes.services.exam_prep_mistral_visuals import VisualSeed
+
+VisualPipelineConfig = stable.VisualPipelineConfig
 
 
 def _block(index: int, kind: str, text: str, bbox):
@@ -35,9 +39,7 @@ def test_text_mask_components_removes_ocr_text_but_keeps_uncovered_diagram():
     image = Image.new("RGB", (600, 800), "white")
     try:
         draw = ImageDraw.Draw(image)
-        # Text-like dark area fully covered by OCR text geometry.
         draw.rectangle((330, 120, 540, 180), fill="black")
-        # Diagram-like source ink outside that text block.
         draw.rectangle((80, 300, 260, 460), outline="black", width=5)
         draw.line((80, 380, 260, 380), fill="black", width=4)
         blocks = [
@@ -140,11 +142,7 @@ def test_grouped_visual_options_are_publishable_without_fake_individual_binding(
     assert plans[0].sanity_issues == ()
 
 
-def test_solution_local_only_candidates_are_not_part_of_machine_visual_contract():
-    # This invariant is intentionally explicit: the real replay showed local-only
-    # solution candidates were overwhelmingly residual typography. Stage 4 may
-    # recover a genuinely missing solution visual later, but Stage 3 does not
-    # manufacture one from unanchored residual text.
+def test_v2_base_does_not_accept_permissive_local_only_solution_typography():
     source_kinds = ["local_graphic"]
     kept = [kind for kind in source_kinds if kind.startswith("ocr_")]
     assert kept == []
