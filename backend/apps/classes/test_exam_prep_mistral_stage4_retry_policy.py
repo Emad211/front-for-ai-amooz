@@ -44,7 +44,39 @@ def test_network_or_http_failure_never_splits(monkeypatch):
     assert audits[0]["status"] == "provider_failed_no_retry"
 
 
-def test_structured_envelope_failure_may_split_exactly_once(monkeypatch):
+def test_stop_with_malformed_structured_json_never_splits(monkeypatch):
+    calls = []
+
+    def fail(**kwargs):
+        calls.append(len(kwargs["targets"]))
+        return (
+            None,
+            PageBatchEnvelopeError(
+                "structured_json_invalid",
+                finish_reason="STOP",
+            ),
+            kwargs["spent"],
+        )
+
+    monkeypatch.setattr(runtime._impl, "_call_primary", fail)
+    rendered = [(_decision(1), b"a"), (_decision(2), b"b")]
+    _results, failed, audits, _spent, primary_calls, split_calls = (
+        runtime._page_results_with_structured_split_only(
+            page_number=40,
+            rendered=rendered,
+            spent=0.0,
+            budget=0.20,
+        )
+    )
+    assert calls == [2]
+    assert failed == {"s-001-p040", "s-002-p040"}
+    assert primary_calls == 1
+    assert split_calls == 0
+    assert audits[0]["status"] == "provider_failed_no_retry"
+    assert audits[0]["finishReason"] == "STOP"
+
+
+def test_explicit_output_truncation_may_split_exactly_once(monkeypatch):
     calls = []
 
     def fail(**kwargs):
@@ -52,14 +84,17 @@ def test_structured_envelope_failure_may_split_exactly_once(monkeypatch):
         if len(kwargs["targets"]) == 2:
             return (
                 None,
-                PageBatchEnvelopeError("structured_json_invalid"),
+                PageBatchEnvelopeError(
+                    "structured_json_invalid",
+                    finish_reason="MAX_TOKENS",
+                ),
                 kwargs["spent"],
             )
         return None, RuntimeError("child_failure"), kwargs["spent"]
 
     monkeypatch.setattr(runtime._impl, "_call_primary", fail)
     rendered = [(_decision(1), b"a"), (_decision(2), b"b")]
-    _results, failed, _audits, _spent, primary_calls, split_calls = (
+    _results, failed, audits, _spent, primary_calls, split_calls = (
         runtime._page_results_with_structured_split_only(
             page_number=40,
             rendered=rendered,
@@ -71,3 +106,4 @@ def test_structured_envelope_failure_may_split_exactly_once(monkeypatch):
     assert failed == {"s-001-p040", "s-002-p040"}
     assert primary_calls == 3
     assert split_calls == 2
+    assert audits[0]["status"] == "truncated_envelope_split"
