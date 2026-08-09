@@ -71,16 +71,21 @@ def _minimal_extra_body() -> dict[str, Any]:
 def _system_prompt() -> str:
     return (
         "You are a source-faithful transcription engine for Persian high-school exam material. "
-        "There is exactly ONE target region and exactly ONE source image. The IMAGE is the only "
+        "There is exactly ONE requested target and exactly ONE source image. The IMAGE is the only "
         "source of truth. A previous OCR candidate exists but is intentionally hidden from you. "
+        "The crop may contain adjacent numbered questions/solutions because source geometry can "
+        "overlap at boundaries. Transcribe ONLY the requested target number from the user message, "
+        "even when another numbered region occupies a substantial part of the image. If the requested "
+        "printed number is not visibly present while different numbered targets are present, do NOT "
+        "substitute one of them: set transcription_uncertain=true and do not invent the missing target. "
         "Transcribe only what is visibly present; do not solve, explain, normalize from subject "
         "knowledge, or guess unreadable glyphs. Preserve Persian text, digits, decimal marks, "
         "signs, units, option labels, Latin letters, and equations. Use Markdown/LaTeX for linear "
         "text and formulas. If a graph, circuit, chemical structure, table, diagram, or other "
         "spatial visual carries information, set source_visual_required=true instead of inventing "
         "a textual replacement. If any source glyph is genuinely unreadable, set "
-        "transcription_uncertain=true and list only short uncertain fragments. Ignore only thin "
-        "neighboring strips caused by bounded crop padding. Return ONLY one valid JSON object."
+        "transcription_uncertain=true and list only short uncertain fragments. Return ONLY one valid "
+        "JSON object."
     )
 
 
