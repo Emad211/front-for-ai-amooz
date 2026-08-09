@@ -260,6 +260,38 @@ def test_segment_blocks_preserve_rtl_region_order_on_two_column_page():
     assert [block["printedNumber"] for block in output["blocks"]] == ["1", "2", "3", "4"]
 
 
+def test_segment_blocks_fail_closed_on_sparse_unclassified_two_column_page():
+    """Do not persist a left-to-right proposal when RTL detection is sparse."""
+
+    segment = SimpleNamespace(
+        role="questions",
+        start_page=1,
+        end_page=1,
+        metadata={"pageNumbers": [1]},
+    )
+    page = SimpleNamespace(page_number=1, display_order=0, orientation=0)
+    # Three regions per side are below is_rtl_double_column's conservative
+    # block threshold. Their interleaved provider order would otherwise be
+    # persisted as 1,4,2,5,3,6 by the geometric fallback.
+    analysis = {
+        "pages": [
+            {
+                "originalPageNumber": 1,
+                "rtlDoubleColumn": False,
+                "regions": [
+                    {"kind": "question", "questionNumber": 1, "bbox": [0.55, 0.10, 0.95, 0.20]},
+                    {"kind": "question", "questionNumber": 4, "bbox": [0.05, 0.10, 0.45, 0.20]},
+                    {"kind": "question", "questionNumber": 2, "bbox": [0.55, 0.30, 0.95, 0.40]},
+                    {"kind": "question", "questionNumber": 5, "bbox": [0.05, 0.30, 0.45, 0.40]},
+                    {"kind": "question", "questionNumber": 3, "bbox": [0.55, 0.50, 0.95, 0.60]},
+                    {"kind": "question", "questionNumber": 6, "bbox": [0.05, 0.50, 0.45, 0.60]},
+                ],
+            }
+        ]
+    }
+    assert build_segment_blocks(analysis, segment=segment, pages=[page]) == {"blocks": []}
+
+
 def test_segment_blocks_remap_v4_oriented_page_bbox():
     segment = SimpleNamespace(
         role="questions",

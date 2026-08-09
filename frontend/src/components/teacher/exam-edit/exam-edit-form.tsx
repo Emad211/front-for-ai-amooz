@@ -464,7 +464,8 @@ export function ExamEditForm({ examDetail, onSave, isSaving }: ExamEditFormProps
             <p className="font-bold">این آزمون از استخراج منبع‌محور V4 ساخته شده است.</p>
             <p>
               متن سؤال، گزینه‌ها و راه‌حل از روی منبع اصلی می‌آیند و در این فرم فقط خواندنی هستند؛
-              تصاویر استخراج‌شده همچنان قابل مشاهده‌اند. عنوان، توضیحات، سطح و زمان را می‌توانید ویرایش کنید.
+              تصاویر استخراج‌شده همچنان قابل مشاهده‌اند. بازبینی محتوای استخراج‌شده را از پنل V4 انجام دهید؛
+              عنوان، توضیحات، سطح و زمان را می‌توانید در همین فرم ویرایش کنید.
             </p>
           </div>
         )}
@@ -575,7 +576,8 @@ export function ExamEditForm({ examDetail, onSave, isSaving }: ExamEditFormProps
                           type="button"
                           size="sm"
                           onClick={() => acknowledgeQuestion(questionIndex, review)}
-                          disabled={!canAcknowledgeQuestionIssues}
+                          disabled={!canAcknowledgeQuestionIssues || sourceAware}
+                          title={sourceAware ? 'بازبینی سؤال‌های V4 از پنل منبع‌محور انجام می‌شود.' : undefined}
                         >
                           <ShieldCheck className="h-4 w-4" />
                           تأیید و کنترل مجدد

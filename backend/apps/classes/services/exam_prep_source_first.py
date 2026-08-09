@@ -832,6 +832,8 @@ def build_segment_blocks(
         if physical not in allowed_pages:
             continue
         rtl_double_column = bool(page.get("rtlDoubleColumn"))
+        has_left_region = False
+        has_right_region = False
         for region_index, region in enumerate(page.get("regions") or []):
             if not isinstance(region, Mapping):
                 continue
@@ -848,8 +850,14 @@ def build_segment_blocks(
             try:
                 region_y0 = float(raw_box[1])
                 region_x0 = float(raw_box[0])
+                region_x1 = float(raw_box[2])
             except (TypeError, ValueError):
                 continue
+            center_x = (region_x0 + region_x1) / 2.0
+            if center_x < 0.5:
+                has_left_region = True
+            elif center_x > 0.5:
+                has_right_region = True
             if not _structurally_safe_region(region):
                 return {"blocks": []}
             number = _region_number(region)
@@ -869,6 +877,12 @@ def build_segment_blocks(
                     physical,
                 )
             )
+        # A sparse two-column page can fall below the layout analyzer's
+        # conservative RTL threshold.  Do not persist a geometric
+        # left-to-right proposal in that case: the existing semantic detector
+        # is safer than assigning the wrong question/crop order.
+        if not rtl_double_column and has_left_region and has_right_region:
+            return {"blocks": []}
 
     def _candidate_sort_key(
         item: tuple[int, float, float, int, bool, Mapping[str, Any], int],
