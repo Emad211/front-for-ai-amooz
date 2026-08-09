@@ -21,42 +21,98 @@ from .exam_prep_page_source import SourcePageExtraction
 from .exam_prep_utils import clean_exam_markdown
 
 
+_OBSERVED_GAP_THRESHOLD = 20
+_MIN_FALLBACK_CLUSTER_SIZE = 3
+
+
+def _merge_ranges(values: Sequence[tuple[int, int]]) -> tuple[tuple[int, int], ...]:
+    merged: list[list[int]] = []
+    for start, end in sorted((int(a), int(b)) for a, b in values if 1 <= int(a) <= int(b)):
+        if not merged or start > merged[-1][1] + 1:
+            merged.append([start, end])
+        else:
+            merged[-1][1] = max(merged[-1][1], end)
+    return tuple((start, end) for start, end in merged)
+
+
+def _observed_clusters(question_numbers: Sequence[int]) -> list[tuple[int, int, int]]:
+    """Return robust observed number clusters separated by a very large gap.
+
+    A few missed OCR anchors must never create a synthetic booklet. The fallback
+    therefore requires at least three observed questions in a cluster and a gap
+    greater than 20 question numbers before splitting.
+    """
+
+    observed = sorted({int(value) for value in question_numbers if int(value) > 0})
+    if not observed:
+        return []
+    groups: list[list[int]] = [[observed[0]]]
+    for value in observed[1:]:
+        if value - groups[-1][-1] > _OBSERVED_GAP_THRESHOLD:
+            groups.append([value])
+        else:
+            groups[-1].append(value)
+    return [
+        (group[0], group[-1], len(group))
+        for group in groups
+        if len(group) >= _MIN_FALLBACK_CLUSTER_SIZE
+    ]
+
+
 def declared_question_intervals(
     evidence: core.MistralDocumentEvidence,
     question_numbers: Sequence[int],
 ) -> tuple[tuple[int, int], ...]:
-    """Return merged contiguous declared ranges, falling back to observed min/max."""
+    """Return real booklet intervals without fabricating OCR gaps.
+
+    Declared booklet tables are authoritative when present. A deterministic
+    observed-anchor fallback only augments a declared set when a large, dense
+    cluster of numbered questions is completely outside every parsed table. This
+    covers alternate booklet-table layouts while preventing one noisy anchor from
+    creating a new scope.
+    """
 
     rows = [
         item
         for item in (evidence.booklet_ranges.get("ranges") or [])
         if isinstance(item, Mapping) and item.get("countMatchesRange") is True
     ]
-    ranges: list[tuple[int, int]] = []
+    declared: list[tuple[int, int]] = []
     for item in rows:
         start = core._integer(item.get("start"))
         end = core._integer(item.get("end"))
         if start is not None and end is not None and 1 <= start <= end:
-            ranges.append((start, end))
-    ranges.sort()
-    merged: list[list[int]] = []
-    for start, end in ranges:
-        if not merged or start > merged[-1][1] + 1:
-            merged.append([start, end])
-        else:
-            merged[-1][1] = max(merged[-1][1], end)
+            declared.append((start, end))
+    merged_declared = list(_merge_ranges(declared))
 
     observed = sorted({int(value) for value in question_numbers if int(value) > 0})
-    if not merged:
-        return ((min(observed), max(observed)),) if observed else ()
+    if not observed:
+        return tuple(merged_declared)
 
-    observed_set = set(observed)
+    if not merged_declared:
+        clusters = _observed_clusters(observed)
+        if len(clusters) >= 2:
+            return tuple((start, end) for start, end, _count in clusters)
+        return ((min(observed), max(observed)),)
+
+    # Keep only declared intervals that actually contain observed questions.
     relevant = [
         (start, end)
-        for start, end in merged
-        if any(start <= value <= end for value in observed_set)
+        for start, end in merged_declared
+        if any(start <= value <= end for value in observed)
     ]
-    return tuple(relevant or [(min(observed), max(observed))]) if observed else tuple(relevant)
+
+    # If an entire dense observed cluster lies outside every parsed declaration,
+    # add it as a fallback booklet interval. This is exactly the situation in
+    # Kانون files whose cover uses the compact ``نام درس / شماره سؤال`` schema.
+    for start, end, _count in _observed_clusters(observed):
+        if any(not (end < a or start > b) for a, b in relevant):
+            continue
+        relevant.append((start, end))
+
+    if not relevant:
+        return ((min(observed), max(observed)),)
+    return _merge_ranges(relevant)
 
 
 def scope_key_for_question(
@@ -82,11 +138,6 @@ def _looks_like_next_range_start(
         return False
     if raw >= next_start:
         return True
-    # Near the end of the current booklet, preserve a next-booklet heading whose
-    # OCR lost leading digits. The Stage-2 heading aligner can then recover it in
-    # the next interval (e.g. raw 1 when expected 251). Restrict this heuristic
-    # to the last few expected headings so an ordinary early one-digit OCR value
-    # can never jump booklets.
     if last_accepted < current_end - 2 or not 0 <= raw <= 9:
         return False
     return str(next_start).endswith(str(raw))
@@ -165,9 +216,6 @@ def aligned_solutions_for_intervals(
             if start <= item.question_number <= end and not item.option_label_valid
         )
 
-    # Anything after the last declared interval is intentionally not attached to
-    # a previous booklet. The booklet-range integrity audit handles unexpected
-    # anchors rather than creating a synthetic numeric gap.
     return accepted, sorted(missing), sorted(invalid)
 
 
