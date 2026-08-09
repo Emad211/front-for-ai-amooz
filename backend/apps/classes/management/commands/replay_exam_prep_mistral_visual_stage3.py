@@ -16,7 +16,7 @@ from apps.classes.services.exam_prep_mistral_ocr_transport import OCR4DocumentRe
 from apps.classes.services.exam_prep_mistral_production import (
     analyze_mistral_document_evidence,
 )
-from apps.classes.services.exam_prep_mistral_visuals import (
+from apps.classes.services.exam_prep_mistral_visual_reconcile import (
     VisualPipelineConfig,
     reconcile_mistral_source_visuals,
 )
@@ -26,21 +26,25 @@ from apps.classes.services.exam_prep_question_verifier import rebuild_assembly_q
 
 
 class _DiagnosticStore:
-    """Mirror production storage names into a local diagnostic crop directory."""
+    """Mirror private storage names into a portable local diagnostic directory."""
 
     def __init__(self, root: Path) -> None:
         self.root = root
         self.files: dict[str, str] = {}
 
     def save(self, name: str, payload: bytes) -> str:
-        safe = Path(name)
-        if safe.is_absolute() or ".." in safe.parts:
+        # Storage keys are POSIX identities even when the replay runs on Windows.
+        parts = [part for part in str(name).replace("\\", "/").split("/") if part]
+        if not parts or any(part in {".", ".."} for part in parts):
+            raise ValueError("Unsafe diagnostic visual storage name.")
+        safe = Path(*parts)
+        if safe.is_absolute():
             raise ValueError("Unsafe diagnostic visual storage name.")
         target = self.root / safe
         target.parent.mkdir(parents=True, exist_ok=True)
         if not target.exists():
             target.write_bytes(payload)
-        self.files[name] = str(target.relative_to(self.root))
+        self.files[name] = target.relative_to(self.root).as_posix()
         return name
 
 
@@ -162,6 +166,7 @@ def _question_visual_summary(projection: Mapping[str, Any]) -> list[dict[str, An
                 "questionNumber": number,
                 "sourcePages": list(question.get("source_pages") or []),
                 "issues": list(question.get("issues") or []),
+                "visualSourceContract": question.get("visualSourceContract"),
                 "visuals": [
                     {
                         "id": item.get("id"),
@@ -171,6 +176,9 @@ def _question_visual_summary(projection: Mapping[str, Any]) -> list[dict[str, An
                         "sourceBBox": item.get("sourceBBox"),
                         "storagePath": item.get("storagePath"),
                         "visualMode": item.get("visualMode"),
+                        "sourceKinds": item.get("sourceKinds"),
+                        "componentIds": item.get("componentIds"),
+                        "groupedOptionLabels": item.get("groupedOptionLabels"),
                         "reviewOnly": item.get("reviewOnly"),
                         "sanity": item.get("sanity"),
                     }
@@ -183,8 +191,8 @@ def _question_visual_summary(projection: Mapping[str, Any]) -> list[dict[str, An
 
 class Command(BaseCommand):
     help = (
-        "Replay the Stage-3 precise visual pipeline locally against an existing "
-        "successful Mistral full-document OCR bundle. Makes zero provider calls."
+        "Replay the source-precise Stage-3 visual pipeline locally against an "
+        "existing successful Mistral OCR bundle. Makes zero provider calls."
     )
 
     def add_arguments(self, parser):
@@ -289,7 +297,7 @@ class Command(BaseCommand):
         (output_dir / "manifest.json").write_text(
             json.dumps(
                 {
-                    "schemaVersion": 1,
+                    "schemaVersion": 2,
                     "privateDiagnosticBundle": True,
                     "productionPipelineChanged": False,
                     "providerRequests": 0,
