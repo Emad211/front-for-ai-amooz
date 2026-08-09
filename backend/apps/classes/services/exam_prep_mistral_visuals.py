@@ -5,16 +5,18 @@ The actual production policy is loaded lazily from
 ``exam_prep_mistral_visual_runtime`` so option binding and fallback behavior stay
 fail-closed without creating import cycles.
 
-Production option markers are deliberately narrow: a marker must be a tiny
-standalone 1..4 label immediately outside an OCR visual block. Numbers inside
-graphs/axes are therefore not accepted as option labels. A second completeness
-pass also rejects crops that leave a nearby caption, legend, axis label, equation
-or other short visual annotation outside all final crop boxes.
+Production policies layered here are deliberately conservative:
+- option markers are tiny standalone 1..4 labels adjacent to OCR visuals;
+- axis/tick numbers inside a graph are never accepted as option labels;
+- repeated body graphics are never discarded merely because they repeat;
+- nearby caption/legend/axis/equation evidence must fit inside the crop set;
+- every stored asset identity includes source page + semantic role.
 
 This module intentionally contains no LLM dependency.
 """
 from __future__ import annotations
 
+import hashlib
 import re
 from typing import Any, Mapping, Sequence
 
@@ -48,7 +50,6 @@ _fingerprint = _p._fingerprint
 _page_map = _p._page_map
 _analysis_page_map = _p._analysis_page_map
 _region_seeds = _p._region_seeds
-_decorative_candidate = _p._decorative_candidate
 _cluster_seeds = _p._cluster_seeds
 _option_label = _p._option_label
 _rtl_reading_order = _p._rtl_reading_order
@@ -59,10 +60,7 @@ _plan_sanity = _p._plan_sanity
 _should_group = _p._should_group
 _visual_required = _p._visual_required
 _fallback_plan = _p._fallback_plan
-_asset_name = _p._asset_name
-_asset_id = _p._asset_id
 _asset_alt = _p._asset_alt
-_asset_from_payload = _p._asset_from_payload
 _rebuild_projection_quality = _p._rebuild_projection_quality
 
 _OPTION_MARKER_ONLY_RE = re.compile(
@@ -70,6 +68,15 @@ _OPTION_MARKER_ONLY_RE = re.compile(
     r"\s*[\)\].:：\-–—،]?\s*$",
     re.IGNORECASE,
 )
+
+
+def _decorative_candidate(seed: VisualSeed, repeated: int) -> bool:
+    """Suppress only repeated margin/template graphics, never repeated body data."""
+
+    x0, y0, x1, y1 = seed.bbox
+    margin = y1 <= 0.17 or y0 >= 0.86 or x1 <= 0.07 or x0 >= 0.93
+    reasonably_small = _area(seed.bbox) <= 0.045
+    return repeated >= 3 and margin and reasonably_small
 
 
 def _safe_option_markers(
@@ -135,7 +142,10 @@ def _auxiliary_completeness_issues(
         return []
     heading = region.get("headingProviderIndex")
     heading_index = int(heading) if isinstance(heading, int) else None
-    audit_gap = min(0.065, max(config.auxiliary_gap, config.auxiliary_gap * 1.7))
+    audit_gap = min(
+        0.065,
+        max(config.auxiliary_gap, config.auxiliary_gap * 1.7),
+    )
     for block in blocks:
         if heading_index is not None and block.provider_index == heading_index:
             continue
@@ -147,7 +157,10 @@ def _auxiliary_completeness_issues(
             audit_gap,
         ):
             continue
-        if any(_coverage(block.bbox, plan.bbox) >= 0.90 for plan in plans):
+        if any(
+            _coverage(block.bbox, plan.bbox) >= 0.90
+            for plan in plans
+        ):
             continue
         return ["visual_residual_graphics"]
     return []
@@ -269,6 +282,87 @@ def _plans_for_region(
         )
     )
     return plans, list(dict.fromkeys(issues))
+
+
+def _asset_name(
+    *,
+    source_sha256: str,
+    plan: VisualPlan,
+    order: int,
+    payload_sha256: str,
+) -> str:
+    option = f"-option-{plan.option_label}" if plan.option_label else ""
+    return (
+        f"{MISTRAL_VISUAL_STORAGE_PREFIX}/{source_sha256}/"
+        f"p{plan.page_number:03d}-q{plan.question_number:03d}-{plan.role}"
+        f"{option}-{order:02d}-{payload_sha256[:16]}.png"
+    )
+
+
+def _asset_id(
+    *,
+    source_sha256: str,
+    plan: VisualPlan,
+    order: int,
+    payload_sha256: str,
+) -> str:
+    option = f"-o{plan.option_label}" if plan.option_label else ""
+    return (
+        f"inline-mistral-v1-{source_sha256[:10]}-p{plan.page_number}"
+        f"-q{plan.question_number}-{plan.role}{option}-{order}-{payload_sha256[:8]}"
+    )
+
+
+def _asset_from_payload(
+    *,
+    plan: VisualPlan,
+    order: int,
+    payload: bytes,
+    source_sha256: str,
+    store: VisualAssetStore,
+) -> dict[str, Any]:
+    digest = hashlib.sha256(payload).hexdigest()
+    stored_name = store.save(
+        _asset_name(
+            source_sha256=source_sha256,
+            plan=plan,
+            order=order,
+            payload_sha256=digest,
+        ),
+        payload,
+    )
+    return {
+        "id": _asset_id(
+            source_sha256=source_sha256,
+            plan=plan,
+            order=order,
+            payload_sha256=digest,
+        ),
+        "role": plan.role,
+        "optionLabel": plan.option_label,
+        "altText": _asset_alt(plan),
+        "selectedVariant": "source",
+        "sourcePage": plan.page_number,
+        "sourceBBox": {
+            "x0": plan.bbox[0],
+            "y0": plan.bbox[1],
+            "x1": plan.bbox[2],
+            "y1": plan.bbox[3],
+        },
+        "storagePath": stored_name,
+        "contentType": "image/png",
+        "byteSize": len(payload),
+        "sha256": digest,
+        "visualMode": plan.mode,
+        "groupedOptionLabels": list(plan.grouped_option_labels),
+        "sourceKinds": list(plan.source_kinds),
+        "componentIds": list(plan.component_ids),
+        "reviewOnly": plan.review_only,
+        "sanity": {
+            "status": "needs_review" if plan.sanity_issues else "passed",
+            "issues": list(plan.sanity_issues),
+        },
+    }
 
 
 def _augment_unresolved_audit(
