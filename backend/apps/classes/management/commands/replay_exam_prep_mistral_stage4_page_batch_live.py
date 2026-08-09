@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from decimal import Decimal, InvalidOperation
 import hashlib
 import json
 import os
@@ -20,15 +21,24 @@ from apps.classes.management.commands.replay_exam_prep_mistral_visual_stage3 imp
     _diagnostic_result,
     _load_bundle_root,
 )
-from apps.classes.services import exam_prep_mistral_stage2_core as stage2
 from apps.classes.services import exam_prep_mistral_stage4_page_batch as stage4_page
 from apps.classes.services import exam_prep_mistral_region_transcriber as region_transcriber
+from apps.classes.services.exam_prep_mistral_disjoint_ranges import (
+    aligned_solutions_for_intervals,
+    build_page_extractions_disjoint,
+    declared_question_intervals,
+    scope_key_for_question,
+)
 from apps.classes.services.exam_prep_mistral_page_batch_transcriber import (
     BatchItem,
+    PageBatchEnvelopeError,
     PageBatchResult,
     transcribe_page_batch,
 )
-from apps.classes.services.exam_prep_mistral_production import analyze_mistral_document_evidence
+from apps.classes.services.exam_prep_mistral_production import (
+    _question_numbers,
+    analyze_mistral_document_evidence,
+)
 from apps.classes.services.exam_prep_mistral_risk_engine_v2 import score_region_risks
 from apps.classes.services.exam_prep_mistral_stage4 import _render_crop
 from apps.classes.services.exam_prep_mistral_stage4_runtime import verify_and_repair_risky_regions
@@ -48,6 +58,13 @@ def _safe(value: str) -> str:
     return re.sub(r"[^A-Za-z0-9_.-]+", "_", str(value or ""))[:100] or "model"
 
 
+def _decimal(value: Any, default: Decimal = Decimal("0")) -> Decimal:
+    try:
+        return Decimal(str(value or "0"))
+    except (InvalidOperation, ValueError):
+        return default
+
+
 def _batch_cache_path(root: Path, *, page_number: int, targets, model: str) -> Path:
     target_ids = [decision.target_id for decision, _payload in targets]
     digest = hashlib.sha256("|".join(target_ids).encode("utf-8")).hexdigest()[:12]
@@ -62,6 +79,9 @@ def _serialize_batch(value: PageBatchResult) -> dict[str, Any]:
         "requestId": value.request_id,
         "usage": value.usage,
         "estimatedCost": value.estimated_cost,
+        "requestedTargetIds": list(value.requested_target_ids),
+        "missingTargetIds": list(value.missing_target_ids),
+        "invalidTargetIds": list(value.invalid_target_ids),
         "items": [item.model_dump() for item in value.items],
     }
 
@@ -73,8 +93,26 @@ def _deserialize_batch(value: dict[str, Any]) -> PageBatchResult:
         items=tuple(BatchItem.model_validate(item) for item in (value.get("items") or [])),
         request_id=str(value.get("requestId") or ""),
         usage={str(k): int(v or 0) for k, v in dict(value.get("usage") or {}).items()},
-        estimated_cost={str(k): float(v or 0) for k, v in dict(value.get("estimatedCost") or {}).items()},
+        estimated_cost={
+            str(k): float(v or 0) for k, v in dict(value.get("estimatedCost") or {}).items()
+        },
+        requested_target_ids=tuple(str(v) for v in (value.get("requestedTargetIds") or [])),
+        missing_target_ids=tuple(str(v) for v in (value.get("missingTargetIds") or [])),
+        invalid_target_ids=tuple(str(v) for v in (value.get("invalidTargetIds") or [])),
     )
+
+
+def _failure_cost(value: dict[str, Any]) -> tuple[float, float]:
+    estimated = dict(value.get("estimatedCost") or {})
+    try:
+        unit = float(estimated.get("unit") or 0)
+    except (TypeError, ValueError):
+        unit = 0.0
+    try:
+        irt = float(estimated.get("irt") or 0)
+    except (TypeError, ValueError):
+        irt = 0.0
+    return unit, irt
 
 
 def _cached_page_batch(
@@ -83,10 +121,16 @@ def _cached_page_batch(
     base_call: PageBatchCall,
     counters: dict[str, float],
 ) -> PageBatchCall:
+    """Checkpoint every logical page call, including structured envelope failures."""
+
     cache_dir.mkdir(parents=True, exist_ok=True)
 
     def call(**kwargs):
-        selected_model = str(kwargs.get("model") or os.getenv("EXAM_PREP_STAGE4_PRIMARY_MODEL") or "gemini-3-flash-preview")
+        selected_model = str(
+            kwargs.get("model")
+            or os.getenv("EXAM_PREP_STAGE4_PRIMARY_MODEL")
+            or "gemini-3-flash-preview"
+        )
         path = _batch_cache_path(
             cache_dir,
             page_number=int(kwargs.get("page_number") or 0),
@@ -98,31 +142,64 @@ def _cached_page_batch(
             counters["pageCacheHits"] = counters.get("pageCacheHits", 0) + 1
             if cached.get("status") == "success":
                 result = _deserialize_batch(cached)
-                counters["logicalEstimatedCostUnit"] = counters.get("logicalEstimatedCostUnit", 0.0) + float(result.estimated_cost.get("unit") or 0)
-                counters["logicalEstimatedCostIrt"] = counters.get("logicalEstimatedCostIrt", 0.0) + float(result.estimated_cost.get("irt") or 0)
+                unit = float(result.estimated_cost.get("unit") or 0)
+                irt = float(result.estimated_cost.get("irt") or 0)
+                counters["logicalEstimatedCostUnit"] = counters.get("logicalEstimatedCostUnit", 0.0) + unit
+                counters["logicalEstimatedCostIrt"] = counters.get("logicalEstimatedCostIrt", 0.0) + irt
                 return result
-            raise RuntimeError(f"cached_page_batch_failure:{cached.get('errorType') or 'unknown'}")
+            unit, irt = _failure_cost(cached)
+            counters["logicalEstimatedCostUnit"] = counters.get("logicalEstimatedCostUnit", 0.0) + unit
+            counters["logicalEstimatedCostIrt"] = counters.get("logicalEstimatedCostIrt", 0.0) + irt
+            if cached.get("errorType") == "PageBatchEnvelopeError":
+                raise PageBatchEnvelopeError(
+                    str(cached.get("reasonCode") or "cached_envelope_failure"),
+                    usage={str(k): int(v or 0) for k, v in dict(cached.get("usage") or {}).items()},
+                    estimated_cost={
+                        str(k): float(v or 0)
+                        for k, v in dict(cached.get("estimatedCost") or {}).items()
+                    },
+                    request_id=str(cached.get("requestId") or ""),
+                )
+            raise RuntimeError(
+                f"cached_page_batch_failure:{cached.get('errorType') or 'unknown'}"
+            )
 
         counters["networkPageRequests"] = counters.get("networkPageRequests", 0) + 1
         try:
             result = base_call(**kwargs)
         except Exception as exc:
-            path.write_text(
-                json.dumps(
+            payload: dict[str, Any] = {
+                "status": "failure",
+                "pageNumber": kwargs.get("page_number"),
+                "model": selected_model,
+                "targetIds": [d.target_id for d, _p in (kwargs.get("targets") or [])],
+                "errorType": type(exc).__name__,
+            }
+            if isinstance(exc, PageBatchEnvelopeError):
+                payload.update(
                     {
-                        "status": "failure",
-                        "pageNumber": kwargs.get("page_number"),
-                        "model": selected_model,
-                        "targetIds": [d.target_id for d, _p in (kwargs.get("targets") or [])],
-                        "errorType": type(exc).__name__,
-                    },
-                    ensure_ascii=False,
-                    indent=2,
-                ),
+                        "reasonCode": exc.reason_code,
+                        "requestId": exc.request_id,
+                        "usage": exc.usage,
+                        "estimatedCost": exc.estimated_cost,
+                    }
+                )
+                unit = float(exc.estimated_cost.get("unit") or 0)
+                irt = float(exc.estimated_cost.get("irt") or 0)
+                counters["networkEstimatedCostUnit"] = counters.get("networkEstimatedCostUnit", 0.0) + unit
+                counters["networkEstimatedCostIrt"] = counters.get("networkEstimatedCostIrt", 0.0) + irt
+                counters["logicalEstimatedCostUnit"] = counters.get("logicalEstimatedCostUnit", 0.0) + unit
+                counters["logicalEstimatedCostIrt"] = counters.get("logicalEstimatedCostIrt", 0.0) + irt
+            path.write_text(
+                json.dumps(payload, ensure_ascii=False, indent=2),
                 encoding="utf-8",
             )
             raise
-        path.write_text(json.dumps(_serialize_batch(result), ensure_ascii=False, indent=2), encoding="utf-8")
+
+        path.write_text(
+            json.dumps(_serialize_batch(result), ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
         unit = float(result.estimated_cost.get("unit") or 0)
         irt = float(result.estimated_cost.get("irt") or 0)
         counters["networkEstimatedCostUnit"] = counters.get("networkEstimatedCostUnit", 0.0) + unit
@@ -136,8 +213,9 @@ def _cached_page_batch(
 
 class Command(BaseCommand):
     help = (
-        "Replay calibrated Stage 4 with all suspicious crops from one physical page "
-        "batched into one native Gemini structured-output request. OCR calls are zero."
+        "Replay calibrated Stage 4 with suspicious crops page-batched into native "
+        "Gemini structured-output requests. OCR is reused from a bundle, but its "
+        "recorded cost still counts toward the total PDF budget."
     )
 
     def add_arguments(self, parser):
@@ -149,6 +227,8 @@ class Command(BaseCommand):
         parser.add_argument("--unresolved-solution-targets", default="")
         parser.add_argument("--max-page-batches", type=int, default=24)
         parser.add_argument("--max-secondary-calls", type=int, default=6)
+        parser.add_argument("--total-budget-usd", type=float, default=0.30)
+        parser.add_argument("--prior-provider-cost-usd", type=float, default=None)
         parser.add_argument("--resume", action="store_true")
         parser.add_argument("--allow-private-transmission", action="store_true")
 
@@ -171,8 +251,8 @@ class Command(BaseCommand):
         maximum_pages = max(1, min(40, int(options.get("max_page_batches") or 24)))
         maximum_secondary = max(0, min(12, int(options.get("max_secondary_calls") or 6)))
         recovered = _number_set(options.get("recovered_solution_targets") or "")
-        unresolved = _number_set(options.get("unresolved_solution_targets") or "")
-        if recovered & unresolved:
+        manual_unresolved = _number_set(options.get("unresolved_solution_targets") or "")
+        if recovered & manual_unresolved:
             raise CommandError("A target cannot be both recovered and unresolved.")
 
         try:
@@ -180,15 +260,32 @@ class Command(BaseCommand):
             page_count = len(PdfReader(str(pdf_path)).pages)
         except Exception as exc:
             raise CommandError("The supplied PDF cannot be opened.") from exc
-        root, manifest = _load_bundle_root(bundle_path)
+        root, bundle_manifest = _load_bundle_root(bundle_path)
         bundle_page_count = int(
-            manifest.get("originalPdfPageCount")
-            or manifest.get("pageCount")
+            bundle_manifest.get("originalPdfPageCount")
+            or bundle_manifest.get("pageCount")
             or len(root.get("pages") or [])
             or 0
         )
         if bundle_page_count and bundle_page_count != page_count:
-            raise CommandError(f"PDF/bundle page count mismatch ({page_count} != {bundle_page_count}).")
+            raise CommandError(
+                f"PDF/bundle page count mismatch ({page_count} != {bundle_page_count})."
+            )
+
+        total_budget = _decimal(options.get("total_budget_usd"), Decimal("0.30"))
+        if total_budget <= 0:
+            raise CommandError("--total-budget-usd must be positive.")
+        explicit_prior = options.get("prior_provider_cost_usd")
+        prior_cost = (
+            _decimal(explicit_prior)
+            if explicit_prior is not None
+            else _decimal(bundle_manifest.get("estimatedCostUnit"))
+        )
+        remaining_stage4_budget = max(Decimal("0"), total_budget - prior_cost)
+        if remaining_stage4_budget <= 0:
+            raise CommandError(
+                f"No Stage-4 budget remains: prior={prior_cost}, total={total_budget}."
+            )
 
         result = _diagnostic_result(pdf_data=pdf_data, root=root, page_count=page_count)
         replay_root = dict(root)
@@ -197,10 +294,20 @@ class Command(BaseCommand):
             replay_root,
             original_page_numbers=list(range(1, page_count + 1)),
         )
-        page_extractions = stage2._build_page_extractions(
+        question_numbers = _question_numbers(evidence)
+        intervals = declared_question_intervals(evidence, question_numbers)
+        _accepted, detected_missing, detected_invalid = aligned_solutions_for_intervals(
+            result,
+            intervals,
+        )
+        detected_unresolved = set(detected_missing) | set(detected_invalid)
+        unresolved = (detected_unresolved | manual_unresolved) - recovered
+
+        page_extractions = build_page_extractions_disjoint(
             result=result,
             evidence=evidence,
             recovered_targets={},
+            intervals=intervals,
         )
         assembled = assemble_page_extractions(
             page_extractions,
@@ -238,6 +345,7 @@ class Command(BaseCommand):
         risk_rows: list[dict[str, Any]] = []
         for decision in decisions:
             row = decision.safe_dict()
+            row["scopeKey"] = scope_key_for_question(intervals, decision.question_number)
             if decision.suspicious:
                 crop_name = f"{decision.target_id}.png"
                 (crop_dir / crop_name).write_bytes(_render_crop(pdf_data, decision))
@@ -288,6 +396,7 @@ class Command(BaseCommand):
                 layout=evidence.layout,
                 recovered_solution_targets=recovered,
                 unresolved_solution_targets=unresolved,
+                max_cost_usd=float(remaining_stage4_budget),
             )
         finally:
             stage4_page.transcribe_page_batch = old_page_call
@@ -305,7 +414,11 @@ class Command(BaseCommand):
         counters["networkSecondaryRequests"] = int(secondary_counter.get("networkRequests") or 0)
         counters["secondaryCacheHits"] = int(secondary_counter.get("cacheHits") or 0)
         stats = dict(stage4_audit.get("stats") or {})
-        provider_requests_this_run = int(counters.get("networkPageRequests") or 0) + int(counters.get("networkSecondaryRequests") or 0)
+        provider_requests_this_run = int(counters.get("networkPageRequests") or 0) + int(
+            counters.get("networkSecondaryRequests") or 0
+        )
+        stage4_cost = _decimal(stats.get("totalLlmCostUsd"))
+        total_estimated_cost = prior_cost + stage4_cost
 
         (output_dir / "stage4.audit.safe.json").write_text(
             json.dumps(stage4_audit, ensure_ascii=False, indent=2), encoding="utf-8"
@@ -314,7 +427,7 @@ class Command(BaseCommand):
             json.dumps(updated.projection, ensure_ascii=False, indent=2), encoding="utf-8"
         )
         manifest_out = {
-            "schemaVersion": 3,
+            "schemaVersion": 4,
             "privateDiagnosticBundle": True,
             "ocrProviderRequests": 0,
             "providerRequestsThisRun": provider_requests_this_run,
@@ -322,20 +435,46 @@ class Command(BaseCommand):
             "networkSecondaryRequestsThisRun": int(counters.get("networkSecondaryRequests") or 0),
             "pageBatchCacheHits": int(counters.get("pageCacheHits") or 0),
             "secondaryCacheHits": int(counters.get("secondaryCacheHits") or 0),
-            "estimatedPrimaryCostUnitThisRun": round(float(counters.get("networkEstimatedCostUnit") or 0), 8),
-            "estimatedPrimaryCostIrtThisRun": round(float(counters.get("networkEstimatedCostIrt") or 0), 2),
+            "estimatedPrimaryCostUnitThisRun": round(
+                float(counters.get("networkEstimatedCostUnit") or 0), 8
+            ),
+            "estimatedPrimaryCostIrtThisRun": round(
+                float(counters.get("networkEstimatedCostIrt") or 0), 2
+            ),
             "sourcePdfSha256": result.source_sha256,
             "pageCount": page_count,
+            "questionCount": len(question_numbers),
+            "questionIntervals": [
+                {
+                    "start": start,
+                    "end": end,
+                    "scopeKey": scope_key_for_question(intervals, start),
+                }
+                for start, end in intervals
+            ],
             "riskRegionCount": len(decisions),
             "suspiciousRegionCount": len(suspicious),
             "suspiciousPageCount": len(suspicious_pages),
             "pageBatches": int(stats.get("pageBatches") or 0),
+            "primaryCalls": int(stats.get("primaryCalls") or 0),
+            "splitCalls": int(stats.get("splitCalls") or 0),
             "primaryTargets": int(stats.get("primaryTargets") or 0),
             "secondaryCalls": int(stats.get("secondaryCalls") or 0),
             "verified": int(stats.get("verified") or 0),
             "repaired": int(stats.get("repaired") or 0),
+            "partialRepairs": int(stats.get("partialRepairs") or 0),
             "unresolved": int(stats.get("unresolved") or 0),
             "deferred": int(stats.get("deferred") or 0),
+            "detectedMissingSolutionTargets": sorted(detected_missing),
+            "detectedInvalidSolutionTargets": sorted(detected_invalid),
+            "unresolvedSolutionTargets": sorted(unresolved),
+            "recoveredSolutionTargetsRiskHintOnly": sorted(recovered),
+            "priorProviderCostUsd": format(prior_cost, "f"),
+            "totalBudgetUsd": format(total_budget, "f"),
+            "stage4BudgetUsd": format(remaining_stage4_budget, "f"),
+            "stage4EstimatedCostUsd": format(stage4_cost, "f"),
+            "totalEstimatedCostUsd": format(total_estimated_cost, "f"),
+            "budgetWithinLimit": total_estimated_cost <= total_budget,
             "stage3Stats": visual_stats,
             "stage3CriticalIssueCodes": list(visual_audit.get("criticalIssueCodes") or []),
         }
@@ -350,6 +489,7 @@ class Command(BaseCommand):
                 f"newPageRequests={int(counters.get('networkPageRequests') or 0)}, "
                 f"newSecondaryRequests={int(counters.get('networkSecondaryRequests') or 0)}, "
                 f"repaired={int(stats.get('repaired') or 0)}, "
-                f"unresolved={int(stats.get('unresolved') or 0)}, bundle={archive}"
+                f"unresolved={int(stats.get('unresolved') or 0)}, "
+                f"totalEstimatedCostUsd={format(total_estimated_cost, 'f')}, bundle={archive}"
             )
         )
