@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from decimal import Decimal, InvalidOperation
 import json
 from pathlib import Path
 import shutil
@@ -13,8 +14,14 @@ from apps.classes.management.commands.replay_exam_prep_mistral_visual_stage3 imp
     _diagnostic_result,
     _load_bundle_root,
 )
-from apps.classes.services import exam_prep_mistral_stage2_core as stage2
+from apps.classes.services.exam_prep_mistral_disjoint_ranges import (
+    aligned_solutions_for_intervals,
+    build_page_extractions_disjoint,
+    declared_question_intervals,
+    scope_key_for_question,
+)
 from apps.classes.services.exam_prep_mistral_production import (
+    _question_numbers,
     analyze_mistral_document_evidence,
 )
 from apps.classes.services.exam_prep_mistral_risk_engine_v2 import score_region_risks
@@ -26,6 +33,9 @@ from apps.classes.services.exam_prep_mistral_visual_reconcile import (
 from apps.classes.services.exam_prep_page_records import assemble_page_extractions
 from apps.classes.services.exam_prep_page_source import attach_source_regions
 from apps.classes.services.exam_prep_question_verifier import rebuild_assembly_quality
+
+
+_DEFAULT_TOTAL_BUDGET = Decimal("0.30")
 
 
 def _number_set(value: str) -> set[int]:
@@ -44,6 +54,13 @@ def _number_set(value: str) -> set[int]:
     return output
 
 
+def _decimal(value: Any, default: Decimal = Decimal("0")) -> Decimal:
+    try:
+        return Decimal(str(value or "0"))
+    except (InvalidOperation, ValueError):
+        return default
+
+
 class Command(BaseCommand):
     help = (
         "Replay OCR4 + Stage 3 locally and emit the exact Stage-4 risk/crop plan. "
@@ -57,6 +74,7 @@ class Command(BaseCommand):
         parser.add_argument("--title", default="Stage 4 risk plan")
         parser.add_argument("--recovered-solution-targets", default="")
         parser.add_argument("--unresolved-solution-targets", default="")
+        parser.add_argument("--total-budget-usd", type=float, default=0.30)
 
     def handle(self, *args, **options):
         pdf_path = Path(options["pdf"]).expanduser().resolve()
@@ -71,8 +89,8 @@ class Command(BaseCommand):
         output_dir.mkdir(parents=True, exist_ok=True)
 
         recovered = _number_set(options.get("recovered_solution_targets") or "")
-        unresolved = _number_set(options.get("unresolved_solution_targets") or "")
-        if recovered & unresolved:
+        manual_unresolved = _number_set(options.get("unresolved_solution_targets") or "")
+        if recovered & manual_unresolved:
             raise CommandError("A target cannot be both recovered and unresolved.")
 
         try:
@@ -80,10 +98,10 @@ class Command(BaseCommand):
             page_count = len(PdfReader(str(pdf_path)).pages)
         except Exception as exc:
             raise CommandError("The supplied PDF cannot be opened.") from exc
-        root, manifest = _load_bundle_root(bundle_path)
+        root, bundle_manifest = _load_bundle_root(bundle_path)
         bundle_page_count = int(
-            manifest.get("originalPdfPageCount")
-            or manifest.get("pageCount")
+            bundle_manifest.get("originalPdfPageCount")
+            or bundle_manifest.get("pageCount")
             or len(root.get("pages") or [])
             or 0
         )
@@ -103,10 +121,24 @@ class Command(BaseCommand):
             replay_root,
             original_page_numbers=list(range(1, page_count + 1)),
         )
-        page_extractions = stage2._build_page_extractions(
+        question_numbers = _question_numbers(evidence)
+        intervals = declared_question_intervals(evidence, question_numbers)
+        _accepted, detected_missing, detected_invalid = aligned_solutions_for_intervals(
+            result,
+            intervals,
+        )
+        detected_unresolved = set(detected_missing) | set(detected_invalid)
+        unresolved = (detected_unresolved | manual_unresolved) - recovered
+
+        # A number-only --recovered-solution-targets list is sufficient for risk
+        # calibration but cannot reconstruct the exact recovered answer label and
+        # source side. Keep assembly source-pure and make that limitation explicit
+        # in the diagnostic manifest instead of fabricating an answer record.
+        page_extractions = build_page_extractions_disjoint(
             result=result,
             evidence=evidence,
             recovered_targets={},
+            intervals=intervals,
         )
         assembled = assemble_page_extractions(
             page_extractions,
@@ -133,11 +165,13 @@ class Command(BaseCommand):
             unresolved_solution_targets=unresolved,
         )
         suspicious = [item for item in decisions if item.suspicious]
+        suspicious_pages = sorted({item.page_number for item in suspicious})
         crop_dir = output_dir / "suspicious-crops"
         crop_dir.mkdir(parents=True, exist_ok=True)
         rows: list[dict[str, Any]] = []
         for decision in decisions:
             row = decision.safe_dict()
+            row["scopeKey"] = scope_key_for_question(intervals, decision.question_number)
             if decision.suspicious:
                 crop_name = f"{decision.target_id}.png"
                 try:
@@ -152,21 +186,48 @@ class Command(BaseCommand):
             for signal in item.signals:
                 signal_counts[signal] = signal_counts.get(signal, 0) + 1
         hard_math = sum(item.hard_math for item in suspicious)
+        total_budget = _decimal(options.get("total_budget_usd"), _DEFAULT_TOTAL_BUDGET)
+        if total_budget <= 0:
+            total_budget = _DEFAULT_TOTAL_BUDGET
+        ocr_cost = _decimal(bundle_manifest.get("estimatedCostUnit"))
+        remaining_budget = max(Decimal("0"), total_budget - ocr_cost)
+
         manifest_out = {
-            "schemaVersion": 2,
+            "schemaVersion": 3,
             "privateDiagnosticBundle": True,
             "providerRequests": 0,
             "sourcePdfSha256": result.source_sha256,
             "pageCount": page_count,
+            "questionCount": len(question_numbers),
+            "questionIntervals": [
+                {
+                    "start": start,
+                    "end": end,
+                    "scopeKey": scope_key_for_question(intervals, start),
+                }
+                for start, end in intervals
+            ],
+            "intentionalNumberGapSuppressed": len(intervals) > 1,
             "regionCount": len(decisions),
             "cleanRegionCount": len(decisions) - len(suspicious),
             "suspiciousRegionCount": len(suspicious),
+            "suspiciousPageCount": len(suspicious_pages),
             "hardMathSuspiciousCount": hard_math,
-            "potentialPrimaryCalls": len(suspicious),
+            "potentialPrimaryPageBatchCalls": len(suspicious_pages),
             "potentialSecondaryCallsUpperBound": min(hard_math, 6),
             "signalCounts": dict(sorted(signal_counts.items())),
-            "recoveredSolutionTargets": sorted(recovered),
+            "detectedMissingSolutionTargets": sorted(detected_missing),
+            "detectedInvalidSolutionTargets": sorted(detected_invalid),
+            "recoveredSolutionTargetsRiskHintOnly": sorted(recovered),
             "unresolvedSolutionTargets": sorted(unresolved),
+            "recoveredAssemblyWarning": (
+                "number-only recovered targets are not reconstructed in this zero-provider plan"
+                if recovered
+                else ""
+            ),
+            "ocrEstimatedCostUsd": format(ocr_cost, "f"),
+            "totalBudgetUsd": format(total_budget, "f"),
+            "remainingBudgetBeforeStage4Usd": format(remaining_budget, "f"),
             "stage3Stats": visual_stats,
             "stage3CriticalIssueCodes": list(visual_audit.get("criticalIssueCodes") or []),
         }
@@ -182,7 +243,9 @@ class Command(BaseCommand):
         self.stdout.write(
             self.style.SUCCESS(
                 "Stage 4 risk plan completed: providerRequests=0, "
+                f"questions={len(question_numbers)}, intervals={list(intervals)}, "
                 f"regions={len(decisions)}, suspicious={len(suspicious)}, "
-                f"hardMath={hard_math}, bundle={archive}"
+                f"pages={len(suspicious_pages)}, hardMath={hard_math}, "
+                f"remainingBudgetUsd={format(remaining_budget, 'f')}, bundle={archive}"
             )
         )
