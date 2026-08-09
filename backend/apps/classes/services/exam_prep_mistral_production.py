@@ -55,8 +55,6 @@ PRODUCTION_ENTRYPOINT = (
     "run_exam_prep_mistral_pipeline"
 )
 
-# Preserve the Stage-2 helper seam used by focused regression tests and later
-# risk-engine work. The implementations remain frozen in the internal core.
 parse_question_region_text = core.parse_question_region_text
 _question_anchor_counts = core._question_anchor_counts
 _question_numbers = core._question_numbers
@@ -126,6 +124,24 @@ def _promote_own_critical(
         if output.get("questionCount") and not critical
         else "needs_review"
     )
+    return output
+
+
+def _server_visual_source_contracts(
+    projection: Mapping[str, Any],
+) -> dict[str, dict[str, Any]]:
+    """Capture immutable contracts in server workflow audit, keyed by question id."""
+
+    exam = projection.get("exam_prep")
+    questions = exam.get("questions") if isinstance(exam, Mapping) else []
+    output: dict[str, dict[str, Any]] = {}
+    for question in questions or []:
+        if not isinstance(question, Mapping):
+            continue
+        question_id = str(question.get("question_id") or "").strip()
+        contract = question.get("visualSourceContract")
+        if question_id and isinstance(contract, Mapping):
+            output[question_id] = dict(contract)
     return output
 
 
@@ -200,9 +216,6 @@ def run_exam_prep_mistral_pipeline(
     )
     assembled = assemble_page_extractions(page_extractions, title=title)
     assembled = attach_source_regions(assembled, pages=page_extractions)
-
-    # Canonical textual issues are evaluated first. Stage 3 then resolves only
-    # visual-specific blockers for which precise source evidence actually exists.
     assembled = rebuild_assembly_quality(assembled)
     assembled, visual_stats, visual_audit = reconcile_mistral_source_visuals(
         assembled,
@@ -266,6 +279,9 @@ def run_exam_prep_mistral_pipeline(
             "targetedSolutionHeadingRecovered": len(recovered_targets),
             "targetedSolutionHeadingUnresolved": unresolved_targets,
             "visualPipeline": visual_audit,
+            "visualSourceContracts": _server_visual_source_contracts(
+                assembled.projection
+            ),
             "visualAssetsAttached": int(visual_stats.get("assetsAttached", 0)),
             "visualQuestionAssets": int(visual_stats.get("questionVisuals", 0)),
             "visualOptionAssets": int(visual_stats.get("optionVisuals", 0)),
