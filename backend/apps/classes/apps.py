@@ -1,3 +1,5 @@
+import os
+
 from django.apps import AppConfig
 
 
@@ -6,8 +8,12 @@ class ClassesConfig(AppConfig):
     name = 'apps.classes'
 
     def ready(self):
-        # Source-aware exam preparation remains registered only for existing
-        # drafts during the staged cleanup. New intake uses tasks_exam_prep.
+        # Source-aware V4 is the production path. OCR4 source-first geometry is
+        # enabled unless the deployment explicitly opts out. This is set before
+        # importing tasks_v4 so web/worker processes share the same default.
+        # Emergency rollback: EXAM_PREP_V4_SOURCE_FIRST_ENABLED=0.
+        os.environ.setdefault('EXAM_PREP_V4_SOURCE_FIRST_ENABLED', '1')
+
         from . import models_v4  # noqa: F401
         from . import models_v4_blocks  # noqa: F401
         from . import models_v4_records  # noqa: F401
