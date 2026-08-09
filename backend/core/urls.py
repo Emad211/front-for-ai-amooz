@@ -1,5 +1,3 @@
-import os
-
 from django.contrib import admin
 from django.urls import path, include
 from rest_framework_simplejwt.views import (
@@ -35,21 +33,12 @@ from apps.core.throttling import SafeScopedRateThrottle
 from apps.classes.views_exam_prep import ExamPrepPdfStep1View
 from apps.classes.views_exam_prep_inline_visual import InlineOrStoredExamVisualContentView
 from apps.classes.views_exam_prep_review import PageFirstExamPrepSessionDetailView
-from apps.classes.views_v4_compat import ExamPrepSourceAwareStep1View
 
 
-# Source-aware V4 is now the production default.  The old page-first intake is
-# retained only as an emergency rollback path so a deployment can recover
-# without reverting code.
-_FORCE_SIMPLE_EXAM_PREP = (
-    (os.getenv('EXAM_PREP_FORCE_SIMPLE_PIPELINE') or 'False').strip().lower()
-    in {'1', 'true', 'yes', 'on'}
-)
-ExamPrepStep1IntakeView = (
-    ExamPrepPdfStep1View
-    if _FORCE_SIMPLE_EXAM_PREP
-    else ExamPrepSourceAwareStep1View
-)
+# The public Exam Prep intake stays simple and non-versioned. The engine behind
+# this endpoint is selected inside the normal Celery task; V4 page/source-map
+# confirmation is not part of new Exam Prep creation.
+ExamPrepStep1IntakeView = ExamPrepPdfStep1View
 
 
 @extend_schema_view(
@@ -122,29 +111,23 @@ urlpatterns = [
 
     path('api/accounts/', include('apps.accounts.urls')),
     path('api/auth/', include('apps.authentication.urls')),
-    # Keep the public URL stable while source-aware V4 is the default engine.
-    # EXAM_PREP_FORCE_SIMPLE_PIPELINE=True is the emergency rollback switch.
     path(
         'api/classes/exam-prep-sessions/step-1/',
         ExamPrepStep1IntakeView.as_view(),
         name='exam_prep_step1_intake',
     ),
-    # The URL is unchanged. This more-specific route only opens PATCH for a
-    # completed page-first draft that is explicitly ready for teacher review;
-    # GET and DELETE inherit the existing behavior. V4 projections also use
-    # this endpoint for safe teacher curation after source review.
     path(
         'api/classes/exam-prep-sessions/<int:session_id>/',
         PageFirstExamPrepSessionDetailView.as_view(),
         name='exam_prep_session_detail_page_first',
     ),
-    # Preserve the existing visual URL. Numeric IDs still stream legacy DB
-    # assets; inline-* IDs stream verified source crops from canonical JSON.
     path(
         'api/classes/exam-prep-sessions/<int:session_id>/visuals/<str:asset_id>/content/',
         InlineOrStoredExamVisualContentView.as_view(),
         name='exam_prep_inline_or_stored_visual_content',
     ),
+    # Keep legacy V4 APIs reachable only for already-created V4 data/admin
+    # compatibility. New Exam Prep intake above never routes through them.
     path('api/classes/exam-prep-v4/', include('apps.classes.urls_v4')),
     path('api/classes/', include('apps.classes.urls')),
     path('api/notifications/', include('apps.notification.urls')),
