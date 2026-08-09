@@ -10,9 +10,18 @@ import {
   type ExamPrepSessionUpdatePayload,
 } from '@/services/classes-service';
 import { ExamEditHeader, ExamEditForm } from '@/components/teacher/exam-edit';
+import { SourceAwareExamEditForm } from '@/components/teacher/exam-edit/source-aware-exam-edit-form';
 
 interface PageProps {
   params: Promise<{ examId: string }>;
+}
+
+function isSourceAware(detail: ExamPrepSessionDetail): boolean {
+  return Boolean(
+    detail.exam_prep_data?.exam_prep.questions.some((question) =>
+      String(question.question_id || '').startsWith('v4-'),
+    ),
+  );
 }
 
 export default function TeacherExamEditPage({ params }: PageProps) {
@@ -62,7 +71,7 @@ export default function TeacherExamEditPage({ params }: PageProps) {
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center min-h-[400px]">
+      <div className="flex min-h-[400px] items-center justify-center">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
       </div>
     );
@@ -70,7 +79,7 @@ export default function TeacherExamEditPage({ params }: PageProps) {
 
   if (error || !detail) {
     return (
-      <div className="flex items-center justify-center min-h-[400px]">
+      <div className="flex min-h-[400px] items-center justify-center">
         <p className="text-destructive">{error || 'خطا در بارگذاری اطلاعات آزمون'}</p>
       </div>
     );
@@ -79,7 +88,11 @@ export default function TeacherExamEditPage({ params }: PageProps) {
   return (
     <div className="space-y-6">
       <ExamEditHeader examId={examId} title={detail.title} status={detail.status} basePath="/teacher" />
-      <ExamEditForm examDetail={detail} onSave={handleSave} isSaving={isSaving} />
+      {isSourceAware(detail) ? (
+        <SourceAwareExamEditForm examDetail={detail} onSave={handleSave} isSaving={isSaving} />
+      ) : (
+        <ExamEditForm examDetail={detail} onSave={handleSave} isSaving={isSaving} />
+      )}
     </div>
   );
 }
