@@ -57,6 +57,63 @@ def test_declared_ranges_merge_only_contiguous_booklets():
     assert ranges.scope_key_for_question(((1, 155),), 94) == "default"
 
 
+def test_dense_observed_cluster_recovers_booklet_missing_from_parsed_tables():
+    evidence = MistralDocumentEvidence(
+        layout={},
+        booklet_ranges={
+            "ranges": [
+                {
+                    "start": 1,
+                    "end": 40,
+                    "questionCount": 40,
+                    "countMatchesRange": True,
+                    "physicalPageNumber": 1,
+                },
+                {
+                    "start": 41,
+                    "end": 75,
+                    "questionCount": 35,
+                    "countMatchesRange": True,
+                    "physicalPageNumber": 8,
+                },
+                {
+                    "start": 76,
+                    "end": 105,
+                    "questionCount": 30,
+                    "countMatchesRange": True,
+                    "physicalPageNumber": 8,
+                },
+            ]
+        },
+        solution_headings={},
+    )
+    observed = list(range(1, 106)) + list(range(251, 291))
+    assert ranges.declared_question_intervals(evidence, observed) == (
+        (1, 105),
+        (251, 290),
+    )
+
+
+def test_single_outlier_never_creates_a_fallback_booklet():
+    evidence = MistralDocumentEvidence(
+        layout={},
+        booklet_ranges={
+            "ranges": [
+                {
+                    "start": 1,
+                    "end": 105,
+                    "questionCount": 105,
+                    "countMatchesRange": True,
+                    "physicalPageNumber": 1,
+                }
+            ]
+        },
+        solution_headings={},
+    )
+    observed = list(range(1, 106)) + [999]
+    assert ranges.declared_question_intervals(evidence, observed) == ((1, 105),)
+
+
 def test_solution_alignment_does_not_invent_106_to_250_gap(monkeypatch):
     first = [_candidate(number, page=40) for number in range(1, 106)]
     second = [_candidate(number, page=54) for number in range(251, 291)]
@@ -84,8 +141,6 @@ def test_solution_alignment_does_not_invent_106_to_250_gap(monkeypatch):
 
 def test_lost_leading_digit_at_second_booklet_start_is_preserved(monkeypatch):
     first = [_candidate(number, page=40) for number in range(1, 106)]
-    # OCR loses the leading digits of 251. The next interval's own aligner must
-    # see raw 1 so it can deterministically recover expected question 251.
     second = [_candidate(251, page=54, raw=1)] + [
         _candidate(number, page=54) for number in range(252, 291)
     ]
