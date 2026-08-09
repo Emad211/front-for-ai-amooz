@@ -1,15 +1,18 @@
 """Production-safe Stage-4 facade preserving Stage-3 visual authority.
 
 Production Stage 4 groups all suspicious source crops from the same physical page
-into one Gemini request. This facade re-applies publication safety rules that are
-independent of provider transport and runs the narrow independent-consensus gate
-for the proven pathological-repetition hallucination family.
+into one Gemini request. This facade then applies two narrow independent-consensus
+gates for failure families proven by full-PDF validation: pathological repeated
+OCR prose and numeric overwrites of non-empty hard-math question fields.
 """
 from __future__ import annotations
 
 from collections import defaultdict
 from typing import Any, Mapping
 
+from .exam_prep_mistral_stage4_hard_question_guard import (
+    enforce_hard_question_numeric_consensus,
+)
 from .exam_prep_mistral_stage4_page_batch_runtime import (
     PageBatchStats,
     verify_and_repair_risky_regions_page_batched,
@@ -60,6 +63,10 @@ _STAGE4_FAILURE_STATUSES = frozenset(
         "pathological_consensus_failed",
         "pathological_consensus_uncertain",
         "pathological_consensus_disagreement",
+        "hard_question_numeric_consensus_unavailable",
+        "hard_question_numeric_consensus_failed",
+        "hard_question_numeric_consensus_uncertain",
+        "hard_question_numeric_consensus_disagreement",
     }
 )
 
@@ -142,6 +149,16 @@ def verify_and_repair_risky_regions(*args, **kwargs):
     result, audit = verify_and_repair_risky_regions_page_batched(*args, **kwargs)
     if isinstance(original, PageAssemblyResult):
         result, audit = enforce_pathological_repair_consensus(
+            original,
+            result,
+            audit,
+            pdf_data=kwargs.get("pdf_data") or b"",
+            layout=kwargs.get("layout") or {},
+            recovered_solution_targets=kwargs.get("recovered_solution_targets") or (),
+            unresolved_solution_targets=kwargs.get("unresolved_solution_targets") or (),
+            max_cost_usd=kwargs.get("max_cost_usd"),
+        )
+        result, audit = enforce_hard_question_numeric_consensus(
             original,
             result,
             audit,
