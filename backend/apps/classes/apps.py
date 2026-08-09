@@ -29,7 +29,9 @@ class ClassesConfig(AppConfig):
         # evidence + teacher-curated semantic projection edits.  The installers
         # extend existing service seams without changing database schema.
         from .services.exam_prep_v4_deployment_hardening import install as install_hardening
+        from .services.exam_prep_v4_answer_label_fix import install as install_answer_label_fix
         from .services.exam_prep_v4_metadata_sync import install as install_metadata_sync
 
         install_hardening()
+        install_answer_label_fix()
         install_metadata_sync()
