@@ -97,7 +97,14 @@ def _cached_transcriber(
     cache_dir.mkdir(parents=True, exist_ok=True)
 
     def call(**kwargs):
-        path = _cache_path(cache_dir, **kwargs)
+        path = _cache_path(
+            cache_dir,
+            kind=str(kwargs.get("kind") or ""),
+            question_number=int(kwargs.get("question_number") or 0),
+            page_number=int(kwargs.get("page_number") or 0),
+            model=str(kwargs.get("model") or ""),
+            thinking_minimal=bool(kwargs.get("thinking_minimal")),
+        )
         if path.is_file():
             try:
                 cached = json.loads(path.read_text(encoding="utf-8"))
