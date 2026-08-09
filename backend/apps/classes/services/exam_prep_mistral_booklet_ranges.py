@@ -8,12 +8,17 @@ _DIGIT_TRANS = str.maketrans(
     "۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩",
     "01234567890123456789",
 )
-_REQUIRED_HEADERS = {
+_STANDARD_HEADERS = {
     "مواد امتحانی",
     "تعداد سؤال",
     "از شماره",
     "تا شماره",
 }
+_ALT_RANGE_HEADERS = {
+    "تعداد سؤال",
+    "شماره سؤال",
+}
+_ALT_SUBJECT_HEADERS = ("نام درس", "مواد امتحانی")
 
 
 def _clean(value: Any) -> str:
@@ -23,6 +28,13 @@ def _clean(value: Any) -> str:
 def _integer(value: Any) -> int | None:
     match = re.search(r"\d+", _clean(value).translate(_DIGIT_TRANS))
     return int(match.group(0)) if match else None
+
+
+def _integers(value: Any) -> list[int]:
+    return [
+        int(item)
+        for item in re.findall(r"\d+", _clean(value).translate(_DIGIT_TRANS))
+    ]
 
 
 class _TableParser(HTMLParser):
@@ -66,22 +78,24 @@ def _rows(html: str) -> list[list[str]]:
     return parser.rows
 
 
-def parse_booklet_table(html: str) -> list[dict[str, Any]]:
-    rows = _rows(html)
-    if len(rows) < 2:
-        return []
+def _is_aggregate_subject(value: str) -> bool:
+    cleaned = _clean(value)
+    return cleaned.startswith("جمع") or cleaned.startswith("مجموع")
+
+
+def _standard_rows(rows: list[list[str]]) -> list[dict[str, Any]]:
     header_index = next(
         (
             index
             for index, row in enumerate(rows)
-            if _REQUIRED_HEADERS.issubset({_clean(cell) for cell in row})
+            if _STANDARD_HEADERS.issubset({_clean(cell) for cell in row})
         ),
         None,
     )
     if header_index is None:
         return []
     header = [_clean(cell) for cell in rows[header_index]]
-    positions = {name: header.index(name) for name in _REQUIRED_HEADERS}
+    positions = {name: header.index(name) for name in _STANDARD_HEADERS}
     output: list[dict[str, Any]] = []
     for row in rows[header_index + 1 :]:
         if len(row) <= max(positions.values()):
@@ -90,7 +104,13 @@ def parse_booklet_table(html: str) -> list[dict[str, Any]]:
         count = _integer(row[positions["تعداد سؤال"]])
         start = _integer(row[positions["از شماره"]])
         end = _integer(row[positions["تا شماره"]])
-        if not subject or count is None or start is None or end is None:
+        if (
+            not subject
+            or _is_aggregate_subject(subject)
+            or count is None
+            or start is None
+            or end is None
+        ):
             continue
         if start < 1 or end < start:
             continue
@@ -104,6 +124,71 @@ def parse_booklet_table(html: str) -> list[dict[str, Any]]:
             }
         )
     return output
+
+
+def _alternate_rows(rows: list[list[str]]) -> list[dict[str, Any]]:
+    """Parse Kانون's compact ``نام درس / شماره سؤال`` booklet tables.
+
+    The range cell is often rendered RTL as ``۲۷۰ - ۲۵۱`` even though its
+    semantic interval is 251..270, so endpoints are normalized with min/max.
+    Aggregate rows such as ``جمع دروس`` are intentionally ignored.
+    """
+
+    header_index: int | None = None
+    subject_header: str | None = None
+    for index, row in enumerate(rows):
+        cells = {_clean(cell) for cell in row}
+        if not _ALT_RANGE_HEADERS.issubset(cells):
+            continue
+        subject_header = next((name for name in _ALT_SUBJECT_HEADERS if name in cells), None)
+        if subject_header is not None:
+            header_index = index
+            break
+    if header_index is None or subject_header is None:
+        return []
+
+    header = [_clean(cell) for cell in rows[header_index]]
+    subject_pos = header.index(subject_header)
+    count_pos = header.index("تعداد سؤال")
+    range_pos = header.index("شماره سؤال")
+    maximum = max(subject_pos, count_pos, range_pos)
+    output: list[dict[str, Any]] = []
+    for row in rows[header_index + 1 :]:
+        if len(row) <= maximum:
+            continue
+        subject = _clean(row[subject_pos])
+        count = _integer(row[count_pos])
+        endpoints = _integers(row[range_pos])
+        if (
+            not subject
+            or _is_aggregate_subject(subject)
+            or count is None
+            or len(endpoints) < 2
+        ):
+            continue
+        start, end = min(endpoints[0], endpoints[1]), max(endpoints[0], endpoints[1])
+        if start < 1 or end < start:
+            continue
+        output.append(
+            {
+                "subject": subject,
+                "questionCount": count,
+                "start": start,
+                "end": end,
+                "countMatchesRange": count == end - start + 1,
+            }
+        )
+    return output
+
+
+def parse_booklet_table(html: str) -> list[dict[str, Any]]:
+    rows = _rows(html)
+    if len(rows) < 2:
+        return []
+    standard = _standard_rows(rows)
+    if standard:
+        return standard
+    return _alternate_rows(rows)
 
 
 def extract_booklet_ranges(
@@ -133,7 +218,23 @@ def extract_booklet_ranges(
         for item in page_rows:
             rows.append({"physicalPageNumber": physical_page, **item})
 
-    rows.sort(key=lambda item: (int(item["start"]), int(item["end"])))
+    # Exact duplicate rows commonly appear in both the booklet cover and the
+    # following metadata page. Keep one source row so overlap/gap diagnostics
+    # describe real intervals rather than duplicated declarations.
+    deduped: dict[tuple[int, int, int, str], dict[str, Any]] = {}
+    for item in rows:
+        key = (
+            int(item["start"]),
+            int(item["end"]),
+            int(item["questionCount"]),
+            str(item["subject"]),
+        )
+        deduped.setdefault(key, item)
+    rows = sorted(
+        deduped.values(),
+        key=lambda item: (int(item["start"]), int(item["end"]), str(item["subject"])),
+    )
+
     valid = [item for item in rows if item["countMatchesRange"]]
     overlaps: list[dict[str, int]] = []
     gaps: list[dict[str, int]] = []
@@ -150,7 +251,7 @@ def extract_booklet_ranges(
             )
 
     return {
-        "schemaVersion": 1,
+        "schemaVersion": 2,
         "contentFree": True,
         "ranges": rows,
         "rangeCount": len(rows),
