@@ -71,11 +71,32 @@ def scope_key_for_question(
     return "default"
 
 
+def _looks_like_next_range_start(
+    *,
+    raw: int,
+    next_start: int | None,
+    current_end: int,
+    last_accepted: int,
+) -> bool:
+    if next_start is None:
+        return False
+    if raw >= next_start:
+        return True
+    # Near the end of the current booklet, preserve a next-booklet heading whose
+    # OCR lost leading digits. The Stage-2 heading aligner can then recover it in
+    # the next interval (e.g. raw 1 when expected 251). Restrict this heuristic
+    # to the last few expected headings so an ordinary early one-digit OCR value
+    # can never jump booklets.
+    if last_accepted < current_end - 2 or not 0 <= raw <= 9:
+        return False
+    return str(next_start).endswith(str(raw))
+
+
 def aligned_solutions_for_intervals(
     result: OCR4DocumentResult,
     intervals: Sequence[tuple[int, int]],
 ) -> tuple[list[AlignedSolutionHeading], list[int], list[int]]:
-    """Align ordered solution headings without fabricating intentional range gaps."""
+    """Align headings per real interval without fabricating intentional gaps."""
 
     candidates = []
     for page in result.pages:
@@ -93,28 +114,60 @@ def aligned_solutions_for_intervals(
     for index, (start, end) in enumerate(ordered_ranges):
         next_start = ordered_ranges[index + 1][0] if index + 1 < len(ordered_ranges) else None
         selected = []
+        last_accepted = start - 1
+
         while cursor < len(candidates):
             candidate = candidates[cursor]
             raw = int(candidate.raw_question_number)
-            if next_start is not None and raw >= next_start and raw > end:
+            if _looks_like_next_range_start(
+                raw=raw,
+                next_start=next_start,
+                current_end=end,
+                last_accepted=last_accepted,
+            ):
                 break
+
             selected.append(candidate)
             cursor += 1
+            trial = align_solution_headings(
+                selected,
+                first_expected_question=start,
+                last_expected_question=None,
+            )
+            in_range = [
+                item.question_number
+                for item in (trial.get("accepted") or [])
+                if start <= item.question_number <= end
+            ]
+            if in_range:
+                last_accepted = max(in_range)
+            if last_accepted >= end:
+                break
+
         aligned = align_solution_headings(
             selected,
             first_expected_question=start,
             last_expected_question=end,
         )
-        accepted.extend(aligned.get("accepted") or [])
-        missing.update(int(value) for value in (aligned.get("missingQuestionNumbers") or []))
+        accepted.extend(
+            item
+            for item in (aligned.get("accepted") or [])
+            if start <= item.question_number <= end
+        )
+        missing.update(
+            int(value)
+            for value in (aligned.get("missingQuestionNumbers") or [])
+            if start <= int(value) <= end
+        )
         invalid.update(
             item.question_number
             for item in (aligned.get("accepted") or [])
-            if not item.option_label_valid
+            if start <= item.question_number <= end and not item.option_label_valid
         )
 
-    # Trailing candidates after the last declared interval are not silently
-    # attached to another booklet; range-integrity checks expose them separately.
+    # Anything after the last declared interval is intentionally not attached to
+    # a previous booklet. The booklet-range integrity audit handles unexpected
+    # anchors rather than creating a synthetic numeric gap.
     return accepted, sorted(missing), sorted(invalid)
 
 
