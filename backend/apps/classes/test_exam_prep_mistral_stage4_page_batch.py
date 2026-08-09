@@ -158,7 +158,7 @@ def test_partial_batch_commits_valid_sibling_and_blocks_missing_item(monkeypatch
     assert audit["stats"]["unresolved"] == 1
 
 
-def test_whole_envelope_failure_splits_once_and_never_recurses(monkeypatch):
+def test_non_truncation_envelope_failure_never_splits(monkeypatch):
     decisions = [_decision(52), _decision(53)]
     monkeypatch.setattr(stage4, "score_region_risks", lambda **_kwargs: decisions)
     monkeypatch.setattr(stage4.legacy, "_render_crop", lambda *_args, **_kwargs: b"png")
@@ -166,23 +166,21 @@ def test_whole_envelope_failure_splits_once_and_never_recurses(monkeypatch):
 
     def fake_batch(**kwargs):
         calls.append([decision.target_id for decision, _ in kwargs["targets"]])
-        if len(kwargs["targets"]) > 1:
-            raise PageBatchEnvelopeError("structured_json_invalid")
-        decision = kwargs["targets"][0][0]
-        return _batch(_item(decision.question_number, f"راه حل درست {decision.question_number}"))
+        raise PageBatchEnvelopeError(
+            "structured_json_invalid",
+            finish_reason="STOP",
+        )
 
     monkeypatch.setattr(stage4, "transcribe_page_batch", fake_batch)
     updated, audit = stage4.verify_and_repair_risky_regions_page_batched(
         _result(), pdf_data=b"pdf", layout={}
     )
-    assert len(calls) == 3
-    assert len(calls[0]) == 2
-    assert all(len(value) == 1 for value in calls[1:])
-    assert audit["stats"]["primaryCalls"] == 3
-    assert audit["stats"]["splitCalls"] == 2
-    assert audit["stats"]["unresolved"] == 0
+    assert calls == [["s-052-p040", "s-053-p040"]]
+    assert audit["stats"]["primaryCalls"] == 1
+    assert audit["stats"]["splitCalls"] == 0
+    assert audit["stats"]["unresolved"] == 2
     assert all(
-        "stage4_verification_unresolved" not in q["issues"]
+        "stage4_verification_unresolved" in q["issues"]
         for q in updated.projection["exam_prep"]["questions"]
     )
 
