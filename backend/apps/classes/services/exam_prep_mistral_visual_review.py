@@ -4,6 +4,10 @@ Teacher review must not trust a stale or edited ``question.issues`` list. This
 module derives critical visual state again from the stored Stage-3 asset contract
 so review refresh and publication cannot accidentally forget a clipped,
 review-only, missing-option, deleted, or whole-page fallback visual.
+
+The optional ``source_contract`` argument is the server-side immutable contract
+captured in ``workflow_state.extractionAudit`` at extraction time. When present,
+it is authoritative over the editable copy carried inside ``exam_prep_json``.
 """
 from __future__ import annotations
 
@@ -42,11 +46,22 @@ def _stage3_asset(value: object) -> bool:
     )
 
 
+def _selected_contract(
+    question: Mapping[str, Any],
+    source_contract: Mapping[str, Any] | None,
+) -> Mapping[str, Any] | None:
+    if isinstance(source_contract, Mapping):
+        return source_contract
+    value = question.get("visualSourceContract")
+    return value if isinstance(value, Mapping) else None
+
+
 def _source_contract_mismatch(
     question: Mapping[str, Any],
     stage3: list[Mapping[str, Any]],
+    source_contract: Mapping[str, Any] | None = None,
 ) -> bool:
-    contract = question.get("visualSourceContract")
+    contract = _selected_contract(question, source_contract)
     if not isinstance(contract, Mapping):
         return bool(stage3)
     if int(contract.get("schemaVersion") or 0) != 1:
@@ -73,7 +88,9 @@ def _source_contract_mismatch(
             required_count = int(role_counts.get(role) or 0)
         except (TypeError, ValueError):
             return True
-        current_count = sum(str(asset.get("role") or "") == role for asset in stage3)
+        current_count = sum(
+            str(asset.get("role") or "") == role for asset in stage3
+        )
         if current_count < required_count:
             return True
 
@@ -117,10 +134,14 @@ def _source_contract_mismatch(
         for value in (asset.get("groupedOptionLabels") or [])
         if str(value) in {"1", "2", "3", "4"}
     }
-    return bool(required_grouped and not required_grouped.issubset(current_grouped))
+    return bool(
+        required_grouped and not required_grouped.issubset(current_grouped)
+    )
 
 
-def _stage3_visuals(question: Mapping[str, Any]) -> list[Mapping[str, Any]]:
+def _stage3_visuals(
+    question: Mapping[str, Any],
+) -> list[Mapping[str, Any]]:
     return [
         item
         for item in (question.get("visuals") or [])
@@ -128,11 +149,19 @@ def _stage3_visuals(question: Mapping[str, Any]) -> list[Mapping[str, Any]]:
     ]
 
 
-def visual_options_complete(question: Mapping[str, Any]) -> bool:
+def visual_options_complete(
+    question: Mapping[str, Any],
+    *,
+    source_contract: Mapping[str, Any] | None = None,
+) -> bool:
     """True only when source metadata supports a complete visual-only 1..4 set."""
 
     stage3 = _stage3_visuals(question)
-    if not stage3 or _source_contract_mismatch(question, stage3):
+    if not stage3 or _source_contract_mismatch(
+        question,
+        stage3,
+        source_contract,
+    ):
         return False
 
     grouped = [
@@ -164,16 +193,20 @@ def visual_options_complete(question: Mapping[str, Any]) -> bool:
     return labels == {"1", "2", "3", "4"}
 
 
-def visual_metadata_issue_codes(question: Mapping[str, Any]) -> list[str]:
+def visual_metadata_issue_codes(
+    question: Mapping[str, Any],
+    *,
+    source_contract: Mapping[str, Any] | None = None,
+) -> list[str]:
     """Return deterministic Stage-3 visual blockers derived from asset metadata."""
 
     stage3 = _stage3_visuals(question)
-    contract = question.get("visualSourceContract")
+    contract = _selected_contract(question, source_contract)
     if not stage3 and not isinstance(contract, Mapping):
         return []
 
     issues: list[str] = []
-    if _source_contract_mismatch(question, stage3):
+    if _source_contract_mismatch(question, stage3, source_contract):
         issues.append("visual_precise_crop_unresolved")
 
     option_assets: list[Mapping[str, Any]] = []
@@ -213,21 +246,35 @@ def visual_metadata_issue_codes(question: Mapping[str, Any]) -> list[str]:
             else ""
         )
         if asset.get("reviewOnly") is True:
-            if not any(code in VISUAL_CRITICAL_ISSUE_CODES for code in sanity_issues):
+            if not any(
+                code in VISUAL_CRITICAL_ISSUE_CODES
+                for code in sanity_issues
+            ):
                 issues.append("visual_precise_crop_unresolved")
         elif sanity_status != "passed":
             issues.append("visual_precise_crop_unresolved")
 
         if role == "option":
             option_assets.append(asset)
-            if str(asset.get("optionLabel") or "") not in {"1", "2", "3", "4"}:
+            if str(asset.get("optionLabel") or "") not in {
+                "1",
+                "2",
+                "3",
+                "4",
+            }:
                 issues.append("visual_option_binding_unresolved")
-        if mode == "grouped_options" and asset.get("reviewOnly") is not True:
+        if (
+            mode == "grouped_options"
+            and asset.get("reviewOnly") is not True
+        ):
             labels = {
                 str(value)
                 for value in (asset.get("groupedOptionLabels") or [])
             }
-            if labels == {"1", "2", "3", "4"} and sanity_status == "passed":
+            if (
+                labels == {"1", "2", "3", "4"}
+                and sanity_status == "passed"
+            ):
                 grouped_option_safe = True
             else:
                 issues.append("visual_missing_option_asset")
