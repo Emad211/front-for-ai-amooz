@@ -155,7 +155,13 @@ def _counter_similarity(left: Counter, right: Counter) -> float:
 
 
 def compare_field(field: str, left: Any, right: Any) -> FieldAgreement:
-    """Compare one semantic field without depending on harmless RTL ordering."""
+    """Compare one semantic field without depending on harmless RTL ordering.
+
+    ``correct_option_label`` is structural answer evidence, not a hard-math text
+    field. Label problems are already handled by the Stage-4 structural signals
+    (missing/invalid answer and heading conflict), so a label-only mismatch must
+    never buy a GPT second opinion for an otherwise healthy solution body.
+    """
 
     a = clean_exam_markdown(left or "").translate(_DIGITS)
     b = clean_exam_markdown(right or "").translate(_DIGITS)
@@ -171,7 +177,9 @@ def compare_field(field: str, left: Any, right: Any) -> FieldAgreement:
     math_similarity = _counter_similarity(math_left, math_right)
     similarity = float(text_similarity(a, b))
 
-    if bool(a) != bool(b):
+    if field == "correct_option_label":
+        conflict = False
+    elif bool(a) != bool(b):
         conflict = True
     elif numeric_left or numeric_right:
         conflict = (not numeric_equal) or (keyed_compared and not keyed_equal)
