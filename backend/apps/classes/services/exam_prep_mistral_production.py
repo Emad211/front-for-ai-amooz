@@ -2,7 +2,7 @@
 
 This module is the only supported production-facing import for the Mistral
 research pipeline. It intentionally has no Exam Prep V4, management-command,
-benchmark, or general-LLM dependency.
+benchmark, or general-LLM call site.
 
 Stage 2 implements the OCR4 document core:
 PDF -> <=30-page OCR4 chunks -> physical page remap -> deterministic layout /
@@ -80,7 +80,7 @@ _OPTION_MARKER_RE = re.compile(
     r"(?:^|\s)(?P<number>[1-4۱-۴١-٤])\s*(?:[)\].:：\-–—])"
 )
 _PAREN_OPTION_RE = re.compile(
-    r"(?:^|\s)[(\[]\s*(?P<number>[1-4۱-۴١-٤])\s*[)\]]"
+    r"[(\[]\s*(?P<number>[1-4۱-۴١-٤])\s*[)\]]"
 )
 _HTML_BREAK_RE = re.compile(
     r"</?(?:tr|td|th|p|div|li|br)\b[^>]*>", re.IGNORECASE
@@ -191,23 +191,43 @@ def parse_question_region_text(value: Any) -> tuple[str, list[dict[str, str]], s
     body = _QUESTION_HEADING_RE.sub("", text, count=1)
 
     sequence = _marker_sequence(body, _OPTION_MARKER_RE)
-    style = "marker"
-    if sequence is None:
-        sequence = _marker_sequence(body, _PAREN_OPTION_RE)
-        style = "parenthesized"
+    if sequence is not None:
+        stem = clean_exam_markdown(body[: sequence[0][1]])
+        options: list[dict[str, str]] = []
+        for index, marker in enumerate(sequence):
+            end = sequence[index + 1][1] if index + 1 < len(sequence) else len(body)
+            option_text = _clean_option_text(body[marker[2] : end])
+            options.append({"label": str(marker[0]), "text_markdown": option_text})
+        if all(item["text_markdown"] for item in options):
+            options.sort(key=lambda item: int(item["label"]))
+            return stem, options, "marker"
+
+    sequence = _marker_sequence(body, _PAREN_OPTION_RE)
     if sequence is None:
         return body, [], "unparsed"
-
-    stem = clean_exam_markdown(body[: sequence[0][1]])
-    options: list[dict[str, str]] = []
-    for index, marker in enumerate(sequence):
-        end = sequence[index + 1][1] if index + 1 < len(sequence) else len(body)
-        option_text = _clean_option_text(body[marker[2] : end])
-        options.append({"label": str(marker[0]), "text_markdown": option_text})
+    line_start = body.rfind("\n", 0, sequence[0][1]) + 1
+    before_first = body[line_start : sequence[0][1]].strip()
+    suffix_style = bool(before_first.strip(" \t-–—•"))
+    options = []
+    if suffix_style:
+        cursor = line_start
+        for marker in sequence:
+            option_text = _clean_option_text(body[cursor : marker[1]])
+            options.append({"label": str(marker[0]), "text_markdown": option_text})
+            cursor = marker[2]
+        stem_end = line_start
+        style = "parenthesized_suffix"
+    else:
+        for index, marker in enumerate(sequence):
+            end = sequence[index + 1][1] if index + 1 < len(sequence) else len(body)
+            option_text = _clean_option_text(body[marker[2] : end])
+            options.append({"label": str(marker[0]), "text_markdown": option_text})
+        stem_end = sequence[0][1]
+        style = "parenthesized_prefix"
     if any(not item["text_markdown"] for item in options):
         return body, [], "unparsed"
     options.sort(key=lambda item: int(item["label"]))
-    return stem, options, style
+    return clean_exam_markdown(body[:stem_end]), options, style
 
 
 def _question_record(region: Mapping[str, Any]) -> dict[str, Any] | None:
@@ -250,6 +270,8 @@ def _question_anchor_counts(evidence: MistralDocumentEvidence) -> dict[int, int]
     for page in evidence.layout.get("pages") or []:
         if not isinstance(page, Mapping):
             continue
+        if str(page.get("pageRole") or "") != "question":
+            continue
         for region in page.get("regions") or []:
             if not isinstance(region, Mapping) or str(region.get("kind") or "") != "question":
                 continue
@@ -263,6 +285,8 @@ def _question_numbers(evidence: MistralDocumentEvidence) -> list[int]:
     numbers: set[int] = set()
     for page in evidence.layout.get("pages") or []:
         if not isinstance(page, Mapping):
+            continue
+        if str(page.get("pageRole") or "") != "question":
             continue
         for region in page.get("regions") or []:
             if not isinstance(region, Mapping) or str(region.get("kind") or "") != "question":
@@ -341,11 +365,7 @@ def _target_crop_specs(
     ordered = sorted(accepted, key=lambda item: item.question_number)
     specs: list[tuple[int, str]] = []
     for target in sorted({int(value) for value in targets if int(value) > 0}):
-        candidates = [
-            item
-            for item in ordered
-            if item.column in {"left", "right"}
-        ]
+        candidates = [item for item in ordered if item.column in {"left", "right"}]
         if not candidates:
             continue
         anchor = min(
@@ -407,6 +427,8 @@ def _render_target_crop_pdf(
             save_all=True,
             append_images=rest,
             resolution=float(dpi),
+            creationDate="D:20000101000000Z",
+            modDate="D:20000101000000Z",
         )
         return output.getvalue()
     finally:
@@ -538,6 +560,8 @@ def _build_page_extractions(
     question_numbers: list[int] = []
 
     for page_number, page in sorted(pages.items()):
+        if str(page.get("pageRole") or "") != "question":
+            continue
         for region in page.get("regions") or []:
             if not isinstance(region, Mapping) or str(region.get("kind") or "") != "question":
                 continue
