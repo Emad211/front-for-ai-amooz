@@ -3,8 +3,7 @@ from __future__ import annotations
 import ast
 import inspect
 
-import pytest
-
+from apps.classes.services import exam_prep_mistral_ocr_transport as transport
 from apps.classes.services import exam_prep_mistral_production as production
 
 
@@ -30,7 +29,7 @@ def _imported_modules(module) -> list[str]:
 
 
 def test_production_entrypoint_has_no_v4_probe_or_benchmark_dependency():
-    imported = _imported_modules(production)
+    imported = [*_imported_modules(production), *_imported_modules(transport)]
     offenders = [
         module
         for module in imported
@@ -80,12 +79,12 @@ def test_deterministic_evidence_uses_only_frozen_runtime_primitives(monkeypatch)
     ]
 
 
-def test_stage_one_entrypoint_cannot_be_accidentally_deployed():
-    with pytest.raises(production.MistralProductionNotReady):
-        production.run_exam_prep_mistral_pipeline(
-            data=b"%PDF-stage-one",
-            title="test",
-        )
+def test_stage_two_runner_contains_no_general_llm_call_site():
+    source = inspect.getsource(production.run_exam_prep_mistral_pipeline)
+    assert "generate_structured(" not in source
+    assert "verify_suspicious_questions(" not in source
+    assert "verify_all_questions(" not in source
+    assert "repair_suspicious_questions(" not in source
 
 
 def test_final_entrypoint_keeps_existing_exam_prep_result_contract():
