@@ -36,12 +36,7 @@ def _merge_ranges(values: Sequence[tuple[int, int]]) -> tuple[tuple[int, int], .
 
 
 def _observed_clusters(question_numbers: Sequence[int]) -> list[tuple[int, int, int]]:
-    """Return robust observed number clusters separated by a very large gap.
-
-    A few missed OCR anchors must never create a synthetic booklet. The fallback
-    therefore requires at least three observed questions in a cluster and a gap
-    greater than 20 question numbers before splitting.
-    """
+    """Return robust observed number clusters separated by a very large gap."""
 
     observed = sorted({int(value) for value in question_numbers if int(value) > 0})
     if not observed:
@@ -63,14 +58,7 @@ def declared_question_intervals(
     evidence: core.MistralDocumentEvidence,
     question_numbers: Sequence[int],
 ) -> tuple[tuple[int, int], ...]:
-    """Return real booklet intervals without fabricating OCR gaps.
-
-    Declared booklet tables are authoritative when present. A deterministic
-    observed-anchor fallback only augments a declared set when a large, dense
-    cluster of numbered questions is completely outside every parsed table. This
-    covers alternate booklet-table layouts while preventing one noisy anchor from
-    creating a new scope.
-    """
+    """Return real booklet intervals without fabricating OCR gaps."""
 
     rows = [
         item
@@ -95,16 +83,11 @@ def declared_question_intervals(
             return tuple((start, end) for start, end, _count in clusters)
         return ((min(observed), max(observed)),)
 
-    # Keep only declared intervals that actually contain observed questions.
     relevant = [
         (start, end)
         for start, end in merged_declared
         if any(start <= value <= end for value in observed)
     ]
-
-    # If an entire dense observed cluster lies outside every parsed declaration,
-    # add it as a fallback booklet interval. This is exactly the situation in
-    # Kانون files whose cover uses the compact ``نام درس / شماره سؤال`` schema.
     for start, end, _count in _observed_clusters(observed):
         if any(not (end < a or start > b) for a, b in relevant):
             continue
@@ -177,7 +160,6 @@ def aligned_solutions_for_intervals(
                 last_accepted=last_accepted,
             ):
                 break
-
             selected.append(candidate)
             cursor += 1
             trial = align_solution_headings(
@@ -225,9 +207,15 @@ def build_page_extractions_disjoint(
     evidence: core.MistralDocumentEvidence,
     recovered_targets: Mapping[int, tuple[str, int, str]],
     intervals: Sequence[tuple[int, int]],
+    authoritative_answer_labels: Mapping[int, str] | None = None,
 ) -> list[SourcePageExtraction]:
-    """Stage-2 assembly with range-aware solution alignment and scope keys."""
+    """Stage-2 assembly with range-aware alignment and optional source labels."""
 
+    authoritative = {
+        int(number): str(label)
+        for number, label in dict(authoritative_answer_labels or {}).items()
+        if str(label) in {"1", "2", "3", "4"}
+    }
     records_by_page: dict[int, list[dict[str, Any]]] = {}
     pages = core._analysis_pages(evidence)
     question_numbers: list[int] = []
@@ -255,7 +243,9 @@ def build_page_extractions_disjoint(
         page = pages.get(heading.physical_page_number)
         region = core._solution_region(page, heading)
         recovered = recovered_targets.get(heading.question_number)
-        if recovered is not None:
+        if heading.question_number in authoritative:
+            label = authoritative[heading.question_number]
+        elif recovered is not None:
             label = recovered[0]
         elif heading.option_label_valid and heading.option_label in {1, 2, 3, 4}:
             label = str(heading.option_label)
@@ -270,6 +260,8 @@ def build_page_extractions_disjoint(
             issues.append("solution_heading_number_recovered")
         if recovered is not None:
             issues.append("targeted_solution_heading_recovered")
+        if heading.question_number in authoritative:
+            issues.append("native_pdf_answer_label_authority")
         if label is None:
             issues.append("mistral_solution_heading_unresolved")
         records_by_page.setdefault(heading.physical_page_number, []).append(
@@ -294,9 +286,10 @@ def build_page_extractions_disjoint(
             }
         )
 
-    for question_number, (label, page_number, side) in recovered_targets.items():
+    for question_number, (recovered_label, page_number, side) in recovered_targets.items():
         if question_number in accepted_numbers:
             continue
+        label = authoritative.get(question_number, recovered_label)
         records_by_page.setdefault(page_number, []).append(
             {
                 "scope_key": scope_key_for_question(intervals, question_number),
@@ -305,7 +298,10 @@ def build_page_extractions_disjoint(
                 "correct_option_label": label,
                 "final_answer_markdown": f"گزینه {label}",
                 "confidence": 0.0,
-                "issues": ["targeted_solution_heading_recovered"],
+                "issues": [
+                    "targeted_solution_heading_recovered",
+                    *(["native_pdf_answer_label_authority"] if question_number in authoritative else []),
+                ],
                 "source_bbox": core._column_bbox(side),
             }
         )
