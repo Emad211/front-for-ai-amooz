@@ -4,15 +4,16 @@ All suspicious crops from one physical PDF page are sent in one provider request
 Each crop remains an independent source image and is explicitly labeled with its
 target id; the previous Mistral candidate is never sent.
 
-The transport uses AvalAI's native Gemini generateContent endpoint so Gemini's
-native JSON response schema can be enforced. There is no automatic same-batch
-retry or paid JSON repair pass. Item validation is deliberately partial: one bad
-item can never discard valid sibling items from the same provider response.
+The transport uses AvalAI's native Gemini generateContent endpoint. Item
+validation is deliberately partial: one bad item can never discard valid sibling
+items. Provider text is decoded with narrow lexical normalization only; there is
+no model repair pass and no semantic JSON reconstruction.
 """
 from __future__ import annotations
 
 import base64
 from dataclasses import dataclass
+import hashlib
 import json
 import os
 import re
@@ -122,7 +123,6 @@ class BatchItem(BaseModel):
     ]
     transcription_uncertain: bool
     uncertain_spans: list[BatchUncertainSpan] = Field(default_factory=list, max_length=16)
-    # Kept for checkpoint compatibility with the first page-batch schema.
     uncertain_fragments: list[str] = Field(default_factory=list, max_length=12)
 
 
@@ -136,17 +136,22 @@ class PageBatchEnvelopeError(ValueError):
         usage: Mapping[str, int] | None = None,
         estimated_cost: Mapping[str, float] | None = None,
         request_id: str = "",
+        finish_reason: str = "",
+        response_text_sha256: str = "",
+        response_text_prefix: str = "",
     ):
         super().__init__(reason_code)
         self.reason_code = reason_code
         self.usage = dict(usage or {})
         self.estimated_cost = dict(estimated_cost or {})
         self.request_id = str(request_id or "")
+        self.finish_reason = str(finish_reason or "")
+        self.response_text_sha256 = str(response_text_sha256 or "")
+        # This is persisted only in the private diagnostic provider cache.
+        self.response_text_prefix = str(response_text_prefix or "")[:2000]
 
 
 def _response_schema() -> dict[str, Any]:
-    """Gemini-compatible JSON Schema with one uniform item shape."""
-
     return {
         "type": "object",
         "properties": {
@@ -247,11 +252,24 @@ def _image_part(payload: bytes) -> dict[str, Any]:
     }
 
 
-def _response_text(root: Mapping[str, Any]) -> str:
-    candidates = root.get("candidates")
-    if not isinstance(candidates, list) or not candidates or not isinstance(candidates[0], Mapping):
+def _candidate(root: Mapping[str, Any]) -> Mapping[str, Any]:
+    values = root.get("candidates")
+    if not isinstance(values, list) or not values or not isinstance(values[0], Mapping):
         raise PageBatchEnvelopeError("no_candidate")
-    content = candidates[0].get("content")
+    return values[0]
+
+
+def _finish_reason(root: Mapping[str, Any]) -> str:
+    try:
+        candidate = _candidate(root)
+    except PageBatchEnvelopeError:
+        return ""
+    return str(candidate.get("finishReason") or candidate.get("finish_reason") or "").strip()
+
+
+def _response_text(root: Mapping[str, Any]) -> str:
+    candidate = _candidate(root)
+    content = candidate.get("content")
     if not isinstance(content, Mapping):
         raise PageBatchEnvelopeError("no_candidate_content")
     parts = content.get("parts")
@@ -262,6 +280,115 @@ def _response_text(root: Mapping[str, Any]) -> str:
     if not text:
         raise PageBatchEnvelopeError("empty_content")
     return text
+
+
+def _escape_raw_json_controls(value: str) -> str:
+    """Escape raw control chars inside quoted JSON strings without changing data."""
+
+    output: list[str] = []
+    in_string = False
+    escaped = False
+    for char in value:
+        if in_string:
+            if escaped:
+                output.append(char)
+                escaped = False
+                continue
+            if char == "\\":
+                output.append(char)
+                escaped = True
+                continue
+            if char == '"':
+                output.append(char)
+                in_string = False
+                continue
+            if char == "\n":
+                output.append("\\n")
+                continue
+            if char == "\r":
+                output.append("\\r")
+                continue
+            if char == "\t":
+                output.append("\\t")
+                continue
+            output.append(char)
+            continue
+        output.append(char)
+        if char == '"':
+            in_string = True
+    return "".join(output)
+
+
+def _remove_trailing_json_commas(value: str) -> str:
+    """Remove only syntactic commas immediately before ]/} outside strings."""
+
+    output: list[str] = []
+    in_string = False
+    escaped = False
+    index = 0
+    while index < len(value):
+        char = value[index]
+        if in_string:
+            output.append(char)
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == '"':
+                in_string = False
+            index += 1
+            continue
+        if char == '"':
+            in_string = True
+            output.append(char)
+            index += 1
+            continue
+        if char == ",":
+            cursor = index + 1
+            while cursor < len(value) and value[cursor].isspace():
+                cursor += 1
+            if cursor < len(value) and value[cursor] in "]}":
+                index += 1
+                continue
+        output.append(char)
+        index += 1
+    return "".join(output)
+
+
+def _strip_outer_fence(value: str) -> str:
+    match = re.fullmatch(r"```(?:json)?\s*(.*?)\s*```", value, flags=re.IGNORECASE | re.DOTALL)
+    return match.group(1).strip() if match else value
+
+
+def _decode_structured_text(text: str) -> Any:
+    """Decode one JSON root with lexical, never semantic, normalization."""
+
+    base = _strip_outer_fence(str(text or "").lstrip("\ufeff").strip())
+    variants = [base]
+    normalized = _remove_trailing_json_commas(_escape_raw_json_controls(base))
+    if normalized != base:
+        variants.append(normalized)
+
+    for value in variants:
+        try:
+            return json.loads(value)
+        except json.JSONDecodeError:
+            pass
+
+    # Accept harmless leading prose/fence wrappers only when one complete JSON
+    # object can be decoded and the trailing material is whitespace/a code fence.
+    for value in variants:
+        start = value.find("{")
+        if start < 0:
+            continue
+        try:
+            decoded, end = json.JSONDecoder().raw_decode(value[start:])
+        except json.JSONDecodeError:
+            continue
+        trailing = value[start + end :].strip()
+        if trailing in {"", "```"}:
+            return decoded
+    raise json.JSONDecodeError("structured JSON is internally malformed", base, 0)
 
 
 def _usage(root: Mapping[str, Any]) -> dict[str, int]:
@@ -333,7 +460,6 @@ def _validate_items(
         target_id = str(raw_item.get("target_id") or "").strip()
         decision = expected.get(target_id)
         if not target_id or decision is None or target_id in returned:
-            # Unexpected/duplicate content cannot poison valid expected siblings.
             continue
         try:
             item = BatchItem.model_validate(raw_item)
@@ -385,8 +511,6 @@ def transcribe_page_batch(
         parts.append({"text": _target_instruction(decision)})
         parts.append(_image_part(payload))
 
-    # Field-level output is materially shorter than free transcription. Keeping
-    # this bounded also constrains the maximum cost of a malformed verbose reply.
     maximum = max(3200, min(9000, 1600 + 1050 * len(targets)))
     body = {
         "systemInstruction": {"parts": [{"text": _system_prompt()}]},
@@ -417,21 +541,29 @@ def transcribe_page_batch(
         raise PageBatchEnvelopeError("provider_root_not_json", request_id=request_id) from exc
     if not isinstance(root, Mapping):
         raise PageBatchEnvelopeError("provider_root_not_object", request_id=request_id)
+
+    finish_reason = _finish_reason(root)
     try:
-        decoded = json.loads(_response_text(root))
+        response_text = _response_text(root)
     except PageBatchEnvelopeError as exc:
         raise PageBatchEnvelopeError(
             exc.reason_code,
             usage=_usage(root),
             estimated_cost=_estimated_cost(root),
             request_id=request_id,
+            finish_reason=finish_reason,
         ) from exc
+    try:
+        decoded = _decode_structured_text(response_text)
     except json.JSONDecodeError as exc:
         raise PageBatchEnvelopeError(
             "structured_json_invalid",
             usage=_usage(root),
             estimated_cost=_estimated_cost(root),
             request_id=request_id,
+            finish_reason=finish_reason,
+            response_text_sha256=hashlib.sha256(response_text.encode("utf-8", errors="replace")).hexdigest(),
+            response_text_prefix=response_text[:2000],
         ) from exc
     items, missing, invalid = _validate_items(decoded, decisions=decisions)
 
@@ -454,5 +586,6 @@ __all__ = [
     "BatchUncertainSpan",
     "PageBatchEnvelopeError",
     "PageBatchResult",
+    "_decode_structured_text",
     "transcribe_page_batch",
 ]
