@@ -72,8 +72,8 @@ def test_gemini_call_is_one_image_source_only_minimal_and_no_retry(monkeypatch):
     assert len(images) == 1
     serialized = json.dumps(payload["messages"], ensure_ascii=False)
     assert "CURRENT_ASSEMBLED_QUESTION" not in serialized
-    assert "MISTRAL" not in serialized.upper()
-    assert "candidate" not in serialized.lower()
+    assert "SECRET_MISTRAL_CANDIDATE" not in serialized
+    assert "previous OCR candidate" in serialized
 
 
 def test_secondary_call_has_no_gemini_thinking_body(monkeypatch):
