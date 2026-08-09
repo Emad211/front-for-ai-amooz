@@ -1,6 +1,6 @@
 """Free deterministic risk scoring for OCR4 question/solution regions.
 
-Stage 4 never asks a model to decide what is risky.  This module inspects only
+Stage 4 never asks a model to decide what is risky. This module inspects only
 local/OCR evidence already produced by Stages 2 and 3, assigns every numbered
 question/solution region a bounded score, and marks only materially suspicious
 regions for source-only transcription.
@@ -118,11 +118,9 @@ def _candidate_text(question: Mapping[str, Any], kind: str) -> str:
             text = clean_exam_markdown(option.get("text_markdown") or "")
             values.append(f"{label}) {text}".strip())
         return "\n".join(value for value in values if value)
-    values = [
-        clean_exam_markdown(question.get("teacher_solution_markdown") or ""),
-        clean_exam_markdown(question.get("final_answer_markdown") or ""),
-    ]
-    return "\n".join(value for value in values if value)
+    # Compare source-only solution transcription with the worked-solution body,
+    # not with the separate synthetic final-answer field.
+    return clean_exam_markdown(question.get("teacher_solution_markdown") or "")
 
 
 def _visual_critical_for_kind(question: Mapping[str, Any], kind: str) -> bool:
@@ -195,7 +193,7 @@ def score_region_risks(
     """Assign a score to every numbered question/solution region.
 
     Simple formulas/digits/scientific prose intentionally stay below threshold on
-    their own.  A call is triggered by complex math or by stronger evidence such
+    their own. A call is triggered by complex math or by stronger evidence such
     as source corruption, parser/heading conflict, invalid answers, or visual
     uncertainty.
     """
@@ -268,7 +266,10 @@ def score_region_risks(
                 or number in unresolved
             )
             if heading_conflict:
-                score += 45 if number in unresolved else 30
+                # A recovered heading is already evidence that the primary OCR
+                # disagreed with the source sequence. Verify it once even if the
+                # surrounding prose is otherwise simple.
+                score += 50 if number in unresolved else 40
                 signals.append("heading_conflict")
 
             if bool(issue_codes & _OCR_DISAGREEMENT_ISSUES):
