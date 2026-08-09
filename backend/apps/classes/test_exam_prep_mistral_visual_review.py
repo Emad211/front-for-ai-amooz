@@ -23,8 +23,37 @@ def _asset(**overrides):
     return value
 
 
-def _question(visuals, *, issues=None):
+def _contract(visuals):
     return {
+        "schemaVersion": 1,
+        "requiredAssetIds": [str(item.get("id") or "") for item in visuals],
+        "roleCounts": {
+            role: sum(str(item.get("role") or "") == role for item in visuals)
+            for role in ("question", "option", "solution")
+        },
+        "optionLabels": sorted(
+            {
+                str(item.get("optionLabel") or "")
+                for item in visuals
+                if item.get("role") == "option"
+                and str(item.get("optionLabel") or "") in {"1", "2", "3", "4"}
+            }
+        ),
+        "groupedOptionLabels": sorted(
+            {
+                str(value)
+                for item in visuals
+                if item.get("visualMode") == "grouped_options"
+                for value in (item.get("groupedOptionLabels") or [])
+            }
+        ),
+        "sourcePages": sorted({int(item.get("sourcePage") or 0) for item in visuals}),
+        "fingerprint": "test",
+    }
+
+
+def _question(visuals, *, issues=None, contract=None):
+    value = {
         "question_id": "default-q-1",
         "scope_key": "default",
         "source_question_number": "1",
@@ -42,6 +71,8 @@ def _question(visuals, *, issues=None):
         "visuals": visuals,
         "issues": list(issues or []),
     }
+    value["visualSourceContract"] = _contract(visuals) if contract is None else contract
+    return value
 
 
 def _projection(question):
@@ -95,6 +126,19 @@ def test_whole_page_fallback_is_never_publish_safe_even_if_metadata_is_tampered(
 
 def test_missing_stage3_sanity_metadata_fails_closed():
     question = _question([_asset(sanity={})])
+    assert "visual_precise_crop_unresolved" in visual_metadata_issue_codes(question)
+
+
+def test_deleting_required_visual_is_detected_from_source_contract():
+    original = [_asset()]
+    question = _question([], issues=[], contract=_contract(original))
+    assert "visual_precise_crop_unresolved" in visual_metadata_issue_codes(question)
+    audit = audit_page_first_projection(_projection(question))
+    assert audit["status"] == "needs_review"
+
+
+def test_stage3_asset_without_source_contract_fails_closed():
+    question = _question([_asset()], contract={})
     assert "visual_precise_crop_unresolved" in visual_metadata_issue_codes(question)
 
 
