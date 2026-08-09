@@ -8,9 +8,8 @@ label in worked-answer headings.
 The contract is deliberately fail-closed. Native labels are authoritative only
 when answer-like pages contain anchored heading rows, every question number is
 unique, labels are 1..4, and the resulting question-number set exactly matches
-the OCR question anchors supplied by the caller. Coordinate overlay is even more
-conservative: geometry is rewritten only when every native heading on that page
-has exactly one number-fragment coordinate.
+the OCR question anchors supplied by the caller. Geometry is overlaid per heading
+only when that exact number fragment has one unambiguous PDF coordinate.
 """
 from __future__ import annotations
 
@@ -73,10 +72,15 @@ class NativeAnswerEvidence:
         return {item.question_number: item.physical_page_number for item in self.headings}
 
     def safe_dict(self, *, trusted: bool) -> dict[str, Any]:
+        coordinate_heading_count = sum(
+            item.x is not None and item.y is not None and item.side in {"left", "right"}
+            for item in self.headings
+        )
         return {
-            "schemaVersion": 1,
+            "schemaVersion": 2,
             "trusted": bool(trusted),
             "headingCount": len(self.headings),
+            "coordinateHeadingCount": coordinate_heading_count,
             "answerPageCount": len(self.answer_pages),
             "answerPages": list(self.answer_pages),
             "coordinateCompletePages": list(self.coordinate_complete_pages),
@@ -140,7 +144,10 @@ def extract_native_answer_evidence(pdf_data: bytes) -> NativeAnswerEvidence:
         for question, option in pairs:
             side = None
             x = y = None
-            if coordinate_complete:
+            # Coordinate trust is per heading. One ambiguous small number on the
+            # page must not prevent another unique missing heading from being
+            # inserted at its exact source position.
+            if len(coordinates.get(question) or []) == 1:
                 x, y = coordinates[question][0]
                 if page_width > 0:
                     side = "right" if x >= page_width / 2 else "left"
@@ -180,7 +187,7 @@ def overlay_native_solution_heading_blocks(
     evidence: NativeAnswerEvidence,
     trusted: bool,
 ) -> dict[str, Any]:
-    """Apply native label authority and, where safe, native heading geometry."""
+    """Apply native label authority and safe per-heading source geometry."""
 
     output = dict(root)
     raw_pages = [dict(page) for page in (root.get("pages") or []) if isinstance(page, Mapping)]
@@ -189,54 +196,52 @@ def overlay_native_solution_heading_blocks(
         return output
 
     reader = PdfReader(io.BytesIO(pdf_data))
-    complete_pages = set(evidence.coordinate_complete_pages)
-    labels = evidence.label_map()
-    native_pages = evidence.page_map()
     by_page: dict[int, list[NativeAnswerHeading]] = {}
     for item in evidence.headings:
-        if item.physical_page_number in complete_pages:
-            by_page.setdefault(item.physical_page_number, []).append(item)
+        by_page.setdefault(item.physical_page_number, []).append(item)
 
     for position, page in enumerate(raw_pages):
         physical_page = int(page.get("sourcePhysicalPage") or int(page.get("index") or position) + 1)
-        existing_blocks = [
-            dict(block) for block in (page.get("blocks") or []) if isinstance(block, Mapping)
-        ]
-
-        if physical_page not in complete_pages:
-            # Native coordinates can be ambiguous when the same small question
-            # number appears elsewhere on the page. Preserve OCR geometry, but a
-            # matching answer heading may still safely inherit the trusted label.
-            changed = False
-            for block in existing_blocks:
-                parsed = parse_solution_heading(str(block.get("content") or ""))
-                if not parsed:
-                    continue
-                number = int(parsed["rawQuestionNumber"])
-                label = labels.get(number)
-                if label and native_pages.get(number) == physical_page:
-                    block["content"] = f"{number} - گزینه {label}"
-                    block["nativeAnswerLabelOverride"] = True
-                    changed = True
-            if changed:
-                page["blocks"] = existing_blocks
-                page["nativeAnswerLabelOverride"] = True
-            continue
-
         native = by_page.get(physical_page)
         if not native or physical_page < 1 or physical_page > len(reader.pages):
             continue
         pdf_page = reader.pages[physical_page - 1]
         page_height = float(pdf_page.mediabox.height or 0)
-        if page_height <= 0 or any(item.y is None or item.side not in {"left", "right"} for item in native):
+        if page_height <= 0:
             continue
 
-        blocks = [
-            block
-            for block in existing_blocks
-            if parse_solution_heading(str(block.get("content") or "")) is None
+        existing_blocks = [
+            dict(block) for block in (page.get("blocks") or []) if isinstance(block, Mapping)
         ]
-        for item in sorted(native, key=lambda value: (0 if value.side == "right" else 1, -(value.y or 0))):
+        native_by_number = {item.question_number: item for item in native}
+        replaced_numbers: set[int] = set()
+        blocks: list[dict[str, Any]] = []
+
+        for block in existing_blocks:
+            parsed = parse_solution_heading(str(block.get("content") or ""))
+            if not parsed:
+                blocks.append(block)
+                continue
+            number = int(parsed["rawQuestionNumber"])
+            item = native_by_number.get(number)
+            if item is None:
+                blocks.append(block)
+                continue
+            if item.x is not None and item.y is not None and item.side in {"left", "right"}:
+                # A unique native coordinate will replace this OCR heading below.
+                replaced_numbers.add(number)
+                continue
+            # Geometry ambiguous: keep the provider bbox/order but replace only
+            # the source-authoritative label.
+            block["content"] = f"{number} - گزینه {item.option_label}"
+            block["nativeAnswerLabelOverride"] = True
+            replaced_numbers.add(number)
+            blocks.append(block)
+
+        injected = 0
+        for item in native:
+            if item.x is None or item.y is None or item.side not in {"left", "right"}:
+                continue
             top = max(0.01, min(0.97, 1.0 - float(item.y) / page_height))
             x0, x1 = ((0.72, 0.97) if item.side == "right" else (0.22, 0.48))
             blocks.append(
@@ -250,8 +255,13 @@ def overlay_native_solution_heading_blocks(
                     "nativeAnswerHeading": True,
                 }
             )
+            replaced_numbers.add(item.question_number)
+            injected += 1
+
         page["blocks"] = blocks
         page["nativeAnswerHeadingOverlay"] = True
+        page["nativeAnswerHeadingInjectedCount"] = injected
+        page["nativeAnswerHeadingCoveredNumbers"] = sorted(replaced_numbers)
 
     return output
 
