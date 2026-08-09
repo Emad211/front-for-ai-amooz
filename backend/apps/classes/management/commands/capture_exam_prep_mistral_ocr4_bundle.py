@@ -31,11 +31,13 @@ class _LocalOCRCheckpointStore:
         contract_fingerprint: str,
         chunk: OCR4Chunk,
     ) -> Path:
+        # Full hashes remain inside the checkpoint payload and are revalidated by
+        # the transport. Short path components only avoid Windows MAX_PATH traps.
         return (
             self.root
-            / source_sha256
-            / contract_fingerprint
-            / f"chunk-{chunk.index:03d}-{chunk.sha256[:16]}.json"
+            / source_sha256[:12]
+            / contract_fingerprint[:12]
+            / f"c{chunk.index:03d}-{chunk.sha256[:10]}.json"
         )
 
     def load(self, *, source_sha256: str, contract_fingerprint: str, chunk: OCR4Chunk) -> bytes | None:
