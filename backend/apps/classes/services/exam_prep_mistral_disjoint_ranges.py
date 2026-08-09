@@ -15,6 +15,7 @@ from .exam_prep_mistral_ocr_transport import OCR4DocumentResult
 from .exam_prep_mistral_solution_headings import (
     AlignedSolutionHeading,
     align_solution_headings,
+    parse_solution_heading,
     solution_heading_candidates,
 )
 from .exam_prep_page_source import SourcePageExtraction
@@ -36,8 +37,6 @@ def _merge_ranges(values: Sequence[tuple[int, int]]) -> tuple[tuple[int, int], .
 
 
 def _observed_clusters(question_numbers: Sequence[int]) -> list[tuple[int, int, int]]:
-    """Return robust observed number clusters separated by a very large gap."""
-
     observed = sorted({int(value) for value in question_numbers if int(value) > 0})
     if not observed:
         return []
@@ -58,8 +57,6 @@ def declared_question_intervals(
     evidence: core.MistralDocumentEvidence,
     question_numbers: Sequence[int],
 ) -> tuple[tuple[int, int], ...]:
-    """Return real booklet intervals without fabricating OCR gaps."""
-
     rows = [
         item
         for item in (evidence.booklet_ranges.get("ranges") or [])
@@ -76,7 +73,6 @@ def declared_question_intervals(
     observed = sorted({int(value) for value in question_numbers if int(value) > 0})
     if not observed:
         return tuple(merged_declared)
-
     if not merged_declared:
         clusters = _observed_clusters(observed)
         if len(clusters) >= 2:
@@ -92,7 +88,6 @@ def declared_question_intervals(
         if any(not (end < a or start > b) for a, b in relevant):
             continue
         relevant.append((start, end))
-
     if not relevant:
         return ((min(observed), max(observed)),)
     return _merge_ranges(relevant)
@@ -130,8 +125,6 @@ def aligned_solutions_for_intervals(
     result: OCR4DocumentResult,
     intervals: Sequence[tuple[int, int]],
 ) -> tuple[list[AlignedSolutionHeading], list[int], list[int]]:
-    """Align headings per real interval without fabricating intentional gaps."""
-
     candidates = []
     for page in result.pages:
         physical = int(page.get("sourcePhysicalPage") or int(page.get("index") or 0) + 1)
@@ -149,7 +142,6 @@ def aligned_solutions_for_intervals(
         next_start = ordered_ranges[index + 1][0] if index + 1 < len(ordered_ranges) else None
         selected = []
         last_accepted = start - 1
-
         while cursor < len(candidates):
             candidate = candidates[cursor]
             raw = int(candidate.raw_question_number)
@@ -197,8 +189,31 @@ def aligned_solutions_for_intervals(
             for item in (aligned.get("accepted") or [])
             if start <= item.question_number <= end and not item.option_label_valid
         )
-
     return accepted, sorted(missing), sorted(invalid)
+
+
+def _embedded_native_answer_labels(result: OCR4DocumentResult) -> dict[int, str]:
+    """Read only labels explicitly injected by the trusted native overlay."""
+
+    values: dict[int, set[str]] = {}
+    for page in result.pages:
+        for block in page.get("blocks") or []:
+            if not isinstance(block, Mapping):
+                continue
+            if not (block.get("nativeAnswerHeading") or block.get("nativeAnswerLabelOverride")):
+                continue
+            parsed = parse_solution_heading(str(block.get("content") or ""))
+            if not parsed:
+                continue
+            number = int(parsed["rawQuestionNumber"])
+            raw_label = int(parsed["rawOptionLabel"])
+            label = raw_label // 10 if raw_label in {10, 20, 30, 40} else raw_label
+            if label not in {1, 2, 3, 4}:
+                continue
+            values.setdefault(number, set()).add(str(label))
+    if any(len(labels) != 1 for labels in values.values()):
+        return {}
+    return {number: next(iter(labels)) for number, labels in values.items()}
 
 
 def build_page_extractions_disjoint(
@@ -209,11 +224,15 @@ def build_page_extractions_disjoint(
     intervals: Sequence[tuple[int, int]],
     authoritative_answer_labels: Mapping[int, str] | None = None,
 ) -> list[SourcePageExtraction]:
-    """Stage-2 assembly with range-aware alignment and optional source labels."""
-
+    explicit = authoritative_answer_labels is not None
+    source_labels = (
+        dict(authoritative_answer_labels or {})
+        if explicit
+        else _embedded_native_answer_labels(result)
+    )
     authoritative = {
         int(number): str(label)
-        for number, label in dict(authoritative_answer_labels or {}).items()
+        for number, label in source_labels.items()
         if str(label) in {"1", "2", "3", "4"}
     }
     records_by_page: dict[int, list[dict[str, Any]]] = {}
