@@ -82,6 +82,9 @@ _SOLUTION_REPAIR_STALE = frozenset(
         "count_answer_unresolved",
     }
 )
+_STRONG_TEXTUAL_SIGNALS = frozenset(
+    {"missing_invalid_answer", "heading_conflict", "ocr_disagreement", "source_corruption"}
+)
 
 
 def _primary_cap() -> int:
@@ -336,6 +339,11 @@ def _mark_unresolved(question: dict[str, Any]) -> dict[str, Any]:
     return updated
 
 
+def _only_visual_anomaly(decision: RegionRiskDecision) -> bool:
+    signals = set(decision.signals)
+    return "visual_anomaly" in signals and not bool(signals & _STRONG_TEXTUAL_SIGNALS)
+
+
 @dataclass(frozen=True, slots=True)
 class Stage4Stats:
     regions: int
@@ -431,6 +439,9 @@ def verify_and_repair_risky_regions(
         if primary.transcript.get("transcriptionUncertain"):
             if decision.hard_math and secondary_calls < secondary_limit:
                 primary_payload = None
+            elif _only_visual_anomaly(decision):
+                row.update({"status": "visual_risk_preserved_source_uncertain"})
+                continue
             else:
                 questions[decision.question_number] = _mark_unresolved(question)
                 row.update({"status": "source_uncertain"})
@@ -447,15 +458,22 @@ def verify_and_repair_risky_regions(
                 row.update({"status": "verified_primary_agreement"})
                 verified += 1
                 continue
-            needs_second = decision.hard_math or not numeric_same
-            if not needs_second:
+
+            # Numeric disagreement is always treated as real disagreement, but a
+            # second paid model is reserved strictly for hard math/formulas. For
+            # non-hard regions the independent source transcription is the repair.
+            if not decision.hard_math:
                 updated = _apply_proposal(question, decision=decision, payload=primary_payload)
                 questions[decision.question_number] = updated
                 row.update({"status": "repaired_primary"})
                 verified += 1
                 repaired += 1
                 continue
+            needs_second = True
         else:
+            if _only_visual_anomaly(decision) and primary.transcript.get("sourceVisualRequired"):
+                row.update({"status": "visual_risk_preserved"})
+                continue
             needs_second = decision.hard_math
 
         if not needs_second or secondary_calls >= secondary_limit:
