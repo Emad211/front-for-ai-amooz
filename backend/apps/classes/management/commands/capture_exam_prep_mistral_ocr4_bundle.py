@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 import json
 from pathlib import Path
 import shutil
@@ -19,7 +20,7 @@ from apps.classes.services.exam_prep_mistral_ocr_transport import (
 class Command(BaseCommand):
     help = (
         "Run only Mistral OCR4 for one PDF and save a reusable diagnostic ZIP. "
-        "No Stage-3/Stage-4 LLM calls are made."
+        "No Stage-3/Stage-4 LLM calls are made and automatic paid OCR retry is disabled."
     )
 
     def add_arguments(self, parser):
@@ -43,7 +44,7 @@ class Command(BaseCommand):
         except Exception as exc:
             raise CommandError("The supplied PDF cannot be opened.") from exc
 
-        config = MistralOCR4Config.from_env()
+        config = replace(MistralOCR4Config.from_env(), max_attempts=1)
         try:
             result = fetch_ocr4_document(data, config=config)
         except MistralOCR4Error as exc:
@@ -62,6 +63,7 @@ class Command(BaseCommand):
             "pageCount": result.page_count,
             "providerCalls": result.provider_call_count,
             "retryCount": result.retry_count,
+            "automaticPaidRetryAllowed": False,
             "checkpointReusedChunks": result.checkpoint_reuse_count,
             "requestIds": list(result.request_ids),
             "resolvedModels": list(result.resolved_models),
