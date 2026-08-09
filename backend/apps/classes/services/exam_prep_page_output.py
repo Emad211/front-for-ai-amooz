@@ -40,6 +40,7 @@ CRITICAL_ISSUE_CODES = frozenset(
         "table_incomplete",
         "count_answer_unresolved",
         "visual_attachment_missing",
+        "stage4_verification_unresolved",
         "failed_chunk",
     }
 )
