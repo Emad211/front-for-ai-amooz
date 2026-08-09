@@ -1,13 +1,9 @@
 """Production-safe Stage-4 facade preserving Stage-3 visual authority.
 
 Production Stage 4 groups all suspicious source crops from the same physical page
-into one Gemini request. This facade re-applies the publication safety rules that
-remain independent of provider transport:
-
-1. remove visual-only issue codes reintroduced by text-quality helpers when the
-   immutable Stage-3 visual contract proves the evidence is healthy;
-2. recompute the Stage-4 machine blocker from every region status of a question
-   so a successful or partial repair cannot hide another unresolved field.
+into one Gemini request. This facade re-applies publication safety rules that are
+independent of provider transport and runs the narrow independent-consensus gate
+for the proven pathological-repetition hallucination family.
 """
 from __future__ import annotations
 
@@ -17,6 +13,9 @@ from typing import Any, Mapping
 from .exam_prep_mistral_stage4_page_batch_runtime import (
     PageBatchStats,
     verify_and_repair_risky_regions_page_batched,
+)
+from .exam_prep_mistral_stage4_pathological_guard import (
+    enforce_pathological_repair_consensus,
 )
 from .exam_prep_mistral_visual_review import (
     visual_metadata_issue_codes,
@@ -55,6 +54,12 @@ _STAGE4_FAILURE_STATUSES = frozenset(
         "secondary_uncertain",
         "secondary_no_vote",
         "second_opinion_disagreement",
+        "pathological_partial_repair_rolled_back",
+        "pathological_unresolved",
+        "pathological_consensus_unavailable",
+        "pathological_consensus_failed",
+        "pathological_consensus_uncertain",
+        "pathological_consensus_disagreement",
     }
 )
 
@@ -129,13 +134,23 @@ def _restore_authority(
 
 
 def _restore_visual_authority(result: PageAssemblyResult) -> PageAssemblyResult:
-    """Compatibility helper retained for focused Stage-3/4 visual tests."""
-
     return _restore_authority(result, audit={"regions": []})
 
 
 def verify_and_repair_risky_regions(*args, **kwargs):
+    original = args[0] if args else kwargs.get("result")
     result, audit = verify_and_repair_risky_regions_page_batched(*args, **kwargs)
+    if isinstance(original, PageAssemblyResult):
+        result, audit = enforce_pathological_repair_consensus(
+            original,
+            result,
+            audit,
+            pdf_data=kwargs.get("pdf_data") or b"",
+            layout=kwargs.get("layout") or {},
+            recovered_solution_targets=kwargs.get("recovered_solution_targets") or (),
+            unresolved_solution_targets=kwargs.get("unresolved_solution_targets") or (),
+            max_cost_usd=kwargs.get("max_cost_usd"),
+        )
     return _restore_authority(result, audit=audit), audit
 
 
