@@ -205,6 +205,12 @@ def overlay_native_solution_heading_blocks(
         native = by_page.get(physical_page)
         if not native or physical_page < 1 or physical_page > len(reader.pages):
             continue
+        # Labels and geometry are separate contracts. Persist every trusted label
+        # even when its coordinate is ambiguous and a targeted geometry recovery
+        # may still be necessary.
+        page["nativeAnswerLabels"] = {
+            str(item.question_number): str(item.option_label) for item in native
+        }
         pdf_page = reader.pages[physical_page - 1]
         page_height = float(pdf_page.mediabox.height or 0)
         if page_height <= 0:
@@ -224,8 +230,6 @@ def overlay_native_solution_heading_blocks(
                 blocks.append(block)
                 continue
             if full_rebuild:
-                # Every native answer heading is geometrically known, therefore
-                # any OCR-parsed answer heading on this page is redundant/noisy.
                 continue
             number = int(parsed["rawQuestionNumber"])
             item = native_by_number.get(number)
