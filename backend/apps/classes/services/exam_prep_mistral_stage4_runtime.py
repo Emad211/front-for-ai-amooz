@@ -1,18 +1,22 @@
 """Production-safe Stage-4 facade preserving Stage-3 visual authority.
 
-This facade has two narrow responsibilities after the source verifier runs:
+This facade has three narrow responsibilities around the source verifier:
 
-1. remove visual-only issue codes reintroduced by the legacy text-quality helper
+1. install the calibrated full-document risk selector (v2) and a bounded primary
+   call cap that can actually cover the intended suspicious set;
+2. remove visual-only issue codes reintroduced by the legacy text-quality helper
    when the immutable Stage-3 visual contract proves the evidence is healthy;
-2. recompute the Stage-4 machine blocker from *all* region statuses of a question
+3. recompute the Stage-4 machine blocker from *all* region statuses of a question
    so a later successful repair cannot erase an earlier unresolved region.
 """
 from __future__ import annotations
 
 from collections import defaultdict
+import os
 from typing import Any, Mapping
 
 from . import exam_prep_mistral_stage4 as _impl
+from .exam_prep_mistral_risk_engine_v2 import score_region_risks as _calibrated_score_region_risks
 from .exam_prep_mistral_visual_review import (
     visual_metadata_issue_codes,
     visual_options_complete,
@@ -49,6 +53,22 @@ _STAGE4_FAILURE_STATUSES = frozenset(
         "second_opinion_disagreement",
     }
 )
+
+
+def _primary_cap() -> int:
+    """Bound cost while covering the calibrated full-exam suspicious set."""
+
+    try:
+        value = int(os.getenv("EXAM_PREP_STAGE4_MAX_PRIMARY_CALLS", "56"))
+    except (TypeError, ValueError):
+        value = 56
+    return max(1, min(80, value))
+
+
+# The implementation imports its selector/cap by name. Install the production
+# policies here rather than duplicating the verifier/merge machinery.
+_impl.score_region_risks = _calibrated_score_region_risks
+_impl._primary_cap = _primary_cap
 
 
 def _number(value: Any) -> int:
