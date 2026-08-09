@@ -11,6 +11,7 @@ from django.utils import timezone
 
 from apps.classes.models import ClassCreationSession
 from apps.classes.models_v4 import ExamProject
+from apps.classes.models_v4_blocks import ExamSourceBlock
 from apps.classes.models_v4_projection import ExamV4Projection
 from apps.classes.models_v4_records import (
     ExamAnswerSolutionRecord,
@@ -20,6 +21,7 @@ from apps.classes.models_v4_records import (
 )
 from apps.classes.models_v4_review import ExamReviewDecision
 from apps.classes.services.exam_prep_v4_observability import emit_v4_event
+from apps.classes.services.exam_prep_v4_source_crops import source_crop_url
 
 
 class ProjectionNotReady(RuntimeError):
@@ -60,7 +62,10 @@ def _current_questions(project: ExamProject) -> tuple[ExamQuestionRecord, ...]:
         ExamQuestionRecord.objects.filter(
             project=project,
             lifecycle_status=ExamExtractionLifecycle.ACCEPTED,
-        ).order_by('document__upload_order', 'order', 'id')
+        )
+        .select_related('source_block')
+        .prefetch_related('source_block__fragments')
+        .order_by('document__upload_order', 'order', 'id')
     )
     if not records:
         raise ProjectionNotReady('No accepted question inventory exists.')
@@ -72,7 +77,10 @@ def _current_answers(project: ExamProject) -> tuple[ExamAnswerSolutionRecord, ..
         ExamAnswerSolutionRecord.objects.filter(
             project=project,
             lifecycle_status=ExamExtractionLifecycle.ACCEPTED,
-        ).order_by('document__upload_order', 'order', 'id')
+        )
+        .select_related('source_block')
+        .prefetch_related('source_block__fragments')
+        .order_by('document__upload_order', 'order', 'id')
     )
     if not records:
         raise ProjectionNotReady('No accepted answer inventory exists.')
@@ -248,6 +256,43 @@ def _question_type(options: list[dict[str, str]]) -> str:
     return 'multiple_choice'
 
 
+def _source_visual_ref(
+    *,
+    project: ExamProject,
+    record: ExamQuestionRecord | ExamAnswerSolutionRecord,
+    role: str,
+    alt_text: str,
+) -> dict[str, Any] | None:
+    """Expose a protected crop URL, never a storage key or raw OCR payload.
+
+    The URL contains the record id for routing, but the view enforces project
+    ancestry and (for students) exact projection membership before streaming.
+    """
+
+    block = getattr(record, 'source_block', None)
+    if block is None or not getattr(record, 'source_block_id', None):
+        return None
+    if block.status != ExamSourceBlock.Status.ACCEPTED:
+        return None
+    # A record without fragments is not renderable; omitting the ref lets the
+    # existing review/legacy UI fall back cleanly instead of showing a broken
+    # image.  Accepted V4 records normally always have at least one fragment.
+    if not block.fragments.all():
+        return None
+    return {
+        'id': f'v4-{role}-{record.id}',
+        'role': role,
+        'optionLabel': None,
+        'altText': alt_text,
+        'selectedVariant': 'source',
+        'url': source_crop_url(
+            project_id=project.id,
+            record_kind='question' if role == 'question' else 'solution',
+            record_id=record.id,
+        ),
+    }
+
+
 def _legacy_question(
     *,
     project: ExamProject,
@@ -267,6 +312,23 @@ def _legacy_question(
             'questionFingerprint': question.fingerprint,
         }
     )[:24]
+    visuals: list[dict[str, Any]] = []
+    question_visual = _source_visual_ref(
+        project=project,
+        record=question,
+        role='question',
+        alt_text='برش اصلی صورت سؤال و گزینه‌ها',
+    )
+    if question_visual is not None:
+        visuals.append(question_visual)
+    solution_visual = _source_visual_ref(
+        project=project,
+        record=answer,
+        role='solution',
+        alt_text='برش اصلی راه‌حل و پاسخ تشریحی',
+    )
+    if solution_visual is not None:
+        visuals.append(solution_visual)
     return {
         'question_id': f'v4-{opaque_id}',
         'question_text_markdown': question.question_text,
@@ -276,7 +338,7 @@ def _legacy_question(
         'correct_option_text_markdown': correct_text,
         'teacher_solution_markdown': answer.solution_text,
         'final_answer_markdown': answer.final_answer,
-        'visuals': [],
+        'visuals': visuals,
     }
 
 
@@ -498,6 +560,50 @@ def publish_legacy_projection(*, teacher, project_id: int) -> dict[str, Any]:
         pipeline_type=ClassCreationSession.PipelineType.EXAM_PREP,
     )
     if session.is_published:
+        # A legacy teacher publish request can predate the V4 publication
+        # endpoint and set only ``session.is_published``.  Repair all three
+        # linked lifecycle records idempotently so protected source crops and
+        # the V4 project agree with the public session boundary.
+        now = session.published_at or projection.published_at or timezone.now()
+        if session.published_at is None:
+            session.published_at = now
+            session.save(update_fields=['published_at', 'updated_at'])
+        projection_updates: list[str] = []
+        if projection.status != ExamV4Projection.Status.PUBLISHED:
+            projection.status = ExamV4Projection.Status.PUBLISHED
+            projection_updates.append('status')
+        if projection.published_at is None:
+            projection.published_at = now
+            projection_updates.append('published_at')
+        if projection_updates:
+            projection.save(update_fields=[*projection_updates, 'updated_at'])
+
+        project_updates: list[str] = []
+        if project.status != ExamProject.Status.PUBLISHED:
+            project.status = ExamProject.Status.PUBLISHED
+            project_updates.append('status')
+        if not project.is_published:
+            project.is_published = True
+            project_updates.append('is_published')
+        if project.published_at is None:
+            project.published_at = now
+            project_updates.append('published_at')
+        state = dict(project.workflow_state) if isinstance(project.workflow_state, dict) else {}
+        state_changed = state.get('stage') != 'published' or state.get('legacySessionId') != session.id
+        if state_changed:
+            state.update(
+                {
+                    'stage': 'published',
+                    'progressPercent': 100,
+                    'legacySessionId': session.id,
+                    'publishedAt': now.isoformat(),
+                    'lastEventAt': now.isoformat(),
+                }
+            )
+            project.workflow_state = state
+            project_updates.append('workflow_state')
+        if project_updates:
+            project.save(update_fields=[*project_updates, 'updated_at'])
         return {
             **projection_payload,
             'status': ExamV4Projection.Status.PUBLISHED,

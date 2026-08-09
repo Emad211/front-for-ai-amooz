@@ -40,6 +40,7 @@ import type {
   ExamPrepSessionUpdatePayload,
 } from '@/services/classes-service';
 import { ProtectedExamVisual } from '@/components/exam-prep/protected-exam-visual';
+import { resolveExamVisualUrl, visualMatchesOption, visualsForRole } from '@/lib/exam-visuals';
 import {
   buildExamReviewSummary,
   type ExamQuestionReviewState,
@@ -545,16 +546,19 @@ export function ExamEditForm({ examDetail, onSave, isSaving }: ExamEditFormProps
                     </div>
                   )}
 
-                  {(question.visuals?.length ?? 0) > 0 && (
+                  {visualsForRole(question.visuals, 'question').length > 0 && (
                     <div className="grid gap-3 sm:grid-cols-2">
-                      {question.visuals?.map((visual) => (
-                        <ProtectedExamVisual
-                          key={visual.id}
-                          url={`/api/classes/exam-prep-sessions/${examDetail.id}/visuals/${visual.id}/content/`}
-                          alt={visual.altText || 'تصویر مرتبط با سؤال'}
-                          className="h-48 w-full rounded-md border object-contain"
-                        />
-                      ))}
+                      {visualsForRole(question.visuals, 'question').map((visual) => {
+                        const url = resolveExamVisualUrl(visual, examDetail.id);
+                        return url ? (
+                          <ProtectedExamVisual
+                            key={String(visual.id)}
+                            url={url}
+                            alt={visual.altText || 'تصویر مرتبط با صورت سؤال'}
+                            className="h-auto max-h-[60vh] min-h-32 w-full rounded-md border object-contain"
+                          />
+                        ) : null;
+                      })}
                     </div>
                   )}
 
@@ -594,6 +598,22 @@ export function ExamEditForm({ examDetail, onSave, isSaving }: ExamEditFormProps
                           )}
                           placeholder={`متن گزینه ${option.label}`}
                         />
+                        {question.visuals
+                          ?.filter(
+                            (visual) =>
+                              visual.role === 'option' && visualMatchesOption(visual, option.label),
+                          )
+                          .map((visual) => {
+                            const url = resolveExamVisualUrl(visual, examDetail.id);
+                            return url ? (
+                              <ProtectedExamVisual
+                                key={String(visual.id)}
+                                url={url}
+                                alt={visual.altText || `تصویر گزینه ${option.label}`}
+                                className="mt-2 h-auto max-h-64 min-h-24 w-full rounded-md border object-contain"
+                              />
+                            ) : null;
+                          })}
                       </div>
                     ))}
                   </div>
@@ -643,6 +663,21 @@ export function ExamEditForm({ examDetail, onSave, isSaving }: ExamEditFormProps
                       rows={6}
                       className="min-h-[150px] resize-none bg-muted/30 md:resize-y"
                     />
+                    {visualsForRole(question.visuals, 'solution').length > 0 && (
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        {visualsForRole(question.visuals, 'solution').map((visual) => {
+                          const url = resolveExamVisualUrl(visual, examDetail.id);
+                          return url ? (
+                            <ProtectedExamVisual
+                              key={String(visual.id)}
+                              url={url}
+                              alt={visual.altText || 'تصویر راه‌حل سؤال'}
+                              className="h-auto max-h-[60vh] min-h-32 w-full rounded-md border object-contain"
+                            />
+                          ) : null;
+                        })}
+                      </div>
+                    )}
                   </div>
                 </AccordionContent>
               </AccordionItem>

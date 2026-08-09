@@ -3959,6 +3959,49 @@ class ExamPrepSessionPublishView(APIView):
                     status=status.HTTP_404_NOT_FOUND,
                 )
 
+            # V4 source-aware sessions are also visible from the legacy
+            # teacher page.  Delegate that button to the canonical V4
+            # publication service before legacy status/artifact checks; the
+            # bridge may legitimately be ``exam_transcribed`` rather than
+            # ``exam_structured``.  This keeps project, projection and
+            # session publication flags atomic and makes crop URLs usable.
+            from .models_v4_projection import ExamV4Projection
+            from .services.exam_prep_v4_projection import (
+                ProjectionIntegrityError,
+                ProjectionNotReady,
+                StaleProjection,
+                publish_legacy_projection,
+            )
+
+            v4_projection = (
+                ExamV4Projection.objects.select_related('project')
+                .filter(session=session, project__teacher=request.user)
+                .first()
+            )
+            if v4_projection is not None:
+                try:
+                    publish_legacy_projection(
+                        teacher=request.user,
+                        project_id=v4_projection.project_id,
+                    )
+                except ProjectionNotReady as exc:
+                    return Response(
+                        {'detail': str(exc), 'code': 'projection_not_ready'},
+                        status=status.HTTP_409_CONFLICT,
+                    )
+                except StaleProjection as exc:
+                    return Response(
+                        {'detail': str(exc), 'code': 'stale_projection'},
+                        status=status.HTTP_409_CONFLICT,
+                    )
+                except ProjectionIntegrityError as exc:
+                    return Response(
+                        {'detail': str(exc), 'code': 'projection_integrity_error'},
+                        status=status.HTTP_409_CONFLICT,
+                    )
+                session.refresh_from_db()
+                return Response(ExamPrepSessionDetailSerializer(session).data)
+
             if session.is_published:
                 return Response(ExamPrepSessionDetailSerializer(session).data)
             if session.status != ClassCreationSession.Status.EXAM_STRUCTURED:
@@ -4824,17 +4867,47 @@ class StudentExamPrepDetailView(APIView):
 
             if qid:
                 visuals = []
+                workflow_state = session.workflow_state
+                v4_project_id = (
+                    workflow_state.get('v4ProjectId')
+                    if isinstance(workflow_state, dict)
+                    else None
+                )
+                v4_project_id_text = str(v4_project_id or '').strip()
+                v4_url_prefix = (
+                    f'/api/classes/exam-prep-source-crops/{v4_project_id_text}/'
+                    if v4_project_id_text.isdigit() and len(v4_project_id_text) <= 12
+                    else ''
+                )
                 for visual in q.get('visuals') or []:
                     if not isinstance(visual, dict) or visual.get('role') == 'solution':
                         continue
                     visual_id = visual.get('id')
                     if visual_id:
+                        visual_url = str(visual.get('url') or '').strip()
+                        # V4 source-first projections carry an authenticated
+                        # crop URL.  Preserve it; only legacy numeric assets
+                        # need the session visual endpoint fallback.
+                        if visual_url.startswith('/api/classes/exam-prep-source-crops/'):
+                            # Never downgrade an opaque V4 ref to the legacy
+                            # integer endpoint when the bridge binding is
+                            # missing or does not match this session.
+                            if (
+                                not v4_url_prefix
+                                or not visual_url.startswith(f'{v4_url_prefix}question/')
+                            ):
+                                continue
+                        else:
+                            visual_url = (
+                                f'/api/classes/exam-prep-sessions/{session.id}/'
+                                f'visuals/{visual_id}/content/'
+                            )
                         visuals.append({
                             'id': visual_id,
                             'role': visual.get('role'),
                             'optionLabel': visual.get('optionLabel'),
                             'altText': visual.get('altText') or '',
-                            'url': f'/api/classes/exam-prep-sessions/{session.id}/visuals/{visual_id}/content/',
+                            'url': visual_url,
                         })
                 safe_questions.append(
                     {
@@ -5463,14 +5536,31 @@ class StudentExamPrepResultView(APIView):
             questions_list = []
 
         correct_map: dict[str, str] = {}
+        question_by_id: dict[str, dict] = {}
         for q in questions_list:
+            if not isinstance(q, dict):
+                continue
             qid = str(q.get('question_id') or '').strip()
             label = str(q.get('correct_option_label') or '').strip()
             if qid:
                 correct_map[qid] = label
+                question_by_id[qid] = q
 
         answers_raw = attempt.answers if isinstance(attempt.answers, dict) else {}
         total_questions = len(correct_map)
+
+        workflow_state = session.workflow_state
+        v4_project_id = (
+            workflow_state.get('v4ProjectId')
+            if isinstance(workflow_state, dict)
+            else None
+        )
+        v4_project_id_text = str(v4_project_id or '').strip()
+        v4_url_prefix = (
+            f'/api/classes/exam-prep-source-crops/{v4_project_id_text}/'
+            if v4_project_id_text.isdigit() and len(v4_project_id_text) <= 12
+            else ''
+        )
 
         items = []
         correct_count = 0
@@ -5495,15 +5585,55 @@ class StudentExamPrepResultView(APIView):
             if attempt.finalized:
                 score_total += q_score
 
-            items.append(
-                {
-                    'question_id': qid,
-                    'selected_label': selected,
-                    'is_correct': bool(q_is_correct) if attempt.finalized else False,
-                    'attempts': q_attempts,
-                    'score_for_question': q_score if attempt.finalized else 0,
-                }
-            )
+            item_payload = {
+                'question_id': qid,
+                'selected_label': selected,
+                'is_correct': bool(q_is_correct) if attempt.finalized else False,
+                'attempts': q_attempts,
+                'score_for_question': q_score if attempt.finalized else 0,
+            }
+            if attempt.finalized:
+                question = question_by_id.get(qid) or {}
+                safe_solution_visuals = []
+                for visual in question.get('visuals') or []:
+                    if not isinstance(visual, dict) or visual.get('role') != 'solution':
+                        continue
+                    visual_id = visual.get('id')
+                    visual_url = str(visual.get('url') or '').strip()
+                    # Only the V4 endpoint is student-readable after
+                    # finalization.  Do not forward arbitrary JSON fields or
+                    # legacy storage/object URLs.
+                    if (
+                        not visual_id
+                        or not v4_url_prefix
+                        or not visual_url.startswith(f'{v4_url_prefix}solution/')
+                    ):
+                        continue
+                    safe_solution_visuals.append(
+                        {
+                            'id': visual_id,
+                            'role': 'solution',
+                            'optionLabel': visual.get('optionLabel'),
+                            'altText': str(visual.get('altText') or '')[:500],
+                            'selectedVariant': visual.get('selectedVariant') or 'source',
+                            'url': visual_url,
+                        }
+                    )
+                item_payload.update(
+                    {
+                        'solution_markdown': str(
+                            question.get('teacher_solution_markdown')
+                            or question.get('final_answer_markdown')
+                            or question.get('correct_option_text_markdown')
+                            or ''
+                        ).strip(),
+                        'teacher_solution_markdown': str(
+                            question.get('teacher_solution_markdown') or ''
+                        ).strip(),
+                        'solution_visuals': safe_solution_visuals,
+                    }
+                )
+            items.append(item_payload)
 
         score_0_100 = int(round(score_total / total_questions)) if (attempt.finalized and total_questions > 0) else 0
 

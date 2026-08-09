@@ -94,6 +94,10 @@ def _legacy_workflow(project: ExamProject) -> dict[str, Any]:
         'message': message,
         'warnings': warnings,
         'readyForReview': stage == 'ready_for_review',
+        # The student detail endpoint uses this stable project binding to
+        # preserve protected V4 source-crop URLs from the projection.  Keep
+        # the older sourceAwareProjectId key for the create-flow bridge.
+        'v4ProjectId': project.id,
         'sourceAwareProjectId': project.id,
     }
 

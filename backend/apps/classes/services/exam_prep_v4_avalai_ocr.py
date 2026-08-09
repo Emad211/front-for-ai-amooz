@@ -17,7 +17,10 @@ import re
 import time
 from typing import Any, Callable, Literal, Mapping, Sequence
 
-import requests
+try:  # Keep pure response/parser tests usable without the optional HTTP client.
+    import requests
+except ImportError:  # pragma: no cover - live environments install requests
+    requests = None  # type: ignore[assignment]
 
 
 AVALAI_OCR_ENDPOINT = 'https://api.avalai.ir/v1/ocr'
@@ -218,14 +221,22 @@ def _default_transport(
     payload: Mapping[str, Any],
     timeout: float,
 ) -> OCRHTTPResponse:
+    http = requests
+    if http is None:  # pragma: no cover - exercised only in dependency failures
+        try:
+            import requests as http  # type: ignore[no-redef]
+        except ImportError as exc:
+            raise AvalAIOCRConfigurationError(
+                "The 'requests' package is required for live OCR."
+            ) from exc
     try:
-        response = requests.post(
+        response = http.post(
             url,
             headers=dict(headers),
             json=dict(payload),
             timeout=timeout,
         )
-    except requests.RequestException as exc:
+    except http.RequestException as exc:
         raise AvalAIOCRTransportError('AvalAI OCR request failed.') from exc
     return OCRHTTPResponse(
         status_code=response.status_code,

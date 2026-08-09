@@ -107,6 +107,7 @@ export default function ExamPage() {
                     <div className="flex-1 overflow-y-auto">
                         <QuestionContent 
                             question={currentQuestion} 
+                            sessionId={examId}
                             totalQuestions={exam.totalQuestions || 0}
                             onNext={goToNextQuestion}
                             onPrev={goToPrevQuestion}

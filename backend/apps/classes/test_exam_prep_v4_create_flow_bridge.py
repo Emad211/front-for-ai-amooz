@@ -178,6 +178,7 @@ def test_legacy_project_progress_is_mirrored_into_existing_session(
     session.refresh_from_db()
     assert session.status == ClassCreationSession.Status.EXAM_TRANSCRIBED
     assert session.workflow_state['stage'] == 'ready_for_review'
+    assert session.workflow_state['v4ProjectId'] == project.id
     assert session.workflow_state['readyForReview'] is True
     assert session.workflow_state['progressPercent'] == 80
 

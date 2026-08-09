@@ -9,6 +9,7 @@ import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { MarkdownWithMath } from '@/components/content/markdown-with-math';
+import { ProtectedExamVisual } from '@/components/exam-prep/protected-exam-visual';
 import { StudentInviteSection } from '@/components/teacher/create-class/student-invite-section';
 import { ClassAnnouncementsCard } from '@/components/teacher/class-detail';
 import { ExamExtractionReview } from '@/components/teacher/exam-edit/exam-extraction-review';
@@ -24,6 +25,7 @@ import { formatDistanceToNow } from 'date-fns';
 import { faIR } from 'date-fns/locale';
 import { formatPersianDate, formatPersianDateTime } from '@/lib/date-utils';
 import { toast } from 'sonner';
+import { resolveExamVisualUrl, visualMatchesOption, visualsForRole } from '@/lib/exam-visuals';
 
 interface PageProps {
   params: Promise<{ examId: string }>;
@@ -326,6 +328,27 @@ export default function TeacherExamDetailPage({ params }: PageProps) {
                                 </span>
                                 <div className="flex-1 min-w-0">
                                   <MarkdownWithMath markdown={q.question_text_markdown} />
+                                  {visualsForRole(q.visuals, 'question').length > 0 && (
+                                    <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                                      {visualsForRole(q.visuals, 'question').map((visual) => {
+                                        const url = resolveExamVisualUrl(visual, examPrep.id);
+                                        return url ? (
+                                          <figure key={String(visual.id)} className="overflow-hidden rounded-lg border border-border bg-background">
+                                            <ProtectedExamVisual
+                                              url={url}
+                                              alt={visual.altText || 'تصویر صورت سؤال'}
+                                              className="h-auto max-h-[60vh] min-h-32 w-full object-contain"
+                                            />
+                                            {visual.altText ? (
+                                              <figcaption className="border-t px-2 py-1 text-xs text-muted-foreground">
+                                                {visual.altText}
+                                              </figcaption>
+                                            ) : null}
+                                          </figure>
+                                        ) : null;
+                                      })}
+                                    </div>
+                                  )}
                                 </div>
                               </div>
 
@@ -341,19 +364,52 @@ export default function TeacherExamDetailPage({ params }: PageProps) {
                                       }`}
                                     >
                                       <span className="font-bold text-sm shrink-0">{opt.label})</span>
-                                      <MarkdownWithMath markdown={opt.text_markdown} />
+                                      <div className="min-w-0 flex-1">
+                                        <MarkdownWithMath markdown={opt.text_markdown} />
+                                        {q.visuals
+                                          ?.filter(
+                                            (visual) =>
+                                              visual.role === 'option' && visualMatchesOption(visual, opt.label),
+                                          )
+                                          .map((visual) => {
+                                            const url = resolveExamVisualUrl(visual, examPrep.id);
+                                            return url ? (
+                                              <ProtectedExamVisual
+                                                key={String(visual.id)}
+                                                url={url}
+                                                alt={visual.altText || `تصویر گزینه ${opt.label}`}
+                                                className="mt-2 h-auto max-h-64 min-h-24 w-full rounded-md border object-contain"
+                                              />
+                                            ) : null;
+                                          })}
+                                      </div>
                                     </div>
                                   ))}
                                 </div>
                               )}
 
-                              {q.teacher_solution_markdown && (
+                              {(q.teacher_solution_markdown || visualsForRole(q.visuals, 'solution').length > 0) && (
                                 <details className="pr-10">
                                   <summary className="text-sm text-primary cursor-pointer hover:underline">
                                     راه‌حل
                                   </summary>
                                   <div className="mt-2 p-3 bg-primary/5 rounded-lg">
                                     <MarkdownWithMath markdown={q.teacher_solution_markdown} />
+                                    {visualsForRole(q.visuals, 'solution').length > 0 && (
+                                      <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                                        {visualsForRole(q.visuals, 'solution').map((visual) => {
+                                          const url = resolveExamVisualUrl(visual, examPrep.id);
+                                          return url ? (
+                                            <ProtectedExamVisual
+                                              key={String(visual.id)}
+                                              url={url}
+                                              alt={visual.altText || 'تصویر راه‌حل سؤال'}
+                                              className="h-auto max-h-[60vh] min-h-32 w-full rounded-md border object-contain"
+                                            />
+                                          ) : null;
+                                        })}
+                                      </div>
+                                    )}
                                   </div>
                                 </details>
                               )}
