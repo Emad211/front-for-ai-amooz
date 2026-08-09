@@ -60,12 +60,7 @@ def merge_teacher_curated_projection(
     current_payload: Mapping[str, Any],
     generated_payload: Mapping[str, Any],
 ) -> dict[str, Any]:
-    """Copy teacher semantic corrections onto a fresh V4 projection safely.
-
-    Structural/source identity is immutable.  A teacher may correct text,
-    formulae, option text, the selected correct option, and solution text after
-    comparing them with the protected source crops.
-    """
+    """Copy teacher semantic corrections onto a fresh V4 projection safely."""
 
     current = projection._normalized_payload(dict(current_payload))
     generated = projection._normalized_payload(dict(generated_payload))
@@ -163,7 +158,17 @@ def _parse_payload(raw: str) -> dict[str, Any] | None:
 
 @transaction.atomic
 def build_legacy_projection_with_teacher_curation(*, teacher, project_id: int) -> dict[str, Any]:
-    """Rebuild source identity, then re-apply only teacher-owned semantic fields."""
+    """Keep the normal fast path; rebuild only when a teacher edited semantics."""
+
+    try:
+        # Unedited projections retain the original idempotent/reuse behavior.
+        return _ORIGINAL_BUILD_LEGACY_PROJECTION(
+            teacher=teacher,
+            project_id=project_id,
+        )
+    except projection.ProjectionIntegrityError as exc:
+        if 'edited after V4 review' not in str(exc):
+            raise
 
     existing = (
         ExamV4Projection.objects.select_for_update()
@@ -171,22 +176,22 @@ def build_legacy_projection_with_teacher_curation(*, teacher, project_id: int) -
         .filter(project_id=project_id, project__teacher=teacher)
         .first()
     )
-    curated_raw = existing.session.exam_prep_json if existing is not None else ''
-    curated = _parse_payload(curated_raw or '')
+    if existing is None:
+        raise projection.ProjectionIntegrityError('Edited projection is no longer available.')
+    curated_raw = existing.session.exam_prep_json or ''
+    curated = _parse_payload(curated_raw)
+    if curated is None:
+        raise projection.ProjectionIntegrityError('Edited projection payload is empty.')
 
-    # The original builder deliberately rejects edited payloads.  Clear the
-    # projection inside this outer transaction so it can rebuild the canonical
-    # source identity. Any error below rolls the temporary write back.
-    if existing is not None and curated is not None:
-        existing.session.exam_prep_json = ''
-        existing.session.save(update_fields=['exam_prep_json', 'updated_at'])
-
+    # Let the canonical builder regenerate source-owned identity inside this
+    # outer transaction. Any validation error below rolls this temporary write
+    # back, so an unsafe teacher edit is never silently lost.
+    existing.session.exam_prep_json = ''
+    existing.session.save(update_fields=['exam_prep_json', 'updated_at'])
     result = _ORIGINAL_BUILD_LEGACY_PROJECTION(
         teacher=teacher,
         project_id=project_id,
     )
-    if curated is None:
-        return result
 
     current_projection = (
         ExamV4Projection.objects.select_for_update()
@@ -196,11 +201,6 @@ def build_legacy_projection_with_teacher_curation(*, teacher, project_id: int) -
     generated = _parse_payload(current_projection.session.exam_prep_json or '')
     if generated is None:
         raise projection.ProjectionIntegrityError('Fresh V4 projection payload is unavailable.')
-
-    if projection._hash_payload(projection._normalized_payload(curated)) == projection._hash_payload(
-        projection._normalized_payload(generated)
-    ):
-        return result
 
     merged = merge_teacher_curated_projection(curated, generated)
     merged_json = json.dumps(
@@ -216,13 +216,14 @@ def build_legacy_projection_with_teacher_curation(*, teacher, project_id: int) -
     current_projection.save(update_fields=['projection_fingerprint', 'updated_at'])
 
     project = ExamProject.objects.select_for_update().get(id=project_id, teacher=teacher)
+    now = timezone.now()
     state = dict(project.workflow_state) if isinstance(project.workflow_state, dict) else {}
     state.update(
         {
             'projectionFingerprintPrefix': fingerprint[:12],
             'teacherCuratedProjection': True,
-            'teacherCuratedAt': timezone.now().isoformat(),
-            'lastEventAt': timezone.now().isoformat(),
+            'teacherCuratedAt': now.isoformat(),
+            'lastEventAt': now.isoformat(),
         }
     )
     project.reviewed_projection_fingerprint = fingerprint
@@ -295,7 +296,7 @@ def _apply_source_option_labels(raw: Any, option_map: Mapping[int, str]) -> Any:
         number = source_first._region_number({'questionNumber': row.get('printedNumber')})
         source_label = option_map.get(number) if number is not None else None
         existing = row.get('correctOption')
-        # Never translate between numeric and alphabetic label systems.  The
+        # Never translate between numeric and alphabetic label systems. The
         # projection validates that a label exists in the question options.
         if source_label and (not str(existing or '').strip() or _numeric_label(existing) is not None):
             if str(existing or '').strip() != source_label:
