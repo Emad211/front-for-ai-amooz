@@ -9,8 +9,8 @@ The contract is deliberately fail-closed. Native labels are authoritative only
 when answer-like pages contain anchored heading rows, every question number is
 unique, labels are 1..4, and the resulting question-number set exactly matches
 the OCR question anchors supplied by the caller. Coordinate overlay is even more
-conservative: a page is rewritten only when every native answer heading on that
-page has exactly one number-fragment coordinate.
+conservative: geometry is rewritten only when every native heading on that page
+has exactly one number-fragment coordinate.
 """
 from __future__ import annotations
 
@@ -29,8 +29,6 @@ _DIGITS = str.maketrans(
     "۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩",
     "01234567890123456789",
 )
-# Anchored heading observed in both independent Kanoon PDFs. Guillemets around
-# the option label keep ordinary question lines/options out of this contract.
 _HEADING_RE = re.compile(
     r"(?m)^\s*(?P<question>[0-9۰-۹٠-٩]{1,3})\s*[-–—]\s*"
     r".{0,48}?[»«]\s*(?P<option>[1-4۱-۴١-٤])\s*[«»]"
@@ -69,10 +67,7 @@ class NativeAnswerEvidence:
         return bool(expected) and observed == expected and not self.duplicate_question_numbers and not self.conflicting_question_numbers
 
     def label_map(self) -> dict[int, str]:
-        output: dict[int, str] = {}
-        for item in self.headings:
-            output[item.question_number] = str(item.option_label)
-        return output
+        return {item.question_number: str(item.option_label) for item in self.headings}
 
     def page_map(self) -> dict[int, int]:
         return {item.question_number: item.physical_page_number for item in self.headings}
@@ -102,8 +97,6 @@ def _page_heading_pairs(text: str) -> list[tuple[int, int]]:
 
 
 def extract_native_answer_evidence(pdf_data: bytes) -> NativeAnswerEvidence:
-    """Read only strict answer headings and optional coordinates from PDF text."""
-
     reader = PdfReader(io.BytesIO(pdf_data))
     headings: list[NativeAnswerHeading] = []
     answer_pages: list[int] = []
@@ -116,13 +109,9 @@ def extract_native_answer_evidence(pdf_data: bytes) -> NativeAnswerEvidence:
             continue
         pairs = _page_heading_pairs(text)
         distinct = {question for question, _option in pairs}
-        # One isolated line can occur in normal prose/options. Require an answer
-        # page to expose at least two independently numbered heading rows and no
-        # repeated question number on that page.
         if len(distinct) < 2 or len(distinct) != len(pairs):
             continue
         answer_pages.append(page_number)
-
         coordinates: dict[int, list[tuple[float, float]]] = {
             question: [] for question in distinct
         }
@@ -148,7 +137,6 @@ def extract_native_answer_evidence(pdf_data: bytes) -> NativeAnswerEvidence:
         if coordinate_complete:
             coordinate_complete_pages.append(page_number)
         page_width = float(page.mediabox.width or 0)
-
         for question, option in pairs:
             side = None
             x = y = None
@@ -170,9 +158,7 @@ def extract_native_answer_evidence(pdf_data: bytes) -> NativeAnswerEvidence:
     by_question: dict[int, list[NativeAnswerHeading]] = {}
     for item in headings:
         by_question.setdefault(item.question_number, []).append(item)
-    duplicates = sorted(
-        question for question, values in by_question.items() if len(values) > 1
-    )
+    duplicates = sorted(question for question, values in by_question.items() if len(values) > 1)
     conflicts = sorted(
         question
         for question, values in by_question.items()
@@ -194,12 +180,7 @@ def overlay_native_solution_heading_blocks(
     evidence: NativeAnswerEvidence,
     trusted: bool,
 ) -> dict[str, Any]:
-    """Replace OCR heading blocks only on coordinate-complete trusted pages.
-
-    The synthetic block changes only heading number/label/position. Existing OCR
-    body blocks remain untouched and are subsequently segmented by the normal
-    layout analyzer. Pages with ambiguous native coordinates are left unchanged.
-    """
+    """Apply native label authority and, where safe, native heading geometry."""
 
     output = dict(root)
     raw_pages = [dict(page) for page in (root.get("pages") or []) if isinstance(page, Mapping)]
@@ -209,6 +190,8 @@ def overlay_native_solution_heading_blocks(
 
     reader = PdfReader(io.BytesIO(pdf_data))
     complete_pages = set(evidence.coordinate_complete_pages)
+    labels = evidence.label_map()
+    native_pages = evidence.page_map()
     by_page: dict[int, list[NativeAnswerHeading]] = {}
     for item in evidence.headings:
         if item.physical_page_number in complete_pages:
@@ -216,6 +199,30 @@ def overlay_native_solution_heading_blocks(
 
     for position, page in enumerate(raw_pages):
         physical_page = int(page.get("sourcePhysicalPage") or int(page.get("index") or position) + 1)
+        existing_blocks = [
+            dict(block) for block in (page.get("blocks") or []) if isinstance(block, Mapping)
+        ]
+
+        if physical_page not in complete_pages:
+            # Native coordinates can be ambiguous when the same small question
+            # number appears elsewhere on the page. Preserve OCR geometry, but a
+            # matching answer heading may still safely inherit the trusted label.
+            changed = False
+            for block in existing_blocks:
+                parsed = parse_solution_heading(str(block.get("content") or ""))
+                if not parsed:
+                    continue
+                number = int(parsed["rawQuestionNumber"])
+                label = labels.get(number)
+                if label and native_pages.get(number) == physical_page:
+                    block["content"] = f"{number} - گزینه {label}"
+                    block["nativeAnswerLabelOverride"] = True
+                    changed = True
+            if changed:
+                page["blocks"] = existing_blocks
+                page["nativeAnswerLabelOverride"] = True
+            continue
+
         native = by_page.get(physical_page)
         if not native or physical_page < 1 or physical_page > len(reader.pages):
             continue
@@ -225,13 +232,10 @@ def overlay_native_solution_heading_blocks(
             continue
 
         blocks = [
-            dict(block)
-            for block in (page.get("blocks") or [])
-            if isinstance(block, Mapping)
-            and parse_solution_heading(str(block.get("content") or "")) is None
+            block
+            for block in existing_blocks
+            if parse_solution_heading(str(block.get("content") or "")) is None
         ]
-        # Fixed normalized x extents make the source column unambiguous. Vertical
-        # position comes from the PDF baseline and therefore preserves ordering.
         for item in sorted(native, key=lambda value: (0 if value.side == "right" else 1, -(value.y or 0))):
             top = max(0.01, min(0.97, 1.0 - float(item.y) / page_height))
             x0, x1 = ((0.72, 0.97) if item.side == "right" else (0.22, 0.48))
