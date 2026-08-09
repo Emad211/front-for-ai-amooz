@@ -8,6 +8,7 @@ from typing import Any
 from .exam_prep_mistral_visual_review import (
     VISUAL_CRITICAL_ISSUE_CODES,
     visual_metadata_issue_codes,
+    visual_options_complete,
 )
 from .exam_prep_page_output import is_critical_page_issue
 from .exam_prep_question_verifier import canonical_question_issues
@@ -19,10 +20,6 @@ _DIGIT_TRANSLATION = str.maketrans(
     "01234567890123456789",
 )
 
-# These codes describe an uncertain source/model judgement rather than a
-# deterministic malformed question. A teacher can explicitly acknowledge them.
-# Structural checks and Stage-3 visual sanity are always recomputed and cannot
-# be bypassed merely by removing a stored issue string.
 _TEACHER_OVERRIDABLE_CODES = frozenset(
     {
         "source_verification_failed",
@@ -166,11 +163,13 @@ def audit_page_first_projection(projection: object) -> dict[str, Any]:
         if parsed_number is not None:
             numbers_by_scope[scope].append(parsed_number)
 
+        visual_codes = visual_metadata_issue_codes(question)
+        complete_visual_options = visual_options_complete(question)
         derived_codes = list(
             dict.fromkeys(
                 [
                     *canonical_question_issues(question),
-                    *visual_metadata_issue_codes(question),
+                    *visual_codes,
                 ]
             )
         )
@@ -184,8 +183,10 @@ def audit_page_first_projection(projection: object) -> dict[str, Any]:
             if (
                 code == "visual_evidence_required"
                 and _has_question_visual(question)
-                and not visual_metadata_issue_codes(question)
+                and not visual_codes
             ):
+                continue
+            if code == "missing_option_text" and complete_visual_options and not visual_codes:
                 continue
             add_issue(code, scope=scope, number=number, pages=pages)
 
