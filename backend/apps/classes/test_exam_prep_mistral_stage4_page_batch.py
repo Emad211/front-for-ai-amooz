@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 from apps.classes.services import exam_prep_mistral_stage4_page_batch as stage4
+# Production imports this facade before calling the implementation. Import it in
+# focused tests as well so the same deterministic field guards are installed.
+from apps.classes.services import exam_prep_mistral_stage4_page_batch_runtime as _runtime_guard  # noqa: F401
 from apps.classes.services.exam_prep_mistral_page_batch_transcriber import (
     BatchItem,
     BatchOption,
