@@ -7,11 +7,14 @@ installs deterministic production guards before exposing it:
 * do not broaden an option-only OCR disagreement into a stem replacement;
 * treat absent provider fields as unavailable evidence;
 * split a failed page batch only when the provider returned an unusable structured
-  envelope. Network/HTTP/timeouts are never converted into automatic retries.
+  envelope. Network/HTTP/timeouts are never converted into automatic retries;
+* reserve budget by crop-count before a primary call instead of applying one
+  wasteful fixed reserve to every page batch.
 """
 from __future__ import annotations
 
 from dataclasses import replace
+import os
 from typing import Any, Mapping
 
 from . import exam_prep_mistral_stage4_page_batch as _impl
@@ -26,6 +29,14 @@ def _number(value: Any) -> int:
         return int(value or 0)
     except (TypeError, ValueError):
         return 0
+
+
+def _float_env(name: str, default: float, *, low: float, high: float) -> float:
+    try:
+        value = float(os.getenv(name, str(default)))
+    except (TypeError, ValueError):
+        value = default
+    return max(low, min(high, value))
 
 
 def _question_map(projection: Mapping[str, Any]) -> dict[int, Mapping[str, Any]]:
@@ -138,6 +149,49 @@ def _sanitize_item_with_absence(item):
     return payload, blocked, flags
 
 
+def _primary_reserve(target_count: int) -> float:
+    """Bound the next primary call using crop count and prior measured replay costs."""
+
+    base = _float_env(
+        "EXAM_PREP_STAGE4_PRIMARY_RESERVE_BASE_USD",
+        0.0028,
+        low=0.001,
+        high=0.02,
+    )
+    per_extra = _float_env(
+        "EXAM_PREP_STAGE4_PRIMARY_RESERVE_PER_EXTRA_TARGET_USD",
+        0.00205,
+        low=0.0002,
+        high=0.01,
+    )
+    return min(0.025, base + per_extra * max(0, int(target_count) - 1))
+
+
+def _budget_reserve(kind: str) -> float:
+    if kind == "secondary":
+        return _float_env(
+            "EXAM_PREP_STAGE4_SECONDARY_RESERVE_USD",
+            0.0045,
+            low=0.001,
+            high=0.03,
+        )
+    # Kept for callers outside _call_primary_budgeted; primary uses crop count.
+    return _primary_reserve(2)
+
+
+def _call_primary_budgeted(*, page_number, targets, spent, budget):
+    reserve = _primary_reserve(len(targets))
+    if budget is not None and spent + reserve > max(0.0, float(budget)) + 1e-12:
+        return None, RuntimeError("stage4_cost_budget"), spent
+    try:
+        result = _impl.transcribe_page_batch(page_number=page_number, targets=targets)
+        return result, None, spent + _impl._gemini_cost(result)
+    except PageBatchEnvelopeError as exc:
+        return None, exc, spent + _impl._gemini_cost(exc)
+    except Exception as exc:
+        return None, exc, spent
+
+
 def _page_results_with_structured_split_only(
     *,
     page_number,
@@ -248,6 +302,8 @@ def _page_results_with_structured_split_only(
 _impl.score_region_risks = _normalized_score_region_risks
 _impl._needed_fields = _needed_fields
 _impl._sanitize_item = _sanitize_item_with_absence
+_impl._budget_reserve = _budget_reserve
+_impl._call_primary = _call_primary_budgeted
 _impl._page_results_with_one_split = _page_results_with_structured_split_only
 
 verify_and_repair_risky_regions_page_batched = (
