@@ -118,3 +118,36 @@ def test_duplicate_target_id_buys_only_one_call(monkeypatch):
     result = risk.score_region_risks(projection=projection, layout=layout)
     assert len(result) == 1
     assert result[0].bbox == second.bbox
+
+
+def test_duplicate_target_prefers_stable_heading_over_higher_risk_recovery(monkeypatch):
+    unstable = RegionRiskDecision(
+        question_number=97,
+        kind="solution",
+        page_number=46,
+        bbox=(0.5, 0.22, 1.0, 0.48),
+        score=90,
+        suspicious=True,
+        hard_math=False,
+        signals=("heading_conflict", "scientific_terminology"),
+        region_issues=("heading_sequence_gap",),
+        candidate_text="wrong recovered region",
+    )
+    stable = RegionRiskDecision(
+        question_number=97,
+        kind="solution",
+        page_number=46,
+        bbox=(0.0, 0.10, 0.5, 0.34),
+        score=5,
+        suspicious=False,
+        hard_math=False,
+        signals=("scientific_terminology",),
+        region_issues=(),
+        candidate_text="stable source region",
+    )
+    monkeypatch.setattr(risk.base, "score_region_risks", lambda **_kwargs: [unstable, stable])
+    projection = {"exam_prep": {"questions": [_question(number=97)]}}
+    layout = {"pages": [{"originalPageNumber": 46, "pageRole": "solution"}]}
+    [result] = risk.score_region_risks(projection=projection, layout=layout)
+    assert result.bbox == stable.bbox
+    assert result.suspicious is False
