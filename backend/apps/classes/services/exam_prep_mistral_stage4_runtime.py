@@ -1,13 +1,13 @@
 """Production-safe Stage-4 facade preserving Stage-3 visual authority.
 
-Production Stage 4 now groups all suspicious source crops from the same physical
-page into one Gemini request.  This facade then re-applies the two publication
-safety rules that remain independent of provider transport:
+Production Stage 4 groups all suspicious source crops from the same physical page
+into one Gemini request. This facade re-applies the publication safety rules that
+remain independent of provider transport:
 
-1. remove visual-only issue codes reintroduced by legacy text-quality helpers
-   when the immutable Stage-3 visual contract proves the evidence is healthy;
-2. recompute the Stage-4 machine blocker from all region statuses of a question
-   so a successful repair cannot hide another unresolved region.
+1. remove visual-only issue codes reintroduced by text-quality helpers when the
+   immutable Stage-3 visual contract proves the evidence is healthy;
+2. recompute the Stage-4 machine blocker from every region status of a question
+   so a successful or partial repair cannot hide another unresolved field.
 """
 from __future__ import annotations
 
@@ -48,10 +48,12 @@ _STAGE4_FAILURE_STATUSES = frozenset(
         "deferred_cost_cap",
         "provider_failed",
         "source_uncertain",
+        "partial_repair_source_uncertain",
         "primary_invalid",
         "unresolved",
         "secondary_failed",
         "secondary_uncertain",
+        "secondary_no_vote",
         "second_opinion_disagreement",
     }
 )
