@@ -200,12 +200,7 @@ def score_region_risks(
     recovered_solution_targets: Sequence[int] | set[int] = (),
     unresolved_solution_targets: Sequence[int] | set[int] = (),
 ) -> list[RegionRiskDecision]:
-    """Assign a score to every numbered question/solution region.
-
-    Formula/digit/scientific signals alone stay below threshold unless the math
-    is genuinely dense. Strong defects are region-specific so a question option
-    parse issue cannot accidentally trigger a second call for its clean solution.
-    """
+    """Assign a score to every numbered question/solution region."""
 
     questions = _question_map(projection)
     recovered = {int(value) for value in recovered_solution_targets}
@@ -261,14 +256,14 @@ def score_region_risks(
                 score += 45
                 signals.append("missing_invalid_answer")
 
+            solution_sequence_risk = kind == "solution" and (number in recovered or number in unresolved)
             heading_conflict = (
                 bool(region_codes & _HEADING_ISSUES)
                 or bool(region.get("numberRecoveredFromSequence"))
-                or number in recovered
-                or number in unresolved
+                or solution_sequence_risk
             )
             if heading_conflict:
-                score += 50 if number in unresolved else 40
+                score += 50 if (kind == "solution" and number in unresolved) else 40
                 signals.append("heading_conflict")
 
             if kind == "question":
