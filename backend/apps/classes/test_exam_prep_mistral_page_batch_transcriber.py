@@ -21,6 +21,23 @@ def _decision(number: int, *, kind: str = "solution", page: int = 40):
     )
 
 
+def _item(number: int):
+    return {
+        "target_id": f"s-{number:03d}-p040",
+        "kind": "solution",
+        "question_number": number,
+        "question_text_markdown": "",
+        "options": [],
+        "correct_option_label": "3",
+        "teacher_solution_markdown": f"راه حل {number}",
+        "source_visual_required": False,
+        "visual_type": "none",
+        "transcription_uncertain": False,
+        "uncertain_spans": [],
+        "uncertain_fragments": [],
+    }
+
+
 class _Response:
     status_code = 200
     headers = {"x-request-id": "req-1"}
@@ -37,36 +54,7 @@ def test_one_page_with_multiple_crops_makes_one_native_structured_request(monkey
 
     def fake_post(url, **kwargs):
         calls.append((url, kwargs))
-        result = {
-            "items": [
-                {
-                    "target_id": "s-052-p040",
-                    "kind": "solution",
-                    "question_number": 52,
-                    "question_text_markdown": "",
-                    "options": [],
-                    "correct_option_label": "3",
-                    "teacher_solution_markdown": "راه حل ۵۲",
-                    "source_visual_required": True,
-                    "visual_type": "diagram",
-                    "transcription_uncertain": False,
-                    "uncertain_fragments": [],
-                },
-                {
-                    "target_id": "s-053-p040",
-                    "kind": "solution",
-                    "question_number": 53,
-                    "question_text_markdown": "",
-                    "options": [],
-                    "correct_option_label": "4",
-                    "teacher_solution_markdown": "راه حل ۵۳",
-                    "source_visual_required": False,
-                    "visual_type": "none",
-                    "transcription_uncertain": False,
-                    "uncertain_fragments": [],
-                },
-            ]
-        }
+        result = {"items": [_item(52), _item(53)]}
         return _Response(
             {
                 "candidates": [{"content": {"parts": [{"text": json.dumps(result, ensure_ascii=False)}]}}],
@@ -95,7 +83,9 @@ def test_one_page_with_multiple_crops_makes_one_native_structured_request(monkey
     body = kwargs["json"]
     assert body["generationConfig"]["thinkingConfig"] == {"thinkingLevel": "minimal"}
     assert body["generationConfig"]["responseMimeType"] == "application/json"
-    assert body["generationConfig"]["responseSchema"]["properties"]["items"]["type"] == "array"
+    schema = body["generationConfig"]["responseSchema"]
+    assert schema["properties"]["items"]["type"] == "array"
+    assert "uncertain_spans" in schema["properties"]["items"]["items"]["properties"]
     inline_images = [
         part
         for part in body["contents"][0]["parts"]
@@ -105,44 +95,53 @@ def test_one_page_with_multiple_crops_makes_one_native_structured_request(monkey
     serialized = json.dumps(body, ensure_ascii=False)
     assert "SECRET_MISTRAL_CANDIDATE" not in serialized
     assert [item.target_id for item in result.items] == ["s-052-p040", "s-053-p040"]
+    assert result.missing_target_ids == ()
+    assert result.invalid_target_ids == ()
     assert result.usage["reasoningTokens"] == 20
     assert result.estimated_cost["irt"] == 120.0
 
 
-def test_batch_rejects_missing_target_without_retry(monkeypatch):
+def test_missing_target_preserves_valid_sibling_without_retry(monkeypatch):
     calls = []
 
     def fake_post(_url, **_kwargs):
         calls.append(1)
-        result = {
-            "items": [
-                {
-                    "target_id": "s-052-p040",
-                    "kind": "solution",
-                    "question_number": 52,
-                    "question_text_markdown": "",
-                    "options": [],
-                    "correct_option_label": "3",
-                    "teacher_solution_markdown": "راه حل",
-                    "source_visual_required": False,
-                    "visual_type": "none",
-                    "transcription_uncertain": False,
-                    "uncertain_fragments": [],
-                }
-            ]
-        }
-        return _Response({"candidates": [{"content": {"parts": [{"text": json.dumps(result)}]}}]})
+        return _Response(
+            {"candidates": [{"content": {"parts": [{"text": json.dumps({"items": [_item(52)]})}]}}]}
+        )
 
     monkeypatch.setattr(batch.requests, "post", fake_post)
     monkeypatch.setenv("AVALAI_API_KEY", "test-key")
 
-    try:
-        batch.transcribe_page_batch(
-            page_number=40,
-            targets=[(_decision(52), b"a"), (_decision(53), b"b")],
-        )
-    except ValueError as exc:
-        assert "every requested target" in str(exc)
-    else:  # pragma: no cover
-        raise AssertionError("missing target must fail")
+    result = batch.transcribe_page_batch(
+        page_number=40,
+        targets=[(_decision(52), b"a"), (_decision(53), b"b")],
+    )
     assert len(calls) == 1
+    assert [item.target_id for item in result.items] == ["s-052-p040"]
+    assert result.missing_target_ids == ("s-053-p040",)
+    assert result.invalid_target_ids == ()
+    assert result.safe_dict()["partial"] is True
+
+
+def test_invalid_one_item_does_not_poison_valid_sibling(monkeypatch):
+    calls = []
+
+    def fake_post(_url, **_kwargs):
+        calls.append(1)
+        bad = _item(53)
+        bad["kind"] = "question"
+        return _Response(
+            {"candidates": [{"content": {"parts": [{"text": json.dumps({"items": [_item(52), bad]})}]}}]}
+        )
+
+    monkeypatch.setattr(batch.requests, "post", fake_post)
+    monkeypatch.setenv("AVALAI_API_KEY", "test-key")
+
+    result = batch.transcribe_page_batch(
+        page_number=40,
+        targets=[(_decision(52), b"a"), (_decision(53), b"b")],
+    )
+    assert len(calls) == 1
+    assert [item.target_id for item in result.items] == ["s-052-p040"]
+    assert result.invalid_target_ids == ("s-053-p040",)
