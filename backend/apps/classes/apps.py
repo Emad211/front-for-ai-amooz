@@ -22,10 +22,22 @@ class ClassesConfig(AppConfig):
         # New Exam Prep creation stays on the simple ClassCreationSession task,
         # but its extraction engine is the researched full-document Mistral
         # OCR4 pipeline (not V4 source-map/page-confirmation).
-        from .services.exam_prep_mistral_document_pipeline import (
-            run_exam_prep_mistral_document_pipeline,
-        )
+        from .services import exam_prep_mistral_document_pipeline as mistral_engine
 
+        original_question_record = mistral_engine._question_record
+
+        def source_aware_question_record(region):
+            record = original_question_record(region)
+            if record is not None and mistral_engine._question_visual_required(region):
+                issues = list(record.get('issues') or [])
+                # The engine immediately satisfies this with the authoritative
+                # PDF source crop and removes the temporary blocker afterward.
+                if 'visual_evidence_required' not in issues:
+                    issues.append('visual_evidence_required')
+                record['issues'] = issues
+            return record
+
+        mistral_engine._question_record = source_aware_question_record
         tasks_exam_prep.run_exam_prep_pdf_pipeline = (
-            run_exam_prep_mistral_document_pipeline
+            mistral_engine.run_exam_prep_mistral_document_pipeline
         )
