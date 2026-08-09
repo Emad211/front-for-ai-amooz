@@ -18,6 +18,9 @@ from django.core.management import call_command
 from django.core.management.base import BaseCommand, CommandError
 from pypdf import PdfReader
 
+from apps.classes.management.commands import (
+    replay_exam_prep_mistral_stage4_page_batch_live as live_replay,
+)
 from apps.classes.management.commands.replay_exam_prep_mistral_visual_stage3 import (
     _diagnostic_result,
     _load_bundle_root,
@@ -184,17 +187,31 @@ class Command(BaseCommand):
                 "output_dir": str(output_dir),
                 "title": str(options.get("title") or "Stage 4 final acceptance replay"),
                 "max_page_batches": max(1, min(40, int(options.get("max_page_batches") or 40))),
-                "max_secondary_calls": max(0, min(20, int(options.get("max_secondary_calls") or 12))),
+                "max_secondary_calls": max(0, min(12, int(options.get("max_secondary_calls") or 12))),
                 "total_budget_usd": float(options.get("total_budget_usd") or 5.00),
                 "allow_private_transmission": True,
             }
             prior = options.get("prior_provider_cost_usd")
             if prior is not None:
                 kwargs["prior_provider_cost_usd"] = float(prior)
-            call_command(
-                "replay_exam_prep_mistral_stage4_page_batch_live",
-                **kwargs,
-            )
+
+            # The live replay imports the shared builder into its module namespace.
+            # Inject the full trusted map explicitly for this call so even a label
+            # with ambiguous geometry is immutable once assembly begins.
+            original_builder = live_replay.build_page_extractions_disjoint
+
+            def authoritative_builder(*args, **builder_kwargs):
+                builder_kwargs["authoritative_answer_labels"] = authoritative
+                return original_builder(*args, **builder_kwargs)
+
+            live_replay.build_page_extractions_disjoint = authoritative_builder
+            try:
+                call_command(
+                    "replay_exam_prep_mistral_stage4_page_batch_live",
+                    **kwargs,
+                )
+            finally:
+                live_replay.build_page_extractions_disjoint = original_builder
 
         manifest_path = output_dir / "manifest.json"
         projection_path = output_dir / "projection.stage4.private.json"
