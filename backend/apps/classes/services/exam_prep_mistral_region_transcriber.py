@@ -1,14 +1,17 @@
 """One-region/one-image source transcription for Stage 4.
 
 The previous Mistral candidate is intentionally never included in provider
-messages.  Every invocation makes exactly one OpenAI-compatible AvalAI request,
+messages. Every invocation makes exactly one OpenAI-compatible AvalAI request,
 with SDK retries forced to zero and no structured-output repair pass.
+
+Usage logging is best-effort and can be disabled for research/live-replay runs
+that intentionally operate without the application PostgreSQL database.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
 import os
-from typing import Any, Literal, Mapping
+from typing import Any, Literal
 
 from apps.chatbot.services.llm_client import (
     _get_gapgpt_client,
@@ -56,6 +59,18 @@ def _max_tokens() -> int:
     return max(1000, min(12000, value))
 
 
+def _usage_db_logging_enabled() -> bool:
+    """Keep production tracking on, while allowing DB-free diagnostic runs.
+
+    The live replay already persists provider token counts in its private audit,
+    so disabling the Django-backed usage logger there loses no diagnostic data
+    and avoids noisy PostgreSQL connection tracebacks on developer machines.
+    """
+
+    value = (os.getenv("EXAM_PREP_STAGE4_USAGE_DB_LOGGING") or "1").strip().lower()
+    return value not in {"0", "false", "no", "off"}
+
+
 def _minimal_extra_body() -> dict[str, Any]:
     """Exact AvalAI Gemini minimal-thinking shape proven by the prior probe."""
 
@@ -85,7 +100,7 @@ def _system_prompt() -> str:
         "spatial visual carries information, set source_visual_required=true instead of inventing "
         "a textual replacement. If any source glyph is genuinely unreadable, set "
         "transcription_uncertain=true and list only short uncertain fragments. Return ONLY one valid "
-        "JSON object."
+        "JSON object whose first non-whitespace character is { and last non-whitespace character is }."
     )
 
 
@@ -98,6 +113,7 @@ def _user_contract(*, kind: str, question_number: int, page_number: int) -> str:
         '"transcription_uncertain":false,'
         '"uncertain_fragments":[]}. '
         "Do not add confidence scores. Do not infer missing content. "
+        "Do not wrap the JSON in Markdown fences or prose. "
         f"TARGET kind={kind} question_number={question_number} physical_page={page_number}."
     )
 
@@ -151,7 +167,12 @@ def transcribe_source_region(
     model: str,
     thinking_minimal: bool,
 ) -> RegionTranscriptionResult:
-    """Make exactly one source-only provider call and validate its JSON."""
+    """Make exactly one source-only provider call and validate its JSON.
+
+    A provider response that is HTTP-successful but not valid JSON is a normal
+    bounded verification failure. It is deliberately not repaired with another
+    paid call; the caller marks the region unresolved and continues.
+    """
 
     if not image:
         raise ValueError("A non-empty source region image is required.")
@@ -210,17 +231,22 @@ def transcribe_source_region(
         content = str(choice.message.content or "").strip()
         if not content:
             raise ValueError("Stage-4 provider returned empty content.")
-        parsed = DirectTranscription.model_validate(extract_json_object(content))
+        try:
+            parsed_obj = extract_json_object(content)
+            parsed = DirectTranscription.model_validate(parsed_obj)
+        except Exception as exc:
+            raise ValueError("Stage-4 provider returned non-conforming JSON content.") from exc
         normalized = normalize_direct_transcription(parsed)
-        track_llm_usage(
-            resp=response,
-            feature=LLMUsageLog.Feature.PDF_EXTRACTION,
-            provider="avalai",
-            model_name=clean_model,
-            detail="exam-prep stage4 source-only region transcription",
-            context=context,
-            duration_ms=timer.elapsed_ms,
-        )
+        if _usage_db_logging_enabled():
+            track_llm_usage(
+                resp=response,
+                feature=LLMUsageLog.Feature.PDF_EXTRACTION,
+                provider="avalai",
+                model_name=clean_model,
+                detail="exam-prep stage4 source-only region transcription",
+                context=context,
+                duration_ms=timer.elapsed_ms,
+            )
         input_tokens, output_tokens, total_tokens, reasoning_tokens = _usage(response)
         return RegionTranscriptionResult(
             kind=kind,
@@ -235,15 +261,16 @@ def transcribe_source_region(
             reasoning_tokens=reasoning_tokens,
         )
     except Exception as exc:
-        track_llm_error(
-            feature=LLMUsageLog.Feature.PDF_EXTRACTION,
-            provider="avalai",
-            model_name=clean_model,
-            error_message=str(exc),
-            detail="exam-prep stage4 source-only region transcription",
-            context=context,
-            duration_ms=timer.elapsed_ms,
-        )
+        if _usage_db_logging_enabled():
+            track_llm_error(
+                feature=LLMUsageLog.Feature.PDF_EXTRACTION,
+                provider="avalai",
+                model_name=clean_model,
+                error_message=str(exc),
+                detail="exam-prep stage4 source-only region transcription",
+                context=context,
+                duration_ms=timer.elapsed_ms,
+            )
         raise
 
 
