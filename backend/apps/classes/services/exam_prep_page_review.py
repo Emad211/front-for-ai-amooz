@@ -5,6 +5,10 @@ from collections import Counter, defaultdict
 import json
 from typing import Any
 
+from .exam_prep_mistral_visual_review import (
+    VISUAL_CRITICAL_ISSUE_CODES,
+    visual_metadata_issue_codes,
+)
 from .exam_prep_page_output import is_critical_page_issue
 from .exam_prep_question_verifier import canonical_question_issues
 from .exam_prep_utils import clean_exam_markdown
@@ -17,7 +21,8 @@ _DIGIT_TRANSLATION = str.maketrans(
 
 # These codes describe an uncertain source/model judgement rather than a
 # deterministic malformed question. A teacher can explicitly acknowledge them.
-# Structural checks are always recomputed and cannot be bypassed by the UI.
+# Structural checks and Stage-3 visual sanity are always recomputed and cannot
+# be bypassed merely by removing a stored issue string.
 _TEACHER_OVERRIDABLE_CODES = frozenset(
     {
         "source_verification_failed",
@@ -92,6 +97,8 @@ def _teacher_can_override(
     question: dict[str, Any],
     reviewed_codes: set[str],
 ) -> bool:
+    if code in VISUAL_CRITICAL_ISSUE_CODES:
+        return False
     if code not in reviewed_codes:
         return False
     if code == "visual_evidence_required":
@@ -105,7 +112,7 @@ def _teacher_can_override(
 
 
 def audit_page_first_projection(projection: object) -> dict[str, Any]:
-    """Re-audit normalized teacher JSON with the production semantic rules."""
+    """Re-audit normalized teacher JSON with production semantic/visual rules."""
 
     questions = _questions(projection)
     issues: list[dict[str, Any]] = []
@@ -129,7 +136,12 @@ def audit_page_first_projection(projection: object) -> dict[str, Any]:
         issues.append(
             {
                 "code": code,
-                "severity": "critical" if is_critical_page_issue(code) else "warning",
+                "severity": (
+                    "critical"
+                    if is_critical_page_issue(code)
+                    or code in VISUAL_CRITICAL_ISSUE_CODES
+                    else "warning"
+                ),
                 "scopeKey": scope,
                 "questionNumber": number,
                 "sourcePages": list(pages or []),
@@ -154,14 +166,26 @@ def audit_page_first_projection(projection: object) -> dict[str, Any]:
         if parsed_number is not None:
             numbers_by_scope[scope].append(parsed_number)
 
-        for code in canonical_question_issues(question):
+        derived_codes = list(
+            dict.fromkeys(
+                [
+                    *canonical_question_issues(question),
+                    *visual_metadata_issue_codes(question),
+                ]
+            )
+        )
+        for code in derived_codes:
             if _teacher_can_override(
                 code,
                 question=question,
                 reviewed_codes=reviewed_codes,
             ):
                 continue
-            if code == "visual_evidence_required" and _has_question_visual(question):
+            if (
+                code == "visual_evidence_required"
+                and _has_question_visual(question)
+                and not visual_metadata_issue_codes(question)
+            ):
                 continue
             add_issue(code, scope=scope, number=number, pages=pages)
 
