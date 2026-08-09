@@ -19,7 +19,6 @@ from typing import Any, Mapping, Sequence
 from . import exam_prep_mistral_visual_primitives as _p
 
 
-# Public contracts.
 MISTRAL_VISUAL_STORAGE_PREFIX = _p.MISTRAL_VISUAL_STORAGE_PREFIX
 VISUAL_CRITICAL_ISSUE_CODES = _p.VISUAL_CRITICAL_ISSUE_CODES
 VisualAssetStore = _p.VisualAssetStore
@@ -30,7 +29,6 @@ VisualSeed = _p.VisualSeed
 VisualPlan = _p.VisualPlan
 BBox = _p.BBox
 
-# Focused deterministic seams retained for tests/runtime.
 _bbox = _p._bbox
 _number = _p._number
 _area = _p._area
@@ -76,12 +74,7 @@ def _safe_option_markers(
     blocks: Sequence[_p.LayoutBlock],
     region_box: BBox,
 ) -> list[tuple[str, BBox]]:
-    """Return only explicit standalone option labels adjacent to OCR visuals.
-
-    Axis/tick numbers commonly look like 1..4. A valid option marker must be a
-    tiny standalone label, lie outside the visual's own bbox, and sit within a
-    narrow geometric gap of an OCR image/table block.
-    """
+    """Return only explicit standalone option labels adjacent to OCR visuals."""
 
     visual_boxes = [
         block.bbox
@@ -119,8 +112,6 @@ def _safe_option_markers(
     return markers
 
 
-# Production runtime calls this narrowed seam. The frozen primitive version is
-# still available internally as ``_p._option_markers`` for research comparison.
 _option_markers = _safe_option_markers
 
 
@@ -149,14 +140,20 @@ def _plans_for_region(
         return [], ["visual_option_binding_unresolved"]
     clusters = _cluster_seeds(seeds, gap=config.cluster_gap)
     markers = _safe_option_markers(blocks, region_box)
-    if len(clusters) != 4 or {label for label, _box in markers} != {"1", "2", "3", "4"}:
+    if (
+        len(clusters) != 4
+        or {label for label, _box in markers}
+        != {"1", "2", "3", "4"}
+    ):
         return [], ["visual_option_binding_unresolved"]
 
     pairs: list[tuple[float, str, int]] = []
     for label, marker_box in markers:
         mx, my = _center(marker_box)
         for index, cluster in enumerate(clusters):
-            cluster_box = _union(seed.bbox for seed in cluster) or cluster[0].bbox
+            cluster_box = _union(
+                seed.bbox for seed in cluster
+            ) or cluster[0].bbox
             cx, cy = _center(cluster_box)
             distance = ((cx - mx) ** 2 + (cy - my) ** 2) ** 0.5
             if distance <= 0.18:
@@ -170,7 +167,10 @@ def _plans_for_region(
         assignments[index] = label
         assigned_labels.add(label)
         assigned_clusters.add(index)
-    if set(assignments.values()) != {"1", "2", "3", "4"} or len(assignments) != 4:
+    if (
+        set(assignments.values()) != {"1", "2", "3", "4"}
+        or len(assignments) != 4
+    ):
         return [], ["visual_option_binding_unresolved"]
 
     heading = region.get("headingProviderIndex")
@@ -204,10 +204,109 @@ def _plans_for_region(
                 component_ids=component_ids,
                 table=any(seed.is_table for seed in cluster),
                 sanity_issues=tuple(sanity),
-                review_only=bool(set(sanity).intersection(VISUAL_CRITICAL_ISSUE_CODES)),
+                review_only=bool(
+                    set(sanity).intersection(
+                        VISUAL_CRITICAL_ISSUE_CODES
+                    )
+                ),
             )
         )
     return plans, list(dict.fromkeys(issues))
+
+
+def _augment_unresolved_audit(
+    updated: Any,
+    stats: dict[str, int],
+    audit: dict[str, Any],
+) -> tuple[dict[str, int], dict[str, Any]]:
+    """Make unresolved-region metrics include every review-only visual asset."""
+
+    unresolved = [
+        dict(item)
+        for item in (audit.get("unresolvedRegions") or [])
+        if isinstance(item, Mapping)
+    ]
+    seen = {
+        (
+            int(item.get("pageNumber") or 0),
+            int(item.get("questionNumber") or 0),
+            str(item.get("role") or ""),
+        )
+        for item in unresolved
+    }
+    projection = getattr(updated, "projection", {})
+    questions = (
+        (projection.get("exam_prep") or {}).get("questions")
+        if isinstance(projection, Mapping)
+        else []
+    )
+    for question in questions or []:
+        if not isinstance(question, Mapping):
+            continue
+        number = _number(question.get("source_question_number")) or 0
+        critical = [
+            str(code)
+            for code in (question.get("issues") or [])
+            if str(code) in VISUAL_CRITICAL_ISSUE_CODES
+        ]
+        for asset in question.get("visuals") or []:
+            if not isinstance(asset, Mapping) or not asset.get("reviewOnly"):
+                continue
+            page = int(asset.get("sourcePage") or 0)
+            role = str(asset.get("role") or "unknown")
+            key = (page, number, role)
+            if key in seen:
+                continue
+            sanity = asset.get("sanity")
+            sanity_issues = (
+                list(sanity.get("issues") or [])
+                if isinstance(sanity, Mapping)
+                else []
+            )
+            unresolved.append(
+                {
+                    "pageNumber": page,
+                    "questionNumber": number,
+                    "role": role,
+                    "reason": str(
+                        next(
+                            (
+                                code
+                                for code in sanity_issues
+                                if code in VISUAL_CRITICAL_ISSUE_CODES
+                            ),
+                            critical[0] if critical else "visual_precise_crop_unresolved",
+                        )
+                    ),
+                }
+            )
+            seen.add(key)
+        if critical and not any(key[1] == number for key in seen):
+            pages = [
+                int(value)
+                for value in (question.get("source_pages") or [])
+                if str(value).isdigit()
+            ]
+            page = pages[0] if pages else 0
+            key = (page, number, "unknown")
+            unresolved.append(
+                {
+                    "pageNumber": page,
+                    "questionNumber": number,
+                    "role": "unknown",
+                    "reason": critical[0],
+                }
+            )
+            seen.add(key)
+
+    new_stats = dict(stats)
+    new_stats["unresolvedRegions"] = len(unresolved)
+    new_audit = dict(audit)
+    new_audit["unresolvedRegions"] = unresolved
+    nested_stats = dict(new_audit.get("stats") or {})
+    nested_stats["unresolvedRegions"] = len(unresolved)
+    new_audit["stats"] = nested_stats
+    return new_stats, new_audit
 
 
 def reconcile_mistral_source_visuals(*args: Any, **kwargs: Any):
@@ -217,7 +316,13 @@ def reconcile_mistral_source_visuals(*args: Any, **kwargs: Any):
         reconcile_mistral_source_visuals as _runtime_reconcile,
     )
 
-    return _runtime_reconcile(*args, **kwargs)
+    updated, stats, audit = _runtime_reconcile(*args, **kwargs)
+    stats, audit = _augment_unresolved_audit(
+        updated,
+        stats,
+        audit,
+    )
+    return updated, stats, audit
 
 
 __all__ = [
