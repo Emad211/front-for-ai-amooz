@@ -25,6 +25,7 @@ from apps.classes.management.commands.replay_exam_prep_mistral_visual_stage3 imp
     _diagnostic_result,
     _load_bundle_root,
 )
+from apps.classes.services import exam_prep_mistral_stage4_page_batch as stage4_page
 from apps.classes.services.exam_prep_mistral_native_answer_headings import (
     authoritative_answer_labels,
     extract_native_answer_evidence,
@@ -108,7 +109,7 @@ class Command(BaseCommand):
         parser.add_argument("--output-dir", required=True)
         parser.add_argument("--title", default="Stage 4 final acceptance replay")
         parser.add_argument("--max-page-batches", type=int, default=40)
-        parser.add_argument("--max-secondary-calls", type=int, default=12)
+        parser.add_argument("--max-secondary-calls", type=int, default=24)
         parser.add_argument("--total-budget-usd", type=float, default=5.00)
         parser.add_argument("--prior-provider-cost-usd", type=float, default=None)
         parser.add_argument("--allow-private-transmission", action="store_true")
@@ -167,13 +168,23 @@ class Command(BaseCommand):
             native,
             expected_question_numbers=expected_numbers,
         )
+        if not native_trusted or len(authoritative) != len(set(expected_numbers)):
+            raise CommandError(
+                "Final acceptance requires exact native answer-label coverage before any live call "
+                f"(expected={len(set(expected_numbers))}, native={len(authoritative)}, "
+                f"duplicates={list(native.duplicate_question_numbers)}, "
+                f"conflicts={list(native.conflicting_question_numbers)})."
+            )
         overlaid_root = overlay_native_solution_heading_blocks(
             initial_root,
             pdf_data=pdf_data,
             evidence=native,
-            trusted=native_trusted,
+            trusted=True,
         )
 
+        requested_secondary_cap = max(
+            0, min(30, int(options.get("max_secondary_calls") or 24))
+        )
         with tempfile.TemporaryDirectory(prefix="ai-amooz-stage4-final-") as tmp:
             overlay_bundle = Path(tmp) / "ocr-overlay.zip"
             _write_overlay_bundle(
@@ -187,7 +198,10 @@ class Command(BaseCommand):
                 "output_dir": str(output_dir),
                 "title": str(options.get("title") or "Stage 4 final acceptance replay"),
                 "max_page_batches": max(1, min(40, int(options.get("max_page_batches") or 40))),
-                "max_secondary_calls": max(0, min(12, int(options.get("max_secondary_calls") or 12))),
+                # The underlying diagnostic command historically clamps its CLI
+                # option to 12. The acceptance-only monkeypatch below owns the
+                # actual in-process cap without changing production defaults.
+                "max_secondary_calls": min(12, requested_secondary_cap),
                 "total_budget_usd": float(options.get("total_budget_usd") or 5.00),
                 "allow_private_transmission": True,
             }
@@ -195,16 +209,15 @@ class Command(BaseCommand):
             if prior is not None:
                 kwargs["prior_provider_cost_usd"] = float(prior)
 
-            # The live replay imports the shared builder into its module namespace.
-            # Inject the full trusted map explicitly for this call so even a label
-            # with ambiguous geometry is immutable once assembly begins.
             original_builder = live_replay.build_page_extractions_disjoint
+            original_secondary_cap = stage4_page._secondary_cap
 
             def authoritative_builder(*args, **builder_kwargs):
                 builder_kwargs["authoritative_answer_labels"] = authoritative
                 return original_builder(*args, **builder_kwargs)
 
             live_replay.build_page_extractions_disjoint = authoritative_builder
+            stage4_page._secondary_cap = lambda: requested_secondary_cap
             try:
                 call_command(
                     "replay_exam_prep_mistral_stage4_page_batch_live",
@@ -212,6 +225,7 @@ class Command(BaseCommand):
                 )
             finally:
                 live_replay.build_page_extractions_disjoint = original_builder
+                stage4_page._secondary_cap = original_secondary_cap
 
         manifest_path = output_dir / "manifest.json"
         projection_path = output_dir / "projection.stage4.private.json"
@@ -220,12 +234,11 @@ class Command(BaseCommand):
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
         projection = json.loads(projection_path.read_text(encoding="utf-8"))
         label_audit = _final_label_audit(projection, authoritative=authoritative)
-        manifest["nativeAnswerEvidence"] = native.safe_dict(trusted=native_trusted)
+        manifest["nativeAnswerEvidence"] = native.safe_dict(trusted=True)
         manifest["nativeAnswerLabelAuthorityCount"] = len(authoritative)
         manifest["nativeAnswerLabelIntegrity"] = label_audit
-        manifest["finalAcceptanceNativeLabelsPassed"] = bool(
-            (not native_trusted) or label_audit.get("passed")
-        )
+        manifest["finalAcceptanceNativeLabelsPassed"] = bool(label_audit.get("passed"))
+        manifest["finalAcceptanceSecondaryCap"] = requested_secondary_cap
         manifest_path.write_text(
             json.dumps(manifest, ensure_ascii=False, indent=2, default=str),
             encoding="utf-8",
@@ -235,12 +248,13 @@ class Command(BaseCommand):
         self.stdout.write(
             self.style.SUCCESS(
                 "Stage 4 FINAL acceptance completed: "
-                f"questions={len(expected_numbers)}, nativeTrusted={native_trusted}, "
+                f"questions={len(expected_numbers)}, nativeTrusted=True, "
                 f"nativeLabels={len(authoritative)}, "
                 f"labelMismatches={label_audit['mismatchCount']}, "
                 f"missingLabels={label_audit['missingLabelCount']}, "
                 f"stage4Repaired={int(manifest.get('repaired') or 0)}, "
                 f"stage4Unresolved={int(manifest.get('unresolved') or 0)}, "
+                f"secondaryCalls={int(manifest.get('secondaryCalls') or 0)}, "
                 f"totalEstimatedCostUsd={manifest.get('totalEstimatedCostUsd')}, "
                 f"bundle={archive}"
             )
