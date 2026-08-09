@@ -1116,6 +1116,24 @@ class StudentExamPrepResultItemSerializer(serializers.Serializer):
     is_correct = serializers.BooleanField()
     attempts = serializers.IntegerField(required=False, default=0)
     score_for_question = serializers.IntegerField(required=False, default=0)
+    # These fields are populated only after the student's attempt is finalized.
+    # Before finalization the result endpoint intentionally returns no answer
+    # or solution evidence.
+    solution_markdown = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        default='',
+    )
+    teacher_solution_markdown = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        default='',
+    )
+    solution_visuals = serializers.ListField(
+        child=serializers.DictField(),
+        required=False,
+        default=list,
+    )
 
 
 class StudentExamPrepResultResponseSerializer(serializers.Serializer):

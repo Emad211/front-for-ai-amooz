@@ -9,7 +9,10 @@ from rest_framework.views import APIView
 
 from apps.classes.models_v4 import ExamProject
 from apps.classes.permissions import IsTeacherUser
-from apps.classes.services.exam_prep_v4_create_flow import adopt_create_flow_projection
+from apps.classes.services.exam_prep_v4_create_flow import (
+    CreateFlowProjectionConflict,
+    adopt_create_flow_projection,
+)
 from apps.classes.services.exam_prep_v4_projection import (
     ProjectionIntegrityError,
     ProjectionNotReady,
@@ -68,10 +71,19 @@ class ExamPrepV4ProjectionView(APIView):
         )
         if isinstance(result, Response):
             return result
-        result = adopt_create_flow_projection(
-            project_id=project_id,
-            projection_payload=result,
-        )
+        try:
+            result = adopt_create_flow_projection(
+                project_id=project_id,
+                projection_payload=result,
+            )
+        except CreateFlowProjectionConflict as exc:
+            return Response(
+                {
+                    'code': 'projection_session_conflict',
+                    'detail': str(exc),
+                },
+                status=status.HTTP_409_CONFLICT,
+            )
         return Response(result, status=status.HTTP_200_OK)
 
 
@@ -87,10 +99,19 @@ class ExamPrepV4PublishView(APIView):
         )
         if isinstance(prepared, Response):
             return prepared
-        adopt_create_flow_projection(
-            project_id=project_id,
-            projection_payload=prepared,
-        )
+        try:
+            adopt_create_flow_projection(
+                project_id=project_id,
+                projection_payload=prepared,
+            )
+        except CreateFlowProjectionConflict as exc:
+            return Response(
+                {
+                    'code': 'projection_session_conflict',
+                    'detail': str(exc),
+                },
+                status=status.HTTP_409_CONFLICT,
+            )
         result = _run(
             publish_legacy_projection,
             teacher=request.user,
@@ -98,8 +119,17 @@ class ExamPrepV4PublishView(APIView):
         )
         if isinstance(result, Response):
             return result
-        result = adopt_create_flow_projection(
-            project_id=project_id,
-            projection_payload=result,
-        )
+        try:
+            result = adopt_create_flow_projection(
+                project_id=project_id,
+                projection_payload=result,
+            )
+        except CreateFlowProjectionConflict as exc:
+            return Response(
+                {
+                    'code': 'projection_session_conflict',
+                    'detail': str(exc),
+                },
+                status=status.HTTP_409_CONFLICT,
+            )
         return Response(result, status=status.HTTP_200_OK)

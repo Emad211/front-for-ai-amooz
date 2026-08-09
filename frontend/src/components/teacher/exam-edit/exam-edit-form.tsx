@@ -40,6 +40,7 @@ import type {
   ExamPrepSessionUpdatePayload,
 } from '@/services/classes-service';
 import { ProtectedExamVisual } from '@/components/exam-prep/protected-exam-visual';
+import { resolveExamVisualUrl, visualMatchesOption, visualsForRole } from '@/lib/exam-visuals';
 import {
   buildExamReviewSummary,
   type ExamQuestionReviewState,
@@ -67,6 +68,15 @@ function initialExamData(examDetail: ExamPrepSessionDetail): ExamPrepData {
 
 function questionValue(question: ExamPrepQuestion, index: number): string {
   return question.question_id || `q-${index + 1}`;
+}
+
+/**
+ * V4 questions are projections of the reviewed source records.  The legacy
+ * editor can still update session metadata, but must not let a teacher edit
+ * the projected question payload (doing so would break the source mapping).
+ */
+function isSourceAwareQuestion(question: ExamPrepQuestion): boolean {
+  return String(question.question_id || '').startsWith('v4-');
 }
 
 export function ExamEditForm({ examDetail, onSave, isSaving }: ExamEditFormProps) {
@@ -113,10 +123,17 @@ export function ExamEditForm({ examDetail, onSave, isSaving }: ExamEditFormProps
         index,
         value: questionValue(question, index),
         review: reviewSummary.questions[index],
+        sourceAware: isSourceAwareQuestion(question),
       }))
       .filter((item) => reviewFilter === 'all' || item.review?.needsReview),
     [examData.exam_prep.questions, reviewFilter, reviewSummary.questions],
   );
+
+  const sourceAwareQuestionCount = useMemo(
+    () => examData.exam_prep.questions.filter(isSourceAwareQuestion).length,
+    [examData.exam_prep.questions],
+  );
+  const hasSourceAwareProjection = sourceAwareQuestionCount > 0;
 
   const canAcknowledgeQuestionIssues = (examDetail.extractionVersion ?? 1) <= 1;
 
@@ -139,7 +156,10 @@ export function ExamEditForm({ examDetail, onSave, isSaving }: ExamEditFormProps
       description: formData.description,
       level: formData.level,
       duration: formData.duration,
-      exam_prep_json: examData,
+      // V4 content is owned by the source-aware review flow.  Omitting the
+      // legacy payload keeps metadata saves safe and avoids a projection
+      // integrity conflict even if a stale client mutates local state.
+      ...(hasSourceAwareProjection ? {} : { exam_prep_json: examData }),
     });
   };
 
@@ -344,7 +364,9 @@ export function ExamEditForm({ examDetail, onSave, isSaving }: ExamEditFormProps
                 </h2>
                 <p className="text-sm leading-6 text-muted-foreground">
                   {reviewCount > 0
-                    ? 'سؤال را باز کنید، دلیل را ببینید، اصلاح لازم را انجام دهید و سپس «تأیید و کنترل مجدد» را بزنید. در پایان همه تغییرات را ذخیره کنید.'
+                    ? hasSourceAwareProjection
+                      ? 'این موارد را در پنل بازبینی منبع‌محور V4 بررسی کنید؛ محتوای سؤال و پاسخ در این فرم قابل ویرایش نیست.'
+                      : 'سؤال را باز کنید، دلیل را ببینید، اصلاح لازم را انجام دهید و سپس «تأیید و کنترل مجدد» را بزنید. در پایان همه تغییرات را ذخیره کنید.'
                     : 'در حال حاضر خطای سؤال‌محور حل‌نشده‌ای در audit ذخیره‌شده دیده نمی‌شود.'}
                 </p>
               </div>
@@ -425,11 +447,30 @@ export function ExamEditForm({ examDetail, onSave, isSaving }: ExamEditFormProps
             <HelpCircle className="h-5 w-5 text-primary" />
             سؤالات و پاسخ‌ها
           </h2>
-          <Button type="button" onClick={addQuestion} variant="outline" size="sm" className="gap-2">
+          <Button
+            type="button"
+            onClick={addQuestion}
+            variant="outline"
+            size="sm"
+            className="gap-2"
+            disabled={hasSourceAwareProjection}
+            title={hasSourceAwareProjection ? 'سؤال‌های این آزمون از منبع V4 ساخته شده‌اند و از اینجا قابل تغییر نیستند.' : undefined}
+          >
             <Plus className="h-4 w-4" />
             افزودن سؤال جدید
           </Button>
         </div>
+
+        {hasSourceAwareProjection && (
+          <div className="rounded-xl border border-blue-500/40 bg-blue-500/5 p-4 text-sm leading-6 text-blue-900 dark:text-blue-100">
+            <p className="font-bold">این آزمون از استخراج منبع‌محور V4 ساخته شده است.</p>
+            <p>
+              متن سؤال، گزینه‌ها و راه‌حل از روی منبع اصلی می‌آیند و در این فرم فقط خواندنی هستند؛
+              تصاویر استخراج‌شده همچنان قابل مشاهده‌اند. بازبینی محتوای استخراج‌شده را از پنل V4 انجام دهید؛
+              عنوان، توضیحات، سطح و زمان را می‌توانید در همین فرم ویرایش کنید.
+            </p>
+          </div>
+        )}
 
         {reviewFilter === 'needs_review' && visibleQuestions.length === 0 && totalQuestions > 0 && (
           <div className="rounded-xl border border-emerald-500/40 bg-emerald-500/5 p-6 text-center">
@@ -447,7 +488,7 @@ export function ExamEditForm({ examDetail, onSave, isSaving }: ExamEditFormProps
           onValueChange={setOpenQuestionIds}
           className="space-y-4"
         >
-          {visibleQuestions.map(({ question, index: questionIndex, value, review }) => (
+          {visibleQuestions.map(({ question, index: questionIndex, value, review, sourceAware }) => (
             <div
               key={value}
               ref={(element) => { questionRefs.current[value] = element; }}
@@ -495,6 +536,7 @@ export function ExamEditForm({ examDetail, onSave, isSaving }: ExamEditFormProps
                       event.stopPropagation();
                       removeQuestion(questionIndex);
                     }}
+                    disabled={sourceAware}
                     aria-label={`حذف سؤال ${questionIndex + 1}`}
                   >
                     <Trash2 className="h-4 w-4" />
@@ -536,7 +578,8 @@ export function ExamEditForm({ examDetail, onSave, isSaving }: ExamEditFormProps
                           type="button"
                           size="sm"
                           onClick={() => acknowledgeQuestion(questionIndex, review)}
-                          disabled={!canAcknowledgeQuestionIssues}
+                          disabled={!canAcknowledgeQuestionIssues || sourceAware}
+                          title={sourceAware ? 'بازبینی سؤال‌های V4 از پنل منبع‌محور انجام می‌شود.' : undefined}
                         >
                           <ShieldCheck className="h-4 w-4" />
                           تأیید و کنترل مجدد
@@ -545,16 +588,19 @@ export function ExamEditForm({ examDetail, onSave, isSaving }: ExamEditFormProps
                     </div>
                   )}
 
-                  {(question.visuals?.length ?? 0) > 0 && (
+                  {visualsForRole(question.visuals, 'question').length > 0 && (
                     <div className="grid gap-3 sm:grid-cols-2">
-                      {question.visuals?.map((visual) => (
-                        <ProtectedExamVisual
-                          key={visual.id}
-                          url={`/api/classes/exam-prep-sessions/${examDetail.id}/visuals/${visual.id}/content/`}
-                          alt={visual.altText || 'تصویر مرتبط با سؤال'}
-                          className="h-48 w-full rounded-md border object-contain"
-                        />
-                      ))}
+                      {visualsForRole(question.visuals, 'question').map((visual) => {
+                        const url = resolveExamVisualUrl(visual, examDetail.id);
+                        return url ? (
+                          <ProtectedExamVisual
+                            key={String(visual.id)}
+                            url={url}
+                            alt={visual.altText || 'تصویر مرتبط با صورت سؤال'}
+                            className="h-auto max-h-[60vh] min-h-32 w-full rounded-md border object-contain"
+                          />
+                        ) : null;
+                      })}
                     </div>
                   )}
 
@@ -568,6 +614,7 @@ export function ExamEditForm({ examDetail, onSave, isSaving }: ExamEditFormProps
                       placeholder="صورت سؤال را به همراه فرمول‌های LaTeX وارد کنید"
                       rows={3}
                       className="font-mono text-sm"
+                      disabled={sourceAware}
                     />
                   </div>
 
@@ -593,7 +640,24 @@ export function ExamEditForm({ examDetail, onSave, isSaving }: ExamEditFormProps
                             event.target.value,
                           )}
                           placeholder={`متن گزینه ${option.label}`}
+                          disabled={sourceAware}
                         />
+                        {question.visuals
+                          ?.filter(
+                            (visual) =>
+                              visual.role === 'option' && visualMatchesOption(visual, option.label),
+                          )
+                          .map((visual) => {
+                            const url = resolveExamVisualUrl(visual, examDetail.id);
+                            return url ? (
+                              <ProtectedExamVisual
+                                key={String(visual.id)}
+                                url={url}
+                                alt={visual.altText || `تصویر گزینه ${option.label}`}
+                                className="mt-2 h-auto max-h-64 min-h-24 w-full rounded-md border object-contain"
+                              />
+                            ) : null;
+                          })}
                       </div>
                     ))}
                   </div>
@@ -603,6 +667,7 @@ export function ExamEditForm({ examDetail, onSave, isSaving }: ExamEditFormProps
                       <Label>انتخاب گزینه صحیح</Label>
                       <Select
                         value={question.correct_option_label || ''}
+                        disabled={sourceAware}
                         onValueChange={(value) => updateQuestion(questionIndex, {
                           correct_option_label: value,
                         })}
@@ -628,6 +693,7 @@ export function ExamEditForm({ examDetail, onSave, isSaving }: ExamEditFormProps
                           final_answer_markdown: event.target.value,
                         })}
                         placeholder="مثلاً: گزینه ب یا x=5"
+                        disabled={sourceAware}
                       />
                     </div>
                   </div>
@@ -642,7 +708,23 @@ export function ExamEditForm({ examDetail, onSave, isSaving }: ExamEditFormProps
                       placeholder="توضیحات و راه‌حل تشریحی مدرس را اینجا وارد کنید"
                       rows={6}
                       className="min-h-[150px] resize-none bg-muted/30 md:resize-y"
+                      disabled={sourceAware}
                     />
+                    {visualsForRole(question.visuals, 'solution').length > 0 && (
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        {visualsForRole(question.visuals, 'solution').map((visual) => {
+                          const url = resolveExamVisualUrl(visual, examDetail.id);
+                          return url ? (
+                            <ProtectedExamVisual
+                              key={String(visual.id)}
+                              url={url}
+                              alt={visual.altText || 'تصویر راه‌حل سؤال'}
+                              className="h-auto max-h-[60vh] min-h-32 w-full rounded-md border object-contain"
+                            />
+                          ) : null;
+                        })}
+                      </div>
+                    )}
                   </div>
                 </AccordionContent>
               </AccordionItem>
@@ -654,7 +736,13 @@ export function ExamEditForm({ examDetail, onSave, isSaving }: ExamEditFormProps
           <div className="rounded-lg border-2 border-dashed border-muted bg-muted/20 py-10 text-center">
             <HelpCircle className="mx-auto mb-3 h-10 w-10 text-muted-foreground" />
             <p className="text-muted-foreground">هنوز هیچ سؤالی برای این آزمون ثبت نشده است.</p>
-            <Button type="button" onClick={addQuestion} variant="link" className="mt-2">
+            <Button
+              type="button"
+              onClick={addQuestion}
+              variant="link"
+              className="mt-2"
+              disabled={hasSourceAwareProjection}
+            >
               ایجاد اولین سؤال
             </Button>
           </div>

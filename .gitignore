@@ -74,3 +74,14 @@ firestore-debug.log
 /frontend-dev.log
 /tmp-walkthrough.js
 /backend/private_answer_media/
+
+# Source-first OCR bundles contain private PDF text and rendered crops.
+/source-first-output/
+*.source-first.zip
+
+# Private Mistral OCR diagnostic outputs contain source text and page images.
+/backend/ocr_probe_output/
+/backend/ocr_probe_output.zip
+/mistral_ocr_probe/
+/mistral_ocr_probe.zip
+*mistral*.analysis.json
