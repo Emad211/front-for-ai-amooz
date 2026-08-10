@@ -1,23 +1,18 @@
-"""Gemini native page-batch transport with strict request-specific identity.
+"""Restored production-shaped Gemini page-batch transport for Stage 4.
 
-This module is deliberately transport-only. It preserves the source-only prompt,
-Pydantic item contract, cost accounting and fail-closed validation from the
-original transcriber while hardening provider-compatibility edges:
+The first live 12R replay proved the native AvalAI/Gemini ``responseSchema``
+contract on the exact same source crops (88 repaired, 13 unresolved). A later
+transport-hardening experiment changed that request contract and made valid
+provider items fail before field safety. This module intentionally restores the
+proven request shape while retaining only lossless envelope handling, safe
+identity recovery, and diagnostics.
 
-* lossless envelope variations are normalized;
-* target identity is constrained by the request-specific JSON schema, with one
-  deterministic fallback from exact ``(kind, question_number)`` when the model
-  changes or omits ``target_id``;
-* an HTTP-200 response that yields zero usable requested items is never cached as
-  success. It becomes a diagnostic envelope failure containing only safe identity
-  metadata, never source text.
-
-No semantic JSON repair is performed. Unknown wrappers and ambiguous identities
-remain errors/missing evidence rather than guessed content.
+Provider omissions of request-known transport metadata are backfilled locally;
+source content (stem/options/answer/solution) is never inferred here. Missing
+content remains empty and is blocked later by Stage-4 field safety.
 """
 from __future__ import annotations
 
-from copy import deepcopy
 import hashlib
 import json
 from typing import Any, Mapping, Sequence
@@ -36,7 +31,7 @@ PageBatchResult = base.PageBatchResult
 
 
 def _normalize_items_envelope(raw: Any, *, target_count: int) -> Mapping[str, Any]:
-    """Normalize only lossless provider envelope variations."""
+    """Normalize only lossless wrapper variations; never reconstruct content."""
 
     if isinstance(raw, Mapping) and isinstance(raw.get("items"), list):
         return raw
@@ -52,34 +47,14 @@ def _normalize_items_envelope(raw: Any, *, target_count: int) -> Mapping[str, An
         )
     ):
         return {"items": [raw]}
-
     if isinstance(raw, Mapping):
         keys = ",".join(sorted(str(key)[:60] for key in raw.keys())[:20])
-        reason = f"invalid_items_envelope:object_keys={keys or '<empty>'}"
-    else:
-        reason = f"invalid_items_envelope:root_type={type(raw).__name__}"
-    raise PageBatchEnvelopeError(reason)
-
-
-def _response_schema_for(decisions: Sequence[RegionRiskDecision]) -> dict[str, Any]:
-    """Bind structured output to this exact request without encoding source text."""
-
-    schema = deepcopy(base._response_schema())
-    items_schema = schema["properties"]["items"]
-    item_schema = items_schema["items"]
-    target_ids = [item.target_id for item in decisions]
-    kinds = sorted({item.kind for item in decisions})
-    numbers = sorted({int(item.question_number) for item in decisions})
-
-    items_schema["minItems"] = len(decisions)
-    items_schema["maxItems"] = len(decisions)
-    item_schema["properties"]["target_id"]["enum"] = target_ids
-    item_schema["properties"]["target_id"]["description"] = (
-        "Copy exactly one TARGET_ID from the request; never invent or rewrite it."
+        raise PageBatchEnvelopeError(
+            f"invalid_items_envelope:object_keys={keys or '<empty>'}"
+        )
+    raise PageBatchEnvelopeError(
+        f"invalid_items_envelope:root_type={type(raw).__name__}"
     )
-    item_schema["properties"]["kind"]["enum"] = kinds
-    item_schema["properties"]["question_number"]["enum"] = numbers
-    return schema
 
 
 def _safe_item_identity(raw_item: Any) -> str:
@@ -97,12 +72,53 @@ def _safe_item_identity(raw_item: Any) -> str:
     )
 
 
+def _placeholder_present(raw: Mapping[str, Any]) -> bool:
+    values = [
+        raw.get("question_text_markdown"),
+        raw.get("teacher_solution_markdown"),
+        raw.get("correct_option_label"),
+    ]
+    for option in raw.get("options") or []:
+        if isinstance(option, Mapping):
+            values.append(option.get("text_markdown"))
+    return any("[?]" in str(value or "") for value in values)
+
+
+def _backfill_request_metadata(
+    raw_item: Mapping[str, Any],
+    *,
+    decision: RegionRiskDecision,
+) -> dict[str, Any]:
+    """Fill only metadata already known from the request or explicit uncertainty.
+
+    These fields do not contain source transcription. Stage-3 remains visual
+    authority, and absent canonical content is deliberately left absent/empty so
+    field safety can fail closed per field.
+    """
+
+    normalized = dict(raw_item)
+    normalized.setdefault("target_id", decision.target_id)
+    normalized.setdefault("kind", decision.kind)
+    normalized.setdefault("question_number", decision.question_number)
+    normalized.setdefault("source_visual_required", False)
+    normalized.setdefault("visual_type", "none")
+    normalized.setdefault("uncertain_spans", [])
+    normalized.setdefault("uncertain_fragments", [])
+    if "transcription_uncertain" not in normalized:
+        normalized["transcription_uncertain"] = bool(
+            normalized.get("uncertain_spans")
+            or normalized.get("uncertain_fragments")
+            or _placeholder_present(normalized)
+        )
+    return normalized
+
+
 def _validate_items_with_identity_fallback(
     raw: Mapping[str, Any],
     *,
     decisions: Sequence[RegionRiskDecision],
 ) -> tuple[tuple[BatchItem, ...], tuple[str, ...], tuple[str, ...]]:
-    """Validate content strictly, recovering only a unique transport identity."""
+    """Validate content, recovering only request-known transport metadata."""
 
     raw_items = raw.get("items")
     if not isinstance(raw_items, list):
@@ -117,10 +133,9 @@ def _validate_items_with_identity_fallback(
         if not isinstance(raw_item, Mapping):
             rejection_notes.append(f"i{index}:{_safe_item_identity(raw_item)}")
             continue
-        normalized = dict(raw_item)
+
         raw_target_id = str(raw_item.get("target_id") or "").strip()
         decision = expected.get(raw_target_id)
-
         if decision is None:
             kind = str(raw_item.get("kind") or "").strip()
             try:
@@ -136,26 +151,34 @@ def _validate_items_with_identity_fallback(
             ]
             if len(matches) != 1:
                 rejection_notes.append(
-                    f"i{index}:identity_unmatched:{_safe_item_identity(raw_item)};matches={len(matches)}"
+                    f"i{index}:identity_unmatched:{_safe_item_identity(raw_item)};"
+                    f"matches={len(matches)}"
                 )
                 continue
             decision = matches[0]
-            normalized["target_id"] = decision.target_id
 
         if decision.target_id in returned:
             rejection_notes.append(f"i{index}:duplicate_identity:{decision.target_id}")
             continue
+
+        normalized = _backfill_request_metadata(raw_item, decision=decision)
+        # A changed target id is transport metadata; after a unique semantic bind,
+        # restore exactly the ID that was sent in the request.
+        normalized["target_id"] = decision.target_id
         try:
             item = BatchItem.model_validate(normalized)
         except ValidationError as exc:
             invalid.add(decision.target_id)
-            error_types = ",".join(
-                sorted({str(error.get("type") or "validation") for error in exc.errors()})
-            )[:240]
+            errors = []
+            for error in exc.errors():
+                loc = ".".join(str(part) for part in (error.get("loc") or ()))
+                errors.append(f"{loc or '?'}:{error.get('type') or 'validation'}")
             rejection_notes.append(
-                f"i{index}:pydantic:{decision.target_id}:{error_types or 'validation'}"
+                f"i{index}:pydantic:{decision.target_id}:"
+                f"{','.join(errors)[:320] or 'validation'}"
             )
             continue
+
         if item.kind != decision.kind or item.question_number != decision.question_number:
             invalid.add(decision.target_id)
             rejection_notes.append(
@@ -174,13 +197,23 @@ def _validate_items_with_identity_fallback(
         if item.target_id not in returned and item.target_id not in invalid
     )
     invalid_ids = tuple(item.target_id for item in decisions if item.target_id in invalid)
-
     if decisions and not ordered:
         notes = "|".join(rejection_notes[:3]) or "no_raw_items"
         raise PageBatchEnvelopeError(
             f"no_usable_requested_items:rawCount={len(raw_items)}:{notes}"
         )
     return ordered, missing, invalid_ids
+
+
+def _generation_config(maximum: int) -> dict[str, Any]:
+    """The exact structured-output contract proven by the successful live run."""
+
+    return {
+        "thinkingConfig": {"thinkingLevel": "minimal"},
+        "maxOutputTokens": maximum,
+        "responseMimeType": "application/json",
+        "responseSchema": base._response_schema(),
+    }
 
 
 def transcribe_page_batch(
@@ -203,9 +236,8 @@ def transcribe_page_batch(
     parts: list[dict[str, Any]] = [
         {
             "text": (
-                f"Physical source page {page_number}. Return EXACTLY one item for each "
-                f"of these {len(targets)} TARGET_ID values. Copy TARGET_ID, kind, and "
-                f"question_number exactly from the instruction preceding each image."
+                f"Physical source page {page_number}. Return one independent item for each "
+                f"of these {len(targets)} TARGET_ID values. Keep ids exactly as supplied."
             )
         }
     ]
@@ -217,12 +249,7 @@ def transcribe_page_batch(
     body = {
         "systemInstruction": {"parts": [{"text": base._system_prompt()}]},
         "contents": [{"role": "user", "parts": parts}],
-        "generationConfig": {
-            "thinkingConfig": {"thinkingLevel": "minimal"},
-            "maxOutputTokens": maximum,
-            "responseMimeType": "application/json",
-            "responseJsonSchema": _response_schema_for(decisions),
-        },
+        "generationConfig": _generation_config(maximum),
     }
     response = base.requests.post(
         f"{base._base_url()}/v1beta/models/{selected_model}:generateContent",
@@ -306,8 +333,9 @@ __all__ = [
     "BatchUncertainSpan",
     "PageBatchEnvelopeError",
     "PageBatchResult",
+    "_backfill_request_metadata",
+    "_generation_config",
     "_normalize_items_envelope",
-    "_response_schema_for",
     "_safe_item_identity",
     "_validate_items_with_identity_fallback",
     "transcribe_page_batch",
