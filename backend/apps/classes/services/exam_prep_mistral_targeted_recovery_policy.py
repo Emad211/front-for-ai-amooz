@@ -1,18 +1,8 @@
-"""Conservative targeted-solution recovery policy shared by production replays.
-
-Targeted OCR can safely repair an invalid option label when Stage 2 already has
-an accepted solution heading/region. A *missing* heading, however, has no trusted
-solution-body anchor: recovering only a number/label would create an answer-only
-record and incorrectly mark the solution as resolved.
-
-Therefore missing-heading recovery is disabled. Those targets remain unresolved
-and may later be repaired only from a source-grounded Stage-4 region.
-"""
+"""Conservative targeted-solution recovery policy shared by production replays."""
 from __future__ import annotations
 
-from typing import Any
-
 from . import exam_prep_mistral_stage2_core as core
+from .exam_prep_mistral_full_width_layout_policy import install_full_width_layout_policy
 
 
 _ORIGINAL_TARGETED_RECOVERY = core._targeted_recovery
@@ -50,6 +40,7 @@ def targeted_recovery_with_usable_solution_context(
 
 
 def install_targeted_recovery_policy() -> None:
+    install_full_width_layout_policy()
     if core._targeted_recovery is not targeted_recovery_with_usable_solution_context:
         core._targeted_recovery = targeted_recovery_with_usable_solution_context
 
