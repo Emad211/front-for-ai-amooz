@@ -98,12 +98,19 @@ def test_unique_kind_and_question_number_recovers_changed_target_id_losslessly()
     assert invalid == ()
 
 
-def test_ambiguous_identity_never_guesses():
+def test_empty_items_is_diagnostic_failure_not_success():
+    decision = _decision(21)
+    with pytest.raises(PageBatchEnvelopeError) as exc:
+        _validate_items_with_identity_fallback({"items": []}, decisions=[decision])
+    assert "no_usable_requested_items:rawCount=0:no_raw_items" in exc.value.reason_code
+
+
+def test_ambiguous_identity_never_guesses_and_fails_closed():
     first = _decision(21)
     second = RegionRiskDecision(
         question_number=21,
         kind="question",
-        page_number=6,
+        page_number=7,
         bbox=(0.2, 0.2, 0.7, 0.6),
         score=80,
         suspicious=True,
@@ -112,24 +119,8 @@ def test_ambiguous_identity_never_guesses():
         region_issues=(),
         candidate_text="candidate-2",
     )
-    # Force two distinct requested IDs with the same semantic identity to prove
-    # the fallback refuses to choose between them.
-    second = second.__class__(
-        question_number=second.question_number,
-        kind=second.kind,
-        page_number=7,
-        bbox=second.bbox,
-        score=second.score,
-        suspicious=second.suspicious,
-        hard_math=second.hard_math,
-        signals=second.signals,
-        region_issues=second.region_issues,
-        candidate_text=second.candidate_text,
-    )
     raw = {"items": [_raw_item(first, target_id="invented-id")]}
-    items, missing, invalid = _validate_items_with_identity_fallback(
-        raw, decisions=[first, second]
-    )
-    assert items == ()
-    assert set(missing) == {first.target_id, second.target_id}
-    assert invalid == ()
+    with pytest.raises(PageBatchEnvelopeError) as exc:
+        _validate_items_with_identity_fallback(raw, decisions=[first, second])
+    assert "identity_unmatched" in exc.value.reason_code
+    assert "matches=2" in exc.value.reason_code
