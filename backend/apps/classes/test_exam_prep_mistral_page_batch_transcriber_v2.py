@@ -6,8 +6,9 @@ from apps.classes.services.exam_prep_mistral_page_batch_transcriber import (
     PageBatchEnvelopeError,
 )
 from apps.classes.services.exam_prep_mistral_page_batch_transcriber_v2 import (
+    _backfill_request_metadata,
+    _generation_config,
     _normalize_items_envelope,
-    _response_schema_for,
     _validate_items_with_identity_fallback,
 )
 from apps.classes.services.exam_prep_mistral_risk_engine import RegionRiskDecision
@@ -50,6 +51,13 @@ def _raw_item(decision: RegionRiskDecision, *, target_id: str | None = None):
     }
 
 
+def test_generation_config_is_pinned_to_proven_response_schema_contract():
+    config = _generation_config(3200)
+    assert config["responseMimeType"] == "application/json"
+    assert "responseSchema" in config
+    assert "responseJsonSchema" not in config
+
+
 def test_normalize_accepts_canonical_items_object():
     raw = {"items": [{"target_id": "q-1"}]}
     assert _normalize_items_envelope(raw, target_count=1) is raw
@@ -73,20 +81,6 @@ def test_normalize_rejects_unknown_wrapper_fail_closed():
     assert "object_keys=results" in exc.value.reason_code
 
 
-def test_request_specific_schema_requires_exact_item_count_and_target_ids():
-    decisions = [_decision(21), _decision(22)]
-    schema = _response_schema_for(decisions)
-    items = schema["properties"]["items"]
-    item = items["items"]
-    assert items["minItems"] == 2
-    assert items["maxItems"] == 2
-    assert item["properties"]["target_id"]["enum"] == [
-        decisions[0].target_id,
-        decisions[1].target_id,
-    ]
-    assert item["properties"]["question_number"]["enum"] == [21, 22]
-
-
 def test_unique_kind_and_question_number_recovers_changed_target_id_losslessly():
     decision = _decision(21)
     raw = {"items": [_raw_item(decision, target_id="invented-id")]}
@@ -96,6 +90,44 @@ def test_unique_kind_and_question_number_recovers_changed_target_id_losslessly()
     assert [item.target_id for item in items] == [decision.target_id]
     assert missing == ()
     assert invalid == ()
+
+
+def test_request_known_noncontent_metadata_can_be_backfilled_without_source_inference():
+    decision = _decision(21)
+    raw = {
+        "target_id": decision.target_id,
+        "question_text_markdown": "متن سؤال",
+        "options": [{"label": "1", "text_markdown": "الف"}],
+    }
+    normalized = _backfill_request_metadata(raw, decision=decision)
+    assert normalized["kind"] == "question"
+    assert normalized["question_number"] == 21
+    assert normalized["source_visual_required"] is False
+    assert normalized["visual_type"] == "none"
+    assert normalized["transcription_uncertain"] is False
+    # Canonical source content is never invented by the metadata fallback.
+    assert "teacher_solution_markdown" not in normalized
+    assert "correct_option_label" not in normalized
+
+    items, missing, invalid = _validate_items_with_identity_fallback(
+        {"items": [raw]}, decisions=[decision]
+    )
+    assert len(items) == 1
+    assert items[0].question_text_markdown == "متن سؤال"
+    assert missing == ()
+    assert invalid == ()
+
+
+def test_placeholder_backfill_marks_transcription_uncertain():
+    decision = _decision(21)
+    normalized = _backfill_request_metadata(
+        {
+            "target_id": decision.target_id,
+            "question_text_markdown": "متن [?]",
+        },
+        decision=decision,
+    )
+    assert normalized["transcription_uncertain"] is True
 
 
 def test_empty_items_is_diagnostic_failure_not_success():
