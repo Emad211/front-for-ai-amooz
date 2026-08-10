@@ -2,13 +2,17 @@
 
 This facade is also the shared deterministic-policy bootstrap used by both the
 production pipeline and production-shaped acceptance replay. It installs only
-provider-free layout/recovery policies before any OCR evidence is analyzed.
+provider-free layout/recovery/visual-binding policies before OCR evidence is
+consumed.
 """
 from __future__ import annotations
 
 from typing import Any, Mapping
 
 from .exam_prep_mistral_full_width_layout_policy import install_full_width_layout_policy
+from .exam_prep_mistral_full_width_visual_option_policy import (
+    install_full_width_visual_option_policy,
+)
 from .exam_prep_mistral_targeted_recovery_policy import install_targeted_recovery_policy
 from . import exam_prep_mistral_visual_reconcile_v3 as _impl
 
@@ -16,6 +20,7 @@ from . import exam_prep_mistral_visual_reconcile_v3 as _impl
 # Both production and final acceptance import this facade before rebuilding OCR4
 # layout evidence. Install the deterministic policies once at that shared seam.
 install_full_width_layout_policy()
+install_full_width_visual_option_policy()
 install_targeted_recovery_policy()
 
 MISTRAL_VISUAL_STORAGE_PREFIX = _impl.MISTRAL_VISUAL_STORAGE_PREFIX
@@ -93,6 +98,7 @@ def _dedupe_exact_visual_assets(result, stats, audit):
     policy = dict(updated_audit.get("policy") or {})
     policy["exactVisualHashDedup"] = True
     policy["fullWidthQuestionLayoutPolicy"] = True
+    policy["fullWidthExactOptionBinding"] = True
     policy["missingHeadingIsNotRecoveredSolution"] = True
     updated_audit["policy"] = policy
     return updated_result, updated_stats, updated_audit
@@ -101,10 +107,10 @@ def _dedupe_exact_visual_assets(result, stats, audit):
 def reconcile_mistral_source_visuals(*args, **kwargs):
     result, stats, audit = _impl.reconcile_mistral_source_visuals(*args, **kwargs)
     result, stats, audit = _dedupe_exact_visual_assets(result, stats, audit)
-    # Surface bootstrap policies even when no duplicate happened.
     audit = dict(audit)
     policy = dict(audit.get("policy") or {})
     policy["fullWidthQuestionLayoutPolicy"] = True
+    policy["fullWidthExactOptionBinding"] = True
     policy["missingHeadingIsNotRecoveredSolution"] = True
     audit["policy"] = policy
     return result, stats, audit
