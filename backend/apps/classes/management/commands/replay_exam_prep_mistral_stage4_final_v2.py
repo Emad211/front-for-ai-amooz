@@ -1,4 +1,4 @@
-"""Final acceptance command using the current Gemini structured transport."""
+"""Final acceptance command using the provenance-safe Gemini transport."""
 from __future__ import annotations
 
 from apps.classes.management.commands import (
@@ -7,8 +7,8 @@ from apps.classes.management.commands import (
 from apps.classes.management.commands.replay_exam_prep_mistral_stage4_final import (
     Command as FinalAcceptanceCommand,
 )
-from apps.classes.services.exam_prep_mistral_page_batch_transcriber_v2 import (
-    transcribe_page_batch as transcribe_page_batch_v2,
+from apps.classes.services.exam_prep_mistral_page_batch_transcriber_v3 import (
+    transcribe_page_batch as transcribe_page_batch_v3,
 )
 
 
@@ -58,7 +58,7 @@ class Command(FinalAcceptanceCommand):
 
             return call
 
-        live_replay.transcribe_page_batch = transcribe_page_batch_v2
+        live_replay.transcribe_page_batch = transcribe_page_batch_v3
         live_replay._cached_page_batch = capped_cache_factory
         try:
             return super().handle(*args, **options)
