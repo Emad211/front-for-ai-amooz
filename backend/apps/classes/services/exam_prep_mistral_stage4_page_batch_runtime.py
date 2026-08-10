@@ -10,11 +10,14 @@ installs deterministic production guards before exposing it:
 * treat absent provider fields as unavailable evidence;
 * split a failed page batch only when the provider explicitly reports output
   truncation. STOP+malformed JSON, network, HTTP and timeouts are never retried;
-* reserve budget by crop-count before a primary call instead of applying one
-  wasteful fixed reserve to every page batch.
+* reserve budget by crop-count before a primary call;
+* open a per-run, concurrency-safe primary circuit after two consecutive
+  image-provenance failures so a broken multimodal route cannot consume the rest
+  of the PDF budget.
 """
 from __future__ import annotations
 
+from contextvars import ContextVar
 from dataclasses import replace
 import os
 from typing import Any, Mapping
@@ -28,9 +31,13 @@ from .exam_prep_mistral_risk_engine_v2 import score_region_risks as _score
 from .exam_prep_utils import clean_exam_markdown
 
 
-# ``transcribe_page_batch`` resolves its decoder from the transport module's
-# globals at call time. Install the hardened lexical decoder once at runtime.
 _page_transport._decode_structured_text = decode_structured_json_text
+_PROVENANCE_FAILURE_PREFIX = "image_modality_unproven:"
+_PROVENANCE_FAILURE_LIMIT = 2
+_PROVENANCE_STATE: ContextVar[dict[str, int | bool] | None] = ContextVar(
+    "exam_prep_stage4_provenance_state",
+    default=None,
+)
 
 
 def _number(value: Any) -> int:
@@ -202,13 +209,48 @@ def _is_truncation_error(error: Any) -> bool:
     return finish in {"MAX_TOKENS", "LENGTH", "MAX_OUTPUT_TOKENS"}
 
 
-def _page_results_with_structured_split_only(
-    *, page_number, rendered, spent, budget
-):
+def _provenance_state() -> dict[str, int | bool]:
+    state = _PROVENANCE_STATE.get()
+    if state is None:
+        state = {"consecutiveFailures": 0, "circuitOpen": False, "blockedPages": 0}
+        _PROVENANCE_STATE.set(state)
+    return state
+
+
+def _record_primary_outcome(result, error) -> None:
+    state = _provenance_state()
+    if result is not None:
+        state["consecutiveFailures"] = 0
+        return
+    reason = str(getattr(error, "reason_code", "") or "")
+    if reason.startswith(_PROVENANCE_FAILURE_PREFIX):
+        failures = int(state.get("consecutiveFailures") or 0) + 1
+        state["consecutiveFailures"] = failures
+        if failures >= _PROVENANCE_FAILURE_LIMIT:
+            state["circuitOpen"] = True
+    else:
+        # Only consecutive image-provenance failures open the circuit.
+        state["consecutiveFailures"] = 0
+
+
+def _page_results_with_structured_split_only(*, page_number, rendered, spent, budget):
     requested = {decision.target_id for decision, _ in rendered}
     audits = []
     results = []
     primary_calls = split_calls = 0
+    state = _provenance_state()
+
+    if bool(state.get("circuitOpen")):
+        state["blockedPages"] = int(state.get("blockedPages") or 0) + 1
+        audits.append(
+            {
+                "pageNumber": page_number,
+                "status": "primary_circuit_open",
+                "targetCount": len(rendered),
+                "reason": "image_provenance_circuit_open",
+            }
+        )
+        return results, requested, audits, spent, primary_calls, split_calls
 
     first, error, spent = _impl._call_primary(
         page_number=page_number,
@@ -216,6 +258,7 @@ def _page_results_with_structured_split_only(
         spent=spent,
         budget=budget,
     )
+    _record_primary_outcome(first, error)
     if first is not None:
         primary_calls += 1
         results.append(first)
@@ -238,6 +281,8 @@ def _page_results_with_structured_split_only(
         "reason": str(reason),
         "finishReason": finish_reason,
     }
+    if bool(state.get("circuitOpen")):
+        base_audit["circuitOpened"] = True
     if not _is_truncation_error(error):
         audits.append({**base_audit, "status": "provider_failed_no_retry"})
         return results, requested, audits, spent, primary_calls, split_calls
@@ -254,6 +299,7 @@ def _page_results_with_structured_split_only(
         child, child_error, spent = _impl._call_primary(
             page_number=page_number, targets=part, spent=spent, budget=budget
         )
+        _record_primary_outcome(child, child_error)
         if child is None:
             if isinstance(child_error, RuntimeError) and str(child_error) == "stage4_cost_budget":
                 child_reason = "cost_budget"
@@ -293,7 +339,34 @@ _impl._budget_reserve = _budget_reserve
 _impl._call_primary = _call_primary_budgeted
 _impl._page_results_with_one_split = _page_results_with_structured_split_only
 
-verify_and_repair_risky_regions_page_batched = _impl.verify_and_repair_risky_regions_page_batched
+
+def verify_and_repair_risky_regions_page_batched(*args, **kwargs):
+    """Run one isolated Stage-4 primary circuit per PDF invocation."""
+
+    state = {"consecutiveFailures": 0, "circuitOpen": False, "blockedPages": 0}
+    token = _PROVENANCE_STATE.set(state)
+    try:
+        result, audit = _impl.verify_and_repair_risky_regions_page_batched(*args, **kwargs)
+    finally:
+        _PROVENANCE_STATE.reset(token)
+
+    output_audit = dict(audit)
+    stats = dict(output_audit.get("stats") or {})
+    stats["imageProvenanceCircuitOpened"] = bool(state.get("circuitOpen"))
+    stats["imageProvenanceCircuitBlockedPages"] = int(state.get("blockedPages") or 0)
+    output_audit["stats"] = stats
+    policy = dict(output_audit.get("policy") or {})
+    policy["imageProvenanceRequired"] = True
+    policy["imageProvenanceCircuitFailureLimit"] = _PROVENANCE_FAILURE_LIMIT
+    output_audit["policy"] = policy
+    return result, output_audit
+
+
 PageBatchStats = _impl.PageBatchStats
 
-__all__ = ["PageBatchStats", "verify_and_repair_risky_regions_page_batched"]
+__all__ = [
+    "PageBatchStats",
+    "_PROVENANCE_FAILURE_LIMIT",
+    "_page_results_with_structured_split_only",
+    "verify_and_repair_risky_regions_page_batched",
+]
