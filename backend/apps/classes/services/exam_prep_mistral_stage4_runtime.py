@@ -24,6 +24,9 @@ from .exam_prep_mistral_stage4_pathological_guard import (
 from .exam_prep_mistral_stage4_source_invariant_guard import (
     enforce_source_invariants,
 )
+from .exam_prep_mistral_targeted_recovery_policy import (
+    install_targeted_recovery_policy,
+)
 from .exam_prep_mistral_visual_review import (
     visual_metadata_issue_codes,
     visual_options_complete,
@@ -31,6 +34,11 @@ from .exam_prep_mistral_visual_review import (
 from .exam_prep_page_records import PageAssemblyResult
 from .exam_prep_question_verifier import rebuild_assembly_quality
 
+
+# Production and diagnostic entrypoints import this facade before buying targeted
+# recovery. Install the conservative shared policy once; Stage-2 core source stays
+# untouched.
+install_targeted_recovery_policy()
 
 _STAGE4_BLOCKER = "stage4_verification_unresolved"
 _VISUAL_REFERENCE_STALE = frozenset(
@@ -237,8 +245,6 @@ def verify_and_repair_risky_regions(*args, **kwargs):
     original = args[0] if args else kwargs.get("result")
     result, audit = verify_and_repair_risky_regions_page_batched(*args, **kwargs)
     if isinstance(original, PageAssemblyResult):
-        # Deterministic source anchors run before paid consensus guards so an
-        # obviously unrelated primary read cannot trigger extra secondary calls.
         result, audit = enforce_source_invariants(original, result, audit)
         result, audit = enforce_pathological_repair_consensus(
             original,
