@@ -2,12 +2,15 @@
 
 This module is deliberately transport-only. It preserves the source-only prompt,
 Pydantic item contract, cost accounting and fail-closed validation from the
-original transcriber while hardening two provider-compatibility edges:
+original transcriber while hardening provider-compatibility edges:
 
 * lossless envelope variations are normalized;
 * target identity is constrained by the request-specific JSON schema, with one
   deterministic fallback from exact ``(kind, question_number)`` when the model
-  changes or omits ``target_id``.
+  changes or omits ``target_id``;
+* an HTTP-200 response that yields zero usable requested items is never cached as
+  success. It becomes a diagnostic envelope failure containing only safe identity
+  metadata, never source text.
 
 No semantic JSON repair is performed. Unknown wrappers and ambiguous identities
 remain errors/missing evidence rather than guessed content.
@@ -68,8 +71,6 @@ def _response_schema_for(decisions: Sequence[RegionRiskDecision]) -> dict[str, A
     kinds = sorted({item.kind for item in decisions})
     numbers = sorted({int(item.question_number) for item in decisions})
 
-    # Google Gemini structured output supports enum/minItems/maxItems. These
-    # constraints prevent an otherwise schema-valid empty list or invented ID.
     items_schema["minItems"] = len(decisions)
     items_schema["maxItems"] = len(decisions)
     item_schema["properties"]["target_id"]["enum"] = target_ids
@@ -81,28 +82,40 @@ def _response_schema_for(decisions: Sequence[RegionRiskDecision]) -> dict[str, A
     return schema
 
 
+def _safe_item_identity(raw_item: Any) -> str:
+    """Describe only structural identity metadata; never source text/content."""
+
+    if not isinstance(raw_item, Mapping):
+        return f"type={type(raw_item).__name__}"
+    keys = ",".join(sorted(str(key)[:40] for key in raw_item.keys())[:20])
+    target = str(raw_item.get("target_id") or "")[:80]
+    kind = str(raw_item.get("kind") or "")[:20]
+    number = str(raw_item.get("question_number") or "")[:20]
+    return (
+        f"keys={keys or '<empty>'};target_id={target or '<empty>'};"
+        f"kind={kind or '<empty>'};question_number={number or '<empty>'}"
+    )
+
+
 def _validate_items_with_identity_fallback(
     raw: Mapping[str, Any],
     *,
     decisions: Sequence[RegionRiskDecision],
 ) -> tuple[tuple[BatchItem, ...], tuple[str, ...], tuple[str, ...]]:
-    """Validate content strictly, recovering only a unique transport identity.
+    """Validate content strictly, recovering only a unique transport identity."""
 
-    If Gemini changes/omits ``target_id`` but returns an exact ``kind`` and
-    ``question_number`` that identify one requested target, rebinding the ID is
-    lossless transport normalization. No text, option, answer or math field is
-    inferred or repaired here.
-    """
-
-    if not isinstance(raw.get("items"), list):
+    raw_items = raw.get("items")
+    if not isinstance(raw_items, list):
         raise PageBatchEnvelopeError("invalid_items_envelope")
 
     expected = {item.target_id: item for item in decisions}
     returned: dict[str, BatchItem] = {}
     invalid: set[str] = set()
+    rejection_notes: list[str] = []
 
-    for raw_item in raw.get("items") or []:
+    for index, raw_item in enumerate(raw_items):
         if not isinstance(raw_item, Mapping):
+            rejection_notes.append(f"i{index}:{_safe_item_identity(raw_item)}")
             continue
         normalized = dict(raw_item)
         raw_target_id = str(raw_item.get("target_id") or "").strip()
@@ -122,19 +135,33 @@ def _validate_items_with_identity_fallback(
                 and item.target_id not in returned
             ]
             if len(matches) != 1:
+                rejection_notes.append(
+                    f"i{index}:identity_unmatched:{_safe_item_identity(raw_item)};matches={len(matches)}"
+                )
                 continue
             decision = matches[0]
             normalized["target_id"] = decision.target_id
 
         if decision.target_id in returned:
+            rejection_notes.append(f"i{index}:duplicate_identity:{decision.target_id}")
             continue
         try:
             item = BatchItem.model_validate(normalized)
-        except ValidationError:
+        except ValidationError as exc:
             invalid.add(decision.target_id)
+            error_types = ",".join(
+                sorted({str(error.get("type") or "validation") for error in exc.errors()})
+            )[:240]
+            rejection_notes.append(
+                f"i{index}:pydantic:{decision.target_id}:{error_types or 'validation'}"
+            )
             continue
         if item.kind != decision.kind or item.question_number != decision.question_number:
             invalid.add(decision.target_id)
+            rejection_notes.append(
+                f"i{index}:identity_conflict:{decision.target_id}:"
+                f"kind={item.kind}:number={item.question_number}"
+            )
             continue
         returned[decision.target_id] = item
 
@@ -147,6 +174,12 @@ def _validate_items_with_identity_fallback(
         if item.target_id not in returned and item.target_id not in invalid
     )
     invalid_ids = tuple(item.target_id for item in decisions if item.target_id in invalid)
+
+    if decisions and not ordered:
+        notes = "|".join(rejection_notes[:3]) or "no_raw_items"
+        raise PageBatchEnvelopeError(
+            f"no_usable_requested_items:rawCount={len(raw_items)}:{notes}"
+        )
     return ordered, missing, invalid_ids
 
 
@@ -275,6 +308,7 @@ __all__ = [
     "PageBatchResult",
     "_normalize_items_envelope",
     "_response_schema_for",
+    "_safe_item_identity",
     "_validate_items_with_identity_fallback",
     "transcribe_page_batch",
 ]
