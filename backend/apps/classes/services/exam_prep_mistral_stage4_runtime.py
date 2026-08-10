@@ -1,15 +1,16 @@
 """Production-safe Stage-4 facade preserving Stage-3 visual authority.
 
-Production Stage 4 groups all suspicious source crops from the same physical page
-into one Gemini request. This facade then applies two narrow independent-consensus
-gates for failure families proven by full-PDF validation: pathological repeated
-OCR prose and numeric overwrites of non-empty hard-math question fields.
+Production Stage 4 groups suspicious source crops by physical page, then applies
+only deterministic or independent-source safety gates. Final projection metadata
+is rebuilt from the post-guard audit so rollback decisions cannot leave stale
+embedded verification state.
 """
 from __future__ import annotations
 
 from collections import defaultdict
 from typing import Any, Mapping
 
+from .exam_prep_mistral_stage4_field_safety import sanitize_source_markdown
 from .exam_prep_mistral_stage4_hard_question_guard import (
     enforce_hard_question_numeric_consensus,
 )
@@ -20,11 +21,15 @@ from .exam_prep_mistral_stage4_page_batch_runtime import (
 from .exam_prep_mistral_stage4_pathological_guard import (
     enforce_pathological_repair_consensus,
 )
+from .exam_prep_mistral_stage4_source_invariant_guard import (
+    enforce_source_invariants,
+)
 from .exam_prep_mistral_visual_review import (
     visual_metadata_issue_codes,
     visual_options_complete,
 )
 from .exam_prep_page_records import PageAssemblyResult
+from .exam_prep_question_verifier import rebuild_assembly_quality
 
 
 _STAGE4_BLOCKER = "stage4_verification_unresolved"
@@ -57,6 +62,8 @@ _STAGE4_FAILURE_STATUSES = frozenset(
         "secondary_uncertain",
         "secondary_no_vote",
         "second_opinion_disagreement",
+        "source_anchor_conflict_rolled_back",
+        "solution_source_invariant_rolled_back",
         "pathological_partial_repair_rolled_back",
         "pathological_unresolved",
         "pathological_consensus_unavailable",
@@ -144,10 +151,95 @@ def _restore_visual_authority(result: PageAssemblyResult) -> PageAssemblyResult:
     return _restore_authority(result, audit={"regions": []})
 
 
+def _sanitize_final_question(question: Mapping[str, Any]) -> tuple[dict[str, Any], list[str]]:
+    """Apply the same deterministic sanitizer to every final canonical text field."""
+
+    updated = dict(question)
+    flags: list[str] = []
+    stem, found = sanitize_source_markdown(updated.get("question_text_markdown") or "")
+    updated["question_text_markdown"] = stem
+    flags.extend(found)
+
+    options: list[dict[str, Any]] = []
+    for raw in updated.get("options") or []:
+        if not isinstance(raw, Mapping):
+            continue
+        option = dict(raw)
+        text, found = sanitize_source_markdown(option.get("text_markdown") or "")
+        option["text_markdown"] = text
+        flags.extend(found)
+        options.append(option)
+    updated["options"] = options
+
+    solution, found = sanitize_source_markdown(updated.get("teacher_solution_markdown") or "")
+    updated["teacher_solution_markdown"] = solution
+    flags.extend(found)
+    final_answer, found = sanitize_source_markdown(updated.get("final_answer_markdown") or "")
+    updated["final_answer_markdown"] = final_answer
+    flags.extend(found)
+    return updated, list(dict.fromkeys(flags))
+
+
+def _finalize_projection_and_audit(
+    result: PageAssemblyResult,
+    audit: Mapping[str, Any],
+) -> tuple[PageAssemblyResult, dict[str, Any]]:
+    """Sanitize globally and synchronize embedded verification with final guard rows."""
+
+    rows = [dict(row) for row in (audit.get("regions") or []) if isinstance(row, Mapping)]
+    rows_by_question: dict[int, list[dict[str, Any]]] = defaultdict(list)
+    for row in rows:
+        number = _number(row.get("questionNumber"))
+        if number > 0:
+            rows_by_question[number].append(row)
+
+    projection = dict(result.projection)
+    exam = dict(projection.get("exam_prep") or {})
+    questions: list[dict[str, Any]] = []
+    sanitized_questions = 0
+    for raw in exam.get("questions") or []:
+        if not isinstance(raw, Mapping):
+            continue
+        question, flags = _sanitize_final_question(raw)
+        if flags:
+            sanitized_questions += 1
+        number = _number(question.get("source_question_number"))
+        metadata = dict(question.get("stage4_verification") or {})
+        metadata["regions"] = rows_by_question.get(number, [])
+        metadata["hasSuspiciousRegion"] = any(
+            bool(row.get("suspicious")) for row in metadata["regions"]
+        )
+        if flags:
+            metadata["finalSanitizerFlags"] = flags
+        else:
+            metadata.pop("finalSanitizerFlags", None)
+        question["stage4_verification"] = metadata
+        questions.append(question)
+
+    exam["questions"] = questions
+    projection["exam_prep"] = exam
+    final_result = result.model_copy(update={"projection": projection})
+    final_result = rebuild_assembly_quality(final_result)
+
+    output_audit = dict(audit)
+    output_audit["regions"] = rows
+    stats = dict(output_audit.get("stats") or {})
+    stats["finalSanitizerQuestionCount"] = sanitized_questions
+    output_audit["stats"] = stats
+    policy = dict(output_audit.get("policy") or {})
+    policy["globalFinalSanitizer"] = True
+    policy["embeddedAuditSyncedAfterAllGuards"] = True
+    output_audit["policy"] = policy
+    return final_result, output_audit
+
+
 def verify_and_repair_risky_regions(*args, **kwargs):
     original = args[0] if args else kwargs.get("result")
     result, audit = verify_and_repair_risky_regions_page_batched(*args, **kwargs)
     if isinstance(original, PageAssemblyResult):
+        # Deterministic source anchors run before paid consensus guards so an
+        # obviously unrelated primary read cannot trigger extra secondary calls.
+        result, audit = enforce_source_invariants(original, result, audit)
         result, audit = enforce_pathological_repair_consensus(
             original,
             result,
@@ -168,9 +260,14 @@ def verify_and_repair_risky_regions(*args, **kwargs):
             unresolved_solution_targets=kwargs.get("unresolved_solution_targets") or (),
             max_cost_usd=kwargs.get("max_cost_usd"),
         )
-    return _restore_authority(result, audit=audit), audit
+    result = _restore_authority(result, audit=audit)
+    return _finalize_projection_and_audit(result, audit)
 
 
 Stage4Stats = PageBatchStats
 
-__all__ = ["Stage4Stats", "verify_and_repair_risky_regions"]
+__all__ = [
+    "Stage4Stats",
+    "_finalize_projection_and_audit",
+    "verify_and_repair_risky_regions",
+]
