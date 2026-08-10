@@ -10,7 +10,7 @@ from __future__ import annotations
 from collections import defaultdict
 from typing import Any, Mapping
 
-from .exam_prep_mistral_page_batch_transcriber_v3 import install_stage4_transport_policy
+from .exam_prep_mistral_page_batch_transcriber_v4 import install_stage4_transport_policy
 from .exam_prep_mistral_stage4_field_safety import sanitize_source_markdown
 from .exam_prep_mistral_stage4_hard_question_guard import (
     enforce_hard_question_numeric_consensus,
@@ -239,6 +239,7 @@ def _finalize_projection_and_audit(
     policy = dict(output_audit.get("policy") or {})
     policy["globalFinalSanitizer"] = True
     policy["embeddedAuditSyncedAfterAllGuards"] = True
+    policy["primaryVisionTransport"] = "avalai_openai_compatible_chat_completions"
     output_audit["policy"] = policy
     return final_result, output_audit
 
