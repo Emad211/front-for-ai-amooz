@@ -1,15 +1,10 @@
-"""Calibrated Stage-4 risk scoring from the first full 55-page dry run.
+"""Calibrated Stage-4 risk scoring with deterministic structural blockers.
 
-The first production-shaped risk plan proved two opposite failures in v1:
-
-* ordinary scientific/math regions accumulated enough low-value signals to
-  become suspicious (125/303 regions);
-* obvious OCR corruption inside the assembled candidate (pathological repeated
-  phrases and repeated tau/gamma glyph substitutions) could remain below the
-  threshold.
-
-This layer keeps the v1 evidence extraction but recalibrates only the final
-selection policy.  It is intentionally simple and deterministic.
+Ordinary scientific/math content must not trigger paid verification by itself,
+but explicit projection defects are source-sensitive evidence and can never be
+classified as clean. This layer therefore combines the existing calibrated OCR
+signals with hard structural defects such as missing stems/options/solutions and
+unresolved visual-source contracts.
 """
 from __future__ import annotations
 
@@ -30,6 +25,13 @@ _TOKEN_RE = re.compile(
     r"[0-9۰-۹٠-٩]+(?:[-/][0-9۰-۹٠-٩]+)?|[\u0600-\u06FF]+|[A-Za-z]+"
 )
 _SUSPICIOUS_GREEK_RE = re.compile(r"\\(?:tau|gamma)\b")
+_VISUAL_STRUCTURAL_ISSUES = frozenset(
+    {
+        "visual_precise_crop_unresolved",
+        "visual_reference_without_ocr_visual",
+        "visual_attachment_missing",
+    }
+)
 
 
 def _threshold() -> int:
@@ -67,18 +69,49 @@ def _question_source_text(question: Mapping[str, Any]) -> str:
     return "\n".join(value for value in values if value)
 
 
+def _options_complete(question: Mapping[str, Any]) -> bool:
+    observed: dict[str, str] = {}
+    for raw in question.get("options") or []:
+        if not isinstance(raw, Mapping):
+            continue
+        label = str(raw.get("label") or "").translate(_DIGITS).strip()
+        if label in {"1", "2", "3", "4"}:
+            observed[label] = clean_exam_markdown(raw.get("text_markdown") or "")
+    return set(observed) == {"1", "2", "3", "4"} and all(observed.values())
+
+
+def _structural_signals(
+    decision: RegionRiskDecision,
+    question: Mapping[str, Any],
+) -> tuple[str, ...]:
+    """Return explicit projection defects that may never be scored as clean."""
+
+    issues = {str(code) for code in (question.get("issues") or []) if str(code)}
+    issues.update(str(code) for code in decision.region_issues if str(code))
+    signals: list[str] = []
+
+    if decision.kind == "question":
+        if (
+            not clean_exam_markdown(question.get("question_text_markdown") or "")
+            or "missing_question_text" in issues
+        ):
+            signals.append("structural_missing_question_text")
+        if not _options_complete(question):
+            signals.append("structural_options_incomplete")
+        if issues & _VISUAL_STRUCTURAL_ISSUES:
+            signals.append("structural_visual_source_unresolved")
+    else:
+        if not clean_exam_markdown(question.get("teacher_solution_markdown") or ""):
+            signals.append("structural_missing_solution_body")
+        if "mistral_solution_heading_unresolved" in issues:
+            signals.append("structural_solution_heading_unresolved")
+    return tuple(signals)
+
+
 def _unexpected_symbol_substitution(
     decision: RegionRiskDecision,
     question: Mapping[str, Any],
 ) -> bool:
-    """Catch a proven OCR4 glyph-substitution family without subject solving.
-
-    In the full replay, repeated ``\\tau`` / ``\\gamma`` appeared where printed
-    digits/operators had been corrupted (S120/S122/S125/S133 and neighbors).
-    Do not flag legitimate notation when the same symbol is already present in
-    the source question; require repetition in the solution candidate.
-    """
-
     if decision.kind != "solution":
         return False
     solution_hits = len(_SUSPICIOUS_GREEK_RE.findall(decision.candidate_text))
@@ -89,8 +122,6 @@ def _unexpected_symbol_substitution(
 
 
 def _pathological_repetition(text: str) -> bool:
-    """Detect long OCR repetition, not ordinary repeated math notation."""
-
     tokens = _TOKEN_RE.findall(clean_exam_markdown(text))
     if len(tokens) < 24:
         return False
@@ -99,9 +130,6 @@ def _pathological_repetition(text: str) -> bool:
         if count < 12:
             continue
         joined = f"{left} {right}"
-        # Repeated Persian/number phrases such as ``۲-۲ ذره`` or ``۲۰۰ و``
-        # are strong corruption evidence. Pure x/x or LaTeX control repetition
-        # is intentionally ignored.
         if _PERSIAN_RE.search(joined) and _NUMBER_RE.search(joined):
             return True
     return False
@@ -127,9 +155,7 @@ def _recalibrated_score(
     selected = set(signals)
     score = 0
 
-    # Low-value content features describe *difficulty*, not evidence of an OCR
-    # defect. They remain useful for prioritization and hard-math eligibility but
-    # do not trigger a call on their own.
+    # Difficulty features are prioritization hints, not evidence of an OCR defect.
     if "formula_math" in selected:
         score += 15 if decision.hard_math else 8
     if "digits_units" in selected:
@@ -149,6 +175,12 @@ def _recalibrated_score(
     if "source_corruption" in selected:
         score += 60
 
+    structural = _structural_signals(decision, question)
+    if structural:
+        # Structural failure is itself sufficient to cross the default threshold.
+        score += 70
+        signals.extend(structural)
+
     if _unexpected_symbol_substitution(decision, question):
         score += 60
         signals.append("symbol_substitution_proxy")
@@ -160,16 +192,6 @@ def _recalibrated_score(
 
 
 def _duplicate_quality(item: RegionRiskDecision) -> tuple[int, int, float]:
-    """Prefer a stable anchor over a noisier recovered duplicate.
-
-    The v2 dry run exposed one costly failure: ``s-097-p046`` had two OCR
-    regions with the same target id. The higher-risk region carried
-    ``heading_sequence_gap`` and rendered source question 94, while the clean
-    duplicate was the stable region. Paying for the higher score would send the
-    wrong source crop. Heading reliability therefore precedes risk/area when
-    deduplicating one physical target.
-    """
-
     heading_unstable = (
         "heading_conflict" in item.signals
         or "heading_sequence_gap" in item.region_issues
@@ -186,7 +208,7 @@ def score_region_risks(
     recovered_solution_targets: Sequence[int] | set[int] = (),
     unresolved_solution_targets: Sequence[int] | set[int] = (),
 ) -> list[RegionRiskDecision]:
-    """Return a small, corruption-focused set of suspicious source regions."""
+    """Return corruption- and structure-focused suspicious source regions."""
 
     original = base.score_region_risks(
         projection=projection,
@@ -200,9 +222,6 @@ def score_region_risks(
     output: list[RegionRiskDecision] = []
 
     for decision in original:
-        # Stage 2 only accepts question anchors from true question pages. The
-        # first dry run exposed six fake question regions inside answer pages;
-        # never buy verification calls for those layout artifacts.
         if decision.kind == "question" and roles.get(decision.page_number) != "question":
             continue
         question = questions.get(decision.question_number)
@@ -224,10 +243,6 @@ def score_region_risks(
             )
         )
 
-    # Provider target IDs must be unique. Duplicate OCR headings on the same
-    # physical page are layout evidence, not justification for duplicate paid
-    # calls. Prefer the region with a stable heading; only then use risk/area as
-    # deterministic tie-breakers.
     deduped: dict[str, RegionRiskDecision] = {}
     for item in output:
         previous = deduped.get(item.target_id)
@@ -245,4 +260,9 @@ def score_region_risks(
     )
 
 
-__all__ = ["RegionRiskDecision", "score_region_risks"]
+__all__ = [
+    "RegionRiskDecision",
+    "_options_complete",
+    "_structural_signals",
+    "score_region_risks",
+]
