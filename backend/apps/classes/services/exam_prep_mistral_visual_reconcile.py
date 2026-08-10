@@ -1,9 +1,9 @@
 """Stable source-precise Stage-3 reconciliation facade.
 
-This facade is also the shared deterministic-policy bootstrap used by both the
+This facade is also the shared production-policy bootstrap used by both the
 production pipeline and production-shaped acceptance replay. It installs only
-provider-free layout/recovery/visual-binding policies before OCR evidence is
-consumed.
+bounded deterministic layout/recovery/visual policies plus the final
+provenance-safe Stage-4 transport seam before OCR evidence is consumed.
 """
 from __future__ import annotations
 
@@ -13,12 +13,14 @@ from .exam_prep_mistral_full_width_layout_policy import install_full_width_layou
 from .exam_prep_mistral_full_width_visual_option_policy import (
     install_full_width_visual_option_policy,
 )
+from .exam_prep_mistral_page_batch_transcriber_v3 import install_stage4_transport_policy
 from .exam_prep_mistral_targeted_recovery_policy import install_targeted_recovery_policy
 from . import exam_prep_mistral_visual_reconcile_v3 as _impl
 
 
-# Both production and final acceptance import this facade before rebuilding OCR4
-# layout evidence. Install the deterministic policies once at that shared seam.
+# Production and final acceptance import this facade before runtime work. Install
+# the shared policies once so both paths execute the same contracts.
+install_stage4_transport_policy()
 install_full_width_layout_policy()
 install_full_width_visual_option_policy()
 install_targeted_recovery_policy()
@@ -100,6 +102,7 @@ def _dedupe_exact_visual_assets(result, stats, audit):
     policy["fullWidthQuestionLayoutPolicy"] = True
     policy["fullWidthExactOptionBinding"] = True
     policy["missingHeadingIsNotRecoveredSolution"] = True
+    policy["provenanceSafeStage4Transport"] = True
     updated_audit["policy"] = policy
     return updated_result, updated_stats, updated_audit
 
@@ -112,6 +115,7 @@ def reconcile_mistral_source_visuals(*args, **kwargs):
     policy["fullWidthQuestionLayoutPolicy"] = True
     policy["fullWidthExactOptionBinding"] = True
     policy["missingHeadingIsNotRecoveredSolution"] = True
+    policy["provenanceSafeStage4Transport"] = True
     audit["policy"] = policy
     return result, stats, audit
 
