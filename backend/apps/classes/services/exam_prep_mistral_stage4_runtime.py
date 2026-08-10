@@ -10,6 +10,7 @@ from __future__ import annotations
 from collections import defaultdict
 from typing import Any, Mapping
 
+from .exam_prep_mistral_page_batch_transcriber_v3 import install_stage4_transport_policy
 from .exam_prep_mistral_stage4_field_safety import sanitize_source_markdown
 from .exam_prep_mistral_stage4_hard_question_guard import (
     enforce_hard_question_numeric_consensus,
@@ -35,9 +36,10 @@ from .exam_prep_page_records import PageAssemblyResult
 from .exam_prep_question_verifier import rebuild_assembly_quality
 
 
-# Production and diagnostic entrypoints import this facade before buying targeted
-# recovery. Install the conservative shared policy once; Stage-2 core source stays
-# untouched.
+# Stage-4 transport belongs here, not in the Stage-3 visual facade. Keeping this
+# installation at the Stage-4 seam avoids the risk_engine -> visual -> transport
+# import cycle while preserving one production/acceptance request contract.
+install_stage4_transport_policy()
 install_targeted_recovery_policy()
 
 _STAGE4_BLOCKER = "stage4_verification_unresolved"
