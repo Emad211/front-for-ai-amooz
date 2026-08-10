@@ -7,8 +7,8 @@ from apps.classes.management.commands import (
 from apps.classes.management.commands.replay_exam_prep_mistral_stage4_final import (
     Command as FinalAcceptanceCommand,
 )
-from apps.classes.services.exam_prep_mistral_page_batch_transcriber_v3 import (
-    transcribe_page_batch as transcribe_page_batch_v3,
+from apps.classes.services.exam_prep_mistral_page_batch_transcriber_v4 import (
+    transcribe_page_batch as transcribe_page_batch_v4,
 )
 
 
@@ -31,10 +31,6 @@ class Command(FinalAcceptanceCommand):
         raw_cap = options.get("max_network_page_requests")
         network_cap = None if raw_cap is None else max(1, int(raw_cap))
 
-        # The parent acceptance command historically uses ``value or 24`` when
-        # deriving its in-process secondary cap. Preserve an explicit zero in the
-        # v2 probe by sending a negative sentinel that the parent's max(0, ...)
-        # normalization deterministically maps back to zero.
         if options.get("max_secondary_calls") == 0:
             options["max_secondary_calls"] = -1
 
@@ -48,17 +44,13 @@ class Command(FinalAcceptanceCommand):
                 return inner
 
             def call(**kwargs):
-                # Important: check before entering the original cache wrapper.
-                # The original wrapper increments networkPageRequests immediately
-                # before the provider call, so bypassing it here keeps the manifest
-                # counter equal to the number of actual network attempts.
                 if int(counters.get("networkPageRequests") or 0) >= network_cap:
                     raise RuntimeError("acceptance_probe_network_page_cap")
                 return inner(**kwargs)
 
             return call
 
-        live_replay.transcribe_page_batch = transcribe_page_batch_v3
+        live_replay.transcribe_page_batch = transcribe_page_batch_v4
         live_replay._cached_page_batch = capped_cache_factory
         try:
             return super().handle(*args, **options)
