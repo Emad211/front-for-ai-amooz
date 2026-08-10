@@ -1,11 +1,11 @@
 """Restored production-shaped Gemini page-batch transport for Stage 4.
 
 The first live 12R replay proved the native AvalAI/Gemini ``responseSchema``
-contract on the exact same source crops (88 repaired, 13 unresolved). A later
-transport-hardening experiment changed that request contract and made valid
-provider items fail before field safety. This module intentionally restores the
-proven request shape while retaining only lossless envelope handling, safe
-identity recovery, and diagnostics.
+contract on the exact same source crops. A later transport-hardening experiment
+changed that request contract and made valid provider items fail before field
+safety. This module keeps the proven request shape and adds one non-negotiable
+source-provenance invariant: provider output has no authority unless Gemini says
+an IMAGE modality was actually processed for the request.
 
 Provider omissions of request-known transport metadata are backfilled locally;
 source content (stem/options/answer/solution) is never inferred here. Missing
@@ -13,6 +13,7 @@ content remains empty and is blocked later by Stage-4 field safety.
 """
 from __future__ import annotations
 
+import base64
 import hashlib
 import json
 from typing import Any, Mapping, Sequence
@@ -89,12 +90,7 @@ def _backfill_request_metadata(
     *,
     decision: RegionRiskDecision,
 ) -> dict[str, Any]:
-    """Fill only metadata already known from the request or explicit uncertainty.
-
-    These fields do not contain source transcription. Stage-3 remains visual
-    authority, and absent canonical content is deliberately left absent/empty so
-    field safety can fail closed per field.
-    """
+    """Fill only metadata already known from the request or explicit uncertainty."""
 
     normalized = dict(raw_item)
     normalized.setdefault("target_id", decision.target_id)
@@ -162,8 +158,6 @@ def _validate_items_with_identity_fallback(
             continue
 
         normalized = _backfill_request_metadata(raw_item, decision=decision)
-        # A changed target id is transport metadata; after a unique semantic bind,
-        # restore exactly the ID that was sent in the request.
         normalized["target_id"] = decision.target_id
         try:
             item = BatchItem.model_validate(normalized)
@@ -206,7 +200,7 @@ def _validate_items_with_identity_fallback(
 
 
 def _generation_config(maximum: int) -> dict[str, Any]:
-    """The exact structured-output contract proven by the successful live run."""
+    """Keep the structured-output contract proven by the successful live run."""
 
     return {
         "thinkingConfig": {"thinkingLevel": "minimal"},
@@ -214,6 +208,75 @@ def _generation_config(maximum: int) -> dict[str, Any]:
         "responseMimeType": "application/json",
         "responseSchema": base._response_schema(),
     }
+
+
+def _image_part_high(payload: bytes) -> dict[str, Any]:
+    """Send every exact crop as an explicit high-resolution Gemini 3 media part."""
+
+    return {
+        "inlineData": {
+            "mimeType": "image/png",
+            "data": base64.b64encode(payload).decode("ascii"),
+        },
+        "mediaResolution": {"level": "media_resolution_high"},
+    }
+
+
+def _usage_with_modalities(root: Mapping[str, Any]) -> dict[str, int]:
+    """Return normal usage plus processed input-modality token counts."""
+
+    usage = dict(base._usage(root))
+    metadata = root.get("usageMetadata")
+    metadata = metadata if isinstance(metadata, Mapping) else {}
+    raw_details = metadata.get("promptTokensDetails")
+    if raw_details is None:
+        raw_details = metadata.get("prompt_tokens_details")
+    details = raw_details if isinstance(raw_details, list) else []
+    image_tokens = text_tokens = document_tokens = 0
+    for raw in details:
+        if not isinstance(raw, Mapping):
+            continue
+        modality = str(raw.get("modality") or "").strip().upper()
+        try:
+            count = int(raw.get("tokenCount") or raw.get("token_count") or 0)
+        except (TypeError, ValueError):
+            count = 0
+        if modality.endswith("IMAGE"):
+            image_tokens += max(0, count)
+        elif modality.endswith("TEXT"):
+            text_tokens += max(0, count)
+        elif modality.endswith("DOCUMENT"):
+            document_tokens += max(0, count)
+    usage["promptModalityDetailsPresent"] = 1 if details else 0
+    usage["imageInputTokens"] = image_tokens
+    usage["textInputTokens"] = text_tokens
+    usage["documentInputTokens"] = document_tokens
+    return usage
+
+
+def _require_image_provenance(
+    root: Mapping[str, Any],
+    *,
+    request_id: str,
+    finish_reason: str,
+) -> dict[str, int]:
+    """Fail closed unless the provider proves that IMAGE input was processed."""
+
+    usage = _usage_with_modalities(root)
+    if int(usage.get("imageInputTokens") or 0) > 0:
+        return usage
+    reason = (
+        "image_modality_unproven:no_prompt_modality_details"
+        if not int(usage.get("promptModalityDetailsPresent") or 0)
+        else "image_modality_unproven:image_tokens_zero"
+    )
+    raise PageBatchEnvelopeError(
+        reason,
+        usage=usage,
+        estimated_cost=base._estimated_cost(root),
+        request_id=request_id,
+        finish_reason=finish_reason,
+    )
 
 
 def transcribe_page_batch(
@@ -243,7 +306,7 @@ def transcribe_page_batch(
     ]
     for decision, payload in targets:
         parts.append({"text": base._target_instruction(decision)})
-        parts.append(base._image_part(payload))
+        parts.append(_image_part_high(payload))
 
     maximum = max(3200, min(9000, 1600 + 1050 * len(targets)))
     body = {
@@ -272,12 +335,17 @@ def transcribe_page_batch(
         raise PageBatchEnvelopeError("provider_root_not_object", request_id=request_id)
 
     finish_reason = base._finish_reason(root)
+    usage = _require_image_provenance(
+        root,
+        request_id=request_id,
+        finish_reason=finish_reason,
+    )
     try:
         response_text = base._response_text(root)
     except PageBatchEnvelopeError as exc:
         raise PageBatchEnvelopeError(
             exc.reason_code,
-            usage=base._usage(root),
+            usage=usage,
             estimated_cost=base._estimated_cost(root),
             request_id=request_id,
             finish_reason=finish_reason,
@@ -290,7 +358,7 @@ def transcribe_page_batch(
     except json.JSONDecodeError as exc:
         raise PageBatchEnvelopeError(
             "structured_json_invalid",
-            usage=base._usage(root),
+            usage=usage,
             estimated_cost=base._estimated_cost(root),
             request_id=request_id,
             finish_reason=finish_reason,
@@ -306,7 +374,7 @@ def transcribe_page_batch(
     except PageBatchEnvelopeError as exc:
         raise PageBatchEnvelopeError(
             exc.reason_code,
-            usage=base._usage(root),
+            usage=usage,
             estimated_cost=base._estimated_cost(root),
             request_id=request_id,
             finish_reason=finish_reason,
@@ -319,7 +387,7 @@ def transcribe_page_batch(
         model=selected_model,
         items=items,
         request_id=request_id,
-        usage=base._usage(root),
+        usage=usage,
         estimated_cost=base._estimated_cost(root),
         requested_target_ids=tuple(item.target_id for item in decisions),
         missing_target_ids=missing,
@@ -335,8 +403,11 @@ __all__ = [
     "PageBatchResult",
     "_backfill_request_metadata",
     "_generation_config",
+    "_image_part_high",
     "_normalize_items_envelope",
+    "_require_image_provenance",
     "_safe_item_identity",
+    "_usage_with_modalities",
     "_validate_items_with_identity_fallback",
     "transcribe_page_batch",
 ]
