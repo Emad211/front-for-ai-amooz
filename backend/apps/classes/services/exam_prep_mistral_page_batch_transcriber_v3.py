@@ -1,9 +1,9 @@
 """Final Stage-4 Gemini transport policy.
 
-Keeps the v2 transport/validation/provenance contract intact and installs only
-the documented Gemini 3 media-resolution spelling before requests are made.
-The patch is process-wide and idempotent, so there is no per-call mutation or
-thread race.
+Keeps the v2 transport/validation/provenance contract intact, installs the
+documented Gemini 3 media-resolution spelling, and routes the shared Stage-4
+page-batch seam through this transport. The install is process-wide and
+idempotent, so production and acceptance use the same request contract.
 """
 from __future__ import annotations
 
@@ -30,8 +30,6 @@ def _image_part_high(payload: bytes) -> dict[str, Any]:
     }
 
 
-# Capture v2's proven responseSchema config before installing our one-time media
-# policy. The helper then adds the documented global fallback.
 _ORIGINAL_GENERATION_CONFIG = v2._generation_config
 
 
@@ -43,8 +41,16 @@ def _generation_config_high(maximum: int) -> dict[str, Any]:
 
 v2._image_part_high = _image_part_high
 v2._generation_config = _generation_config_high
-
 transcribe_page_batch = v2.transcribe_page_batch
+
+
+def install_stage4_transport_policy() -> None:
+    # Imported lazily to avoid adding Stage-4 orchestration dependencies to the
+    # transport module until the policy is actually installed.
+    from . import exam_prep_mistral_stage4_page_batch as page_batch
+
+    if page_batch.transcribe_page_batch is not transcribe_page_batch:
+        page_batch.transcribe_page_batch = transcribe_page_batch
 
 
 __all__ = [
@@ -53,5 +59,6 @@ __all__ = [
     "BatchUncertainSpan",
     "PageBatchEnvelopeError",
     "PageBatchResult",
+    "install_stage4_transport_policy",
     "transcribe_page_batch",
 ]
