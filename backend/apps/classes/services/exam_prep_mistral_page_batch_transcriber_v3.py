@@ -30,27 +30,19 @@ def _image_part_high(payload: bytes) -> dict[str, Any]:
     }
 
 
-def _generation_config(maximum: int) -> dict[str, Any]:
-    value = dict(v2.base._response_schema() and v2._generation_config(maximum))
-    # Global setting is documented for all multimodal generateContent models and
-    # provides a safe fallback if a gateway ignores the per-Part override.
-    value["mediaResolution"] = "MEDIA_RESOLUTION_HIGH"
-    return value
-
-
-# Install once. v2.transcribe_page_batch resolves both helpers from its module
-# globals at request time.
+# Capture v2's proven responseSchema config before installing our one-time media
+# policy. The helper then adds the documented global fallback.
 _ORIGINAL_GENERATION_CONFIG = v2._generation_config
 
 
-def _generation_config_without_recursion(maximum: int) -> dict[str, Any]:
+def _generation_config_high(maximum: int) -> dict[str, Any]:
     value = dict(_ORIGINAL_GENERATION_CONFIG(maximum))
     value["mediaResolution"] = "MEDIA_RESOLUTION_HIGH"
     return value
 
 
 v2._image_part_high = _image_part_high
-v2._generation_config = _generation_config_without_recursion
+v2._generation_config = _generation_config_high
 
 transcribe_page_batch = v2.transcribe_page_batch
 
