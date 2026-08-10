@@ -1,9 +1,22 @@
-"""Stable source-precise Stage-3 reconciliation facade."""
+"""Stable source-precise Stage-3 reconciliation facade.
+
+This facade is also the shared deterministic-policy bootstrap used by both the
+production pipeline and production-shaped acceptance replay. It installs only
+provider-free layout/recovery policies before any OCR evidence is analyzed.
+"""
 from __future__ import annotations
 
 from typing import Any, Mapping
 
+from .exam_prep_mistral_full_width_layout_policy import install_full_width_layout_policy
+from .exam_prep_mistral_targeted_recovery_policy import install_targeted_recovery_policy
 from . import exam_prep_mistral_visual_reconcile_v3 as _impl
+
+
+# Both production and final acceptance import this facade before rebuilding OCR4
+# layout evidence. Install the deterministic policies once at that shared seam.
+install_full_width_layout_policy()
+install_targeted_recovery_policy()
 
 MISTRAL_VISUAL_STORAGE_PREFIX = _impl.MISTRAL_VISUAL_STORAGE_PREFIX
 PrivateVisualAssetStore = _impl.PrivateVisualAssetStore
@@ -79,13 +92,22 @@ def _dedupe_exact_visual_assets(result, stats, audit):
     updated_audit["stats"] = dict(updated_stats)
     policy = dict(updated_audit.get("policy") or {})
     policy["exactVisualHashDedup"] = True
+    policy["fullWidthQuestionLayoutPolicy"] = True
+    policy["missingHeadingIsNotRecoveredSolution"] = True
     updated_audit["policy"] = policy
     return updated_result, updated_stats, updated_audit
 
 
 def reconcile_mistral_source_visuals(*args, **kwargs):
     result, stats, audit = _impl.reconcile_mistral_source_visuals(*args, **kwargs)
-    return _dedupe_exact_visual_assets(result, stats, audit)
+    result, stats, audit = _dedupe_exact_visual_assets(result, stats, audit)
+    # Surface bootstrap policies even when no duplicate happened.
+    audit = dict(audit)
+    policy = dict(audit.get("policy") or {})
+    policy["fullWidthQuestionLayoutPolicy"] = True
+    policy["missingHeadingIsNotRecoveredSolution"] = True
+    audit["policy"] = policy
+    return result, stats, audit
 
 
 __all__ = [
