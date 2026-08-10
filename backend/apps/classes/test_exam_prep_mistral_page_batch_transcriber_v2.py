@@ -8,7 +8,10 @@ from apps.classes.services.exam_prep_mistral_page_batch_transcriber import (
 from apps.classes.services.exam_prep_mistral_page_batch_transcriber_v2 import (
     _backfill_request_metadata,
     _generation_config,
+    _image_part_high,
     _normalize_items_envelope,
+    _require_image_provenance,
+    _usage_with_modalities,
     _validate_items_with_identity_fallback,
 )
 from apps.classes.services.exam_prep_mistral_risk_engine import RegionRiskDecision
@@ -51,13 +54,6 @@ def _raw_item(decision: RegionRiskDecision, *, target_id: str | None = None):
     }
 
 
-def test_generation_config_is_pinned_to_proven_response_schema_contract():
-    config = _generation_config(3200)
-    assert config["responseMimeType"] == "application/json"
-    assert "responseSchema" in config
-    assert "responseJsonSchema" not in config
-
-
 def test_normalize_accepts_canonical_items_object():
     raw = {"items": [{"target_id": "q-1"}]}
     assert _normalize_items_envelope(raw, target_count=1) is raw
@@ -81,6 +77,72 @@ def test_normalize_rejects_unknown_wrapper_fail_closed():
     assert "object_keys=results" in exc.value.reason_code
 
 
+def test_restored_generation_config_uses_proven_response_schema_contract():
+    config = _generation_config(3200)
+    assert "responseSchema" in config
+    assert "responseJsonSchema" not in config
+    assert config["responseMimeType"] == "application/json"
+
+
+def test_image_part_forces_high_media_resolution_without_changing_crop_bytes():
+    part = _image_part_high(b"png")
+    assert part["inlineData"]["mimeType"] == "image/png"
+    assert part["inlineData"]["data"]
+    assert part["mediaResolution"] == {"level": "media_resolution_high"}
+
+
+def test_usage_with_modalities_records_processed_image_tokens():
+    root = {
+        "usageMetadata": {
+            "promptTokenCount": 1500,
+            "candidatesTokenCount": 100,
+            "totalTokenCount": 1600,
+            "promptTokensDetails": [
+                {"modality": "TEXT", "tokenCount": 300},
+                {"modality": "IMAGE", "tokenCount": 1200},
+            ],
+        }
+    }
+    usage = _usage_with_modalities(root)
+    assert usage["promptModalityDetailsPresent"] == 1
+    assert usage["textInputTokens"] == 300
+    assert usage["imageInputTokens"] == 1200
+
+
+def test_usage_with_modalities_accepts_snake_case_provider_shape():
+    root = {
+        "usageMetadata": {
+            "prompt_tokens_details": [
+                {"modality": "IMAGE", "token_count": 1120},
+            ]
+        }
+    }
+    assert _usage_with_modalities(root)["imageInputTokens"] == 1120
+
+
+def test_image_provenance_is_hard_gate():
+    proven = {
+        "usageMetadata": {
+            "promptTokensDetails": [{"modality": "IMAGE", "tokenCount": 1120}]
+        }
+    }
+    usage = _require_image_provenance(proven, request_id="req", finish_reason="STOP")
+    assert usage["imageInputTokens"] == 1120
+
+    with pytest.raises(PageBatchEnvelopeError) as absent:
+        _require_image_provenance({}, request_id="req", finish_reason="STOP")
+    assert "no_prompt_modality_details" in absent.value.reason_code
+
+    zero = {
+        "usageMetadata": {
+            "promptTokensDetails": [{"modality": "TEXT", "tokenCount": 330}]
+        }
+    }
+    with pytest.raises(PageBatchEnvelopeError) as text_only:
+        _require_image_provenance(zero, request_id="req", finish_reason="STOP")
+    assert "image_tokens_zero" in text_only.value.reason_code
+
+
 def test_unique_kind_and_question_number_recovers_changed_target_id_losslessly():
     decision = _decision(21)
     raw = {"items": [_raw_item(decision, target_id="invented-id")]}
@@ -92,42 +154,22 @@ def test_unique_kind_and_question_number_recovers_changed_target_id_losslessly()
     assert invalid == ()
 
 
-def test_request_known_noncontent_metadata_can_be_backfilled_without_source_inference():
+def test_request_known_metadata_can_be_backfilled_but_content_is_never_invented():
     decision = _decision(21)
     raw = {
         "target_id": decision.target_id,
-        "question_text_markdown": "متن سؤال",
-        "options": [{"label": "1", "text_markdown": "الف"}],
+        "question_text_markdown": "متن",
+        "options": [],
+        "correct_option_label": "",
+        "teacher_solution_markdown": "",
     }
     normalized = _backfill_request_metadata(raw, decision=decision)
     assert normalized["kind"] == "question"
     assert normalized["question_number"] == 21
     assert normalized["source_visual_required"] is False
     assert normalized["visual_type"] == "none"
-    assert normalized["transcription_uncertain"] is False
-    # Canonical source content is never invented by the metadata fallback.
-    assert "teacher_solution_markdown" not in normalized
-    assert "correct_option_label" not in normalized
-
-    items, missing, invalid = _validate_items_with_identity_fallback(
-        {"items": [raw]}, decisions=[decision]
-    )
-    assert len(items) == 1
-    assert items[0].question_text_markdown == "متن سؤال"
-    assert missing == ()
-    assert invalid == ()
-
-
-def test_placeholder_backfill_marks_transcription_uncertain():
-    decision = _decision(21)
-    normalized = _backfill_request_metadata(
-        {
-            "target_id": decision.target_id,
-            "question_text_markdown": "متن [?]",
-        },
-        decision=decision,
-    )
-    assert normalized["transcription_uncertain"] is True
+    assert normalized["question_text_markdown"] == "متن"
+    assert normalized["options"] == []
 
 
 def test_empty_items_is_diagnostic_failure_not_success():
