@@ -31,6 +31,13 @@ class Command(FinalAcceptanceCommand):
         raw_cap = options.get("max_network_page_requests")
         network_cap = None if raw_cap is None else max(1, int(raw_cap))
 
+        # The parent acceptance command historically uses ``value or 24`` when
+        # deriving its in-process secondary cap. Preserve an explicit zero in the
+        # v2 probe by sending a negative sentinel that the parent's max(0, ...)
+        # normalization deterministically maps back to zero.
+        if options.get("max_secondary_calls") == 0:
+            options["max_secondary_calls"] = -1
+
         def capped_cache_factory(*, cache_dir, base_call, counters):
             inner = previous_cache_factory(
                 cache_dir=cache_dir,
