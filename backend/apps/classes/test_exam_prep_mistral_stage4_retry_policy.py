@@ -107,3 +107,48 @@ def test_explicit_output_truncation_may_split_exactly_once(monkeypatch):
     assert primary_calls == 3
     assert split_calls == 2
     assert audits[0]["status"] == "truncated_envelope_split"
+
+
+def test_two_consecutive_image_provenance_failures_open_per_run_circuit(monkeypatch):
+    calls = []
+
+    def unproven(**kwargs):
+        calls.append(kwargs["page_number"])
+        return (
+            None,
+            PageBatchEnvelopeError(
+                "image_modality_unproven:image_tokens_zero",
+                finish_reason="STOP",
+            ),
+            kwargs["spent"],
+        )
+
+    monkeypatch.setattr(runtime._impl, "_call_primary", unproven)
+    state = {"consecutiveFailures": 0, "circuitOpen": False, "blockedPages": 0}
+    token = runtime._PROVENANCE_STATE.set(state)
+    try:
+        for page_number in (40, 41):
+            runtime._page_results_with_structured_split_only(
+                page_number=page_number,
+                rendered=[(_decision(page_number), b"a")],
+                spent=0.0,
+                budget=0.20,
+            )
+        _results, failed, audits, _spent, primary_calls, split_calls = (
+            runtime._page_results_with_structured_split_only(
+                page_number=42,
+                rendered=[(_decision(42), b"a")],
+                spent=0.0,
+                budget=0.20,
+            )
+        )
+    finally:
+        runtime._PROVENANCE_STATE.reset(token)
+
+    assert calls == [40, 41]
+    assert state["circuitOpen"] is True
+    assert state["blockedPages"] == 1
+    assert primary_calls == 0
+    assert split_calls == 0
+    assert failed == {"s-042-p040"}
+    assert audits[0]["status"] == "primary_circuit_open"
