@@ -7,7 +7,7 @@ source-only read. Each provider request contains exactly one crop.
 """
 from __future__ import annotations
 
-from collections import defaultdict
+from collections import Counter, defaultdict
 from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
 from decimal import Decimal
 import io
@@ -72,6 +72,17 @@ _QUESTION_HEADING_RE = re.compile(
 )
 _STRONG_VISUAL_TYPES = frozenset(
     {"diagram", "graph", "chemical_structure", "table", "spatial_layout"}
+)
+_LATEX_FRACTION_RE = re.compile(
+    r"(?P<outer>[+-]?)\s*\\(?:d|t)?frac\s*"
+    r"\{\s*(?P<inner>[+-]?\d+)\s*\}\s*\{\s*(?P<den>\d+)\s*\}"
+)
+_CANON_NUMBER_RE = re.compile(
+    r"(?<![A-Za-z0-9])[-+]?\d+(?:/\d+|[\.,]\d+)?(?:\^[-+]?\d+)?"
+)
+_CANON_KEYED_RE = re.compile(
+    r"(?P<key>\\?[A-Za-zΑ-Ωα-ω][A-Za-z0-9_Α-Ωα-ω]*)\s*=\s*"
+    r"(?P<number>[-+]?\d+(?:/\d+|[\.,]\d+)?(?:\^[-+]?\d+)?)"
 )
 
 
@@ -170,6 +181,31 @@ def _fields_equivalent(left: Mapping[str, Any], right: Mapping[str, Any]) -> boo
     )
 
 
+def _canonical_numeric_text(value: Any) -> str:
+    text = normalize_text_for_similarity(str(value or ""))
+
+    def replace_fraction(match: re.Match[str]) -> str:
+        outer_negative = match.group("outer") == "-"
+        inner = int(match.group("inner"))
+        numerator = abs(inner)
+        negative = outer_negative ^ (inner < 0)
+        sign = "-" if negative else ""
+        return f" {sign}{numerator}/{match.group('den')} "
+
+    return _LATEX_FRACTION_RE.sub(replace_fraction, text)
+
+
+def _canonical_numeric_counter(value: Any) -> Counter[str]:
+    return Counter(_CANON_NUMBER_RE.findall(_canonical_numeric_text(value)))
+
+
+def _canonical_keyed_counter(value: Any) -> Counter[tuple[str, str]]:
+    output: Counter[tuple[str, str]] = Counter()
+    for match in _CANON_KEYED_RE.finditer(_canonical_numeric_text(value)):
+        output[(match.group("key").lstrip("\\").lower(), match.group("number"))] += 1
+    return output
+
+
 def _field_agrees(field: str, left: Any, right: Any) -> bool:
     a = str(left or "")
     b = str(right or "")
@@ -178,14 +214,24 @@ def _field_agrees(field: str, left: Any, right: Any) -> bool:
     if not a.strip() or not b.strip():
         return False
     comparison = compare_field(field, a, b)
-    if numeric_signature(a) != numeric_signature(b):
+    numeric_left = _canonical_numeric_counter(a)
+    numeric_right = _canonical_numeric_counter(b)
+    if numeric_left != numeric_right:
         return False
-    if numeric_signature(a):
-        return (
-            comparison.keyed_numeric_equal
-            and comparison.math_token_similarity >= 0.72
+    if numeric_left:
+        keyed_left = _canonical_keyed_counter(a)
+        keyed_right = _canonical_keyed_counter(b)
+        if (keyed_left or keyed_right) and keyed_left != keyed_right:
+            return False
+        standard_consensus = (
+            comparison.math_token_similarity >= 0.72
             and comparison.text_similarity >= 0.86
         )
+        order_tolerant_math_consensus = (
+            comparison.math_token_similarity >= 0.90
+            and comparison.text_similarity >= 0.70
+        )
+        return standard_consensus or order_tolerant_math_consensus
     return float(text_similarity(a, b)) >= 0.98
 
 
