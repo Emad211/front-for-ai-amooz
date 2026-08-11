@@ -186,12 +186,23 @@ def _load_cached_targeted_recovery(
             )
         recovered[question] = (str(option), next(iter(pages)), next(iter(columns)))
 
+    normalized_specs = tuple(
+        (
+            int(item.get("physicalPageNumber") or 0),
+            str(item.get("column") or "").strip().lower(),
+        )
+        for item in crop_specs
+    )
+    if any(page < 1 or side not in {"left", "right"} for page, side in normalized_specs):
+        raise CommandError("Targeted recovery bundle contains invalid crop mapping metadata.")
+
     estimated = manifest.get("estimatedCost")
     estimated = estimated if isinstance(estimated, Mapping) else {}
     cached_result = SimpleNamespace(
         pages=tuple(
             dict(page) for page in (root.get("pages") or []) if isinstance(page, Mapping)
         ),
+        crop_specs=normalized_specs,
         estimated_cost_unit=_decimal(estimated.get("unit")),
         provider_call_count=max(0, int(manifest.get("providerRequestCount") or 0)),
         retry_count=max(0, int(manifest.get("retryCount") or 0)),
