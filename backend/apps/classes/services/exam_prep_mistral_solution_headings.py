@@ -18,13 +18,13 @@ _DIGIT_TRANS = str.maketrans(
 _SOLUTION_PAGE_HEADER_RE = re.compile(r"پاسخ", re.IGNORECASE)
 _Q_FIRST_RE = re.compile(
     r"^\s*[#*_`«»\"'()]*\s*(?P<question>[0-9۰-۹٠-٩]{1,3})\s*[»\"'()]*\s*"
-    r"(?:[-–—]\s*)?گزین(?:ه|ۀ|هٔ)\s*[«»\"'()]*\s*"
+    r"(?:[-–—ـ]\s*)?گزین(?:ه|ۀ|هٔ)\s*[«»\"'()]*\s*"
     r"(?P<option>[0-9۰-۹٠-٩]{1,2})\s*[»\"'()]*",
     re.IGNORECASE,
 )
 _OPTION_FIRST_RE = re.compile(
     r"^\s*[#*_`«»\"'()]*\s*(?P<option>[0-9۰-۹٠-٩]{1,2})\s*[»\"'()]*\s*"
-    r"گزین(?:ه|ۀ|هٔ)\s*(?:[-–—]\s*)?"
+    r"گزین(?:ه|ۀ|هٔ)\s*(?:[-–—ـ]\s*)?"
     r"(?P<question>[0-9۰-۹٠-٩]{1,3})",
     re.IGNORECASE,
 )
