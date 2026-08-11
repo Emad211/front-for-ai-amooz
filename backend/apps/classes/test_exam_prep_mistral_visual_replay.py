@@ -73,8 +73,10 @@ def test_diagnostic_store_preserves_private_storage_identity_locally(tmp_path):
     store = _DiagnosticStore(tmp_path)
     name = "exam-prep/source/visuals/v1/source/p001-q001-question-01-a.png"
     assert store.save(name, b"png") == name
-    assert (tmp_path / name).read_bytes() == b"png"
-    assert store.files[name] == name
+    relative = store.files[name]
+    assert relative.startswith("assets/")
+    assert relative.endswith(".png")
+    assert (tmp_path / relative).read_bytes() == b"png"
 
 
 def test_diagnostic_store_rejects_path_traversal(tmp_path):
