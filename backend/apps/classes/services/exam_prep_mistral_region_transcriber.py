@@ -31,6 +31,14 @@ DEFAULT_PRIMARY_MODEL = "gemini-3-flash-preview"
 DEFAULT_SECONDARY_MODEL = "gpt-5.4-mini"
 
 
+class RegionTranscriptionEmptyContent(ValueError):
+    """Provider returned HTTP-successful response without usable content."""
+
+
+class RegionTranscriptionNonconformingContent(ValueError):
+    """Provider content was present but did not satisfy the JSON contract."""
+
+
 def primary_model() -> str:
     return _strip_model_prefix(
         (os.getenv("EXAM_PREP_STAGE4_PRIMARY_MODEL") or DEFAULT_PRIMARY_MODEL).strip()
@@ -244,12 +252,16 @@ def transcribe_source_region(
         choice = response.choices[0]
         content = str(choice.message.content or "").strip()
         if not content:
-            raise ValueError("Stage-4 provider returned empty content.")
+            raise RegionTranscriptionEmptyContent(
+                "Stage-4 provider returned empty content."
+            )
         try:
             parsed_obj = extract_json_object(content)
             parsed = DirectTranscription.model_validate(parsed_obj)
         except Exception as exc:
-            raise ValueError("Stage-4 provider returned non-conforming JSON content.") from exc
+            raise RegionTranscriptionNonconformingContent(
+                "Stage-4 provider returned non-conforming JSON content."
+            ) from exc
         normalized = normalize_direct_transcription(parsed)
         if _usage_db_logging_enabled():
             track_llm_usage(
@@ -291,6 +303,8 @@ def transcribe_source_region(
 __all__ = [
     "DEFAULT_PRIMARY_MODEL",
     "DEFAULT_SECONDARY_MODEL",
+    "RegionTranscriptionEmptyContent",
+    "RegionTranscriptionNonconformingContent",
     "RegionTranscriptionResult",
     "primary_model",
     "secondary_model",
