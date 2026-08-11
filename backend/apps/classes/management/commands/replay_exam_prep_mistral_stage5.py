@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 from collections import Counter
+from decimal import Decimal, InvalidOperation
 from hashlib import sha256
 import json
 import os
 from pathlib import Path
 import re
 from threading import Lock
+from types import SimpleNamespace
 from typing import Any, Mapping
+from zipfile import BadZipFile, ZipFile
 
 from django.core.management.base import BaseCommand, CommandError
 from pypdf import PdfReader
@@ -19,6 +22,10 @@ from apps.classes.management.commands.replay_exam_prep_mistral_visual_stage3 imp
 )
 from apps.classes.services import exam_prep_mistral_production as production
 from apps.classes.services import exam_prep_mistral_stage5 as stage5
+from apps.classes.services.exam_prep_mistral_targeted_recovery import (
+    collect_crop_headings,
+    resolve_target_questions,
+)
 from apps.classes.services.exam_prep_question_verifier import rebuild_assembly_quality
 
 
@@ -79,7 +86,7 @@ def _load_cached_input(*, pdf_path: Path, bundle_path: Path):
         raise CommandError("OCR bundle manifest has no valid page count.") from exc
     if bundle_page_count != page_count:
         raise CommandError(
-            f"PDF/bundle page count mismatch ({page_count} != {bundle_page_count})."
+            f"OCR bundle page count mismatch ({page_count} != {bundle_page_count})."
         )
 
     result = _diagnostic_result(
@@ -88,6 +95,105 @@ def _load_cached_input(*, pdf_path: Path, bundle_path: Path):
         page_count=page_count,
     )
     return pdf_data, result, manifest
+
+
+def _solution_target_numbers(
+    targets: frozenset[RegionTarget] | None,
+) -> list[int]:
+    if targets is None:
+        return []
+    return sorted({number for number, kind in targets if kind == "solution"})
+
+
+def _decimal(value: Any) -> Decimal:
+    try:
+        return max(Decimal("0"), Decimal(str(value or "0")))
+    except (InvalidOperation, TypeError, ValueError):
+        return Decimal("0")
+
+
+def _load_cached_targeted_recovery(
+    *,
+    bundle_path: Path,
+    targets: frozenset[RegionTarget] | None,
+):
+    """Load a previously paid targeted OCR result without making a provider call."""
+
+    target_questions = _solution_target_numbers(targets)
+    if not target_questions:
+        raise CommandError("--targeted-bundle requires at least one solution:N target.")
+    if not bundle_path.is_file() or bundle_path.suffix.lower() != ".zip":
+        raise CommandError("--targeted-bundle must point to an existing ZIP file.")
+
+    try:
+        with ZipFile(bundle_path) as archive:
+            names = set(archive.namelist())
+            required = {"response.raw.json", "request.safe.json", "manifest.json"}
+            if not required.issubset(names):
+                raise CommandError(
+                    "Targeted bundle must contain response.raw.json, request.safe.json, and manifest.json."
+                )
+            root = json.loads(archive.read("response.raw.json").decode("utf-8"))
+            request = json.loads(archive.read("request.safe.json").decode("utf-8"))
+            manifest = json.loads(archive.read("manifest.json").decode("utf-8"))
+    except CommandError:
+        raise
+    except (OSError, BadZipFile, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise CommandError("Targeted recovery bundle is invalid or incomplete.") from exc
+
+    if not isinstance(root, Mapping) or not isinstance(request, Mapping) or not isinstance(manifest, Mapping):
+        raise CommandError("Targeted recovery bundle JSON roots must be objects.")
+    source = request.get("source")
+    source = source if isinstance(source, Mapping) else {}
+    crop_specs = source.get("cropSpecs")
+    if not isinstance(crop_specs, list) or not all(isinstance(item, Mapping) for item in crop_specs):
+        raise CommandError("Targeted recovery bundle has no valid source.cropSpecs.")
+
+    headings = collect_crop_headings(root, crop_specs)
+    resolution = resolve_target_questions(headings, target_questions)
+    if not resolution.get("complete"):
+        unresolved = resolution.get("unresolvedQuestionNumbers") or []
+        conflicts = resolution.get("conflicts") or []
+        raise CommandError(
+            "Targeted recovery bundle does not resolve every requested solution target "
+            f"(unresolved={unresolved}, conflicts={conflicts})."
+        )
+
+    recovered: dict[int, tuple[str, int, str]] = {}
+    for item in resolution.get("recovered") or []:
+        question = int(item.get("questionNumber") or 0)
+        option = int(item.get("optionLabel") or 0)
+        evidence = [
+            heading
+            for heading in headings
+            if int(heading.get("rawQuestionNumber") or 0) == question
+            and heading.get("optionLabelValid") is True
+            and int(heading.get("optionLabel") or 0) == option
+        ]
+        pages = {
+            int(heading.get("physicalPageNumber") or 0)
+            for heading in evidence
+            if int(heading.get("physicalPageNumber") or 0) > 0
+        }
+        columns = {
+            str(heading.get("column") or "").strip().lower()
+            for heading in evidence
+            if str(heading.get("column") or "").strip().lower() in {"left", "right"}
+        }
+        if len(pages) != 1 or len(columns) != 1:
+            raise CommandError(
+                f"Targeted recovery evidence for solution {question} is spatially ambiguous."
+            )
+        recovered[question] = (str(option), next(iter(pages)), next(iter(columns)))
+
+    estimated = manifest.get("estimatedCost")
+    estimated = estimated if isinstance(estimated, Mapping) else {}
+    cached_result = SimpleNamespace(
+        estimated_cost_unit=_decimal(estimated.get("unit")),
+        provider_call_count=max(0, int(manifest.get("providerRequestCount") or 0)),
+        retry_count=max(0, int(manifest.get("retryCount") or 0)),
+    )
+    return recovered, cached_result
 
 
 def _question_number(question: Mapping[str, Any]) -> int:
@@ -133,6 +239,7 @@ def _run_cached_pipeline(
     targets: frozenset[RegionTarget] | None,
     visual_store: _DiagnosticStore,
     evidence_sink: list[dict[str, Any]] | None = None,
+    cached_targeted_recovery: tuple[dict[int, tuple[str, int, str]], Any | None] | None = None,
 ):
     """Run the production facade with narrowly scoped, fully restored replay seams."""
 
@@ -149,12 +256,30 @@ def _run_cached_pipeline(
         if targets is not None
         else None
     )
+    cached_recovered, cached_targeted_result = cached_targeted_recovery or ({}, None)
 
     def cached_fetch(*args, **kwargs):
         return cached_result
 
-    def no_targeted_ocr(*args, **kwargs):
-        return {}, None
+    def cached_targeted_ocr(*args, **kwargs):
+        requested = sorted(
+            set(int(value) for value in (kwargs.get("missing") or []))
+            | set(int(value) for value in (kwargs.get("invalid") or []))
+        )
+        if not requested:
+            return {}, None
+        if cached_targeted_result is None:
+            return {}, None
+        missing_from_bundle = sorted(set(requested) - set(cached_recovered))
+        if missing_from_bundle:
+            raise RuntimeError(
+                "Cached targeted recovery does not cover production-requested solution targets: "
+                f"{missing_from_bundle}"
+            )
+        return (
+            {number: cached_recovered[number] for number in requested},
+            cached_targeted_result,
+        )
 
     def local_reconcile(result, *args, **kwargs):
         if target_numbers is not None:
@@ -214,7 +339,7 @@ def _run_cached_pipeline(
         return value
 
     production.fetch_ocr4_document = cached_fetch
-    production._targeted_recovery = no_targeted_ocr
+    production._targeted_recovery = cached_targeted_ocr
     production.reconcile_mistral_source_visuals = local_reconcile
     production.score_region_risks = exact_target_score
     production.finalize_stage5_regions = exact_target_finalize
@@ -253,6 +378,7 @@ def _build_manifest(
     cached_result,
     bundle_name: str,
     targets: frozenset[RegionTarget] | None,
+    targeted_bundle_name: str | None = None,
 ) -> dict[str, Any]:
     audit = result.extraction_audit if isinstance(result.extraction_audit, Mapping) else {}
     risk = audit.get("riskEngine") if isinstance(audit.get("riskEngine"), Mapping) else {}
@@ -270,13 +396,14 @@ def _build_manifest(
         else []
     )
     return {
-        "schemaVersion": 3,
+        "schemaVersion": 4,
         "privateDiagnosticBundle": True,
         "privateTransmissionExplicitlyAllowed": True,
         "productionPipelineChanged": False,
         "productionEntrypoint": production.PRODUCTION_ENTRYPOINT,
         "cachedOcrOnly": True,
         "inputBundle": bundle_name,
+        "cachedTargetedRecoveryBundle": targeted_bundle_name,
         "sourcePdfSha256": cached_result.source_sha256,
         "pageCount": cached_result.page_count,
         "targetStats": {
@@ -287,6 +414,7 @@ def _build_manifest(
         },
         "callStats": {
             "ocrProviderCallsThisReplay": 0,
+            "targetedOcrProviderCallsThisReplay": 0,
             "primaryCalls": primary_calls,
             "mainCalls": main_calls,
             "stage5Calls": primary_calls + main_calls,
@@ -335,6 +463,7 @@ class Command(BaseCommand):
     def add_arguments(self, parser):
         parser.add_argument("--pdf", required=True)
         parser.add_argument("--bundle", required=True)
+        parser.add_argument("--targeted-bundle")
         parser.add_argument("--output-dir", required=True)
         parser.add_argument("--title", default="Stage 5 production replay")
         selection = parser.add_mutually_exclusive_group(required=True)
@@ -353,6 +482,13 @@ class Command(BaseCommand):
         )
         pdf_path = Path(options["pdf"]).expanduser().resolve()
         bundle_path = Path(options["bundle"]).expanduser().resolve()
+        targeted_bundle_path = (
+            Path(options["targeted_bundle"]).expanduser().resolve()
+            if options.get("targeted_bundle")
+            else None
+        )
+        if targeted_bundle_path is not None and targets is None:
+            raise CommandError("--targeted-bundle is supported only with --targets.")
         output_dir = Path(options["output_dir"]).expanduser().resolve()
         if output_dir.exists():
             if not output_dir.is_dir() or any(output_dir.iterdir()):
@@ -361,6 +497,14 @@ class Command(BaseCommand):
         pdf_data, cached_result, _bundle_manifest = _load_cached_input(
             pdf_path=pdf_path,
             bundle_path=bundle_path,
+        )
+        cached_targeted_recovery = (
+            _load_cached_targeted_recovery(
+                bundle_path=targeted_bundle_path,
+                targets=targets,
+            )
+            if targeted_bundle_path is not None
+            else None
         )
         output_dir.mkdir(parents=True, exist_ok=True)
         visual_store = _DiagnosticStore(output_dir / "stage3-visuals")
@@ -372,6 +516,7 @@ class Command(BaseCommand):
             targets=targets,
             visual_store=visual_store,
             evidence_sink=provider_evidence,
+            cached_targeted_recovery=cached_targeted_recovery,
         )
 
         manifest = _build_manifest(
@@ -379,6 +524,9 @@ class Command(BaseCommand):
             cached_result=cached_result,
             bundle_name=bundle_path.name,
             targets=targets,
+            targeted_bundle_name=(
+                targeted_bundle_path.name if targeted_bundle_path is not None else None
+            ),
         )
         (output_dir / "projection.private.json").write_text(
             json.dumps(result.projection, ensure_ascii=False, indent=2),
@@ -428,6 +576,7 @@ __all__ = [
     "_DiagnosticStore",
     "_build_manifest",
     "_load_cached_input",
+    "_load_cached_targeted_recovery",
     "_parse_targets",
     "_run_cached_pipeline",
 ]
