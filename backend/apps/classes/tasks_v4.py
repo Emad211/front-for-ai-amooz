@@ -36,6 +36,10 @@ from apps.classes.services.exam_prep_v4_observability import (
 from apps.classes.services.exam_prep_v4_ocr_evidence import (
     wrap_with_optional_ocr_evidence,
 )
+from apps.classes.services.exam_prep_source_first import (
+    MistralSourceFirstAdapter,
+    SourceFirstOCRConfig,
+)
 from apps.classes.services.exam_prep_v4_source_pipeline import (
     prepare_and_classify_pdf_source,
 )
@@ -45,6 +49,11 @@ from apps.classes.services.exam_prep_v4_projects import exam_prep_v4_enabled
 TASK_SOFT_LIMIT = int(os.getenv('EXAM_PREP_V4_TASK_SOFT_LIMIT_SECONDS', '3300'))
 TASK_HARD_LIMIT = int(os.getenv('EXAM_PREP_V4_TASK_HARD_LIMIT_SECONDS', '3600'))
 EXTRACTION_MAX_RETRIES = int(os.getenv('EXAM_PREP_V4_EXTRACTION_MAX_RETRIES', '2'))
+
+
+def _source_first_enabled() -> bool:
+    raw = os.getenv('EXAM_PREP_V4_SOURCE_FIRST_ENABLED', '0')
+    return raw.strip().lower() in {'1', 'true', 'yes', 'on'}
 
 
 @dataclass(frozen=True, slots=True)
@@ -500,7 +509,16 @@ def process_exam_prep_v4_extraction(
         )
 
         structured = StructuredLLMExamPrepV4Provider()
-        selected = wrap_with_optional_ocr_evidence(structured)
+        if _source_first_enabled():
+            # OCR4 is a geometry prepass only. Question/answer text remains in
+            # the existing structured provider and source crops remain the
+            # evidence authority. The flag is deliberately off by default.
+            selected = MistralSourceFirstAdapter(
+                fallback=structured,
+                config=SourceFirstOCRConfig.from_env(),
+            )
+        else:
+            selected = wrap_with_optional_ocr_evidence(structured)
         provider = ObservedExamPrepV4Provider(delegate=selected, context=context)
         result = run_document_extraction_pipeline(
             document_id=document.id,
