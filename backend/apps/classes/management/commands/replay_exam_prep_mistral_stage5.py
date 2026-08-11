@@ -189,6 +189,9 @@ def _load_cached_targeted_recovery(
     estimated = manifest.get("estimatedCost")
     estimated = estimated if isinstance(estimated, Mapping) else {}
     cached_result = SimpleNamespace(
+        pages=tuple(
+            dict(page) for page in (root.get("pages") or []) if isinstance(page, Mapping)
+        ),
         estimated_cost_unit=_decimal(estimated.get("unit")),
         provider_call_count=max(0, int(manifest.get("providerRequestCount") or 0)),
         retry_count=max(0, int(manifest.get("retryCount") or 0)),
