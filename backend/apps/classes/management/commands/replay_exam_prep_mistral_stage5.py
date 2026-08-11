@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections import Counter
 from hashlib import sha256
 import json
+import os
 from pathlib import Path
 import re
 from threading import Lock
@@ -23,6 +24,7 @@ from apps.classes.services.exam_prep_question_verifier import rebuild_assembly_q
 
 RegionTarget = tuple[int, str]
 _TARGET_KINDS = frozenset({"question", "solution"})
+_USAGE_LOG_ENV = "EXAM_PREP_STAGE4_USAGE_DB_LOGGING"
 
 
 def _parse_targets(value: Any) -> frozenset[RegionTarget]:
@@ -140,6 +142,7 @@ def _run_cached_pipeline(
     original_score = production.score_region_risks
     original_finalize = production.finalize_stage5_regions
     original_transcribe = stage5._transcribe
+    original_usage_logging = os.environ.get(_USAGE_LOG_ENV)
     evidence_lock = Lock()
     target_numbers = (
         frozenset(number for number, _kind in targets)
@@ -216,6 +219,9 @@ def _run_cached_pipeline(
     production.score_region_risks = exact_target_score
     production.finalize_stage5_regions = exact_target_finalize
     stage5._transcribe = capture_transcribe
+    # Replay already persists token counts and provider evidence locally. Do not
+    # make diagnostic live calls depend on the application's PostgreSQL logger.
+    os.environ[_USAGE_LOG_ENV] = "0"
     try:
         return production.run_exam_prep_mistral_pipeline(
             data=pdf_data,
@@ -228,6 +234,10 @@ def _run_cached_pipeline(
         production.score_region_risks = original_score
         production.finalize_stage5_regions = original_finalize
         stage5._transcribe = original_transcribe
+        if original_usage_logging is None:
+            os.environ.pop(_USAGE_LOG_ENV, None)
+        else:
+            os.environ[_USAGE_LOG_ENV] = original_usage_logging
 
 
 def _safe_int(value: Any) -> int:
@@ -260,7 +270,7 @@ def _build_manifest(
         else []
     )
     return {
-        "schemaVersion": 2,
+        "schemaVersion": 3,
         "privateDiagnosticBundle": True,
         "privateTransmissionExplicitlyAllowed": True,
         "productionPipelineChanged": False,
@@ -292,8 +302,12 @@ def _build_manifest(
             "statusCounts": dict(sorted(statuses.items())),
         },
         "costStats": {
-            "replayEstimatedCostUsd": str(
+            "replayChargedCostUsd": str(audit.get("stage5ChargedCostUsd") or "0"),
+            "replaySuccessfulUsageCostUsd": str(
                 audit.get("stage5SuccessfulCallEstimatedCostUsd") or "0"
+            ),
+            "replayCostEstimateComplete": bool(
+                audit.get("stage5CostEstimateComplete")
             ),
             "projectedProductionTotalEstimatedCostUsd": str(
                 audit.get("totalEstimatedCostUsd") or "0"
@@ -403,7 +417,8 @@ class Command(BaseCommand):
                 f"regions={manifest['targetStats']['processedRegionCount']}, "
                 f"calls={call_stats['stage5Calls']}, "
                 f"blocked={block_stats['blockedRegions']}, "
-                f"costUsd={cost_stats['replayEstimatedCostUsd']}"
+                f"chargedCostUsd={cost_stats['replayChargedCostUsd']}, "
+                f"costEstimateComplete={cost_stats['replayCostEstimateComplete']}"
             )
         )
 
