@@ -158,7 +158,19 @@ class Command(BaseCommand):
             first_question=first_question,
             last_question=last_question,
         )
-        accepted: list[AlignedSolutionHeading] = aligned["accepted"]
+        accepted_all: list[AlignedSolutionHeading] = list(aligned["accepted"])
+        accepted = [
+            item
+            for item in accepted_all
+            if first_question <= item.question_number <= last_question
+        ]
+        out_of_range_accepted = sorted(
+            {
+                item.question_number
+                for item in accepted_all
+                if not first_question <= item.question_number <= last_question
+            }
+        )
         base_options = {
             item.question_number: item.option_label
             for item in accepted
@@ -246,12 +258,13 @@ class Command(BaseCommand):
         )
 
         report = {
-            "schemaVersion": 1,
+            "schemaVersion": 2,
             "contentFree": True,
             "safeMergePolicy": "target_questions_only",
             "base": {
                 "acceptedHeadingCount": len(accepted),
                 "uniqueAcceptedQuestionCount": base_unique,
+                "outOfRangeAcceptedQuestionNumbers": out_of_range_accepted,
                 "missingQuestionNumbers": base_missing,
                 "invalidOptionQuestionNumbers": base_invalid,
             },
