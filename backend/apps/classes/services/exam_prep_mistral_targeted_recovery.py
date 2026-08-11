@@ -21,6 +21,13 @@ _CROP_BOUNDS = {
 }
 
 
+def _int_value(value: Any, default: int) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
 def _heading_lines(value: Any) -> list[str]:
     """Return line-like OCR segments without trusting provider block boundaries.
 
@@ -64,16 +71,13 @@ def collect_crop_headings(
 ) -> list[dict[str, Any]]:
     output: list[dict[str, Any]] = []
     pages = [page for page in (root.get("pages") or []) if isinstance(page, Mapping)]
-    pages.sort(key=lambda page: int(page.get("index") or 0))
+    pages.sort(key=lambda page: _int_value(page.get("index"), 0))
     for page in pages:
-        crop_index = int(page.get("index") or 0)
+        crop_index = _int_value(page.get("index"), 0)
         if not 0 <= crop_index < len(crop_specs):
             continue
         spec = crop_specs[crop_index]
-        try:
-            physical_page = int(spec.get("physicalPageNumber") or 0)
-        except (TypeError, ValueError):
-            physical_page = 0
+        physical_page = _int_value(spec.get("physicalPageNumber"), 0)
         side = str(spec.get("column") or "").strip().lower()
         for block_index, block in enumerate(page.get("blocks") or []):
             if not isinstance(block, Mapping):
@@ -98,10 +102,7 @@ def resolve_target_questions(
     targets = sorted({int(value) for value in target_questions if int(value) > 0})
     grouped: dict[int, list[Mapping[str, Any]]] = {}
     for heading in headings:
-        try:
-            question = int(heading.get("rawQuestionNumber") or 0)
-        except (TypeError, ValueError):
-            continue
+        question = _int_value(heading.get("rawQuestionNumber"), 0)
         grouped.setdefault(question, []).append(heading)
 
     recovered: list[dict[str, Any]] = []
@@ -133,9 +134,9 @@ def resolve_target_questions(
                     "evidenceCount": len(evidence),
                     "physicalPages": sorted(
                         {
-                            int(item.get("physicalPageNumber") or 0)
+                            _int_value(item.get("physicalPageNumber"), 0)
                             for item in evidence
-                            if int(item.get("physicalPageNumber") or 0) > 0
+                            if _int_value(item.get("physicalPageNumber"), 0) > 0
                         }
                     ),
                 }
@@ -201,7 +202,7 @@ def recovered_solution_layout_regions(
 
     headings = collect_crop_headings(root, crop_specs)
     pages = {
-        int(page.get("index") or 0): page
+        _int_value(page.get("index"), 0): page
         for page in (root.get("pages") or [])
         if isinstance(page, Mapping)
     }
@@ -218,26 +219,26 @@ def recovered_solution_layout_regions(
         matches = [
             item
             for item in headings
-            if int(item.get("rawQuestionNumber") or 0) == number
+            if _int_value(item.get("rawQuestionNumber"), 0) == number
             and item.get("optionLabelValid") is True
-            and int(item.get("optionLabel") or 0) == label
-            and int(item.get("physicalPageNumber") or 0) == physical_page
+            and _int_value(item.get("optionLabel"), 0) == label
+            and _int_value(item.get("physicalPageNumber"), 0) == physical_page
             and str(item.get("column") or "").strip().lower() == side
         ]
         if len(matches) != 1:
             continue
         match = matches[0]
-        crop_index = int(match.get("providerCropIndex") or 0)
-        block_index = int(match.get("providerBlockIndex") or -1)
+        crop_index = _int_value(match.get("providerCropIndex"), -1)
+        block_index = _int_value(match.get("providerBlockIndex"), -1)
         page = pages.get(crop_index)
-        if page is None or block_index < 0:
+        if page is None or crop_index < 0 or block_index < 0:
             continue
 
         same_block = [
             item
             for item in headings
-            if int(item.get("providerCropIndex") or -1) == crop_index
-            and int(item.get("providerBlockIndex") or -1) == block_index
+            if _int_value(item.get("providerCropIndex"), -1) == crop_index
+            and _int_value(item.get("providerBlockIndex"), -1) == block_index
         ]
         if len(same_block) != 1:
             continue
@@ -251,8 +252,8 @@ def recovered_solution_layout_regions(
             (
                 by_index[next_index].bbox[1]
                 for item in headings
-                if int(item.get("providerCropIndex") or -1) == crop_index
-                and (next_index := int(item.get("providerBlockIndex") or -1)) in by_index
+                if _int_value(item.get("providerCropIndex"), -1) == crop_index
+                and (next_index := _int_value(item.get("providerBlockIndex"), -1)) in by_index
                 and by_index[next_index].bbox[1] > heading_block.bbox[1]
             ),
             default=0.98,
@@ -296,28 +297,22 @@ def overlay_recovered_solution_regions(
     pages = [dict(page) for page in (layout.get("pages") or []) if isinstance(page, Mapping)]
     page_positions: dict[int, list[int]] = {}
     for index, page in enumerate(pages):
-        try:
-            number = int(page.get("originalPageNumber") or 0)
-        except (TypeError, ValueError):
-            number = 0
+        number = _int_value(page.get("originalPageNumber"), 0)
         if number > 0:
             page_positions.setdefault(number, []).append(index)
 
     existing = {
-        int(region.get("questionNumber") or 0)
+        _int_value(region.get("questionNumber"), 0)
         for page in pages
         for region in (page.get("regions") or [])
         if isinstance(region, Mapping)
         and str(region.get("kind") or "") == "solution"
-        and int(region.get("questionNumber") or 0) > 0
+        and _int_value(region.get("questionNumber"), 0) > 0
     }
     added: list[int] = []
     for raw in regions:
-        try:
-            number = int(raw.get("questionNumber") or 0)
-            page_number = int(raw.get("originalPageNumber") or 0)
-        except (TypeError, ValueError):
-            continue
+        number = _int_value(raw.get("questionNumber"), 0)
+        page_number = _int_value(raw.get("originalPageNumber"), 0)
         positions = page_positions.get(page_number, [])
         if number < 1 or number in existing or len(positions) != 1:
             continue
