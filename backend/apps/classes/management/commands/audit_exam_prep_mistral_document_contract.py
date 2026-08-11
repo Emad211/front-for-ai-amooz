@@ -60,16 +60,23 @@ def build_document_contract(
     root: Mapping[str, Any],
     manifest: Mapping[str, Any],
     *,
+    expected_first_question: int = 1,
     expected_last_question: int = 155,
 ) -> dict[str, Any]:
+    first = max(1, int(expected_first_question))
+    last = max(1, int(expected_last_question))
+    if first > last:
+        raise ValueError('expected_first_question must be <= expected_last_question')
+    expected_count = last - first + 1
+
     mapping = _page_mapping(manifest)
     ranges = extract_booklet_ranges(root, original_page_numbers=mapping)
     layout = analyze_ocr_document(root, original_page_numbers=mapping)
     solutions = audit_solution_headings(
         root,
         original_page_numbers=mapping,
-        first_expected_question=1,
-        last_expected_question=expected_last_question,
+        first_expected_question=first,
+        last_expected_question=last,
     )
 
     question_numbers = sorted(
@@ -79,9 +86,10 @@ def build_document_contract(
         for region in page.get('regions') or []
         if region.get('kind') == 'question'
         and isinstance(region.get('questionNumber'), int)
+        and first <= int(region['questionNumber']) <= last
     )
     unique_questions = sorted(set(question_numbers))
-    expected = list(range(1, expected_last_question + 1))
+    expected = list(range(first, last + 1))
     question_duplicates = sorted(
         number
         for number in unique_questions
@@ -95,9 +103,9 @@ def build_document_contract(
     )
 
     declared_exact = bool(
-        ranges.get('overallStart') == 1
-        and ranges.get('overallEnd') == expected_last_question
-        and ranges.get('declaredQuestionCount') == expected_last_question
+        ranges.get('overallStart') == first
+        and ranges.get('overallEnd') == last
+        and ranges.get('declaredQuestionCount') == expected_count
         and not ranges.get('gaps')
         and not ranges.get('overlaps')
         and ranges.get('allCountsMatchRanges') is True
@@ -111,6 +119,11 @@ def build_document_contract(
         'contentFree': True,
         'providerRequestCount': manifest.get('providerRequestCount'),
         'pageCount': manifest.get('pageCount'),
+        'expectedQuestionRange': {
+            'first': first,
+            'last': last,
+            'count': expected_count,
+        },
         'declaredRanges': {
             'exact': declared_exact,
             'rangeCount': ranges.get('rangeCount'),
@@ -154,17 +167,23 @@ class Command(BaseCommand):
     def add_arguments(self, parser):
         parser.add_argument('--bundle', required=True)
         parser.add_argument('--output', required=True)
+        parser.add_argument('--expected-first-question', type=int, default=1)
         parser.add_argument('--expected-last-question', type=int, default=155)
 
     def handle(self, *args, **options):
         bundle = Path(options['bundle']).expanduser().resolve()
         if not bundle.is_file():
             raise CommandError('--bundle must point to an existing ZIP file.')
+        first = max(1, int(options['expected_first_question']))
+        last = max(1, int(options['expected_last_question']))
+        if first > last:
+            raise CommandError('--expected-first-question must be <= --expected-last-question.')
         root, manifest = _load_success_bundle(bundle)
         report = build_document_contract(
             root,
             manifest,
-            expected_last_question=max(1, int(options['expected_last_question'])),
+            expected_first_question=first,
+            expected_last_question=last,
         )
         output = Path(options['output']).expanduser().resolve()
         output.parent.mkdir(parents=True, exist_ok=True)
@@ -175,6 +194,7 @@ class Command(BaseCommand):
         self.stdout.write(
             self.style.SUCCESS(
                 'Mistral OCR document contract audit completed: '
+                f"expected={first}-{last}, "
                 f"questionsExact={report['questions']['exact']}, "
                 f"declaredRangesExact={report['declaredRanges']['exact']}, "
                 f"solutionMissing={len(report['solutions']['missingHeadings'])}, "
