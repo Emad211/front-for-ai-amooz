@@ -22,10 +22,7 @@ from apps.classes.management.commands.replay_exam_prep_mistral_visual_stage3 imp
 )
 from apps.classes.services import exam_prep_mistral_production as production
 from apps.classes.services import exam_prep_mistral_stage5 as stage5
-from apps.classes.services.exam_prep_mistral_targeted_recovery import (
-    collect_crop_headings,
-    resolve_target_questions,
-)
+from apps.classes.services.exam_prep_mistral_targeted_recovery import collect_crop_headings
 from apps.classes.services.exam_prep_question_verifier import rebuild_assembly_quality
 
 
@@ -117,7 +114,15 @@ def _load_cached_targeted_recovery(
     bundle_path: Path,
     targets: frozenset[RegionTarget] | None,
 ):
-    """Load a previously paid targeted OCR result without making a provider call."""
+    """Load all safe recoveries from a previously paid targeted OCR bundle.
+
+    Stage-5 ``--targets`` select only which final verifier regions are exercised.
+    Production solution recovery still runs document-wide before that filter is
+    applied. Cache every unambiguous heading present in the bundle, then let the
+    production recovery seam request only its real missing/invalid numbers. This
+    preserves target-only merge semantics while allowing a narrow Stage-5 replay
+    to reuse a bundle that was originally captured for a wider recovery set.
+    """
 
     target_questions = _solution_target_numbers(targets)
     if not target_questions:
@@ -150,41 +155,58 @@ def _load_cached_targeted_recovery(
         raise CommandError("Targeted recovery bundle has no valid source.cropSpecs.")
 
     headings = collect_crop_headings(root, crop_specs)
-    resolution = resolve_target_questions(headings, target_questions)
-    if not resolution.get("complete"):
-        unresolved = resolution.get("unresolvedQuestionNumbers") or []
-        conflicts = resolution.get("conflicts") or []
-        raise CommandError(
-            "Targeted recovery bundle does not resolve every requested solution target "
-            f"(unresolved={unresolved}, conflicts={conflicts})."
-        )
+    grouped: dict[int, list[Mapping[str, Any]]] = {}
+    for heading in headings:
+        try:
+            question = int(heading.get("rawQuestionNumber") or 0)
+        except (TypeError, ValueError):
+            continue
+        if question > 0:
+            grouped.setdefault(question, []).append(heading)
 
     recovered: dict[int, tuple[str, int, str]] = {}
-    for item in resolution.get("recovered") or []:
-        question = int(item.get("questionNumber") or 0)
-        option = int(item.get("optionLabel") or 0)
+    for question, candidates in sorted(grouped.items()):
+        valid_options = sorted(
+            {
+                int(item.get("optionLabel"))
+                for item in candidates
+                if item.get("optionLabelValid") is True
+                and isinstance(item.get("optionLabel"), int)
+                and 1 <= int(item.get("optionLabel")) <= 4
+            }
+        )
+        if len(valid_options) != 1:
+            continue
+        option = valid_options[0]
         evidence = [
-            heading
-            for heading in headings
-            if int(heading.get("rawQuestionNumber") or 0) == question
-            and heading.get("optionLabelValid") is True
-            and int(heading.get("optionLabel") or 0) == option
+            item
+            for item in candidates
+            if item.get("optionLabelValid") is True
+            and int(item.get("optionLabel") or 0) == option
         ]
         pages = {
-            int(heading.get("physicalPageNumber") or 0)
-            for heading in evidence
-            if int(heading.get("physicalPageNumber") or 0) > 0
+            int(item.get("physicalPageNumber") or 0)
+            for item in evidence
+            if int(item.get("physicalPageNumber") or 0) > 0
         }
         columns = {
-            str(heading.get("column") or "").strip().lower()
-            for heading in evidence
-            if str(heading.get("column") or "").strip().lower() in {"left", "right"}
+            str(item.get("column") or "").strip().lower()
+            for item in evidence
+            if str(item.get("column") or "").strip().lower() in {"left", "right"}
         }
-        if len(pages) != 1 or len(columns) != 1:
-            raise CommandError(
-                f"Targeted recovery evidence for solution {question} is spatially ambiguous."
+        if len(pages) == 1 and len(columns) == 1:
+            recovered[question] = (
+                str(option),
+                next(iter(pages)),
+                next(iter(columns)),
             )
-        recovered[question] = (str(option), next(iter(pages)), next(iter(columns)))
+
+    missing_selected = sorted(set(target_questions) - set(recovered))
+    if missing_selected:
+        raise CommandError(
+            "Targeted recovery bundle does not resolve every requested Stage-5 solution target "
+            f"(unresolved={missing_selected})."
+        )
 
     normalized_specs = tuple(
         (
