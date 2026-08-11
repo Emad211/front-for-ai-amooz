@@ -114,6 +114,50 @@ def test_failed_call_keeps_reservation_and_blocks_next_call(monkeypatch):
     assert audit["costCapExceeded"] is True
 
 
+def test_success_without_usage_keeps_reservation_charge(monkeypatch):
+    monkeypatch.setenv("EXAM_PREP_STAGE5_RESERVED_INPUT_TOKENS", "1000")
+    ledger = runtime.Stage5BudgetLedger(
+        max_cost_usd=Decimal("0.006"),
+        max_output_tokens=1000,
+    )
+
+    reservation = ledger.reserve("gpt-5.4-mini")
+    assert reservation is not None
+    missing_usage = replace(
+        _transcript(),
+        input_tokens=0,
+        output_tokens=0,
+        total_tokens=0,
+    )
+    ledger.settle(reservation, missing_usage)
+
+    audit = ledger.safe_dict()
+    assert audit["chargedCostUsd"] == "0.00525"
+    assert audit["successfulCallEstimatedCostUsd"] == "0.00525"
+    assert audit["successfulCallsChargedAtReservation"] == 1
+    assert audit["costEstimateComplete"] is False
+    assert ledger.reserve("gpt-5.4-mini") is None
+
+
+def test_successful_call_cost_marks_missing_usage_incomplete():
+    audit = {
+        "regions": [
+            {
+                "primary": {
+                    "model": "gpt-5.4-mini",
+                    "inputTokens": 0,
+                    "outputTokens": 0,
+                }
+            }
+        ]
+    }
+
+    cost, complete = runtime.successful_call_cost_usd(audit)
+
+    assert cost == Decimal("0")
+    assert complete is False
+
+
 def test_unknown_priced_model_fails_closed():
     ledger = runtime.Stage5BudgetLedger(
         max_cost_usd=Decimal("1.00"),
