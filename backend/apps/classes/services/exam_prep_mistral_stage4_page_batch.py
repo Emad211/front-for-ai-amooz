@@ -380,6 +380,57 @@ def _call_primary(
         return None, exc, spent
 
 
+def _retry_missing_targets(
+    *,
+    page_number: int,
+    rendered: Sequence[tuple[RegionRiskDecision, bytes]],
+    failed_target_ids: set[str],
+    spent: float,
+    budget: float | None,
+    audits: list[dict[str, Any]],
+) -> tuple[PageBatchResult | None, int, int, float]:
+    """Retry only the targets a successful batch call omitted or invalidated.
+
+    A batch call can return HTTP 200 with valid JSON overall while still
+    dropping or malforming one or two of several requested items — the model
+    does not always return every item in a large batch. That partial gap
+    previously had no retry path at all and went straight to
+    ``provider_failed``. One small follow-up call carrying only the missing
+    targets (not the whole page) recovers most of these cheaply.
+    """
+
+    retry_targets = [item for item in rendered if item[0].target_id in failed_target_ids]
+    if not retry_targets:
+        return None, 0, 0, spent
+    retry, retry_error, spent = _call_primary(
+        page_number=page_number, targets=retry_targets, spent=spent, budget=budget
+    )
+    if retry is None:
+        if isinstance(retry_error, RuntimeError) and str(retry_error) == "stage4_cost_budget":
+            audits.append(
+                {
+                    "pageNumber": page_number,
+                    "status": "retry_budget_blocked",
+                    "targetCount": len(retry_targets),
+                }
+            )
+            return None, 0, 0, spent
+        reason = getattr(
+            retry_error, "reason_code", type(retry_error).__name__ if retry_error else "unknown"
+        )
+        audits.append(
+            {
+                "pageNumber": page_number,
+                "status": "retry_failed",
+                "targetCount": len(retry_targets),
+                "reason": str(reason),
+            }
+        )
+        return None, 1, 1, spent
+    audits.append({**retry.safe_dict(), "status": "retry_success"})
+    return retry, 1, 1, spent
+
+
 def _page_results_with_one_split(
     *,
     page_number: int,
@@ -402,6 +453,22 @@ def _page_results_with_one_split(
         results.append(first)
         audits.append({**first.safe_dict(), "status": "success"})
         failed = set(first.missing_target_ids) | set(first.invalid_target_ids)
+        if not failed:
+            return results, failed, audits, spent, primary_calls, split_calls
+
+        retry_result, retry_calls, retry_split, spent = _retry_missing_targets(
+            page_number=page_number,
+            rendered=rendered,
+            failed_target_ids=failed,
+            spent=spent,
+            budget=budget,
+            audits=audits,
+        )
+        primary_calls += retry_calls
+        split_calls += retry_split
+        if retry_result is not None:
+            results.append(retry_result)
+            failed = failed - set(item.target_id for item in retry_result.items)
         return results, failed, audits, spent, primary_calls, split_calls
 
     if isinstance(error, RuntimeError) and str(error) == "stage4_cost_budget":

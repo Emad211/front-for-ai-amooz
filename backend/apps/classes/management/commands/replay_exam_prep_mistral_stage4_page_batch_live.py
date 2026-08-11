@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 import re
 import shutil
+import time
 from typing import Any, Callable
 
 from django.core.management.base import BaseCommand, CommandError
@@ -36,6 +37,14 @@ from apps.classes.services.exam_prep_mistral_page_batch_transcriber import (
     BatchItem,
     PageBatchEnvelopeError,
     PageBatchResult,
+)
+# Use the same AvalAI /v1/chat/completions transport that production installs via
+# exam_prep_mistral_stage4_runtime.install_stage4_transport_policy(). The base
+# (v1) transcriber above calls the native, unreliable v1beta:generateContent
+# bridge; importing it directly here (as this file previously did) silently
+# bypassed the production transport fix and made every page batch fail closed
+# with a fabricated 'invalid_items_envelope'/timeout at zero real cost.
+from apps.classes.services.exam_prep_mistral_page_batch_transcriber_v4 import (
     transcribe_page_batch,
 )
 from apps.classes.services.exam_prep_mistral_production import (
@@ -130,6 +139,8 @@ def _cached_page_batch(
     cache_dir.mkdir(parents=True, exist_ok=True)
 
     def call(**kwargs):
+        page_number = int(kwargs.get("page_number") or 0)
+        target_ids = [d.target_id for d, _p in (kwargs.get("targets") or [])]
         selected_model = str(
             kwargs.get("model")
             or os.getenv("EXAM_PREP_STAGE4_PRIMARY_MODEL")
@@ -137,13 +148,18 @@ def _cached_page_batch(
         )
         path = _batch_cache_path(
             cache_dir,
-            page_number=int(kwargs.get("page_number") or 0),
+            page_number=page_number,
             targets=kwargs.get("targets") or [],
             model=selected_model,
         )
         if path.is_file():
             cached = json.loads(path.read_text(encoding="utf-8"))
             counters["pageCacheHits"] = counters.get("pageCacheHits", 0) + 1
+            print(
+                f"[stage4] page {page_number:>3} targets={target_ids} "
+                f"CACHE-HIT status={cached.get('status')}",
+                flush=True,
+            )
             if cached.get("status") == "success":
                 result = _deserialize_batch(cached)
                 unit = float(result.estimated_cost.get("unit") or 0)
@@ -169,9 +185,20 @@ def _cached_page_batch(
             )
 
         counters["networkPageRequests"] = counters.get("networkPageRequests", 0) + 1
+        started = time.monotonic()
+        print(
+            f"[stage4] page {page_number:>3} targets={target_ids} REQUEST model={selected_model} ...",
+            flush=True,
+        )
         try:
             result = base_call(**kwargs)
         except Exception as exc:
+            elapsed = time.monotonic() - started
+            print(
+                f"[stage4] page {page_number:>3} targets={target_ids} FAILED "
+                f"({type(exc).__name__}: {exc}) elapsed={elapsed:.1f}s",
+                flush=True,
+            )
             payload: dict[str, Any] = {
                 "status": "failure",
                 "pageNumber": kwargs.get("page_number"),
@@ -206,6 +233,12 @@ def _cached_page_batch(
         )
         unit = float(result.estimated_cost.get("unit") or 0)
         irt = float(result.estimated_cost.get("irt") or 0)
+        elapsed = time.monotonic() - started
+        print(
+            f"[stage4] page {page_number:>3} targets={target_ids} OK "
+            f"items={len(result.items)} costUsd={unit:.5f} elapsed={elapsed:.1f}s",
+            flush=True,
+        )
         counters["networkEstimatedCostUnit"] = counters.get("networkEstimatedCostUnit", 0.0) + unit
         counters["networkEstimatedCostIrt"] = counters.get("networkEstimatedCostIrt", 0.0) + irt
         counters["logicalEstimatedCostUnit"] = counters.get("logicalEstimatedCostUnit", 0.0) + unit
@@ -314,20 +347,35 @@ class Command(BaseCommand):
         auto_recovered: dict[int, tuple[str, int, str]] = {}
         targeted_result = None
         if targeted_plan.get("allowed"):
+            # One bounded retry: this request only carries small cropped
+            # question/solution regions, so retrying a transient provider
+            # failure (e.g. HTTP 504) is cheap, unlike the main OCR chunks.
             targeted_config = replace(
                 MistralOCR4Config.from_env(),
-                max_attempts=1,
+                max_attempts=2,
                 word_confidence=False,
                 checkpoint_enabled=False,
             )
-            auto_recovered, targeted_result = stage2._targeted_recovery(
-                pdf_data,
-                accepted=accepted,
-                missing=detected_missing,
-                invalid=detected_invalid,
-                config=targeted_config,
-                should_cancel=None,
-            )
+            print("[stage4] targeted solution-heading recovery: requesting ...", flush=True)
+            try:
+                auto_recovered, targeted_result = stage2._targeted_recovery(
+                    pdf_data,
+                    accepted=accepted,
+                    missing=detected_missing,
+                    invalid=detected_invalid,
+                    config=targeted_config,
+                    should_cancel=None,
+                )
+                print(
+                    f"[stage4] targeted recovery OK: recovered={sorted(auto_recovered)}",
+                    flush=True,
+                )
+            except Exception as exc:
+                print(
+                    f"[stage4] targeted recovery FAILED ({type(exc).__name__}: {exc}); "
+                    "continuing with all targets unresolved.",
+                    flush=True,
+                )
 
         targeted_cost = (
             targeted_result.estimated_cost_unit if targeted_result is not None else Decimal("0")

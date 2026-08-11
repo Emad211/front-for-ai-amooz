@@ -57,12 +57,27 @@ def _model() -> str:
     return (os.getenv("EXAM_PREP_STAGE4_PRIMARY_MODEL") or DEFAULT_MODEL).strip()
 
 
-def _timeout() -> float:
+def _timeout(target_count: int = 1) -> float:
+    """Scale the read timeout with how many source images are in one request.
+
+    A page batch bundles 1-7+ independent question/solution crops into a single
+    multimodal call; generation time grows with the number of images and the
+    expected output size, so a fixed timeout starves large batches while being
+    unnecessarily long for single-target calls. Both knobs stay env-tunable.
+    """
+
     try:
-        value = float(os.getenv("EXAM_PREP_STAGE4_TIMEOUT_SECONDS", "240"))
+        base_value = float(os.getenv("EXAM_PREP_STAGE4_TIMEOUT_SECONDS", "240"))
     except (TypeError, ValueError):
-        value = 240.0
-    return max(30.0, min(600.0, value))
+        base_value = 240.0
+    try:
+        per_extra_target = float(
+            os.getenv("EXAM_PREP_STAGE4_TIMEOUT_SECONDS_PER_EXTRA_TARGET", "60")
+        )
+    except (TypeError, ValueError):
+        per_extra_target = 60.0
+    extra = max(0, int(target_count) - 1) * max(0.0, per_extra_target)
+    return max(30.0, min(600.0, base_value + extra))
 
 
 def _base_url() -> str:

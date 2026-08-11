@@ -139,6 +139,15 @@ def test_two_corrupted_targets_on_same_page_buy_one_primary_batch(monkeypatch):
 
 
 def test_partial_batch_commits_valid_sibling_and_blocks_missing_item(monkeypatch):
+    """A batch that never recovers the missing item on retry stays blocked.
+
+    The mock always returns the same fixed result regardless of which targets
+    are actually requested, so the one bounded retry for the missing item
+    (added to recover partial-miss batches cheaply) also cannot produce it.
+    The call count legitimately becomes 2 (primary + one retry); the outcome
+    for both questions is unchanged.
+    """
+
     decisions = [_decision(52), _decision(53)]
     monkeypatch.setattr(stage4, "score_region_risks", lambda **_kwargs: decisions)
     monkeypatch.setattr(stage4.legacy, "_render_crop", lambda *_args, **_kwargs: b"png")
@@ -154,8 +163,42 @@ def test_partial_batch_commits_valid_sibling_and_blocks_missing_item(monkeypatch
     questions = updated.projection["exam_prep"]["questions"]
     assert questions[0]["teacher_solution_markdown"] == "راه حل درست 52"
     assert "stage4_verification_unresolved" in questions[1]["issues"]
-    assert audit["stats"]["primaryCalls"] == 1
+    assert audit["stats"]["primaryCalls"] == 2
+    assert audit["stats"]["splitCalls"] == 1
     assert audit["stats"]["unresolved"] == 1
+
+
+def test_partial_batch_retry_recovers_the_missing_item(monkeypatch):
+    """Regression for the fix: when the retry call actually returns the
+    missing item, it is committed instead of staying unresolved.
+    """
+
+    decisions = [_decision(52), _decision(53)]
+    monkeypatch.setattr(stage4, "score_region_risks", lambda **_kwargs: decisions)
+    monkeypatch.setattr(stage4.legacy, "_render_crop", lambda *_args, **_kwargs: b"png")
+    calls = []
+
+    def fake_batch(**kwargs):
+        ids = [decision.target_id for decision, _payload in kwargs["targets"]]
+        calls.append(ids)
+        if ids == ["s-053-p040"]:
+            return _batch(_item(53, "راه حل درست 53 recovered"))
+        return _batch(_item(52, "راه حل درست 52"), missing=("s-053-p040",))
+
+    monkeypatch.setattr(stage4, "transcribe_page_batch", fake_batch)
+
+    updated, audit = stage4.verify_and_repair_risky_regions_page_batched(
+        _result(), pdf_data=b"pdf", layout={}
+    )
+    assert calls == [["s-052-p040", "s-053-p040"], ["s-053-p040"]]
+    questions = updated.projection["exam_prep"]["questions"]
+    assert questions[0]["teacher_solution_markdown"] == "راه حل درست 52"
+    assert questions[1]["teacher_solution_markdown"] == "راه حل درست 53 recovered"
+    assert "stage4_verification_unresolved" not in questions[1]["issues"]
+    assert audit["stats"]["primaryCalls"] == 2
+    assert audit["stats"]["splitCalls"] == 1
+    assert audit["stats"]["repaired"] == 2
+    assert audit["stats"]["unresolved"] == 0
 
 
 def test_non_truncation_envelope_failure_never_splits(monkeypatch):

@@ -320,15 +320,24 @@ def run_exam_prep_mistral_pipeline(
         targeted_budget["cropPageCount"] and not targeted_budget["allowed"]
     )
     if targeted_budget["allowed"]:
-        targeted_config = replace(config, max_attempts=1)
-        recovered_targets, targeted_result = _targeted_recovery(
-            data,
-            accepted=accepted,
-            missing=missing,
-            invalid=invalid,
-            config=targeted_config,
-            should_cancel=should_cancel,
-        )
+        # This request only carries a handful of small cropped question/solution
+        # regions (not the full document), so one bounded retry on a transient
+        # provider failure (e.g. HTTP 504) is cheap and safe, unlike the main OCR
+        # chunks where automatic retry is deliberately disabled to avoid
+        # re-buying a large request. A persistent failure still degrades to
+        # "unresolved" below instead of aborting the whole pipeline run.
+        targeted_config = replace(config, max_attempts=2)
+        try:
+            recovered_targets, targeted_result = _targeted_recovery(
+                data,
+                accepted=accepted,
+                missing=missing,
+                invalid=invalid,
+                config=targeted_config,
+                should_cancel=should_cancel,
+            )
+        except MistralOCR4Error:
+            recovered_targets, targeted_result = {}, None
     else:
         recovered_targets, targeted_result = {}, None
 

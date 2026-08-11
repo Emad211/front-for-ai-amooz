@@ -52,13 +52,26 @@ def _usage(root: Mapping[str, Any]) -> dict[str, int]:
         except (TypeError, ValueError):
             return 0
 
+    # AvalAI's OpenAI-compatible usage block never breaks Gemini prompt tokens out
+    # by modality: image_tokens is always JSON null and every image byte is folded
+    # into text_tokens instead (observed: text_tokens == prompt_tokens on every
+    # real image-bearing call). That is a gateway accounting gap, not evidence the
+    # image was dropped. Track whether the provider *explicitly* reported a
+    # numeric image_tokens value so callers can tell a confirmed zero (real
+    # problem) apart from an unreported field (gateway limitation).
+    raw_image_tokens = prompt_details.get("image_tokens")
+    image_tokens_reported = isinstance(raw_image_tokens, (int, float)) and not isinstance(
+        raw_image_tokens, bool
+    )
+
     return {
         "inputTokens": integer(raw.get("prompt_tokens")),
         "outputTokens": integer(raw.get("completion_tokens")),
         "reasoningTokens": integer(completion_details.get("reasoning_tokens")),
         "totalTokens": integer(raw.get("total_tokens")),
         "promptModalityDetailsPresent": 1 if prompt_details else 0,
-        "imageInputTokens": integer(prompt_details.get("image_tokens")),
+        "imageInputTokens": integer(raw_image_tokens),
+        "imageTokensReported": 1 if image_tokens_reported else 0,
         "textInputTokens": integer(prompt_details.get("text_tokens")),
         "documentInputTokens": 0,
     }
@@ -108,22 +121,55 @@ def _response_text(root: Mapping[str, Any]) -> str:
     return text
 
 
+# Conservative floor for a text-only Stage-4 request with no images: the fixed
+# system prompt plus one short per-target instruction line is well under this.
+# A real image-bearing request measured 1434-1441 prompt tokens for one image at
+# "high" detail, so this floor leaves a wide margin while still catching a
+# request whose image(s) were genuinely dropped in transit.
+_TEXT_ONLY_PROMPT_TOKEN_FLOOR = 250
+_MIN_PROMPT_TOKENS_PER_IMAGE = 350
+
+
 def _require_image_provenance(
     root: Mapping[str, Any],
     *,
     request_id: str,
     finish_reason: str,
+    expected_image_count: int = 1,
 ) -> dict[str, int]:
     usage = _usage(root)
     if int(usage.get("imageInputTokens") or 0) > 0:
         return usage
-    reason = (
-        "image_modality_unproven:no_prompt_modality_details"
-        if not int(usage.get("promptModalityDetailsPresent") or 0)
-        else "image_modality_unproven:image_tokens_zero"
-    )
+    if not int(usage.get("promptModalityDetailsPresent") or 0):
+        raise PageBatchEnvelopeError(
+            "image_modality_unproven:no_prompt_modality_details",
+            usage=usage,
+            estimated_cost=_estimated_cost(root),
+            request_id=request_id,
+            finish_reason=finish_reason,
+        )
+    if not int(usage.get("imageTokensReported") or 0):
+        # The gateway reported a prompt_tokens_details block but left image_tokens
+        # null for every image-bearing Gemini call (a known AvalAI accounting gap,
+        # not evidence of a dropped image). Fall back to a prompt-size heuristic:
+        # require enough extra prompt volume to be consistent with the image(s)
+        # actually being included in the request payload.
+        floor = _TEXT_ONLY_PROMPT_TOKEN_FLOOR + _MIN_PROMPT_TOKENS_PER_IMAGE * max(
+            1, int(expected_image_count)
+        )
+        if int(usage.get("inputTokens") or 0) >= floor:
+            return usage
+        raise PageBatchEnvelopeError(
+            "image_modality_unproven:prompt_tokens_too_small_for_unreported_modality",
+            usage=usage,
+            estimated_cost=_estimated_cost(root),
+            request_id=request_id,
+            finish_reason=finish_reason,
+        )
+    # image_tokens was explicitly reported as a confirmed zero: the provider is
+    # telling us no image was actually processed. Fail closed as before.
     raise PageBatchEnvelopeError(
-        reason,
+        "image_modality_unproven:image_tokens_zero",
         usage=usage,
         estimated_cost=_estimated_cost(root),
         request_id=request_id,
@@ -189,7 +235,7 @@ def transcribe_page_batch(
             "Content-Type": "application/json",
         },
         json=body,
-        timeout=base._timeout(),
+        timeout=base._timeout(target_count=len(targets)),
     )
     request_id = str(response.headers.get("x-request-id") or "").strip()
     if response.status_code != 200:
@@ -206,6 +252,7 @@ def transcribe_page_batch(
         root,
         request_id=request_id,
         finish_reason=finish_reason,
+        expected_image_count=len(targets),
     )
     try:
         response_text = _response_text(root)

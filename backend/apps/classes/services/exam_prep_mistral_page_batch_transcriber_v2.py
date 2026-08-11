@@ -85,6 +85,100 @@ def _placeholder_present(raw: Mapping[str, Any]) -> bool:
     return any("[?]" in str(value or "") for value in values)
 
 
+_OPTION_TEXT_KEY_ALIASES: tuple[str, ...] = ("text", "value", "content")
+
+
+def _normalize_option_key_aliases(raw_options: Any) -> Any:
+    """Rename known-safe synonym keys to the required schema key, losslessly.
+
+    Observed on "how many of the following are correct" (چند مورد) questions,
+    where the printed options are bare digits. Two provider deviations recur
+    for exactly this question style:
+
+    1. ``{"label": "۱", "text": "۴"}`` / ``{"label": "۱", "value": "۴"}`` instead
+       of the required ``text_markdown`` key;
+    2. the whole options list flattened to bare values, e.g. ``["۴", "۳", "۲",
+       "۱"]`` with no object/label at all.
+
+    Case 2 is only resolved by position (label = 1-based index), which matches
+    the fixed 1..4 printed layout every source item in this pipeline already
+    assumes. The visible option value itself is never invented or altered
+    here, only its key name / wrapper shape.
+    """
+
+    if not isinstance(raw_options, list):
+        return raw_options
+    if raw_options and all(not isinstance(option, Mapping) for option in raw_options):
+        return [
+            {"label": str(index + 1), "text_markdown": option}
+            for index, option in enumerate(raw_options)
+        ]
+    normalized_options = []
+    for option in raw_options:
+        if not isinstance(option, Mapping):
+            normalized_options.append(option)
+            continue
+        option = dict(option)
+        if not str(option.get("text_markdown") or "").strip():
+            for alias in _OPTION_TEXT_KEY_ALIASES:
+                value = option.get(alias)
+                if value is not None and str(value).strip():
+                    option["text_markdown"] = value
+                    break
+        normalized_options.append(option)
+    return normalized_options
+
+
+def _normalize_uncertain_span_reasons(raw_spans: Any) -> Any:
+    """Fall back an out-of-enum ``reason`` to the existing generic "other" bucket.
+
+    The span's ``field``/``fragment`` (the actual uncertainty evidence) is never
+    touched; only an unrecognized reason label is remapped so one metadata
+    quirk does not discard an otherwise valid, correctly-flagged item.
+    """
+
+    if not isinstance(raw_spans, list):
+        return raw_spans
+    normalized_spans = []
+    for span in raw_spans:
+        if not isinstance(span, Mapping):
+            continue
+        # A span missing its required identity ("which field") carries no
+        # usable evidence and cannot be safely defaulted; drop only that one
+        # supplementary diagnostic entry rather than reject the whole item.
+        if not str(span.get("field") or "").strip():
+            continue
+        span = dict(span)
+        if str(span.get("reason") or "") not in base._UNCERTAIN_REASONS:
+            span["reason"] = "other"
+        normalized_spans.append(span)
+    return normalized_spans
+
+
+_NULLABLE_STRING_FIELDS: tuple[str, ...] = (
+    "question_text_markdown",
+    "correct_option_label",
+    "teacher_solution_markdown",
+)
+
+
+def _normalize_null_string_fields(raw_item: Mapping[str, Any]) -> dict[str, Any]:
+    """Treat an explicit JSON ``null`` the same as an absent optional string field.
+
+    Observed live (Q65-p013): the model returned ``"teacher_solution_markdown":
+    null`` on a question-kind item instead of omitting the key or using "".
+    Both already default to "" when absent; only the explicit-null case fails
+    Pydantic's strict string type check. No content is invented — the same
+    empty default the schema already uses is applied.
+    """
+
+    normalized = dict(raw_item)
+    for field in _NULLABLE_STRING_FIELDS:
+        if field in normalized and normalized[field] is None:
+            normalized[field] = ""
+    return normalized
+
+
 def _backfill_request_metadata(
     raw_item: Mapping[str, Any],
     *,
@@ -92,7 +186,13 @@ def _backfill_request_metadata(
 ) -> dict[str, Any]:
     """Fill only metadata already known from the request or explicit uncertainty."""
 
-    normalized = dict(raw_item)
+    normalized = _normalize_null_string_fields(raw_item)
+    if "options" in normalized:
+        normalized["options"] = _normalize_option_key_aliases(normalized["options"])
+    if "uncertain_spans" in normalized:
+        normalized["uncertain_spans"] = _normalize_uncertain_span_reasons(
+            normalized["uncertain_spans"]
+        )
     normalized.setdefault("target_id", decision.target_id)
     normalized.setdefault("kind", decision.kind)
     normalized.setdefault("question_number", decision.question_number)

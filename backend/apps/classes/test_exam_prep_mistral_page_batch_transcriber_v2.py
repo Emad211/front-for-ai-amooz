@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytest
 
 from apps.classes.services.exam_prep_mistral_page_batch_transcriber import (
+    BatchItem,
     PageBatchEnvelopeError,
 )
 from apps.classes.services.exam_prep_mistral_page_batch_transcriber_v2 import (
@@ -170,6 +171,142 @@ def test_request_known_metadata_can_be_backfilled_but_content_is_never_invented(
     assert normalized["visual_type"] == "none"
     assert normalized["question_text_markdown"] == "متن"
     assert normalized["options"] == []
+
+
+def test_backfill_normalizes_known_option_text_key_aliases():
+    """Regression: digit-only "چند مورد" options sometimes use text/value keys.
+
+    Live evidence (20Tir1404 Q28, Q87): Gemini returned options as
+    ``{"label": "۱", "text": "۴"}`` or ``{"label": "۱", "value": "۴"}`` instead
+    of the required ``text_markdown`` key, causing every option to fail Pydantic
+    validation and the whole page batch to be discarded even though the model
+    read the source correctly. The rename must be lossless: no value invented.
+    """
+
+    decision = _decision(21)
+    raw = {
+        "target_id": decision.target_id,
+        "question_text_markdown": "متن",
+        "options": [
+            {"label": "۱", "text": "۴"},
+            {"label": "۲", "value": "۳"},
+            {"label": "۳", "text_markdown": "۲"},
+            {"label": "۴", "content": "۱"},
+        ],
+        "correct_option_label": "",
+        "teacher_solution_markdown": "",
+    }
+    normalized = _backfill_request_metadata(raw, decision=decision)
+    assert [option["text_markdown"] for option in normalized["options"]] == [
+        "۴",
+        "۳",
+        "۲",
+        "۱",
+    ]
+
+    item = BatchItem.model_validate({**_raw_item(decision), **normalized})
+    assert [option.text_markdown for option in item.options] == ["۴", "۳", "۲", "۱"]
+
+
+def test_backfill_does_not_overwrite_a_real_text_markdown_with_an_alias():
+    decision = _decision(21)
+    raw = {
+        "target_id": decision.target_id,
+        "options": [{"label": "۱", "text_markdown": "واقعی", "text": "جعلی"}],
+    }
+    normalized = _backfill_request_metadata(raw, decision=decision)
+    assert normalized["options"][0]["text_markdown"] == "واقعی"
+
+
+def test_backfill_normalizes_bare_option_list_by_position():
+    """Regression: Q120/Q122 (20Tir1404) returned options as a flat value list
+    with no object/label wrapper at all, failing every option with a pydantic
+    model_type error. Position becomes the label (1-based), matching the fixed
+    1..4 printed layout assumed everywhere else in this pipeline.
+    """
+
+    decision = _decision(21)
+    raw = {
+        "target_id": decision.target_id,
+        "options": ["۴", "۳", "۲", "۱"],
+    }
+    normalized = _backfill_request_metadata(raw, decision=decision)
+    assert normalized["options"] == [
+        {"label": "1", "text_markdown": "۴"},
+        {"label": "2", "text_markdown": "۳"},
+        {"label": "3", "text_markdown": "۲"},
+        {"label": "4", "text_markdown": "۱"},
+    ]
+    item = BatchItem.model_validate({**_raw_item(decision), **normalized})
+    assert [option.text_markdown for option in item.options] == ["۴", "۳", "۲", "۱"]
+
+
+def test_backfill_maps_unknown_uncertain_reason_to_other():
+    """Regression: an out-of-enum uncertain_spans.reason (e.g. a free-form
+    string the model invented) must not discard an otherwise valid item.
+    """
+
+    decision = _decision(21)
+    raw = {
+        "target_id": decision.target_id,
+        "uncertain_spans": [
+            {
+                "field": "question_text_markdown",
+                "fragment": "...",
+                "reason": "not_a_real_enum_value",
+            }
+        ],
+    }
+    normalized = _backfill_request_metadata(raw, decision=decision)
+    assert normalized["uncertain_spans"][0]["reason"] == "other"
+    item = BatchItem.model_validate({**_raw_item(decision), **normalized})
+    assert item.uncertain_spans[0].reason == "other"
+
+
+def test_backfill_drops_uncertain_span_missing_required_field():
+    """Regression: an uncertain_spans entry missing "field" (Q081/S081-p044
+    live case) carries no usable identity and cannot be safely defaulted; it
+    must be dropped rather than reject the whole otherwise-valid item.
+    """
+
+    decision = _decision(21)
+    raw = {
+        "target_id": decision.target_id,
+        "uncertain_spans": [
+            {"fragment": "...", "reason": "unreadable_glyph"},
+            {
+                "field": "correct_option_label",
+                "fragment": "...",
+                "reason": "unreadable_glyph",
+            },
+        ],
+    }
+    normalized = _backfill_request_metadata(raw, decision=decision)
+    assert len(normalized["uncertain_spans"]) == 1
+    assert normalized["uncertain_spans"][0]["field"] == "correct_option_label"
+    item = BatchItem.model_validate({**_raw_item(decision), **normalized})
+    assert len(item.uncertain_spans) == 1
+
+
+def test_backfill_treats_explicit_null_string_field_as_empty_default():
+    """Regression: Q65-p013 returned teacher_solution_markdown=null on a
+    question item, tripping strict string validation even though the field
+    already defaults to "" when simply absent.
+    """
+
+    decision = _decision(21)
+    raw = {
+        "target_id": decision.target_id,
+        "question_text_markdown": "متن",
+        "teacher_solution_markdown": None,
+        "correct_option_label": None,
+    }
+    normalized = _backfill_request_metadata(raw, decision=decision)
+    assert normalized["teacher_solution_markdown"] == ""
+    assert normalized["correct_option_label"] == ""
+    item = BatchItem.model_validate({**_raw_item(decision), **normalized})
+    assert item.teacher_solution_markdown == ""
+    assert item.correct_option_label == ""
 
 
 def test_empty_items_is_diagnostic_failure_not_success():
