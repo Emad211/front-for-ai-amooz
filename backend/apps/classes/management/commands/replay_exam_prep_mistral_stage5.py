@@ -417,7 +417,7 @@ def _build_manifest(
         else []
     )
     return {
-        "schemaVersion": 4,
+        "schemaVersion": 3,
         "privateDiagnosticBundle": True,
         "privateTransmissionExplicitlyAllowed": True,
         "productionPipelineChanged": False,
