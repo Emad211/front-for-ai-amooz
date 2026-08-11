@@ -88,10 +88,19 @@ def _number(value: Any) -> int:
 
 
 def _bbox(value: Any) -> tuple[float, float, float, float] | None:
-    if not isinstance(value, (list, tuple)) or len(value) != 4:
+    if isinstance(value, Mapping):
+        values = (
+            value.get("x0", value.get("left")),
+            value.get("y0", value.get("top")),
+            value.get("x1", value.get("right")),
+            value.get("y1", value.get("bottom")),
+        )
+    elif isinstance(value, (list, tuple)) and len(value) == 4:
+        values = value
+    else:
         return None
     try:
-        x0, y0, x1, y1 = (float(item) for item in value)
+        x0, y0, x1, y1 = (float(item) for item in values)
     except (TypeError, ValueError):
         return None
     if not (0 <= x0 < x1 <= 1 and 0 <= y0 < y1 <= 1):
@@ -191,6 +200,66 @@ class RegionRiskDecision:
             "signals": list(self.signals),
             "regionIssues": list(self.region_issues),
         }
+
+
+def _append_recovered_solution_regions(
+    *,
+    decisions: list[RegionRiskDecision],
+    questions: Mapping[int, Mapping[str, Any]],
+    recovered: set[int],
+    threshold: int,
+) -> None:
+    """Bridge targeted answer recovery into Stage-5 when base OCR missed the heading.
+
+    A recovered heading is already backed by one deterministic page/column crop.
+    The assembled projection preserves that crop as an ``answer`` source region.
+    When no ordinary solution decision exists, reuse exactly one such region as
+    the source image for Stage-5. Ambiguous or invalid geometry remains blocked.
+    """
+
+    existing = {
+        decision.question_number
+        for decision in decisions
+        if decision.kind == "solution"
+    }
+    for number in sorted(recovered - existing):
+        question = questions.get(number)
+        if not isinstance(question, Mapping):
+            continue
+        source_regions: set[tuple[int, tuple[float, float, float, float]]] = set()
+        for raw in question.get("source_regions") or []:
+            if not isinstance(raw, Mapping):
+                continue
+            role = str(raw.get("role") or raw.get("record_type") or "").strip().lower()
+            if role not in {"answer", "solution"}:
+                continue
+            page_number = _number(raw.get("page_number") or raw.get("pageNumber"))
+            box = _bbox(raw.get("bbox"))
+            if page_number > 0 and box is not None:
+                source_regions.add((page_number, box))
+        if len(source_regions) != 1:
+            continue
+        page_number, box = next(iter(source_regions))
+        candidate = _candidate_text(question, "solution")
+        hard_math, formula_score = _hard_math_score(candidate)
+        score = min(100, 40 + formula_score)
+        signals = ["heading_conflict", "targeted_recovery_region"]
+        if formula_score:
+            signals.append("formula_math")
+        decisions.append(
+            RegionRiskDecision(
+                question_number=number,
+                kind="solution",
+                page_number=page_number,
+                bbox=box,
+                score=score,
+                suspicious=score >= threshold,
+                hard_math=hard_math,
+                signals=tuple(signals),
+                region_issues=("targeted_solution_heading_recovered",),
+                candidate_text=candidate,
+            )
+        )
 
 
 def score_region_risks(
@@ -299,6 +368,13 @@ def score_region_risks(
                     candidate_text=candidate,
                 )
             )
+
+    _append_recovered_solution_regions(
+        decisions=decisions,
+        questions=questions,
+        recovered=recovered,
+        threshold=threshold,
+    )
 
     return sorted(
         decisions,
