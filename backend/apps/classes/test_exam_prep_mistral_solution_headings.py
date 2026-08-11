@@ -31,6 +31,20 @@ def test_solution_heading_supports_question_first_and_option_first():
     }
 
 
+def test_solution_heading_supports_live_kashida_and_compact_variants():
+    expected = {
+        "rawQuestionNumber": 136,
+        "rawOptionLabel": 2,
+        "format": "question_first",
+    }
+    assert parse_solution_heading("136ـ گزینه «2»") == expected
+    assert parse_solution_heading("۱۳۶-گزینه «۲»") == expected
+
+    # Parsing a well-formed neighboring heading must not relabel it as the
+    # requested target; the Stage-5 exact-number gate still sees 128 as 128.
+    assert parse_solution_heading("128- گزینه «3»")["rawQuestionNumber"] == 128
+
+
 def test_solution_heading_unwraps_outer_math_text_markup_and_braces():
     expected = {
         "rawQuestionNumber": 89,
