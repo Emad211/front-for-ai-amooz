@@ -31,9 +31,20 @@ def _load_bundle(path: Path) -> tuple[Mapping[str, Any], Mapping[str, Any]]:
                     f"code={failure.get('providerErrorCode') or 'unknown'}; "
                     f"retryable={failure.get('retryable')}"
                 )
+            metadata_name = (
+                "request.safe.json"
+                if "request.safe.json" in names
+                else "manifest.json"
+                if "manifest.json" in names
+                else ""
+            )
+            if not metadata_name:
+                raise CommandError(
+                    "Bundle is missing request.safe.json or manifest.json metadata."
+                )
             return (
                 json.loads(archive.read("response.raw.json").decode("utf-8")),
-                json.loads(archive.read("request.safe.json").decode("utf-8")),
+                json.loads(archive.read(metadata_name).decode("utf-8")),
             )
     except CommandError:
         raise
