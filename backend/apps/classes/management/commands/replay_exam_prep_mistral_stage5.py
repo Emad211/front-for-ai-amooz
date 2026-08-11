@@ -267,6 +267,33 @@ def _subset_questions(result, *, numbers: frozenset[int]):
     return rebuild_assembly_quality(subset)
 
 
+def _subset_layout(layout: Mapping[str, Any], *, numbers: frozenset[int]) -> dict[str, Any]:
+    """Limit diagnostic Stage-3 work to exact requested question numbers."""
+
+    output = dict(layout)
+    pages: list[dict[str, Any]] = []
+    for raw_page in layout.get("pages") or []:
+        if not isinstance(raw_page, Mapping):
+            continue
+        regions: list[dict[str, Any]] = []
+        for raw_region in raw_page.get("regions") or []:
+            if not isinstance(raw_region, Mapping):
+                continue
+            try:
+                number = int(raw_region.get("questionNumber") or 0)
+            except (TypeError, ValueError):
+                number = 0
+            if number in numbers:
+                regions.append(dict(raw_region))
+        if not regions:
+            continue
+        page = dict(raw_page)
+        page["regions"] = regions
+        pages.append(page)
+    output["pages"] = pages
+    return output
+
+
 def _run_cached_pipeline(
     *,
     pdf_data: bytes,
@@ -325,6 +352,9 @@ def _run_cached_pipeline(
     def local_reconcile(result, *args, **kwargs):
         if target_numbers is not None:
             result = _subset_questions(result, numbers=target_numbers)
+            layout = kwargs.get("layout")
+            if isinstance(layout, Mapping):
+                kwargs["layout"] = _subset_layout(layout, numbers=target_numbers)
         kwargs.pop("storage_namespace", None)
         kwargs.pop("should_cancel", None)
         kwargs["store"] = visual_store
