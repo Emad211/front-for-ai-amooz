@@ -93,6 +93,8 @@ def _system_prompt() -> str:
         "even when another numbered region occupies a substantial part of the image. If the requested "
         "printed number is not visibly present while different numbered targets are present, do NOT "
         "substitute one of them: set transcription_uncertain=true and do not invent the missing target. "
+        "The printed target heading/number is evidence, not decoration. If that heading is visible in "
+        "the image, preserve it verbatim as the FIRST line of transcription_markdown; never omit it. "
         "Transcribe only what is visibly present; do not solve, explain, normalize from subject "
         "knowledge, or guess unreadable glyphs. Preserve Persian text, digits, decimal marks, "
         "signs, units, option labels, Latin letters, and equations. Use Markdown/LaTeX for linear "
@@ -112,6 +114,8 @@ def _user_contract(*, kind: str, question_number: int, page_number: int) -> str:
         '"visual_type":"none|diagram|graph|chemical_structure|table|spatial_layout|other",'
         '"transcription_uncertain":false,'
         '"uncertain_fragments":[]}. '
+        "If the requested printed heading is visible, transcription_markdown MUST begin with that "
+        "visible heading before any author name, prose, equation, or explanation. "
         "Do not add confidence scores. Do not infer missing content. "
         "Do not wrap the JSON in Markdown fences or prose. "
         f"TARGET kind={kind} question_number={question_number} physical_page={page_number}."
