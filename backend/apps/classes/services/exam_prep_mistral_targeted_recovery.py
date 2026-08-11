@@ -19,6 +19,10 @@ _CROP_BOUNDS = {
     "left": (0.02, 0.075, 0.51, 0.965),
     "right": (0.49, 0.075, 0.98, 0.965),
 }
+_VISUAL_TYPES = frozenset({"image", "table"})
+_TEXTUAL_TYPES = frozenset(
+    {"text", "title", "list", "caption", "equation", "code", "references", "aside_text"}
+)
 
 
 def _int_value(value: Any, default: int) -> int:
@@ -186,6 +190,17 @@ def _mapped_crop_bbox(
     return mapped
 
 
+def _union_boxes(values: Sequence[tuple[float, float, float, float]]) -> tuple[float, float, float, float] | None:
+    if not values:
+        return None
+    return (
+        min(box[0] for box in values),
+        min(box[1] for box in values),
+        max(box[2] for box in values),
+        max(box[3] for box in values),
+    )
+
+
 def recovered_solution_layout_regions(
     root: Mapping[str, Any],
     *,
@@ -196,8 +211,9 @@ def recovered_solution_layout_regions(
 
     A region is emitted only when one recovered target maps to exactly one OCR
     heading block and that block contains no second parsed solution heading.
-    The vertical boundary ends at the next heading block in the same crop. This
-    avoids the broad whole-column fallback that can make Stage-5 read a neighbor.
+    The vertical boundary ends at the next heading block in the same crop. Any
+    targeted OCR image/table block whose center falls inside that exact interval
+    is carried back as source visual evidence for the existing Stage-3 pipeline.
     """
 
     headings = collect_crop_headings(root, crop_specs)
@@ -267,6 +283,47 @@ def recovered_solution_layout_regions(
         mapped = _mapped_crop_bbox(local_box, side=side)
         if mapped is None:
             continue
+
+        body = [
+            block
+            for block in normalized
+            if block.provider_index == block_index
+            or (
+                block.bbox[1] >= heading_block.bbox[1]
+                and block.bbox[1] < next_y
+            )
+        ]
+        mapped_body_boxes: list[tuple[float, float, float, float]] = []
+        visuals: list[dict[str, Any]] = []
+        captions: list[dict[str, Any]] = []
+        text_parts: list[str] = []
+        for block in body:
+            mapped_block = _mapped_crop_bbox(block.bbox, side=side)
+            if mapped_block is None:
+                continue
+            mapped_body_boxes.append(mapped_block)
+            if block.block_type in _VISUAL_TYPES:
+                visuals.append(
+                    {
+                        "type": block.block_type,
+                        "content": block.content,
+                        "bbox": list(mapped_block),
+                        "column": side,
+                        "role": "solution",
+                        "targetedRecoveryVisual": True,
+                    }
+                )
+            if block.block_type == "caption":
+                captions.append(
+                    {
+                        "content": block.content,
+                        "bbox": list(mapped_block),
+                    }
+                )
+            if block.block_type in _TEXTUAL_TYPES and block.content:
+                text_parts.append(block.content)
+
+        content_box = _union_boxes(mapped_body_boxes)
         output.append(
             {
                 "kind": "solution",
@@ -275,12 +332,13 @@ def recovered_solution_layout_regions(
                 "correctOptionLabel": label,
                 "column": side,
                 "bbox": list(mapped),
-                "contentBBox": None,
-                "text": "",
-                "visuals": [],
-                "captions": [],
+                "contentBBox": list(content_box) if content_box else None,
+                "text": "\n".join(text_parts),
+                "visuals": visuals,
+                "captions": captions,
                 "issues": ["targeted_solution_heading_recovered"],
                 "targetedRecoveryRegion": True,
+                "targetedRecoveryVisualCandidateCount": len(visuals),
                 "originalPageNumber": physical_page,
             }
         )
