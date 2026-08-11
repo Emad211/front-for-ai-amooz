@@ -28,6 +28,8 @@ from apps.commons.token_tracker import (
 )
 
 from .exam_prep_mistral_region_transcriber import (
+    RegionTranscriptionEmptyContent,
+    RegionTranscriptionNonconformingContent,
     RegionTranscriptionResult,
     transcribe_source_region,
 )
@@ -83,6 +85,10 @@ _CANON_NUMBER_RE = re.compile(
 _CANON_KEYED_RE = re.compile(
     r"(?P<key>\\?[A-Za-zΑ-Ωα-ω][A-Za-z0-9_Α-Ωα-ω]*)\s*=\s*"
     r"(?P<number>[-+]?\d+(?:/\d+|[\.,]\d+)?(?:\^[-+]?\d+)?)"
+)
+_FORMAT_RETRY_FAILURES = (
+    RegionTranscriptionEmptyContent,
+    RegionTranscriptionNonconformingContent,
 )
 
 
@@ -678,6 +684,43 @@ def _transcribe_many(
     }
 
 
+def _retry_format_failures_once(
+    items: Sequence[tuple[int, RegionRiskDecision, bytes]],
+    outcomes: Mapping[int, RegionTranscriptionResult | Exception],
+    *,
+    model: str,
+    call_limit: int,
+    calls_so_far: int,
+    should_cancel=None,
+    deadline_at: float | None = None,
+    budget: Stage5BudgetLedger | None = None,
+) -> tuple[dict[int, RegionTranscriptionResult | Exception], int, set[int]]:
+    """Retry only provider-format failures, once, through normal accounting."""
+
+    headroom = max(0, int(call_limit) - int(calls_so_far))
+    retry_items = [
+        item
+        for item in items
+        if isinstance(outcomes.get(item[0]), _FORMAT_RETRY_FAILURES)
+    ][:headroom]
+    if not retry_items:
+        return dict(outcomes), 0, set()
+    retry_outcomes = _transcribe_many(
+        retry_items,
+        model=model,
+        should_cancel=should_cancel,
+        deadline_at=deadline_at,
+        budget=budget,
+    )
+    retry_calls = sum(
+        not isinstance(value, (_Stage5DeadlineExceeded, Stage5CostBudgetExceeded))
+        for value in retry_outcomes.values()
+    )
+    merged = dict(outcomes)
+    merged.update(retry_outcomes)
+    return merged, retry_calls, {index for index, _decision, _crop in retry_items}
+
+
 def finalize_stage5_regions(
     result: PageAssemblyResult,
     *,
@@ -737,6 +780,7 @@ def finalize_stage5_regions(
     main_limit = _main_cap()
     preflight_exceeded = len(decisions) > primary_limit
     primary_calls = main_calls = tiebreaker_calls = verified = repaired = 0
+    primary_format_retries = main_format_retries = 0
     successful_input_tokens = successful_output_tokens = successful_total_tokens = 0
 
     decision_counts: dict[tuple[int, str], int] = {}
@@ -833,6 +877,21 @@ def finalize_stage5_regions(
         not isinstance(value, (_Stage5DeadlineExceeded, Stage5CostBudgetExceeded))
         for value in primary_outcomes.values()
     )
+    primary_outcomes, primary_format_retries, primary_retry_indexes = _retry_format_failures_once(
+        primary_items,
+        primary_outcomes,
+        model=primary_name,
+        call_limit=primary_limit,
+        calls_so_far=primary_calls,
+        should_cancel=should_cancel,
+        deadline_at=deadline_at,
+        budget=cost_ledger,
+    )
+    primary_calls += primary_format_retries
+    for index in primary_retry_indexes:
+        if index in states:
+            states[index]["row"]["primaryFormatRetry"] = True
+
     main_candidates: list[tuple[int, RegionRiskDecision, bytes]] = []
     for index, decision, crop in primary_items:
         state = states[index]
@@ -920,6 +979,21 @@ def finalize_stage5_regions(
         not isinstance(value, (_Stage5DeadlineExceeded, Stage5CostBudgetExceeded))
         for value in main_outcomes.values()
     )
+    main_outcomes, main_format_retries, main_retry_indexes = _retry_format_failures_once(
+        selected_main,
+        main_outcomes,
+        model=main_name,
+        call_limit=main_limit,
+        calls_so_far=main_calls,
+        should_cancel=should_cancel,
+        deadline_at=deadline_at,
+        budget=cost_ledger,
+    )
+    main_calls += main_format_retries
+    for index in main_retry_indexes:
+        if index in states:
+            states[index]["row"]["mainFormatRetry"] = True
+
     for index, decision, _crop in selected_main:
         state = states[index]
         question = state["question"]
@@ -1122,7 +1196,13 @@ def finalize_stage5_regions(
         "schemaVersion": 1,
         "policy": {
             "candidateMistralShown": False,
-            "oneRegionOneImageOneCall": True,
+            "oneRegionOneImageOneCall": False,
+            "oneRegionOneImagePerAttempt": True,
+            "maxFormatRetriesPerRegion": 1,
+            "formatRetryFailureTypes": [
+                "RegionTranscriptionEmptyContent",
+                "RegionTranscriptionNonconformingContent",
+            ],
             "allRegionsReceivePrimary": target_filter is None,
             "targetedEvaluation": target_filter is not None,
             "primaryModel": primary_name,
@@ -1140,6 +1220,9 @@ def finalize_stage5_regions(
             "missingRegions": missing_regions,
             "primaryCalls": primary_calls,
             "mainCalls": main_calls,
+            "primaryFormatRetries": primary_format_retries,
+            "mainFormatRetries": main_format_retries,
+            "formatRetries": primary_format_retries + main_format_retries,
             "tiebreakerCalls": tiebreaker_calls,
             "verified": verified,
             "repaired": repaired,
