@@ -74,7 +74,7 @@ def test_diagnostic_store_preserves_private_storage_identity_locally(tmp_path):
     name = "exam-prep/source/visuals/v1/source/p001-q001-question-01-a.png"
     assert store.save(name, b"png") == name
     relative = store.files[name]
-    assert relative.startswith("assets/")
+    assert relative.startswith("objects/")
     assert relative.endswith(".png")
     assert (tmp_path / relative).read_bytes() == b"png"
 
