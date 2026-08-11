@@ -102,14 +102,26 @@ def build_document_contract(
         and not question_missing
     )
 
+    range_count = int(ranges.get('rangeCount') or 0)
+    range_declared = range_count > 0
     declared_exact = bool(
-        ranges.get('overallStart') == first
+        range_declared
+        and ranges.get('overallStart') == first
         and ranges.get('overallEnd') == last
         and ranges.get('declaredQuestionCount') == expected_count
         and not ranges.get('gaps')
         and not ranges.get('overlaps')
         and ranges.get('allCountsMatchRanges') is True
     )
+    # A booklet that does not print an explicit numeric range is not a contract
+    # mismatch. Exact question anchors are still sufficient for boundary work.
+    declared_compatible = (not range_declared) or declared_exact
+    declared_status = (
+        'not_declared'
+        if not range_declared
+        else ('exact' if declared_exact else 'mismatch')
+    )
+
     solution_missing = list(solutions.get('missingSolutionHeadingNumbers') or [])
     invalid_options = list(solutions.get('invalidOptionLabels') or [])
     solution_anchor_coverage = int(solutions.get('acceptedHeadingCount') or 0)
@@ -125,8 +137,11 @@ def build_document_contract(
             'count': expected_count,
         },
         'declaredRanges': {
+            'declared': range_declared,
+            'status': declared_status,
+            'compatibleWithExpected': declared_compatible,
             'exact': declared_exact,
-            'rangeCount': ranges.get('rangeCount'),
+            'rangeCount': range_count,
             'declaredQuestionCount': ranges.get('declaredQuestionCount'),
             'overallStart': ranges.get('overallStart'),
             'overallEnd': ranges.get('overallEnd'),
@@ -151,7 +166,7 @@ def build_document_contract(
             'invalidOptionLabels': invalid_options,
         },
         'readyForRegionBoundaryBenchmark': bool(
-            declared_exact and question_exact
+            question_exact and declared_compatible
         ),
         'solutionBoundaryGapsRemain': bool(solution_missing),
         'invalidSolutionAnswerLabelsRemain': bool(invalid_options),
@@ -196,7 +211,7 @@ class Command(BaseCommand):
                 'Mistral OCR document contract audit completed: '
                 f"expected={first}-{last}, "
                 f"questionsExact={report['questions']['exact']}, "
-                f"declaredRangesExact={report['declaredRanges']['exact']}, "
+                f"declaredRangeStatus={report['declaredRanges']['status']}, "
                 f"solutionMissing={len(report['solutions']['missingHeadings'])}, "
                 f"invalidSolutionOptions={len(report['solutions']['invalidOptionLabels'])}, "
                 f'output={output}'
