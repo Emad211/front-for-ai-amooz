@@ -1,5 +1,3 @@
-import os
-
 from django.contrib import admin
 from django.urls import path, include
 from rest_framework_simplejwt.views import (
@@ -34,19 +32,7 @@ from apps.core.views import HealthCheckView
 from apps.core.throttling import SafeScopedRateThrottle
 from apps.classes.views_exam_prep import ExamPrepPdfStep1View
 from apps.classes.views_exam_prep_inline_visual import InlineOrStoredExamVisualContentView
-from apps.classes.views_exam_prep_review import PageFirstExamPrepSessionDetailView
-from apps.classes.views_v4_compat import ExamPrepSourceAwareStep1View
-
-
-_SIMPLE_EXAM_PREP_ENABLED = (
-    (os.getenv('EXAM_PREP_SIMPLE_PIPELINE_ENABLED') or 'True').strip().lower()
-    in {'1', 'true', 'yes', 'on'}
-)
-ExamPrepStep1IntakeView = (
-    ExamPrepPdfStep1View
-    if _SIMPLE_EXAM_PREP_ENABLED
-    else ExamPrepSourceAwareStep1View
-)
+from apps.classes.views_exam_prep_review import ExamPrepReviewSessionDetailView
 
 
 @extend_schema_view(
@@ -119,21 +105,19 @@ urlpatterns = [
 
     path('api/accounts/', include('apps.accounts.urls')),
     path('api/auth/', include('apps.authentication.urls')),
-    # The product keeps one existing teacher endpoint. New intake creates a
-    # normal ClassCreationSession directly; the temporary switch is rollback-only
-    # and will be removed after legacy jobs are drained in Phase 4.
+    # New exam-prep sessions use the production Mistral OCR pipeline directly.
     path(
         'api/classes/exam-prep-sessions/step-1/',
-        ExamPrepStep1IntakeView.as_view(),
+        ExamPrepPdfStep1View.as_view(),
         name='exam_prep_step1_intake',
     ),
     # The URL is unchanged. This more-specific route only opens PATCH for a
-    # completed page-first draft that is explicitly ready for teacher review;
+    # completed production draft that is explicitly ready for teacher review;
     # GET and DELETE inherit the existing behavior.
     path(
         'api/classes/exam-prep-sessions/<int:session_id>/',
-        PageFirstExamPrepSessionDetailView.as_view(),
-        name='exam_prep_session_detail_page_first',
+        ExamPrepReviewSessionDetailView.as_view(),
+        name='exam_prep_session_detail_review',
     ),
     # Preserve the existing visual URL. Numeric IDs still stream legacy DB
     # assets; inline-* IDs stream verified source crops from canonical JSON.
@@ -142,7 +126,6 @@ urlpatterns = [
         InlineOrStoredExamVisualContentView.as_view(),
         name='exam_prep_inline_or_stored_visual_content',
     ),
-    path('api/classes/exam-prep-v4/', include('apps.classes.urls_v4')),
     path('api/classes/', include('apps.classes.urls')),
     path('api/notifications/', include('apps.notification.urls')),
     path('api/admin/', include('apps.commons.urls')),

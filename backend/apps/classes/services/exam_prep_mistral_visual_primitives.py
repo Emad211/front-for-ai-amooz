@@ -21,6 +21,7 @@ from typing import Any, Iterable, Mapping, Protocol, Sequence
 
 from PIL import Image
 
+from .exam_prep_mistral_artifacts import MISTRAL_VISUAL_STORAGE_PREFIX
 from .exam_prep_mistral_layout_analysis import (
     LayoutBlock,
     associate_uncovered_graphics,
@@ -32,7 +33,7 @@ from .exam_prep_page_records import AssemblyIssue, PageAssemblyResult
 from .exam_prep_utils import clean_exam_markdown
 
 
-MISTRAL_VISUAL_STORAGE_PREFIX = "exam-prep/source/visuals/v1"
+MISTRAL_VISUAL_MAX_BYTES = 8 * 1024 * 1024
 _VISUAL_SIGNAL_CODES = frozenset(
     {
         "visual_reference_without_ocr_visual",
@@ -94,6 +95,11 @@ class PrivateVisualAssetStore:
             return name
         return str(storage.save(name, ContentFile(payload)))
 
+    def delete(self, name: str) -> bool:
+        from core.storage_backends import delete_answer_source_file
+
+        return delete_answer_source_file(name)
+
 
 @dataclass(frozen=True, slots=True)
 class VisualPipelineConfig:
@@ -138,7 +144,7 @@ class VisualPipelineConfig:
                 "EXAM_PREP_VISUAL_MAX_BYTES",
                 5 * 1024 * 1024,
                 512 * 1024,
-                12 * 1024 * 1024,
+                MISTRAL_VISUAL_MAX_BYTES,
             ),
         )
 
@@ -1221,6 +1227,7 @@ def reconcile_mistral_source_visuals(
 
 
 __all__ = [
+    "MISTRAL_VISUAL_MAX_BYTES",
     "MISTRAL_VISUAL_STORAGE_PREFIX",
     "PrivateVisualAssetStore",
     "VISUAL_CRITICAL_ISSUE_CODES",

@@ -15,9 +15,10 @@ is made by Stage 3.
 
 ## Status
 
-Stage 3 is implemented behind the isolated OCR4 production entrypoint. It is not
-yet wired into the live Celery task; live cutover remains intentionally deferred
-until the later risk/verifier, final integrity/UI, and release stages are ready.
+Stage 3 is part of the complete Mistral Stage 1–5 production entrypoint used by
+the standard Exam Prep Celery task. The public intake has no page-first or
+V4/Source-Map alternative route. Stage-3 output remains review-gated and does
+not bypass final integrity/publication checks.
 
 ## Authority model
 
@@ -164,7 +165,13 @@ multiple solution crops are retained.
 Precise source crops are persisted in the existing private `answer_sources`
 storage, under:
 
-`exam-prep/source/visuals/v1/<source-sha>/...`
+`exam-prep/source/visuals/v1/session-<id>/<source-sha>/...`
+
+`session-<id>` is an isolation and cleanup boundary, not only a naming detail.
+Successful pipelines retain these final crops. Cancellation, terminal failure,
+session deletion, and cascade deletion remove the exact session prefix (with a
+second verification pass), without listing or deleting another session's
+namespace.
 
 The canonical question JSON stores a reference and provenance instead of an
 inline base64 blob. Each Stage-3 visual records:
@@ -338,6 +345,7 @@ Stage-3 tests cover:
 - whole-page review fallback;
 - authenticated private visual streaming;
 - storage path traversal/size guards;
+- session-isolated cancel/failure/delete cleanup;
 - visual metadata re-audit during teacher review;
 - inability to acknowledge away visual-critical issues;
 - architecture boundary: no V4 / benchmark / general LLM dependency.
@@ -349,7 +357,9 @@ All of these tests are local/provider-free.
 Stage 3 does not decide scientific text/formula truth. It establishes source
 visual completeness and immutable visual provenance.
 
-The next stage is the risk engine + targeted independent transcriber/verifier.
-That stage may consume Stage-3 source crops for suspicious regions, but it must
-preserve this module's fail-closed visual authority and one-region/one-image
-request policy.
+Stage 4 consumes Stage-3 region evidence only for free deterministic risk
+scoring. Stage 5 then reads every numbered question and solution region with one
+source crop per request: `gpt-5.4-mini` is primary and
+`gemini-3.6-flash` is the bounded main escalation model. Neither stage may
+downgrade Stage-3 fail-closed visual authority or replace immutable source
+provenance.

@@ -1,4 +1,4 @@
-"""Deterministic validation for teacher-edited page-first projections."""
+"""Deterministic validation for teacher-edited exam-prep projections."""
 from __future__ import annotations
 
 from collections import Counter, defaultdict
@@ -30,6 +30,7 @@ _TEACHER_OVERRIDABLE_CODES = frozenset(
         "duplicate_solution_across_questions",
         "table_incomplete",
         "count_answer_unresolved",
+        "stage5_finalization_blocked",
     }
 )
 

@@ -87,6 +87,32 @@ def test_stage_two_runner_contains_no_general_llm_call_site():
     assert "repair_suspicious_questions(" not in source
 
 
+def test_production_uses_stage5_as_the_only_paid_region_verifier():
+    source = inspect.getsource(production.run_exam_prep_mistral_pipeline)
+    assert "score_region_risks(" in source
+    assert "finalize_stage5_regions(" in source
+    assert "verify_and_repair_risky_regions(" not in source
+    assert "verify_and_repair_risky_regions_page_batched(" not in source
+
+
+def test_production_applies_native_answer_overlay_only_through_its_strict_contract():
+    source = inspect.getsource(production.run_exam_prep_mistral_pipeline)
+    assert "native.trusted_for(question_numbers)" in source
+    assert "overlay_native_solution_heading_blocks(" in source
+    assert "authoritative_answer_labels=" in source
+
+
+def test_production_engine_name_does_not_claim_page_first_or_source_map_v4():
+    engine = production.PRODUCTION_ENGINE.lower()
+    assert "page_first" not in engine
+    assert "source_map" not in engine
+    assert not engine.endswith("_v4")
+    assert "stage5" in engine
+    assert "page_first" not in inspect.getsource(
+        production.run_exam_prep_mistral_pipeline
+    ).lower()
+
+
 def test_final_entrypoint_keeps_existing_exam_prep_result_contract():
     signature = inspect.signature(production.run_exam_prep_mistral_pipeline)
     assert signature.return_annotation in {
@@ -100,4 +126,27 @@ def test_final_entrypoint_keeps_existing_exam_prep_result_contract():
         "scope_hint",
         "on_page_complete",
         "should_cancel",
+        "asset_namespace",
     ]
+
+
+def test_solution_is_resolved_only_after_exact_target_binding():
+    audit = {
+        "regions": [
+            {"kind": "solution", "questionNumber": 1, "status": "verified_source"},
+            {
+                "kind": "solution",
+                "questionNumber": 2,
+                "status": "repaired_source",
+                "resolutionTargetConfirmed": False,
+            },
+            {
+                "kind": "solution",
+                "questionNumber": 3,
+                "status": "verified_source_main",
+                "resolutionTargetConfirmed": True,
+            },
+        ]
+    }
+
+    assert production._resolved_solution_numbers(audit) == {3}

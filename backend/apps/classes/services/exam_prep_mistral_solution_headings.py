@@ -7,6 +7,7 @@ from typing import Any, Mapping, Sequence
 from .exam_prep_mistral_layout_analysis import (
     LayoutBlock,
     is_rtl_double_column,
+    normalize_outer_heading_markup,
     normalize_page_blocks,
 )
 
@@ -41,7 +42,7 @@ def _integer(value: Any) -> int | None:
 def parse_solution_heading(text: str) -> dict[str, Any] | None:
     """Parse both real OCR heading orders observed in the source document."""
 
-    value = str(text or "").strip()
+    value = normalize_outer_heading_markup(text)
     for format_name, pattern in (
         ("question_first", _Q_FIRST_RE),
         ("option_first", _OPTION_FIRST_RE),

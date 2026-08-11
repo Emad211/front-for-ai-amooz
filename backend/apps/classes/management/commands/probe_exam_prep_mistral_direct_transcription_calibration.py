@@ -40,8 +40,9 @@ from apps.commons.json_utils import extract_json_object
 
 _MODELS = (
     "gpt-5.4-mini",
-    "gemini-3-flash-preview",
+    "gemini-3.6-flash",
 )
+_MAX_OUTPUT_TOKENS = 2500
 
 _TARGETS = (
     "question:65",
@@ -49,6 +50,20 @@ _TARGETS = (
     "solution:57",
     "solution:133",
 )
+
+
+def _minimal_extra_body() -> dict[str, Any]:
+    return {
+        "generationConfig": {
+            "thinkingConfig": {"thinkingLevel": "minimal"},
+        }
+    }
+
+
+def _csv_values(value: str) -> tuple[str, ...]:
+    return tuple(
+        dict.fromkeys(part.strip() for part in str(value or "").split(",") if part.strip())
+    )
 
 
 def _system_prompt() -> str:
@@ -102,18 +117,42 @@ def _parse_transcription(content: str) -> dict[str, Any]:
     return normalize_direct_transcription(parsed)
 
 
-def _config(bundle: Path) -> dict[str, Any]:
+def _config(
+    bundle: Path,
+    *,
+    models: tuple[str, ...] = _MODELS,
+    targets: tuple[str, ...] = _TARGETS,
+) -> dict[str, Any]:
     return {
         "schemaVersion": 1,
         "sourceBundleName": bundle.name,
         "sourceBundleBytes": bundle.stat().st_size,
-        "models": list(_MODELS),
-        "targets": list(_TARGETS),
+        "models": list(models),
+        "targets": list(targets),
+        "thinkingLevel": "minimal",
+        "maxOutputTokens": _MAX_OUTPUT_TOKENS,
         "oneSourceImagePerProviderCall": True,
         "candidateOcrShownToTranscriber": False,
         "automaticRetry": False,
         "automaticPaidRepair": False,
     }
+
+
+def _request_payload(
+    *,
+    model: str,
+    item: Mapping[str, Any],
+    crop_bytes: bytes,
+) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "model": model,
+        "messages": _messages(item, crop_bytes),
+        "response_format": {"type": "json_object"},
+        "max_tokens": _MAX_OUTPUT_TOKENS,
+    }
+    if model.startswith("gemini-"):
+        payload["extra_body"] = _minimal_extra_body()
+    return payload
 
 
 def _call_once(
@@ -127,11 +166,7 @@ def _call_once(
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     item_id = str(item["itemId"])
     prefix = f"transcriber.{_safe_filename(model)}.{item_id}"
-    payload = {
-        "model": model,
-        "messages": _messages(item, crop_bytes),
-        "response_format": {"type": "json_object"},
-    }
+    payload = _request_payload(model=model, item=item, crop_bytes=crop_bytes)
     (output_dir / f"{prefix}.request.safe.json").write_text(
         json.dumps(
             {
@@ -141,6 +176,8 @@ def _call_once(
                 "imageCount": 1,
                 "candidateOcrIncluded": False,
                 "responseFormat": "json_object",
+                "thinkingLevel": "minimal",
+                "maxOutputTokens": _MAX_OUTPUT_TOKENS,
                 "automaticRetry": False,
                 "automaticPaidRepair": False,
                 "endpoint": f"{_base_url()}/chat/completions",
@@ -208,6 +245,8 @@ class Command(BaseCommand):
     def add_arguments(self, parser):
         parser.add_argument("--bundle", required=True)
         parser.add_argument("--output-dir", required=True)
+        parser.add_argument("--models", default=",".join(_MODELS))
+        parser.add_argument("--targets", default=",".join(_TARGETS))
         parser.add_argument("--timeout-seconds", type=float, default=600.0)
         parser.add_argument("--resume", action="store_true")
         parser.add_argument("--allow-private-transmission", action="store_true")
@@ -219,12 +258,18 @@ class Command(BaseCommand):
         if not api_key:
             raise CommandError("AVALAI_API_KEY is required in this PowerShell session.")
         timeout = max(30.0, float(options.get("timeout_seconds") or 600.0))
+        models = _csv_values(options.get("models") or "")
+        target_specs = _csv_values(options.get("targets") or "")
+        if len(models) < 2:
+            raise CommandError("--models requires at least two distinct models for A/B comparison.")
+        if not target_specs:
+            raise CommandError("--targets requires at least one kind:number target.")
         bundle = Path(options["bundle"]).expanduser().resolve()
         if not bundle.is_file():
             raise CommandError("--bundle must point to an existing successful ZIP.")
         output_dir = Path(options["output_dir"]).expanduser().resolve()
         resume = bool(options.get("resume"))
-        expected_config = _config(bundle)
+        expected_config = _config(bundle, models=models, targets=target_specs)
 
         if output_dir.exists() and any(output_dir.iterdir()):
             if not resume:
@@ -242,7 +287,7 @@ class Command(BaseCommand):
                 encoding="utf-8",
             )
 
-        preflight = _preflight(models=_MODELS, api_key=api_key, timeout=timeout)
+        preflight = _preflight(models=models, api_key=api_key, timeout=timeout)
         (output_dir / "model-preflight.safe.json").write_text(
             json.dumps(preflight, ensure_ascii=False, indent=2),
             encoding="utf-8",
@@ -257,7 +302,7 @@ class Command(BaseCommand):
         manifest, root, archive = _load_success_bundle(bundle)
         try:
             analysis = analyze_ocr_document(root, original_page_numbers=_selected_pages(manifest))
-            targets = parse_fidelity_targets(",".join(_TARGETS))
+            targets = parse_fidelity_targets(",".join(target_specs))
             try:
                 selected = find_target_regions(analysis, targets)
             except ValueError as exc:
@@ -317,13 +362,13 @@ class Command(BaseCommand):
             encoding="utf-8",
         )
 
-        transcripts_by_model: dict[str, list[dict[str, Any]]] = {model: [] for model in _MODELS}
+        transcripts_by_model: dict[str, list[dict[str, Any]]] = {model: [] for model in models}
         call_meta: list[dict[str, Any]] = []
         completed = 0
         current_model = ""
         current_item_id = ""
         try:
-            for model in _MODELS:
+            for model in models:
                 for item in private_items:
                     current_model = model
                     current_item_id = str(item["itemId"])
@@ -406,10 +451,10 @@ class Command(BaseCommand):
             "schemaVersion": 1,
             "privateDiagnosticBundle": True,
             "productionPipelineChanged": False,
-            "models": list(_MODELS),
+            "models": list(models),
             "itemCount": len(private_items),
             "acceptedTranscriptCount": sum(len(rows) for rows in transcripts_by_model.values()),
-            "expectedProviderCalls": len(_MODELS) * len(private_items),
+            "expectedProviderCalls": len(models) * len(private_items),
             "oneSourceImagePerProviderCall": True,
             "candidateOcrShownToTranscriber": False,
             "providerRetryPerCall": 0,
@@ -417,9 +462,9 @@ class Command(BaseCommand):
             "estimatedTotalUnit": round(sum(float(row.get("estimatedUnit") or 0) for row in call_meta), 8),
             "estimatedTotalIrt": round(sum(float(row.get("estimatedIrt") or 0) for row in call_meta), 2),
             "acceptance": {
-                "allTargetsResolvedLocally": len(private_items) == len(_TARGETS),
-                "allTranscriptsAccepted": sum(len(rows) for rows in transcripts_by_model.values()) == len(_MODELS) * len(private_items),
-                "exactExpectedProviderResponses": len(call_meta) == len(_MODELS) * len(private_items),
+                "allTargetsResolvedLocally": len(private_items) == len(target_specs),
+                "allTranscriptsAccepted": sum(len(rows) for rows in transcripts_by_model.values()) == len(models) * len(private_items),
+                "exactExpectedProviderResponses": len(call_meta) == len(models) * len(private_items),
             },
         }
         manifest_out["acceptance"]["passed"] = all(manifest_out["acceptance"].values())

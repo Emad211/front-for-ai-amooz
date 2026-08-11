@@ -99,6 +99,7 @@ from .serializers import (
     StudentExamPrepResultResponseSerializer,
 )
 from .services.transcription import transcribe_media_bytes
+from .services.exam_prep_mistral_artifacts import cleanup_session_private_artifacts
 from .services.pdf_extraction import extract_pdf_to_markdown
 from .services.structure import structure_transcript_markdown
 from .services.prerequisites import extract_prerequisites, generate_prerequisite_teaching
@@ -1170,7 +1171,11 @@ class ClassCreationSessionDetailView(APIView):
         responses={200: ClassCreationSessionDetailSerializer},
     )
     def get(self, request, session_id: int):
-        session = ClassCreationSession.objects.filter(id=session_id, teacher=request.user).first()
+        session = ClassCreationSession.objects.filter(
+            id=session_id,
+            teacher=request.user,
+            pipeline_type=ClassCreationSession.PipelineType.CLASS,
+        ).first()
         if session is None:
             return Response({'detail': 'جلسه پیدا نشد.'}, status=status.HTTP_404_NOT_FOUND)
         return Response(ClassCreationSessionDetailSerializer(session).data)
@@ -1183,7 +1188,11 @@ class ClassCreationSessionDetailView(APIView):
         responses={200: ClassCreationSessionDetailSerializer},
     )
     def patch(self, request, session_id: int):
-        session = ClassCreationSession.objects.filter(id=session_id, teacher=request.user).first()
+        session = ClassCreationSession.objects.filter(
+            id=session_id,
+            teacher=request.user,
+            pipeline_type=ClassCreationSession.PipelineType.CLASS,
+        ).first()
         if session is None:
             return Response({'detail': 'جلسه پیدا نشد.'}, status=status.HTTP_404_NOT_FOUND)
 
@@ -1223,7 +1232,11 @@ class ClassCreationSessionDetailView(APIView):
         responses={204: None},
     )
     def delete(self, request, session_id: int):
-        session = ClassCreationSession.objects.filter(id=session_id, teacher=request.user).first()
+        session = ClassCreationSession.objects.filter(
+            id=session_id,
+            teacher=request.user,
+            pipeline_type=ClassCreationSession.PipelineType.CLASS,
+        ).first()
         if session is None:
             return Response({'detail': 'جلسه پیدا نشد.'}, status=status.HTTP_404_NOT_FOUND)
         session.delete()
@@ -3815,49 +3828,93 @@ class ExamPrepSessionDetailView(APIView):
         if session.is_active_pipeline:
             _cancel_session_pipeline(session)
         artifact = ExamPrepExtractionArtifact.objects.filter(session=session).first()
+        from core.storage_backends import delete_answer_source_file
+        from .services.exam_prep_mistral_production import PRODUCTION_ENGINE
+        from .services.exam_prep_mistral_visuals import (
+            visual_registry_covers_projection,
+            visual_registry_storage_names,
+        )
+
+        workflow = session.workflow_state if isinstance(session.workflow_state, dict) else {}
+        extraction_audit = workflow.get('extractionAudit')
+        try:
+            parsed_projection = json.loads(session.exam_prep_json or '{}')
+        except (json.JSONDecodeError, TypeError):
+            parsed_projection = {}
+        projection = parsed_projection if isinstance(parsed_projection, dict) else {}
+        if (
+            workflow.get('engine') == PRODUCTION_ENGINE
+            and not visual_registry_covers_projection(
+                extraction_audit if isinstance(extraction_audit, dict) else {},
+                projection,
+            )
+        ):
+            return Response(
+                {
+                    'detail': (
+                        'رجیستری فایل‌های تصویری کامل نیست؛ برای جلوگیری از باقی‌ماندن '
+                        'فایل خصوصی، حذف متوقف شد.'
+                    )
+                },
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+        if not cleanup_session_private_artifacts(
+            session.id,
+            include_visuals=True,
+            include_checkpoints=True,
+        ):
+            return Response(
+                {'detail': 'حذف فایل‌های خصوصی در حال پردازش کامل نشد. دوباره تلاش کنید.'},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+        storage_names = set(
+            visual_registry_storage_names(
+                extraction_audit if isinstance(extraction_audit, dict) else {}
+            )
+        )
         if artifact is not None and artifact.pipeline_version >= 2:
-            from core.storage_backends import delete_answer_source_file
             from .services.exam_prep_visuals import delete_visual_assets
 
-            storage_names = {
+            storage_names.update({
                 str(block.get('storageName'))
                 for block in artifact.source_blocks or []
                 if isinstance(block, dict) and block.get('storageName')
-            }
+            })
             if not delete_visual_assets(artifact.visual_assets.all()):
                 return Response(
                     {'detail': 'حذف فایل‌های تصویری کامل نشد. دوباره تلاش کنید.'},
                     status=status.HTTP_503_SERVICE_UNAVAILABLE,
                 )
-            deletion_results = [
-                delete_answer_source_file(storage_name)
-                for storage_name in storage_names
-            ]
-            if not all(deletion_results):
-                return Response(
-                    {
-                        'detail': (
-                            'حذف فایل‌های منبع کامل نشد. برای جلوگیری از باقی‌ماندن '
-                            'فایل خصوصی، دوباره تلاش کنید.'
-                        )
-                    },
-                    status=status.HTTP_503_SERVICE_UNAVAILABLE,
-                )
+        deletion_results = [
+            delete_answer_source_file(storage_name)
+            for storage_name in sorted(storage_names)
+        ]
+        if not all(deletion_results):
+            return Response(
+                {
+                    'detail': (
+                        'حذف فایل‌های منبع کامل نشد. برای جلوگیری از باقی‌ماندن '
+                        'فایل خصوصی، دوباره تلاش کنید.'
+                    )
+                },
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+        if artifact is not None and artifact.pipeline_version >= 2:
             artifact.source_blocks = []
             artifact.save(update_fields=['source_blocks', 'updated_at'])
-            if session.source_file:
-                try:
-                    session.source_file.delete(save=False)
-                except Exception:
-                    logger.warning(
-                        'Failed to delete exam-prep upload before session deletion session=%s.',
-                        session.id,
-                        exc_info=True,
-                    )
-                    return Response(
-                        {'detail': 'حذف فایل اصلی کامل نشد. دوباره تلاش کنید.'},
-                        status=status.HTTP_503_SERVICE_UNAVAILABLE,
-                    )
+        if session.source_file:
+            try:
+                session.source_file.delete(save=False)
+            except Exception:
+                logger.warning(
+                    'Failed to delete exam-prep upload before session deletion session=%s.',
+                    session.id,
+                    exc_info=True,
+                )
+                return Response(
+                    {'detail': 'حذف فایل اصلی کامل نشد. دوباره تلاش کنید.'},
+                    status=status.HTTP_503_SERVICE_UNAVAILABLE,
+                )
         session.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
 
@@ -3885,6 +3942,20 @@ class ExamPrepSessionCancelView(APIView):
             )
 
         _cancel_session_pipeline(session)
+        if not cleanup_session_private_artifacts(
+            session.id,
+            include_visuals=True,
+            include_checkpoints=True,
+        ):
+            return Response(
+                {
+                    'detail': (
+                        'پردازش متوقف شد، اما پاک‌سازی فایل‌های خصوصی کامل نشد. '
+                        'حذف جلسه را دوباره امتحان کنید.'
+                    )
+                },
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
         return Response(ExamPrepSessionDetailSerializer(session).data, status=status.HTTP_200_OK)
 
 
@@ -3970,6 +4041,34 @@ class ExamPrepSessionPublishView(APIView):
                         )
                     },
                     status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            workflow = (
+                session.workflow_state
+                if isinstance(session.workflow_state, dict)
+                else {}
+            )
+            from .services.exam_prep_mistral_production import PRODUCTION_ENGINE
+            from .services.exam_prep_mistral_readiness import (
+                production_review_artifact_is_valid,
+            )
+
+            if (
+                workflow.get('engine') == PRODUCTION_ENGINE
+                and not production_review_artifact_is_valid(
+                    workflow,
+                    require_publishable=True,
+                )
+            ):
+                return Response(
+                    {
+                        'detail': (
+                            'خروجی معتبر و آماده بازبینی مراحل ۱ تا ۵ برای '
+                            'انتشار موجود نیست.'
+                        ),
+                        'code': 'production_audit_required',
+                    },
+                    status=status.HTTP_409_CONFLICT,
                 )
 
             artifact = ExamPrepExtractionArtifact.objects.select_for_update().filter(
@@ -5463,11 +5562,29 @@ class StudentExamPrepResultView(APIView):
             questions_list = []
 
         correct_map: dict[str, str] = {}
+        result_details: dict[str, dict] = {}
         for q in questions_list:
             qid = str(q.get('question_id') or '').strip()
             label = str(q.get('correct_option_label') or '').strip()
             if qid:
                 correct_map[qid] = label
+                result_details[qid] = {
+                    'teacher_solution_markdown': str(
+                        q.get('teacher_solution_markdown') or q.get('final_answer_markdown') or ''
+                    ).strip(),
+                    'solution_visuals': [
+                        {
+                            'id': visual.get('id'),
+                            'role': 'solution',
+                            'altText': visual.get('altText') or 'تصویر راه‌حل',
+                            'url': f'/api/classes/exam-prep-sessions/{session.id}/visuals/{visual.get("id")}/content/',
+                        }
+                        for visual in q.get('visuals') or []
+                        if isinstance(visual, dict)
+                        and visual.get('role') == 'solution'
+                        and visual.get('id')
+                    ],
+                }
 
         answers_raw = attempt.answers if isinstance(attempt.answers, dict) else {}
         total_questions = len(correct_map)
@@ -5495,15 +5612,21 @@ class StudentExamPrepResultView(APIView):
             if attempt.finalized:
                 score_total += q_score
 
-            items.append(
-                {
+            item = {
                     'question_id': qid,
                     'selected_label': selected,
                     'is_correct': bool(q_is_correct) if attempt.finalized else False,
                     'attempts': q_attempts,
                     'score_for_question': q_score if attempt.finalized else 0,
-                }
-            )
+            }
+            if attempt.finalized:
+                details = result_details.get(qid, {})
+                item.update({
+                    'correct_option_label': correct_label,
+                    'teacher_solution_markdown': details.get('teacher_solution_markdown', ''),
+                    'solution_visuals': details.get('solution_visuals', []),
+                })
+            items.append(item)
 
         score_0_100 = int(round(score_total / total_questions)) if (attempt.finalized and total_questions > 0) else 0
 

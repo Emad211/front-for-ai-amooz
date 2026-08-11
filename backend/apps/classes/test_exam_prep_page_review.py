@@ -5,6 +5,7 @@ from model_bakery import baker
 from rest_framework.test import APIClient
 
 from apps.classes.models import ClassCreationSession
+from apps.classes.services.exam_prep_mistral_production import PRODUCTION_ENGINE
 from apps.classes.services.exam_prep_page_review import (
     audit_page_first_projection,
     render_projection_transcript,
@@ -52,6 +53,68 @@ def _projection(questions):
     return {'exam_prep': {'title': 'آزمون زیست', 'questions': questions}}
 
 
+def _production_stage_audit(*, blocked=False):
+    blocked_count = int(blocked)
+    return {
+        'engine': PRODUCTION_ENGINE,
+        'status': 'needs_review' if blocked else 'passed',
+        'questionCount': 1,
+        'criticalIssueCount': blocked_count,
+        'ocrSourcePages': 2,
+        'ocrResolvedModels': ['mistral-ocr-latest'],
+        'nativeAnswerEvidence': {'schemaVersion': 2, 'trusted': True},
+        'questionIntervals': [
+            {'start': 1, 'end': 1, 'scopeKey': 'default'},
+        ],
+        'visualPipeline': {
+            'schemaVersion': 2,
+            'sourceSha256': 'a' * 64,
+            'stats': {'unresolvedRegions': 0, 'storageFailures': 0},
+            'unresolvedRegions': [],
+            'criticalIssueCodes': [],
+        },
+        'riskRegionCount': 2,
+        'riskSuspiciousRegionCount': blocked_count,
+        'targetedRegionPrimaryCalls': 2,
+        'targetedRegionUnresolved': blocked_count,
+        'riskEngine': {
+            'schemaVersion': 1,
+            'policy': {
+                'allRegionsReceivePrimary': True,
+                'targetedEvaluation': False,
+            },
+            'stats': {
+                'regions': 2,
+                'missingRegions': 0,
+                'primaryCalls': 2,
+                'blocked': blocked_count,
+            },
+            'budget': {
+                'preflightExceeded': False,
+                'deadlineExceeded': False,
+            },
+            'regions': [
+                {
+                    'targetId': 'question-1',
+                    'questionNumber': 1,
+                    'kind': 'question',
+                    'status': (
+                        'blocked_model_disagreement'
+                        if blocked
+                        else 'verified_source'
+                    ),
+                },
+                {
+                    'targetId': 'solution-1',
+                    'questionNumber': 1,
+                    'kind': 'solution',
+                    'status': 'verified_source',
+                },
+            ],
+        },
+    }
+
+
 def _page_first_session(
     teacher,
     projection,
@@ -79,6 +142,34 @@ def _page_first_session(
             },
         },
     )
+
+
+def _mistral_session(
+    teacher,
+    projection,
+    *,
+    visual_contracts=None,
+    extra_audit=None,
+):
+    session = _page_first_session(teacher, projection)
+    questions = (projection.get('exam_prep') or {}).get('questions') or []
+    stage5_blocked = any(
+        'stage5_finalization_blocked' in (question.get('issues') or [])
+        for question in questions
+        if isinstance(question, dict)
+    )
+    session.workflow_state = {
+        **session.workflow_state,
+        'engine': PRODUCTION_ENGINE,
+        'extractionAudit': {
+            **_production_stage_audit(blocked=stage5_blocked),
+            **session.workflow_state['extractionAudit'],
+            **dict(extra_audit or {}),
+            'visualSourceContracts': dict(visual_contracts or {}),
+        },
+    }
+    session.save(update_fields=['workflow_state', 'updated_at'])
+    return session
 
 
 def test_canonical_projection_audit_detects_gaps_and_invalid_correct_option():
@@ -164,6 +255,113 @@ def test_valid_teacher_edit_moves_page_first_session_to_publishable_status():
     assert session.workflow_state['extractionAudit']['criticalIssueCount'] == 0
     assert session.transcript_markdown.startswith('# آزمون زیست')
     assert '## سؤال 1' in session.transcript_markdown
+
+
+def test_mistral_stage5_audit_blocker_cannot_be_cleared_by_json_acknowledgement():
+    teacher = _teacher()
+    question = {
+        **_question(1),
+        'issues': ['stage5_finalization_blocked'],
+        'teacher_reviewed_issue_codes': ['stage5_finalization_blocked'],
+    }
+    session = _mistral_session(teacher, _projection([question]))
+
+    response = _auth(teacher).patch(
+        f'/api/classes/exam-prep-sessions/{session.id}/',
+        {'exam_prep_json': _projection([question])},
+        format='json',
+    )
+
+    assert response.status_code == 200
+    session.refresh_from_db()
+    assert session.status == ClassCreationSession.Status.EXAM_TRANSCRIBED
+    assert session.workflow_state['publicationBlocked'] is True
+
+
+def test_mistral_teacher_acknowledgement_does_not_hide_structural_errors():
+    teacher = _teacher()
+    question = {
+        **_question(1),
+        'question_text_markdown': '',
+        'issues': ['stage5_finalization_blocked'],
+        'teacher_reviewed_issue_codes': ['stage5_finalization_blocked'],
+    }
+    session = _mistral_session(teacher, _projection([question]))
+
+    response = _auth(teacher).patch(
+        f'/api/classes/exam-prep-sessions/{session.id}/',
+        {'exam_prep_json': _projection([question])},
+        format='json',
+    )
+
+    assert response.status_code == 200
+    session.refresh_from_db()
+    assert session.status == ClassCreationSession.Status.EXAM_TRANSCRIBED
+    codes = {
+        issue['code']
+        for issue in session.workflow_state['extractionAudit']['issues']
+    }
+    assert 'no_questions' in codes
+
+
+def test_mistral_review_preserves_server_visual_source_contracts():
+    teacher = _teacher()
+    question = _question(1)
+    contract = {'default-q-1': {'schemaVersion': 1, 'requiredAssetIds': []}}
+    session = _mistral_session(
+        teacher,
+        _projection([question]),
+        visual_contracts=contract,
+    )
+
+    response = _auth(teacher).patch(
+        f'/api/classes/exam-prep-sessions/{session.id}/',
+        {'exam_prep_json': _projection([question])},
+        format='json',
+    )
+
+    assert response.status_code == 200
+    session.refresh_from_db()
+    assert (
+        session.workflow_state['extractionAudit']['visualSourceContracts']
+        == contract
+    )
+
+
+def test_mistral_review_get_and_patch_preserve_immutable_stage5_audit():
+    teacher = _teacher()
+    question = _question(1)
+    stage_audit = _production_stage_audit()
+    immutable = {
+        'riskEngine': stage_audit['riskEngine'],
+        'nativeAnswerEvidence': stage_audit['nativeAnswerEvidence'],
+        'totalEstimatedCostUsd': '0.731',
+        'totalProviderCalls': 312,
+        'visualAssetRegistry': {'asset-1': {'id': 'asset-1'}},
+    }
+    session = _mistral_session(
+        teacher,
+        _projection([question]),
+        extra_audit=immutable,
+    )
+
+    get_response = _auth(teacher).get(
+        f'/api/classes/exam-prep-sessions/{session.id}/'
+    )
+    assert get_response.status_code == 200
+    session.refresh_from_db()
+    for key, value in immutable.items():
+        assert session.workflow_state['extractionAudit'][key] == value
+
+    patch_response = _auth(teacher).patch(
+        f'/api/classes/exam-prep-sessions/{session.id}/',
+        {'exam_prep_json': _projection([question])},
+        format='json',
+    )
+    assert patch_response.status_code == 200
+    session.refresh_from_db()
+    for key, value in immutable.items():
+        assert session.workflow_state['extractionAudit'][key] == value
 
 
 def test_invalid_teacher_edit_stays_blocked_and_keeps_reviewable_output():

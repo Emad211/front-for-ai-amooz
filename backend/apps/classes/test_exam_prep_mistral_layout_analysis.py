@@ -65,6 +65,65 @@ def test_rtl_columns_are_reordered_and_compact_solution_numbers_recovered():
     assert 'provider_reading_order_corrected_for_rtl_columns' in page['issues']
 
 
+def test_wrapped_solution_heading_keeps_source_geometry_and_content():
+    wrapped_heading = r'$$\text{۸۹- گزینه «۳»}$$'
+    blocks = [
+        _block('title', 100, 100, 900, 140, wrapped_heading),
+        _block('text', 100, 150, 900, 250, 'راه حل'),
+    ]
+
+    result = analyze_ocr_document(
+        {'model': 'mistral-ocr-4-0', 'pages': [_page(0, blocks)]}
+    )
+
+    region = result['pages'][0]['regions'][0]
+    assert region['kind'] == 'solution'
+    assert region['questionNumber'] == 89
+    assert region['correctOptionLabel'] == 3
+    assert region['headingProviderIndex'] == 0
+    assert region['bbox'] == [0.0, 100 / 1400, 1.0, 0.98]
+    assert region['contentBBox'] == [0.1, 100 / 1400, 0.9, 250 / 1400]
+    assert region['text'].startswith(wrapped_heading)
+
+
+def test_option_first_solution_heading_is_a_distinct_layout_region():
+    blocks = [
+        _block('title', 100, 100, 900, 140, '«۴» گزینه - ۱۱۲'),
+        _block('text', 100, 150, 900, 250, 'راه حل'),
+    ]
+
+    result = analyze_ocr_document(
+        {'model': 'mistral-ocr-4-0', 'pages': [_page(0, blocks)]}
+    )
+
+    [region] = result['pages'][0]['regions']
+    assert region['kind'] == 'solution'
+    assert region['questionNumber'] == 112
+    assert region['correctOptionLabel'] == 4
+    assert region['headingProviderIndex'] == 0
+
+
+def test_solution_page_does_not_promote_numbered_body_options_to_questions():
+    blocks = [
+        _block('title', 580, 100, 920, 140, '۱- گزینه ۲'),
+        _block('text', 580, 150, 920, 250, 'راه حل یک'),
+        _block('text', 580, 300, 920, 340, '۱- مورد فرعی داخل راه حل'),
+        _block('title', 580, 500, 920, 540, '۲- گزینه ۳'),
+        _block('text', 580, 550, 920, 650, 'راه حل دو'),
+    ]
+
+    result = analyze_ocr_document(
+        {'model': 'mistral-ocr-4-0', 'pages': [_page(0, blocks)]}
+    )
+
+    page = result['pages'][0]
+    assert page['pageRole'] == 'solution'
+    assert [(region['kind'], region['questionNumber']) for region in page['regions']] == [
+        ('solution', 1),
+        ('solution', 2),
+    ]
+
+
 def test_caption_count_detects_missing_chemical_structure_block():
     blocks = [
         _block('title', 100, 100, 900, 140, '94- کدام ساختار درست است؟'),

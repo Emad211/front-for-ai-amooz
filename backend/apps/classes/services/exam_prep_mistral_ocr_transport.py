@@ -7,9 +7,10 @@ PDF bytes -> contiguous <=30-page mini PDFs -> OCR4 blocks -> validated physical
 
 Successful chunk responses are checkpointed in private storage only after exact
 page-coverage validation. A later retry/re-run can reuse those chunks without
-paying for them again. Only transport failures and the narrow transient HTTP
-allow-list are retried; malformed 2xx responses and request/configuration errors
-fail without a paid repeat.
+paying for them again. Production scopes that reuse to one session and removes
+the checkpoints at its terminal lifecycle boundary. Only transport failures
+and the narrow transient HTTP allow-list are retried; malformed 2xx responses
+and request/configuration errors fail without a paid repeat.
 """
 from __future__ import annotations
 
@@ -25,6 +26,11 @@ import time
 from typing import Any, Callable, Mapping, Protocol, Sequence
 
 from pypdf import PdfReader, PdfWriter
+
+from .exam_prep_mistral_artifacts import (
+    MISTRAL_OCR_CHECKPOINT_PREFIX,
+    validate_storage_namespace,
+)
 
 
 AVALAI_OCR_ENDPOINT = "https://api.avalai.ir/v1/ocr"
@@ -218,11 +224,15 @@ class OCRCheckpointStore(Protocol):
 class PrivateOCRCheckpointStore:
     """Persist validated OCR responses in the repository's private media store."""
 
-    prefix = "exam-prep/source/ocr4-checkpoints/v1"
+    prefix = MISTRAL_OCR_CHECKPOINT_PREFIX
+
+    def __init__(self, *, namespace: str = "") -> None:
+        self.namespace = validate_storage_namespace(namespace)
 
     def _name(self, *, source_sha256: str, contract_fingerprint: str, chunk: OCR4Chunk) -> str:
+        namespace_prefix = f"{self.namespace}/" if self.namespace else ""
         return (
-            f"{self.prefix}/{source_sha256}/{contract_fingerprint}/"
+            f"{self.prefix}/{namespace_prefix}{source_sha256}/{contract_fingerprint}/"
             f"chunk-{chunk.index:03d}-{chunk.sha256[:16]}.json"
         )
 

@@ -35,7 +35,8 @@ _HEADING_RE = re.compile(
     r".{0,48}?[»«]\s*(?P<option>[1-4۱-۴١-٤])\s*[«»]"
 )
 _NUMBER_FRAGMENT_RE = re.compile(
-    r"^\s*(?P<question>[0-9۰-۹٠-٩]{1,3})\s*[-–—]\s*$"
+    r"^\s*(?P<question>[0-9۰-۹٠-٩]{1,3})\s*[-–—]\s*"
+    r"(?:$|گزین(?:ه|ۀ|هٔ))"
 )
 
 
@@ -102,6 +103,39 @@ def _page_heading_pairs(text: str) -> list[tuple[int, int]]:
     return pairs
 
 
+def _heading_coordinates(
+    fragments: Sequence[tuple[str, float, float]],
+    pairs: Sequence[tuple[int, int]],
+) -> dict[int, list[tuple[float, float]]]:
+    """Disambiguate heading numbers from numbered options in the same PDF page."""
+
+    expected = {int(question): int(option) for question, option in pairs}
+    all_candidates = {question: [] for question in expected}
+    label_supported = {question: [] for question in expected}
+    for index, (text, x, y) in enumerate(fragments):
+        match = _NUMBER_FRAGMENT_RE.match(str(text or ""))
+        if not match:
+            continue
+        question = _integer(match.group("question"))
+        if question not in expected:
+            continue
+        point = (float(x), float(y))
+        all_candidates[question].append(point)
+        context = unicodedata.normalize(
+            "NFKC",
+            "".join(str(item[0] or "") for item in fragments[index : index + 8]),
+        ).translate(_DIGITS)
+        option = expected[question]
+        if re.search(rf"(?:«\s*{option}\s*»|»\s*{option}\s*«)", context):
+            label_supported[question].append(point)
+
+    output: dict[int, list[tuple[float, float]]] = {}
+    for question in expected:
+        strong = label_supported[question]
+        output[question] = strong if strong else all_candidates[question]
+    return output
+
+
 def extract_native_answer_evidence(pdf_data: bytes) -> NativeAnswerEvidence:
     reader = PdfReader(io.BytesIO(pdf_data))
     headings: list[NativeAnswerHeading] = []
@@ -118,19 +152,11 @@ def extract_native_answer_evidence(pdf_data: bytes) -> NativeAnswerEvidence:
         if len(distinct) < 2 or len(distinct) != len(pairs):
             continue
         answer_pages.append(page_number)
-        coordinates: dict[int, list[tuple[float, float]]] = {
-            question: [] for question in distinct
-        }
+        fragments: list[tuple[str, float, float]] = []
 
         def visitor(text_value, _cm, tm, _font_dict, _font_size):
-            match = _NUMBER_FRAGMENT_RE.match(str(text_value or ""))
-            if not match:
-                return
-            question = _integer(match.group("question"))
-            if question not in coordinates:
-                return
             try:
-                coordinates[question].append((float(tm[4]), float(tm[5])))
+                fragments.append((str(text_value or ""), float(tm[4]), float(tm[5])))
             except (TypeError, ValueError, IndexError):
                 return
 
@@ -138,6 +164,7 @@ def extract_native_answer_evidence(pdf_data: bytes) -> NativeAnswerEvidence:
             page.extract_text(visitor_text=visitor)
         except Exception:
             pass
+        coordinates = _heading_coordinates(fragments, pairs)
 
         coordinate_complete = all(len(coordinates[question]) == 1 for question in distinct)
         if coordinate_complete:

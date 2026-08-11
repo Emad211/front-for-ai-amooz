@@ -31,6 +31,18 @@ def test_solution_heading_supports_question_first_and_option_first():
     }
 
 
+def test_solution_heading_unwraps_outer_math_text_markup_and_braces():
+    expected = {
+        "rawQuestionNumber": 89,
+        "rawOptionLabel": 3,
+        "format": "question_first",
+    }
+
+    assert parse_solution_heading(r"$$\text{۸۹- گزینه «۳»}$$") == expected
+    assert parse_solution_heading(r"\(\text{۸۹- گزینه «۳»}\)") == expected
+    assert parse_solution_heading("{۸۹- گزینه «۳»}") == expected
+
+
 def test_solution_option_normalizes_only_the_observed_zero_suffix_pattern():
     assert normalize_solution_option_label(30) == (3, True, True)
     assert normalize_solution_option_label(4) == (4, False, True)

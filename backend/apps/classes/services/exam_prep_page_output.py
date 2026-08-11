@@ -41,6 +41,7 @@ CRITICAL_ISSUE_CODES = frozenset(
         "count_answer_unresolved",
         "visual_attachment_missing",
         "stage4_verification_unresolved",
+        "stage5_finalization_blocked",
         "failed_chunk",
     }
 )
@@ -276,3 +277,9 @@ def render_strict_page_first_transcript(
         lines.append("")
 
     return "\n".join(lines).strip() + "\n"
+
+
+# Generic names for pipelines that consume the canonical PageAssemblyResult
+# contract without using the legacy page-first extraction architecture.
+build_strict_exam_audit = build_strict_page_first_audit
+render_strict_exam_transcript = render_strict_page_first_transcript

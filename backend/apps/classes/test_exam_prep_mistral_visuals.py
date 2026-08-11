@@ -249,6 +249,34 @@ def test_asset_identity_keeps_page_and_role_even_for_identical_payload():
     }) == 3
 
 
+def test_asset_storage_namespace_is_stable_per_session_and_isolated_between_sessions():
+    plan = visuals.VisualPlan(
+        page_number=11,
+        question_number=57,
+        role="question",
+        option_label=None,
+        mode="single_question",
+        bbox=(0.2, 0.2, 0.5, 0.5),
+        source_kinds=("ocr_image",),
+        component_ids=("a",),
+    )
+    kwargs = {
+        "source_sha256": "a" * 64,
+        "plan": plan,
+        "order": 1,
+        "payload_sha256": "b" * 64,
+    }
+
+    first = visuals._asset_name(**kwargs, storage_namespace="session-101")
+    retry = visuals._asset_name(**kwargs, storage_namespace="session-101")
+    second = visuals._asset_name(**kwargs, storage_namespace="session-202")
+
+    assert first == retry
+    assert first != second
+    assert "/session-101/" in first
+    assert "/session-202/" in second
+
+
 def test_complete_option_visuals_allow_four_empty_text_slots_without_missing_options():
     question = {
         "question_id": "default-q-1",

@@ -32,7 +32,6 @@ import {
   type UploadProgress,
 } from '@/services/classes-service';
 import { PipelineTracker } from './pipeline-tracker';
-import { ExamPrepSourceAwareWorkspace } from './exam-prep-source-aware-workspace';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -1012,10 +1011,6 @@ export function CreateClassPage() {
         </div>
         </FileUploadSection>
       </div>
-
-      {pipelineType === 'exam_prep' && examPrepSessionIdForActions ? (
-        <ExamPrepSourceAwareWorkspace sessionId={examPrepSessionIdForActions} />
-      ) : null}
 
       {pipelineType === 'class' ? (
         <Card className="overflow-hidden rounded-2xl border-border/40 bg-card/70 backdrop-blur" dir="rtl">

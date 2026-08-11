@@ -64,21 +64,21 @@ git push origin main
 | متغیر | مقدار | توضیح |
 |--------|-------|-------|
 | `DEBUG` | `False` | |
-| `DJANGO_SECRET_KEY` | `WNktgCA4...` (مقدار فعلی شما) | ⚠️ **پیشنهاد**: یک کلید ۶۴+ کاراکتری جدید بسازید |
+| `DJANGO_SECRET_KEY` | `<DJANGO_SECRET_KEY>` | یک مقدار تصادفی ۶۴+ کاراکتری بسازید |
 | `ALLOWED_HOSTS` | `*` | ⚠️ **پیشنهاد**: به `aiamoooz.darkube.app` تغییر دهید |
 
 ### ۳.۲. دیتابیس
 
 | متغیر | مقدار |
 |--------|-------|
-| `DATABASE_URL` | `postgresql://postgres:IcHfBNcI0Ey8XGv2R85V@ai-amooz-db.ai-products-ai-amooz.svc:5432/postgres` |
+| `DATABASE_URL` | `postgresql://<DB_USER>:<DB_PASSWORD>@<DB_HOST>:5432/<DB_NAME>` |
 | `CONN_MAX_AGE` | `600` (پیش‌فرض — نیازی به ست کردن نیست) |
 
 ### ۳.۳. Redis
 
 | متغیر | مقدار |
 |--------|-------|
-| `CHAT_REDIS_URL` | `redis://wTsn0gOcwynZe2VZ5pY1PoBH5PP5fzEl@2bd19fdd-bd09-43d9-9cc4-9c48c29009d2.hsvc.ir:24484/0` |
+| `CHAT_REDIS_URL` | `redis://:<REDIS_PASSWORD>@<REDIS_HOST>:<REDIS_PORT>/0` |
 
 > **نکته**: `REDIS_URL`، `CELERY_BROKER_URL` و `CELERY_RESULT_BACKEND` ست نشده‌اند — کد به‌صورت خودکار از `CHAT_REDIS_URL` fallback می‌کند. ✅ درست است.
 
@@ -86,11 +86,12 @@ git push origin main
 
 | متغیر | مقدار |
 |--------|-------|
-| `AVALAI_API_KEY` | `av-...` (کلید شما) |
+| `AVALAI_API_KEY` | `<AVALAI_API_KEY>` |
 | `AVALAI_BASE_URL` | `https://api.avalai.ir/v1` |
+| `AVALAI_OCR_ENDPOINT` | `https://api.avalai.ir/v1/ocr` |
 | `MODE` | `avalai` |
 | `MODEL_NAME` | `gpt-4o-mini` |
-| `GEMINI_API_KEY` | `AIza...` (کلید شما) |
+| `GEMINI_API_KEY` | `<GEMINI_API_KEY>` |
 | `TRANSCRIPTION_MODEL` | `models/gemini-2.5-flash` |
 | `REWRITE_MODEL` | `models/gemini-2.5-flash` |
 | `IMAGE_MODEL` | `models/gemini-2.0-flash` |
@@ -112,7 +113,7 @@ git push origin main
 
 | متغیر | مقدار |
 |--------|-------|
-| `MEDIANA_API_KEY` | `...` (کلید شما) |
+| `MEDIANA_API_KEY` | `<MEDIANA_API_KEY>` |
 
 ### ۳.۶. CORS / CSRF
 
@@ -138,6 +139,37 @@ git push origin main
 |--------|-------|
 | `CLASS_PIPELINE_ASYNC` | `True` |
 
+### ۳.۹. Exam Prep Mistral
+
+مسیر استاندارد Exam Prep ثابت است:
+
+`Mistral OCR4 -> Stage 2 deterministic assembly -> Stage 3 source-precise visuals -> Stage 4 free risk scoring -> Stage 5 all-region finalization`
+
+مسیر public مبتنی بر page-first یا V4/Source Map و runtime switch برای برگشت به آن‌ها وجود ندارد.
+
+| متغیر | مقدار پروداکشن |
+|--------|-----------------|
+| `EXAM_PREP_MISTRAL_OCR_MODEL` | `mistral-ocr-4-0` |
+| `EXAM_PREP_MISTRAL_OCR_MAX_PAGES_PER_REQUEST` | `30` |
+| `EXAM_PREP_MISTRAL_OCR_CHECKPOINTS` | `True` |
+| `EXAM_PREP_STAGE4_RISK_THRESHOLD` | `40` |
+| `EXAM_PREP_STAGE5_PRIMARY_MODEL` | `gpt-5.4-mini` |
+| `EXAM_PREP_STAGE5_MAIN_MODEL` | `gemini-3.6-flash` |
+| `EXAM_PREP_STAGE5_TIEBREAKER_MODEL` | خالی |
+| `EXAM_PREP_STAGE5_MAX_PRIMARY_CALLS` | `400` |
+| `EXAM_PREP_STAGE5_MAX_MAIN_CALLS` | `40` |
+| `EXAM_PREP_STAGE5_MAX_CONCURRENCY` | `4` |
+| `EXAM_PREP_STAGE5_MAX_WALL_SECONDS` | `1800` |
+| `EXAM_PREP_STAGE5_RESERVED_INPUT_TOKENS` | `8192` |
+| `EXAM_PREP_TOTAL_PDF_BUDGET_USD` | `1.50` |
+| `EXAM_PREP_TASK_SOFT_LIMIT_SECONDS` | `3300` |
+| `EXAM_PREP_TASK_HARD_LIMIT_SECONDS` | `3600` |
+| `EXAM_PREP_TASK_FINALIZE_SAFETY_SECONDS` | `300` |
+
+پس از ثبت هزینهٔ OCR، باقی‌ماندهٔ `EXAM_PREP_TOTAL_PDF_BUDGET_USD=1.50`
+گیت سخت ارسال callهای Stage 5 است. هر call پیش از ارسال رزرو می‌شود؛ call
+موفق با token usage واقعی تسویه و call ناموفق/invalid با مبلغ رزرو شارژ می‌شود.
+
 ---
 
 ## ۴. ساخت اپ Celery Worker (اپ جداگانه در Hamravesh)
@@ -154,11 +186,12 @@ git push origin main
 ### ۴.۲. دستور اجرایی (Command Override)
 
 ```
-celery -A core worker --loglevel=info --concurrency=2 --max-tasks-per-child=50
+celery -A core worker -Q default,pipeline --loglevel=info --concurrency=2 --max-tasks-per-child=50
 ```
 
 > **توضیح پارامترها:**
 > - `-A core` → ماژول Celery در `core/celery.py`
+> - `-Q default,pipeline` → هم task‌های عمومی و هم Exam Prep صف `pipeline` را مصرف می‌کند
 > - `--concurrency=2` → ۲ worker process همزمان (با ۲GB RAM کافی)
 > - `--max-tasks-per-child=50` → بعد از ۵۰ task، child ریستارت (جلوگیری از memory leak)
 > - `--loglevel=info` → سطح لاگ
@@ -382,7 +415,7 @@ python -c "import secrets; print(secrets.token_urlsafe(64))"
 | Static files `404` | `collectstatic` اجرا نشده | ری‌بیلد ایمیج — CMD شامل `collectstatic` هست |
 | Admin بدون CSS | whitenoise نصب نیست | `requirements.txt` شامل `whitenoise>=6.0.0` باشد |
 | Celery tasks اجرا نمی‌شوند | Worker روشن نیست | اپ Celery Worker بسازید (بخش ۴) |
-| Redis connection error | Password/port اشتباه | `CHAT_REDIS_URL` format: `redis://PASSWORD@HOST:PORT/DB` |
+| Redis connection error | Password/port اشتباه | `CHAT_REDIS_URL` format: `redis://:<REDIS_PASSWORD>@<REDIS_HOST>:<REDIS_PORT>/<DB>` |
 | Media files حذف شدند | بدون PV | Persistent Volume بسازید (بخش ۷) |
 | Memory بالا | Worker/concurrency زیاد | `GUNICORN_WORKERS=2` یا `--concurrency=1` |
 | Response time بالا | Worker کم | `GUNICORN_WORKERS=4` + `GUNICORN_THREADS=4` |

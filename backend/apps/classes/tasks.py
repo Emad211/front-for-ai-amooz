@@ -2041,6 +2041,9 @@ def cleanup_stale_sessions(self) -> dict:
         ExamPrepVisualAsset,
     )
     from core.storage_backends import delete_answer_source_file
+    from .services.exam_prep_mistral_artifacts import (
+        cleanup_session_private_artifacts,
+    )
 
     now = _tz.now()
     cutoff = now - timedelta(hours=2)
@@ -2065,13 +2068,26 @@ def cleanup_stale_sessions(self) -> dict:
             exam_extraction_artifact__units__heartbeat_at__gte=cutoff,
         )
     ).distinct()
+    stale_exam_prep_ids = list(
+        stale_qs.filter(
+            pipeline_type=ClassCreationSession.PipelineType.EXAM_PREP,
+        ).values_list('id', flat=True)
+    )
     count = stale_qs.count()
+    cleaned_mistral_private_sessions = 0
     if count > 0:
         stale_qs.update(
             status=ClassCreationSession.Status.FAILED,
             error_detail='پایپ لاین بیش از ۲ ساعت بدون پاسخ ماند و به طور خودکار متوقف شد.',
         )
         logger.warning('Marked %d stale sessions as FAILED (stuck >2h).', count)
+        for stale_session_id in stale_exam_prep_ids:
+            if cleanup_session_private_artifacts(
+                stale_session_id,
+                include_visuals=True,
+                include_checkpoints=True,
+            ):
+                cleaned_mistral_private_sessions += 1
 
     cleaned_sources = 0
     due_artifacts = list(
@@ -2224,6 +2240,7 @@ def cleanup_stale_sessions(self) -> dict:
         'cleaned_exam_source_count': cleaned_sources,
         'cleaned_orphan_exam_source_count': cleaned_orphan_sources,
         'cleaned_orphan_exam_visual_count': cleaned_orphan_visuals,
+        'cleaned_mistral_private_session_count': cleaned_mistral_private_sessions,
     }
 
 

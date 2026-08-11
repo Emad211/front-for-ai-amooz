@@ -4,8 +4,9 @@ from dataclasses import dataclass
 from difflib import SequenceMatcher
 import re
 from typing import Any, Literal, Mapping, Sequence
+import unicodedata
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 _VISUAL_TYPES = (
@@ -33,6 +34,16 @@ class DirectTranscription(BaseModel):
     ]
     transcription_uncertain: bool
     uncertain_fragments: list[str] = Field(default_factory=list, max_length=16)
+
+    @field_validator("transcription_markdown")
+    @classmethod
+    def reject_non_renderable_controls(cls, value: str) -> str:
+        if any(
+            unicodedata.category(char) == "Cc" and char not in "\t\n\r"
+            for char in value
+        ):
+            raise ValueError("transcription_markdown contains a control character")
+        return value
 
 
 @dataclass(frozen=True, slots=True)

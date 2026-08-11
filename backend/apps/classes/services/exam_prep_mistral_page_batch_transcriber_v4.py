@@ -207,6 +207,11 @@ def _request_body(
         # JSON mode is intentionally simpler than provider-specific native schema
         # translation; the same Pydantic/identity validators remain authoritative.
         "response_format": {"type": "json_object"},
+        "extra_body": {
+            "generationConfig": {
+                "thinkingConfig": {"thinkingLevel": "minimal"},
+            }
+        },
     }
 
 

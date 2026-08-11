@@ -20,7 +20,8 @@ from apps.classes.services.exam_prep_legacy_audit import (
     PAGE_FIRST_ENGINE,
     build_exam_prep_legacy_audit,
 )
-from apps.classes.views_exam_prep import _page_first_workflow_state
+from apps.classes.services.exam_prep_mistral_production import PRODUCTION_ENGINE
+from apps.classes.views_exam_prep import _mistral_workflow_state
 
 
 pytestmark = pytest.mark.django_db
@@ -80,8 +81,8 @@ def _build_inventory():
     current = _session(
         teacher,
         status=ClassCreationSession.Status.EXAM_TRANSCRIBING,
-        task_id='current-page-first-task',
-        workflow_state={'engine': PAGE_FIRST_ENGINE, 'stage': 'extracting_questions'},
+        task_id='current-mistral-task',
+        workflow_state={'engine': PRODUCTION_ENGINE, 'stage': 'extracting_questions'},
     )
     v1_active = _session(
         teacher,
@@ -227,16 +228,16 @@ def _build_inventory():
     }
 
 
-def test_page_first_workflow_states_have_explicit_engine_marker():
-    intake_state = _page_first_workflow_state('queued', message='queued')
+def test_production_workflow_states_have_explicit_engine_marker():
+    intake_state = _mistral_workflow_state('queued', message='queued')
     task_state = tasks_exam_prep._workflow_state(
         'reading_source',
         message='reading',
         progress=10,
     )
 
-    assert intake_state['engine'] == PAGE_FIRST_ENGINE
-    assert task_state['engine'] == PAGE_FIRST_ENGINE
+    assert intake_state['engine'] == PRODUCTION_ENGINE
+    assert task_state['engine'] == PRODUCTION_ENGINE
 
 
 def test_audit_classifies_current_and_legacy_families_without_task_leakage():
@@ -248,7 +249,7 @@ def test_audit_classifies_current_and_legacy_families_without_task_leakage():
     assert report['writesPerformed'] == 0
     assert report['sessions']['total'] == 9
     assert report['sessions']['familyCounts'] == {
-        'page_first': 1,
+        PRODUCTION_ENGINE: 1,
         'v1': 4,
         'v2': 1,
         'v3': 1,
@@ -281,7 +282,7 @@ def test_audit_classifies_current_and_legacy_families_without_task_leakage():
         'v3': ['v3-artifact-task', 'v3-session-task'],
         'v4': ['v4-project-task'],
     }
-    assert 'current-page-first-task' not in json.dumps(task_ids)
+    assert 'current-mistral-task' not in json.dumps(task_ids)
     assert report['drain']['taskCount'] == 7
 
 

@@ -545,12 +545,12 @@ export function ExamEditForm({ examDetail, onSave, isSaving }: ExamEditFormProps
                     </div>
                   )}
 
-                  {(question.visuals?.length ?? 0) > 0 && (
+                  {(question.visuals?.some((visual) => visual.role !== 'solution') ?? false) && (
                     <div className="grid gap-3 sm:grid-cols-2">
-                      {question.visuals?.map((visual) => (
+                      {question.visuals?.filter((visual) => visual.role !== 'solution').map((visual) => (
                         <ProtectedExamVisual
                           key={visual.id}
-                          url={`/api/classes/exam-prep-sessions/${examDetail.id}/visuals/${visual.id}/content/`}
+                          url={`/api/classes/exam-prep-sessions/${examDetail.id}/visuals/${encodeURIComponent(String(visual.id))}/content/`}
                           alt={visual.altText || 'تصویر مرتبط با سؤال'}
                           className="h-48 w-full rounded-md border object-contain"
                         />
@@ -643,6 +643,14 @@ export function ExamEditForm({ examDetail, onSave, isSaving }: ExamEditFormProps
                       rows={6}
                       className="min-h-[150px] resize-none bg-muted/30 md:resize-y"
                     />
+                    {question.visuals?.filter((visual) => visual.role === 'solution').map((visual) => (
+                      <ProtectedExamVisual
+                        key={visual.id}
+                        url={`/api/classes/exam-prep-sessions/${examDetail.id}/visuals/${encodeURIComponent(String(visual.id))}/content/`}
+                        alt={visual.altText || 'تصویر راه‌حل'}
+                        className="mx-auto max-h-[28rem] max-w-full rounded-md border object-contain"
+                      />
+                    ))}
                   </div>
                 </AccordionContent>
               </AccordionItem>

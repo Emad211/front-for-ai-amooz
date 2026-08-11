@@ -1,9 +1,10 @@
-"""Celery task for the non-versioned exam-preparation PDF pipeline."""
+"""Celery task for the production Mistral OCR exam-preparation pipeline."""
 from __future__ import annotations
 
 import json
 import logging
 import os
+from time import monotonic
 from typing import Any
 
 from celery import shared_task
@@ -11,18 +12,33 @@ from django.db import transaction
 
 from apps.chatbot.services.llm_client import is_transient_llm_error
 from apps.classes.models import ClassCreationSession
-from apps.classes.services.exam_prep_pipeline import (
-    ExamPrepPipelineCancelled,
-    run_exam_prep_pdf_pipeline,
+from apps.classes.services.exam_prep_mistral_artifacts import (
+    cleanup_session_private_artifacts,
+    session_artifact_namespace,
 )
-from apps.commons.token_tracker import set_current_user
+from apps.classes.services.exam_prep_mistral_production import (
+    PRODUCTION_ENGINE,
+    run_exam_prep_mistral_pipeline,
+)
+from apps.classes.services.exam_prep_pipeline import ExamPrepPipelineCancelled
+from apps.classes.services.exam_prep_mistral_stage5_runtime import stage5_task_deadline
+from apps.commons.token_tracker import set_current_session_id, set_current_user
 
 
 logger = logging.getLogger('apps.classes.exam_prep')
-PAGE_FIRST_ENGINE = 'page_first'
+PIPELINE_ENGINE = PRODUCTION_ENGINE
 TASK_SOFT_LIMIT = int(os.getenv('EXAM_PREP_TASK_SOFT_LIMIT_SECONDS', '3300'))
 TASK_HARD_LIMIT = int(os.getenv('EXAM_PREP_TASK_HARD_LIMIT_SECONDS', '3600'))
 TASK_MAX_RETRIES = int(os.getenv('EXAM_PREP_TASK_MAX_RETRIES', '2'))
+TASK_FINALIZE_SAFETY_SECONDS = int(
+    os.getenv('EXAM_PREP_TASK_FINALIZE_SAFETY_SECONDS', '300')
+)
+
+
+def _stage5_deadline_at(task_started_at: float) -> float:
+    task_limit = min(TASK_SOFT_LIMIT, TASK_HARD_LIMIT)
+    usable_seconds = max(0, task_limit - max(0, TASK_FINALIZE_SAFETY_SECONDS))
+    return task_started_at + usable_seconds
 
 
 def _workflow_state(
@@ -37,7 +53,7 @@ def _workflow_state(
     publication_blocked: bool = False,
 ) -> dict:
     return {
-        'engine': PAGE_FIRST_ENGINE,
+        'engine': PIPELINE_ENGINE,
         'stage': stage,
         'message': message,
         'progressPercent': max(0, min(100, int(progress))),
@@ -79,6 +95,15 @@ def _mark_failed(session_id: int, detail: str) -> None:
     )
 
 
+def _session_cancel_requested(session_id: int) -> bool:
+    """A deleted session is also terminal; never keep spending after deletion."""
+
+    return not ClassCreationSession.objects.filter(
+        id=session_id,
+        cancel_requested=False,
+    ).exists()
+
+
 @shared_task(
     bind=True,
     max_retries=TASK_MAX_RETRIES,
@@ -92,6 +117,7 @@ def _mark_failed(session_id: int, detail: str) -> None:
 def process_exam_prep_pdf_session(self, session_id: int) -> dict:
     """Write one PDF directly into the existing ``exam_prep_json`` field."""
 
+    task_started_at = monotonic()
     session = (
         ClassCreationSession.objects.select_related('teacher')
         .filter(id=session_id)
@@ -102,18 +128,43 @@ def process_exam_prep_pdf_session(self, session_id: int) -> dict:
     if session.pipeline_type != ClassCreationSession.PipelineType.EXAM_PREP:
         return {'status': 'skipped', 'reason': 'not_exam_prep'}
     if session.status == ClassCreationSession.Status.EXAM_STRUCTURED:
+        cleanup_session_private_artifacts(
+            session.id,
+            include_visuals=False,
+            include_checkpoints=True,
+        )
         return {'status': 'reused', 'session_id': session.id}
     if session.status != ClassCreationSession.Status.EXAM_TRANSCRIBING:
+        if session.status in {
+            ClassCreationSession.Status.CANCELLED,
+            ClassCreationSession.Status.FAILED,
+        }:
+            cleanup_session_private_artifacts(
+                session.id,
+                include_visuals=True,
+                include_checkpoints=True,
+            )
         return {'status': 'skipped', 'reason': f'status:{session.status}'}
     if session.cancel_requested:
+        cleanup_session_private_artifacts(
+            session.id,
+            include_visuals=True,
+            include_checkpoints=True,
+        )
         _mark_cancelled(session.id)
         return {'status': 'cancelled', 'session_id': session.id}
     if session.source_type != ClassCreationSession.SourceType.PDF or not session.source_file:
         detail = 'A valid PDF source file is required.'
+        cleanup_session_private_artifacts(
+            session.id,
+            include_visuals=True,
+            include_checkpoints=True,
+        )
         _mark_failed(session.id, detail)
         raise RuntimeError(detail)
 
     set_current_user(session.teacher)
+    set_current_session_id(session.id)
     logger.info(
         'exam_prep.pipeline.started sessionId=%s taskId=%s attempt=%s',
         session.id,
@@ -137,10 +188,7 @@ def process_exam_prep_pdf_session(self, session_id: int) -> dict:
             session.source_file.close()
 
         def should_cancel() -> bool:
-            return ClassCreationSession.objects.filter(
-                id=session.id,
-                cancel_requested=True,
-            ).exists()
+            return _session_cancel_requested(session.id)
 
         def on_page_complete(completed: int, total: int) -> None:
             progress = 20 + int((completed / max(1, total)) * 70)
@@ -156,13 +204,15 @@ def process_exam_prep_pdf_session(self, session_id: int) -> dict:
                 )
             )
 
-        result = run_exam_prep_pdf_pipeline(
-            data=data,
-            title=session.title,
-            scope_hint='default',
-            on_page_complete=on_page_complete,
-            should_cancel=should_cancel,
-        )
+        with stage5_task_deadline(_stage5_deadline_at(task_started_at)):
+            result = run_exam_prep_mistral_pipeline(
+                data=data,
+                title=session.title,
+                scope_hint='default',
+                on_page_complete=on_page_complete,
+                should_cancel=should_cancel,
+                asset_namespace=session_artifact_namespace(session.id),
+            )
         if should_cancel():
             raise ExamPrepPipelineCancelled('Cancellation requested after extraction.')
 
@@ -206,6 +256,11 @@ def process_exam_prep_pdf_session(self, session_id: int) -> dict:
                 .first()
             )
             if locked is None:
+                cleanup_session_private_artifacts(
+                    session.id,
+                    include_visuals=True,
+                    include_checkpoints=True,
+                )
                 return {'status': 'skipped', 'reason': 'session_deleted'}
             if locked.cancel_requested:
                 locked.status = ClassCreationSession.Status.CANCELLED
@@ -224,6 +279,11 @@ def process_exam_prep_pdf_session(self, session_id: int) -> dict:
                         'workflow_state',
                         'updated_at',
                     ]
+                )
+                cleanup_session_private_artifacts(
+                    session.id,
+                    include_visuals=True,
+                    include_checkpoints=True,
                 )
                 return {'status': 'cancelled', 'session_id': locked.id}
 
@@ -261,6 +321,16 @@ def process_exam_prep_pdf_session(self, session_id: int) -> dict:
                 ]
             )
 
+        if not cleanup_session_private_artifacts(
+            session.id,
+            include_visuals=False,
+            include_checkpoints=True,
+        ):
+            logger.warning(
+                'exam_prep.pipeline.checkpoint_cleanup_pending sessionId=%s',
+                session.id,
+            )
+
         logger.info(
             'exam_prep.pipeline.completed sessionId=%s pageCount=%s questionCount=%s matchedAnswerCount=%s orphanAnswerCount=%s reviewCount=%s criticalIssueCount=%s failedPageCount=%s publicationReady=%s',
             session.id,
@@ -285,6 +355,11 @@ def process_exam_prep_pdf_session(self, session_id: int) -> dict:
             'publication_ready': publishable,
         }
     except ExamPrepPipelineCancelled:
+        cleanup_session_private_artifacts(
+            session.id,
+            include_visuals=True,
+            include_checkpoints=True,
+        )
         _mark_cancelled(session.id)
         logger.info('exam_prep.pipeline.cancelled sessionId=%s', session.id)
         return {'status': 'cancelled', 'session_id': session.id}
@@ -306,6 +381,11 @@ def process_exam_prep_pdf_session(self, session_id: int) -> dict:
             )
             raise self.retry(exc=exc, countdown=countdown)
 
+        cleanup_session_private_artifacts(
+            session.id,
+            include_visuals=True,
+            include_checkpoints=True,
+        )
         _mark_failed(session.id, str(exc))
         logger.exception(
             'exam_prep.pipeline.failed sessionId=%s errorCode=%s',

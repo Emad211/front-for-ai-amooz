@@ -851,7 +851,7 @@ export async function structureClassCreationStep2(params: {
 
 
 // ==========================================================================
-// EXAM PREP PIPELINE (2 Steps)
+// EXAM PREP PDF INTAKE + BACKGROUND MISTRAL PIPELINE
 // ==========================================================================
 
 export type ExamPrepStatus =
@@ -962,14 +962,15 @@ export interface ExamPrepExtractionAudit {
 }
 
 export interface ExamPrepVisualRef {
-  id: number;
+  id: string | number;
   role: 'question' | 'option' | 'solution';
   optionLabel?: string | null;
   altText: string;
   selectedVariant: 'source' | 'generated';
 }
 
-export interface ExamPrepVisualAsset extends ExamPrepVisualRef {
+export interface ExamPrepVisualAsset extends Omit<ExamPrepVisualRef, 'id'> {
+  id: number;
   questionKey: string;
   status: string;
   teacherApprovedGenerated: boolean;
@@ -1010,7 +1011,7 @@ export interface ExamPrepQuestion {
 }
 
 /**
- * Exam Prep Step 1: Upload and transcribe audio/video.
+ * Upload one PDF and start the production Mistral OCR pipeline.
  */
 export async function transcribeExamPrepStep1(
   params: {
@@ -1207,9 +1208,19 @@ export async function getExamPrepVisualBlob(
     throw new Error('NEXT_PUBLIC_API_URL تنظیم نشده است.');
   }
   const apiOrigin = API_URL.replace(/\/api$/, '');
-  const url = relativeUrl.startsWith('http')
-    ? relativeUrl
-    : `${apiOrigin}${relativeUrl.startsWith('/') ? '' : '/'}${relativeUrl}`;
+  // Protected visual URLs must stay on the configured API origin.
+  // Never attach the user's bearer token to an arbitrary external URL.
+  let parsed: URL;
+  try {
+    parsed = new URL(relativeUrl, `${apiOrigin}/`);
+  } catch {
+    throw new Error('آدرس تصویر نامعتبر است.');
+  }
+  const expectedOrigin = new URL(`${apiOrigin}/`).origin;
+  if (parsed.origin !== expectedOrigin) {
+    throw new Error('آدرس تصویر خارج از دامنهٔ امن برنامه است.');
+  }
+  const url = parsed.toString();
   return requestBlob(url, signal);
 }
 

@@ -74,6 +74,7 @@ export const CRITICAL_EXAM_REVIEW_CODES = new Set([
   'source_verification_failed',
   'table_incomplete',
   'count_answer_unresolved',
+  'stage5_finalization_blocked',
   'failed_chunk',
 ]);
 
@@ -201,6 +202,10 @@ const ISSUE_COPY: Record<string, { label: string; description: string }> = {
   source_verification_failed: {
     label: 'تطبیق با منبع قطعی نشده',
     description: 'سیستم نتوانسته صحت سؤال یا پاسخ را از روی صفحه منبع تأیید کند؛ دستی بررسی کنید.',
+  },
+  stage5_finalization_blocked: {
+    label: 'تأیید نهایی این بخش قطعی نشده است',
+    description: 'تأیید نهایی منبع کامل نشده است؛ صفحه منبع را بررسی و سپس این مورد را تأیید کنید.',
   },
   targeted_repair_unresolved: {
     label: 'اصلاح خودکار کامل نشده',

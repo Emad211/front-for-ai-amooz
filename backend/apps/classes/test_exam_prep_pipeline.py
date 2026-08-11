@@ -30,19 +30,15 @@ class TestExamPrepStep1Transcription:
 
     @pytest.fixture(autouse=True)
     def _stub_celery_tasks(self, monkeypatch):
-        """Stub Celery .delay() so tests don't need a running broker."""
+        """Stub the production PDF task so tests don't need a running broker."""
         monkeypatch.setattr(
-            'apps.classes.views.process_exam_prep_step1_transcription.delay',
-            lambda session_id: None,
+            'apps.classes.views_exam_prep.process_exam_prep_pdf_session.apply_async',
+            lambda **kwargs: None,
         )
-        monkeypatch.setattr(
-            'apps.classes.views.process_exam_prep_full_pipeline.delay',
-            lambda session_id: None,
-        )
-        monkeypatch.setattr(
-            'apps.classes.views.process_exam_prep_step2_structure.delay',
-            lambda session_id: None,
-        )
+
+    @staticmethod
+    def _pdf_upload(name='exam.pdf', payload=b'%PDF-1.4\nproduction-test'):
+        return SimpleUploadedFile(name, payload, content_type='application/pdf')
 
     def test_requires_authentication(self):
         """Step 1 should reject unauthenticated requests."""
@@ -71,23 +67,15 @@ class TestExamPrepStep1Transcription:
         )
         assert res.status_code == 403
 
-    def test_teacher_can_start_exam_prep_transcription(self, monkeypatch):
-        """Teacher can upload file and start exam prep transcription."""
+    def test_teacher_can_start_exam_prep_transcription(self):
+        """Teacher can upload a PDF and start the production pipeline."""
         user = User.objects.create_user(username='teacher1', password='pass', role=User.Role.TEACHER)
         token = str(RefreshToken.for_user(user).access_token)
-
-        def _fake_transcribe_media_bytes(*, data: bytes, mime_type: str):
-            return ('# Transcript\nسوال اول...', 'gemini', 'models/gemini-2.5-flash')
-
-        monkeypatch.setattr(
-            'apps.classes.views.transcribe_media_bytes',
-            _fake_transcribe_media_bytes,
-        )
 
         client = APIClient()
         client.credentials(HTTP_AUTHORIZATION=f'Bearer {token}')
 
-        upload = SimpleUploadedFile('exam.ogg', b'fake-audio', content_type='audio/ogg')
+        upload = self._pdf_upload()
         res = client.post(
             '/api/classes/exam-prep-sessions/step-1/',
             {'title': 'ریاضی کنکور', 'description': 'حل تست‌های فصل ۱', 'file': upload},
@@ -143,19 +131,11 @@ class TestExamPrepStep1Transcription:
         )
         assert res.status_code == 400
 
-    def test_idempotency_with_client_request_id(self, monkeypatch):
+    def test_idempotency_with_client_request_id(self):
         """A genuine retry (SAME file + SAME client_request_id) dedupes to the
         existing session — no duplicate is created."""
         user = User.objects.create_user(username='teacher4', password='pass', role=User.Role.TEACHER)
         token = str(RefreshToken.for_user(user).access_token)
-
-        def _fake_transcribe_media_bytes(*, data: bytes, mime_type: str):
-            return ('# Transcript', 'gemini', 'models/gemini-2.5-flash')
-
-        monkeypatch.setattr(
-            'apps.classes.views.transcribe_media_bytes',
-            _fake_transcribe_media_bytes,
-        )
 
         client = APIClient()
         client.credentials(HTTP_AUTHORIZATION=f'Bearer {token}')
@@ -164,7 +144,7 @@ class TestExamPrepStep1Transcription:
         client_request_id = str(uuid.uuid4())
 
         # First request
-        upload1 = SimpleUploadedFile('exam1.ogg', b'fake-audio', content_type='audio/ogg')
+        upload1 = self._pdf_upload('exam1.pdf')
         res1 = client.post(
             '/api/classes/exam-prep-sessions/step-1/',
             {'title': 'Test', 'file': upload1, 'client_request_id': client_request_id},
@@ -174,7 +154,7 @@ class TestExamPrepStep1Transcription:
 
         # Second request: SAME file (same name + bytes) + SAME client_request_id →
         # a genuine retry, must dedupe to the existing session.
-        upload2 = SimpleUploadedFile('exam1.ogg', b'fake-audio', content_type='audio/ogg')
+        upload2 = self._pdf_upload('exam1.pdf')
         res2 = client.post(
             '/api/classes/exam-prep-sessions/step-1/',
             {'title': 'Test', 'file': upload2, 'client_request_id': client_request_id},
@@ -184,17 +164,12 @@ class TestExamPrepStep1Transcription:
         # Should return same session (idempotent hit)
         assert res2.data['id'] == session_id_1
 
-    def test_different_file_same_client_request_id_creates_new_session(self, monkeypatch):
+    def test_different_file_same_client_request_id_creates_new_session(self):
         """A DIFFERENT file reusing the same client_request_id must NOT return the
         stale session (that would emit the old media's output for a new upload —
         the 'new input, stale output' bug). It mints a fresh session instead."""
         user = User.objects.create_user(username='teacher4b', password='pass', role=User.Role.TEACHER)
         token = str(RefreshToken.for_user(user).access_token)
-
-        monkeypatch.setattr(
-            'apps.classes.views.transcribe_media_bytes',
-            lambda *, data, mime_type: ('# Transcript', 'gemini', 'models/gemini-2.5-flash'),
-        )
 
         client = APIClient()
         client.credentials(HTTP_AUTHORIZATION=f'Bearer {token}')
@@ -204,13 +179,13 @@ class TestExamPrepStep1Transcription:
 
         res1 = client.post(
             '/api/classes/exam-prep-sessions/step-1/',
-            {'title': 'A', 'file': SimpleUploadedFile('a.ogg', b'audio-A', content_type='audio/ogg'),
+            {'title': 'A', 'file': self._pdf_upload('a.pdf', b'%PDF-1.4\nA'),
              'client_request_id': client_request_id},
             format='multipart',
         )
         res2 = client.post(
             '/api/classes/exam-prep-sessions/step-1/',
-            {'title': 'B', 'file': SimpleUploadedFile('b.ogg', b'audio-B-different', content_type='audio/ogg'),
+            {'title': 'B', 'file': self._pdf_upload('b.pdf', b'%PDF-1.4\nB-different'),
              'client_request_id': client_request_id},
             format='multipart',
         )

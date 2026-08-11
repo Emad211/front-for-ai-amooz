@@ -1,4 +1,14 @@
-# Exam Prep simplification and legacy removal plan
+# Exam Prep page-first simplification plan (superseded)
+
+> **Superseded on 2026-08-11:** This file is retained as the historical
+> page-first/V4 cleanup plan only. It is not the production architecture or a
+> deployment runbook. The standard Exam Prep intake now runs
+> `Mistral OCR4 -> deterministic Stage 2 -> source-precise Stage 3 -> free
+> deterministic Stage 4 -> all-region Stage 5`. Stage 5 uses
+> `gpt-5.4-mini` as primary and `gemini-3.6-flash` as the bounded main
+> escalation model. There is no public page-first or V4/Source-Map route and no
+> runtime rollback flag. See `docs/EXAM_PREP_MISTRAL_PRODUCTION_FREEZE.md` for
+> the active contract. All sections below are historical.
 
 ## Current checkpoint
 
@@ -109,14 +119,10 @@ New intake does **not** create:
 - legacy extraction artifacts or units;
 - projection rows.
 
-A temporary deployment rollback switch remains during Phase 3/4:
-
-```text
-EXAM_PREP_SIMPLE_PIPELINE_ENABLED=True
-```
-
-Setting it to false restores the old V4 intake view. This is a deployment
-rollback only, not another pipeline version. It must be removed after Phase 4.
+The temporary deployment rollback switch described by this historical plan has
+been removed. Current deployments must not define or rely on
+`EXAM_PREP_SIMPLE_PIPELINE_ENABLED`; the standard endpoint is fixed to the
+Mistral Stage 1–5 runner and does not restore a public V4 intake.
 
 ## Legacy runtime still present
 

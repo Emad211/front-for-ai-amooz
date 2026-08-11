@@ -15,7 +15,7 @@ import {
   updateEditablePageRole,
   type EditableSourceMapPage,
   type ExamPrepV4Page,
-} from './source-map-model.ts';
+} from './source-map-model';
 
 const sourcePages: ExamPrepV4Page[] = [
   {

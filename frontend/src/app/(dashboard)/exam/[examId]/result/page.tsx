@@ -7,6 +7,7 @@ import { DashboardService } from '@/services/dashboard-service';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { MarkdownWithMath } from '@/components/content/markdown-with-math';
+import { ProtectedExamVisual } from '@/components/exam-prep/protected-exam-visual';
 import { toPersianOptionLabel } from '@/lib/persian-option-label';
 import type { Exam } from '@/types';
 
@@ -16,7 +17,16 @@ type ExamPrepResult = {
   correct_count: number;
   total_questions: number;
   answers: Record<string, string>;
-  items: { question_id: string; selected_label: string; is_correct: boolean; attempts: number; score_for_question: number }[];
+  items: {
+    question_id: string;
+    selected_label: string;
+    is_correct: boolean;
+    attempts: number;
+    score_for_question: number;
+    correct_option_label?: string;
+    teacher_solution_markdown?: string;
+    solution_visuals?: { id: string | number; role: 'solution'; altText: string; url: string }[];
+  }[];
 };
 
 export default function ExamResultPage() {
@@ -238,7 +248,37 @@ export default function ExamResultPage() {
                       <span className="font-semibold">ثبت نشده</span>
                     )}
                   </div>
+                  {result.finalized && (
+                    <div className="flex items-center justify-between gap-2 bg-card border border-border rounded-lg px-3 py-2">
+                      <span className="text-muted-foreground">پاسخ صحیح</span>
+                      <span className="font-semibold">
+                        {it.correct_option_label
+                          ? toPersianOptionLabel(it.correct_option_label)
+                          : '—'}
+                      </span>
+                    </div>
+                  )}
                 </div>
+                {result.finalized && (it.teacher_solution_markdown || it.solution_visuals?.length) ? (
+                  <div className="mt-3 space-y-3 rounded-lg border border-border bg-card p-3">
+                    <div className="text-sm font-semibold">راه‌حل تشریحی</div>
+                    {it.teacher_solution_markdown ? (
+                      <MarkdownWithMath
+                        markdown={it.teacher_solution_markdown}
+                        renderKey={`res-solution-${it.question_id}`}
+                        className="text-sm leading-7"
+                      />
+                    ) : null}
+                    {it.solution_visuals?.map((visual) => (
+                      <ProtectedExamVisual
+                        key={visual.id}
+                        url={visual.url}
+                        alt={visual.altText || 'تصویر راه‌حل'}
+                        className="mx-auto max-h-[28rem] max-w-full rounded-md object-contain"
+                      />
+                    ))}
+                  </div>
+                ) : null}
               </div>
             );
           })}

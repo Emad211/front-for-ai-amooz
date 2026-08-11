@@ -166,6 +166,8 @@ def transcribe_source_region(
     page_number: int,
     model: str,
     thinking_minimal: bool,
+    timeout: float | None = None,
+    max_output_tokens: int | None = None,
 ) -> RegionTranscriptionResult:
     """Make exactly one source-only provider call and validate its JSON.
 
@@ -205,8 +207,16 @@ def transcribe_source_region(
         "model": clean_model,
         "messages": messages,
         "response_format": {"type": "json_object"},
-        "max_tokens": _max_tokens(),
-        "timeout": _timeout(),
+        "max_tokens": (
+            _max_tokens()
+            if max_output_tokens is None
+            else max(500, min(12000, int(max_output_tokens)))
+        ),
+        "timeout": (
+            _timeout()
+            if timeout is None
+            else max(30.0, min(600.0, float(timeout)))
+        ),
     }
     if thinking_minimal:
         create_kwargs["extra_body"] = _minimal_extra_body()

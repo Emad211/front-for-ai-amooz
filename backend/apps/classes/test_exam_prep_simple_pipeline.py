@@ -311,7 +311,7 @@ def test_task_persists_publishable_projection_and_readable_transcript(
     )
     monkeypatch.setattr(
         tasks_exam_prep,
-        'run_exam_prep_pdf_pipeline',
+        'run_exam_prep_mistral_pipeline',
         lambda **_kwargs: fake_result,
     )
 
@@ -353,7 +353,7 @@ def test_task_blocks_publication_for_partial_result_but_keeps_output(
     )
     monkeypatch.setattr(
         tasks_exam_prep,
-        'run_exam_prep_pdf_pipeline',
+        'run_exam_prep_mistral_pipeline',
         lambda **_kwargs: fake_result,
     )
 
@@ -379,7 +379,7 @@ def test_task_terminal_pipeline_error_marks_db_and_raises_for_celery(
     session = _session_with_pdf(page_count=1)
     monkeypatch.setattr(
         tasks_exam_prep,
-        'run_exam_prep_pdf_pipeline',
+        'run_exam_prep_mistral_pipeline',
         lambda **_kwargs: (_ for _ in ()).throw(NoExamQuestionsFound('no questions')),
     )
 
@@ -406,7 +406,7 @@ def test_task_honors_cancellation_before_provider(source_storage, monkeypatch):
     calls = []
     monkeypatch.setattr(
         tasks_exam_prep,
-        'run_exam_prep_pdf_pipeline',
+        'run_exam_prep_mistral_pipeline',
         lambda **kwargs: calls.append(kwargs),
     )
 
@@ -416,6 +416,10 @@ def test_task_honors_cancellation_before_provider(source_storage, monkeypatch):
     assert result['status'] == 'cancelled'
     assert session.status == ClassCreationSession.Status.CANCELLED
     assert calls == []
+
+
+def test_missing_session_is_a_cooperative_cancellation_boundary():
+    assert tasks_exam_prep._session_cancel_requested(999_999_999) is True
 
 
 def test_renderer_preserves_every_physical_page():

@@ -5,6 +5,8 @@ from django.utils import timezone
 
 from core.storage_backends import delete_answer_source_file
 
+from .services.exam_prep_mistral_artifacts import cleanup_session_private_artifacts
+
 from .models import (
     ClassCreationSession,
     ExamPrepExtractionArtifact,
@@ -24,6 +26,10 @@ from .services.exam_prep_page_review import (
     render_projection_transcript,
     retain_failed_page_evidence,
 )
+from .services.exam_prep_mistral_production import PRODUCTION_ENGINE
+from .services.exam_prep_mistral_readiness import (
+    production_review_artifact_is_valid,
+)
 from .services.exam_prep_v4_create_flow import (
     cancel_source_aware_project_for_session,
     sync_create_flow_session,
@@ -40,6 +46,26 @@ def _delete_blobs_after_commit(names: list[str]) -> None:
             delete_answer_source_file(name)
 
     transaction.on_commit(delete_files)
+
+
+@receiver(
+    post_delete,
+    sender=ClassCreationSession,
+    dispatch_uid='exam_prep_mistral_private_namespace_cleanup',
+)
+def cleanup_exam_prep_mistral_private_namespace(sender, instance, **kwargs):  # noqa: ARG001
+    """Cover admin/cascade deletion paths that bypass the owner API."""
+
+    if instance.pipeline_type != ClassCreationSession.PipelineType.EXAM_PREP:
+        return
+    session_id = instance.id
+    transaction.on_commit(
+        lambda: cleanup_session_private_artifacts(
+            session_id,
+            include_visuals=True,
+            include_checkpoints=True,
+        )
+    )
 
 
 @receiver(post_delete, sender=StudentExerciseAnswerAsset)
@@ -142,18 +168,18 @@ def propagate_existing_create_flow_cancel(
 @receiver(
     post_save,
     sender=ClassCreationSession,
-    dispatch_uid='exam_prep_page_first_revalidate_teacher_edit',
+    dispatch_uid='exam_prep_revalidate_teacher_edit',
 )
-def revalidate_page_first_teacher_edit(
+def revalidate_exam_prep_teacher_edit(
     sender,
     instance,
     created,
     update_fields,
     **kwargs,
 ):  # noqa: ARG001
-    """Re-audit only a teacher edit of canonical page-first exam JSON.
+    """Re-audit only a teacher edit of canonical production exam JSON.
 
-    The page-first task saves ``exam_prep_json`` and ``transcript_markdown`` in
+    The production task saves ``exam_prep_json`` and ``transcript_markdown`` in
     the same operation, so that save is intentionally ignored here. The normal
     teacher PATCH updates ``exam_prep_json`` only; that edit is revalidated and
     may move an incomplete draft to ``exam_structured`` once all critical issues
@@ -167,17 +193,56 @@ def revalidate_page_first_teacher_edit(
         or 'transcript_markdown' in changed
         or instance.pipeline_type != ClassCreationSession.PipelineType.EXAM_PREP
         or instance.is_published
+        or instance.status not in {
+            ClassCreationSession.Status.EXAM_TRANSCRIBED,
+            ClassCreationSession.Status.EXAM_STRUCTURED,
+        }
     ):
         return
     workflow = instance.workflow_state if isinstance(instance.workflow_state, dict) else {}
-    if workflow.get('engine') != 'page_first':
+    if workflow.get('engine') not in {'page_first', PRODUCTION_ENGINE}:
+        return
+    if (
+        workflow.get('stage') != 'ready_for_review'
+        or workflow.get('readyForReview') is not True
+    ):
+        return
+    if (
+        workflow.get('engine') == PRODUCTION_ENGINE
+        and not production_review_artifact_is_valid(workflow)
+    ):
         return
 
     projection = parse_projection(instance.exam_prep_json)
-    audit = audit_page_first_projection(projection)
+    previous_audit = workflow.get('extractionAudit')
+    previous_audit = previous_audit if isinstance(previous_audit, dict) else {}
+    visual_contracts = previous_audit.get('visualSourceContracts')
+    visual_contracts = visual_contracts if isinstance(visual_contracts, dict) else {}
+    preserved_visual_audit = {
+        key: previous_audit[key]
+        for key in ('visualAssetRegistry', 'visualPipeline')
+        if isinstance(previous_audit.get(key), dict)
+    }
+    recomputed_audit = audit_page_first_projection(
+        projection,
+        visual_source_contracts=visual_contracts,
+    )
+    audit = {**previous_audit, **recomputed_audit}
+    if visual_contracts:
+        audit['visualSourceContracts'] = visual_contracts
+    audit.update(preserved_visual_audit)
     failed_page_numbers = workflow.get('failedPageNumbers') or []
     audit = retain_failed_page_evidence(audit, failed_page_numbers)
     passed = audit.get('status') == 'passed'
+    if workflow.get('engine') == PRODUCTION_ENGINE:
+        passed = passed and production_review_artifact_is_valid(
+            {
+                **workflow,
+                'publicationBlocked': False,
+                'extractionAudit': audit,
+            },
+            require_publishable=True,
+        )
     warnings: list[str] = []
     critical_count = int(audit.get('criticalIssueCount') or 0)
     if critical_count:

@@ -20,6 +20,27 @@ def test_native_heading_parser_is_anchored_and_normalizes_digits():
     assert native._page_heading_pairs(text) == [(251, 3), (252, 1)]
 
 
+def test_native_heading_coordinate_fragment_accepts_the_full_heading_run():
+    match = native._NUMBER_FRAGMENT_RE.match("۴- گزینه «۲»")
+    assert match is not None
+    assert native._integer(match.group("question")) == 4
+
+
+def test_native_heading_coordinates_use_the_nearby_printed_option_label():
+    fragments = [
+        ("۴ -", 285.4, 641.8),
+        ("\x03", 0.0, 0.0),
+        ("گزینه", 0.0, 0.0),
+        ("»۲«", 0.0, 0.0),
+        ("۴ -", 553.7, 68.3),
+        ("متن گزینه چهار", 0.0, 0.0),
+    ]
+
+    coordinates = native._heading_coordinates(fragments, [(4, 2)])
+
+    assert coordinates == {4: [(285.4, 641.8)]}
+
+
 def test_native_evidence_trust_requires_exact_unique_question_coverage():
     evidence = native.NativeAnswerEvidence(
         headings=(

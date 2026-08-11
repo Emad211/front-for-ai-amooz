@@ -6,9 +6,9 @@ from apps.classes.services import exam_prep_mistral_production as production
 from apps.classes.services import exam_prep_mistral_stage4_page_batch_runtime as runtime
 
 
-def test_total_pdf_budget_defaults_to_thirty_cents(monkeypatch):
+def test_total_pdf_budget_defaults_to_one_fifty(monkeypatch):
     monkeypatch.delenv("EXAM_PREP_TOTAL_PDF_BUDGET_USD", raising=False)
-    assert production._total_budget_usd() == Decimal("0.30")
+    assert production._total_budget_usd() == Decimal("1.50")
 
 
 def test_total_pdf_budget_can_be_lowered_but_not_negative(monkeypatch):
@@ -18,9 +18,9 @@ def test_total_pdf_budget_can_be_lowered_but_not_negative(monkeypatch):
     assert production._total_budget_usd() == Decimal("0")
 
 
-def test_targeted_ocr_recovery_is_allowed_only_when_it_leaves_stage4_reserve(monkeypatch):
+def test_targeted_ocr_recovery_is_allowed_only_when_it_leaves_stage5_reserve(monkeypatch):
     monkeypatch.setenv("EXAM_PREP_TARGETED_OCR_RESERVE_PER_PAGE_USD", "0.0065")
-    monkeypatch.setenv("EXAM_PREP_STAGE4_MINIMUM_RESERVE_USD", "0.0065")
+    monkeypatch.setenv("EXAM_PREP_STAGE5_MINIMUM_RESERVE_USD", "0.0065")
     monkeypatch.setattr(production, "_target_crop_specs", lambda accepted, targets: [(1, "left")] * 2)
 
     allowed = production._targeted_recovery_budget_plan(
@@ -54,7 +54,7 @@ def test_targeted_ocr_recovery_has_no_reserve_when_no_crop_is_needed(monkeypatch
     )
     assert plan["allowed"] is False
     assert plan["reserveUsd"] == Decimal("0")
-    assert plan["minimumStage4ReserveUsd"] == Decimal("0")
+    assert plan["minimumStage5ReserveUsd"] == Decimal("0")
 
 
 def test_secondary_budget_gate_uses_runtime_reserve(monkeypatch):

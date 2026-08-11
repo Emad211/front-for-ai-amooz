@@ -249,7 +249,7 @@ class TestConcurrentSessionLimit:
                 status=ClassCreationSession.Status.EXAM_TRANSCRIBING,
             )
 
-        upload = SimpleUploadedFile('audio.ogg', b'fake-audio', content_type='audio/ogg')
+        upload = SimpleUploadedFile('sample.pdf', b'%PDF-fake', content_type='application/pdf')
         resp = client.post(
             '/api/classes/exam-prep-sessions/step-1/',
             {'title': 'test', 'file': upload, 'client_request_id': str(uuid.uuid4())},

@@ -46,7 +46,7 @@ export interface Question {
   correctOptionId?: string;
   userAnswerId?: string;
   visuals?: {
-    id: number;
+    id: string | number;
     role: 'question' | 'option';
     optionLabel?: string | null;
     altText: string;

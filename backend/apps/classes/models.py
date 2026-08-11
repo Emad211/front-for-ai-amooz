@@ -148,6 +148,13 @@ class ClassCreationSession(models.Model):
     @property
     def is_active_pipeline(self) -> bool:
         """True while the pipeline is still running (i.e. cancellable)."""
+        workflow = self.workflow_state if isinstance(self.workflow_state, dict) else {}
+        if (
+            self.pipeline_type == self.PipelineType.EXAM_PREP
+            and self.status == self.Status.EXAM_TRANSCRIBED
+            and workflow.get('readyForReview') is True
+        ):
+            return False
         return self.status not in self.TERMINAL_STATUSES
 
     class Meta:

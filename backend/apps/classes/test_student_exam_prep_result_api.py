@@ -63,6 +63,7 @@ class TestStudentExamPrepResultApi:
                         {'label': 'ب', 'text_markdown': '2'},
                     ],
                     'correct_option_label': 'ب',
+                    'teacher_solution_markdown': 'راه حل سؤال یک',
                 },
                 {
                     'question_id': 'q2',
@@ -92,10 +93,12 @@ class TestStudentExamPrepResultApi:
         assert resp.data['score_0_100'] == 50
 
         items = {it['question_id']: it for it in resp.data['items']}
-        # Never expose correct answers to students
+        # Finalized results may reveal the answer and worked solution.
         assert 'correct_label' not in items['q1']
         assert items['q1']['is_correct'] is True
         assert items['q2']['is_correct'] is False
+        assert items['q1']['correct_option_label'] == 'ب'
+        assert items['q1']['teacher_solution_markdown'] == 'راه حل سؤال یک'
 
     def test_result_before_finalize_does_not_reveal_correctness(self):
         student, client = self._make_student_client(student_phone='09920000003')
@@ -136,6 +139,9 @@ class TestStudentExamPrepResultApi:
         assert items[0]['selected_label'] == 'ب'
         assert items[0]['is_correct'] is False
         assert 'correct_label' not in items[0]
+        assert 'correct_option_label' not in items[0]
+        assert 'teacher_solution_markdown' not in items[0]
+        assert 'solution_visuals' not in items[0]
 
     def test_result_is_404_when_student_not_invited(self):
         # Session is invited for a different phone.

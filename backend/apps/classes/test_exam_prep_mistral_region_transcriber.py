@@ -94,10 +94,14 @@ def test_secondary_call_has_no_gemini_thinking_body(monkeypatch):
         page_number=39,
         model="gpt-5.4-mini",
         thinking_minimal=False,
+        timeout=60,
+        max_output_tokens=2500,
     )
 
     assert len(client.calls) == 1
     assert "extra_body" not in client.calls[0]
+    assert client.calls[0]["timeout"] == 60.0
+    assert client.calls[0]["max_tokens"] == 2500
     assert client.options == [{"max_retries": 0}]
 
 

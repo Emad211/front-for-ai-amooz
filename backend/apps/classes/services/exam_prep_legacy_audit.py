@@ -21,9 +21,11 @@ from apps.classes.models import (
 from apps.classes.models_v4 import ExamProject, ExamSourceDocument
 from apps.classes.models_v4_bridge import ExamV4SessionBridge
 from apps.classes.models_v4_projection import ExamV4Projection
+from apps.classes.services.exam_prep_mistral_production import PRODUCTION_ENGINE
 
 
 PAGE_FIRST_ENGINE = 'page_first'
+CURRENT_ENGINES = frozenset({PAGE_FIRST_ENGINE, PRODUCTION_ENGINE})
 SCHEMA_VERSION = 1
 
 _SESSION_ACTIVE = {
@@ -100,8 +102,9 @@ def _session_family(
     artifact_versions: dict[int, int],
 ) -> str:
     state = session.workflow_state if isinstance(session.workflow_state, dict) else {}
-    if str(state.get('engine') or '') == PAGE_FIRST_ENGINE:
-        return PAGE_FIRST_ENGINE
+    engine = str(state.get('engine') or '')
+    if engine in CURRENT_ENGINES:
+        return engine
     if session.id in v4_session_ids:
         return 'v4'
     version = artifact_versions.get(session.id)
@@ -116,7 +119,7 @@ def _session_action(
     family: str,
     valid_question_count: int,
 ) -> str:
-    if family == PAGE_FIRST_ENGINE:
+    if family in CURRENT_ENGINES:
         return 'current'
     if session.is_published or valid_question_count > 0:
         return 'retain'
@@ -240,7 +243,7 @@ def build_exam_prep_legacy_audit(*, include_ids: bool = False) -> dict[str, Any]
             publishable_session_ids.append(session.id)
         if session.is_published and question_count < 1:
             invalid_published_session_ids.append(session.id)
-        if family != PAGE_FIRST_ENGINE and session.status in _SESSION_ACTIVE:
+        if family not in CURRENT_ENGINES and session.status in _SESSION_ACTIVE:
             _append_task(task_ids, family, session.celery_task_id)
 
     for artifact in artifacts:
@@ -281,6 +284,7 @@ def build_exam_prep_legacy_audit(*, include_ids: bool = False) -> dict[str, Any]
         'dryRun': True,
         'writesPerformed': 0,
         'pageFirstEngine': PAGE_FIRST_ENGINE,
+        'productionEngine': PRODUCTION_ENGINE,
         'sessions': {
             'total': len(sessions),
             'familyCounts': dict(sorted(family_counts.items())),

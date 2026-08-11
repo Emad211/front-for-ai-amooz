@@ -560,7 +560,7 @@ export const DashboardService = {
         type?: string;
         options: { label: string; text_markdown: string }[];
         visuals?: {
-          id: number;
+          id: string | number;
           role: 'question' | 'option';
           optionLabel?: string | null;
           altText: string;
@@ -655,7 +655,16 @@ export const DashboardService = {
       correct_count: number;
       total_questions: number;
       answers: Record<string, string>;
-      items: { question_id: string; selected_label: string; is_correct: boolean; attempts: number; score_for_question: number }[];
+      items: {
+        question_id: string;
+        selected_label: string;
+        is_correct: boolean;
+        attempts: number;
+        score_for_question: number;
+        correct_option_label?: string;
+        teacher_solution_markdown?: string;
+        solution_visuals?: { id: string | number; role: 'solution'; altText: string; url: string }[];
+      }[];
     }>(url, {
       method: 'GET',
       headers: {

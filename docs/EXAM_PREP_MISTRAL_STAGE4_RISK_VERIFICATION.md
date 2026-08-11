@@ -1,4 +1,4 @@
-# Exam Prep Mistral OCR4 — Stage 4 Risk-Gated Verification
+# Exam Prep Mistral OCR4 — Stage 4 Deterministic Risk Scoring
 
 Branch of record: `experiment/mistral-ocr-layout-probe`
 
@@ -10,8 +10,31 @@ The product contract remains:
 
 `ClassCreationSession -> ExamPrepPipelineResult -> exam_prep_json`
 
-Stage 4 is targeted verification, not a second extraction pipeline and not a
-whole-exam LLM audit.
+## Current production contract
+
+Stage 4 is a free deterministic pass. It scores every numbered question and
+solution region and records content-free risk evidence; it makes **zero provider
+calls** and does not mutate source text or visuals. Its default threshold remains
+`EXAM_PREP_STAGE4_RISK_THRESHOLD=40`.
+
+Paid verification moved to Stage 5. Stage 5 reads every question and solution
+crop with `gpt-5.4-mini` as the cheap primary model, then uses
+`gemini-3.6-flash` only for bounded disagreement/failure escalation. Each
+request carries one target and one crop. The production caps are 400 primary
+calls and 40 main calls, with no third model.
+
+The complete Stage 1–5 runner is wired to the standard Celery task and public
+Exam Prep intake. No page-first or V4/Source-Map public route is available.
+
+## Superseded historical Stage-4 verifier design
+
+> **Superseded:** Everything below this banner describes the earlier targeted
+> Stage-4 verifier experiment. Do not use its model order, caps, paid-call plan,
+> or environment variables as production configuration. It is retained only as
+> research history; the current contract is the section above.
+
+The historical Stage 4 design treated this as targeted verification, not a
+second extraction pipeline or a whole-exam LLM audit.
 
 ## Pipeline
 
@@ -253,5 +276,7 @@ These tests make zero provider requests.
 
 ## Stage boundary
 
-Stage 4 does not wire Celery to the OCR4 production runner. Live task cutover
-remains a later release step after final integrity/UI/release-gate work.
+This historical experiment no longer defines the runtime boundary. Current
+Stage 4 ends after free deterministic scoring; Stage 5 owns all paid region
+finalization, and the complete runner is already wired to the standard Celery
+task. See `docs/EXAM_PREP_MISTRAL_PRODUCTION_FREEZE.md` for the active contract.

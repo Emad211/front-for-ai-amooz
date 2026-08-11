@@ -88,6 +88,11 @@ def test_request_body_uses_advertised_chat_vision_shape():
     )
     assert body["model"] == "gemini-3.6-flash"
     assert body["response_format"] == {"type": "json_object"}
+    assert body["extra_body"] == {
+        "generationConfig": {
+            "thinkingConfig": {"thinkingLevel": "minimal"},
+        }
+    }
     content = body["messages"][1]["content"]
     images = [part for part in content if part.get("type") == "image_url"]
     assert len(images) == 1

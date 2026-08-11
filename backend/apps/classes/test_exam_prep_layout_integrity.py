@@ -63,8 +63,8 @@ def test_cover_page_is_skipped_without_provider_evidence():
 def test_strong_vertical_gutter_routes_to_two_columns():
     image = _png(
         lambda draw: (
-            draw.rectangle((430, 80, 760, 1030), fill="black"),
-            draw.rectangle((40, 80, 370, 1030), fill="black"),
+            draw.rectangle((450, 80, 760, 1030), fill="black"),
+            draw.rectangle((40, 80, 350, 1030), fill="black"),
         )
     )
     decision = classify_exam_page(

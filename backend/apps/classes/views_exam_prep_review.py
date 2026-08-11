@@ -1,7 +1,7 @@
-"""Teacher detail view for reviewable page-first exam-prep drafts.
+"""Teacher detail view for completed, reviewable exam-prep drafts.
 
 The public URL remains unchanged. This narrow override preserves the legacy
-view's DELETE behavior, permits PATCH for a completed page-first draft, and
+view's DELETE behavior, permits PATCH for a completed production draft, and
 keeps legacy drafts self-healing when review rules become more accurate.
 """
 from __future__ import annotations
@@ -21,6 +21,10 @@ from .serializers import (
     ExamPrepSessionUpdateSerializer,
 )
 from .services.exam_prep_inventory import rebuild_audit_after_teacher_review
+from .services.exam_prep_mistral_production import PRODUCTION_ENGINE
+from .services.exam_prep_mistral_readiness import (
+    production_review_artifact_is_valid,
+)
 from .services.exam_prep_page_review import (
     audit_page_first_projection,
     parse_projection,
@@ -39,16 +43,46 @@ def _workflow(session: ClassCreationSession) -> dict[str, Any]:
     return dict(value) if isinstance(value, dict) else {}
 
 
-def _is_reviewable_page_first_session(session: ClassCreationSession) -> bool:
+_REVIEWABLE_ENGINES = frozenset({'page_first', PRODUCTION_ENGINE})
+_REVIEWABLE_STATUSES = frozenset(
+    {
+        ClassCreationSession.Status.EXAM_TRANSCRIBED,
+        ClassCreationSession.Status.EXAM_STRUCTURED,
+    }
+)
+
+
+def _is_reviewable_exam_session(session: ClassCreationSession) -> bool:
     """Use durable workflow completion, not stale task metadata, as the gate."""
 
     workflow = _workflow(session)
-    return bool(
+    reviewable = bool(
         session.pipeline_type == ClassCreationSession.PipelineType.EXAM_PREP
-        and workflow.get('engine') == 'page_first'
+        and session.status in _REVIEWABLE_STATUSES
+        and workflow.get('engine') in _REVIEWABLE_ENGINES
         and workflow.get('readyForReview') is True
         and not session.is_published
     )
+    if not reviewable:
+        return False
+    if workflow.get('engine') == PRODUCTION_ENGINE:
+        return production_review_artifact_is_valid(workflow)
+    return True
+
+
+def _review_patch_conflict(session: ClassCreationSession) -> str:
+    if session.status in {
+        ClassCreationSession.Status.FAILED,
+        ClassCreationSession.Status.CANCELLED,
+    }:
+        return 'جلسه خاتمه‌یافته قابل ویرایش نیست.'
+    workflow = _workflow(session)
+    if (
+        workflow.get('engine') == PRODUCTION_ENGINE
+        and not production_review_artifact_is_valid(workflow)
+    ):
+        return 'خروجی کامل و معتبر پایپ‌لاین برای بازبینی موجود نیست.'
+    return ''
 
 
 def _normalise_page_numbers(values: object) -> list[int]:
@@ -159,12 +193,12 @@ def _downgrade_intentional_number_gaps(audit: dict[str, Any]) -> dict[str, Any]:
     return updated
 
 
-def _refresh_page_first_review_state(
+def _refresh_exam_review_state(
     session: ClassCreationSession,
 ) -> ClassCreationSession:
-    """Recompute a completed page-first draft and persist only real blockers."""
+    """Recompute a completed draft and persist only real blockers."""
 
-    if not _is_reviewable_page_first_session(session):
+    if not _is_reviewable_exam_session(session):
         return session
 
     workflow = _workflow(session)
@@ -172,19 +206,40 @@ def _refresh_page_first_review_state(
     previous_audit = previous_audit if isinstance(previous_audit, dict) else {}
     visual_contracts = previous_audit.get('visualSourceContracts')
     visual_contracts = visual_contracts if isinstance(visual_contracts, dict) else {}
+    preserved_visual_audit = {
+        key: previous_audit[key]
+        for key in ('visualAssetRegistry', 'visualPipeline')
+        if isinstance(previous_audit.get(key), dict)
+    }
     projection = parse_projection(session.exam_prep_json)
-    audit = _downgrade_intentional_number_gaps(
+    recomputed_audit = _downgrade_intentional_number_gaps(
         audit_page_first_projection(
             projection,
             visual_source_contracts=visual_contracts,
         )
     )
+    audit = {**previous_audit, **recomputed_audit}
+    if visual_contracts:
+        audit['visualSourceContracts'] = visual_contracts
+    audit.update(preserved_visual_audit)
     remaining_failed_pages = _failed_pages_that_still_contain_content(
         session,
         workflow.get('failedPageNumbers') or [],
     )
     audit = retain_failed_page_evidence(audit, remaining_failed_pages)
     passed = audit.get('status') == 'passed'
+    if workflow.get('engine') == PRODUCTION_ENGINE:
+        passed = passed and production_review_artifact_is_valid(
+            {
+                **workflow,
+                'stage': 'ready_for_review',
+                'readyForReview': True,
+                'publicationBlocked': False,
+                'failedPageNumbers': remaining_failed_pages,
+                'extractionAudit': audit,
+            },
+            require_publishable=True,
+        )
 
     warnings: list[str] = []
     critical_count = int(audit.get('criticalIssueCount') or 0)
@@ -249,8 +304,8 @@ def _refresh_page_first_review_state(
     return session
 
 
-class PageFirstExamPrepSessionDetailSerializer(ExamPrepSessionDetailSerializer):
-    """Expose the durable page-first audit when no legacy artifact exists."""
+class ExamPrepReviewSessionDetailSerializer(ExamPrepSessionDetailSerializer):
+    """Expose the durable production audit when no legacy artifact exists."""
 
     def get_extractionAudit(self, obj):
         artifact = self._artifact(obj)
@@ -260,10 +315,10 @@ class PageFirstExamPrepSessionDetailSerializer(ExamPrepSessionDetailSerializer):
         return dict(audit) if isinstance(audit, dict) else None
 
 
-class PageFirstExamPrepSessionDetailView(ExamPrepSessionDetailView):
+class ExamPrepReviewSessionDetailView(ExamPrepSessionDetailView):
     """Keep the existing endpoint while permitting completed blocked drafts."""
 
-    serializer_class = PageFirstExamPrepSessionDetailSerializer
+    serializer_class = ExamPrepReviewSessionDetailSerializer
 
     def get(self, request, session_id: int):
         session = _teacher_exam_prep_sessions(request.user).filter(id=session_id).first()
@@ -272,14 +327,14 @@ class PageFirstExamPrepSessionDetailView(ExamPrepSessionDetailView):
                 {'detail': 'جلسه آمادگی آزمون یافت نشد.'},
                 status=status.HTTP_404_NOT_FOUND,
             )
-        session = _refresh_page_first_review_state(session)
-        return Response(PageFirstExamPrepSessionDetailSerializer(session).data)
+        session = _refresh_exam_review_state(session)
+        return Response(ExamPrepReviewSessionDetailSerializer(session).data)
 
     @extend_schema(
         tags=['Exam Prep'],
         summary='Update Exam Prep Session',
         request=ExamPrepSessionUpdateSerializer,
-        responses={200: PageFirstExamPrepSessionDetailSerializer},
+        responses={200: ExamPrepReviewSessionDetailSerializer},
     )
     def patch(self, request, session_id: int):
         session = _teacher_exam_prep_sessions(request.user).filter(id=session_id).first()
@@ -287,6 +342,12 @@ class PageFirstExamPrepSessionDetailView(ExamPrepSessionDetailView):
             return Response(
                 {'detail': 'جلسه آمادگی آزمون یافت نشد.'},
                 status=status.HTTP_404_NOT_FOUND,
+            )
+        conflict = _review_patch_conflict(session)
+        if conflict:
+            return Response(
+                {'detail': conflict},
+                status=status.HTTP_409_CONFLICT,
             )
 
         serializer = ExamPrepSessionUpdateSerializer(data=request.data, partial=True)
@@ -302,19 +363,25 @@ class PageFirstExamPrepSessionDetailView(ExamPrepSessionDetailView):
             if field_name in data
         ]
         if not updated_fields:
-            session = _refresh_page_first_review_state(session)
-            return Response(PageFirstExamPrepSessionDetailSerializer(session).data)
+            session = _refresh_exam_review_state(session)
+            return Response(ExamPrepReviewSessionDetailSerializer(session).data)
 
         with transaction.atomic():
             session = ClassCreationSession.objects.select_for_update().get(
                 id=session.id,
                 teacher=request.user,
             )
+            conflict = _review_patch_conflict(session)
+            if conflict:
+                return Response(
+                    {'detail': conflict},
+                    status=status.HTTP_409_CONFLICT,
+                )
             if 'exam_prep_json' in data and (
                 session.is_published
                 or (
                     session.is_active_pipeline
-                    and not _is_reviewable_page_first_session(session)
+                    and not _is_reviewable_exam_session(session)
                 )
             ):
                 return Response(
@@ -377,5 +444,5 @@ class PageFirstExamPrepSessionDetailView(ExamPrepSessionDetailView):
                     artifact.save(update_fields=['audit', 'updated_at'])
 
         session = _teacher_exam_prep_sessions(request.user).get(id=session_id)
-        session = _refresh_page_first_review_state(session)
-        return Response(PageFirstExamPrepSessionDetailSerializer(session).data)
+        session = _refresh_exam_review_state(session)
+        return Response(ExamPrepReviewSessionDetailSerializer(session).data)

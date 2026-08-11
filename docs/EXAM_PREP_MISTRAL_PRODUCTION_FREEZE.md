@@ -27,7 +27,11 @@ All new OCR4 production wiring enters through:
 The signature and return type remain compatible with the existing simple Exam
 Prep runner.
 
-## Stage 1 — research freeze / production boundary: complete
+The standard Exam Prep intake and `tasks_exam_prep.py` now use this entrypoint.
+There is no public V4/Source-Map or page-first intake route and no runtime switch
+back to either architecture.
+
+## Production boundary: complete
 
 Research probes, benchmark builders, calibration tools, run-comparison helpers
 and findings remain in the repository for reproducibility but are not production
@@ -40,19 +44,15 @@ The production boundary forbids:
 - benchmark/gold/run-comparison helpers;
 - probe commands.
 
-## Stage 2 — OCR4 document core: complete and frozen
+## Stage 1 — Mistral OCR4 transport: complete
 
-Stage 2 is preserved byte-for-byte in:
+The paid OCR boundary is:
 
-`apps.classes.services.exam_prep_mistral_stage2_core`
+`apps.classes.services.exam_prep_mistral_ocr_transport`
 
 Its contract is:
 
-`PDF -> bounded chunks -> Mistral OCR4 blocks -> physical page remap -> booklet ranges -> RTL layout -> question regions -> solution-heading state machine -> targeted gap/invalid recovery -> deterministic assembly`
-
-The paid OCR boundary remains:
-
-`apps.classes.services.exam_prep_mistral_ocr_transport`
+`PDF -> bounded mini-PDF chunks -> Mistral OCR4 blocks -> exact physical-page coverage`
 
 ### OCR transport invariants
 
@@ -80,8 +80,21 @@ Malformed 2xx evidence is not paid-retried.
 
 A successful chunk is checkpointed only after exact coverage validation in
 private `answer_sources` storage. Checkpoints are bound to source SHA, OCR
-contract fingerprint, chunk index/pages and mini-PDF SHA. A later run can reuse
-validated chunks and pay only for unfinished work.
+contract fingerprint, chunk index/pages and mini-PDF SHA. They are additionally
+isolated under `session-<id>`, so only a retry of the same session can reuse
+validated chunks and pay only for unfinished work. Checkpoints are removed on
+success, cancellation, terminal failure, and deletion; they are retained only
+across a scheduled transient retry.
+
+## Stage 2 — deterministic document assembly: complete and frozen
+
+Stage 2 is preserved byte-for-byte in:
+
+`apps.classes.services.exam_prep_mistral_stage2_core`
+
+Its contract is:
+
+`OCR4 blocks -> physical page remap -> booklet ranges -> RTL layout -> question regions -> solution-heading state machine -> targeted gap/invalid recovery -> deterministic assembly`
 
 ### Structure invariants
 
@@ -152,7 +165,7 @@ suppressed.
 
 Crops are stored privately under:
 
-`exam-prep/source/visuals/v1/<source-sha>/...`
+`exam-prep/source/visuals/v1/session-<id>/<source-sha>/...`
 
 `exam_prep_json` keeps asset id, role, option binding, physical source page,
 normalized bbox, private storage reference, hash/size, visual mode, component
@@ -161,6 +174,11 @@ provenance and sanity metadata.
 Asset identity includes physical page + question + semantic role + option where
 applicable + occurrence + payload digest. Question and solution visual evidence
 is never semantically deduplicated.
+
+The session prefix is also the lifecycle boundary. A successful run preserves
+its durable Stage-3 crops, while cancellation, terminal failure, deletion, and
+the corresponding worker/API race paths delete the complete session prefix.
+Prefix validation is exact, so cleanup for one session cannot touch another.
 
 ### Visual fail-closed gates
 
@@ -191,6 +209,43 @@ Stage 3 is local/deterministic. `generalLlmCalls` remains zero. The later risk
 engine may selectively pass suspicious source crops to a model, but it cannot
 downgrade deterministic visual evidence.
 
+## Stage 4 — free deterministic region risk: complete
+
+Stage 4 scores every numbered question and solution region locally. It records
+formula/math density, units, scientific terms, structural defects, recovered or
+conflicting headings, OCR disagreement, and Stage-3 visual anomalies. It makes
+zero provider calls and is evidence for Stage 5; a low score is not treated as a
+semantic-accuracy guarantee.
+
+## Stage 5 — all-region source finalization: complete
+
+Stage 5 sends every numbered question crop and every numbered solution crop to
+the cheap primary model, `gpt-5.4-mini`. The main model,
+`gemini-3.6-flash`, is used only for bounded disagreement/failure escalation.
+There is no third-model/tiebreaker path in production.
+
+Stage-5 invariants:
+
+- one exact source crop and one target per provider request;
+- the existing Mistral candidate is hidden from independent transcribers;
+- deterministic reconciliation applies only defensible source-backed repairs;
+- unresolved regions receive `stage5_finalization_blocked` and fail closed;
+- primary-call cap `400` and main-call cap `40`;
+- provider I/O concurrency defaults to `4`, while reconciliation remains ordered
+  and deterministic;
+- maximum Stage-5 wall time defaults to `1800` seconds;
+- each production call is reserved against the remaining PDF budget before
+  submission; successful calls settle to actual usage and failed/invalid calls
+  retain their conservative reservation;
+- the Celery task stops starting Stage-5 calls 300 seconds before its soft
+  limit, leaving room for the bounded in-flight provider wave and cleanup;
+- visual assets and immutable Stage-3 provenance are preserved.
+
+`EXAM_PREP_TOTAL_PDF_BUDGET_USD=1.50` is the document target. After recorded OCR
+and targeted-recovery spend, its remainder is a hard rolling Stage-5 submission
+gate. Audit exposes successful cost, failed-call reservation, charged cost,
+maximum reserved exposure, and the exact fail-closed reason.
+
 ## Research code retained
 
 The repository intentionally keeps research-only:
@@ -204,27 +259,13 @@ They are evidence, not production dependencies.
 
 ## Current product wiring state
 
-The new OCR4 Stage 1–3 runner is still intentionally **not** the live Celery
-runner. `tasks_exam_prep.py` continues to call the existing simple page-first
-pipeline until later stages are complete.
+The standard teacher endpoint creates the existing `ClassCreationSession`, and
+the `pipeline` Celery queue runs the complete Stage 1–5 Mistral entrypoint. A
+successful machine run ends in the existing ready-for-review workflow; critical
+structural/visual/Stage-5 blockers still prevent publication.
 
-This prevents a half-finished OCR4 rollout while the risk/verifier, final
-integrity/dashboard/UI, branch reconciliation and release gate are unfinished.
-
-## Next stage
-
-Stage 4 is the targeted risk engine and independent source transcriber/verifier:
-
-- deterministic local risk scoring;
-- clean regions: zero LLM calls;
-- suspicious region: one exact Stage-3 source crop, one model call;
-- primary candidate: Gemini 3 Flash with minimal thinking based on prior
-  calibration;
-- hard residual formula/math disagreement may use GPT-5.4-mini as a second
-  opinion;
-- no multi-image batching;
-- unresolved/high-risk output fails closed to teacher review;
-- verifier may escalate local visual evidence but may not remove it.
-
-Celery cutover remains later, after risk/verifier, final integrity/UI, selective
-`main` reconciliation, and full 55-page end-to-end acceptance.
+The historical page-first and V4/Source-Map code may remain for migration or
+research compatibility, but neither has a public production intake route.
+Production promotion still requires the focused hard-page replay, periodic
+full-document replay, and release-gate verification; wiring alone is not an
+accuracy claim.

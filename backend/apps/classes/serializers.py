@@ -1116,6 +1116,11 @@ class StudentExamPrepResultItemSerializer(serializers.Serializer):
     is_correct = serializers.BooleanField()
     attempts = serializers.IntegerField(required=False, default=0)
     score_for_question = serializers.IntegerField(required=False, default=0)
+    correct_option_label = serializers.CharField(required=False, allow_blank=True)
+    teacher_solution_markdown = serializers.CharField(required=False, allow_blank=True)
+    solution_visuals = serializers.ListField(
+        child=serializers.DictField(), required=False
+    )
 
 
 class StudentExamPrepResultResponseSerializer(serializers.Serializer):

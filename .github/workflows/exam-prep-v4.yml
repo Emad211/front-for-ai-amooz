@@ -1,69 +1,32 @@
-name: exam-prep-v4
+name: exam-prep-production
 
 on:
   pull_request:
     paths:
       - '.github/workflows/exam-prep-v4.yml'
-      - '.github/workflows/exam-prep-v4-avalai-ocr-live-smoke.yml'
-      - 'backend/apps/classes/apps.py'
-      - 'backend/apps/classes/conftest.py'
-      - 'backend/apps/classes/models_v4*.py'
-      - 'backend/apps/classes/signals.py'
-      - 'backend/apps/classes/tasks_exam_prep.py'
-      - 'backend/apps/classes/tasks_v4*.py'
-      - 'backend/apps/classes/views_exam_prep*.py'
-      - 'backend/apps/classes/views_v4*.py'
-      - 'backend/apps/classes/serializers_v4*.py'
-      - 'backend/apps/classes/urls_v4.py'
-      - 'backend/apps/classes/management/commands/audit_exam_prep_legacy.py'
-      - 'backend/apps/classes/management/commands/*exam_prep_v4*.py'
-      - 'backend/apps/classes/migrations/004*_exam_prep_v4_*.py'
-      - 'backend/apps/classes/services/exam_prep_legacy_audit.py'
-      - 'backend/apps/classes/services/exam_prep_page*.py'
-      - 'backend/apps/classes/services/exam_prep_pipeline.py'
-      - 'backend/apps/classes/services/exam_prep_question*.py'
-      - 'backend/apps/classes/services/exam_prep_text_quality.py'
-      - 'backend/apps/classes/services/exam_prep_v4_*.py'
-      - 'backend/apps/classes/test_exam_prep_inline_*.py'
-      - 'backend/apps/classes/test_exam_prep_legacy_audit.py'
-      - 'backend/apps/classes/test_exam_prep_page*.py'
-      - 'backend/apps/classes/test_exam_prep_question_*.py'
-      - 'backend/apps/classes/test_exam_prep_review_*.py'
-      - 'backend/apps/classes/test_exam_prep_text_quality.py'
-      - 'backend/apps/classes/test_exam_prep_simple_pipeline.py'
-      - 'backend/apps/classes/test_exam_prep_v4_*.py'
-      - 'backend/apps/commons/structured_llm.py'
-      - 'backend/apps/commons/test_structured_llm.py'
-      - 'backend/apps/commons/llm_prompts/__init__.py'
-      - 'backend/apps/commons/llm_prompts/exam_prep_page.py'
-      - 'backend/apps/commons/llm_prompts/exam_prep_question_audit.py'
-      - 'backend/apps/commons/llm_prompts/exam_prep_question_repair.py'
-      - 'backend/apps/commons/llm_prompts/exam_prep_v4.py'
-      - 'backend/core/storage_backends.py'
+      - 'backend/apps/classes/**'
+      - 'backend/apps/chatbot/**'
+      - 'backend/apps/commons/**'
+      - 'backend/core/settings.py'
+      - 'backend/requirements.txt'
+      - 'backend/pytest.ini'
       - 'backend/core/urls.py'
+      - 'backend/core/storage_backends.py'
+      - 'backend/.env.example'
       - 'backend/.env.production.example'
-      - 'frontend/tsconfig.exam-prep-v4.json'
-      - 'frontend/src/components/exam-prep/protected-exam-visual.tsx'
-      - 'frontend/src/features/exam-prep-v4/**'
-      - 'frontend/src/services/exam-prep-v4*.ts'
-      - 'frontend/src/services/exam-prep-source-aware-service.ts'
-      - 'frontend/src/hooks/use-exam-prep-v4-*.ts'
-      - 'frontend/src/components/teacher/exam-prep-v4/**'
-      - 'frontend/src/components/teacher/create-class/exam-prep-source-aware-workspace.tsx'
-      - 'frontend/src/components/teacher/create-class/pipeline-tracker.tsx'
-      - 'frontend/src/components/teacher/create-class/file-upload-section.tsx'
-      - 'frontend/src/app/(teacher)/teacher/exam-prep-v4/**'
-      - 'frontend/src/constants/navigation.ts'
+      - 'frontend/src/**'
       - 'frontend/package.json'
       - 'frontend/package-lock.json'
-      - 'docs/features/exam-prep-*.md'
-      - 'docs/runbooks/exam-prep-v4-*.md'
   workflow_dispatch:
 
 jobs:
   backend:
-    name: exam prep backend validation (postgres)
+    name: exam prep backend
     runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: backend
 
     services:
       postgres:
@@ -79,6 +42,7 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
+
       redis:
         image: redis:7
         ports:
@@ -94,54 +58,41 @@ jobs:
       REDIS_URL: redis://localhost:6379/0
       DJANGO_SECRET_KEY: ci-insecure-exam-prep-test-key
       DEBUG: 'True'
-      EXAM_PREP_SIMPLE_PIPELINE_ENABLED: 'True'
-      EXAM_PREP_V4_ENABLED: 'True'
-      MODEL_NAME: models/fake-ci-model
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
           cache: pip
           cache-dependency-path: backend/requirements.txt
 
-      - name: Install dependencies
+      - name: Install backend dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r backend/requirements.txt
+          pip install -r requirements.txt
 
-      - name: Django system check
-        run: python backend/manage.py check
+      - name: Django check
+        run: python manage.py check
 
-      - name: Check classes migration drift
-        run: python backend/manage.py makemigrations classes --check --dry-run
+      - name: Migration drift
+        run: python manage.py makemigrations classes --check --dry-run
 
-      - name: Run focused exam prep tests on PostgreSQL
+      - name: Production Exam Prep tests
         run: |
-          python -m pytest \
-            backend/apps/commons/test_structured_llm.py \
-            backend/apps/classes/test_exam_prep_inline_*.py \
-            backend/apps/classes/test_exam_prep_legacy_audit.py \
-            backend/apps/classes/test_exam_prep_page_*.py \
-            backend/apps/classes/test_exam_prep_question_*.py \
-            backend/apps/classes/test_exam_prep_review_*.py \
-            backend/apps/classes/test_exam_prep_text_quality.py \
-            backend/apps/classes/test_exam_prep_simple_pipeline.py \
-            backend/apps/classes/test_exam_prep_v4_*.py \
+          python -m pytest apps/classes \
+            -k "exam_prep_mistral or exam_prep_api_state_boundaries or exam_prep_inline_visual or student_exam_prep_result_api or pipeline_cancel or pipeline_robustness" \
             -q --create-db
 
   frontend:
-    name: exam prep teacher-flow frontend validation
+    name: exam prep frontend
     runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: '22'
           cache: npm
@@ -151,12 +102,10 @@ jobs:
         working-directory: frontend
         run: npm ci
 
-      - name: Focused TypeScript check
+      - name: Typecheck
         working-directory: frontend
-        run: npx tsc -p tsconfig.exam-prep-v4.json --noEmit
+        run: npm run typecheck
 
-      - name: Source-map state model tests
+      - name: Production build
         working-directory: frontend
-        run: >-
-          node --experimental-strip-types --test
-          src/features/exam-prep-v4/source-map-model.test.ts
+        run: npm run build

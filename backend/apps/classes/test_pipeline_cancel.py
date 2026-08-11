@@ -59,6 +59,23 @@ class TestModelHelpers:
         session = baker.make(ClassCreationSession, status=status)
         assert session.is_active_pipeline is False
 
+    def test_review_ready_blocked_exam_is_not_cancellable_but_ordinary_transcribed_is(self):
+        review_ready = baker.make(
+            ClassCreationSession,
+            pipeline_type=PipelineType.EXAM_PREP,
+            status=Status.EXAM_TRANSCRIBED,
+            workflow_state={'readyForReview': True},
+        )
+        still_running = baker.make(
+            ClassCreationSession,
+            pipeline_type=PipelineType.EXAM_PREP,
+            status=Status.EXAM_TRANSCRIBED,
+            workflow_state={'readyForReview': False},
+        )
+
+        assert review_ready.is_active_pipeline is False
+        assert still_running.is_active_pipeline is True
+
     def test_pipeline_cancelled_helper_detects_flag(self):
         from apps.classes.tasks import _pipeline_cancelled
         session = baker.make(ClassCreationSession, status=Status.STRUCTURING, cancel_requested=True)

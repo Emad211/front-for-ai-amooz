@@ -25,6 +25,11 @@ _SOLUTION_HEADING_RE = re.compile(
     r"(?:[-–—]\s*)?گزین(?:ه|ۀ|هٔ)\s*[«»\"'()]*\s*(?P<option>[0-9۰-۹٠-٩]{1,2})",
     re.IGNORECASE,
 )
+_SOLUTION_OPTION_FIRST_RE = re.compile(
+    r"^\s*[#«»\"'()]*\s*(?P<option>[0-9۰-۹٠-٩]{1,2})\s*[»\"'()]*\s*"
+    r"گزین(?:ه|ۀ|هٔ)\s*(?:[-–—]\s*)?(?P<number>[0-9۰-۹٠-٩]{1,3})",
+    re.IGNORECASE,
+)
 _QUESTION_HEADING_RE = re.compile(
     r"^\s*#?\s*(?P<number>[0-9۰-۹٠-٩]{1,3})\s*[-–—]\s*(?!گزین(?:ه|ۀ|هٔ))",
     re.IGNORECASE,
@@ -41,6 +46,39 @@ _VISUAL_OPTION_RE = re.compile(
 )
 _LATIN_CAPTION_RE = re.compile(r"^\s*\(?\s*([A-D])\s*\)?\s*$", re.IGNORECASE)
 _OPTION_LINE_RE = re.compile(r"^\s*[\(\[]?[1-6۱-۶١-٦][\)\].:：\-–—]?")
+_OUTER_TEXT_WRAPPER_RE = re.compile(
+    r"^\\(?:text|textrm|mathrm)\s*\{(?P<content>.*)\}$",
+    re.DOTALL,
+)
+_OUTER_HEADING_DELIMITERS = (
+    ("$$", "$$"),
+    (r"\[", r"\]"),
+    (r"\(", r"\)"),
+    ("$", "$"),
+    ("{", "}"),
+)
+
+
+def normalize_outer_heading_markup(text: str) -> str:
+    """Remove only common wrappers around an otherwise literal heading."""
+
+    value = str(text or "").strip()
+    while value:
+        previous = value
+        for opening, closing in _OUTER_HEADING_DELIMITERS:
+            if (
+                len(value) > len(opening) + len(closing)
+                and value.startswith(opening)
+                and value.endswith(closing)
+            ):
+                value = value[len(opening) : -len(closing)].strip()
+                break
+        text_wrapper = _OUTER_TEXT_WRAPPER_RE.fullmatch(value)
+        if text_wrapper:
+            value = text_wrapper.group("content").strip()
+        if value == previous:
+            break
+    return value
 
 
 def _digits(value: str) -> str:
@@ -212,22 +250,25 @@ def reorder_blocks(
 
 
 def _parse_heading(block: LayoutBlock) -> dict[str, Any] | None:
-    text = block.content.strip()
-    solution = _SOLUTION_HEADING_RE.match(text)
+    raw_text = block.content.strip()
+    solution_text = normalize_outer_heading_markup(raw_text)
+    solution = _SOLUTION_HEADING_RE.match(solution_text)
+    if solution is None:
+        solution = _SOLUTION_OPTION_FIRST_RE.match(solution_text)
     if solution:
         return {
             "kind": "solution",
             "rawNumber": _int(solution.group("number")),
             "optionLabel": _int(solution.group("option")),
-            "rawText": text,
+            "rawText": raw_text,
         }
-    question = _QUESTION_HEADING_RE.match(text)
+    question = _QUESTION_HEADING_RE.match(raw_text)
     if question:
         return {
             "kind": "question",
             "rawNumber": _int(question.group("number")),
             "optionLabel": None,
-            "rawText": text,
+            "rawText": raw_text,
         }
     return None
 
@@ -346,12 +387,13 @@ def build_regions(
     *,
     previous_numbers: Mapping[str, int | None],
     rtl_double_column: bool,
+    solution_only: bool = False,
 ) -> tuple[list[dict[str, Any]], dict[str, int | None]]:
     table_content = _table_content_by_id(page)
     parsed: list[tuple[int, LayoutBlock, dict[str, Any]]] = []
     for order_index, block in enumerate(ordered):
         heading = _parse_heading(block)
-        if heading:
+        if heading and not (solution_only and heading.get("kind") == "question"):
             parsed.append((order_index, block, heading))
 
     last = dict(previous_numbers)
@@ -532,12 +574,16 @@ def analyze_ocr_document(
             for block in ordered
             if (heading := _parse_heading(block)) is not None
         ]
-        role = _page_role(page, blocks, heading_previews)
+        solution_only = sum(
+            heading.get("kind") == "solution" for heading in heading_previews
+        ) >= 2
+        role = "solution" if solution_only else _page_role(page, blocks, heading_previews)
         regions, last = build_regions(
             page,
             ordered,
             previous_numbers=last,
             rtl_double_column=double,
+            solution_only=solution_only,
         )
         combined = "\n".join(
             [str(page.get("header") or ""), str(page.get("markdown") or "")]

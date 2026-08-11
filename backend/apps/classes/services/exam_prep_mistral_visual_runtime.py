@@ -19,7 +19,7 @@ from __future__ import annotations
 from dataclasses import replace
 import copy
 import os
-from typing import Any, Mapping, Sequence
+from typing import Any, Callable, Mapping, Sequence
 
 from PIL import Image
 
@@ -395,6 +395,8 @@ def reconcile_mistral_source_visuals(
     source_sha256: str,
     store: VisualAssetStore | None = None,
     config: VisualPipelineConfig | None = None,
+    storage_namespace: str = "",
+    should_cancel: Callable[[], bool] | None = None,
 ) -> tuple[PageAssemblyResult, dict[str, int], dict[str, Any]]:
     """Reconcile precise visuals with fail-closed option binding and crops."""
 
@@ -404,6 +406,12 @@ def reconcile_mistral_source_visuals(
         )
     selected = config or VisualPipelineConfig.from_env()
     selected_store = store or PrivateVisualAssetStore()
+
+    def cancel_if_requested() -> None:
+        if should_cancel is not None and should_cancel():
+            raise RuntimeError("Cancellation requested during Stage-3 visual reconciliation.")
+
+    cancel_if_requested()
     working_layout = copy.deepcopy(dict(layout))
     analysis_pages = v._analysis_page_map(working_layout)
     ocr_by_page = v._page_map(ocr_pages)
@@ -432,6 +440,7 @@ def reconcile_mistral_source_visuals(
     document = pdfium.PdfDocument(pdf_data)
     try:
         for page_number in relevant_pages:
+            cancel_if_requested()
             image = v._render_page(
                 document,
                 page_number,
@@ -595,6 +604,7 @@ def reconcile_mistral_source_visuals(
         for page_number, raw_plans in sorted(
             plans_by_page.items()
         ):
+            cancel_if_requested()
             image = v._render_page(
                 document,
                 page_number,
@@ -610,6 +620,7 @@ def reconcile_mistral_source_visuals(
                     int,
                 ] = {}
                 for original_plan in plans:
+                    cancel_if_requested()
                     plan = original_plan
                     key = (
                         plan.question_number,
@@ -661,6 +672,7 @@ def reconcile_mistral_source_visuals(
                             payload=payload,
                             source_sha256=source_sha256,
                             store=selected_store,
+                            storage_namespace=storage_namespace,
                         )
                     except Exception:
                         storage_failures += 1
@@ -669,6 +681,16 @@ def reconcile_mistral_source_visuals(
                             [],
                         ).append("visual_storage_failed")
                         continue
+                    if should_cancel is not None and should_cancel():
+                        deleter = getattr(selected_store, "delete", None)
+                        if callable(deleter):
+                            try:
+                                deleter(str(asset.get("storagePath") or ""))
+                            except Exception:
+                                pass
+                        raise RuntimeError(
+                            "Cancellation requested during Stage-3 visual reconciliation."
+                        )
                     if plan.sanity_issues:
                         asset["reviewOnly"] = True
                         asset["sanity"] = {

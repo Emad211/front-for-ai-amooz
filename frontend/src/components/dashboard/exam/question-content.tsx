@@ -247,6 +247,17 @@ export const QuestionContent = ({
               })}
             </RadioGroup>
           )}
+          {question.visuals
+            ?.filter((visual) => visual.role === 'option' && !visual.optionLabel)
+            .map((visual) => (
+              <figure key={visual.id} className="overflow-hidden rounded-lg border border-border bg-background">
+                <ProtectedExamVisual
+                  url={visual.url}
+                  alt={visual.altText || 'تصویر گروهی گزینه‌ها'}
+                  className="mx-auto max-h-[28rem] w-auto max-w-full object-contain"
+                />
+              </figure>
+            ))}
 
           {/* ===== PER-QUESTION CHECK BUTTON ===== */}
           {!isFinalized && (
