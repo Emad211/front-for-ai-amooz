@@ -1,9 +1,15 @@
 from __future__ import annotations
 
+import pytest
+
 from apps.classes.services.exam_prep_mistral_risk_engine import score_region_risks
+from apps.classes.services.exam_prep_mistral_targeted_recovery import (
+    overlay_recovered_solution_regions,
+    recovered_solution_layout_regions,
+)
 
 
-def _projection(source_regions):
+def _projection():
     return {
         "exam_prep": {
             "questions": [
@@ -20,54 +26,97 @@ def _projection(source_regions):
                     "teacher_solution_markdown": "",
                     "issues": [],
                     "visuals": [],
-                    "source_regions": source_regions,
+                    "source_regions": [],
                 }
             ]
         }
     }
 
 
-def test_recovered_answer_region_becomes_stage5_solution_decision():
+def _targeted_root():
+    return {
+        "pages": [
+            {
+                "index": 0,
+                "blocks": [
+                    {
+                        "type": "text",
+                        "content": "127- گزینه 3",
+                        "bbox": {"x0": 0.05, "y0": 0.10, "x1": 0.95, "y1": 0.15},
+                    },
+                    {
+                        "type": "text",
+                        "content": "متن پاسخ سؤال 127",
+                        "bbox": {"x0": 0.05, "y0": 0.16, "x1": 0.95, "y1": 0.35},
+                    },
+                    {
+                        "type": "text",
+                        "content": "128- گزینه 2",
+                        "bbox": {"x0": 0.05, "y0": 0.40, "x1": 0.95, "y1": 0.45},
+                    },
+                ],
+            }
+        ]
+    }
+
+
+def test_precise_recovered_solution_region_becomes_stage5_decision():
+    regions = recovered_solution_layout_regions(
+        _targeted_root(),
+        crop_specs=[{"physicalPageNumber": 11, "column": "left"}],
+        recovered_targets={127: ("3", 11, "left")},
+    )
+
+    assert len(regions) == 1
+    region = regions[0]
+    assert region["questionNumber"] == 127
+    assert region["originalPageNumber"] == 11
+    assert region["targetedRecoveryRegion"] is True
+    assert region["bbox"] == pytest.approx([0.02, 0.164, 0.51, 0.431])
+
+    layout = overlay_recovered_solution_regions(
+        {"pages": [{"originalPageNumber": 11, "regions": []}]},
+        regions,
+    )
     decisions = score_region_risks(
-        projection=_projection(
-            [
-                {
-                    "page_number": 11,
-                    "role": "answer",
-                    "record_type": "answer",
-                    "bbox": {"x0": 0.02, "y0": 0.075, "x1": 0.51, "y1": 0.965},
-                }
-            ]
-        ),
-        layout={"pages": []},
+        projection=_projection(),
+        layout=layout,
         recovered_solution_targets={127},
     )
 
     assert len(decisions) == 1
     decision = decisions[0]
     assert (decision.question_number, decision.kind, decision.page_number) == (127, "solution", 11)
-    assert decision.bbox == (0.02, 0.075, 0.51, 0.965)
-    assert "targeted_recovery_region" in decision.signals
+    assert decision.bbox == pytest.approx((0.02, 0.164, 0.51, 0.431))
+    assert "heading_conflict" in decision.signals
 
 
-def test_ambiguous_recovered_answer_regions_stay_fail_closed():
-    decisions = score_region_risks(
-        projection=_projection(
-            [
-                {
-                    "page_number": 11,
-                    "role": "answer",
-                    "bbox": {"x0": 0.02, "y0": 0.075, "x1": 0.51, "y1": 0.965},
-                },
-                {
-                    "page_number": 13,
-                    "role": "answer",
-                    "bbox": {"x0": 0.49, "y0": 0.075, "x1": 0.98, "y1": 0.965},
-                },
-            ]
-        ),
-        layout={"pages": []},
-        recovered_solution_targets={127},
+def test_multi_heading_provider_block_stays_fail_closed():
+    root = {
+        "pages": [
+            {
+                "index": 0,
+                "blocks": [
+                    {
+                        "type": "text",
+                        "content": "127- گزینه 3\n128- گزینه 2",
+                        "bbox": {"x0": 0.05, "y0": 0.10, "x1": 0.95, "y1": 0.50},
+                    }
+                ],
+            }
+        ]
+    }
+
+    regions = recovered_solution_layout_regions(
+        root,
+        crop_specs=[{"physicalPageNumber": 11, "column": "left"}],
+        recovered_targets={127: ("3", 11, "left")},
     )
 
+    assert regions == []
+    decisions = score_region_risks(
+        projection=_projection(),
+        layout={"pages": [{"originalPageNumber": 11, "regions": []}]},
+        recovered_solution_targets={127},
+    )
     assert decisions == []
