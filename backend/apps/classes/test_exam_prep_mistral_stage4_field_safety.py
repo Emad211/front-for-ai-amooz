@@ -68,6 +68,14 @@ def test_sanitizer_strips_fake_visual_url_author_and_page_metadata():
     }
 
 
+def test_sanitizer_strips_kashida_solution_heading_without_losing_body():
+    cleaned, flags = sanitize_source_markdown(
+        "136ـ گزینه «2»\nمتن پاسخ تشریحی"
+    )
+    assert cleaned == "متن پاسخ تشریحی"
+    assert "removed_solution_heading" in flags
+
+
 def test_uncertainty_is_field_specific_when_spans_exist():
     item = SimpleNamespace(
         uncertain_spans=(
