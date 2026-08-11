@@ -42,6 +42,10 @@ from .exam_prep_mistral_risk_engine import score_region_risks
 from .exam_prep_mistral_solution_headings import audit_solution_headings
 from .exam_prep_mistral_stage5 import finalize_stage5_regions
 from .exam_prep_mistral_stage5_runtime import successful_call_cost_usd
+from .exam_prep_mistral_targeted_recovery import (
+    overlay_recovered_solution_regions,
+    recovered_solution_layout_regions,
+)
 from .exam_prep_mistral_visuals import build_visual_asset_registry
 from .exam_prep_mistral_visual_reconcile import (
     VISUAL_CRITICAL_ISSUE_CODES,
@@ -387,6 +391,30 @@ def run_exam_prep_mistral_pipeline(
     unresolved_targets = sorted(
         (set(missing) | set(invalid)) - set(recovered_targets)
     )
+    recovered_layout_regions: list[dict[str, Any]] = []
+    if targeted_result is not None and recovered_targets:
+        targets = sorted(set(missing) | set(invalid))
+        specs = _target_crop_specs(accepted, targets)
+        crop_specs = [
+            {"physicalPageNumber": page_number, "column": side}
+            for page_number, side in specs
+        ]
+        targeted_root = {
+            "pages": [dict(page) for page in (targeted_result.pages or ())]
+        }
+        recovered_layout_regions = recovered_solution_layout_regions(
+            targeted_root,
+            crop_specs=crop_specs,
+            recovered_targets=recovered_targets,
+        )
+        if recovered_layout_regions:
+            evidence = replace(
+                evidence,
+                layout=overlay_recovered_solution_regions(
+                    evidence.layout,
+                    recovered_layout_regions,
+                ),
+            )
 
     page_extractions = build_page_extractions_disjoint(
         result=ocr_result,
@@ -518,6 +546,7 @@ def run_exam_prep_mistral_pipeline(
             "targetedSolutionHeadingCalls": targeted_calls,
             "targetedSolutionHeadingRetries": targeted_retries,
             "targetedSolutionHeadingRecovered": len(recovered_targets),
+            "targetedSolutionPreciseRegionCount": len(recovered_layout_regions),
             "targetedSolutionHeadingUnresolved": remaining_unresolved_targets,
             "targetedSolutionHeadingSkippedBudget": targeted_skipped_budget,
             "targetedSolutionHeadingBudgetPlan": {
