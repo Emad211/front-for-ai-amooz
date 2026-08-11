@@ -259,6 +259,7 @@ def _run_cached_pipeline(
 
     original_fetch = production.fetch_ocr4_document
     original_targeted_recovery = production._targeted_recovery
+    original_target_crop_specs = production._target_crop_specs
     original_reconcile = production.reconcile_mistral_source_visuals
     original_score = production.score_region_risks
     original_finalize = production.finalize_stage5_regions
@@ -274,6 +275,10 @@ def _run_cached_pipeline(
 
     def cached_fetch(*args, **kwargs):
         return cached_result
+
+    def cached_target_crop_specs(accepted, target_questions):
+        specs = getattr(cached_targeted_result, "crop_specs", ()) if cached_targeted_result is not None else ()
+        return list(specs) if specs else original_target_crop_specs(accepted, target_questions)
 
     def cached_targeted_ocr(*args, **kwargs):
         requested = sorted(
@@ -354,6 +359,7 @@ def _run_cached_pipeline(
 
     production.fetch_ocr4_document = cached_fetch
     production._targeted_recovery = cached_targeted_ocr
+    production._target_crop_specs = cached_target_crop_specs
     production.reconcile_mistral_source_visuals = local_reconcile
     production.score_region_risks = exact_target_score
     production.finalize_stage5_regions = exact_target_finalize
@@ -369,6 +375,7 @@ def _run_cached_pipeline(
     finally:
         production.fetch_ocr4_document = original_fetch
         production._targeted_recovery = original_targeted_recovery
+        production._target_crop_specs = original_target_crop_specs
         production.reconcile_mistral_source_visuals = original_reconcile
         production.score_region_risks = original_score
         production.finalize_stage5_regions = original_finalize
