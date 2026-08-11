@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytest
 
 from apps.classes.services.exam_prep_mistral_risk_engine import score_region_risks
+from apps.classes.services.exam_prep_mistral_solution_headings import parse_solution_heading
 from apps.classes.services.exam_prep_mistral_targeted_recovery import (
     overlay_recovered_solution_regions,
     recovered_solution_layout_regions,
@@ -47,12 +48,22 @@ def _targeted_root():
                     {
                         "type": "text",
                         "content": "متن پاسخ سؤال 127",
-                        "bbox": {"x0": 0.05, "y0": 0.16, "x1": 0.95, "y1": 0.35},
+                        "bbox": {"x0": 0.05, "y0": 0.16, "x1": 0.95, "y1": 0.23},
+                    },
+                    {
+                        "type": "image",
+                        "content": "",
+                        "bbox": {"x0": 0.20, "y0": 0.24, "x1": 0.80, "y1": 0.34},
                     },
                     {
                         "type": "text",
                         "content": "128- گزینه 2",
                         "bbox": {"x0": 0.05, "y0": 0.40, "x1": 0.95, "y1": 0.45},
+                    },
+                    {
+                        "type": "image",
+                        "content": "",
+                        "bbox": {"x0": 0.20, "y0": 0.50, "x1": 0.80, "y1": 0.60},
                     },
                 ],
             }
@@ -60,7 +71,15 @@ def _targeted_root():
     }
 
 
-def test_precise_recovered_solution_region_becomes_stage5_decision():
+def test_markdown_wrapped_solution_heading_is_still_target_evidence():
+    parsed = parse_solution_heading("**۱۳۶- گزینهٔ «۲»**")
+
+    assert parsed is not None
+    assert parsed["rawQuestionNumber"] == 136
+    assert parsed["rawOptionLabel"] == 2
+
+
+def test_precise_recovered_solution_region_becomes_stage5_decision_and_keeps_visual():
     regions = recovered_solution_layout_regions(
         _targeted_root(),
         crop_specs=[{"physicalPageNumber": 11, "column": "left"}],
@@ -73,6 +92,13 @@ def test_precise_recovered_solution_region_becomes_stage5_decision():
     assert region["originalPageNumber"] == 11
     assert region["targetedRecoveryRegion"] is True
     assert region["bbox"] == pytest.approx([0.02, 0.164, 0.51, 0.431])
+    assert region["targetedRecoveryVisualCandidateCount"] == 1
+    assert len(region["visuals"]) == 1
+    visual = region["visuals"][0]
+    assert visual["type"] == "image"
+    assert visual["role"] == "solution"
+    assert visual["targetedRecoveryVisual"] is True
+    assert visual["bbox"] == pytest.approx([0.118, 0.2886, 0.412, 0.3776])
 
     layout = overlay_recovered_solution_regions(
         {"pages": [{"originalPageNumber": 11, "regions": []}]},
