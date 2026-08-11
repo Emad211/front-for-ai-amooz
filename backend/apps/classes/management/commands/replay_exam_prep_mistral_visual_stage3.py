@@ -26,7 +26,7 @@ from apps.classes.services.exam_prep_question_verifier import rebuild_assembly_q
 
 
 class _DiagnosticStore:
-    """Mirror private storage names into a portable local diagnostic directory."""
+    """Persist logical private-storage keys in a portable local diagnostic tree."""
 
     def __init__(self, root: Path) -> None:
         self.root = root
@@ -34,13 +34,20 @@ class _DiagnosticStore:
 
     def save(self, name: str, payload: bytes) -> str:
         # Storage keys are POSIX identities even when the replay runs on Windows.
+        # Do not mirror their full hierarchy locally: the replay output directory
+        # itself can already be long enough to exceed legacy Windows path limits.
         parts = [part for part in str(name).replace("\\", "/").split("/") if part]
         if not parts or any(part in {".", ".."} for part in parts):
             raise ValueError("Unsafe diagnostic visual storage name.")
         safe = Path(*parts)
         if safe.is_absolute():
             raise ValueError("Unsafe diagnostic visual storage name.")
-        target = self.root / safe
+        logical_name = "/".join(parts)
+        suffix = Path(parts[-1]).suffix.lower()
+        if not suffix or len(suffix) > 10:
+            suffix = ".bin"
+        digest = hashlib.sha256(logical_name.encode("utf-8")).hexdigest()
+        target = self.root / "objects" / digest[:2] / f"{digest}{suffix}"
         target.parent.mkdir(parents=True, exist_ok=True)
         if not target.exists():
             target.write_bytes(payload)
