@@ -18,6 +18,10 @@ _VISUAL_TYPES = (
     "spatial_layout",
     "other",
 )
+_SIMPLE_TEX_EXPONENT_RE = re.compile(
+    r"(?P<base>(?:\\?[A-Za-zΑ-Ωα-ω]+|\d+(?:[\.,]\d+)?))\s*\^\s*"
+    r"\{\s*(?P<exp>[+-]?\d+)\s*\}"
+)
 
 
 class DirectTranscription(BaseModel):
@@ -65,6 +69,10 @@ def normalize_text_for_similarity(value: str) -> str:
         )
     )
     text = text.replace("ي", "ی").replace("ك", "ک")
+    # Providers commonly emit the same simple exponent either as ``x^2`` or
+    # ``x^{2}``. Canonicalize only simple numeric exponents; do not interpret
+    # compound TeX expressions or change their mathematical meaning.
+    text = _SIMPLE_TEX_EXPONENT_RE.sub(r"\g<base>^\g<exp>", text)
     text = re.sub(r"\s+", " ", text)
     return text.strip().lower()
 
