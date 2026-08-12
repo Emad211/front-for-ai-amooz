@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import os
-from typing import Any, Literal
+from typing import Any, Literal, Mapping
 
 from apps.chatbot.services.llm_client import (
     _get_gapgpt_client,
@@ -29,6 +29,22 @@ from apps.commons.token_tracker import LLMTimer, track_llm_error, track_llm_usag
 
 DEFAULT_PRIMARY_MODEL = "gemini-3-flash-preview"
 DEFAULT_SECONDARY_MODEL = "gpt-5.4-mini"
+_PROVIDER_KEY_ALIASES = {
+    "transcriptionMarkdown": "transcription_markdown",
+    "sourceVisualRequired": "source_visual_required",
+    "visualType": "visual_type",
+    "transcriptionUncertain": "transcription_uncertain",
+    "uncertainFragments": "uncertain_fragments",
+}
+_ALLOWED_VISUAL_TYPES = {
+    "none",
+    "diagram",
+    "graph",
+    "chemical_structure",
+    "table",
+    "spatial_layout",
+    "other",
+}
 
 
 class RegionTranscriptionEmptyContent(ValueError):
@@ -37,6 +53,41 @@ class RegionTranscriptionEmptyContent(ValueError):
 
 class RegionTranscriptionNonconformingContent(ValueError):
     """Provider content was present but did not satisfy the JSON contract."""
+
+
+class RegionTranscriptionJsonParseFailure(RegionTranscriptionNonconformingContent):
+    """Provider returned content from which no JSON object could be recovered."""
+
+
+class RegionTranscriptionSchemaFailure(RegionTranscriptionNonconformingContent):
+    """Provider returned JSON whose values did not satisfy the safe contract."""
+
+
+def _normalize_provider_contract(value: Any) -> dict[str, Any]:
+    """Normalize representation-only provider drift without changing source content."""
+
+    if not isinstance(value, Mapping):
+        raise RegionTranscriptionSchemaFailure(
+            "Stage-4 provider JSON root must be an object."
+        )
+    payload = dict(value)
+    for alias, canonical in _PROVIDER_KEY_ALIASES.items():
+        if canonical not in payload and alias in payload:
+            payload[canonical] = payload[alias]
+
+    visual_type = payload.get("visual_type")
+    if isinstance(visual_type, str):
+        normalized_visual = visual_type.strip().lower().replace("-", "_").replace(" ", "_")
+        if normalized_visual in _ALLOWED_VISUAL_TYPES:
+            payload["visual_type"] = normalized_visual
+
+    fragments = payload.get("uncertain_fragments")
+    if fragments is None:
+        payload["uncertain_fragments"] = []
+    elif isinstance(fragments, str):
+        fragment = fragments.strip()
+        payload["uncertain_fragments"] = [fragment] if fragment else []
+    return payload
 
 
 def primary_model() -> str:
@@ -183,9 +234,8 @@ def transcribe_source_region(
 ) -> RegionTranscriptionResult:
     """Make exactly one source-only provider call and validate its JSON.
 
-    A provider response that is HTTP-successful but not valid JSON is a normal
-    bounded verification failure. It is deliberately not repaired with another
-    paid call; the caller marks the region unresolved and continues.
+    HTTP-successful provider content is parsed once. Representation-only schema
+    drift is normalized locally; the caller owns any bounded paid retry policy.
     """
 
     if not image:
@@ -245,8 +295,6 @@ def transcribe_source_region(
         "thinking_minimal": bool(thinking_minimal),
     }
     try:
-        # Force SDK retries off for this call even when a broader environment
-        # enables them elsewhere in the application.
         client = _get_gapgpt_client().with_options(max_retries=0)
         response = client.chat.completions.create(**create_kwargs)
         choice = response.choices[0]
@@ -257,10 +305,19 @@ def transcribe_source_region(
             )
         try:
             parsed_obj = extract_json_object(content)
-            parsed = DirectTranscription.model_validate(parsed_obj)
         except Exception as exc:
-            raise RegionTranscriptionNonconformingContent(
-                "Stage-4 provider returned non-conforming JSON content."
+            raise RegionTranscriptionJsonParseFailure(
+                "Stage-4 provider returned content without recoverable JSON."
+            ) from exc
+        try:
+            parsed = DirectTranscription.model_validate(
+                _normalize_provider_contract(parsed_obj)
+            )
+        except RegionTranscriptionSchemaFailure:
+            raise
+        except Exception as exc:
+            raise RegionTranscriptionSchemaFailure(
+                "Stage-4 provider JSON did not satisfy the transcription schema."
             ) from exc
         normalized = normalize_direct_transcription(parsed)
         if _usage_db_logging_enabled():
@@ -304,8 +361,10 @@ __all__ = [
     "DEFAULT_PRIMARY_MODEL",
     "DEFAULT_SECONDARY_MODEL",
     "RegionTranscriptionEmptyContent",
+    "RegionTranscriptionJsonParseFailure",
     "RegionTranscriptionNonconformingContent",
     "RegionTranscriptionResult",
+    "RegionTranscriptionSchemaFailure",
     "primary_model",
     "secondary_model",
     "transcribe_source_region",
