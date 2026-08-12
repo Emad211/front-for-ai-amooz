@@ -319,8 +319,6 @@ def _visual_only_question_verified(
 
 
 def _source_text_fields(fields: Mapping[str, Any]) -> dict[str, Any]:
-    """Exclude the native-PDF answer label from model agreement decisions."""
-
     return {
         str(field): sanitize_source_markdown(value)[0]
         for field, value in fields.items()
@@ -333,9 +331,7 @@ def _required_kinds(question: Mapping[str, Any]) -> frozenset[str]:
     for raw in question.get("source_regions") or []:
         if not isinstance(raw, Mapping):
             continue
-        value = str(
-            raw.get("kind") or raw.get("role") or raw.get("record_type") or ""
-        ).lower()
+        value = str(raw.get("kind") or raw.get("role") or raw.get("record_type") or "").lower()
         if "solution" in value or "answer" in value:
             kinds.add("solution")
     if str(question.get("teacher_solution_markdown") or "").strip():
@@ -347,11 +343,7 @@ def _visual_evidence_complete(question: Mapping[str, Any], *, kind: str) -> bool
     contract = question.get("visualSourceContract")
     required_ids = {
         str(value)
-        for value in (
-            contract.get("requiredAssetIds")
-            if isinstance(contract, Mapping)
-            else []
-        )
+        for value in (contract.get("requiredAssetIds") if isinstance(contract, Mapping) else [])
         if str(value)
     }
     if not required_ids:
@@ -403,8 +395,6 @@ def _apply_source_payload(
     decision: RegionRiskDecision,
     payload: Mapping[str, Any],
 ) -> dict[str, Any]:
-    """Apply source text while keeping native-answer and source assets immutable."""
-
     updated = dict(question)
     if decision.kind == "question":
         updated["question_text_markdown"] = sanitize_source_markdown(
@@ -430,11 +420,7 @@ def _apply_source_payload(
 def _sanitize_question(question: Mapping[str, Any]) -> tuple[dict[str, Any], list[str]]:
     updated = dict(question)
     flags: list[str] = []
-    for field in (
-        "question_text_markdown",
-        "teacher_solution_markdown",
-        "final_answer_markdown",
-    ):
+    for field in ("question_text_markdown", "teacher_solution_markdown", "final_answer_markdown"):
         value, found = sanitize_source_markdown(updated.get(field) or "")
         updated[field] = value
         flags.extend(found)
@@ -503,10 +489,7 @@ def _crop_page_image(image: Image.Image, decision: RegionRiskDecision) -> bytes:
         if max(crop.size) > maximum:
             ratio = maximum / max(crop.size)
             resized = crop.resize(
-                (
-                    max(1, round(crop.width * ratio)),
-                    max(1, round(crop.height * ratio)),
-                ),
+                (max(1, round(crop.width * ratio)), max(1, round(crop.height * ratio))),
                 Image.Resampling.LANCZOS,
             )
             crop.close()
@@ -525,8 +508,6 @@ def _render_crops(
     should_cancel=None,
     deadline_at: float | None = None,
 ) -> dict[int, bytes | Exception]:
-    """Open the PDF once and render each referenced page once."""
-
     if not indexed_decisions:
         return {}
     try:
@@ -576,8 +557,6 @@ def _transcribe_many(
     deadline_at: float | None = None,
     budget: Stage5BudgetLedger | None = None,
 ) -> dict[int, RegionTranscriptionResult | Exception]:
-    """Parallelize provider I/O only, with a rolling bounded window."""
-
     ordered_items = list(items)
     if not ordered_items:
         return {}
@@ -593,10 +572,7 @@ def _transcribe_many(
         index, decision, crop = item
         close_old_connections()
         try:
-            with llm_tracking_context(
-                user=current_user,
-                session_id=current_session_id,
-            ):
+            with llm_tracking_context(user=current_user, session_id=current_session_id):
                 try:
                     value: RegionTranscriptionResult | Exception = _transcribe(
                         decision=decision,
@@ -630,8 +606,6 @@ def _transcribe_many(
             item = ordered_items[next_position]
             reservation = budget.reserve(model) if budget is not None else None
             if budget is not None and reservation is None:
-                # An in-flight reservation may settle below its maximum. Retry
-                # after it completes; only fail closed when no call is pending.
                 if pending:
                     return
                 budget_hit = True
@@ -653,11 +627,7 @@ def _transcribe_many(
     try:
         fill_window()
         while pending:
-            completed, _not_done = wait(
-                pending,
-                timeout=1.0,
-                return_when=FIRST_COMPLETED,
-            )
+            completed, _not_done = wait(pending, timeout=1.0, return_when=FIRST_COMPLETED)
             if should_cancel is not None and should_cancel():
                 raise RuntimeError("Cancellation requested during Stage-5 finalization.")
             if deadline_at is not None and monotonic() >= deadline_at:
@@ -695,13 +665,9 @@ def _retry_format_failures_once(
     deadline_at: float | None = None,
     budget: Stage5BudgetLedger | None = None,
 ) -> tuple[dict[int, RegionTranscriptionResult | Exception], int, set[int]]:
-    """Retry only provider-format failures, once, through normal accounting."""
-
     headroom = max(0, int(call_limit) - int(calls_so_far))
     retry_items = [
-        item
-        for item in items
-        if isinstance(outcomes.get(item[0]), _FORMAT_RETRY_FAILURES)
+        item for item in items if isinstance(outcomes.get(item[0]), _FORMAT_RETRY_FAILURES)
     ][:headroom]
     if not retry_items:
         return dict(outcomes), 0, set()
@@ -721,6 +687,34 @@ def _retry_format_failures_once(
     return merged, retry_calls, {index for index, _decision, _crop in retry_items}
 
 
+def _bounded_recheck(
+    items: Sequence[tuple[int, RegionRiskDecision, bytes]],
+    *,
+    model: str,
+    call_limit: int,
+    calls_so_far: int,
+    should_cancel=None,
+    deadline_at: float | None = None,
+    budget: Stage5BudgetLedger | None = None,
+) -> tuple[dict[int, RegionTranscriptionResult | Exception], int]:
+    headroom = max(0, int(call_limit) - int(calls_so_far))
+    selected = list(items)[:headroom]
+    if not selected:
+        return {}, 0
+    outcomes = _transcribe_many(
+        selected,
+        model=model,
+        should_cancel=should_cancel,
+        deadline_at=deadline_at,
+        budget=budget,
+    )
+    calls = sum(
+        not isinstance(value, (_Stage5DeadlineExceeded, Stage5CostBudgetExceeded))
+        for value in outcomes.values()
+    )
+    return outcomes, calls
+
+
 def finalize_stage5_regions(
     result: PageAssemblyResult,
     *,
@@ -730,13 +724,6 @@ def finalize_stage5_regions(
     required_targets: set[tuple[int, str]] | frozenset[tuple[int, str]] | None = None,
     max_cost_usd: Decimal | float | str | None = None,
 ) -> tuple[PageAssemblyResult, dict[str, Any]]:
-    """Run the cheap source read for every supplied region.
-
-    This first-pass seam deliberately does not trust the Stage-4 ``suspicious``
-    bit as a selector. Main-model adjudication and field-selective repair are
-    handled only when the primary source read disagrees.
-    """
-
     started_at = monotonic()
     max_wall_seconds = _max_wall_seconds()
     deadline_at = started_at + max_wall_seconds
@@ -750,10 +737,7 @@ def finalize_stage5_regions(
     if not primary_name or not main_name or primary_name == main_name:
         raise ValueError("Stage-5 primary and main models must be distinct and non-empty.")
     cost_ledger = (
-        Stage5BudgetLedger(
-            max_cost_usd=max_cost_usd,
-            max_output_tokens=_max_output_tokens(),
-        )
+        Stage5BudgetLedger(max_cost_usd=max_cost_usd, max_output_tokens=_max_output_tokens())
         if max_cost_usd is not None
         else None
     )
@@ -781,6 +765,7 @@ def finalize_stage5_regions(
     preflight_exceeded = len(decisions) > primary_limit
     primary_calls = main_calls = tiebreaker_calls = verified = repaired = 0
     primary_format_retries = main_format_retries = 0
+    primary_degraded_rechecks = main_disagreement_rechecks = 0
     successful_input_tokens = successful_output_tokens = successful_total_tokens = 0
 
     decision_counts: dict[tuple[int, str], int] = {}
@@ -793,8 +778,7 @@ def finalize_stage5_regions(
     required_by_question: dict[int, set[str]] = {}
     if target_filter is None:
         required_by_question = {
-            number: set(_required_kinds(question))
-            for number, question in questions.items()
+            number: set(_required_kinds(question)) for number, question in questions.items()
         }
     else:
         for number, kind in target_filter:
@@ -812,9 +796,7 @@ def finalize_stage5_regions(
                 )
                 missing_regions += 1
 
-    eligible: list[
-        tuple[int, RegionRiskDecision, dict[str, Any], dict[str, Any]]
-    ] = []
+    eligible: list[tuple[int, RegionRiskDecision, dict[str, Any], dict[str, Any]]] = []
     for index, decision in enumerate(decisions):
         if should_cancel is not None and should_cancel():
             raise RuntimeError("Cancellation requested during Stage-5 finalization.")
@@ -851,9 +833,7 @@ def finalize_stage5_regions(
                 )
                 row["reason"] = type(crop_value).__name__
                 continue
-            candidate = _source_text_fields(
-                candidate_fields(question, kind=decision.kind)
-            )
+            candidate = _source_text_fields(candidate_fields(question, kind=decision.kind))
             states[index] = {
                 "decision": decision,
                 "question": question,
@@ -937,9 +917,7 @@ def finalize_stage5_regions(
             else {}
         )
         primary_label_conflict = _answer_label_conflict(
-            question,
-            decision=decision,
-            payload=primary_payload,
+            question, decision=decision, payload=primary_payload
         )
         state["primaryPayload"] = primary_payload
         state["primaryFields"] = primary_fields
@@ -947,8 +925,7 @@ def finalize_stage5_regions(
         state["primaryVisualMissing"] = primary_visual_missing
         if primary_payload is not None:
             similarity, numeric_same = _agreement(
-                _proposal_text(decision, primary_payload),
-                decision.candidate_text,
+                _proposal_text(decision, primary_payload), decision.candidate_text
             )
             row["candidateSimilarity"] = similarity
             row["numericAgreement"] = numeric_same
@@ -1032,17 +1009,17 @@ def finalize_stage5_regions(
                 row["mainFailure"] = "visual_evidence_missing"
                 main_payload = None
             if main_payload is not None:
-                main_fields = _source_text_fields(
-                    payload_fields(main_payload, kind=decision.kind)
-                )
+                main_fields = _source_text_fields(payload_fields(main_payload, kind=decision.kind))
             else:
                 row["mainFailure"] = "uncertain_or_invalid"
 
         main_label_conflict = _answer_label_conflict(
-            question,
-            decision=decision,
-            payload=main_payload,
+            question, decision=decision, payload=main_payload
         )
+        state["mainPayload"] = main_payload
+        state["mainFields"] = main_fields
+        state["mainLabelConflict"] = main_label_conflict
+
         if (
             main_payload is not None
             and _candidate_corroborated(state["candidate"], main_fields)
@@ -1054,17 +1031,11 @@ def finalize_stage5_regions(
             continue
         if (
             main_payload is not None
-            and _candidate_corroborated(
-                state["candidate"], state["primaryFields"], main_fields
-            )
+            and _candidate_corroborated(state["candidate"], state["primaryFields"], main_fields)
             and not main_label_conflict
             and not state["primaryLabelConflict"]
         ):
-            row["status"] = (
-                "verified_source_consensus"
-                if state["primaryFields"]
-                else "verified_source_main"
-            )
+            row["status"] = "verified_source_consensus" if state["primaryFields"] else "verified_source_main"
             row["resolutionTargetConfirmed"] = True
             verified += 1
             continue
@@ -1078,9 +1049,7 @@ def finalize_stage5_regions(
                 continue
             current_question = questions.get(decision.question_number, question)
             questions[decision.question_number] = _apply_source_payload(
-                current_question,
-                decision=decision,
-                payload=main_payload,
+                current_question, decision=decision, payload=main_payload
             )
             row["status"] = "repaired_source"
             row["resolutionTargetConfirmed"] = True
@@ -1091,27 +1060,136 @@ def finalize_stage5_regions(
         if state.get("primaryVisualMissing") and main_payload is None:
             row["status"] = "blocked_visual_evidence_missing"
         else:
-            row["status"] = (
-                "blocked_model_disagreement"
-                if main_payload is not None
-                else "blocked_main_failed"
+            row["status"] = "blocked_model_disagreement" if main_payload is not None else "blocked_main_failed"
+
+    degraded_items = [
+        (index, decision, crop)
+        for index, decision, crop in selected_main
+        if states[index]["row"].get("status") == "blocked_main_failed"
+        and isinstance(main_outcomes.get(index), RegionTranscriptionNonconformingContent)
+        and states[index].get("primaryPayload") is not None
+        and not states[index].get("primaryVisualMissing")
+        and not states[index].get("primaryLabelConflict")
+    ]
+    degraded_outcomes, degraded_calls = _bounded_recheck(
+        degraded_items,
+        model=primary_name,
+        call_limit=primary_limit,
+        calls_so_far=primary_calls,
+        should_cancel=should_cancel,
+        deadline_at=deadline_at,
+        budget=cost_ledger,
+    )
+    primary_calls += degraded_calls
+    primary_degraded_rechecks += degraded_calls
+    for index, decision, _crop in degraded_items:
+        if index not in degraded_outcomes:
+            continue
+        state = states[index]
+        row = state["row"]
+        question = state["question"]
+        row["primaryDegradedRecheck"] = True
+        value = degraded_outcomes[index]
+        if isinstance(value, Exception):
+            row["primaryDegradedRecheckFailure"] = type(value).__name__
+            continue
+        successful_input_tokens += value.input_tokens
+        successful_output_tokens += value.output_tokens
+        successful_total_tokens += value.total_tokens
+        row["primaryDegradedRecheckEvidence"] = value.safe_dict()
+        if not _target_heading_confirmed(decision, value):
+            row["primaryDegradedRecheckFailure"] = "target_heading_mismatch"
+            continue
+        if _strong_visual_required(value) and not _visual_evidence_complete(question, kind=decision.kind):
+            row["primaryDegradedRecheckFailure"] = "visual_evidence_missing"
+            continue
+        payload = _proposal(decision, value)
+        if payload is None:
+            row["primaryDegradedRecheckFailure"] = "uncertain_or_invalid"
+            continue
+        fields = _source_text_fields(payload_fields(payload, kind=decision.kind))
+        label_conflict = _answer_label_conflict(question, decision=decision, payload=payload)
+        if label_conflict or not _field_maps_agree(state["primaryFields"], fields):
+            row["primaryDegradedRecheckFailure"] = "primary_recheck_disagreement"
+            continue
+        if _candidate_corroborated(state["candidate"], state["primaryFields"], fields):
+            row["status"] = "verified_source_primary_recheck"
+        else:
+            current_question = questions.get(decision.question_number, question)
+            questions[decision.question_number] = _apply_source_payload(
+                current_question, decision=decision, payload=payload
             )
+            row["status"] = "repaired_source_primary_recheck"
+            repaired += 1
+        row["resolutionTargetConfirmed"] = True
+        verified += 1
+
+    disagreement_items = [
+        (index, decision, crop)
+        for index, decision, crop in selected_main
+        if states[index]["row"].get("status") == "blocked_model_disagreement"
+        and states[index].get("primaryPayload") is not None
+        and not states[index].get("primaryVisualMissing")
+        and not states[index].get("primaryLabelConflict")
+    ]
+    disagreement_outcomes, disagreement_calls = _bounded_recheck(
+        disagreement_items,
+        model=main_name,
+        call_limit=main_limit,
+        calls_so_far=main_calls,
+        should_cancel=should_cancel,
+        deadline_at=deadline_at,
+        budget=cost_ledger,
+    )
+    main_calls += disagreement_calls
+    main_disagreement_rechecks += disagreement_calls
+    for index, decision, _crop in disagreement_items:
+        if index not in disagreement_outcomes:
+            continue
+        state = states[index]
+        row = state["row"]
+        question = state["question"]
+        row["mainDisagreementRecheck"] = True
+        value = disagreement_outcomes[index]
+        if isinstance(value, Exception):
+            row["mainDisagreementRecheckFailure"] = type(value).__name__
+            continue
+        successful_input_tokens += value.input_tokens
+        successful_output_tokens += value.output_tokens
+        successful_total_tokens += value.total_tokens
+        row["mainDisagreementRecheckEvidence"] = value.safe_dict()
+        if not _target_heading_confirmed(decision, value):
+            row["mainDisagreementRecheckFailure"] = "target_heading_mismatch"
+            continue
+        if _strong_visual_required(value) and not _visual_evidence_complete(question, kind=decision.kind):
+            row["mainDisagreementRecheckFailure"] = "visual_evidence_missing"
+            continue
+        payload = _proposal(decision, value)
+        if payload is None:
+            row["mainDisagreementRecheckFailure"] = "uncertain_or_invalid"
+            continue
+        fields = _source_text_fields(payload_fields(payload, kind=decision.kind))
+        label_conflict = _answer_label_conflict(question, decision=decision, payload=payload)
+        if label_conflict or not _field_maps_agree(state["primaryFields"], fields):
+            row["mainDisagreementRecheckFailure"] = "still_disagrees"
+            continue
+        current_question = questions.get(decision.question_number, question)
+        questions[decision.question_number] = _apply_source_payload(
+            current_question, decision=decision, payload=payload
+        )
+        row["status"] = "repaired_source_main_recheck"
+        row["resolutionTargetConfirmed"] = True
+        verified += 1
+        repaired += 1
 
     if cost_ledger is not None and cost_ledger.charged > cost_ledger.cap:
-        # The reservation is intentionally conservative, but provider-reported
-        # input usage is authoritative. Any underestimate is a document-level
-        # budget anomaly and must not publish silently.
         for row in rows:
             if not str(row.get("status") or "").startswith("blocked_"):
                 row["preBudgetStatus"] = row.get("status")
                 row["status"] = "blocked_stage5_cost_budget"
                 row["reason"] = "reservation_underestimated"
 
-    blocked = sum(
-        str(row.get("status") or "").startswith("blocked_")
-        for row in rows
-    )
-
+    blocked = sum(str(row.get("status") or "").startswith("blocked_") for row in rows)
     blocked_questions = {
         int(row.get("questionNumber") or 0)
         for row in rows
@@ -1174,9 +1252,7 @@ def finalize_stage5_regions(
             update={
                 "projection": projection,
                 "issues": remaining_issues,
-                "questions_needing_review": sum(
-                    bool(question.get("issues")) for question in cleaned_questions
-                ),
+                "questions_needing_review": sum(bool(question.get("issues")) for question in cleaned_questions),
                 "publication_ready": bool(cleaned_questions)
                 and not any(is_critical_page_issue(issue.code) for issue in remaining_issues)
                 and not any(
@@ -1189,8 +1265,7 @@ def finalize_stage5_regions(
 
     elapsed_seconds = max(0.0, monotonic() - started_at)
     deadline_blocked = sum(
-        str(row.get("status") or "") == "blocked_stage5_deadline"
-        for row in rows
+        str(row.get("status") or "") == "blocked_stage5_deadline" for row in rows
     )
     audit = {
         "schemaVersion": 1,
@@ -1199,6 +1274,10 @@ def finalize_stage5_regions(
             "oneRegionOneImageOneCall": False,
             "oneRegionOneImagePerAttempt": True,
             "maxFormatRetriesPerRegion": 1,
+            "maxPrimaryDegradedRechecksPerRegion": 1,
+            "maxMainDisagreementRechecksPerRegion": 1,
+            "degradedProviderAcceptanceRequiresRepeatFieldAgreement": True,
+            "disagreementRecheckAcceptanceRequiresCrossModelFieldAgreement": True,
             "formatRetryFailureTypes": [
                 "RegionTranscriptionEmptyContent",
                 "RegionTranscriptionNonconformingContent",
@@ -1223,6 +1302,8 @@ def finalize_stage5_regions(
             "primaryFormatRetries": primary_format_retries,
             "mainFormatRetries": main_format_retries,
             "formatRetries": primary_format_retries + main_format_retries,
+            "primaryDegradedRechecks": primary_degraded_rechecks,
+            "mainDisagreementRechecks": main_disagreement_rechecks,
             "tiebreakerCalls": tiebreaker_calls,
             "verified": verified,
             "repaired": repaired,
@@ -1241,18 +1322,11 @@ def finalize_stage5_regions(
             "preflightExceeded": preflight_exceeded,
             "maxConcurrency": _max_concurrency(),
             "maxWallSeconds": max_wall_seconds,
-            "effectiveMaxWallSeconds": round(
-                max(0.0, deadline_at - started_at),
-                3,
-            ),
+            "effectiveMaxWallSeconds": round(max(0.0, deadline_at - started_at), 3),
             "taskDeadlineApplied": task_deadline_at is not None,
             "elapsedSeconds": round(elapsed_seconds, 3),
             "deadlineExceeded": deadline_blocked > 0,
-            **(
-                cost_ledger.safe_dict()
-                if cost_ledger is not None
-                else {"costCapEnabled": False}
-            ),
+            **(cost_ledger.safe_dict() if cost_ledger is not None else {"costCapEnabled": False}),
         },
         "regions": rows,
     }
