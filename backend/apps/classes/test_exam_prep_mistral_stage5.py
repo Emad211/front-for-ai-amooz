@@ -504,6 +504,9 @@ def test_stage5_primary_reads_every_region_one_crop_per_call(monkeypatch):
         "missingRegions": 0,
         "primaryCalls": 2,
         "mainCalls": 0,
+        "primaryFormatRetries": 0,
+        "mainFormatRetries": 0,
+        "formatRetries": 0,
         "tiebreakerCalls": 0,
         "verified": 2,
         "repaired": 0,
@@ -513,7 +516,9 @@ def test_stage5_primary_reads_every_region_one_crop_per_call(monkeypatch):
         "successfulTotalTokens": 240,
         "finalSanitizerQuestionCount": 0,
     }
-    assert audit["policy"]["oneRegionOneImageOneCall"] is True
+    assert audit["policy"]["oneRegionOneImageOneCall"] is False
+    assert audit["policy"]["oneRegionOneImagePerAttempt"] is True
+    assert audit["policy"]["maxFormatRetriesPerRegion"] == 1
     assert audit["policy"]["allRegionsReceivePrimary"] is True
 
 
