@@ -507,6 +507,8 @@ def test_stage5_primary_reads_every_region_one_crop_per_call(monkeypatch):
         "primaryFormatRetries": 0,
         "mainFormatRetries": 0,
         "formatRetries": 0,
+        "primaryDegradedRechecks": 0,
+        "mainDisagreementRechecks": 0,
         "tiebreakerCalls": 0,
         "verified": 2,
         "repaired": 0,
@@ -519,6 +521,8 @@ def test_stage5_primary_reads_every_region_one_crop_per_call(monkeypatch):
     assert audit["policy"]["oneRegionOneImageOneCall"] is False
     assert audit["policy"]["oneRegionOneImagePerAttempt"] is True
     assert audit["policy"]["maxFormatRetriesPerRegion"] == 1
+    assert audit["policy"]["maxPrimaryDegradedRechecksPerRegion"] == 1
+    assert audit["policy"]["maxMainDisagreementRechecksPerRegion"] == 1
     assert audit["policy"]["allRegionsReceivePrimary"] is True
 
 
@@ -829,13 +833,22 @@ def test_stage5_hard_math_disagreement_blocks_without_a_slow_third_model(monkeyp
         decisions=[question_decision, _decision(kind="solution", suspicious=False)],
     )
 
-    assert calls == ["gpt-5.4-mini", "gpt-5.4-mini", "gemini-3.6-flash"]
+    assert calls == [
+        "gpt-5.4-mini",
+        "gpt-5.4-mini",
+        "gemini-3.6-flash",
+        "gemini-3.6-flash",
+    ]
     question = updated.projection["exam_prep"]["questions"][0]
     assert question["options"][0]["text_markdown"] == "الف"
     assert "stage5_finalization_blocked" in question["issues"]
     assert audit["stats"]["tiebreakerCalls"] == 0
+    assert audit["stats"]["mainDisagreementRechecks"] == 1
     assert audit["stats"]["repaired"] == 0
     assert audit["stats"]["blocked"] == 1
+    question_row = next(row for row in audit["regions"] if row["kind"] == "question")
+    assert question_row["mainDisagreementRecheck"] is True
+    assert question_row["mainDisagreementRecheckFailure"] == "still_disagrees"
 
 
 def test_stage5_main_cap_is_selected_in_input_order_after_parallel_primary(monkeypatch):
