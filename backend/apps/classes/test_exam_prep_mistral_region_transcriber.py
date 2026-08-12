@@ -133,12 +133,15 @@ def test_db_usage_logging_can_be_disabled_for_local_live_replay(monkeypatch):
     assert len(client.calls) == 1
 
 
-def test_http_success_with_non_json_content_fails_once_without_paid_repair(monkeypatch):
+def test_http_success_with_non_json_content_reports_json_parse_failure_once(monkeypatch):
     client = _FakeClient(content="متن ساده بدون شیء JSON")
     monkeypatch.setenv("EXAM_PREP_STAGE4_USAGE_DB_LOGGING", "0")
     monkeypatch.setattr(transcriber, "_get_gapgpt_client", lambda: client)
 
-    with pytest.raises(ValueError, match="non-conforming JSON"):
+    with pytest.raises(
+        transcriber.RegionTranscriptionJsonParseFailure,
+        match="without recoverable JSON",
+    ):
         transcriber.transcribe_source_region(
             image=b"fake-image",
             kind="solution",
@@ -150,3 +153,34 @@ def test_http_success_with_non_json_content_fails_once_without_paid_repair(monke
 
     assert len(client.calls) == 1
     assert client.options == [{"max_retries": 0}]
+
+
+def test_representation_only_camel_case_contract_is_normalized(monkeypatch):
+    client = _FakeClient(
+        content=json.dumps(
+            {
+                "transcriptionMarkdown": "81- گزینه 2\nپاسخ",
+                "sourceVisualRequired": True,
+                "visualType": "Spatial-Layout",
+                "transcriptionUncertain": False,
+                "uncertainFragments": None,
+            },
+            ensure_ascii=False,
+        )
+    )
+    monkeypatch.setenv("EXAM_PREP_STAGE4_USAGE_DB_LOGGING", "0")
+    monkeypatch.setattr(transcriber, "_get_gapgpt_client", lambda: client)
+
+    result = transcriber.transcribe_source_region(
+        image=b"fake-image",
+        kind="solution",
+        question_number=81,
+        page_number=44,
+        model="gemini-3-flash-preview",
+        thinking_minimal=True,
+    )
+
+    assert result.transcript["transcriptionMarkdown"].startswith("81-")
+    assert result.transcript["sourceVisualRequired"] is True
+    assert result.transcript["visualType"] == "spatial_layout"
+    assert result.transcript["uncertainFragments"] == []
