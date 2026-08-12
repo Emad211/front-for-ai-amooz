@@ -3,12 +3,13 @@
 The first replay proved that permissive local solution detection mostly captures
 residual typography. Disabling it entirely, however, loses real vector diagrams
 such as the known S133 source. This layer accepts only large structural connected
-components after OCR text masking, and only when the question has no solution
-visual already.
+components after OCR text masking, and only when the question has no publish-safe
+solution visual already.
 """
 from __future__ import annotations
 
 from dataclasses import replace
+import re
 from typing import Any, Mapping, Sequence
 
 from . import exam_prep_mistral_visual_reconcile_v2 as base
@@ -23,6 +24,10 @@ VisualPipelineConfig = base.VisualPipelineConfig
 VisualPipelineStats = base.VisualPipelineStats
 VISUAL_CRITICAL_ISSUE_CODES = base.VISUAL_CRITICAL_ISSUE_CODES
 MISTRAL_VISUAL_STORAGE_PREFIX = base.MISTRAL_VISUAL_STORAGE_PREFIX
+_TARGETED_VISUAL_CUE_RE = re.compile(
+    r"(?:مکعب|کره|بیضی|استوانه|مخروط)\s+(?:زیر|مقابل|نشان[‌ ]?داده)",
+    re.IGNORECASE,
+)
 
 
 def _clamp(box, boundary):
@@ -64,6 +69,17 @@ def _stage3_assets_by_question(result: PageAssemblyResult) -> dict[int, list[dic
     return output
 
 
+def _publish_safe_solution_asset(asset: Mapping[str, Any]) -> bool:
+    if str(asset.get("role") or "").lower() != "solution":
+        return False
+    if bool(asset.get("reviewOnly")):
+        return False
+    sanity = asset.get("sanity")
+    if isinstance(sanity, Mapping) and str(sanity.get("status") or "").lower() == "failed":
+        return False
+    return True
+
+
 def _strong_solution_clusters(
     *,
     region: Mapping[str, Any],
@@ -82,8 +98,6 @@ def _strong_solution_clusters(
         width = box[2] - box[0]
         height = box[3] - box[1]
         aspect = max(width / max(height, 1e-9), height / max(width, 1e-9))
-        # A residual word/glyph is normally far below these page-normalized
-        # dimensions. Structural diagrams/axes/polygons survive this gate.
         if area < 0.0012 or ink < 80:
             continue
         if max(width, height) < 0.075 or min(width, height) < 0.018:
@@ -145,7 +159,11 @@ def _targeted_recovery_components(
 
     if not bool(region.get("targetedRecoveryRegion")):
         return []
-    if not base._VISUAL_WORD_RE.search(str(region.get("text") or "")):
+    region_text = str(region.get("text") or "")
+    if not (
+        base._VISUAL_WORD_RE.search(region_text)
+        or _TARGETED_VISUAL_CUE_RE.search(region_text)
+    ):
         return []
     region_box = v._bbox(region.get("bbox"))
     if region_box is None:
@@ -192,7 +210,7 @@ def _recover_solution_visuals(
     questions_with_solution = {
         number
         for number, assets in existing.items()
-        if any(asset.get("role") == "solution" for asset in assets)
+        if any(_publish_safe_solution_asset(asset) for asset in assets)
     }
     analysis_pages = v._analysis_page_map(layout)
     ocr_by_page = v._page_map(ocr_pages)
@@ -242,8 +260,6 @@ def _recover_solution_visuals(
                         )
                         if clusters:
                             recovery_mode = "targeted_recovery_region"
-                            # The base OCR block that hid the diagram must not be
-                            # allowed to expand Smart Union back to that coarse bbox.
                             union_blocks = []
                     if not clusters:
                         continue
