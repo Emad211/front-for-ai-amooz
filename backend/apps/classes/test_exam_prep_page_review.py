@@ -495,6 +495,49 @@ def test_publish_endpoint_blocks_forged_production_workflow():
     assert session.is_published is False
 
 
+def test_publish_endpoint_allows_degraded_run_with_recheck_call_inflation(monkeypatch):
+    """Owner policy `همیشه مجاز`: a real degraded run still publishes.
+
+    A single legitimate degraded recheck (`maxPrimaryDegradedRechecksPerRegion`)
+    makes ``primaryCalls`` exceed ``regions`` — a healthy signal, not a forgery.
+    Gate B is pure anti-forgery, so it must not treat call-count inflation (or a
+    blocked region) as grounds to refuse publication.
+    """
+    teacher = _teacher()
+    session = _page_first_session(
+        teacher,
+        _projection([_question(1)]),
+        status=ClassCreationSession.Status.EXAM_TRANSCRIBED,
+    )
+    degraded_audit = _production_stage_audit(blocked=True)
+    # One region absorbed a degraded recheck: two primary calls over one region.
+    degraded_audit['riskEngine']['stats']['regions'] = 2
+    degraded_audit['riskEngine']['stats']['primaryCalls'] = 3
+    degraded_audit['riskEngine']['stats']['blocked'] = 1
+    degraded_audit['targetedRegionPrimaryCalls'] = 3
+    degraded_audit['targetedRegionUnresolved'] = 1
+    degraded_audit['riskRegionCount'] = 2
+    session.workflow_state = {
+        **session.workflow_state,
+        'engine': PRODUCTION_ENGINE,
+        'publicationBlocked': True,
+        'extractionAudit': degraded_audit,
+    }
+    session.save(update_fields=['workflow_state', 'updated_at'])
+    monkeypatch.setattr(
+        'apps.classes.views.send_publish_sms_task.delay',
+        lambda *_args, **_kwargs: None,
+    )
+
+    response = _auth(teacher).post(
+        f'/api/classes/exam-prep-sessions/{session.id}/publish/'
+    )
+
+    assert response.status_code == 200
+    session.refresh_from_db()
+    assert session.is_published is True
+
+
 def test_publish_endpoint_accepts_page_first_session_after_valid_edit(monkeypatch):
     teacher = _teacher()
     session = _page_first_session(teacher, _projection([_question(1)]))

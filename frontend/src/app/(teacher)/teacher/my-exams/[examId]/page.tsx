@@ -1,6 +1,6 @@
 'use client';
 
-import { use, useCallback, useEffect, useRef, useState } from 'react';
+import { use, useCallback, useEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
 import Link from 'next/link';
 import { Loader2, ArrowRight, CheckCircle, Users, FileQuestion, Calendar, Clock, AlertCircle, Edit3 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
@@ -39,6 +39,57 @@ const statusLabels: Record<string, string> = {
   failed: 'خطا',
 };
 
+// Deferred mount for the مرحله ۲ question list. A large booklet (100+ questions)
+// used to mount every card at once — and each card runs a KaTeX typeset pass per
+// stem/option/solution plus one authenticated fetch per `ProtectedExamVisual` —
+// so opening the panel fired hundreds of typeset passes and a fetch burst that
+// froze the tab. LazyMount reserves a fixed-height placeholder until the card
+// scrolls near the panel's own scroll viewport, then mounts the real content
+// once and keeps it mounted, bounding the work to what's on (or near) screen.
+function LazyMount({
+  children,
+  rootRef,
+  minHeight = 200,
+  rootMargin = '800px',
+  className,
+}: {
+  children: ReactNode;
+  rootRef?: RefObject<HTMLDivElement | null>;
+  minHeight?: number;
+  rootMargin?: string;
+  className?: string;
+}) {
+  const ref = useRef<HTMLDivElement | null>(null);
+  const [visible, setVisible] = useState(false);
+
+  useEffect(() => {
+    if (visible) return;
+    const node = ref.current;
+    if (!node) return;
+    if (typeof IntersectionObserver === 'undefined') {
+      setVisible(true); // Safe fallback: render eagerly where IO is unavailable.
+      return;
+    }
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          setVisible(true);
+          observer.disconnect();
+        }
+      },
+      { root: rootRef?.current ?? null, rootMargin },
+    );
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [visible, rootRef, rootMargin]);
+
+  return (
+    <div ref={ref} className={className} style={visible ? undefined : { minHeight }}>
+      {visible ? children : null}
+    </div>
+  );
+}
+
 export default function TeacherExamDetailPage({ params }: PageProps) {
   const { examId } = use(params);
   const router = useRouter();
@@ -50,6 +101,9 @@ export default function TeacherExamDetailPage({ params }: PageProps) {
   const [isInviteExpanded, setIsInviteExpanded] = useState(false);
   const [invites, setInvites] = useState<ClassInvite[]>([]);
   const pollTimer = useRef<number | null>(null);
+  // Scroll viewport for مرحله ۲; used as the IntersectionObserver root so cards
+  // are lazily mounted as they scroll into the panel (see LazyMount above).
+  const stepTwoScrollRef = useRef<HTMLDivElement | null>(null);
 
   const stopPolling = useCallback(() => {
     if (pollTimer.current) {
@@ -330,12 +384,16 @@ export default function TeacherExamDetailPage({ params }: PageProps) {
                     <span className="text-sm font-bold">مرحله ۲: سوال و جواب ({questions.length} سوال)</span>
                   </AccordionTrigger>
                   <AccordionContent className="pt-2">
-                    <div className="rounded-xl border border-border/60 bg-background/80 p-4 max-h-[60vh] overflow-y-auto space-y-4">
+                    <div
+                      ref={stepTwoScrollRef}
+                      className="rounded-xl border border-border/60 bg-background/80 p-4 max-h-[60vh] overflow-y-auto space-y-4"
+                    >
                       {questions.length === 0 ? (
                         <p className="text-sm text-muted-foreground">سوالی استخراج نشده است.</p>
                       ) : (
                         questions.map((q, index) => (
-                          <Card key={q.question_id} className="rounded-xl border-border/60">
+                          <LazyMount key={q.question_id} rootRef={stepTwoScrollRef}>
+                            <Card className="rounded-xl border-border/60">
                             <CardContent className="p-4 space-y-3">
                               <div className="flex items-start gap-3">
                                 <span className="flex items-center justify-center w-7 h-7 rounded-full bg-primary/10 text-primary text-sm font-bold shrink-0">
@@ -416,6 +474,7 @@ export default function TeacherExamDetailPage({ params }: PageProps) {
                               )}
                             </CardContent>
                           </Card>
+                          </LazyMount>
                         ))
                       )}
                     </div>

@@ -40,6 +40,7 @@ import type {
   ExamPrepSessionUpdatePayload,
 } from '@/services/classes-service';
 import { ProtectedExamVisual } from '@/components/exam-prep/protected-exam-visual';
+import { LatexMarkdownEditor } from '@/components/exercises/latex-markdown-editor';
 import {
   buildExamReviewSummary,
   type ExamQuestionReviewState,
@@ -58,6 +59,20 @@ const levelOptions = [
   { value: 'متوسط', label: 'متوسط' },
   { value: 'پیشرفته', label: 'پیشرفته' },
 ];
+
+// Ordered Persian option labels (الف، ب، ج، ...). Used both when seeding a new
+// question and when appending an option to an incomplete question.
+const PERSIAN_OPTION_LABELS = [
+  'الف', 'ب', 'ج', 'د', 'ه', 'و', 'ز', 'ح', 'ط', 'ی',
+];
+
+function nextOptionLabel(options: ExamPrepQuestion['options']): string {
+  const used = new Set(options.map((option) => option.label));
+  return (
+    PERSIAN_OPTION_LABELS.find((label) => !used.has(label))
+    ?? String(options.length + 1)
+  );
+}
 
 function initialExamData(examDetail: ExamPrepSessionDetail): ExamPrepData {
   return examDetail.exam_prep_data || {
@@ -147,13 +162,11 @@ export function ExamEditForm({ examDetail, onSave, isSaving }: ExamEditFormProps
     const newQuestion: ExamPrepQuestion = {
       question_id: `q-${Date.now()}`,
       question_text_markdown: '',
-      options: [
-        { label: 'الف', text_markdown: '' },
-        { label: 'ب', text_markdown: '' },
-        { label: 'ج', text_markdown: '' },
-        { label: 'د', text_markdown: '' },
-      ],
-      correct_option_label: 'الف',
+      options: PERSIAN_OPTION_LABELS.slice(0, 4).map((label) => ({
+        label,
+        text_markdown: '',
+      })),
+      correct_option_label: PERSIAN_OPTION_LABELS[0],
       correct_option_text_markdown: '',
       teacher_solution_markdown: '',
       final_answer_markdown: '',
@@ -224,6 +237,28 @@ export function ExamEditForm({ examDetail, onSave, isSaving }: ExamEditFormProps
     updateQuestion(questionIndex, { options });
   };
 
+  const addOption = (questionIndex: number) => {
+    const question = examData.exam_prep.questions[questionIndex];
+    const options = [
+      ...question.options,
+      { label: nextOptionLabel(question.options), text_markdown: '' },
+    ];
+    updateQuestion(questionIndex, { options });
+  };
+
+  const removeOption = (questionIndex: number, optionIndex: number) => {
+    const question = examData.exam_prep.questions[questionIndex];
+    const removed = question.options[optionIndex];
+    const options = question.options.filter((_, index) => index !== optionIndex);
+    const updates: Partial<ExamPrepQuestion> = { options };
+    // If the removed option was the answer key, fall back to the first remaining
+    // option so the correct-answer selector never points at a deleted label.
+    if (question.correct_option_label === removed?.label) {
+      updates.correct_option_label = options[0]?.label ?? null;
+    }
+    updateQuestion(questionIndex, updates);
+  };
+
   const acknowledgeQuestion = (
     questionIndex: number,
     review: ExamQuestionReviewState,
@@ -250,6 +285,11 @@ export function ExamEditForm({ examDetail, onSave, isSaving }: ExamEditFormProps
 
   const reviewCount = reviewSummary.reviewQuestionIds.length;
   const totalQuestions = examData.exam_prep.questions.length;
+  // Owner policy: only review-blocking (critical) issues are ever displayed.
+  // Advisory warnings are hidden everywhere in the edit UI.
+  const blockingGlobalIssues = reviewSummary.globalIssues.filter(
+    (issue) => issue.severity === 'critical',
+  );
 
   return (
     <form onSubmit={handleSubmit} className="space-y-8 pb-8" dir="rtl">
@@ -389,20 +429,15 @@ export function ExamEditForm({ examDetail, onSave, isSaving }: ExamEditFormProps
                 {reviewSummary.criticalQuestionCount} سؤال با خطای بحرانی
               </Badge>
             )}
-            {reviewSummary.warningQuestionCount > 0 && (
-              <Badge variant="outline" className="border-amber-500/50 text-amber-700 dark:text-amber-300">
-                {reviewSummary.warningQuestionCount} سؤال با هشدار
-              </Badge>
-            )}
           </div>
 
-          {reviewSummary.globalIssues.length > 0 && (
+          {blockingGlobalIssues.length > 0 && (
             <div className="rounded-xl border border-destructive/40 bg-destructive/5 p-4">
               <p className="mb-2 text-sm font-bold text-destructive">
-                {reviewSummary.globalIssues.length} مشکل کلی به سؤال مشخصی متصل نشده است
+                {blockingGlobalIssues.length} مشکل کلی به سؤال مشخصی متصل نشده است
               </p>
               <div className="space-y-2">
-                {reviewSummary.globalIssues.map((issue, index) => (
+                {blockingGlobalIssues.map((issue, index) => (
                   <div key={`${issue.code}-${index}`} className="text-sm">
                     <span className="font-semibold">{issue.label}</span>
                     <span className="text-muted-foreground"> — {issue.description}</span>
@@ -477,10 +512,9 @@ export function ExamEditForm({ examDetail, onSave, isSaving }: ExamEditFormProps
                       </span>
                       {review?.needsReview && (
                         <Badge
-                          variant={review.criticalCount > 0 ? 'destructive' : 'outline'}
-                          className={review.criticalCount > 0 ? '' : 'border-amber-500/50 text-amber-700 dark:text-amber-300'}
+                          variant="destructive"
                         >
-                          نیازمند بازبینی · {review.issues.length}
+                          نیازمند بازبینی · {review.criticalCount}
                         </Badge>
                       )}
                     </div>
@@ -509,12 +543,12 @@ export function ExamEditForm({ examDetail, onSave, isSaving }: ExamEditFormProps
                         <p className="font-bold">چرا این سؤال نیازمند بازبینی است؟</p>
                       </div>
                       <div className="space-y-3">
-                        {review.issues.map((issue) => (
+                        {review.issues
+                          .filter((issue) => issue.severity === 'critical')
+                          .map((issue) => (
                           <div key={issue.code} className="rounded-lg border border-border/60 bg-background/70 p-3">
                             <div className="flex flex-wrap items-center gap-2">
-                              <Badge variant={issue.severity === 'critical' ? 'destructive' : 'outline'}>
-                                {issue.severity === 'critical' ? 'بحرانی' : 'هشدار'}
-                              </Badge>
+                              <Badge variant="destructive">بحرانی</Badge>
                               <span className="text-sm font-semibold">{issue.label}</span>
                               {issue.sourcePages.length > 0 && (
                                 <span className="text-xs text-muted-foreground">
@@ -558,44 +592,66 @@ export function ExamEditForm({ examDetail, onSave, isSaving }: ExamEditFormProps
                     </div>
                   )}
 
-                  <div className="space-y-2">
-                    <Label>متن اصلی سؤال (صورت سؤال)</Label>
-                    <Textarea
-                      value={question.question_text_markdown || ''}
-                      onChange={(event) => updateQuestion(questionIndex, {
-                        question_text_markdown: event.target.value,
-                      })}
-                      placeholder="صورت سؤال را به همراه فرمول‌های LaTeX وارد کنید"
-                      rows={3}
-                      className="font-mono text-sm"
-                    />
-                  </div>
+                  <LatexMarkdownEditor
+                    label="متن اصلی سؤال (صورت سؤال)"
+                    previewLabel="پیش‌نمایش صورت سؤال"
+                    value={question.question_text_markdown || ''}
+                    onChange={(value) => updateQuestion(questionIndex, {
+                      question_text_markdown: value,
+                    })}
+                    placeholder="صورت سؤال را به همراه فرمول‌های LaTeX وارد کنید"
+                    rows={3}
+                  />
 
-                  <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                    {question.options.map((option, optionIndex) => (
-                      <div key={`${option.label}-${optionIndex}`} className="space-y-1">
-                        <div className="flex items-center justify-between">
-                          <Label className="text-xs text-muted-foreground">
-                            گزینه {option.label}
-                          </Label>
-                          {question.correct_option_label === option.label && (
-                            <span className="flex items-center gap-1 rounded-full bg-green-100 px-1.5 text-[10px] text-green-700">
-                              <CheckCircle2 className="h-2 w-2" />
-                              پاسخ صحیح
-                            </span>
-                          )}
+                  <div className="space-y-3">
+                    <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                      {question.options.map((option, optionIndex) => (
+                        <div key={`${option.label}-${optionIndex}`} className="space-y-1">
+                          <div className="flex items-center justify-between">
+                            <Label className="text-xs text-muted-foreground">
+                              گزینه {option.label}
+                            </Label>
+                            {question.correct_option_label === option.label && (
+                              <span className="flex items-center gap-1 rounded-full bg-green-100 px-1.5 text-[10px] text-green-700">
+                                <CheckCircle2 className="h-2 w-2" />
+                                پاسخ صحیح
+                              </span>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Input
+                              value={option.text_markdown || ''}
+                              onChange={(event) => updateOption(
+                                questionIndex,
+                                optionIndex,
+                                event.target.value,
+                              )}
+                              placeholder={`متن گزینه ${option.label}`}
+                            />
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className="shrink-0 text-destructive"
+                              onClick={() => removeOption(questionIndex, optionIndex)}
+                              aria-label={`حذف گزینه ${option.label}`}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
                         </div>
-                        <Input
-                          value={option.text_markdown || ''}
-                          onChange={(event) => updateOption(
-                            questionIndex,
-                            optionIndex,
-                            event.target.value,
-                          )}
-                          placeholder={`متن گزینه ${option.label}`}
-                        />
-                      </div>
-                    ))}
+                      ))}
+                    </div>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="gap-2"
+                      onClick={() => addOption(questionIndex)}
+                    >
+                      <Plus className="h-4 w-4" />
+                      افزودن گزینه
+                    </Button>
                   </div>
 
                   <div className="grid grid-cols-1 gap-4 md:grid-cols-2 md:gap-6">
@@ -633,15 +689,15 @@ export function ExamEditForm({ examDetail, onSave, isSaving }: ExamEditFormProps
                   </div>
 
                   <div className="space-y-2">
-                    <Label>تحلیل و راه‌حل مدرس</Label>
-                    <Textarea
+                    <LatexMarkdownEditor
+                      label="تحلیل و راه‌حل مدرس"
+                      previewLabel="پیش‌نمایش راه‌حل"
                       value={question.teacher_solution_markdown || ''}
-                      onChange={(event) => updateQuestion(questionIndex, {
-                        teacher_solution_markdown: event.target.value,
+                      onChange={(value) => updateQuestion(questionIndex, {
+                        teacher_solution_markdown: value,
                       })}
                       placeholder="توضیحات و راه‌حل تشریحی مدرس را اینجا وارد کنید"
                       rows={6}
-                      className="min-h-[150px] resize-none bg-muted/30 md:resize-y"
                     />
                     {question.visuals?.filter((visual) => visual.role === 'solution').map((visual) => (
                       <ProtectedExamVisual

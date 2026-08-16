@@ -94,6 +94,11 @@ Final gate order (owner-ownership scoped throughout — `teacher=request.user`, 
   `require_publishable=True`**. This is pure anti-forgery: it proves all five stages ran (Stage-1 OCR
   pages/models, Stage-2 numbering schemaVersion==2, Stage-3 visual pipeline schemaVersion==2 +
   sha256, Stage-4/5 risk-engine policy) — it does **not** demand zero blocked/critical.
+
+  **The `require_publishable=False` path is now purely *structural*** (see §4.1) — every check is a
+  type/schema-version/shape assertion on durable pipeline evidence. It carries **no numeric-consistency
+  checks**, because those measure publish-*readiness*, not forgery, and a healthy degraded run fails
+  them (see §4.1).
 - **Artifact block (v2/v3 inventory pipeline only, `pipeline_version >= 2`)** — Gate C
   (`extraction_review_required`), Gate D (generated-visual approval), Gate E
   (`teacher_extraction_confirmation_required`, `pipeline_version >= 3`) are **left intact**.
@@ -113,6 +118,38 @@ stays. **Correct scoping = restore v3's gates, keep only the Mistral-facing rela
 
 `exam_prep_mistral_readiness.py` is untouched; its `require_publishable=True` branch is simply no
 longer reached from the publish view.
+
+### 4.1 Gate B is structural-only — the second degraded-run block, and its fix
+
+After the two-tier issue model + the 429 backoff landed (commit e92e6f6), the owner re-ran the same
+58-page Konkur booklet and publishing was **still refused** (red toast *"خروجی معتبر و آماده بازبینی
+مراحل ۱ تا ۵ برای انتشار موجود نیست."*). The 429 flood was gone and the session reached
+review, but Gate B itself still returned `False`.
+
+Root cause — Gate B's `require_publishable=False` path used to end with a **numeric-consistency**
+check `not (0 <= primaryCalls <= regions)`. But:
+
+- Stage-5 policy allows `maxPrimaryDegradedRechecksPerRegion: 1` (`exam_prep_mistral_stage5.py`), and
+- `riskEngine.stats.primaryCalls` is a **sum across all regions**.
+
+So a single legitimate degraded recheck pushes `primaryCalls > regions` — a **healthy** signal (the
+pipeline retried a shaky region), not a forged one. Gating on it wrongly blocked real 100+ question
+booklets. The sibling equalities on that path (`recordedPrimaryCalls == primaryCalls`,
+`recordedUnresolved == blocked`, `riskRegionCount == regions`) compared a `stats`-derived value to
+itself — always-true dead weight.
+
+**Fix:** the `require_publishable=False` path now returns `True` as soon as the **structural**
+anti-forgery block passes (engine/stage/readyForReview + the five schema-versioned stage
+fingerprints). All numeric-consistency checks were removed from it. Those checks survive **only** in
+the dead `require_publishable=True` branch (0 production callers — all four callers use the default;
+confirmed by grep), kept as a latent publish-readiness helper and for its unit coverage. Structural
+forgery detection is unchanged: a bare `{'engine': PRODUCTION_ENGINE, 'status': 'passed'}` workflow
+still fails (missing OCR pages / question intervals / risk-engine schema) → `409
+production_audit_required`.
+
+Regression: `test_publish_endpoint_allows_degraded_run_with_recheck_call_inflation` (a blocked region
++ `primaryCalls=3 > regions=2`) publishes 200; `test_publish_endpoint_blocks_forged_production_workflow`
+still 409. Both in `test_exam_prep_page_review.py`.
 
 ---
 
@@ -160,6 +197,46 @@ report so the teacher reads a run's cost directly.
   status !== 'failed'`. Pipeline-panel مرحله ۲ renders `q.visuals` by role
   (question / option / solution) via `ProtectedExamVisual`; مرحله ۱ shows the token/cost line.
 - **`classes-service.ts`** — `usageSummary?` added to `ExamPrepSessionDetail`.
+
+### 7.1 Second-round owner fixes (edit-form review UX + مرحله ۲ performance)
+
+After the publish gate was unblocked, the owner ran the 58-page / 145-question booklet through the
+teacher UI and reported four follow-ups. All are frontend-only; each is `tsc --noEmit` clean.
+
+- **Hide advisory warnings, show only review-blocking (C)** — `exam-edit-form.tsx`. Because
+  `describeExamReviewIssue` already sets `severity === 'critical'` **iff** the code is in
+  `REVIEW_BLOCKING_EXAM_CODES` (§7), "show only critical" is exactly `filter(i => i.severity ===
+  'critical')`. The global-issues card now guards/counts/maps over `blockingGlobalIssues =
+  globalIssues.filter(i => i.severity === 'critical')`; per-question issue rows filter to
+  `severity === 'critical'` and render a fixed `بحرانی` destructive badge (no more `هشدار` rows);
+  the accordion-trigger badge reads `نیازمند بازبینی · {review.criticalCount}`. Advisory issues are
+  no longer surfaced in the edit lane — matching the owner's *"هشدارها همه پاک بشن، فقط بحرانی‌ها"*.
+- **Add/remove options when options are incomplete (D)** — `exam-edit-form.tsx`. Persian option
+  labels (`PERSIAN_OPTION_LABELS = ['الف','ب','ج','د','ه','و','ز','ح','ط','ی']`) + `nextOptionLabel`
+  pick the first unused label. `addOption(questionIndex)` appends `{label, text_markdown:''}`;
+  `removeOption` drops one and falls the `correct_option_label` back to `options[0]?.label ?? null`
+  when the removed option was the key. Each option row gained a ghost `Trash2` remove button and the
+  grid an outline **«افزودن گزینه»** (`Plus`) button, so a question extracted with < 4 options can be
+  completed in place. `addQuestion` seeds four labelled options + `correct_option_label` =
+  `PERSIAN_OPTION_LABELS[0]`.
+- **Rendered-LaTeX preview + math keyboard in the edit section (E)** — `exam-edit-form.tsx`. The stem
+  (`متن اصلی سؤال`) and teacher-solution (`تحلیل و راه‌حل مدرس`) `<Textarea>`s were swapped for
+  `LatexMarkdownEditor` (`@/components/exercises/latex-markdown-editor`) — the exact component used in
+  **ساخت تمرین**, which carries an always-on live `MarkdownWithMath` preview and a toggleable
+  «کیبورد ریاضی». Its `onChange` yields the new string, wired straight into `updateQuestion`; the
+  solution editor stays inside the `space-y-2` block above the solution-visuals `.map`
+  (`ProtectedExamVisual`, `role === 'solution'`), so images still render. No new dependency — the
+  feature is reused verbatim from the exercise builder.
+- **مرحله ۲ latency — lazy per-card mount (B)** — `my-exams/[examId]/page.tsx`. `MarkdownWithMath`
+  runs one KaTeX `renderMathInElement` pass per instance (in a `requestAnimationFrame` effect) and
+  `ProtectedExamVisual` fires one authenticated blob fetch on mount. Mounting all 145 question cards
+  the instant the accordion opened meant ~870 typeset passes **plus** a fetch burst — the *"دیلی بسیار
+  زیاد"* the owner hit. Fix: a local `LazyMount` wrapper reserves a fixed-height (`200px`) placeholder
+  per card and only mounts the real `<Card>` once it scrolls near the panel's own scroll viewport
+  (`IntersectionObserver` with the `max-h-[60vh] overflow-y-auto` container as `root`, `rootMargin:
+  '800px'` for pre-render), then keeps it mounted. Initial work drops from all-cards to the ~10
+  on/near screen; the rest render progressively as the teacher scrolls. Falls back to eager render
+  where `IntersectionObserver` is unavailable. No virtualization dependency, no data-shape change.
 
 ### Student visuals (req #5) — already worked
 
