@@ -22,6 +22,7 @@ from apps.classes.services.file_validation import is_probably_pdf
 from apps.classes.services.exam_prep_mistral_production import PRODUCTION_ENGINE
 from apps.classes.services.session_workflow import build_session_workflow_state
 from apps.classes.tasks_exam_prep import process_exam_prep_pdf_session
+from apps.classes.views import ExamPrepStep1TranscribeView
 
 
 logger = logging.getLogger('apps.classes.exam_prep')
@@ -140,6 +141,13 @@ class ExamPrepPdfStep1View(APIView):
         serializer.is_valid(raise_exception=True)
         payload = serializer.validated_data
         upload = payload['file']
+        # Route by file type: audio/video/image go to the legacy transcription
+        # pipeline (ExamPrepStep1TranscribeView); only PDFs use the production
+        # Mistral OCR pipeline below. The serializer already accepts all four
+        # kinds, and is_pdf_upload checks content-type/name only (no byte read),
+        # so the upload pointer is untouched for the delegated media path.
+        if not is_pdf_upload(upload):
+            return ExamPrepStep1TranscribeView().post(request)
         if not _valid_pdf_upload(upload):
             return Response(
                 {'file': ['برای آمادگی آزمون یک فایل PDF معتبر بارگذاری کنید.']},

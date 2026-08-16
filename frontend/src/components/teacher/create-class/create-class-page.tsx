@@ -577,14 +577,7 @@ export function CreateClassPage() {
   const examPrepStatus = examPrepSessionDetail?.status ?? examPrepOptimisticStatus ?? null;
   const { message: examPrepPipelineMessage, isDone: isExamPrepPipelineDone, isFailed: isExamPrepPipelineFailed } = getExamPrepPipelineMessage(examPrepStatus);
   const isExamPrepPipelineRunning = Boolean(examPrepStatus && EXAM_PREP_PROCESSING_STATUSES.has(examPrepStatus));
-  const isExamPrepPdf = Boolean(
-    lessonFile
-    && (
-      lessonFile.type === 'application/pdf'
-      || lessonFile.name.toLowerCase().endsWith('.pdf')
-    )
-  );
-  const canStartExamPrepPipeline = Boolean(title.trim()) && isExamPrepPdf && !isExamPrepPipelineStarting && !isExamPrepPipelineRunning;
+  const canStartExamPrepPipeline = Boolean(title.trim()) && Boolean(lessonFile) && !isExamPrepPipelineStarting && !isExamPrepPipelineRunning;
 
   // Current pipeline state based on selected type
   const currentSessionId = pipelineType === 'class' ? sessionIdForActions : examPrepSessionIdForActions;
@@ -910,7 +903,7 @@ export function CreateClassPage() {
           <p className="text-xs text-muted-foreground">
             {pipelineType === 'class'
               ? 'برای ساخت کلاس آموزشی از این گزینه استفاده کنید. شامل ترنسکریپت، ساختاردهی، پیش‌نیازها، آموزش پیش‌نیازها و خلاصه.'
-              : 'فایل PDF سؤال‌ها، پاسخ‌نامه یا راه‌حل را بارگذاری کنید. ساختار صفحات بررسی می‌شود و سپس سؤال‌ها و پاسخ‌ها آماده می‌شوند.'}
+              : 'فایل آزمون را بارگذاری کنید: PDF سؤال‌ها/پاسخ‌نامه، یا فایل ویدیویی/صوتی. سپس سؤال‌ها و پاسخ‌ها آماده می‌شوند.'}
           </p>
         </div>
       </Card>
@@ -955,7 +948,7 @@ export function CreateClassPage() {
           title={pipelineType === 'class' ? 'بارگذاری فایل درسی' : 'بارگذاری فایل آزمون'}
           isExpanded={expandedSections.includes('files')}
           onToggle={() => toggleSection('files')}
-          accept={pipelineType === 'class' ? 'audio/*,video/*,image/*,application/pdf,.pdf' : 'application/pdf,.pdf'}
+          accept="audio/*,video/*,image/*,application/pdf,.pdf"
           multiple={false}
           onFilesSelected={(files) => {
             const file = files && files.length ? files[0] : null;
@@ -983,7 +976,7 @@ export function CreateClassPage() {
                   ? `فایل انتخاب‌شده: ${lessonFile.name}`
                   : pipelineType === 'class'
                     ? 'یک فایل صوتی، ویدیویی، تصویری یا PDF انتخاب کنید.'
-                    : 'یک فایل PDF سؤال‌ها، پاسخ‌نامه یا راه‌حل انتخاب کنید.'}
+                    : 'یک فایل صوتی، ویدیویی، تصویری یا PDF انتخاب کنید.'}
               </div>
             </div>
 
