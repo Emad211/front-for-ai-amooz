@@ -4032,11 +4032,14 @@ class ExamPrepSessionPublishView(APIView):
 
             if session.is_published:
                 return Response(ExamPrepSessionDetailSerializer(session).data)
-            if session.status != ClassCreationSession.Status.EXAM_STRUCTURED:
+            if session.status not in {
+                ClassCreationSession.Status.EXAM_TRANSCRIBED,
+                ClassCreationSession.Status.EXAM_STRUCTURED,
+            }:
                 return Response(
                     {
                         'detail': (
-                            'فقط جلسه‌های با وضعیت exam_structured قابل انتشار هستند. '
+                            'فقط جلسه‌هایی که استخراجشان کامل شده قابل انتشار هستند. '
                             f'وضعیت فعلی: {session.status}'
                         )
                     },
@@ -4055,10 +4058,7 @@ class ExamPrepSessionPublishView(APIView):
 
             if (
                 workflow.get('engine') == PRODUCTION_ENGINE
-                and not production_review_artifact_is_valid(
-                    workflow,
-                    require_publishable=True,
-                )
+                and not production_review_artifact_is_valid(workflow)
             ):
                 return Response(
                     {
@@ -4071,6 +4071,13 @@ class ExamPrepSessionPublishView(APIView):
                     status=status.HTTP_409_CONFLICT,
                 )
 
+            # The gates below are scoped to the separate v2/v3 *inventory* pipeline,
+            # which persists an ``ExamPrepExtractionArtifact``. The default Mistral
+            # production engine creates no artifact (its state lives in
+            # ``workflow_state``), so for a Mistral session ``artifact is None`` and
+            # publishing is governed solely by Gate A + the engine-scoped anti-forgery
+            # check above — i.e. the owner's `همیشه مجاز` policy. The v3 review-binding
+            # anti-forgery contract is intentionally left intact for its own pipeline.
             artifact = ExamPrepExtractionArtifact.objects.select_for_update().filter(
                 session=session
             ).first()

@@ -118,6 +118,25 @@ def _max_tokens() -> int:
     return max(1000, min(12000, value))
 
 
+def _max_retries() -> int:
+    """Bounded SDK retries for the single source-only region request.
+
+    Stage-5 fans out one small request per numbered question + solution region
+    at ``EXAM_PREP_STAGE5_MAX_CONCURRENCY`` (default 4). On a large booklet that
+    burst trips AvalAI's rate limiter; with ``max_retries=0`` every 429 became an
+    immediate ``blocked_main_failed`` and stamped the region critical. The OpenAI
+    client already does exponential backoff + jitter on 429/5xx, so a small retry
+    budget absorbs the burst without a lower concurrency cap. There is still no
+    repair pass — each attempt is the same source-only request.
+    """
+
+    try:
+        value = int(os.getenv("EXAM_PREP_STAGE4_MAX_RETRIES", "3"))
+    except (TypeError, ValueError):
+        value = 3
+    return max(0, min(6, value))
+
+
 def _usage_db_logging_enabled() -> bool:
     """Keep production tracking on, while allowing DB-free diagnostic runs.
 
@@ -284,6 +303,7 @@ def transcribe_source_region(
         create_kwargs["extra_body"] = _minimal_extra_body()
 
     timer = LLMTimer().start()
+    max_retries = _max_retries()
     context = {
         "stage": "exam_prep_stage4_region_transcription",
         "kind": kind,
@@ -291,11 +311,11 @@ def transcribe_source_region(
         "page_number": page_number,
         "image_count": 1,
         "candidate_mistral_shown": False,
-        "provider_attempts": 1,
+        "provider_attempts": max_retries + 1,
         "thinking_minimal": bool(thinking_minimal),
     }
     try:
-        client = _get_gapgpt_client().with_options(max_retries=0)
+        client = _get_gapgpt_client().with_options(max_retries=max_retries)
         response = client.chat.completions.create(**create_kwargs)
         choice = response.choices[0]
         content = str(choice.message.content or "").strip()

@@ -78,6 +78,17 @@ export const CRITICAL_EXAM_REVIEW_CODES = new Set([
   'failed_chunk',
 ]);
 
+// Owner policy `همیشه مجاز` + narrow review lane: a question is forced into the
+// review lane ONLY when it has no stem text or no options. This mirrors the
+// backend `REVIEW_BLOCKING_ISSUE_CODES` byte-for-byte — keep the two in sync.
+// Every other code in CRITICAL_EXAM_REVIEW_CODES is now an advisory warning that
+// is displayed but never blocks publish or forces review.
+export const REVIEW_BLOCKING_EXAM_CODES = new Set([
+  'no_questions',
+  'missing_question_text',
+  'missing_options',
+]);
+
 const ISSUE_COPY: Record<string, { label: string; description: string }> = {
   no_questions: {
     label: 'هیچ سؤالی استخراج نشده',
@@ -294,12 +305,11 @@ export function describeExamReviewIssue(
     code,
     label: copy.label,
     description: copy.description,
-    severity:
-      issue.severity === 'critical'
-      || CRITICAL_EXAM_REVIEW_CODES.has(code)
-      || code.startsWith('conflicting_option:')
-        ? 'critical'
-        : 'warning',
+    // Displayed severity mirrors the review gate: only a missing stem or missing
+    // options render as `critical`. Everything else — including backend
+    // `severity: 'critical'` advisories and the broad CRITICAL_EXAM_REVIEW_CODES
+    // set — is downgraded to an advisory `warning` (owner policy `همیشه مجاز`).
+    severity: REVIEW_BLOCKING_EXAM_CODES.has(code) ? 'critical' : 'warning',
     sourcePages: sourcePages(issue.sourcePages),
   };
 }
@@ -340,7 +350,9 @@ export function buildExamReviewSummary(
       issues,
       criticalCount,
       warningCount,
-      needsReview: issues.length > 0,
+      // Forced into the review lane only when a blocking code is present; advisory
+      // warnings stay visible on the card but never mark the question as needing review.
+      needsReview: issues.some((issue) => REVIEW_BLOCKING_EXAM_CODES.has(issue.code)),
     };
   });
 

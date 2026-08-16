@@ -59,7 +59,7 @@ from .exam_prep_mistral_stage5_runtime import (
     Stage5CostBudgetExceeded,
     current_stage5_task_deadline,
 )
-from .exam_prep_page_output import is_critical_page_issue
+from .exam_prep_page_output import is_review_blocking_issue
 from .exam_prep_page_records import PageAssemblyResult
 from .exam_prep_question_verifier import rebuild_assembly_quality
 
@@ -1254,9 +1254,9 @@ def finalize_stage5_regions(
                 "issues": remaining_issues,
                 "questions_needing_review": sum(bool(question.get("issues")) for question in cleaned_questions),
                 "publication_ready": bool(cleaned_questions)
-                and not any(is_critical_page_issue(issue.code) for issue in remaining_issues)
+                and not any(is_review_blocking_issue(issue.code) for issue in remaining_issues)
                 and not any(
-                    is_critical_page_issue(code)
+                    is_review_blocking_issue(code)
                     for question in cleaned_questions
                     for code in question.get("issues") or []
                 ),

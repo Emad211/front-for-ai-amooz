@@ -235,13 +235,14 @@ def revalidate_exam_prep_teacher_edit(
     audit = retain_failed_page_evidence(audit, failed_page_numbers)
     passed = audit.get('status') == 'passed'
     if workflow.get('engine') == PRODUCTION_ENGINE:
+        # Anti-forgery only (all 5 stages ran); publishing is always allowed once
+        # the audit passes the narrow review-blocking gate — owner policy `همیشه مجاز`.
         passed = passed and production_review_artifact_is_valid(
             {
                 **workflow,
                 'publicationBlocked': False,
                 'extractionAudit': audit,
             },
-            require_publishable=True,
         )
     warnings: list[str] = []
     critical_count = int(audit.get('criticalIssueCount') or 0)

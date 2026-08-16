@@ -180,8 +180,13 @@ def test_canonical_projection_audit_detects_gaps_and_invalid_correct_option():
 
     audit = audit_page_first_projection(projection)
 
-    assert audit['status'] == 'needs_review'
+    # A missing question number and an out-of-range answer key are advisory: both
+    # questions still have a stem and options, so the exam stays publishable
+    # (owner policy `همیشه مجاز`). They remain visible in criticalIssueCount.
+    assert audit['status'] == 'passed'
     assert audit['questionCount'] == 2
+    assert audit['questionsNeedingReview'] == 0
+    assert audit['usableQuestionCount'] == 2
     assert audit['questionNumberGaps'] == {'default': [2]}
     codes = {issue['code'] for issue in audit['issues']}
     assert 'missing_question_number' in codes
@@ -257,7 +262,7 @@ def test_valid_teacher_edit_moves_page_first_session_to_publishable_status():
     assert '## سؤال 1' in session.transcript_markdown
 
 
-def test_mistral_stage5_audit_blocker_cannot_be_cleared_by_json_acknowledgement():
+def test_mistral_stage5_advisory_issue_does_not_block_publish():
     teacher = _teacher()
     question = {
         **_question(1),
@@ -274,8 +279,11 @@ def test_mistral_stage5_audit_blocker_cannot_be_cleared_by_json_acknowledgement(
 
     assert response.status_code == 200
     session.refresh_from_db()
-    assert session.status == ClassCreationSession.Status.EXAM_TRANSCRIBED
-    assert session.workflow_state['publicationBlocked'] is True
+    # `stage5_finalization_blocked` is advisory only: the re-audit recomputes
+    # issues from the projection (stem + options both present) and never blocks
+    # on the stamp, so the draft becomes publishable — owner policy `همیشه مجاز`.
+    assert session.status == ClassCreationSession.Status.EXAM_STRUCTURED
+    assert session.workflow_state['publicationBlocked'] is False
 
 
 def test_mistral_teacher_acknowledgement_does_not_hide_structural_errors():
@@ -417,18 +425,72 @@ def test_valid_manual_json_cannot_clear_failed_physical_page():
     assert 'صفحه‌های نیازمند بازپردازش: **6**' in session.transcript_markdown
 
 
-def test_publish_endpoint_rejects_page_first_session_with_critical_issues():
+def test_publish_endpoint_allows_page_first_session_despite_content_issues(monkeypatch):
+    """Owner policy `همیشه مجاز`: content issues never block the publish button.
+
+    A non-production (page_first) draft carrying a broken question still
+    publishes — the broken question only lands in the advisory review lane; it
+    does not gate publication.
+    """
     teacher = _teacher()
     session = _page_first_session(
         teacher,
         _projection([{**_question(1), 'question_text_markdown': '', 'options': []}]),
+    )
+    monkeypatch.setattr(
+        'apps.classes.views.send_publish_sms_task.delay',
+        lambda *_args, **_kwargs: None,
     )
 
     response = _auth(teacher).post(
         f'/api/classes/exam-prep-sessions/{session.id}/publish/'
     )
 
-    assert response.status_code == 400
+    assert response.status_code == 200
+    session.refresh_from_db()
+    assert session.is_published is True
+
+
+def test_publish_endpoint_rejects_non_owner_teacher():
+    owner = _teacher()
+    intruder = _teacher()
+    session = _page_first_session(owner, _projection([_question(1)]))
+
+    response = _auth(intruder).post(
+        f'/api/classes/exam-prep-sessions/{session.id}/publish/'
+    )
+
+    assert response.status_code == 404
+    session.refresh_from_db()
+    assert session.is_published is False
+
+
+def test_publish_endpoint_blocks_forged_production_workflow():
+    """Anti-forgery (Gate B) is the one content-independent gate that survives.
+
+    A workflow claiming the production engine but missing durable five-stage
+    evidence must never publish, even though publishing is otherwise always
+    allowed. Hand-written workflow JSON cannot impersonate the pipeline.
+    """
+    teacher = _teacher()
+    session = _page_first_session(teacher, _projection([_question(1)]))
+    session.workflow_state = {
+        **session.workflow_state,
+        'engine': PRODUCTION_ENGINE,
+        'stage': 'ready_for_review',
+        'readyForReview': True,
+        # No ocrSourcePages / questionIntervals / riskEngine — the artifact is a
+        # forgery, so production_review_artifact_is_valid must reject it.
+        'extractionAudit': {'engine': PRODUCTION_ENGINE, 'status': 'passed'},
+    }
+    session.save(update_fields=['workflow_state', 'updated_at'])
+
+    response = _auth(teacher).post(
+        f'/api/classes/exam-prep-sessions/{session.id}/publish/'
+    )
+
+    assert response.status_code == 409
+    assert response.data['code'] == 'production_audit_required'
     session.refresh_from_db()
     assert session.is_published is False
 

@@ -252,25 +252,22 @@ def promote_integrity_audit(
     critical_count = sum(
         issue.get("severity") == "critical" for issue in issues
     )
-    critical_questions = {
-        (
-            str(issue.get("scopeKey") or "default"),
-            int(issue.get("questionNumber") or 0),
-        )
-        for issue in issues
-        if issue.get("severity") == "critical"
-        and int(issue.get("questionNumber") or 0) > 0
-    }
+    # Gate on genuinely-broken questions (no stem / no options) plus any
+    # unrecoverable physical page — not the broad advisory critical set.
+    blocking_questions = exam_prep_page_output.review_blocking_question_keys(issues)
+    blocked_by_failed_page = bool(output.get("failedPageNumbers"))
     question_count = int(output.get("questionCount") or 0)
     output["criticalIssueCount"] = critical_count
-    output["questionsNeedingReview"] = len(critical_questions)
+    output["questionsNeedingReview"] = len(blocking_questions)
     output["usableQuestionCount"] = max(
         0,
-        question_count - len(critical_questions),
+        question_count - len(blocking_questions),
     )
     output["status"] = (
         "passed"
-        if question_count > 0 and critical_count == 0
+        if question_count > 0
+        and not blocking_questions
+        and not blocked_by_failed_page
         else "needs_review"
     )
     output.update(integrity_stats)

@@ -50,7 +50,7 @@ class _FakeClient:
         return self
 
 
-def test_gemini_call_is_one_image_source_only_minimal_and_no_retry(monkeypatch):
+def test_gemini_call_is_one_image_source_only_minimal_with_bounded_retries(monkeypatch):
     client = _FakeClient()
     monkeypatch.setattr(transcriber, "_get_gapgpt_client", lambda: client)
     monkeypatch.setattr(transcriber, "track_llm_usage", lambda **_kwargs: None)
@@ -67,7 +67,10 @@ def test_gemini_call_is_one_image_source_only_minimal_and_no_retry(monkeypatch):
 
     assert result.model == "gemini-3-flash-preview"
     assert len(client.calls) == 1
-    assert client.options == [{"max_retries": 0}]
+    # Bounded SDK retries (default 3) absorb the Stage-5 429 burst; the OpenAI
+    # client backs off internally. There is still no structured-output repair
+    # pass — each attempt is the same single source-only request.
+    assert client.options == [{"max_retries": 3}]
     payload = client.calls[0]
     assert payload["extra_body"] == {
         "generationConfig": {"thinkingConfig": {"thinkingLevel": "minimal"}}
@@ -102,7 +105,7 @@ def test_secondary_call_has_no_gemini_thinking_body(monkeypatch):
     assert "extra_body" not in client.calls[0]
     assert client.calls[0]["timeout"] == 60.0
     assert client.calls[0]["max_tokens"] == 2500
-    assert client.options == [{"max_retries": 0}]
+    assert client.options == [{"max_retries": 3}]
 
 
 def test_db_usage_logging_can_be_disabled_for_local_live_replay(monkeypatch):
@@ -152,7 +155,44 @@ def test_http_success_with_non_json_content_reports_json_parse_failure_once(monk
         )
 
     assert len(client.calls) == 1
-    assert client.options == [{"max_retries": 0}]
+    assert client.options == [{"max_retries": 3}]
+
+
+def test_stage4_max_retries_is_env_driven_and_clamped(monkeypatch):
+    # Default is the bounded 429-absorbing budget, not the old hardcoded 0.
+    monkeypatch.delenv("EXAM_PREP_STAGE4_MAX_RETRIES", raising=False)
+    assert transcriber._max_retries() == 3
+
+    monkeypatch.setenv("EXAM_PREP_STAGE4_MAX_RETRIES", "5")
+    assert transcriber._max_retries() == 5
+
+    # Clamp: never below 0, never above 6, and garbage falls back to the default.
+    monkeypatch.setenv("EXAM_PREP_STAGE4_MAX_RETRIES", "-4")
+    assert transcriber._max_retries() == 0
+    monkeypatch.setenv("EXAM_PREP_STAGE4_MAX_RETRIES", "99")
+    assert transcriber._max_retries() == 6
+    monkeypatch.setenv("EXAM_PREP_STAGE4_MAX_RETRIES", "not-an-int")
+    assert transcriber._max_retries() == 3
+
+
+def test_stage4_env_retry_budget_flows_into_with_options(monkeypatch):
+    client = _FakeClient()
+    monkeypatch.setenv("EXAM_PREP_STAGE4_MAX_RETRIES", "6")
+    monkeypatch.setenv("EXAM_PREP_STAGE4_USAGE_DB_LOGGING", "0")
+    monkeypatch.setattr(transcriber, "_get_gapgpt_client", lambda: client)
+
+    transcriber.transcribe_source_region(
+        image=b"fake-image",
+        kind="question",
+        question_number=7,
+        page_number=3,
+        model="gemini-3-flash-preview",
+        thinking_minimal=True,
+    )
+
+    # The env-configured budget is the exact value handed to the SDK; the region
+    # transcriber never hardcodes retries.
+    assert client.options == [{"max_retries": 6}]
 
 
 def test_representation_only_camel_case_contract_is_normalized(monkeypatch):

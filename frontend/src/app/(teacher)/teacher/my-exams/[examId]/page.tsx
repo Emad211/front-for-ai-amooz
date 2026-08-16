@@ -12,6 +12,7 @@ import { MarkdownWithMath } from '@/components/content/markdown-with-math';
 import { StudentInviteSection } from '@/components/teacher/create-class/student-invite-section';
 import { ClassAnnouncementsCard } from '@/components/teacher/class-detail';
 import { ExamExtractionReview } from '@/components/teacher/exam-edit/exam-extraction-review';
+import { ProtectedExamVisual } from '@/components/exam-prep/protected-exam-visual';
 import {
   fetchExamPrepSession,
   publishExamPrepSession,
@@ -172,16 +173,18 @@ export default function TeacherExamDetailPage({ params }: PageProps) {
     isReviewReady && examPrep.status === 'exam_transcribed'
       ? 'آماده بازبینی'
       : statusLabels[examPrep.status] || examPrep.status;
-  const extractionPassed =
-    !examPrep.extractionAudit || examPrep.extractionAudit.status === 'passed';
-  const extractionReviewConfirmed =
-    !examPrep.teacherReviewRequired || Boolean(examPrep.teacherReviewedAt);
+  const usage = examPrep.usageSummary ?? null;
+  const visualContentUrl = (visualId: string | number) =>
+    `/api/classes/exam-prep-sessions/${examPrep.id}/visuals/${encodeURIComponent(String(visualId))}/content/`;
+  // Owner policy `همیشه مجاز`: publishing is gated only by real blockers — an
+  // already-published session, an in-flight or failed run, or zero questions.
+  // Extraction-audit status and teacher-review confirmation are advisory only
+  // and never block publish (the backend gate was relaxed to match).
   const canPublish =
-    examPrep.status === 'exam_structured'
-    && !examPrep.is_published
+    !examPrep.is_published
     && questions.length > 0
-    && extractionPassed
-    && extractionReviewConfirmed;
+    && !isProcessing
+    && examPrep.status !== 'failed';
   const publishDisabledReason = examPrep.is_published
     ? 'این آزمون قبلاً منتشر شده است.'
     : isProcessing
@@ -190,15 +193,7 @@ export default function TeacherExamDetailPage({ params }: PageProps) {
         ? 'پردازش آزمون با خطا متوقف شده است.'
         : questions.length === 0
           ? 'برای انتشار باید حداقل یک سؤال وجود داشته باشد.'
-          : !extractionPassed
-            ? 'ابتدا خطاهای استخراج را در بخش بازبینی برطرف کنید.'
-            : !extractionReviewConfirmed
-              ? 'ابتدا بازبینی استخراج را تأیید کنید.'
-              : examPrep.status !== 'exam_structured'
-                ? isReviewReady
-                  ? 'پیش‌نویس آماده بازبینی است؛ ابتدا موارد مسدودکننده انتشار را برطرف کنید.'
-                  : 'پیش‌نویس آزمون هنوز آماده انتشار نیست.'
-                : null;
+          : null;
   const publishButtonLabel = examPrep.is_published
     ? 'منتشر شده'
     : isPublishing
@@ -305,6 +300,28 @@ export default function TeacherExamDetailPage({ params }: PageProps) {
                     <div className="rounded-xl border border-border/60 bg-background/80 p-4 max-h-[45vh] overflow-y-auto">
                       <MarkdownWithMath markdown={examPrep.transcript_markdown || '—'} />
                     </div>
+                    {usage && usage.calls > 0 && (
+                      <div
+                        dir="rtl"
+                        className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 rounded-xl border border-border/60 bg-muted/30 px-3 py-2 text-xs text-muted-foreground"
+                      >
+                        <span>
+                          مصرف توکن:{' '}
+                          <span className="font-bold text-foreground">
+                            {usage.totalTokens.toLocaleString('fa-IR')}
+                          </span>
+                        </span>
+                        <span>
+                          هزینه:{' '}
+                          <span className="font-bold text-foreground">
+                            {Math.round(usage.costToman).toLocaleString('fa-IR')} تومان
+                          </span>
+                        </span>
+                        <span className="opacity-70">
+                          ({usage.costUsd.toFixed(4)}$ · {usage.calls.toLocaleString('fa-IR')} فراخوانی)
+                        </span>
+                      </div>
+                    )}
                   </AccordionContent>
                 </AccordionItem>
 
@@ -329,6 +346,21 @@ export default function TeacherExamDetailPage({ params }: PageProps) {
                                 </div>
                               </div>
 
+                              {q.visuals?.some((v) => v.role === 'question') && (
+                                <div className="grid gap-3 pr-6 sm:grid-cols-2 sm:pr-10">
+                                  {q.visuals
+                                    ?.filter((v) => v.role === 'question')
+                                    .map((visual) => (
+                                      <ProtectedExamVisual
+                                        key={visual.id}
+                                        url={visualContentUrl(visual.id)}
+                                        alt={visual.altText || 'تصویر صورت سؤال'}
+                                        className="h-auto max-h-72 w-full rounded-md border object-contain"
+                                      />
+                                    ))}
+                                </div>
+                              )}
+
                               {q.options && q.options.length > 0 && (
                                 <div className="space-y-2 pr-6 sm:pr-10">
                                   {q.options.map((opt) => (
@@ -341,19 +373,44 @@ export default function TeacherExamDetailPage({ params }: PageProps) {
                                       }`}
                                     >
                                       <span className="font-bold text-sm shrink-0">{opt.label})</span>
-                                      <MarkdownWithMath markdown={opt.text_markdown} />
+                                      <div className="min-w-0 flex-1 space-y-2">
+                                        <MarkdownWithMath markdown={opt.text_markdown} />
+                                        {q.visuals
+                                          ?.filter((v) => v.role === 'option' && v.optionLabel === opt.label)
+                                          .map((visual) => (
+                                            <ProtectedExamVisual
+                                              key={visual.id}
+                                              url={visualContentUrl(visual.id)}
+                                              alt={visual.altText || `تصویر گزینه ${opt.label}`}
+                                              className="h-auto max-h-56 w-full rounded-md border object-contain"
+                                            />
+                                          ))}
+                                      </div>
                                     </div>
                                   ))}
                                 </div>
                               )}
 
-                              {q.teacher_solution_markdown && (
+                              {(q.teacher_solution_markdown
+                                || q.visuals?.some((v) => v.role === 'solution')) && (
                                 <details className="pr-10">
                                   <summary className="text-sm text-primary cursor-pointer hover:underline">
                                     راه‌حل
                                   </summary>
-                                  <div className="mt-2 p-3 bg-primary/5 rounded-lg">
-                                    <MarkdownWithMath markdown={q.teacher_solution_markdown} />
+                                  <div className="mt-2 p-3 bg-primary/5 rounded-lg space-y-3">
+                                    {q.teacher_solution_markdown && (
+                                      <MarkdownWithMath markdown={q.teacher_solution_markdown} />
+                                    )}
+                                    {q.visuals
+                                      ?.filter((v) => v.role === 'solution')
+                                      .map((visual) => (
+                                        <ProtectedExamVisual
+                                          key={visual.id}
+                                          url={visualContentUrl(visual.id)}
+                                          alt={visual.altText || 'تصویر راه‌حل'}
+                                          className="mx-auto max-h-[28rem] max-w-full rounded-md border object-contain"
+                                        />
+                                      ))}
                                   </div>
                                 </details>
                               )}

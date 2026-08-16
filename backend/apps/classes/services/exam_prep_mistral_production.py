@@ -54,6 +54,7 @@ from .exam_prep_mistral_visual_reconcile import (
 from .exam_prep_page_output import (
     build_strict_exam_audit,
     render_strict_exam_transcript,
+    review_blocking_question_keys,
 )
 from .exam_prep_page_records import assemble_page_extractions
 from .exam_prep_page_source import attach_source_regions
@@ -220,20 +221,23 @@ def _promote_own_critical(
             issue["severity"] = "critical"
     output["issues"] = issues
     critical = [item for item in issues if item.get("severity") == "critical"]
-    critical_questions = {
-        int(item.get("questionNumber") or 0)
-        for item in critical
-        if int(item.get("questionNumber") or 0) > 0
-    }
+    # `_OWN_CRITICAL_CODES` (Stage-5 blockers, visual-critical codes, …) stay
+    # promoted to critical severity for the advisory `criticalIssueCount`, but
+    # publishing is gated only by genuinely-broken questions (no stem / no
+    # options) plus any unrecoverable physical page — owner policy `همیشه مجاز`.
+    blocking_questions = review_blocking_question_keys(issues)
+    blocked_by_failed_page = bool(output.get("failedPageNumbers"))
     output["criticalIssueCount"] = len(critical)
-    output["questionsNeedingReview"] = len(critical_questions)
+    output["questionsNeedingReview"] = len(blocking_questions)
     output["usableQuestionCount"] = max(
         0,
-        int(output.get("questionCount") or 0) - len(critical_questions),
+        int(output.get("questionCount") or 0) - len(blocking_questions),
     )
     output["status"] = (
         "passed"
-        if output.get("questionCount") and not critical
+        if output.get("questionCount")
+        and not blocking_questions
+        and not blocked_by_failed_page
         else "needs_review"
     )
     return output
