@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 import re
-from typing import Any, Mapping, Sequence
+from typing import Any, Callable, Mapping, Sequence
 
 from . import exam_prep_mistral_visual_reconcile_v2 as base
 from . import exam_prep_mistral_visuals as v
@@ -205,6 +205,8 @@ def _recover_solution_visuals(
     source_sha256: str,
     store: VisualAssetStore,
     config: VisualPipelineConfig,
+    storage_namespace: str = "",
+    should_cancel: Callable[[], bool] | None = None,
 ) -> tuple[PageAssemblyResult, int, list[dict[str, Any]]]:
     existing = _stage3_assets_by_question(result)
     questions_with_solution = {
@@ -224,6 +226,10 @@ def _recover_solution_visuals(
     document = pdfium.PdfDocument(pdf_data)
     try:
         for page_number, page_analysis in analysis_pages.items():
+            if should_cancel is not None and should_cancel():
+                raise RuntimeError(
+                    "Cancellation requested during Stage-3 visual reconciliation."
+                )
             if page_number not in ocr_by_page:
                 continue
             solution_regions = [
@@ -340,6 +346,7 @@ def _recover_solution_visuals(
                                     payload=payload,
                                     source_sha256=source_sha256,
                                     store=store,
+                                    storage_namespace=storage_namespace,
                                 )
                             except Exception:
                                 continue
@@ -385,6 +392,8 @@ def reconcile_mistral_source_visuals(
     source_sha256: str,
     store: VisualAssetStore | None = None,
     config: VisualPipelineConfig | None = None,
+    storage_namespace: str = "",
+    should_cancel: Callable[[], bool] | None = None,
 ):
     selected = config or VisualPipelineConfig.from_env()
     selected_store = store or PrivateVisualAssetStore()
@@ -396,6 +405,8 @@ def reconcile_mistral_source_visuals(
         source_sha256=source_sha256,
         store=selected_store,
         config=selected,
+        storage_namespace=storage_namespace,
+        should_cancel=should_cancel,
     )
     updated, recovered_count, recovered_regions = _recover_solution_visuals(
         updated,
@@ -405,6 +416,8 @@ def reconcile_mistral_source_visuals(
         source_sha256=source_sha256,
         store=selected_store,
         config=selected,
+        storage_namespace=storage_namespace,
+        should_cancel=should_cancel,
     )
     if recovered_count:
         stats = dict(stats)
