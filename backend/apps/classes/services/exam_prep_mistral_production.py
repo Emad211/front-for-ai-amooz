@@ -14,6 +14,7 @@ from dataclasses import replace
 from decimal import Decimal, InvalidOperation
 import io
 import os
+import re
 from typing import Any, Mapping, Sequence
 
 from . import exam_prep_mistral_stage2_core as core
@@ -113,6 +114,123 @@ core.parse_question_region_text = parse_question_region_text
 
 _STALE_PARSE_FAILURE_CODE = "mistral_question_option_parse_failed"
 
+# Relaxed inline-option recovery -------------------------------------------------
+# The frozen Stage-2 detectors (``_OPTION_MARKER_RE`` needs trailing punctuation,
+# ``_PAREN_OPTION_RE`` needs a closing bracket, ``_marker_sequence`` needs all
+# four markers in strict order) split only clean ``۱)…۴)`` runs. Live 58-page
+# booklets also produce three degenerate shapes the frozen path rejects:
+#   A. half-open parens ``(۱ … (۲ … (۳ … (۴``  (opening bracket, no close, no punct)
+#   B. an OCR-dropped internal marker ``(۱) … (۲) … (۴)``  (only 3 of 4 survive)
+#   C. a flattened table ``(۱) v ۲ v ۳ v ۴ v``  (bare standalone digit markers)
+# This facade-local relaxed pass recovers those without touching the frozen core:
+# a marker is a digit 1..4 whose left edge is start/space/opening-bracket and
+# whose right edge is a closing punct, whitespace, or end — never glued to math
+# (``$``, ``_``, ``=``, ``/``) or another digit (so ``۱۰``/``۳/۴`` never anchor).
+# A run must start at marker 1 and hold >= 3 strictly-increasing markers, the
+# first of which is "strong" (carries a bracket or closing punct); that is what
+# keeps dense math from false-firing. Internal gaps become empty labelled options
+# (the teacher fixes the residual value via the edit form) so the review gate
+# clears while nothing is ever blanked or dropped.
+_MARKER_VALUE = {
+    "1": 1, "۱": 1, "١": 1,
+    "2": 2, "۲": 2, "٢": 2,
+    "3": 3, "۳": 3, "٣": 3,
+    "4": 4, "۴": 4, "٤": 4,
+}
+_MARKER_DIGIT_RE = re.compile(r"[1-4۱-۴١-٤]")
+_OPEN_BRACKETS = "(["
+_CLOSE_MARKER_PUNCT = ")].:：-–—"
+_MIN_RELAXED_RUN = 3
+
+
+def _relaxed_markers(body: str) -> list[tuple[int, int, int, bool]]:
+    """Return ``(number, outer_start, content_end, strong)`` marker candidates.
+
+    ``outer_start`` includes a leading ``(``/``[`` when present; ``content_end``
+    is the index just past the marker (past a closing punct when present); a
+    marker is ``strong`` when it carries a bracket or closing punctuation.
+    """
+
+    markers: list[tuple[int, int, int, bool]] = []
+    length = len(body)
+    for match in _MARKER_DIGIT_RE.finditer(body):
+        position = match.start()
+        number = _MARKER_VALUE[match.group(0)]
+        # Left edge: allow one opening bracket, then require start/whitespace so a
+        # marker glued to prose or math (``f(2)``, ``$x_1``) is rejected.
+        outer_start = position
+        has_open = False
+        left = body[position - 1] if position > 0 else ""
+        if left in _OPEN_BRACKETS:
+            has_open = True
+            outer_start = position - 1
+            left = body[outer_start - 1] if outer_start > 0 else ""
+        if left and not left.isspace():
+            continue
+        # Right edge: optionally consume one closing punct (spaces allowed before
+        # it); otherwise the digit must be followed by whitespace or end so a
+        # multi-digit value (``۱۰``) or a fraction (``۳/۴``) never anchors a run.
+        has_close = False
+        content_end = position + 1
+        probe = position + 1
+        while probe < length and body[probe] == " ":
+            probe += 1
+        if probe < length and body[probe] in _CLOSE_MARKER_PUNCT:
+            has_close = True
+            content_end = probe + 1
+        else:
+            after = body[position + 1] if position + 1 < length else ""
+            if after and not after.isspace():
+                continue
+        markers.append((number, outer_start, content_end, has_open or has_close))
+    return markers
+
+
+def _relaxed_option_run(
+    markers: list[tuple[int, int, int, bool]],
+) -> list[tuple[int, int, int, bool]] | None:
+    """Pick the first ascending run that starts at a strong marker 1 (>= 3 long).
+
+    Gaps are tolerated (Mode B drops one internal marker) but the run must start
+    at 1 and increase strictly, and its first marker must be strong so dense math
+    can never seed a run.
+    """
+
+    for start_index, first in enumerate(markers):
+        if first[0] != 1 or not first[3]:
+            continue
+        run = [first]
+        for candidate in markers[start_index + 1 :]:
+            if run[-1][0] < candidate[0] <= 4:
+                run.append(candidate)
+        if len(run) >= _MIN_RELAXED_RUN:
+            return run
+    return None
+
+
+def _split_relaxed_inline_options(
+    body: str,
+) -> tuple[str, list[dict[str, str]]] | None:
+    """Fallback split for OCR-mangled marker runs the frozen path can't parse."""
+
+    run = _relaxed_option_run(_relaxed_markers(body))
+    if run is None:
+        return None
+    recovered_stem = clean_exam_markdown(body[: run[0][1]])
+    if not recovered_stem:
+        return None
+    texts: dict[int, str] = {}
+    for index, marker in enumerate(run):
+        number, _outer_start, content_end, _strong = marker
+        text_end = run[index + 1][1] if index + 1 < len(run) else len(body)
+        texts[number] = core._clean_option_text(body[content_end:text_end])
+    highest = run[-1][0]
+    options = [
+        {"label": str(number), "text_markdown": texts.get(number, "")}
+        for number in range(1, highest + 1)
+    ]
+    return recovered_stem, options
+
 
 def _split_inline_stem_options(
     stem: Any,
@@ -122,12 +240,14 @@ def _split_inline_stem_options(
     ``mistral-ocr-4-0`` sometimes emits the four numbered options *inside* the
     question stem and leaves ``options[]`` empty (frequently with an empty
     trailing option), which used to force an otherwise-answerable question into
-    the review lane with ``missing_options``. When the stem ends in a
-    deterministic 1..4 marker run this returns ``(clean_stem, options)``, keeping
-    the label of every option — including empty/image-only options so they still
-    render and only advisory ``missing_option_text`` applies. Returns ``None``
-    when there is no clean marker run or no real question text precedes it, so a
-    genuinely option-less stem stays review-blocking (owner policy).
+    the review lane with ``missing_options``. The frozen 1..4 marker run is tried
+    first (proven on clean runs); a facade-local relaxed pass then recovers the
+    three degenerate OCR shapes the frozen detectors reject (see the block above).
+    On success this returns ``(clean_stem, options)``, keeping the label of every
+    option — including empty/image-only options so they still render and only
+    advisory ``missing_option_text`` applies. Returns ``None`` when there is no
+    marker run or no real question text precedes it, so a genuinely option-less
+    stem stays review-blocking (owner policy).
     """
 
     body = clean_exam_markdown(stem or "")
@@ -137,22 +257,21 @@ def _split_inline_stem_options(
     sequence = core._marker_sequence(body, core._OPTION_MARKER_RE)
     if sequence is None:
         sequence = core._marker_sequence(body, core._PAREN_OPTION_RE)
-    if sequence is None:
-        return None
-    recovered_stem = clean_exam_markdown(body[: sequence[0][1]])
-    if not recovered_stem:
-        return None
-    options: list[dict[str, str]] = []
-    for index, marker in enumerate(sequence):
-        end = sequence[index + 1][1] if index + 1 < len(sequence) else len(body)
-        options.append(
-            {
-                "label": str(marker[0]),
-                "text_markdown": core._clean_option_text(body[marker[2] : end]),
-            }
-        )
-    options.sort(key=lambda item: int(item["label"]))
-    return recovered_stem, options
+    if sequence is not None:
+        recovered_stem = clean_exam_markdown(body[: sequence[0][1]])
+        if recovered_stem:
+            options: list[dict[str, str]] = []
+            for index, marker in enumerate(sequence):
+                end = sequence[index + 1][1] if index + 1 < len(sequence) else len(body)
+                options.append(
+                    {
+                        "label": str(marker[0]),
+                        "text_markdown": core._clean_option_text(body[marker[2] : end]),
+                    }
+                )
+            options.sort(key=lambda item: int(item["label"]))
+            return recovered_stem, options
+    return _split_relaxed_inline_options(body)
 
 
 def _recover_inline_stem_options(

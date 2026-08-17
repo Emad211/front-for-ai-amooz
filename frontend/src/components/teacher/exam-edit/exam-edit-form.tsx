@@ -32,6 +32,17 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from '@/components/ui/accordion';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
 import { CLASS_TITLE_MAX_LENGTH } from '@/constants/teacher-limits';
 import type {
   ExamPrepSessionDetail,
@@ -45,6 +56,10 @@ import {
   buildExamReviewSummary,
   type ExamQuestionReviewState,
 } from './exam-review-utils';
+import {
+  removeQuestionAtIndex,
+  removeQuestionsAtIndexes,
+} from './exam-edit-mutations';
 
 interface ExamEditFormProps {
   examDetail: ExamPrepSessionDetail;
@@ -187,13 +202,23 @@ export function ExamEditForm({ examDetail, onSave, isSaving }: ExamEditFormProps
   };
 
   const removeQuestion = (index: number) => {
-    setExamData((previous) => ({
-      ...previous,
-      exam_prep: {
-        ...previous.exam_prep,
-        questions: previous.exam_prep.questions.filter((_, itemIndex) => itemIndex !== index),
-      },
-    }));
+    setExamData((previous) => removeQuestionAtIndex(previous, index));
+  };
+
+  // Bulk action for the literal owner workflow: drop every question the review
+  // lane still flags, then publish the healthy remainder. The review summary is
+  // index-aligned with ``exam_prep.questions``, so map the flagged positions to
+  // their true array indexes (never the filtered-view indexes) and delete them
+  // in one referentially-safe update.
+  const removeReviewNeededQuestions = () => {
+    const flaggedIndexes = examData.exam_prep.questions
+      .map((_question, index) => index)
+      .filter((index) => reviewSummary.questions[index]?.needsReview);
+    if (flaggedIndexes.length === 0) {
+      return;
+    }
+    setExamData((previous) => removeQuestionsAtIndexes(previous, flaggedIndexes));
+    setReviewFilter('all');
   };
 
   const updateQuestion = (
@@ -420,6 +445,35 @@ export function ExamEditForm({ examDetail, onSave, isSaving }: ExamEditFormProps
                   <ChevronLeft className="h-4 w-4" />
                 </Button>
               )}
+              {reviewCount > 0 && (
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="destructive"
+                      size="sm"
+                      className="gap-2"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                      حذف همه نیازمند بازبینی ({reviewCount})
+                    </Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent dir="rtl">
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>حذف همه سؤال‌های نیازمند بازبینی؟</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        {reviewCount} سؤالی که هنوز نیازمند بازبینی هستند از این آزمون حذف می‌شوند تا فقط سؤال‌های سالم برای انتشار بمانند. این کار پس از ذخیره قطعی می‌شود و قابل بازگشت نیست.
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>انصراف</AlertDialogCancel>
+                      <AlertDialogAction onClick={removeReviewNeededQuestions}>
+                        حذف {reviewCount} سؤال
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+              )}
             </div>
           </div>
 
@@ -520,19 +574,34 @@ export function ExamEditForm({ examDetail, onSave, isSaving }: ExamEditFormProps
                     </div>
                   </AccordionTrigger>
 
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    className="absolute left-12 top-1/2 z-10 -translate-y-1/2 text-destructive opacity-0 transition-opacity group-hover/title:opacity-100"
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      removeQuestion(questionIndex);
-                    }}
-                    aria-label={`حذف سؤال ${questionIndex + 1}`}
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
+                  <AlertDialog>
+                    <AlertDialogTrigger asChild>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="absolute left-12 top-1/2 z-10 -translate-y-1/2 text-destructive hover:bg-destructive/10"
+                        onClick={(event) => event.stopPropagation()}
+                        aria-label={`حذف سؤال ${questionIndex + 1}`}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </AlertDialogTrigger>
+                    <AlertDialogContent dir="rtl">
+                      <AlertDialogHeader>
+                        <AlertDialogTitle>حذف این سؤال؟</AlertDialogTitle>
+                        <AlertDialogDescription>
+                          سؤال {review?.questionNumber || questionIndex + 1} از این آزمون حذف می‌شود. این کار پس از ذخیره قطعی می‌شود و قابل بازگشت نیست.
+                        </AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <AlertDialogFooter>
+                        <AlertDialogCancel>انصراف</AlertDialogCancel>
+                        <AlertDialogAction onClick={() => removeQuestion(questionIndex)}>
+                          حذف سؤال
+                        </AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
                 </div>
 
                 <AccordionContent className="space-y-6 px-4 pb-6 pt-4">

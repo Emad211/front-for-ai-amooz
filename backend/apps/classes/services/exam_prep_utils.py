@@ -215,4 +215,13 @@ def normalize_exam_prep_json(raw_value: object) -> tuple[str | None, bool]:
         except Exception:
             return None, False
     normalized, changed = normalize_exam_prep_questions(value)
+    # Teacher-edit path only: re-derive each question's issues from the edited
+    # content so a question the teacher has just fixed drops its stale repairable
+    # codes and leaves the review lane (the stored per-question badge must agree
+    # with the recomputed session audit). Lazy import avoids the
+    # ``exam_prep_question_verifier`` → ``exam_prep_utils`` import cycle.
+    from .exam_prep_question_verifier import rebuild_projection_question_issues
+
+    if rebuild_projection_question_issues(normalized):
+        changed = True
     return json.dumps(normalized, ensure_ascii=False), changed
