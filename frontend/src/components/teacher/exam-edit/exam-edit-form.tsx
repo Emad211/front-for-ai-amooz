@@ -579,9 +579,9 @@ export function ExamEditForm({ examDetail, onSave, isSaving }: ExamEditFormProps
                     </div>
                   )}
 
-                  {(question.visuals?.some((visual) => visual.role !== 'solution') ?? false) && (
+                  {(question.visuals?.some((visual) => visual.role === 'question') ?? false) && (
                     <div className="grid gap-3 sm:grid-cols-2">
-                      {question.visuals?.filter((visual) => visual.role !== 'solution').map((visual) => (
+                      {question.visuals?.filter((visual) => visual.role === 'question').map((visual) => (
                         <ProtectedExamVisual
                           key={visual.id}
                           url={`/api/classes/exam-prep-sessions/${examDetail.id}/visuals/${encodeURIComponent(String(visual.id))}/content/`}
@@ -639,6 +639,16 @@ export function ExamEditForm({ examDetail, onSave, isSaving }: ExamEditFormProps
                               <Trash2 className="h-4 w-4" />
                             </Button>
                           </div>
+                          {question.visuals
+                            ?.filter((visual) => visual.role === 'option' && visual.optionLabel === option.label)
+                            .map((visual) => (
+                              <ProtectedExamVisual
+                                key={visual.id}
+                                url={`/api/classes/exam-prep-sessions/${examDetail.id}/visuals/${encodeURIComponent(String(visual.id))}/content/`}
+                                alt={visual.altText || `تصویر گزینه ${option.label}`}
+                                className="h-28 w-full rounded-md border object-contain"
+                              />
+                            ))}
                         </div>
                       ))}
                     </div>
@@ -652,40 +662,54 @@ export function ExamEditForm({ examDetail, onSave, isSaving }: ExamEditFormProps
                       <Plus className="h-4 w-4" />
                       افزودن گزینه
                     </Button>
+                    {(() => {
+                      const optionLabels = new Set(question.options.map((option) => option.label));
+                      const orphanedOptionVisuals = question.visuals?.filter(
+                        (visual) => visual.role === 'option'
+                          && !(visual.optionLabel != null && optionLabels.has(visual.optionLabel)),
+                      ) ?? [];
+                      if (orphanedOptionVisuals.length === 0) {
+                        return null;
+                      }
+                      return (
+                        <div className="space-y-2 rounded-md border border-dashed border-muted p-3">
+                          <p className="text-xs text-muted-foreground">
+                            تصاویر گزینه‌ای که به گزینه‌ای متصل نشده‌اند:
+                          </p>
+                          <div className="grid gap-3 sm:grid-cols-2">
+                            {orphanedOptionVisuals.map((visual) => (
+                              <ProtectedExamVisual
+                                key={visual.id}
+                                url={`/api/classes/exam-prep-sessions/${examDetail.id}/visuals/${encodeURIComponent(String(visual.id))}/content/`}
+                                alt={visual.altText || 'تصویر گزینه'}
+                                className="h-28 w-full rounded-md border object-contain"
+                              />
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })()}
                   </div>
 
-                  <div className="grid grid-cols-1 gap-4 md:grid-cols-2 md:gap-6">
-                    <div className="space-y-2">
-                      <Label>انتخاب گزینه صحیح</Label>
-                      <Select
-                        value={question.correct_option_label || ''}
-                        onValueChange={(value) => updateQuestion(questionIndex, {
-                          correct_option_label: value,
-                        })}
-                      >
-                        <SelectTrigger>
-                          <SelectValue placeholder="پاسخ صحیح را انتخاب کنید" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {question.options.map((option) => (
-                            <SelectItem key={option.label} value={option.label}>
-                              گزینه {option.label}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label>خروجی نهایی (نتیجه)</Label>
-                      <Input
-                        value={question.final_answer_markdown || ''}
-                        onChange={(event) => updateQuestion(questionIndex, {
-                          final_answer_markdown: event.target.value,
-                        })}
-                        placeholder="مثلاً: گزینه ب یا x=5"
-                      />
-                    </div>
+                  <div className="space-y-2">
+                    <Label>انتخاب گزینه صحیح</Label>
+                    <Select
+                      value={question.correct_option_label || ''}
+                      onValueChange={(value) => updateQuestion(questionIndex, {
+                        correct_option_label: value,
+                      })}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="پاسخ صحیح را انتخاب کنید" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {question.options.map((option) => (
+                          <SelectItem key={option.label} value={option.label}>
+                            گزینه {option.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </div>
 
                   <div className="space-y-2">

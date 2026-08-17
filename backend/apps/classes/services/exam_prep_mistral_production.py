@@ -56,7 +56,7 @@ from .exam_prep_page_output import (
     render_strict_exam_transcript,
     review_blocking_question_keys,
 )
-from .exam_prep_page_records import assemble_page_extractions
+from .exam_prep_page_records import PageAssemblyResult, assemble_page_extractions
 from .exam_prep_page_source import attach_source_regions
 from .exam_prep_pipeline import (
     ExamPrepPipelineCancelled,
@@ -110,6 +110,102 @@ def parse_question_region_text(value: Any) -> tuple[str, list[dict[str, str]], s
 
 
 core.parse_question_region_text = parse_question_region_text
+
+_STALE_PARSE_FAILURE_CODE = "mistral_question_option_parse_failed"
+
+
+def _split_inline_stem_options(
+    stem: Any,
+) -> tuple[str, list[dict[str, str]]] | None:
+    """Pull an OCR-inlined option run out of a question stem.
+
+    ``mistral-ocr-4-0`` sometimes emits the four numbered options *inside* the
+    question stem and leaves ``options[]`` empty (frequently with an empty
+    trailing option), which used to force an otherwise-answerable question into
+    the review lane with ``missing_options``. When the stem ends in a
+    deterministic 1..4 marker run this returns ``(clean_stem, options)``, keeping
+    the label of every option — including empty/image-only options so they still
+    render and only advisory ``missing_option_text`` applies. Returns ``None``
+    when there is no clean marker run or no real question text precedes it, so a
+    genuinely option-less stem stays review-blocking (owner policy).
+    """
+
+    body = clean_exam_markdown(stem or "")
+    if not body:
+        return None
+    body = core._QUESTION_HEADING_RE.sub("", body, count=1)
+    sequence = core._marker_sequence(body, core._OPTION_MARKER_RE)
+    if sequence is None:
+        sequence = core._marker_sequence(body, core._PAREN_OPTION_RE)
+    if sequence is None:
+        return None
+    recovered_stem = clean_exam_markdown(body[: sequence[0][1]])
+    if not recovered_stem:
+        return None
+    options: list[dict[str, str]] = []
+    for index, marker in enumerate(sequence):
+        end = sequence[index + 1][1] if index + 1 < len(sequence) else len(body)
+        options.append(
+            {
+                "label": str(marker[0]),
+                "text_markdown": core._clean_option_text(body[marker[2] : end]),
+            }
+        )
+    options.sort(key=lambda item: int(item["label"]))
+    return recovered_stem, options
+
+
+def _recover_inline_stem_options(
+    result: PageAssemblyResult,
+) -> PageAssemblyResult:
+    """Recover inline options for assembled questions that lost their options[].
+
+    Deterministic, provider-free, and idempotent: only questions with fewer than
+    two options and a recoverable stem are touched. On success the stale
+    region-level ``mistral_question_option_parse_failed`` code is dropped (the
+    parse now succeeded); ``rebuild_assembly_quality`` recomputes the rest.
+    """
+
+    projection = dict(result.projection)
+    exam = dict(projection.get("exam_prep") or {})
+    source_questions = exam.get("questions")
+    if not isinstance(source_questions, list):
+        return result
+    changed = False
+    questions: list[Any] = []
+    for question in source_questions:
+        if not isinstance(question, Mapping):
+            questions.append(question)
+            continue
+        options = [
+            item
+            for item in (question.get("options") or [])
+            if isinstance(item, Mapping)
+        ]
+        if len(options) >= 2:
+            questions.append(dict(question))
+            continue
+        recovered = _split_inline_stem_options(question.get("question_text_markdown"))
+        if recovered is None:
+            questions.append(dict(question))
+            continue
+        stem, recovered_options = recovered
+        updated = dict(question)
+        updated["question_text_markdown"] = stem
+        updated["options"] = recovered_options
+        updated["issues"] = [
+            code
+            for code in (question.get("issues") or [])
+            if clean_exam_markdown(code).strip() != _STALE_PARSE_FAILURE_CODE
+        ]
+        questions.append(updated)
+        changed = True
+    if not changed:
+        return result
+    exam["questions"] = questions
+    projection["exam_prep"] = exam
+    return result.model_copy(update={"projection": projection})
+
 
 _question_anchor_counts = core._question_anchor_counts
 _question_numbers = core._question_numbers
@@ -429,6 +525,11 @@ def run_exam_prep_mistral_pipeline(
     )
     assembled = assemble_page_extractions(page_extractions, title=title)
     assembled = attach_source_regions(assembled, pages=page_extractions)
+    # Recover options that OCR left inline in the stem before quality is rebuilt,
+    # so a question whose options were merely mis-placed is not sent to the
+    # review lane as `missing_options` (owner policy: only a genuinely no-stem /
+    # no-options question is review-blocking).
+    assembled = _recover_inline_stem_options(assembled)
     assembled = rebuild_assembly_quality(assembled)
 
     try:

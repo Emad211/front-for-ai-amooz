@@ -238,6 +238,78 @@ teacher UI and reported four follow-ups. All are frontend-only; each is `tsc --n
   on/near screen; the rest render progressively as the teacher scrolls. Falls back to eager render
   where `IntersectionObserver` is unavailable. No virtualization dependency, no data-shape change.
 
+### 7.2 Third-round owner fixes (inline-option recovery + option-visual placement + form cleanup)
+
+After the second round, the owner ran the 58-page / 145-question booklet again and reported that **24 of
+145 questions were forced into the review lane**, 23 of them with `missing_options` and one (Q19) with
+`missing_question_text`. The demand: *"نمی‌خواهم حتی یک سؤال رو ببینم که برای بازبینی برگشت داده شده"* —
+zero questions in the review lane — **without** dropping the gate (a genuinely broken question must still
+block).
+
+**Root cause (data-extraction, not a gate).** `mistral-ocr-4-0` sometimes emits the four numbered options
+*inside* the question stem and leaves `options[]` empty. The frozen region parser
+(`exam_prep_mistral_stage2_core.parse_question_region_text`) has an `all(item["text_markdown"] …)` guard
+(`:201`): when the 4th option marker (`۴)`) has empty text — an image option or an OCR truncation — the
+whole run is discarded, options stay inline in `question_text_markdown`, `options == []`, and
+`canonical_question_issues` fires the **review-blocking** `missing_options`. 23 of 24 review items were
+exactly this shape (the 24th, Q19, was a true empty stem → legitimately stays blocked).
+
+**Fix — deterministic, provider-free, pre-quality recovery** (`exam_prep_mistral_production.py`):
+
+- `_split_inline_stem_options(stem)` strips the leading question heading, then reuses the frozen core's
+  own detectors (`_QUESTION_HEADING_RE`, `_marker_sequence`, `_OPTION_MARKER_RE` → `_PAREN_OPTION_RE`
+  fallback, `_clean_option_text`) to split a clean `۱)…۲)…۳)…۴)` run off the tail. Returns the recovered
+  stem + labelled options, or `None` when there is no real stem before the markers (so an option-marker-only
+  string is **not** mistaken for a question).
+- `_recover_inline_stem_options(result)` runs over the assembled projection, touching **only** questions
+  with `< 2` options and a recoverable stem. It writes the trimmed stem + `options[]` (labels preserved
+  even when a value is empty — an image option or truncation) and drops the now-stale region code
+  `mistral_question_option_parse_failed`. Wired into `run_exam_prep_mistral_pipeline` **between**
+  `attach_source_regions` and `rebuild_assembly_quality`, so the canonical recompute sees the recovered
+  options and the review gate clears naturally.
+
+This is a **data fix, not a gate drop**: a question with a real stem but genuinely no option markers, or a
+true empty stem (Q19), still surfaces `missing_options` / `missing_question_text` and stays review-blocking
+per the locked policy. Because `canonical_question_issues` only fires `missing_options` when
+`len(options) < 2` (empty option *text* is advisory `missing_option_text`), recovering ≥ 2 labelled options
+is sufficient to clear the lane while preserving image/empty options for the render layer.
+
+The frozen `exam_prep_mistral_stage2_core.py` is **untouched** — the recovery lives entirely in the
+production facade and reuses the core's detectors read-only.
+
+**Frontend — option-visual placement + form cleanup** (`exam-edit-form.tsx`):
+
+- **Image options render *as* options (D)** — *"گزینه‌هایی که خودشون تصویر هستن هم باید به‌عنوان گزینه
+  نمایش داده بشن"*. The stem-adjacent visual grid used to lump **all** non-solution visuals
+  (`role !== 'solution'`) above the stem, disconnected from their option. It now renders **only**
+  `role === 'question'` visuals there; each `role === 'option'` visual renders **beside its matching option
+  row**, matched by `visual.optionLabel === option.label`, inside the options map. An orphaned-option
+  fallback block (an `option` visual whose `optionLabel` matches no current option — null label, or the
+  teacher removed the row) renders under the options grid so a visual is **never silently dropped**. The
+  pipeline-output panel (`my-exams/[examId]/page.tsx`) and the student view (`question-content.tsx`)
+  already did this exact `optionLabel === label` matching (incl. the student-view orphan fallback) — only
+  the edit form was inconsistent, now aligned across all three surfaces.
+- **Remove the "خروجی نهایی (نتیجه)" field (C)** — *"«جوابِ نهایی چیه» رو هم پاک بکن"*. The
+  `final_answer_markdown` `<Input>` and its two-column wrapper were removed from the per-question form;
+  the "انتخاب گزینه صحیح" `<Select>` is now full-width. The backend data shape is **unchanged**
+  (`final_answer_markdown` stays in the payload / factory default) — this is a display-only removal.
+
+**Regression + hygiene:**
+
+- `test_exam_prep_mistral_inline_option_recovery.py` (**new**, 6 tests, provider-free): splitter recovers
+  the real broken shape and keeps the empty trailing option; recovery clears the `missing_options` gate;
+  labels are emitted for a pure-image (all-empty) option row; a marker-less stem and an option-marker-only
+  string stay unrecovered; questions with existing options are untouched.
+- **Stale prompts-contract allow-list** — `test_prompts_contract.py::test_no_unexpected_top_level_keys` was
+  **already red on `main`** (unrelated to this round): 7 genuinely-live prompt keys
+  (`exam_prep_page_extraction`, `exam_prep_question_audit`, `exam_prep_question_repair`, and the four
+  `exam_prep_v4_*`) existed in `PROMPTS` but were never added to `LIVE_KEYS`. Added them (each `["default"]`)
+  so the guard is green. **No prompt wording changed** — this is a test-fixture correction only.
+
+Both frontend surfaces are `cd frontend && npx tsc --noEmit` clean; the touched backend suites
+(`test_exam_prep_mistral_production_core/boundary`, `_inline_option_recovery`, `_visual_only_options`,
+`_question_verifier`, `test_exam_prep_page_output`, `test_prompts_contract`) pass.
+
 ### Student visuals (req #5) — already worked
 
 `StudentExamPrepDetailView` emits per-question `visuals[]`; `QuestionContent` renders them via
