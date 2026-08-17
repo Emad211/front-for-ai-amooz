@@ -556,6 +556,7 @@ def _transcribe_many(
     should_cancel=None,
     deadline_at: float | None = None,
     budget: Stage5BudgetLedger | None = None,
+    on_progress=None,
 ) -> dict[int, RegionTranscriptionResult | Exception]:
     ordered_items = list(items)
     if not ordered_items:
@@ -638,6 +639,13 @@ def _transcribe_many(
                 if budget is not None and reservation is not None:
                     budget.settle(reservation, value)
                 outcomes[index] = value
+                if on_progress is not None:
+                    # Best-effort heartbeat: a progress-sink failure must never
+                    # abort the paid fan-out or leak a partial-run exception.
+                    try:
+                        on_progress(len(outcomes), len(ordered_items))
+                    except Exception:
+                        pass
             if not deadline_hit and not budget_hit:
                 fill_window()
     except Exception:
@@ -723,6 +731,7 @@ def finalize_stage5_regions(
     should_cancel=None,
     required_targets: set[tuple[int, str]] | frozenset[tuple[int, str]] | None = None,
     max_cost_usd: Decimal | float | str | None = None,
+    on_region_complete=None,
 ) -> tuple[PageAssemblyResult, dict[str, Any]]:
     started_at = monotonic()
     max_wall_seconds = _max_wall_seconds()
@@ -852,6 +861,7 @@ def finalize_stage5_regions(
         should_cancel=should_cancel,
         deadline_at=deadline_at,
         budget=cost_ledger,
+        on_progress=on_region_complete,
     )
     primary_calls = sum(
         not isinstance(value, (_Stage5DeadlineExceeded, Stage5CostBudgetExceeded))

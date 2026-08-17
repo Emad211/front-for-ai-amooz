@@ -34,11 +34,35 @@ TASK_FINALIZE_SAFETY_SECONDS = int(
     os.getenv('EXAM_PREP_TASK_FINALIZE_SAFETY_SECONDS', '300')
 )
 
+# Progress-bar bands (percent). The bar must track wall-clock share, not page
+# count. OCR (Stage 1) is the fast phase — it finishes every page in the first
+# ~2 of a ~8 minute run, so it may only fill the low "reading source" band; if
+# it owned 20..90% it would read as ~90% two minutes in while the real work had
+# not started. The per-question Stage-5 source re-read is the long tail (~6 of
+# the ~8 minutes) and carries the bar up through the "extracting questions"
+# band. The short deterministic Stages 2-4 fall in the seam at the OCR ceiling.
+OCR_PROGRESS_FLOOR = 15
+OCR_PROGRESS_CEILING = 40
+STAGE5_PROGRESS_FLOOR = 40
+STAGE5_PROGRESS_CEILING = 95
+
 
 def _stage5_deadline_at(task_started_at: float) -> float:
     task_limit = min(TASK_SOFT_LIMIT, TASK_HARD_LIMIT)
     usable_seconds = max(0, task_limit - max(0, TASK_FINALIZE_SAFETY_SECONDS))
     return task_started_at + usable_seconds
+
+
+def _band_progress(completed: int, total: int, *, floor: int, ceiling: int) -> int:
+    """Map ``completed/total`` into the ``[floor, ceiling]`` percent band.
+
+    Pure and provider-free so the progress mapping can be unit-tested without a
+    live pipeline run. Clamps the fraction to ``[0, 1]`` so a caller can never
+    push the bar past the band ceiling (e.g. OCR completion must not read 90%).
+    """
+    safe_total = max(1, int(total))
+    fraction = min(1.0, max(0, int(completed)) / safe_total)
+    return floor + int(fraction * (ceiling - floor))
 
 
 def _workflow_state(
@@ -191,7 +215,36 @@ def process_exam_prep_pdf_session(self, session_id: int) -> dict:
             return _session_cancel_requested(session.id)
 
         def on_page_complete(completed: int, total: int) -> None:
-            progress = 20 + int((completed / max(1, total)) * 70)
+            # OCR is the fast phase: keep it inside the low "reading source"
+            # band so finishing all pages (~2 min in) never reads as near-done.
+            progress = _band_progress(
+                completed,
+                total,
+                floor=OCR_PROGRESS_FLOOR,
+                ceiling=OCR_PROGRESS_CEILING,
+            )
+            ClassCreationSession.objects.filter(
+                id=session.id,
+                cancel_requested=False,
+                status=ClassCreationSession.Status.EXAM_TRANSCRIBING,
+            ).update(
+                workflow_state=_workflow_state(
+                    'reading_source',
+                    message=f'صفحه {completed} از {total} خوانده شد.',
+                    progress=progress,
+                )
+            )
+
+        def on_region_complete(completed: int, total: int) -> None:
+            # Stage-5 per-question source re-read is the long tail (~6 min); it
+            # carries the bar through the "extracting questions" band so the UI
+            # keeps advancing during the phase that actually dominates runtime.
+            progress = _band_progress(
+                completed,
+                total,
+                floor=STAGE5_PROGRESS_FLOOR,
+                ceiling=STAGE5_PROGRESS_CEILING,
+            )
             ClassCreationSession.objects.filter(
                 id=session.id,
                 cancel_requested=False,
@@ -199,7 +252,7 @@ def process_exam_prep_pdf_session(self, session_id: int) -> dict:
             ).update(
                 workflow_state=_workflow_state(
                     'extracting_questions',
-                    message=f'صفحه {completed} از {total} پردازش شد.',
+                    message=f'تحلیل سؤال {completed} از {total}.',
                     progress=progress,
                 )
             )
@@ -210,6 +263,7 @@ def process_exam_prep_pdf_session(self, session_id: int) -> dict:
                 title=session.title,
                 scope_hint='default',
                 on_page_complete=on_page_complete,
+                on_region_complete=on_region_complete,
                 should_cancel=should_cancel,
                 asset_namespace=session_artifact_namespace(session.id),
             )
@@ -368,9 +422,9 @@ def process_exam_prep_pdf_session(self, session_id: int) -> dict:
             countdown = min(300, 45 * (2 ** int(self.request.retries or 0)))
             ClassCreationSession.objects.filter(id=session.id).update(
                 workflow_state=_workflow_state(
-                    'extracting_questions',
+                    'reading_source',
                     message='خطای موقت رخ داد؛ پردازش دوباره تلاش می‌شود.',
-                    progress=20,
+                    progress=OCR_PROGRESS_FLOOR,
                 )
             )
             logger.warning(

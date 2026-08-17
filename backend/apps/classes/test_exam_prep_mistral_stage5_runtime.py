@@ -279,6 +279,7 @@ def test_production_keeps_public_signature_and_passes_remaining_budget_directly(
         "model",
         "scope_hint",
         "on_page_complete",
+        "on_region_complete",
         "should_cancel",
         "asset_namespace",
     ]

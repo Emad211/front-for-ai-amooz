@@ -348,3 +348,39 @@ Verified: 151 passed across the touched suites; `cd frontend && npx tsc --noEmit
 
 Garbled/doubled LaTeX from `mistral-ocr-4-0` on dense math is a model-quality issue, not a gate.
 Not fixed here.
+
+---
+
+## 11. Progress-bar honesty — OCR band vs Stage-5 tail
+
+**Symptom (owner):** on a ~8-minute run the bar hit **90%** in the first ~2 minutes — while only OCR
+had run — then froze there for the ~6 minutes of real extraction work.
+
+**Root cause:** `tasks_exam_prep.on_page_complete` mapped OCR page completion onto `20 + (completed/
+total)*70`, so 58/58 pages read = 90%, under a stage mislabelled `extracting_questions`. Stages 2–5 (the
+majority of wall-clock, dominated by the per-question Stage-5 source re-read) emitted **no** progress
+until the terminal `progress=100`.
+
+**Fix — wall-clock bands, not page count** (`tasks_exam_prep.py`):
+
+- Pure, unit-testable `_band_progress(completed, total, *, floor, ceiling)` clamps the fraction to
+  `[0,1]` and maps it into a band. Two bands, ordered with headroom below terminal 100:
+  - **OCR** → `reading_source`, `OCR_PROGRESS_FLOOR=15 → OCR_PROGRESS_CEILING=40`. Finishing every
+    page now reads 40%, never 90%. The short deterministic Stages 2–4 sit in the seam at the ceiling.
+  - **Stage 5** → `extracting_questions`, `STAGE5_PROGRESS_FLOOR=40 → STAGE5_PROGRESS_CEILING=95`. The
+    long tail carries the bar up as each numbered question/solution region is re-read.
+- New `on_region_complete(completed, total)` heartbeat plumbed **tasks → production facade →
+  `exam_prep_mistral_stage5`**: `run_exam_prep_mistral_pipeline(..., on_region_complete=…)` forwards it
+  to `finalize_stage5_regions(..., on_region_complete=…)`, which passes it as `on_progress` into the
+  **primary** `_transcribe_many` pass only (one call per eligible region). Fired from the completion
+  loop after each outcome is recorded; **best-effort (try/except)** so a DB/progress-sink hiccup can
+  never abort the paid fan-out. Retry (non-transient) path now resets to `reading_source` /
+  `OCR_PROGRESS_FLOOR` instead of the old `extracting_questions` / 20.
+- Frontend `pipeline-tracker.tsx` stays a passive renderer (`effectiveProgress = progressPercent`
+  verbatim); the OCR→`reading_source` / Stage-5→`extracting_questions` mapping matches its
+  stage-chip order. **Backend-only fix.**
+
+**Regression guard:** `test_exam_prep_progress_bands.py` (provider-free) — OCR 58/58 → 40 (not 90),
+fraction clamp on over/under-count, Stage-5 completion → 95, band ordering leaves headroom for terminal
+100. The facade signature-lock tests (`test_exam_prep_mistral_production_boundary.py`,
+`test_exam_prep_mistral_stage5_runtime.py`) now include `on_region_complete` after `on_page_complete`.

@@ -381,6 +381,7 @@ def run_exam_prep_mistral_pipeline(
     model: str | None = None,
     scope_hint: str = "default",
     on_page_complete: ProgressCallback | None = None,
+    on_region_complete: ProgressCallback | None = None,
     should_cancel: CancelCheck | None = None,
     asset_namespace: str | None = None,
 ) -> ExamPrepPipelineResult:
@@ -566,6 +567,7 @@ def run_exam_prep_mistral_pipeline(
             decisions=decisions,
             max_cost_usd=remaining_stage5_budget,
             should_cancel=should_cancel,
+            on_region_complete=on_region_complete,
         )
     except RuntimeError as exc:
         if "Cancellation requested during Stage-5" in str(exc):
