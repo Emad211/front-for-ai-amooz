@@ -561,3 +561,149 @@ def test_publish_endpoint_accepts_page_first_session_after_valid_edit(monkeypatc
     session.refresh_from_db()
     assert session.status == ClassCreationSession.Status.EXAM_STRUCTURED
     assert session.is_published is True
+
+
+# --- Owner regression: a real (drifted) production run must stay usable --------
+#
+# The 137-question Konkur booklet the owner ran completed the full five-stage
+# pipeline, but its persisted ``visualPipeline.sourceSha256`` came back blank (a
+# resumed-OCR run) — a Stage-3 fingerprint that has nothing to do with whether
+# the pipeline actually ran. The strict ``production_review_artifact_is_valid``
+# gate fail-closes on that single drifted field, and because the SAME gate
+# guarded publish, the review PATCH conflict check, AND the re-audit refresh,
+# one drift made the run permanently unpublishable and un-editable with zero
+# teacher recourse — violating the owner-locked `همیشه مجاز` policy. The shallow
+# ``production_run_is_authentic`` gate keeps such a run publishable/editable
+# while still rejecting a forgery (see the preserved forged-workflow test).
+_DRIFTED_VISUAL_PIPELINE = {
+    'schemaVersion': 2,
+    # A resumed-OCR run persisted a blank digest; the strict gate demands 64 hex
+    # chars, so it rejects an otherwise-complete real run.
+    'sourceSha256': '',
+    'stats': {'unresolvedRegions': 0, 'storageFailures': 0},
+    'unresolvedRegions': [],
+    'criticalIssueCodes': [],
+}
+# Page-level issues the OCR recorded against a whole page, not a numbered
+# question (``questionNumber == 0``), so a teacher cannot clear them by editing
+# or deleting any single question — exactly the owner's red card of "۸ مشکل کلی
+# به سؤال مشخصی متصل نشده است". They are NOT review-blocking (that gate needs a
+# positive question number), so review-needed already reads 0.
+_DETACHED_PAGE_ISSUES = [
+    {
+        'code': 'missing_question_text',
+        'scopeKey': 'default',
+        'questionNumber': 0,
+        'severity': 'critical',
+        'sourcePages': [5],
+    },
+    {
+        'code': 'missing_options',
+        'scopeKey': 'default',
+        'questionNumber': 0,
+        'severity': 'critical',
+        'sourcePages': [7],
+    },
+]
+
+
+def _drifted_production_session(teacher, questions):
+    """A completed production run whose stored audit drifted from the strict schema.
+
+    Every Stage-1/Stage-2 authenticity fingerprint is intact (so it is
+    unmistakably a real pipeline run, not hand-authored forgery), but
+    ``visualPipeline`` has a blank ``sourceSha256`` and the audit still carries
+    detached page-level residue issues that no current question can clear.
+    """
+
+    return _mistral_session(
+        teacher,
+        _projection(questions),
+        extra_audit={
+            'status': 'needs_review',
+            'questionCount': len(questions),
+            'visualPipeline': dict(_DRIFTED_VISUAL_PIPELINE),
+            'issues': [dict(issue) for issue in _DETACHED_PAGE_ISSUES],
+            'criticalIssueCount': len(_DETACHED_PAGE_ISSUES),
+            'questionsNeedingReview': 0,
+        },
+    )
+
+
+def test_publish_endpoint_allows_drifted_authentic_production_run(monkeypatch):
+    """`همیشه مجاز`: a real run with a drifted deep-schema field still publishes.
+
+    Reproduces the owner's toast ``خروجی معتبر و آماده بازبینی مراحل ۱ تا ۵ برای
+    انتشار موجود نیست.`` (``production_audit_required``). The run completed all
+    five stages; only ``visualPipeline.sourceSha256`` drifted. It must publish.
+    """
+    teacher = _teacher()
+    session = _drifted_production_session(teacher, [_question(1), _question(2)])
+    monkeypatch.setattr(
+        'apps.classes.views.send_publish_sms_task.delay',
+        lambda *_args, **_kwargs: None,
+    )
+
+    response = _auth(teacher).post(
+        f'/api/classes/exam-prep-sessions/{session.id}/publish/'
+    )
+
+    assert response.status_code == 200, response.data
+    session.refresh_from_db()
+    assert session.is_published is True
+
+
+def test_review_patch_persists_delete_on_drifted_production_run():
+    """Reproduces "نه ادیت ها ثبت میشه نه پاک کردن ها".
+
+    The teacher deletes one of two questions on a drifted run. The strict gate
+    made the PATCH conflict-check refuse (409) BEFORE ``session.save``, so the
+    reduced projection never persisted. The shallow gate lets the edit through
+    and the deletion survives reload.
+    """
+    teacher = _teacher()
+    session = _drifted_production_session(teacher, [_question(1), _question(2)])
+
+    response = _auth(teacher).patch(
+        f'/api/classes/exam-prep-sessions/{session.id}/',
+        {'exam_prep_json': _projection([_question(1)])},
+        format='json',
+    )
+
+    assert response.status_code == 200, response.data
+    session.refresh_from_db()
+    stored = json.loads(session.exam_prep_json)
+    numbers = [
+        question['source_question_number']
+        for question in stored['exam_prep']['questions']
+    ]
+    assert numbers == ['1']
+
+
+def test_review_get_clears_detached_page_issues_on_drifted_run():
+    """The red card of detached page-level issues must clear on a healthy run.
+
+    A GET recomputes the audit from the (question-keyed) projection, which can
+    only emit issues for questions that currently exist — so the detached
+    ``questionNumber == 0`` residue vanishes and the run reads as passed. The
+    strict gate blocked that refresh entirely, freezing the stale residue.
+    """
+    teacher = _teacher()
+    session = _drifted_production_session(teacher, [_question(1), _question(2)])
+
+    response = _auth(teacher).get(
+        f'/api/classes/exam-prep-sessions/{session.id}/'
+    )
+
+    assert response.status_code == 200
+    audit = response.data['extractionAudit']
+    detached_blocking = [
+        issue
+        for issue in (audit.get('issues') or [])
+        if issue.get('code') in {'missing_question_text', 'missing_options'}
+        and int(issue.get('questionNumber') or 0) == 0
+    ]
+    assert detached_blocking == []
+    assert audit['status'] == 'passed'
+    session.refresh_from_db()
+    assert session.status == ClassCreationSession.Status.EXAM_STRUCTURED

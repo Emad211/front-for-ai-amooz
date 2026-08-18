@@ -23,7 +23,7 @@ from .serializers import (
 from .services.exam_prep_inventory import rebuild_audit_after_teacher_review
 from .services.exam_prep_mistral_production import PRODUCTION_ENGINE
 from .services.exam_prep_mistral_readiness import (
-    production_review_artifact_is_valid,
+    production_run_is_authentic,
 )
 from .services.exam_prep_page_output import review_blocking_question_keys
 from .services.exam_prep_page_review import (
@@ -67,7 +67,7 @@ def _is_reviewable_exam_session(session: ClassCreationSession) -> bool:
     if not reviewable:
         return False
     if workflow.get('engine') == PRODUCTION_ENGINE:
-        return production_review_artifact_is_valid(workflow)
+        return production_run_is_authentic(workflow)
     return True
 
 
@@ -80,7 +80,7 @@ def _review_patch_conflict(session: ClassCreationSession) -> str:
     workflow = _workflow(session)
     if (
         workflow.get('engine') == PRODUCTION_ENGINE
-        and not production_review_artifact_is_valid(workflow)
+        and not production_run_is_authentic(workflow)
     ):
         return 'خروجی کامل و معتبر پایپ‌لاین برای بازبینی موجود نیست.'
     return ''
@@ -226,7 +226,7 @@ def _refresh_exam_review_state(
     if workflow.get('engine') == PRODUCTION_ENGINE:
         # Anti-forgery only — publishing is always allowed once the audit clears
         # the narrow review-blocking gate (owner policy `همیشه مجاز`).
-        passed = passed and production_review_artifact_is_valid(
+        passed = passed and production_run_is_authentic(
             {
                 **workflow,
                 'stage': 'ready_for_review',

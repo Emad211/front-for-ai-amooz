@@ -153,6 +153,79 @@ still 409. Both in `test_exam_prep_page_review.py`.
 
 ---
 
+### 4.2 The gate goes shallow — one drifted deep-schema field must not brick a real 137-Q run
+
+After commit `b196a23` (Reqs 1–3) landed on `main`, the owner ran a **137-question Konkur math booklet**
+("تست ریاضی کنکور") end-to-end and hit a hard wall that made Reqs 2 & 3 unusable in the live UI:
+
+1. **Publishing was refused** with the exact §1 toast (*"خروجی معتبر و آماده بازبینی مراحل ۱ تا ۵ برای
+   انتشار موجود نیست."*, `production_audit_required`, 409) **even though review-needed showed `0`** and the
+   owner had deleted all 8 flagged questions — *"من باید بتونم انتشارررر بدم"*.
+2. **Neither edits nor deletes persisted** — *"نه ادیت ها ثبت میشه نه پاک کردن ها"* — deleted questions
+   reappeared after save/reload.
+3. A red card showed **"۸ مشکل کلی به سؤال مشخصی متصل نشده است"** — 8 page-level issues
+   (`missing_question_text` / `missing_options` at pages 5/36/7/39/13/43) attached to **no** question
+   (`questionNumber == 0`), so no edit or delete could clear them.
+
+**Root cause — one strict-gate `False`, three broken surfaces.** §4.1 relaxed Gate B to *structural-only*
+but still demanded that **every** deep Stage-3/4/5 schema field survived byte-for-byte:
+`nativeAnswerEvidence.schemaVersion == 2`, `visualPipeline.schemaVersion == 2` **and**
+`len(sourceSha256) == 64`, `riskEngine.schemaVersion == 1` + `policy` + `stats` + `budget` + `regions`.
+`production_review_artifact_is_valid(workflow)` returned `False` for the owner's run because one of those
+fields had **drifted** — the leading suspect is a **resumed-OCR run that persisted a blank
+`visualPipeline.sourceSha256`** (a Stage-3 fingerprint with nothing to do with whether the pipeline ran).
+A fresh healthy run passes the strict gate; only a drifted/old-schema run fails. Because the **same** gate
+guarded three places, one drifted field cascaded:
+
+- **Publish** (`views.py`) → `409 production_audit_required` (symptom 1).
+- **Review PATCH** conflict check (`views_exam_prep_review._review_patch_conflict`) → the PATCH returned
+  `409` **before `session.save()` ever ran**, so the teacher's deletions/edits were silently discarded
+  (symptom 2 — it was the PATCH being refused, *not* the edit signal).
+- **Re-audit refresh** (`_refresh_exam_review_state`, gated by `_is_reviewable_exam_session`) →
+  early-returned, so the stale page-level residue was never recomputed away (symptom 3). The teacher-edit
+  signal (`signals.revalidate_exam_prep_teacher_edit`) early-returned on the same check.
+
+The strict gate **fail-closed on any drift with zero teacher recourse** — the run was permanently
+unpublishable *and* un-editable, violating the owner-locked `همیشه مجاز`.
+
+**Fix — a shallow `production_run_is_authentic(workflow)` (`exam_prep_mistral_readiness.py`).** It checks
+only the fingerprints a forgery cannot fabricate and that deterministic Stage-1/Stage-2 **always** emit:
+`engine == PRODUCTION_ENGINE`, `stage == 'ready_for_review'`, `readyForReview is True`,
+`extractionAudit.engine == PRODUCTION_ENGINE`, `ocrSourcePages >= 1`, a non-empty `ocrResolvedModels`
+with ≥1 non-empty model string (Stage 1), and `questionCount >= 1` + a non-empty `questionIntervals`
+list of mappings (Stage 2). It **drops** the drift-fragile deep Stage-3/4/5 assertions entirely. All **6**
+production call sites were repointed to it (`views.py` publish, `views_exam_prep_review`
+`_is_reviewable_exam_session` / `_review_patch_conflict` / `_refresh_exam_review_state` re-check,
+`signals` early-return + re-check). `production_review_artifact_is_valid` is **kept** (now zero callers,
+still exported) as the strict latent helper; both are in `__all__`.
+
+Why repointing the re-check is safe: after a teacher edit the recomputed audit is
+`{**previous_audit, **recomputed_audit}` — `audit_page_first_projection` does not re-emit
+`ocrSourcePages` / `ocrResolvedModels` / `questionIntervals`, so those Stage-1/2 fingerprints are
+inherited from `previous_audit` and the shallow gate still passes on a genuine run.
+
+Why symptom 3 clears: once `_is_reviewable_exam_session` returns `True` (shallow gate), the refresh
+rebuilds the audit from the **question-keyed** `audit_page_first_projection`, which can only emit issues
+for questions that currently exist. The 8 detached `questionNumber == 0` residue issues have no surviving
+question, so they vanish; `review_blocking_question_keys` (already `> 0`-only) yields empty → status
+`passed`.
+
+**Forgery still caught:** a bare `{'engine': PRODUCTION_ENGINE, 'stage': 'ready_for_review',
+'readyForReview': True, 'extractionAudit': {'engine': PRODUCTION_ENGINE, 'status': 'passed'}}` lacks
+`ocrSourcePages` / `ocrResolvedModels` / `questionIntervals` → shallow gate `False` → still `409`. The
+v2/v3 inventory `pipeline_version >= 2/3` artifact block is untouched (inert for Mistral, load-bearing for
+v3).
+
+Regression (all in `test_exam_prep_page_review.py`, provider-free, modelling a real run whose
+`visualPipeline.sourceSha256` came back blank while every Stage-1/2 fingerprint stays intact):
+`test_publish_endpoint_allows_drifted_authentic_production_run` (publish 200),
+`test_review_patch_persists_delete_on_drifted_production_run` (PATCH deletes a question, 200, deletion
+survives `refresh_from_db`), `test_review_get_clears_detached_page_issues_on_drifted_run` (detached
+page-level issues clear, status `passed`). `test_publish_endpoint_blocks_forged_production_workflow` stays
+`409`.
+
+---
+
 ## 5. 429 fix (req #6) — bounded backoff, not a lower cap
 
 `services/exam_prep_mistral_region_transcriber.py`:

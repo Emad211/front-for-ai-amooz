@@ -4053,12 +4053,12 @@ class ExamPrepSessionPublishView(APIView):
             )
             from .services.exam_prep_mistral_production import PRODUCTION_ENGINE
             from .services.exam_prep_mistral_readiness import (
-                production_review_artifact_is_valid,
+                production_run_is_authentic,
             )
 
             if (
                 workflow.get('engine') == PRODUCTION_ENGINE
-                and not production_review_artifact_is_valid(workflow)
+                and not production_run_is_authentic(workflow)
             ):
                 return Response(
                     {

@@ -28,7 +28,7 @@ from .services.exam_prep_page_review import (
 )
 from .services.exam_prep_mistral_production import PRODUCTION_ENGINE
 from .services.exam_prep_mistral_readiness import (
-    production_review_artifact_is_valid,
+    production_run_is_authentic,
 )
 from .services.exam_prep_v4_create_flow import (
     cancel_source_aware_project_for_session,
@@ -209,7 +209,7 @@ def revalidate_exam_prep_teacher_edit(
         return
     if (
         workflow.get('engine') == PRODUCTION_ENGINE
-        and not production_review_artifact_is_valid(workflow)
+        and not production_run_is_authentic(workflow)
     ):
         return
 
@@ -237,7 +237,7 @@ def revalidate_exam_prep_teacher_edit(
     if workflow.get('engine') == PRODUCTION_ENGINE:
         # Anti-forgery only (all 5 stages ran); publishing is always allowed once
         # the audit passes the narrow review-blocking gate — owner policy `همیشه مجاز`.
-        passed = passed and production_review_artifact_is_valid(
+        passed = passed and production_run_is_authentic(
             {
                 **workflow,
                 'publicationBlocked': False,

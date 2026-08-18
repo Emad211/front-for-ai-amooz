@@ -150,4 +150,72 @@ def production_review_artifact_is_valid(
     )
 
 
-__all__ = ['production_review_artifact_is_valid']
+def production_run_is_authentic(workflow: object) -> bool:
+    """Shallow anti-forgery check: did the production pipeline genuinely run?
+
+    This is the gate that publish, the review PATCH, and the re-audit refresh
+    consult. It confirms the run is a real Mistral production extraction — enough
+    to defeat hand-written workflow JSON — WITHOUT demanding that every deep
+    Stage-3/4/5 schema field survived byte-for-byte.
+
+    Why shallow, and why it matters (owner-locked `همیشه مجاز`): a completed
+    137-question run whose persisted ``visualPipeline.sourceSha256`` came back
+    blank (a resumed-OCR run) is unmistakably real — every Stage-1/Stage-2
+    authenticity fingerprint is intact — yet the strict
+    :func:`production_review_artifact_is_valid` fail-closes on that one drifted
+    field. Because the strict gate guarded publish AND the review PATCH conflict
+    check AND the re-audit refresh, one drifted field made the run permanently
+    unpublishable and un-editable, with the teacher's deletions silently refused.
+    This gate checks only the fingerprints that a forgery cannot fabricate and
+    that deterministic Stage-1/Stage-2 always emit, so a drifted-but-real run
+    stays fully usable while a bare forged workflow is still rejected.
+
+    A blocked/degraded Stage-5 result is still authentic — publishing remains a
+    teacher-ownership decision, never an issue-count gate.
+    """
+
+    if not isinstance(workflow, Mapping):
+        return False
+    if (
+        workflow.get('engine') != PRODUCTION_ENGINE
+        or workflow.get('stage') != 'ready_for_review'
+        or workflow.get('readyForReview') is not True
+    ):
+        return False
+
+    audit = workflow.get('extractionAudit')
+    if not isinstance(audit, Mapping) or audit.get('engine') != PRODUCTION_ENGINE:
+        return False
+
+    # Stage 1 fingerprint: OCR ran against a real PDF and recorded its model.
+    ocr_pages = _integer(audit.get('ocrSourcePages'))
+    resolved_models = audit.get('ocrResolvedModels')
+    if (
+        ocr_pages is None
+        or ocr_pages < 1
+        or not isinstance(resolved_models, list)
+        or not any(str(model or '').strip() for model in resolved_models)
+    ):
+        return False
+
+    # Stage 2 fingerprint: deterministic assembly produced numbered questions
+    # over concrete source intervals. These are emitted for every real run and
+    # are exactly what a hand-written workflow omits.
+    question_count = _integer(audit.get('questionCount'))
+    intervals = audit.get('questionIntervals')
+    if (
+        question_count is None
+        or question_count < 1
+        or not isinstance(intervals, list)
+        or not intervals
+        or not all(isinstance(item, Mapping) for item in intervals)
+    ):
+        return False
+
+    return True
+
+
+__all__ = [
+    'production_review_artifact_is_valid',
+    'production_run_is_authentic',
+]
