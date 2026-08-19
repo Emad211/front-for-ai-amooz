@@ -67,6 +67,25 @@ class TestAssignOrgManager:
         assert other_admin.role == User.Role.ADMIN  # NOT demoted to MANAGER
         assert OrganizationMembership.objects.filter(user=other_admin, organization=org).exists()
 
+    def test_assign_refuses_an_advisor_instead_of_silently_clobbering_the_role(self):
+        """An ADVISOR must not be turned into a MANAGER behind the admin's back.
+
+        The platform role drives the landing route, so a silent flip would strand
+        an advisor with live engagements outside /advisor — broken, but looking
+        like it worked. Refuse loudly; make the admin change the role first.
+        """
+        admin = _admin()
+        advisor = baker.make(User, role=User.Role.ADVISOR)
+        org = baker.make(Organization, owner=None)
+
+        res = _auth(admin).post(ASSIGN.format(advisor.id), {'organization_id': org.id}, format='json')
+
+        assert res.status_code == 400, res.data
+        advisor.refresh_from_db()
+        assert advisor.role == User.Role.ADVISOR
+        assert not OrganizationMembership.objects.filter(user=advisor, organization=org).exists()
+        assert org.owner_id is None
+
     def test_assign_does_not_steal_existing_owner(self):
         admin = _admin()
         owner = baker.make(User, role=User.Role.MANAGER)
@@ -161,7 +180,6 @@ class TestUserStatsAndList:
 @pytest.mark.django_db
 class TestFreelancerToggle:
     DETAIL = '/api/admin/users/{}/'
-
     def test_list_exposes_is_freelancer(self):
         admin = _admin()
         baker.make(User, role=User.Role.TEACHER, is_freelancer=False)
@@ -188,3 +206,82 @@ class TestFreelancerToggle:
         assert res.status_code == 200
         teacher.refresh_from_db()
         assert teacher.is_freelancer is True
+
+
+@pytest.mark.django_db
+class TestPromoteToAdvisor:
+    """This PATCH is the ONLY way an ADVISOR account comes into existence.
+
+    accounts.User is not registered in Django admin and there is no
+    create-user endpoint; public self-registration is STUDENT-only
+    (RegisterSerializer._VALID_ROLES). So the runbook is: the advisor signs up
+    normally, then a platform admin flips their role here. If this PATCH ever
+    stops accepting 'ADVISOR', the whole مشاور feature becomes unreachable in
+    production while every advisory test still passes — hence this test.
+    """
+
+    DETAIL = '/api/admin/users/{}/'
+
+    def test_admin_can_promote_a_student_to_advisor(self):
+        admin = _admin()
+        student = baker.make(User, role=User.Role.STUDENT)
+
+        res = _auth(admin).patch(
+            self.DETAIL.format(student.id), {'role': 'ADVISOR'}, format='json',
+        )
+
+        assert res.status_code == 200, res.data
+        student.refresh_from_db()
+        assert student.role == User.Role.ADVISOR
+        # Promotion must not smuggle in platform-admin powers.
+        assert student.is_staff is False
+        assert student.is_superuser is False
+
+    def test_promotion_does_not_create_an_advisor_profile_row(self):
+        """post_save's profile chain is create-only and has no ADVISOR branch."""
+        admin = _admin()
+        student = baker.make(User, role=User.Role.STUDENT)
+
+        _auth(admin).patch(
+            self.DETAIL.format(student.id), {'role': 'ADVISOR'}, format='json',
+        )
+
+        student.refresh_from_db()
+        assert not hasattr(student, 'teacherprofile')
+        assert not hasattr(student, 'adminprofile')
+
+    def test_advisor_can_be_demoted_back(self):
+        """Rollback for the S1 live check is "revert the role" — it must work."""
+        admin = _admin()
+        advisor = baker.make(User, role=User.Role.ADVISOR)
+
+        res = _auth(admin).patch(
+            self.DETAIL.format(advisor.id), {'role': 'STUDENT'}, format='json',
+        )
+
+        assert res.status_code == 200, res.data
+        advisor.refresh_from_db()
+        assert advisor.role == User.Role.STUDENT
+
+    def test_non_admin_cannot_promote_anyone_to_advisor(self):
+        teacher = baker.make(User, role=User.Role.TEACHER)
+        student = baker.make(User, role=User.Role.STUDENT)
+
+        res = _auth(teacher).patch(
+            self.DETAIL.format(student.id), {'role': 'ADVISOR'}, format='json',
+        )
+
+        assert res.status_code in (401, 403)
+        student.refresh_from_db()
+        assert student.role == User.Role.STUDENT
+
+    def test_unauthenticated_cannot_promote_anyone_to_advisor(self):
+        student = baker.make(User, role=User.Role.STUDENT)
+
+        res = APIClient().patch(
+            self.DETAIL.format(student.id), {'role': 'ADVISOR'}, format='json',
+        )
+
+        assert res.status_code in (401, 403)
+        student.refresh_from_db()
+        assert student.role == User.Role.STUDENT

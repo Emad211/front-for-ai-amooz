@@ -49,6 +49,7 @@ import {
   UserCircle,
   RefreshCw,
   Building2,
+  ClipboardList,
   X,
 } from 'lucide-react';
 
@@ -74,6 +75,11 @@ const ROLE_MAP: Record<string, { label: string; icon: typeof Users; className: s
     label: 'دانش‌آموز',
     icon: GraduationCap,
     className: 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border-emerald-500/20',
+  },
+  ADVISOR: {
+    label: 'مشاور',
+    icon: ClipboardList,
+    className: 'bg-amber-500/15 text-amber-700 dark:text-amber-400 border-amber-500/20',
   },
 };
 
@@ -181,8 +187,9 @@ export default function AdminUsersPage() {
     const managers = users.filter((u) => u.role === 'MANAGER').length;
     const teachers = users.filter((u) => u.role === 'TEACHER').length;
     const students = users.filter((u) => u.role === 'STUDENT').length;
+    const advisors = users.filter((u) => u.role === 'ADVISOR').length;
     const active = users.filter((u) => u.isActive).length;
-    return { total, admins, managers, teachers, students, active };
+    return { total, admins, managers, teachers, students, advisors, active };
   }, [users]);
 
   // ─── Edit Handlers ─────────────────────────────────────────────────────
@@ -308,12 +315,13 @@ export default function AdminUsersPage() {
         </div>
 
         {/* ── Stats Cards ──────────────────────────────────────────── */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7 gap-3">
           {[
             { label: 'کل کاربران', value: stats.total, icon: Users },
             { label: 'ادمین‌ها', value: stats.admins, icon: ShieldCheck },
             { label: 'مدیران سازمان آموزشی', value: stats.managers, icon: Building2 },
             { label: 'معلمان', value: stats.teachers, icon: BookOpen },
+            { label: 'مشاوران', value: stats.advisors, icon: ClipboardList },
             { label: 'دانش‌آموزان', value: stats.students, icon: GraduationCap },
             { label: 'فعال', value: stats.active, icon: UserCircle },
           ].map((s) => (
@@ -353,6 +361,7 @@ export default function AdminUsersPage() {
                   <SelectItem value="ADMIN">ادمین</SelectItem>
                   <SelectItem value="MANAGER">مدیر سازمان آموزشی</SelectItem>
                   <SelectItem value="TEACHER">معلم</SelectItem>
+                  <SelectItem value="ADVISOR">مشاور</SelectItem>
                   <SelectItem value="STUDENT">دانش‌آموز</SelectItem>
                 </SelectContent>
               </Select>
@@ -563,6 +572,7 @@ export default function AdminUsersPage() {
                     <SelectItem value="ADMIN">ادمین</SelectItem>
                     <SelectItem value="MANAGER">مدیر سازمان آموزشی</SelectItem>
                     <SelectItem value="TEACHER">معلم</SelectItem>
+                    <SelectItem value="ADVISOR">مشاور</SelectItem>
                     <SelectItem value="STUDENT">دانش‌آموز</SelectItem>
                   </SelectContent>
                 </Select>
@@ -662,6 +672,17 @@ export default function AdminUsersPage() {
                   {editForm.is_staff ? 'بله' : 'خیر'}
                 </Button>
               </div>
+
+              {/* Staff implies platform-admin permissions (IsPlatformAdmin admits
+                  is_staff), so a staff-ticked advisor silently gains the admin
+                  panel while still showing as «مشاور». Warn instead of blocking —
+                  an admin may legitimately be building a support account. */}
+              {editForm.role === 'ADVISOR' && editForm.is_staff && (
+                <p className="text-xs text-amber-600 dark:text-amber-500 -mt-2">
+                  توجه: با روشن بودن دسترسی Staff، این حساب دسترسی ادمین پلتفرم را هم
+                  می‌گیرد. برای یک مشاور معمولی آن را خاموش بگذارید.
+                </p>
+              )}
 
               {/* TEACHER only: may they keep a personal (freelancer) workspace
                   alongside any organizations? Off = org-only (no personal space). */}

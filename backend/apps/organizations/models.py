@@ -105,6 +105,11 @@ class OrganizationMembership(models.Model):
         DEPUTY = 'deputy', _('معاون')
         TEACHER = 'teacher', _('معلم')
         STUDENT = 'student', _('دانش‌آموز')
+        # A study advisor attached to this organization. Deliberately absent from
+        # InvitationCode.TargetRole: an advisor account is created by a platform
+        # admin, never self-onboarded by a code (the org invite code doubles as a
+        # passwordless login credential — see docs/features/advisor-mvp.md B1).
+        ADVISOR = 'advisor', _('مشاور')
 
     class MemberStatus(models.TextChoices):
         ACTIVE = 'active', _('فعال')

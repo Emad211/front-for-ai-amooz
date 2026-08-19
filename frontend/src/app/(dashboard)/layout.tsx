@@ -25,7 +25,10 @@ export default function DashboardLayout({
     const redirectByRole = (role: string) => {
       const r = (role || '').toLowerCase();
       if (!r || r === 'student') return false;
-      // Manager → /org, teacher → /teacher, admin → /admin (single source of truth).
+      // Anything that is not a student belongs in its own panel: manager → /org,
+      // teacher → /teacher, advisor → /advisor, admin → /admin. landingFor() is
+      // the single source of truth, so a new role needs no change here — only a
+      // new case there.
       router.replace(landingFor(r));
       return true;
     };

@@ -45,6 +45,11 @@ import {
 import type { OrgRole } from '@/types';
 import { StudyGroupsManager } from '@/components/organization/study-groups-manager';
 
+// 'advisor' is deliberately absent: an org advisor is a platform ADVISOR account
+// attached by the org, not an org_role a manager can hand to an existing student.
+// Offering it here would create a member with org_role=advisor and role=STUDENT —
+// inert, and indistinguishable from a real advisor in the members list. The
+// attach flow is owned by the advisory app (see docs/features/advisor-mvp.md S9).
 const ROLE_OPTIONS = [
   { value: 'admin', label: 'مدیر سازمان آموزشی' },
   { value: 'deputy', label: 'معاون' },
