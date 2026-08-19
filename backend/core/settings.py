@@ -63,6 +63,7 @@ INSTALLED_APPS = [
     'apps.material',
     'apps.organizations',
     'apps.waitlist',
+    'apps.advisory.apps.AdvisoryConfig',
 ]
 
 AUTH_USER_MODEL = 'accounts.User'

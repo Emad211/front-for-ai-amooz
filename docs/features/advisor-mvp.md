@@ -32,10 +32,11 @@
 ## ۲. مدل داده (۷ جدول — کل MVP)
 
 ```
-Subject
-  name(fa) · slug · is_active · organization FK(null=global) · created_at
-  UniqueConstraint(name, organization)
-  UniqueConstraint(name) WHERE organization IS NULL      ← لازم است: PG هر NULL را متمایز می‌بیند
+Subject                                     ← لند شد در گام ۲ · انحراف‌ها: §۹.۲
+  name(fa) · normalized_name(مشتق از name، editable=False، db_index) · is_active
+  organization FK(null=global) · created_at · updated_at · created_by FK SET_NULL
+  UniqueConstraint(normalized_name, organization)
+  UniqueConstraint(normalized_name) WHERE organization IS NULL   ← لازم است: PG هر NULL را متمایز می‌بیند
 
 AdvisoryEngagement                          ← حاملِ tenancy برای همه‌چیز
   advisor  FK User  on_delete=PROTECT       (limit_choices_to role=ADVISOR)
@@ -270,4 +271,56 @@ ADVISOR عمداً پروفایل ندارند)، `organizations/models.py` + `m
 > **۲۱۰۸ passed / ۰ failed / ۲ skipped** است — یعنی از این پس هر سرخی در سوئیت،
 > رگرسیونِ کار advisory است و قابل اعتماد. ممیزی:
 > [`docs/EXAM_PREP_V4_DECOMMISSION_AUDIT.md`](../EXAM_PREP_V4_DECOMMISSION_AUDIT.md).
+
+---
+
+## ۹. ثبت اجرا — گام ۲ (اپ `advisory` + فهرست درس‌ها)
+
+وضعیت: **کامل، تست‌شده، آماده‌ی دیپلوی.** صفر تماس شبکه، صفر توکن، صفر Celery.
+
+چک زنده (§۵ سطر ۲): در **جنگو ادمین روی هاست بک‌اند** (`/admin/advisory/subject/`
+— نه دامنه‌ی فرانت؛ رِرایت فرانت `/admin/` را پروکسی نمی‌کند، E3) دو درس بساز:
+یکی با `organization` خالی (سراسری) و یکی با سازمان مشاور → در `/advisor/subjects`
+هر دو با برچسب درست دیده شوند. برگشت: جدول را خالی کن؛ بی‌خطر است.
+
+### ۹.۱ آنچه لند شد
+
+**بک‌اند** — اپ نو `apps/advisory/`: `models.py` (`Subject`)، `migrations/0001_initial.py`
+(۱ جدول، هر دو constraint با پیام فارسی)، `admin.py` (`SubjectAdmin` + ستون
+«دامنه» + مهرِ `created_by`)، `serializers.py` (camelCase، همه read-only)،
+`views.py` (`SubjectListView`)، `urls.py`، `services/text.py`
+(`normalize_subject_name`)، `services/scope.py` (`advisor_organization_ids`).
+ثبت در `core/settings.py` و `core/urls.py` (`api/advisory/`).
+
+**فرانت** — `services/advisory-service.ts` (لایه‌ی API + رفرش خودکار توکن روی ۴۰۱)،
+`lib/persian-search.ts` (**ابزار مشترک نو**)، `app/(advisor)/advisor/subjects/page.tsx`،
+نویگیشن در `(advisor)/advisor/layout.tsx`، ارتقای کارت «درس‌ها» در `advisor/page.tsx`.
+
+**تست** — `test_subject_catalog.py` (۳۱)، `test_subjects_api.py` (۱۹)،
+`test_import_boundaries.py` (۷)، `lib/persian-search.test.ts` (۹).
+
+### ۹.۲ تصمیم‌های اصلاح‌شده یا جلو‌افتاده در گام ۲
+
+| # | موضوع | تصمیم نهایی |
+|---|---|---|
+| ۱ | `slug` در شکل قفل‌شده‌ی §۲ | **حذف شد.** هیچ‌جا مصرف نداشت (نه URL، نه lookup) و برای نام فارسی یا `allow_unicode=True` می‌خواست یا به رشته‌ی خالی سقوط می‌کرد. §۲ به شکل واقعیِ لند‌شده اصلاح شد. |
+| ۲ | کلید یکتایی | **از `name` به `normalized_name` منتقل شد** (فیلد مشتق، `editable=False`). بدون آن «ریاضي» و «ریاضی» دو ردیف مجاز بودند و مشاور دو گزینه‌ی یکسان می‌دید. constraint دوم (partial، `WHERE organization IS NULL`) عیناً حفظ شد — چون PG هر NULL را متمایز می‌بیند، آن یکی است که فهرست سراسری را واقعاً یکتا می‌کند. |
+| ۳ | اعتبارسنجی تکراری در ادمین | **کوئری صریح در `Model.clean()`**، نه اتکا به `validate_constraints`. `editable=False` باعث می‌شود `_get_validation_exclusions()` فیلد را کنار بگذارد و اعتبارسنجی هر constraint متکی به آن **بی‌صدا رد شود** → ادمین با `IntegrityError` ۵۰۰ می‌داد. حالا خطای فیلدی فارسی روی `name` می‌نشیند و constraint‌های DB ضمانت سختِ پشتی‌اند. |
+| ۴ | صفحه‌بندی اندپوینت | **`pagination_class = None`.** پیش‌فرض DRF سراسری است (`PAGE_SIZE` از `DRF_PAGE_SIZE`، پیش‌فرض ۵۰) و یک اندپوینتِ «انتخابگر» را بی‌صدا قطع می‌کرد. مرتب‌سازی هم صریح است: `F('organization_id').asc(nulls_first=True)` چون PG در ASC، NULL را آخر می‌گذارد. |
+| ۵ | `services/scope.py` | **جلو افتاد** از گام ۶ به گام ۲. اولین مصرفش همین کوئری (سراسری ∪ سازمان‌های مشاور) بود؛ نوشتنش دو بار، یک بار موقت، تنها راهِ داشتن دو منطق tenancy بود. |
+| ۶ | نگهبان import | باگ در **خودِ نگهبان** پیدا شد: هر import نسبی را به پیشوند ثابت `apps.advisory.` می‌بست → ۶۴ متخلفِ کاذب. با `_package_of()` رفع و با **دو تست که خود resolver را pin می‌کنند** قفل شد. نگهبانی که خودش تست ندارد، امنیتِ کاذب است. |
+| ۷ | `lib/persian-search.ts` (فرانت) | **ابزار مشترک نو، عمداً جدا از کلید یکتایی بک‌اند.** جست‌وجوی فارسی بی‌فولد برای همان ورودی‌هایی می‌شکند که بک‌اند یک نرمال‌ساز کامل برایشان دارد (یای/کاف عربی، سه دستگاه رقم، ZWNJ) — و شکستش یعنی ردیفی که مشاور همین حالا می‌بیند با اولین حرفِ تایپ ناپدید شود، که «درس وجود ندارد» خوانده می‌شود نه «جست‌وجویم سخت‌گیر است». دو تابع دو **هدف متفاوت** دارند: کلید بک‌اند نباید هرگز دو درسِ واقعاً متفاوت را یکی کند، فولد فرانت باید سخاوتمند باشد. مصرف بعدی: گام‌های ۳، ۴، ۷. |
+| ۸ | نویگیشن پنل مشاور | **در گام ۲ آمد، نه ۳/۷.** کامنت خودِ پوسته‌ی گام ۱ آن را مشروط به «بیش از یک مقصد» کرده بود و حالا دو مقصد هست. فعال‌بودن با **تطبیق دقیق** است نه `startsWith` — چون `/advisor` پیشوند هر مسیر خواهرش است و تب «خانه» همه‌جا روشن می‌ماند. |
+| ۹ | حالت خطای صفحه | `subjects` روی شکست **`null` می‌ماند**، نه `[]`. آرایه‌ی خالی «فهرست خالی است» رندر می‌شود که ادعایی مادیْ متفاوت و گمراه‌کننده است؛ با `null`، دکمه‌ی «تلاش مجدد» در دسترس می‌ماند. |
+| ۱۰ | `npm run lint` | **در کل ریپو خراب است** (`Converting circular structure to JSON … property 'react' closes the circle`، از `frontend/.eslintrc.json`). پیش‌از‌این وجود داشته: با اجرا روی یک فایل دست‌نخورده تأیید شد. **گیت واقعی فرانت `npm run typecheck` است** — چون `next.config.ts` هم `typescript.ignoreBuildErrors` و هم `eslint.ignoreDuringBuilds` را `true` گذاشته، خطای تایپ بی‌صدا دیپلوی می‌شود. |
+
+### ۹.۳ وریفای انجام‌شده
+
+- سوئیت **کامل** بک‌اند: **۲۱۶۵ passed / ۰ failed / ۲ skipped** (۴۴۰s).
+  دقیقاً **۵۷+** نسبت به بیس‌لاین ۲۱۰۸ (§۸.۴) = همان ۵۷ تست advisory → **صفر رگرسیون**.
+  دو skip، همان گاردهای از‌قبل‌موجودِ `test_pdf_accuracy_benchmark.py` است.
+- `npx tsx --test src/lib/persian-search.test.ts` → **۹/۹**.
+- `npm run typecheck` → پاک · `npm run build` → exit 0 با
+  `/(advisor)/advisor/subjects/page` در `app-build-manifest.json`.
+- `npm run lint` → **گیت نیست** (سطر ۱۰ بالا).
 
