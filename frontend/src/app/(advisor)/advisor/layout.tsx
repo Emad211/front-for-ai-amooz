@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import Link from 'next/link';
-import { BookOpen, ClipboardList, Home, LogOut } from 'lucide-react';
+import { BookOpen, ClipboardList, Home, LogOut, Users } from 'lucide-react';
 
 import { WorkspaceProvider } from '@/hooks/use-workspace';
 import {
@@ -31,6 +31,7 @@ import { cn } from '@/lib/utils';
  */
 const NAV = [
   { href: '/advisor', label: 'خانه', icon: Home },
+  { href: '/advisor/students', label: 'دانش‌آموزان من', icon: Users },
   { href: '/advisor/subjects', label: 'درس‌ها', icon: BookOpen },
 ];
 

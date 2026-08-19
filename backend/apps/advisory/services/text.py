@@ -77,3 +77,22 @@ def normalize_subject_name(raw: object) -> str:
     # casefold, not lower: the catalog will eventually hold Latin names too
     # (Math, IELTS) and casefold is the aggressive, locale-independent form.
     return text.casefold()
+
+
+def mask_phone(raw: object) -> str:
+    """Return a phone number with its middle hidden: ``0912***6789``.
+
+    Used wherever a phone leaves the server attached to *someone else's* record —
+    the student's pending-invite banner shows which number an advisor addressed,
+    which is the only way to recognise a wrong-number invite, but the full number
+    of a third party is not the student's to read.
+
+    Anything that is not an 11-digit Iranian mobile is masked conservatively
+    rather than echoed back, so a malformed value can never leak in full.
+    """
+    digits = ''.join(ch for ch in str(raw or '') if ch.isascii() and ch.isdigit())
+    if len(digits) == 11:
+        return f'{digits[:4]}***{digits[-4:]}'
+    if len(digits) > 4:
+        return f'{digits[:2]}***{digits[-2:]}'
+    return '***'

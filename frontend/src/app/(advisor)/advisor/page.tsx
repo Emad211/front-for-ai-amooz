@@ -27,6 +27,12 @@ export default function AdvisorHomePage() {
 
   const live = [
     {
+      icon: Users,
+      title: 'دانش‌آموزان من',
+      body: 'افزودن دانش‌آموز با دعوت‌نامه، و دریافت گروهی از سازمان آموزشی.',
+      href: '/advisor/students',
+    },
+    {
       icon: BookOpen,
       title: 'درس‌ها',
       body: 'فهرست درس‌هایی که می‌توانید در برنامهٔ دانش‌آموزان استفاده کنید.',
@@ -35,11 +41,6 @@ export default function AdvisorHomePage() {
   ];
 
   const upcoming = [
-    {
-      icon: Users,
-      title: 'دانش‌آموزان من',
-      body: 'افزودن دانش‌آموز با دعوت‌نامه، و دریافت گروهی از سازمان آموزشی.',
-    },
     {
       icon: CalendarRange,
       title: 'برنامهٔ هفتگی',

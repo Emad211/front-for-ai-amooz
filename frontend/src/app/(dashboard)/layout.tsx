@@ -8,6 +8,7 @@ import { getStoredUser } from '@/services/auth-service';
 import { DashboardService } from '@/services/dashboard-service';
 import { landingFor } from '@/lib/auth-routing';
 import { OnboardingGate } from '@/components/auth/onboarding-gate';
+import { AdvisorInviteBanner } from '@/components/advisory/advisor-invite-banner';
 import { Children, useEffect } from 'react';
 
 export default function DashboardLayout({
@@ -69,6 +70,7 @@ export default function DashboardLayout({
     )}>
       <OnboardingGate />
       {!isFocusedMode && <DashboardHeader />}
+      {!isFocusedMode && <AdvisorInviteBanner />}
       {Children.toArray(children)}
       {!isFocusedMode && <MobileNav />}
     </div>

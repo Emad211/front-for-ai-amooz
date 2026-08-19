@@ -33,7 +33,13 @@ _UNSCOPED = {'Subject'}
 
 # scope.py is the door itself; admin and migrations are Django-owned surfaces that
 # must import models by definition; tests exist to poke at models directly.
-_EXEMPT_FILES = {'scope.py', 'admin.py', 'models.py'}
+#
+# invites.py is the one added door, and it is added on purpose: it *writes*
+# tenancy rather than reading across it (it creates the engagement row and runs
+# the accept/reject state machine under ``select_for_update``), so there is no
+# queryset for scope.py to hand it. The list is pinned by a test below so that a
+# third door cannot appear without someone editing this comment.
+_EXEMPT_FILES = {'scope.py', 'admin.py', 'models.py', 'invites.py'}
 
 
 def _package_of(path: Path) -> str:
@@ -170,3 +176,28 @@ def test_scope_is_the_only_place_that_knows_the_org_gate():
     assert 'OrgRole.ADVISOR' in source
     assert 'MemberStatus.ACTIVE' in source
     assert 'subscription_status' in source
+
+
+def test_the_exempt_list_does_not_grow_by_accident():
+    """Pin the set of files allowed to import a tenancy-bearing model.
+
+    Every entry costs something: it is one more place a future reader has to check
+    when asking "who can read another student's log?". Adding one should require
+    editing this assertion and the comment above ``_EXEMPT_FILES``, not just
+    appending a filename and watching the suite stay green.
+    """
+    assert _EXEMPT_FILES == {'scope.py', 'admin.py', 'models.py', 'invites.py'}
+
+
+def test_views_do_not_import_engagement_directly():
+    """The narrow version of the rule above, stated where it actually bites.
+
+    ``views.py`` is where a "just this once" direct query gets written, and a
+    direct ``AdvisoryEngagement.objects.filter(advisor=request.user)`` looks
+    correct while skipping the organization gate entirely.
+    """
+    source = (ADVISORY_DIR / 'views.py').read_text(encoding='utf-8')
+    assert 'AdvisoryEngagement' not in source, (
+        'views.py must go through services/scope.py, not touch the model directly.'
+    )
+

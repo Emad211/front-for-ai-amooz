@@ -1,16 +1,32 @@
 """Advisory data model.
 
-Step 2 of docs/features/advisor-mvp.md adds exactly one table: the ``Subject``
-catalog. Everything the advisor plans and the student logs will hang off a
-subject, so this table is the first thing that has to be right.
+Step 2 of docs/features/advisor-mvp.md added the ``Subject`` catalog. Step 3 adds
+``AdvisoryEngagement`` — the row that ties one advisor to one student and becomes
+the **tenancy carrier** for every table after it: a plan, a log and a subject
+selection all hang off an engagement, never off a ``User``. That is what makes
+every later authorization query a join with an owner in it rather than a
+"current user" comparison that is easy to forget.
 """
+
+import datetime
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models
+from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 
 from .services.text import normalize_subject_name
+
+# How long an unanswered invite stays claimable (B6). Long enough that a student
+# who only opens the app on weekends still finds it; short enough that a roster
+# of forgotten invites does not accumulate into a permanent claim on someone.
+INVITE_TTL_DAYS = 14
+
+# After a student rejects an advisor, that exact pair is blocked for this long
+# (B6). ``REJECTED`` is terminal: the advisor may not simply re-invite the next
+# minute, which is what turns "no" into a real answer instead of a rate limit.
+REJECT_BLOCK_DAYS = 30
 
 
 class Subject(models.Model):
@@ -137,3 +153,167 @@ class Subject(models.Model):
                 update_fields.add('normalized_name')
                 kwargs['update_fields'] = update_fields
         return super().save(*args, **kwargs)
+
+
+class AdvisoryEngagement(models.Model):
+    """One advisor working with one student — the tenancy carrier of the feature.
+
+    Every advisory table added after this one points at an engagement rather than
+    at a ``User``, so "may this advisor read this row?" is always answered by the
+    same single join (see ``services/scope.py``). Nothing else in the app is
+    allowed to invent its own ownership rule.
+
+    Lifecycle::
+
+        PENDING ──accept──▶ ACTIVE ──end──▶ ENDED
+           └────reject────▶ REJECTED   (terminal; the pair is blocked 30 days)
+
+    ``PENDING`` is created by the advisor, but only ever **claimed** by the
+    student: an invite is an offer, not an assignment. The advisor gets no data
+    at all until the student presses «قبول».
+    """
+
+    class Mode(models.TextChoices):
+        FREELANCE = 'freelance', _('فریلنسر')
+        ORG = 'org', _('سازمانی')
+
+    class Status(models.TextChoices):
+        PENDING = 'PENDING', _('در انتظار پذیرش')
+        ACTIVE = 'ACTIVE', _('فعال')
+        REJECTED = 'REJECTED', _('رد شده')
+        ENDED = 'ENDED', _('پایان‌یافته')
+
+    advisor = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name='advisory_engagements',
+        limit_choices_to={'role': 'ADVISOR'},
+        verbose_name=_('مشاور'),
+    )
+    # CASCADE, unlike the advisor's PROTECT: a student who leaves the platform
+    # takes their study history with them (D3 — the log belongs to the student),
+    # whereas an advisor with live students must not be deletable at all.
+    student = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='advisory_engagements_as_student',
+        verbose_name=_('دانش‌آموز'),
+    )
+    # The canonical phone the advisor addressed the invite to. Kept so that
+    # accepting can re-verify it against the claimant's current phone (B6): if
+    # the number changed hands between invite and accept, the invite is dead
+    # rather than a handover of one student's data to a different human.
+    invited_phone = models.CharField(
+        max_length=15,
+        blank=True,
+        default='',
+        verbose_name=_('شماره‌ی دعوت‌شده'),
+    )
+    mode = models.CharField(
+        max_length=10,
+        choices=Mode.choices,
+        default=Mode.FREELANCE,
+        verbose_name=_('نوع همکاری'),
+    )
+    organization = models.ForeignKey(
+        'organizations.Organization',
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name='advisory_engagements',
+        verbose_name=_('سازمان'),
+    )
+    status = models.CharField(
+        max_length=10,
+        choices=Status.choices,
+        default=Status.PENDING,
+        verbose_name=_('وضعیت'),
+    )
+    invited_at = models.DateTimeField(auto_now_add=True, verbose_name=_('زمان دعوت'))
+    invite_expires_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name=_('انقضای دعوت'),
+    )
+    # A date, not a datetime: plans and logs are day-grained, and «از امروز»
+    # must not depend on which side of midnight UTC the accept landed.
+    started_on = models.DateField(null=True, blank=True, verbose_name=_('شروع همکاری'))
+    # Terminal timestamp for BOTH ``REJECTED`` and ``ENDED`` — one field, because
+    # the 30-day re-invite block only ever needs "when did this stop".
+    ended_at = models.DateTimeField(null=True, blank=True, verbose_name=_('زمان پایان'))
+    terms_accepted_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name=_('زمان پذیرش شرایط'),
+    )
+
+    class Meta:
+        ordering = ['-invited_at']
+        constraints = [
+            # ``mode`` and ``organization`` must agree. Without this, an "org"
+            # engagement with a NULL organization would read as freelance to
+            # every scope query and quietly escape the organization gate.
+            models.CheckConstraint(
+                condition=(
+                    models.Q(mode='freelance', organization__isnull=True)
+                    | models.Q(mode='org', organization__isnull=False)
+                ),
+                name='ck_advisory_engagement_mode_org',
+                violation_error_message=_('همکاری سازمانی باید سازمان داشته باشد و فریلنسری نباید.'),
+            ),
+            # One active advisor per student. Partial, so the rejected and ended
+            # history of the same student stays queryable.
+            models.UniqueConstraint(
+                fields=['student'],
+                condition=models.Q(status='ACTIVE'),
+                name='uniq_active_advisory_per_student',
+                violation_error_message=_('این دانش‌آموز از قبل مشاور فعال دارد.'),
+            ),
+            # Anti-spam: one open invite per (advisor, student) pair.
+            models.UniqueConstraint(
+                fields=['advisor', 'student'],
+                condition=models.Q(status='PENDING'),
+                name='uniq_pending_advisory_invite',
+                violation_error_message=_('دعوت‌نامه‌ی باز برای این دانش‌آموز از قبل وجود دارد.'),
+            ),
+        ]
+        indexes = [
+            models.Index(fields=['advisor', 'status'], name='idx_adv_eng_advisor_status'),
+            models.Index(fields=['student', 'status'], name='idx_adv_eng_student_status'),
+            models.Index(
+                fields=['status', 'invite_expires_at'],
+                name='idx_adv_eng_status_expires',
+            ),
+        ]
+        verbose_name = _('همکاری مشاوره')
+        verbose_name_plural = _('همکاری‌های مشاوره')
+
+    def __str__(self) -> str:
+        return f'{self.advisor} → {self.student} ({self.get_status_display()})'
+
+    @property
+    def is_expired(self) -> bool:
+        """A ``PENDING`` invite past its TTL. Never true for a settled row."""
+        if self.status != self.Status.PENDING or self.invite_expires_at is None:
+            return False
+        return self.invite_expires_at <= timezone.now()
+
+    @classmethod
+    def default_invite_expiry(cls) -> datetime.datetime:
+        return timezone.now() + datetime.timedelta(days=INVITE_TTL_DAYS)
+
+    def clean(self) -> None:
+        """Mirror the mode/organization check with a field-level message.
+
+        The DB constraint is the guarantee; this is what the Django admin and any
+        serializer calling ``full_clean()`` can actually show a human.
+        """
+        super().clean()
+        if self.mode == self.Mode.ORG and self.organization_id is None:
+            raise ValidationError({
+                'organization': _('برای همکاری سازمانی، سازمان الزامی است.'),
+            })
+        if self.mode == self.Mode.FREELANCE and self.organization_id is not None:
+            raise ValidationError({
+                'organization': _('همکاری فریلنسری نمی‌تواند سازمان داشته باشد.'),
+            })

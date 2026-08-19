@@ -26,6 +26,71 @@ export type AdvisorySubject = {
   isActive: boolean;
 };
 
+/** `freelance` = the advisor invited this student directly; `org` = the student
+ * arrived through an organization the advisor belongs to. */
+export type EngagementMode = 'freelance' | 'org';
+
+/** Lifecycle status as it appears on the wire. Only ACTIVE ever reaches the
+ * student roster; PENDING only reaches the outbox and the student's banner. */
+export type EngagementStatus = 'PENDING' | 'ACTIVE' | 'REJECTED' | 'ENDED';
+
+/** An accepted student, as their advisor sees them. `id` is the ENGAGEMENT id,
+ * never the student's user id — every later advisory route is keyed by it. */
+export type AdvisorStudent = {
+  id: number;
+  studentName: string;
+  phoneMasked: string;
+  mode: EngagementMode;
+  organizationName: string | null;
+  /** ISO date (`YYYY-MM-DD`) the collaboration began, or `null` if not started. */
+  startedOn: string | null;
+  status: EngagementStatus;
+};
+
+/** The advisor's outbox: an invite with the invitee deliberately stripped out —
+ * only the masked number the advisor themselves typed. No name, no id. */
+export type AdvisorPendingInvite = {
+  id: number;
+  phoneMasked: string;
+  invitedAt: string;
+  expiresAt: string | null;
+  isExpired: boolean;
+};
+
+/** `GET /advisory/students/` — roster and outbox arrive together. */
+export type AdvisorStudentsResponse = {
+  students: AdvisorStudent[];
+  pendingInvites: AdvisorPendingInvite[];
+};
+
+/** A pending invite as the STUDENT sees it — the accept-banner payload. */
+export type StudentInvite = {
+  id: number;
+  advisorName: string;
+  invitedPhoneMasked: string;
+  mode: EngagementMode;
+  organizationName: string | null;
+  invitedAt: string;
+  expiresAt: string | null;
+};
+
+/** The student's current advisor, if they have one. */
+export type StudentEngagement = {
+  id: number;
+  advisorName: string;
+  mode: EngagementMode;
+  organizationName: string | null;
+  startedOn: string | null;
+  status: EngagementStatus;
+};
+
+/** `GET /advisory/me/engagement/` — drives both the dashboard section and the
+ * accept banner from one call. */
+export type StudentEngagementResponse = {
+  active: StudentEngagement | null;
+  invites: StudentInvite[];
+};
+
 function getAccessToken(): string {
   if (typeof window === 'undefined') {
     throw new Error('This action must run in the browser.');
@@ -52,6 +117,16 @@ function extractErrorMessage(payload: unknown, fallback: string): string {
     const obj = payload as Record<string, unknown>;
     if (typeof obj.detail === 'string' && obj.detail.trim()) return obj.detail;
     if (typeof obj.message === 'string' && obj.message.trim()) return obj.message;
+    // DRF serializer errors arrive as {"phone": ["…"]}. The invite endpoint's
+    // 400 (mal-shaped number) uses exactly this shape, so surface the first
+    // field message rather than collapsing every validation error into the
+    // generic fallback — an advisor who typed «۰۹۱۲» must be told that.
+    for (const value of Object.values(obj)) {
+      if (typeof value === 'string' && value.trim()) return value;
+      if (Array.isArray(value) && typeof value[0] === 'string' && value[0].trim()) {
+        return value[0];
+      }
+    }
   }
   if (typeof payload === 'string' && payload.trim()) return payload;
   return fallback;
@@ -108,5 +183,61 @@ export const AdvisoryService = {
    */
   getSubjects: async (): Promise<AdvisorySubject[]> => {
     return requestJson<AdvisorySubject[]>('/advisory/subjects/');
+  },
+
+  /**
+   * The advisor's roster (accepted students) and outbox (unanswered invites),
+   * in one call — they are one screen, and splitting them buys only a second
+   * loading state. Neither list is paginated; both are bounded server-side.
+   */
+  getStudents: async (): Promise<AdvisorStudentsResponse> => {
+    return requestJson<AdvisorStudentsResponse>('/advisory/students/');
+  },
+
+  /**
+   * Invite a student by phone. The backend answers `202 {"status":"sent"}` for
+   * every well-formed number regardless of whether it belongs to anyone — that
+   * uniformity is a security property (B2), so the UI must treat success as
+   * "the invite was queued", never "a student was found". A `400` means the
+   * number itself is mal-shaped; `429`/`503` are quota/breaker limits, whose
+   * Persian `detail` is surfaced verbatim by `requestJson`.
+   */
+  createInvite: async (phone: string): Promise<{ status: string }> => {
+    return requestJson<{ status: string }>('/advisory/invites/', {
+      method: 'POST',
+      body: JSON.stringify({ phone }),
+    });
+  },
+
+  /**
+   * "Do I have an advisor, and are there invites waiting?" — the student-side
+   * read. `active` and `invites` are both empty for the vast majority of
+   * students; the existence of an active engagement is what gates the advisory
+   * UI, since the repo has no separate feature flag.
+   */
+  getMyEngagement: async (): Promise<StudentEngagementResponse> => {
+    return requestJson<StudentEngagementResponse>('/advisory/me/engagement/');
+  },
+
+  /**
+   * Accept an invite — grants the advisor read access from **today** on. `404`
+   * for an invite that is missing/expired/addressed to a different number,
+   * `409` if the student already has an active advisor or already accepted.
+   */
+  acceptInvite: async (inviteId: number): Promise<StudentEngagement> => {
+    return requestJson<StudentEngagement>(
+      `/advisory/me/invites/${inviteId}/accept/`,
+      { method: 'POST' },
+    );
+  },
+
+  /**
+   * Decline an invite. Terminal: the same advisor cannot re-invite for 30 days.
+   */
+  rejectInvite: async (inviteId: number): Promise<{ status: string }> => {
+    return requestJson<{ status: string }>(
+      `/advisory/me/invites/${inviteId}/reject/`,
+      { method: 'POST' },
+    );
   },
 };
