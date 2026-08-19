@@ -21,7 +21,10 @@ def test_diagnostic_store_keeps_logical_key_but_uses_compact_local_path(tmp_path
     relative = store.files[logical]
     assert relative.startswith("objects/")
     assert len(relative) < 100
-    assert (root / relative).read_bytes() == b"png-bytes"
+    # Read through store.root, not the raw `root`: on Windows the store swaps in
+    # a \\?\-prefixed root so a deep --out directory cannot overflow MAX_PATH,
+    # and rebuilding the path from the unprefixed root would hit that cap here.
+    assert (store.root / relative).read_bytes() == b"png-bytes"
 
 
 def test_targeted_layout_scope_keeps_only_requested_question_regions():

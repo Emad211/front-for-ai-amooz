@@ -3,6 +3,7 @@ from __future__ import annotations
 from decimal import Decimal
 import hashlib
 import json
+import os
 from pathlib import Path
 import shutil
 import zipfile
@@ -25,11 +26,31 @@ from apps.classes.services.exam_prep_page_source import attach_source_regions
 from apps.classes.services.exam_prep_question_verifier import rebuild_assembly_quality
 
 
+def _long_path_root(root: Path) -> Path:
+    """Return a root that survives the legacy Windows 260-character path cap.
+
+    Compacting the object name (below) bounds our own contribution to ~78
+    characters, but the caller's ``--out`` directory is outside our control and
+    can already be deep enough that any child overflows. On Windows the ``\\\\?\\``
+    prefix opts the path out of MAX_PATH; elsewhere there is nothing to do. The
+    prefix stays internal — ``self.root`` is only ever joined against or used as
+    the base of ``relative_to``, never printed.
+    """
+    if os.name != 'nt':
+        return root
+    # \\?\ paths are passed to the OS verbatim, so they must already be
+    # normalised: abspath collapses '..' without resolving symlinks.
+    absolute = os.path.abspath(root)
+    if absolute.startswith('\\\\?\\'):
+        return Path(absolute)
+    return Path('\\\\?\\' + absolute)
+
+
 class _DiagnosticStore:
     """Persist logical private-storage keys in a portable local diagnostic tree."""
 
     def __init__(self, root: Path) -> None:
-        self.root = root
+        self.root = _long_path_root(root)
         self.files: dict[str, str] = {}
 
     def save(self, name: str, payload: bytes) -> str:
