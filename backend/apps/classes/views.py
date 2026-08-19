@@ -3317,6 +3317,27 @@ class StudentNotificationListView(APIView):
                     }
                 )
 
+        # Single-user notifications any app dropped into this student's feed via
+        # apps.notification.services.notify_user (e.g. an advisory invite). Read
+        # through apps.notification only — this view never learns which app wrote
+        # the row, which keeps the classes→advisory boundary intact. Each item
+        # carries its own in-app link (falling back to /notifications).
+        from apps.notification.models import DirectNotification
+
+        for item in DirectNotification.objects.filter(recipient=user).order_by('-created_at'):
+            item_id = f'direct-{item.id}'
+            out.append(
+                {
+                    'id': item_id,
+                    'title': item.title,
+                    'message': item.message,
+                    'type': item.notification_type,
+                    'isRead': item_id in read_ids,
+                    'createdAt': item.created_at.isoformat(),
+                    'link': item.link or '/notifications',
+                }
+            )
+
         for session in sessions:
             for announcement in session.announcements.all():
                 # Map priority to notification type

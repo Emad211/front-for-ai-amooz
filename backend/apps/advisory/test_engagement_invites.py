@@ -23,6 +23,7 @@ from rest_framework.test import APIClient
 
 from apps.advisory.models import INVITE_TTL_DAYS, REJECT_BLOCK_DAYS, AdvisoryEngagement
 from apps.advisory.services import invites as invite_service
+from apps.notification.models import DirectNotification
 
 User = get_user_model()
 Status = AdvisoryEngagement.Status
@@ -563,6 +564,122 @@ def test_a_dead_sms_provider_does_not_fail_the_invite():
 def test_no_sms_key_is_not_an_error():
     with patch.dict('os.environ', {'MEDIANA_API_KEY': ''}):
         assert invite_service._send_invite_sms(phone='09121110000', advisor=_advisor()) is False
+
+
+# ── the in-app feed notification: same awareness signal, other channel ────────
+# The student must see the invite in the bell they are already logged in to, not
+# only over SMS. It is written in the worker (deliver_invite), tied to the row,
+# and — unlike the SMS — is NOT gated by the anti-bombing cooldown: an in-app row
+# is not phone-bombing, and a second advisor's genuine pending invite should show.
+
+def test_delivery_drops_one_feed_notification_for_the_student(no_sms):
+    advisor = _advisor(first_name='زهرا', last_name='مرادی')
+    student = _student(phone='09121110000')
+    invite_service.deliver_invite(advisor_id=advisor.pk, phone=student.phone)
+
+    rows = DirectNotification.objects.filter(recipient=student)
+    assert rows.count() == 1
+    row = rows.get()
+    assert row.source == 'advisory'
+    # The advisor is named so the student knows who invited them...
+    assert 'زهرا مرادی' in row.message
+    # ...and the link is an in-app path to the accept banner, never a credential.
+    assert row.link == '/home'
+
+
+def test_the_feed_notification_carries_no_code_or_link(no_sms):
+    """B1 mirror: the feed row is awareness, not authority — nothing claimable.
+
+    The accept banner behind the student's own session is the only place to act;
+    a notification that carried a code or URL would inherit the invite-code JWT
+    threat model exactly as an SMS would.
+    """
+    advisor = _advisor(first_name='زهرا', last_name='مرادی')
+    student = _student(phone='09121110000')
+    invite_service.deliver_invite(advisor_id=advisor.pk, phone=student.phone)
+
+    row = DirectNotification.objects.get(recipient=student)
+    blob = f'{row.title}\n{row.message}'.lower()
+    assert 'http' not in blob
+    for token in ('کد', 'code', 'رمز', 'token'):
+        assert token not in blob
+
+
+def test_a_second_advisor_within_a_day_still_gets_a_feed_notification(no_sms):
+    """The SMS is cooldown-suppressed for the second advisor; the feed row is not.
+
+    This is the whole reason the notify call sits above the cooldown gate: the
+    student got no second SMS (anti-bombing), but the second advisor's invite is a
+    real pending row they should be able to see and accept from the bell.
+    """
+    student = _student(phone='09121110000')
+    invite_service.deliver_invite(advisor_id=_advisor('a').pk, phone=student.phone)
+    second = invite_service.deliver_invite(advisor_id=_advisor('b').pk, phone=student.phone)
+
+    assert second['status'] == 'created_cooldown'
+    assert no_sms.call_count == 1  # SMS suppressed for the second
+    assert DirectNotification.objects.filter(recipient=student).count() == 2  # feed not
+
+
+@pytest.mark.parametrize('phone', ['09129999999', '08120000000', ''])
+def test_a_run_that_creates_no_row_creates_no_feed_notification(no_sms, phone):
+    """no_student / invalid_phone / self_invite all return before the write.
+
+    The notify call is placed after every early return and after the row commits,
+    so a run that never creates an engagement never touches a stranger's feed.
+    """
+    invite_service.deliver_invite(advisor_id=_advisor().pk, phone=phone)
+    assert DirectNotification.objects.count() == 0
+
+
+def test_a_feed_notification_failure_does_not_roll_back_the_invite(no_sms):
+    """Best-effort: the row is the source of truth; the banner reads from it.
+
+    If notify_user ever raises (a notification bug, a DB hiccup on that table), the
+    engagement must still commit — otherwise a feed glitch would silently drop a
+    real invite the advisor was told went out.
+    """
+    advisor, student = _advisor(), _student(phone='09121110000')
+    with patch(
+        'apps.notification.services.notify_user',
+        side_effect=RuntimeError('feed down'),
+    ):
+        result = invite_service.deliver_invite(advisor_id=advisor.pk, phone=student.phone)
+
+    assert result['status'] == 'created'
+    assert AdvisoryEngagement.objects.filter(
+        advisor=advisor, student=student, status=Status.PENDING,
+    ).count() == 1
+    assert DirectNotification.objects.count() == 0
+
+
+def test_the_feed_notification_surfaces_in_the_student_feed_and_marks_read(no_sms):
+    """End-to-end across the app boundary: advisory writes, the classes feed reads.
+
+    The classes StudentNotificationListView reads DirectNotification through
+    apps.notification only (never importing advisory), surfaces it as ``direct-<id>``
+    and read-tracks it through the same receipt table as every other source.
+    """
+    advisor = _advisor(first_name='زهرا', last_name='مرادی')
+    student = _student(phone='09121110000')
+    invite_service.deliver_invite(advisor_id=advisor.pk, phone=student.phone)
+    row = DirectNotification.objects.get(recipient=student)
+    item_id = f'direct-{row.id}'
+
+    client = _auth(student)
+    feed = client.get('/api/classes/student/notifications/')
+    assert feed.status_code == 200
+    item = next(n for n in feed.data if n['id'] == item_id)
+    assert item['isRead'] is False
+    assert 'زهرا مرادی' in item['message']
+    assert item['link'] == '/home'
+
+    # A receipt for that synthetic id flips isRead — the whitelist-free mark-read
+    # view accepts ``direct-<id>`` with no per-source change.
+    assert client.post(f'/api/notifications/{item_id}/read/').status_code == 200
+    feed2 = client.get('/api/classes/student/notifications/')
+    item2 = next(n for n in feed2.data if n['id'] == item_id)
+    assert item2['isRead'] is True
 
 
 # ── accept ────────────────────────────────────────────────────────────────────

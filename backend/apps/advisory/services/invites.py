@@ -227,6 +227,46 @@ def _send_invite_sms(*, phone: str, advisor) -> bool:
         return False
 
 
+def _notify_student_of_invite(*, student, advisor) -> bool:
+    """Drop the invite into the student's in-app feed. Best-effort; never raises.
+
+    The same awareness signal as the SMS, on the channel the student is already
+    logged in to. It routes through ``apps.notification.services.notify_user`` —
+    the sanctioned seam — so advisory never touches ``apps.classes`` and the feed
+    view never learns advisory exists. Like the SMS it carries **no code, link or
+    token** (B1): the message says "an invite is waiting", and the accept banner,
+    behind the student's own authenticated session, is the only place to act on
+    it. ``link='/home'`` points at that banner; it is an in-app path, not a
+    credential.
+
+    A failure here is not a failure to invite: the engagement row is already
+    committed and the banner reads from it, so the student can still accept even
+    if this feed row never lands. Hence best-effort, never raising.
+    """
+    try:
+        from apps.notification import services as notification_services
+
+        advisor_name = (
+            ' '.join(filter(None, [advisor.first_name, advisor.last_name])).strip()
+            or advisor.username
+        )
+        notification_services.notify_user(
+            recipient=student,
+            title='دعوت به همکاری مشاوره',
+            message=(
+                f'مشاور «{advisor_name}» شما را به همکاری دعوت کرده است. '
+                'برای دیدن و پذیرش دعوت، به صفحهٔ اصلی خود مراجعه کنید.'
+            ),
+            notification_type='info',
+            link='/home',
+            source='advisory',
+        )
+        return True
+    except Exception:
+        logger.exception('Advisory invite feed notification failed')
+        return False
+
+
 def deliver_invite(*, advisor_id: int, phone: str) -> dict:
     """Resolve a phone number to a student and create the PENDING engagement.
 
@@ -298,6 +338,13 @@ def deliver_invite(*, advisor_id: int, phone: str) -> dict:
     # An engagement is created even when the student already has an ACTIVE
     # advisor: the invite is harmless while it waits, may become claimable if the
     # current engagement ends, and accepting it early simply 409s.
+
+    # The in-app feed notification is tied to the committed row, not to the SMS
+    # cooldown: a second advisor's invite is silent over SMS (B-anti-bombing) but
+    # still a real pending invite the student should see in their bell. So it
+    # fires here, above the cooldown gate, on both the created and the
+    # created_cooldown paths — at most one per row, because there is one row.
+    _notify_student_of_invite(student=student, advisor=advisor)
 
     # Cooldown is claimed only now, so a run that failed before creating anything
     # does not burn the student's one daily notification.
