@@ -94,6 +94,13 @@ def test_similarity_and_numeric_signature_are_content_free_disagreement_signals(
     assert numeric_signature("x = ۷۰ / ۷") != numeric_signature("x = ۳۰ / ۲")
 
 
+def test_simple_tex_exponent_braces_are_equivalent_for_disagreement_signals():
+    braced = r"3^{2} + r^{2} = 4^{2}"
+    plain = r"3^2 + r^2 = 4^2"
+    assert text_similarity(braced, plain) == 1.0
+    assert numeric_signature(braced) == numeric_signature(plain)
+
+
 def test_direct_transcription_summary_keeps_visual_and_numeric_disagreement_explicit():
     targets = [
         {"itemId": "q-065", "kind": "question", "questionNumber": 65, "physicalPageNumber": 13}

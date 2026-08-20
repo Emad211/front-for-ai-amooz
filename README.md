@@ -77,7 +77,7 @@ GENAI_HTTP_TIMEOUT=1000                         # Timeout in ms
 MODE=avalai                                     # Legacy fallback (use LLM_PROVIDER)
 
 # ============ OPTIONAL ============
-MEDIANA_API_KEY=ZY2nMe3zsJaswUqPbtWJAyhEtpA2VPLmjfi7HnQbD38=
+MEDIANA_API_KEY=your-mediana-api-key-here
 CLASS_PIPELINE_ASYNC=True                       # Run heavy tasks asynchronously
 ```
 

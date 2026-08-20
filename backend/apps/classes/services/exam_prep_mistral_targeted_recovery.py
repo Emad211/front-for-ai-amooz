@@ -4,6 +4,7 @@ from html import unescape
 import re
 from typing import Any, Mapping, Sequence
 
+from .exam_prep_mistral_layout_analysis import normalize_page_blocks
 from .exam_prep_mistral_solution_headings import (
     normalize_solution_option_label,
     parse_solution_heading,
@@ -14,6 +15,21 @@ _HTML_BREAK_RE = re.compile(
     re.IGNORECASE,
 )
 _HTML_TAG_RE = re.compile(r"<[^>]+>")
+_CROP_BOUNDS = {
+    "left": (0.02, 0.075, 0.51, 0.965),
+    "right": (0.49, 0.075, 0.98, 0.965),
+}
+_VISUAL_TYPES = frozenset({"image", "table"})
+_TEXTUAL_TYPES = frozenset(
+    {"text", "title", "list", "caption", "equation", "code", "references", "aside_text"}
+)
+
+
+def _int_value(value: Any, default: int) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
 
 
 def _heading_lines(value: Any) -> list[str]:
@@ -59,16 +75,13 @@ def collect_crop_headings(
 ) -> list[dict[str, Any]]:
     output: list[dict[str, Any]] = []
     pages = [page for page in (root.get("pages") or []) if isinstance(page, Mapping)]
-    pages.sort(key=lambda page: int(page.get("index") or 0))
+    pages.sort(key=lambda page: _int_value(page.get("index"), 0))
     for page in pages:
-        crop_index = int(page.get("index") or 0)
+        crop_index = _int_value(page.get("index"), 0)
         if not 0 <= crop_index < len(crop_specs):
             continue
         spec = crop_specs[crop_index]
-        try:
-            physical_page = int(spec.get("physicalPageNumber") or 0)
-        except (TypeError, ValueError):
-            physical_page = 0
+        physical_page = _int_value(spec.get("physicalPageNumber"), 0)
         side = str(spec.get("column") or "").strip().lower()
         for block_index, block in enumerate(page.get("blocks") or []):
             if not isinstance(block, Mapping):
@@ -93,10 +106,7 @@ def resolve_target_questions(
     targets = sorted({int(value) for value in target_questions if int(value) > 0})
     grouped: dict[int, list[Mapping[str, Any]]] = {}
     for heading in headings:
-        try:
-            question = int(heading.get("rawQuestionNumber") or 0)
-        except (TypeError, ValueError):
-            continue
+        question = _int_value(heading.get("rawQuestionNumber"), 0)
         grouped.setdefault(question, []).append(heading)
 
     recovered: list[dict[str, Any]] = []
@@ -128,9 +138,9 @@ def resolve_target_questions(
                     "evidenceCount": len(evidence),
                     "physicalPages": sorted(
                         {
-                            int(item.get("physicalPageNumber") or 0)
+                            _int_value(item.get("physicalPageNumber"), 0)
                             for item in evidence
-                            if int(item.get("physicalPageNumber") or 0) > 0
+                            if _int_value(item.get("physicalPageNumber"), 0) > 0
                         }
                     ),
                 }
@@ -153,3 +163,238 @@ def resolve_target_questions(
         "conflicts": conflicts,
         "complete": not unresolved and not conflicts and len(recovered) == len(targets),
     }
+
+
+def _mapped_crop_bbox(
+    local_box: tuple[float, float, float, float],
+    *,
+    side: str,
+) -> tuple[float, float, float, float] | None:
+    crop = _CROP_BOUNDS.get(side)
+    if crop is None:
+        return None
+    lx0, ly0, lx1, ly1 = local_box
+    if not (0 <= lx0 < lx1 <= 1 and 0 <= ly0 < ly1 <= 1):
+        return None
+    cx0, cy0, cx1, cy1 = crop
+    width = cx1 - cx0
+    height = cy1 - cy0
+    mapped = (
+        cx0 + lx0 * width,
+        cy0 + ly0 * height,
+        cx0 + lx1 * width,
+        cy0 + ly1 * height,
+    )
+    if not (0 <= mapped[0] < mapped[2] <= 1 and 0 <= mapped[1] < mapped[3] <= 1):
+        return None
+    return mapped
+
+
+def _union_boxes(values: Sequence[tuple[float, float, float, float]]) -> tuple[float, float, float, float] | None:
+    if not values:
+        return None
+    return (
+        min(box[0] for box in values),
+        min(box[1] for box in values),
+        max(box[2] for box in values),
+        max(box[3] for box in values),
+    )
+
+
+def recovered_solution_layout_regions(
+    root: Mapping[str, Any],
+    *,
+    crop_specs: Sequence[Mapping[str, Any]],
+    recovered_targets: Mapping[int, tuple[str, int, str]],
+) -> list[dict[str, Any]]:
+    """Derive precise original-page regions from already-paid targeted OCR.
+
+    A region is emitted only when one recovered target maps to exactly one OCR
+    heading block and that block contains no second parsed solution heading.
+    The vertical boundary ends at the next heading block in the same crop. Any
+    targeted OCR image/table block whose center falls inside that exact interval
+    is carried back as source visual evidence for the existing Stage-3 pipeline.
+    """
+
+    headings = collect_crop_headings(root, crop_specs)
+    pages = {
+        _int_value(page.get("index"), 0): page
+        for page in (root.get("pages") or [])
+        if isinstance(page, Mapping)
+    }
+    output: list[dict[str, Any]] = []
+
+    for raw_number, recovered in sorted(recovered_targets.items()):
+        number = int(raw_number)
+        try:
+            label = int(recovered[0])
+            physical_page = int(recovered[1])
+        except (TypeError, ValueError, IndexError):
+            continue
+        side = str(recovered[2] if len(recovered) > 2 else "").strip().lower()
+        matches = [
+            item
+            for item in headings
+            if _int_value(item.get("rawQuestionNumber"), 0) == number
+            and item.get("optionLabelValid") is True
+            and _int_value(item.get("optionLabel"), 0) == label
+            and _int_value(item.get("physicalPageNumber"), 0) == physical_page
+            and str(item.get("column") or "").strip().lower() == side
+        ]
+        if len(matches) != 1:
+            continue
+        match = matches[0]
+        crop_index = _int_value(match.get("providerCropIndex"), -1)
+        block_index = _int_value(match.get("providerBlockIndex"), -1)
+        page = pages.get(crop_index)
+        if page is None or crop_index < 0 or block_index < 0:
+            continue
+
+        same_block = [
+            item
+            for item in headings
+            if _int_value(item.get("providerCropIndex"), -1) == crop_index
+            and _int_value(item.get("providerBlockIndex"), -1) == block_index
+        ]
+        if len(same_block) != 1:
+            continue
+
+        normalized = normalize_page_blocks(page)
+        by_index = {block.provider_index: block for block in normalized}
+        heading_block = by_index.get(block_index)
+        if heading_block is None:
+            continue
+        next_y = min(
+            (
+                by_index[next_index].bbox[1]
+                for item in headings
+                if _int_value(item.get("providerCropIndex"), -1) == crop_index
+                and (next_index := _int_value(item.get("providerBlockIndex"), -1)) in by_index
+                and by_index[next_index].bbox[1] > heading_block.bbox[1]
+            ),
+            default=0.98,
+        )
+        local_box = (
+            0.0,
+            heading_block.bbox[1],
+            1.0,
+            max(heading_block.bbox[3], next_y),
+        )
+        mapped = _mapped_crop_bbox(local_box, side=side)
+        if mapped is None:
+            continue
+
+        body = [
+            block
+            for block in normalized
+            if block.provider_index == block_index
+            or (
+                block.bbox[1] >= heading_block.bbox[1]
+                and block.bbox[1] < next_y
+            )
+        ]
+        mapped_body_boxes: list[tuple[float, float, float, float]] = []
+        visuals: list[dict[str, Any]] = []
+        captions: list[dict[str, Any]] = []
+        text_parts: list[str] = []
+        for block in body:
+            mapped_block = _mapped_crop_bbox(block.bbox, side=side)
+            if mapped_block is None:
+                continue
+            mapped_body_boxes.append(mapped_block)
+            if block.block_type in _VISUAL_TYPES:
+                visuals.append(
+                    {
+                        "type": block.block_type,
+                        "content": block.content,
+                        "bbox": list(mapped_block),
+                        "column": side,
+                        "role": "solution",
+                        "targetedRecoveryVisual": True,
+                    }
+                )
+            if block.block_type == "caption":
+                captions.append(
+                    {
+                        "content": block.content,
+                        "bbox": list(mapped_block),
+                    }
+                )
+            if block.block_type in _TEXTUAL_TYPES and block.content:
+                text_parts.append(block.content)
+
+        content_box = _union_boxes(mapped_body_boxes)
+        output.append(
+            {
+                "kind": "solution",
+                "questionNumber": number,
+                "rawQuestionNumber": number,
+                "correctOptionLabel": label,
+                "column": side,
+                "bbox": list(mapped),
+                "contentBBox": list(content_box) if content_box else None,
+                "text": "\n".join(text_parts),
+                "visuals": visuals,
+                "captions": captions,
+                "issues": ["targeted_solution_heading_recovered"],
+                "targetedRecoveryRegion": True,
+                "targetedRecoveryVisualCandidateCount": len(visuals),
+                "originalPageNumber": physical_page,
+            }
+        )
+    return output
+
+
+def overlay_recovered_solution_regions(
+    layout: Mapping[str, Any],
+    regions: Sequence[Mapping[str, Any]],
+) -> dict[str, Any]:
+    """Overlay only unambiguous missing solution regions onto the base layout."""
+
+    output = dict(layout)
+    pages = [dict(page) for page in (layout.get("pages") or []) if isinstance(page, Mapping)]
+    page_positions: dict[int, list[int]] = {}
+    for index, page in enumerate(pages):
+        number = _int_value(page.get("originalPageNumber"), 0)
+        if number > 0:
+            page_positions.setdefault(number, []).append(index)
+
+    existing = {
+        _int_value(region.get("questionNumber"), 0)
+        for page in pages
+        for region in (page.get("regions") or [])
+        if isinstance(region, Mapping)
+        and str(region.get("kind") or "") == "solution"
+        and _int_value(region.get("questionNumber"), 0) > 0
+    }
+    added: list[int] = []
+    for raw in regions:
+        number = _int_value(raw.get("questionNumber"), 0)
+        page_number = _int_value(raw.get("originalPageNumber"), 0)
+        positions = page_positions.get(page_number, [])
+        if number < 1 or number in existing or len(positions) != 1:
+            continue
+        position = positions[0]
+        page = dict(pages[position])
+        page_regions = [
+            dict(item) for item in (page.get("regions") or []) if isinstance(item, Mapping)
+        ]
+        region = {key: value for key, value in raw.items() if key != "originalPageNumber"}
+        page_regions.append(region)
+        page["regions"] = page_regions
+        pages[position] = page
+        existing.add(number)
+        added.append(number)
+
+    output["pages"] = pages
+    output["targetedRecoveredSolutionRegions"] = sorted(added)
+    return output
+
+
+__all__ = [
+    "collect_crop_headings",
+    "overlay_recovered_solution_regions",
+    "recovered_solution_layout_regions",
+    "resolve_target_questions",
+    "scan_solution_headings",
+]

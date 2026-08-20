@@ -23,8 +23,9 @@ from .serializers import (
 from .services.exam_prep_inventory import rebuild_audit_after_teacher_review
 from .services.exam_prep_mistral_production import PRODUCTION_ENGINE
 from .services.exam_prep_mistral_readiness import (
-    production_review_artifact_is_valid,
+    production_run_is_authentic,
 )
+from .services.exam_prep_page_output import review_blocking_question_keys
 from .services.exam_prep_page_review import (
     audit_page_first_projection,
     parse_projection,
@@ -66,7 +67,7 @@ def _is_reviewable_exam_session(session: ClassCreationSession) -> bool:
     if not reviewable:
         return False
     if workflow.get('engine') == PRODUCTION_ENGINE:
-        return production_review_artifact_is_valid(workflow)
+        return production_run_is_authentic(workflow)
     return True
 
 
@@ -79,7 +80,7 @@ def _review_patch_conflict(session: ClassCreationSession) -> str:
     workflow = _workflow(session)
     if (
         workflow.get('engine') == PRODUCTION_ENGINE
-        and not production_review_artifact_is_valid(workflow)
+        and not production_run_is_authentic(workflow)
     ):
         return 'خروجی کامل و معتبر پایپ‌لاین برای بازبینی موجود نیست.'
     return ''
@@ -167,25 +168,19 @@ def _downgrade_intentional_number_gaps(audit: dict[str, Any]) -> dict[str, Any]:
         if issue.get('code') == 'missing_question_number':
             issue['severity'] = 'warning'
     critical_count = sum(item.get('severity') == 'critical' for item in issues)
-    critical_question_keys = {
-        (
-            str(item.get('scopeKey') or 'default'),
-            int(item.get('questionNumber') or 0),
-        )
-        for item in issues
-        if item.get('severity') == 'critical'
-        and int(item.get('questionNumber') or 0) > 0
-    }
+    # Only genuinely-broken questions (no stem / no options) gate status and the
+    # review lane; criticalIssueCount stays the broad advisory metric.
+    blocking_question_keys = review_blocking_question_keys(issues)
     question_count = int(updated.get('questionCount') or 0)
     updated.update(
         {
             'issues': issues,
             'criticalIssueCount': critical_count,
-            'questionsNeedingReview': len(critical_question_keys),
-            'usableQuestionCount': max(0, question_count - len(critical_question_keys)),
+            'questionsNeedingReview': len(blocking_question_keys),
+            'usableQuestionCount': max(0, question_count - len(blocking_question_keys)),
             'status': (
                 'passed'
-                if question_count > 0 and critical_count == 0
+                if question_count > 0 and not blocking_question_keys
                 else 'needs_review'
             ),
         }
@@ -229,7 +224,9 @@ def _refresh_exam_review_state(
     audit = retain_failed_page_evidence(audit, remaining_failed_pages)
     passed = audit.get('status') == 'passed'
     if workflow.get('engine') == PRODUCTION_ENGINE:
-        passed = passed and production_review_artifact_is_valid(
+        # Anti-forgery only — publishing is always allowed once the audit clears
+        # the narrow review-blocking gate (owner policy `همیشه مجاز`).
+        passed = passed and production_run_is_authentic(
             {
                 **workflow,
                 'stage': 'ready_for_review',
@@ -238,7 +235,6 @@ def _refresh_exam_review_state(
                 'failedPageNumbers': remaining_failed_pages,
                 'extractionAudit': audit,
             },
-            require_publishable=True,
         )
 
     warnings: list[str] = []

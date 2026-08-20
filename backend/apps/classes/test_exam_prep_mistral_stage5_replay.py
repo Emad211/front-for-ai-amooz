@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from hashlib import sha256
 import json
+import os
 from pathlib import Path
 from types import SimpleNamespace
 import zipfile
@@ -128,6 +129,7 @@ def test_cached_runner_uses_only_cached_ocr_filters_targets_and_restores_patches
     decision_66 = SimpleNamespace(question_number=66, kind="solution")
     calls: dict[str, object] = {}
     evidence: list[dict[str, object]] = []
+    monkeypatch.setenv(replay._USAGE_LOG_ENV, "sentinel")
 
     def live_ocr(*args, **kwargs):
         raise AssertionError("live OCR must never run during cached replay")
@@ -183,6 +185,7 @@ def test_cached_runner_uses_only_cached_ocr_filters_targets_and_restores_patches
     }
 
     def fake_runner(**kwargs):
+        assert os.environ[replay._USAGE_LOG_ENV] == "0"
         assert production.fetch_ocr4_document(b"ignored") is cached_result
         assert production._targeted_recovery(b"ignored") == ({}, None)
         updated, _stats, _audit = production.reconcile_mistral_source_visuals(
@@ -236,6 +239,7 @@ def test_cached_runner_uses_only_cached_ocr_filters_targets_and_restores_patches
     assert production.finalize_stage5_regions is originals["stage5"]
     assert stage5._transcribe is originals["transcribe"]
     assert production.run_exam_prep_mistral_pipeline is fake_runner
+    assert os.environ[replay._USAGE_LOG_ENV] == "sentinel"
     assert evidence == [
         {
             "questionNumber": 65,
@@ -261,6 +265,8 @@ def test_manifest_separates_replay_spend_from_projected_production_total():
         extraction_audit={
             "totalProviderCalls": 9,
             "stage5SuccessfulCallEstimatedCostUsd": "0.120000",
+            "stage5ChargedCostUsd": "0.130000",
+            "stage5CostEstimateComplete": False,
             "totalEstimatedCostUsd": "0.600000",
             "totalPdfBudgetUsd": "1.500000",
             "budgetWithinLimit": True,
@@ -289,10 +295,13 @@ def test_manifest_separates_replay_spend_from_projected_production_total():
         targets=frozenset({(65, "question"), (57, "solution")}),
     )
 
+    assert manifest["schemaVersion"] == 3
     assert manifest["callStats"]["ocrProviderCallsThisReplay"] == 0
     assert manifest["callStats"]["totalProviderCallsThisReplay"] == 3
     assert manifest["callStats"]["projectedProductionTotalProviderCalls"] == 9
-    assert manifest["costStats"]["replayEstimatedCostUsd"] == "0.120000"
+    assert manifest["costStats"]["replayChargedCostUsd"] == "0.130000"
+    assert manifest["costStats"]["replaySuccessfulUsageCostUsd"] == "0.120000"
+    assert manifest["costStats"]["replayCostEstimateComplete"] is False
     assert (
         manifest["costStats"]["projectedProductionTotalEstimatedCostUsd"]
         == "0.600000"

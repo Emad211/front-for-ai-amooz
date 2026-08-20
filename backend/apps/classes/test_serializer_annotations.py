@@ -162,3 +162,67 @@ class TestExamPrepSessionDetailSerializer:
         data = ExamPrepSessionDetailSerializer(session).data
 
         assert data['exam_prep_data'] is None
+
+    def test_usage_summary_sums_only_this_sessions_logs(self):
+        session = baker.make(
+            'classes.ClassCreationSession',
+            pipeline_type='exam_prep',
+        )
+        other = baker.make(
+            'classes.ClassCreationSession',
+            pipeline_type='exam_prep',
+        )
+        baker.make(
+            'commons.LLMUsageLog',
+            session_id=session.id,
+            input_tokens=100,
+            output_tokens=40,
+            total_tokens=140,
+            estimated_cost_usd='0.010000',
+            estimated_cost_toman='7000.00',
+        )
+        baker.make(
+            'commons.LLMUsageLog',
+            session_id=session.id,
+            input_tokens=60,
+            output_tokens=10,
+            total_tokens=70,
+            estimated_cost_usd='0.005000',
+            estimated_cost_toman='3500.00',
+        )
+        # A different session's usage must not leak into this rollup.
+        baker.make(
+            'commons.LLMUsageLog',
+            session_id=other.id,
+            total_tokens=9999,
+            estimated_cost_toman='999999.00',
+        )
+
+        summary = ExamPrepSessionDetailSerializer(session).data['usageSummary']
+
+        assert summary['totalTokens'] == 210
+        assert summary['inputTokens'] == 160
+        assert summary['outputTokens'] == 50
+        assert summary['calls'] == 2
+        assert summary['costUsd'] == pytest.approx(0.015)
+        assert summary['costToman'] == pytest.approx(10500.0)
+        # Token counts are ints, costs are floats (Decimal columns coerced).
+        assert isinstance(summary['totalTokens'], int)
+        assert isinstance(summary['costToman'], float)
+
+    def test_usage_summary_is_all_zero_without_logs(self):
+        session = baker.make(
+            'classes.ClassCreationSession',
+            pipeline_type='exam_prep',
+        )
+
+        summary = ExamPrepSessionDetailSerializer(session).data['usageSummary']
+
+        assert summary == {
+            'totalTokens': 0,
+            'inputTokens': 0,
+            'outputTokens': 0,
+            'costUsd': 0,
+            'costToman': 0,
+            'calls': 0,
+        }

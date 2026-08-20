@@ -1,6 +1,7 @@
 import json
 
 from django.conf import settings
+from django.db.models import Count, Sum
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 from rest_framework import serializers
@@ -944,6 +945,7 @@ class ExamPrepSessionDetailSerializer(
     teacherReviewRequired = serializers.SerializerMethodField()
     teacherReviewedAt = serializers.SerializerMethodField()
     projectionFingerprint = serializers.SerializerMethodField()
+    usageSummary = serializers.SerializerMethodField()
 
     @extend_schema_field(serializers.DictField())
     def get_exam_prep_data(self, obj: ClassCreationSession):
@@ -987,6 +989,33 @@ class ExamPrepSessionDetailSerializer(
     def get_pendingExercises(self, obj):
         return self._wf(obj)['pendingExercises']
 
+    @extend_schema_field(serializers.DictField())
+    def get_usageSummary(self, obj):
+        """Per-session LLM token/cost rollup for the pipeline report (req #4).
+
+        ``LLMUsageLog.session_id`` is the bare ``ClassCreationSession.id`` stamped
+        by ``set_current_session_id(session.id)`` in ``tasks_exam_prep.py``. Mirrors
+        the organization-costs rollup so the teacher can read the cost of a run
+        straight from the مرحله ۱ report. Costs are floats (Decimal columns), token
+        counts and call totals are ints; a run with no logged calls returns zeros.
+        """
+        from apps.commons.models import LLMUsageLog
+
+        agg = LLMUsageLog.objects.filter(session_id=obj.id).aggregate(
+            totalTokens=Sum('total_tokens'),
+            inputTokens=Sum('input_tokens'),
+            outputTokens=Sum('output_tokens'),
+            costUsd=Sum('estimated_cost_usd'),
+            costToman=Sum('estimated_cost_toman'),
+            calls=Count('id'),
+        )
+        return {
+            key: (float(value) if 'cost' in key.lower() else int(value))
+            if value is not None
+            else 0
+            for key, value in agg.items()
+        }
+
     class Meta:
         model = ClassCreationSession
         fields = [
@@ -1026,6 +1055,7 @@ class ExamPrepSessionDetailSerializer(
             'teacherReviewRequired',
             'teacherReviewedAt',
             'projectionFingerprint',
+            'usageSummary',
         ]
 
 

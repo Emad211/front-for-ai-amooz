@@ -925,6 +925,17 @@ export interface ExamPrepSessionDetail {
   teacherReviewRequired?: boolean;
   teacherReviewedAt?: string | null;
   projectionFingerprint?: string | null;
+  // Per-session LLM token/cost rollup for the pipeline report (backend req #4).
+  // Aggregated from LLMUsageLog rows keyed by this session id; all-zero when the
+  // run logged nothing. Costs are floats (Decimal columns), counts are ints.
+  usageSummary?: {
+    totalTokens: number;
+    inputTokens: number;
+    outputTokens: number;
+    costUsd: number;
+    costToman: number;
+    calls: number;
+  } | null;
 }
 
 export interface ExamPrepSourceUnitIssue {

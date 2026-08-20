@@ -158,7 +158,7 @@ export interface UserProfile {
   email: string;
   phone: string;
   avatar: string;
-  role: 'student' | 'admin' | 'teacher' | 'manager';
+  role: 'student' | 'admin' | 'teacher' | 'manager' | 'advisor';
   grade?: string;
   major?: string;
   bio?: string;
@@ -419,7 +419,7 @@ export interface ClassDetail extends Course {
 // ============================================================================
 
 export type SubscriptionStatus = 'active' | 'expired' | 'suspended';
-export type OrgRole = 'admin' | 'deputy' | 'teacher' | 'student';
+export type OrgRole = 'admin' | 'deputy' | 'teacher' | 'student' | 'advisor';
 export type MemberStatus = 'active' | 'suspended';
 
 export interface Organization {

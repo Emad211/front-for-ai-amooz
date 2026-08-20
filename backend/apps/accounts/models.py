@@ -10,6 +10,12 @@ class User(AbstractUser):
         MANAGER = 'MANAGER', _('Manager')
         TEACHER = 'TEACHER', _('Teacher')
         STUDENT = 'STUDENT', _('Student')
+        # Study advisor (مشاور): plans a student's week and reads their study
+        # log. Works freelance and/or inside an organization. Grants NOTHING by
+        # default — every advisory endpoint opts in explicitly via
+        # apps.core.permissions.IsAdvisorUser. Has NO profile model on purpose
+        # (like MANAGER) — see apps/accounts/signals.py.
+        ADVISOR = 'ADVISOR', _('Advisor')
 
     role = models.CharField(
         max_length=10,

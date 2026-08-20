@@ -1,0 +1,183 @@
+'use client';
+
+import { useEffect, useMemo, useState } from 'react';
+import { BookOpen, RefreshCw, Search, AlertCircle } from 'lucide-react';
+
+import { AdvisoryService, type AdvisorySubject } from '@/services/advisory-service';
+import { matchesSearch } from '@/lib/persian-search';
+import { toPersianDigits } from '@/lib/persian-digits';
+import { Card, CardContent } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Skeleton } from '@/components/ui/skeleton';
+
+/**
+ * Advisor → درس‌ها (subject catalog), read-only.
+ *
+ * The advisor does not create subjects: the platform admin curates the shared
+ * catalog and an organization curates its own. This page exists so the advisor
+ * can see exactly what they will be able to assign in S4 — and so a missing
+ * subject is a visible, reportable fact rather than a silently short dropdown.
+ *
+ * Filtering is client-side because the endpoint is unpaginated by design: the
+ * whole catalog is already in hand, so a round-trip per keystroke would be
+ * slower and would add a failure mode for nothing.
+ */
+export default function AdvisorSubjectsPage() {
+  const [subjects, setSubjects] = useState<AdvisorySubject[] | null>(null);
+  const [error, setError] = useState('');
+  const [query, setQuery] = useState('');
+  const [reloadKey, setReloadKey] = useState(0);
+
+  useEffect(() => {
+    let active = true;
+    setError('');
+    setSubjects(null);
+
+    AdvisoryService.getSubjects()
+      .then((rows) => {
+        if (active) setSubjects(rows);
+      })
+      .catch((err: unknown) => {
+        // Keep `subjects` null so the retry button stays reachable: an empty
+        // array here would render as "the catalog is empty", which is a
+        // different and much more misleading statement than "load failed".
+        if (active) setError(err instanceof Error ? err.message : 'خطای نامشخص');
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [reloadKey]);
+
+  const visible = useMemo(
+    () => (subjects ?? []).filter((s) => matchesSearch(s.name, query)),
+    [subjects, query],
+  );
+
+  const globalCount = (subjects ?? []).filter((s) => s.isGlobal).length;
+  const orgCount = (subjects ?? []).length - globalCount;
+
+  return (
+    <div className="space-y-5">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="flex items-center gap-2 text-xl font-bold sm:text-2xl">
+            <BookOpen className="h-5 w-5 text-primary" />
+            درس‌ها
+          </h1>
+          <p className="mt-1.5 text-sm text-muted-foreground">
+            فهرست درس‌هایی که می‌توانید در برنامهٔ دانش‌آموزان‌تان استفاده کنید.
+          </p>
+        </div>
+        {subjects && subjects.length > 0 && (
+          <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+            <Badge variant="secondary">
+              {toPersianDigits(globalCount)} درس سراسری
+            </Badge>
+            {orgCount > 0 && (
+              <Badge variant="outline">
+                {toPersianDigits(orgCount)} درس سازمانی
+              </Badge>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* ── loading ─────────────────────────────────────────────────────── */}
+      {!subjects && !error && (
+        <div className="space-y-2" aria-busy="true" aria-live="polite">
+          <span className="sr-only">در حال بارگذاری درس‌ها…</span>
+          {[0, 1, 2, 3].map((i) => (
+            <Skeleton key={i} className="h-14 w-full" />
+          ))}
+        </div>
+      )}
+
+      {/* ── load failure ────────────────────────────────────────────────── */}
+      {error && (
+        <Card className="border-destructive/40 bg-destructive/5">
+          <CardContent className="flex flex-wrap items-center justify-between gap-3 py-4">
+            <p className="flex items-center gap-2 text-sm text-destructive">
+              <AlertCircle className="h-4 w-4 shrink-0" />
+              {error}
+            </p>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setReloadKey((k) => k + 1)}
+            >
+              <RefreshCw className="ml-2 h-4 w-4" />
+              تلاش مجدد
+            </Button>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* ── catalog genuinely empty ─────────────────────────────────────── */}
+      {subjects && subjects.length === 0 && (
+        <Card className="border-dashed">
+          <CardContent className="py-10 text-center">
+            <BookOpen className="mx-auto h-8 w-8 text-muted-foreground/60" />
+            <p className="mt-3 text-sm font-medium">هنوز درسی ثبت نشده است</p>
+            <p className="mx-auto mt-1.5 max-w-md text-xs leading-relaxed text-muted-foreground">
+              فهرست درس‌ها را مدیر پلتفرم (برای همه) یا سازمان آموزشی شما (فقط
+              برای خودش) تنظیم می‌کند. اگر درسی را لازم دارید و اینجا نیست، به
+              پشتیبانی اطلاع دهید.
+            </p>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* ── the catalog ─────────────────────────────────────────────────── */}
+      {subjects && subjects.length > 0 && (
+        <>
+          <div className="relative">
+            <Search className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="جست‌وجوی نام درس…"
+              className="pr-9"
+              aria-label="جست‌وجوی نام درس"
+            />
+          </div>
+
+          {visible.length === 0 ? (
+            <p className="py-8 text-center text-sm text-muted-foreground">
+              درسی با این نام پیدا نشد.
+            </p>
+          ) : (
+            <ul className="space-y-2">
+              {visible.map((subject) => (
+                <li key={subject.id}>
+                  <Card className="border-border/50">
+                    <CardContent className="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
+                      <span className="text-sm font-medium">{subject.name}</span>
+                      {subject.isGlobal ? (
+                        <Badge variant="secondary" className="font-normal">
+                          سراسری
+                        </Badge>
+                      ) : (
+                        <Badge variant="outline" className="font-normal">
+                          {subject.organizationName || 'سازمانی'}
+                        </Badge>
+                      )}
+                    </CardContent>
+                  </Card>
+                </li>
+              ))}
+            </ul>
+          )}
+
+          {query.trim() !== '' && visible.length > 0 && (
+            <p className="text-center text-xs text-muted-foreground">
+              {toPersianDigits(visible.length)} از {toPersianDigits(subjects.length)} درس
+            </p>
+          )}
+        </>
+      )}
+    </div>
+  );
+}

@@ -70,6 +70,17 @@ def _cost_usd(
     ) / _MILLION
 
 
+def _reported_usage(value: Any) -> tuple[int, int]:
+    """Return priceable usage only when both token sides are provider-reported."""
+
+    try:
+        input_tokens = max(0, int(getattr(value, "input_tokens", 0) or 0))
+        output_tokens = max(0, int(getattr(value, "output_tokens", 0) or 0))
+    except (TypeError, ValueError):
+        return 0, 0
+    return input_tokens, output_tokens
+
+
 @dataclass(frozen=True, slots=True)
 class _Reservation:
     model: str
@@ -94,6 +105,7 @@ class Stage5BudgetLedger:
         self.failure_cost = Decimal("0")
         self.maximum_exposure = Decimal("0")
         self.failed_calls = 0
+        self.success_calls_charged_at_reservation = 0
         self.blocked_calls = 0
         self.cost_estimate_complete = True
         self.cost_cap_exceeded = False
@@ -129,17 +141,28 @@ class Stage5BudgetLedger:
             self.failed_calls += 1
             self.failure_cost += cost
         else:
-            cost = _cost_usd(
-                str(getattr(value, "model", reservation.model) or reservation.model),
-                input_tokens=int(getattr(value, "input_tokens", 0) or 0),
-                output_tokens=int(getattr(value, "output_tokens", 0) or 0),
+            input_tokens, output_tokens = _reported_usage(value)
+            resolved_model = str(
+                getattr(value, "model", reservation.model) or reservation.model
+            )
+            cost = (
+                _cost_usd(
+                    resolved_model,
+                    input_tokens=input_tokens,
+                    output_tokens=output_tokens,
+                )
+                if input_tokens > 0 and output_tokens > 0
+                else None
             )
             if cost is None:
+                # A successful response without complete provider usage must not
+                # free its reservation and make the document budget look cheaper
+                # than it can be proven to be. Charge the conservative reservation
+                # and mark the estimate incomplete instead.
                 self.cost_estimate_complete = False
                 cost = reservation.amount
-                self.failure_cost += cost
-            else:
-                self.success_cost += cost
+                self.success_calls_charged_at_reservation += 1
+            self.success_cost += cost
         self.charged += cost
         if self.charged + self.reserved > self.cap:
             self.cost_cap_exceeded = True
@@ -163,6 +186,7 @@ class Stage5BudgetLedger:
             "costCapExceeded": self.cost_cap_exceeded,
             "budgetBlockedCalls": self.blocked_calls,
             "failedCallsChargedAtReservation": self.failed_calls,
+            "successfulCallsChargedAtReservation": self.success_calls_charged_at_reservation,
         }
 
 
@@ -178,10 +202,15 @@ def successful_call_cost_usd(stage5_audit: Mapping[str, Any]) -> tuple[Decimal, 
             call = row.get(key)
             if not isinstance(call, Mapping):
                 continue
+            input_tokens = int(call.get("inputTokens") or 0)
+            output_tokens = int(call.get("outputTokens") or 0)
+            if input_tokens <= 0 or output_tokens <= 0:
+                complete = False
+                continue
             cost = _cost_usd(
                 str(call.get("model") or ""),
-                input_tokens=int(call.get("inputTokens") or 0),
-                output_tokens=int(call.get("outputTokens") or 0),
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
             )
             if cost is None:
                 complete = False

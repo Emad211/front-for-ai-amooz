@@ -131,6 +131,7 @@ urlpatterns = [
     path('api/admin/', include('apps.commons.urls')),
     path('api/organizations/', include('apps.organizations.urls')),
     path('api/waitlist/', include('apps.waitlist.urls')),
+    path('api/advisory/', include('apps.advisory.urls')),
 ]
 
 from django.conf import settings

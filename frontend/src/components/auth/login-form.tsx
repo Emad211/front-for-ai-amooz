@@ -82,12 +82,23 @@ export function LoginForm({ onSwitchToJoin }: LoginFormProps) {
       const isSafePath = (path: string) =>
         path.startsWith('/') && !path.startsWith('//') && !path.includes('://');
 
+      // Every panel prefix is owned by exactly one role. A `?next` pointing into
+      // someone else's panel is dropped in favour of this role's own landing
+      // route — the target layout would bounce it anyway, but only after
+      // rendering the wrong panel for a frame.
+      const PANEL_PREFIXES: Record<string, string> = {
+        admin: '/admin',
+        manager: '/org',
+        teacher: '/teacher',
+        advisor: '/advisor',
+      };
+
       const isAllowedByRole = (path: string) => {
-        if (normalizedRole === 'admin') return path.startsWith('/admin');
-        if (normalizedRole === 'manager') return path.startsWith('/org');
-        if (normalizedRole === 'teacher') return path.startsWith('/teacher');
-        // student
-        return !path.startsWith('/teacher') && !path.startsWith('/admin') && !path.startsWith('/org');
+        const own = PANEL_PREFIXES[normalizedRole];
+        // A non-student role may only be sent into its own panel.
+        if (own) return path.startsWith(own);
+        // A student may go anywhere that is not somebody else's panel.
+        return !Object.values(PANEL_PREFIXES).some((p) => path.startsWith(p));
       };
 
       const safeNext =

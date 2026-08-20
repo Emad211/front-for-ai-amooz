@@ -99,8 +99,12 @@ function formatToman(amount: number | null | undefined): string {
 const ROLE_MAP: Record<string, string> = {
   admin: 'مدیر',
   ADMIN: 'مدیر',
+  manager: 'مدیر سازمان آموزشی',
+  MANAGER: 'مدیر سازمان آموزشی',
   teacher: 'معلم',
   TEACHER: 'معلم',
+  advisor: 'مشاور',
+  ADVISOR: 'مشاور',
   student: 'دانش‌آموز',
   STUDENT: 'دانش‌آموز',
 };

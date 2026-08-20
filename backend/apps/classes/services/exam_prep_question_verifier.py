@@ -217,6 +217,40 @@ def canonical_question_issues(question: dict[str, Any]) -> list[str]:
     return list(dict.fromkeys(issues))
 
 
+def rebuild_projection_question_issues(projection: Any) -> bool:
+    """Recompute every question's stored ``issues[]`` from its current content.
+
+    The teacher-edit write path stores edited questions verbatim, so a question
+    whose stem/options a teacher has just fixed keeps its stale repairable codes
+    (``missing_options`` / ``missing_question_text`` / ``missing_option_text`` …)
+    and never leaves the review lane, even though the recomputed session audit
+    has cleared it. Re-deriving each question's issues here — with the exact
+    ``canonical_question_issues`` rule the audit uses — keeps the per-question
+    badge consistent with the audit. Non-repairable advisory codes are preserved
+    by ``canonical_question_issues``. Mutates ``projection`` in place and returns
+    True if any question's issue list changed.
+    """
+
+    if not isinstance(projection, dict):
+        return False
+    exam = projection.get("exam_prep")
+    if not isinstance(exam, dict):
+        return False
+    questions = exam.get("questions")
+    if not isinstance(questions, list):
+        return False
+
+    changed = False
+    for question in questions:
+        if not isinstance(question, dict):
+            continue
+        derived = canonical_question_issues(question)
+        if derived != list(question.get("issues") or []):
+            question["issues"] = derived
+            changed = True
+    return changed
+
+
 def question_needs_targeted_repair(question: dict[str, Any]) -> bool:
     return bool(
         set(canonical_question_issues(question))

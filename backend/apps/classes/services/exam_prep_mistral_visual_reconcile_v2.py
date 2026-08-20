@@ -18,7 +18,7 @@ from dataclasses import replace
 import copy
 import math
 import re
-from typing import Any, Mapping, Sequence
+from typing import Any, Callable, Mapping, Sequence
 
 from PIL import Image
 
@@ -398,11 +398,21 @@ def reconcile_mistral_source_visuals(
     source_sha256: str,
     store: VisualAssetStore | None = None,
     config: VisualPipelineConfig | None = None,
+    storage_namespace: str = "",
+    should_cancel: Callable[[], bool] | None = None,
 ) -> tuple[PageAssemblyResult, dict[str, int], dict[str, Any]]:
     """Produce precise source visuals without defaulting work to teachers."""
 
     if not pdf_data or not pdf_data.lstrip().startswith(b"%PDF"):
         raise ValueError("visual reconciliation requires authoritative PDF bytes")
+
+    def cancel_if_requested() -> None:
+        if should_cancel is not None and should_cancel():
+            raise RuntimeError(
+                "Cancellation requested during Stage-3 visual reconciliation."
+            )
+
+    cancel_if_requested()
     selected = config or VisualPipelineConfig.from_env()
     selected_store = store or PrivateVisualAssetStore()
     working, local_count = _prepare_layout(
@@ -502,6 +512,7 @@ def reconcile_mistral_source_visuals(
     document = pdfium.PdfDocument(pdf_data)
     try:
         for page_number, plans in sorted(plans_by_page.items()):
+            cancel_if_requested()
             image = v._render_page(document, page_number, selected.crop_dpi)
             try:
                 counters: dict[tuple[int, str, str | None], int] = {}
@@ -531,6 +542,7 @@ def reconcile_mistral_source_visuals(
                             payload=payload,
                             source_sha256=source_sha256,
                             store=selected_store,
+                            storage_namespace=storage_namespace,
                         )
                     except Exception:
                         storage_failures += 1

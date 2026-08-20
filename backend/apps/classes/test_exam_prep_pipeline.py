@@ -473,10 +473,32 @@ class TestExamPrepSessionPublish:
         session.refresh_from_db()
         assert session.is_published is True
 
-    def test_cannot_publish_session_in_wrong_status(self, teacher_with_ready_session):
-        """Cannot publish if not EXAM_STRUCTURED."""
+    def test_teacher_can_publish_transcribed_session(self, teacher_with_ready_session):
+        """A degraded run that lands EXAM_TRANSCRIBED is still publishable.
+
+        Owner policy `همیشه مجاز`: a Mistral run whose Stage-5 was rate-limited
+        finalizes as EXAM_TRANSCRIBED (advisory issues only, no v2/v3 artifact),
+        and the teacher must still be able to publish it.
+        """
         user, session = teacher_with_ready_session
         session.status = ClassCreationSession.Status.EXAM_TRANSCRIBED
+        session.save()
+        token = str(RefreshToken.for_user(user).access_token)
+
+        client = APIClient()
+        client.credentials(HTTP_AUTHORIZATION=f'Bearer {token}')
+        res = client.post(f'/api/classes/exam-prep-sessions/{session.id}/publish/')
+
+        assert res.status_code == 200
+        assert res.data['is_published'] is True
+
+        session.refresh_from_db()
+        assert session.is_published is True
+
+    def test_cannot_publish_session_in_wrong_status(self, teacher_with_ready_session):
+        """Cannot publish a session in a non-reviewable status (e.g. failed)."""
+        user, session = teacher_with_ready_session
+        session.status = ClassCreationSession.Status.FAILED
         session.save()
 
         token = str(RefreshToken.for_user(user).access_token)
