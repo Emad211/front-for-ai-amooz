@@ -34,12 +34,16 @@ _UNSCOPED = {'Subject'}
 # scope.py is the door itself; admin and migrations are Django-owned surfaces that
 # must import models by definition; tests exist to poke at models directly.
 #
-# invites.py is the one added door, and it is added on purpose: it *writes*
-# tenancy rather than reading across it (it creates the engagement row and runs
-# the accept/reject state machine under ``select_for_update``), so there is no
-# queryset for scope.py to hand it. The list is pinned by a test below so that a
-# third door cannot appear without someone editing this comment.
-_EXEMPT_FILES = {'scope.py', 'admin.py', 'models.py', 'invites.py'}
+# The two write doors are added on purpose, and each *writes* tenancy rather than
+# reading across it, so there is no queryset for scope.py to hand it:
+#   • invites.py — creates the engagement row and runs the accept/reject state
+#     machine under ``select_for_update``.
+#   • student_subjects.py (S4) — the set-replace for a student's subject selection;
+#     it mutates ``StudentSubject`` (get_or_create + is_active toggle) after the
+#     view has already resolved ownership through scope.advisor_engagement.
+# The list is pinned by a test below so that a further door cannot appear without
+# someone editing this comment.
+_EXEMPT_FILES = {'scope.py', 'admin.py', 'models.py', 'invites.py', 'student_subjects.py'}
 
 
 def _package_of(path: Path) -> str:
@@ -186,7 +190,7 @@ def test_the_exempt_list_does_not_grow_by_accident():
     editing this assertion and the comment above ``_EXEMPT_FILES``, not just
     appending a filename and watching the suite stay green.
     """
-    assert _EXEMPT_FILES == {'scope.py', 'admin.py', 'models.py', 'invites.py'}
+    assert _EXEMPT_FILES == {'scope.py', 'admin.py', 'models.py', 'invites.py', 'student_subjects.py'}
 
 
 def test_views_do_not_import_engagement_directly():

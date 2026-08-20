@@ -24,6 +24,11 @@ export type AdvisorySubject = {
   organizationName: string | null;
   isGlobal: boolean;
   isActive: boolean;
+  /** Grade tag, `'10'|'11'|'12'` — or `null` for an "all levels" subject. It is
+   * a *filter* only: an untagged subject is always shown, and the picker never
+   * hides a subject a student's grade does not match. */
+  grade: string | null;
+  gradeLabel: string | null;
 };
 
 /** `freelance` = the advisor invited this student directly; `org` = the student
@@ -89,6 +94,33 @@ export type StudentEngagement = {
 export type StudentEngagementResponse = {
   active: StudentEngagement | null;
   invites: StudentInvite[];
+};
+
+/** `GET /advisory/students/<engagementId>/subjects/` — what the picker opens with.
+ * `studentGrade` only *pre-fills* the grade filter; it gates nothing. */
+export type EngagementSubjectsResponse = {
+  studentGrade: string | null;
+  studentGradeLabel: string | null;
+  selectedSubjectIds: number[];
+};
+
+/** One selected subject, as it appears on both the advisor `PUT` response and the
+ * student's mirror. A catalog fact only — never the engagement it hangs off. */
+export type StudentSubjectRow = {
+  subjectId: number;
+  name: string;
+  grade: string | null;
+  gradeLabel: string | null;
+  isGlobal: boolean;
+};
+
+/** `GET /advisory/me/subjects/` — the student's view of what their advisor picked.
+ * `active` is false (and `subjects` empty) for every student without an advisor,
+ * which is the vast majority; the card renders nothing in that case. */
+export type MySubjectsResponse = {
+  active: boolean;
+  advisorName?: string;
+  subjects: StudentSubjectRow[];
 };
 
 function getAccessToken(): string {
@@ -239,5 +271,45 @@ export const AdvisoryService = {
       `/advisory/me/invites/${inviteId}/reject/`,
       { method: 'POST' },
     );
+  },
+
+  /**
+   * Read one student's current subject selection to seed the picker. `engagementId`
+   * is the ENGAGEMENT id (`AdvisorStudent.id`), never a user id. `404` for an
+   * engagement that is missing or belongs to another advisor — the caller shows a
+   * "not found", never a "forbidden", so the existence of the pairing never leaks.
+   */
+  getEngagementSubjects: async (
+    engagementId: number,
+  ): Promise<EngagementSubjectsResponse> => {
+    return requestJson<EngagementSubjectsResponse>(
+      `/advisory/students/${engagementId}/subjects/`,
+    );
+  },
+
+  /**
+   * Replace a student's subject set wholesale (not append): whatever is omitted is
+   * deactivated server-side, an empty array clears the selection. Returns the new
+   * active set. `409` if the engagement is not ACTIVE, `400` for a subject the
+   * advisor may not assign — both surface their Persian `detail` via `requestJson`.
+   */
+  setEngagementSubjects: async (
+    engagementId: number,
+    subjectIds: number[],
+  ): Promise<StudentSubjectRow[]> => {
+    return requestJson<StudentSubjectRow[]>(
+      `/advisory/students/${engagementId}/subjects/`,
+      { method: 'PUT', body: JSON.stringify({ subjectIds }) },
+    );
+  },
+
+  /**
+   * The student-side mirror: "what did my advisor pick for me?" Quiet like
+   * `getMyEngagement` — a student with no active advisor gets
+   * `{ active: false, subjects: [] }`, never an error, so the card can render
+   * nothing without special-casing a failure.
+   */
+  getMySubjects: async (): Promise<MySubjectsResponse> => {
+    return requestJson<MySubjectsResponse>('/advisory/me/subjects/');
   },
 };

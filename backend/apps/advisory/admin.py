@@ -14,13 +14,13 @@ who never agreed to be watched.
 
 from django.contrib import admin
 
-from .models import AdvisoryEngagement, Subject
+from .models import AdvisoryEngagement, StudentSubject, Subject
 
 
 @admin.register(Subject)
 class SubjectAdmin(admin.ModelAdmin):
-    list_display = ('name', 'scope_label', 'is_active', 'created_at')
-    list_filter = ('is_active', 'organization')
+    list_display = ('name', 'grade', 'scope_label', 'is_active', 'created_at')
+    list_filter = ('is_active', 'grade', 'organization')
     search_fields = ('name', 'normalized_name')
     raw_id_fields = ('organization', 'created_by')
     readonly_fields = ('normalized_name', 'created_at', 'updated_at')
@@ -50,3 +50,23 @@ class AdvisoryEngagementAdmin(admin.ModelAdmin):
 
     def has_add_permission(self, request) -> bool:
         return False
+
+
+@admin.register(StudentSubject)
+class StudentSubjectAdmin(admin.ModelAdmin):
+    """Read-mostly inspection surface for a student's subject selection.
+
+    The write path is the advisor's picker, not this page — but a support operator
+    debugging "my advisor's subjects vanished" needs to see the *deactivated* rows
+    the set-replace leaves behind, which the API deliberately hides. ``is_active`` is
+    editable here on purpose so an operator can hand-reactivate one; ``engagement`` and
+    ``subject`` are ``raw_id_fields`` because both catalogs are far too large for a
+    dropdown.
+    """
+
+    list_display = ('subject', 'engagement', 'is_active', 'created_at', 'updated_at')
+    list_filter = ('is_active',)
+    search_fields = ('subject__name', 'engagement__student__username')
+    raw_id_fields = ('engagement', 'subject')
+    readonly_fields = ('created_at', 'updated_at')
+    list_select_related = ('subject', 'engagement', 'engagement__student')

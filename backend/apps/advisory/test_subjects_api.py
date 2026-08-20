@@ -98,9 +98,13 @@ def test_serialized_fields_are_camel_case_and_hide_the_internal_key():
     item = response.data[0]
     assert set(item) == {
         'id', 'name', 'organizationId', 'organizationName', 'isGlobal', 'isActive',
+        'grade', 'gradeLabel',
     }
     assert item['isGlobal'] is True
     assert item['organizationId'] is None
+    # An untagged subject reads as "all levels" on both the raw code and the label.
+    assert item['grade'] is None
+    assert item['gradeLabel'] is None
 
 
 def test_globals_are_listed_before_org_private_subjects():

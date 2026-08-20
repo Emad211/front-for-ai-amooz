@@ -18,7 +18,7 @@ from django.utils import timezone
 
 from apps.organizations.models import Organization, OrganizationMembership
 
-from ..models import AdvisoryEngagement
+from ..models import AdvisoryEngagement, StudentSubject, Subject
 
 
 def advisor_organization_ids(user) -> list[int]:
@@ -90,6 +90,22 @@ def visible_engagements(advisor) -> QuerySet[AdvisoryEngagement]:
     )
 
 
+def advisor_engagement(advisor, pk) -> AdvisoryEngagement | None:
+    """Resolve one engagement by id **from the advisor's visible set**, or ``None``.
+
+    This is the per-id sibling of ``visible_engagements``: a view hands it a URL
+    ``pk`` and gets back either the row the advisor owns or ``None`` — never a row
+    belonging to someone else. The view turns ``None`` into a **404, not a 403**
+    (the S1–S3 convention): a 403 would confirm the engagement exists and leak that
+    some advisor works with that student. Because the lookup rides on
+    ``visible_engagements``, a foreign row and a nonexistent id are indistinguishable
+    here, which is exactly what upholds that.
+    """
+    if not _is_advisor(advisor):
+        return None
+    return visible_engagements(advisor).filter(pk=pk).first()
+
+
 def advisor_students(advisor) -> QuerySet[AdvisoryEngagement]:
     """The advisor's roster — ``ACTIVE`` engagements only, student prefetched."""
     return (
@@ -153,5 +169,41 @@ def student_claimable_invites(student) -> QuerySet[AdvisoryEngagement]:
         )
         .select_related('advisor')
         .order_by('-invited_at')
+    )
+
+
+# ── S4: per-student subject selection ────────────────────────────────────────
+
+def student_subjects(engagement) -> QuerySet[StudentSubject]:
+    """The **active** subject rows selected for one engagement, subject prefetched.
+
+    Read side of the S4 write door. Takes a resolved engagement (the caller has
+    already proven ownership via ``advisor_engagement`` or
+    ``student_active_engagement``), so it does no scoping of its own — it only
+    hides the deactivated history rows the set-replace leaves behind.
+    """
+    return (
+        StudentSubject.objects.filter(engagement=engagement, is_active=True)
+        .select_related('subject', 'subject__organization')
+        .order_by('subject__name')
+    )
+
+
+def assignable_subjects(advisor) -> QuerySet[Subject]:
+    """The subjects this advisor is allowed to select for a student.
+
+    The single source of truth for "what may this advisor assign", used both to
+    build the picker and to validate a write (``services/student_subjects``). It is
+    the same set ``SubjectListView`` shows: active, and either global
+    (``organization IS NULL``) or private to an organization the advisor currently
+    belongs to. Re-evaluated live through ``advisor_organization_ids`` for the same
+    C1 reason ``visible_engagements`` is — a removed advisor loses org subjects at
+    once. A non-advisor gets ``.none()``, never an exception.
+    """
+    if not _is_advisor(advisor):
+        return Subject.objects.none()
+    org_ids = advisor_organization_ids(advisor)
+    return Subject.objects.filter(is_active=True).filter(
+        Q(organization__isnull=True) | Q(organization_id__in=org_ids),
     )
 

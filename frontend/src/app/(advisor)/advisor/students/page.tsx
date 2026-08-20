@@ -24,6 +24,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
+import { SubjectPickerDialog } from '@/components/advisory/subject-picker-dialog';
 
 /**
  * Advisor → دانش‌آموزان من (roster + outbox + invite-by-phone).
@@ -228,6 +229,10 @@ export default function AdvisorStudentsPage() {
                             از {formatPersianDate(s.startedOn)}
                           </span>
                         )}
+                        <SubjectPickerDialog
+                          engagementId={s.id}
+                          studentName={s.studentName}
+                        />
                       </div>
                     </CardContent>
                   </Card>

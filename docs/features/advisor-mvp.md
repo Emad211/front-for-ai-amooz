@@ -15,7 +15,7 @@
 | حالت کار | هم فریلنسر هم سازمانی، با **داشبورد سوییچ‌شو** (مکانیزم موجود `WorkspaceSwitcher`). |
 | جذب دانش‌آموز (فریلنسر) | مشاور با **شماره تلفن** دانش‌آموزِ *موجود* دعوت می‌فرستد. **هرگز کاربر نمی‌سازد.** |
 | جذب دانش‌آموز (سازمانی) | سازمان یک `StudyGroup` را **گروهی** به مشاور می‌سپارد. |
-| دامنه تحصیلی | **تمام سطوح**. هیچ‌جا «کنکور» یا پایه‌ی سخت‌کدشده نداریم. |
+| دامنه تحصیلی | **تمام سطوح**. هیچ‌جا «کنکور» یا پایه‌ی سخت‌کدشده نداریم. (گام ۴ یک **برچسبِ پایه‌ی اختیاری** روی `Subject` افزود، صرفاً برای فیلترِ راحتیِ انتخابگر؛ درسِ بی‌برچسب = همه‌ی سطوح و همیشه نمایش داده می‌شود، پس این قفل نمی‌شکند — §۱۱.) |
 | مدل زمانی | **هفته‌ای، تکرارشونده، لنگرزده به شنبه**. ماه = تجمیع هفته‌ها روی خواندن. |
 | آزمون بیرونی / OCR | **خارج از MVP**. (فاز بعد، روی زیرساخت exam-prep موجود.) |
 | LLM | **صفر تماس LLM در MVP.** تسک Celery فقط دو مورد: ارسال پیامک دعوت (صف `default`، گام ۳ — دلیل امنیتی: §۱۰.۲) و مصالحه‌گر شبانه‌ی گام ۹. |
@@ -32,10 +32,11 @@
 ## ۲. مدل داده (۷ جدول — کل MVP)
 
 ```
-Subject                                     ← لند شد در گام ۲ · انحراف‌ها: §۹.۲
+Subject                                     ← لند شد در گام ۲ · grade در گام ۴ · انحراف‌ها: §۹.۲ · §۱۱
   name(fa) · normalized_name(مشتق از name، editable=False، db_index) · is_active
+  grade(CharField(2)، '10'|'11'|'12'، null، db_index — برچسبِ فیلتر، نه هویت؛ NULL=همه‌ی سطوح)
   organization FK(null=global) · created_at · updated_at · created_by FK SET_NULL
-  UniqueConstraint(normalized_name, organization)
+  UniqueConstraint(normalized_name, organization)          ← grade عمداً در کلید یکتایی نیست
   UniqueConstraint(normalized_name) WHERE organization IS NULL   ← لازم است: PG هر NULL را متمایز می‌بیند
 
 AdvisoryEngagement                          ← حاملِ tenancy · لند شد در گام ۳ · انحراف‌ها: §۱۰.۲
@@ -52,9 +53,9 @@ AdvisoryEngagement                          ← حاملِ tenancy · لند ش�
   UniqueConstraint(advisor,student)  WHERE status='PENDING'   ← ضد‌اسپم دعوت
   Index(advisor,status) · Index(student,status) · Index(status,invite_expires_at)
 
-StudentSubject
-  engagement FK CASCADE · subject FK PROTECT · is_active
-  UniqueConstraint(engagement, subject)
+StudentSubject                              ← لند شد در گام ۴ · §۱۱
+  engagement FK CASCADE · subject FK PROTECT · is_active(set-replace با toggle، نه حذف ردیف)
+  UniqueConstraint(engagement, subject) · Index(engagement, is_active)
 
 WeeklyPlan
   engagement FK CASCADE · week_start(date, شنبه) · status DRAFT|PUBLISHED · note · created_by FK User SET_NULL
@@ -384,5 +385,57 @@ check + ۲ unique جزئی + ۳ ایندکس، همه با پیام فارسی)�
   با هر سه مسیر به‌صورت استاتیک: `/advisor 4.42 kB` · `/advisor/students 8.31 kB`
   · `/advisor/subjects 7.35 kB`.
 - `npm run lint` → همچنان **گیت نیست** (§۹.۲ ردیف ۱۰).
+
+---
+
+## ۱۱. ثبت اجرا — گام ۴ (انتخابِ درسِ دانش‌آموز · `StudentSubject`)
+
+وضعیت: **کامل، تست‌شده، آماده‌ی دیپلوی.** صفر تماس LLM، صفر Celery — CRUDِ خالص.
+
+چک زنده (§۵ سطر ۴): مشاور در `/advisor/students` روی «انتخاب درس‌ها»ی یک دانش‌آموزِ
+ACTIVE می‌زند، ۳ درس را تیک می‌زند و «ذخیره» → همان دانش‌آموز در خانه‌ی داشبورد،
+کارتِ «درس‌های مطالعاتی شما» را با همان ۳ درس می‌بیند. **برگشت:** ردیف‌های
+`StudentSubject` را از جنگو ادمین غیرفعال/حذف کن؛ بی‌خطر است (فقط `WeeklyPlanItem`/
+`DailyLogItem`ِ گام‌های بعد با PROTECT به آن اشاره می‌کنند و هنوز وجود ندارند).
+
+### ۱۱.۱ آنچه لند شد
+
+**بک‌اند** — `models.py` (`Subject.grade`ِ نال‌پذیر + `SUBJECT_GRADE_CHOICES`ِ محلی +
+مدلِ `StudentSubject`)، `migrations/0003_subject_grade_studentsubject.py` (افزودنیِ
+بی‌داون‌تایم: ستونِ نال‌پذیر بی‌بک‌فیل + ۱ جدول)، بسط `services/scope.py`
+(`advisor_engagement` / `student_subjects` / `assignable_subjects`)، **درِ نوشتنِ نو**
+`services/student_subjects.py` (`set_engagement_subjects` در ترنزاکشن + استثنای
+`SubjectNotAssignable`)، `serializers.py` (`SubjectSerializer` + `grade`/`gradeLabel`،
+`StudentSubjectSerializer`، `EngagementSubjectsWriteSerializer`)، `views.py`
+(`AdvisorEngagementSubjectsView` GET/PUT + `StudentSubjectsView` GET — نازک، بدون
+import مدلِ حاملِ tenancy)، `urls.py` (`advisory_student_subjects` + `advisory_my_subjects`)،
+`admin.py` (ثبتِ `StudentSubject` + `grade` روی `SubjectAdmin` — جای تگ‌زدنِ اونر).
+
+**فرانت** — بسط `services/advisory-service.ts` (`grade`/`gradeLabel` روی
+`AdvisorySubject` + سه تایپ + `getEngagementSubjects`/`setEngagementSubjects`/
+`getMySubjects`)، `components/advisory/subject-picker-dialog.tsx` (دیالوگِ انتخابگر:
+جستجوی فارسی + چیپ‌های پایه + لیستِ چک‌باکس در `ScrollArea` + شمارنده‌ی زنده +
+ذخیره‌ی set-replace)، `app/(dashboard)/home/my-subjects-card.tsx` (کارتِ آینه‌ایِ
+دانش‌آموز، **«ساکت»** مثل بنر دعوت — تا داده نیامده هیچ‌چیز رندر نمی‌کند)، نصبِ
+انتخابگر روی هر ردیفِ روسترِ ACTIVE و کارت زیر `<StatsGrid>` در خانه.
+
+### ۱۱.۲ تصمیم‌ها، انحراف‌ها و ریسک‌های دانسته در گام ۴
+
+| # | موضوع | تصمیم نهایی |
+|---|---|---|
+| ۱ | **انحراف از §۱: برچسبِ پایه روی `Subject` (تاییدِ صریحِ اونر).** | §۱ «تمام سطوح، بدون پایه‌ی سخت‌کدشده» را قفل کرده بود. اونر پذیرفت که کاتالوگ **تخت** بماند ولی یک **برچسبِ پایه‌ی اختیاری** بگیرد تا انتخابگر یک **فیلترِ راحتی** داشته باشد. قفل نمی‌شکند: درسِ **بی‌برچسب = همه‌ی سطوح** و همیشه نمایش داده می‌شود؛ هیچ «کنکور» یا پایه‌ای سخت‌کد نشده؛ فیلتر صرفاً پیدا‌کردن را آسان می‌کند و چیزی را حذف نمی‌کند. |
+| ۲ | **`grade` برچسبِ فیلتر است، نه هویت.** | `grade` عمداً به کلیدهای یکتاییِ `Subject` **افزوده نشد** (هم‌نامیِ ظاهری بین پایه‌ها با نام‌های متمایز حل می‌شود: حسابان ≠ هندسه)؛ `clean()`/`normalized_name` دست‌نخورده (پایه در نرمال‌سازیِ نام نقشی ندارد). ادعای مجاز‌بودنِ درس هم **سمت‌سرور** در `scope.assignable_subjects` تصمیم گرفته می‌شود، نه با این برچسب. |
+| ۳ | **درِ نوشتنِ نو + رشدِ آگاهانه‌ی لیستِ معاف.** | `StudentSubject` حاملِ tenancy است؛ طبق قفلِ `test_import_boundaries.py`، ویو/سریالایزر حق import آن را ندارند، پس همه‌ی نوشتن از `services/student_subjects.py` می‌گذرد (خواهرِ `invites.py`). این فایل به `_EXEMPT_FILES` افزوده شد و اَشِرشنِ پین‌شده‌ی «لیستِ معاف تصادفی رشد نکند» + توضیحش به‌روز شد. `StudentSubject` **به `_UNSCOPED` افزوده نشد** — تنها `Subject` بی‌اسکوپ می‌ماند. |
+| ۴ | **set-replace با toggleِ `is_active`، نه حذفِ ردیف.** | افزودنِ دوباره‌ی درسی که قبلاً برداشته شده، `is_active` را دوباره True می‌کند به‌جای ساختِ ردیفِ نو. تاریخچه حفظ می‌شود و با فلسفه‌ی خودِ `Subject` («هرگز حذف نکن، غیرفعال کن» — که docstringش از قبل به این PROTECT اشاره داشت) هم‌خط است. |
+| ۵ | **فیلترِ نرمِ چندگزینه‌ای (واقعیتِ کنکور).** | چیپ‌های پایه، پایه‌ی خودِ دانش‌آموز را پیش‌انتخاب می‌کنند ولی **چند پایه با هم** قابل انتخاب‌اند (دانش‌آموزِ دوازدهم پایه‌های ۱۰–۱۲ را می‌خواند) و «همه» فیلتر را پاک می‌کند. درسِ بی‌برچسب هرگز پنهان نمی‌شود. برچسبِ پایه از پروفایلِ دانش‌آموز صرفاً برای پیش‌پُرکردنِ چیپ خوانده می‌شود (با گاردِ امن؛ نبودِ پروفایل = بدونِ پیش‌انتخاب). |
+| ۶ | **قراردادهای وضعیت حفظ شد.** | engagementِ غریبه/ناموجود → **۴۰۴** (نه ۴۰۳، تا وجودش فاش نشود)؛ PUT روی engagementِ غیرِ ACTIVE → **۴۰۹**؛ id درسِ خارج از `assignable_subjects` → **۴۰۰**؛ نقشِ اشتباه (ادمین هم) → ۴۰۳؛ ناشناس → ۴۰۱؛ دانش‌آموزِ بی‌همکاریِ فعال → **۲۰۰ ساکت** `{active:false, subjects:[]}`. آدرس‌دهی همچنان با **id engagement**، بدون `studentId` روی سیم. |
+
+### ۱۱.۳ وریفای انجام‌شده
+
+- سوئیت اپ `advisory` آفلاین (Postgres/Redis پایین، رسپیِ SQLite+LocMem از memory
+  `offline-pytest-without-postgres-redis`) → **۱۹۴ passed** — شاملِ تست‌های نوِ گام ۴
+  و تست‌های به‌روزشده‌ی مرزِ import و آلوستِ کاتالوگ.
+- `npx tsc --noEmit` → پاک.
+- چکِ زنده: به عهده‌ی اونر در دیپلوی (§۵ سطر ۴ / بالای همین بخش).
 
 

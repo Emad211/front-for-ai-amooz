@@ -24,6 +24,7 @@ from rest_framework import serializers
 from apps.commons.phone_utils import is_valid_iran_mobile, normalize_phone
 
 from .models import Subject
+from .services.student_subjects import MAX_SUBJECTS_PER_STUDENT
 from .services.text import mask_phone
 
 
@@ -57,6 +58,11 @@ class SubjectSerializer(serializers.ModelSerializer):
     )
     isGlobal = serializers.BooleanField(source='is_global', read_only=True)
     isActive = serializers.BooleanField(source='is_active', read_only=True)
+    # The raw code ('10'/'11'/'12') for the client's filter logic, plus a ready
+    # Persian label so no client re-implements the choice map. ``null`` on both
+    # means "all levels" — see Subject.grade.
+    grade = serializers.CharField(read_only=True, allow_null=True)
+    gradeLabel = serializers.SerializerMethodField()
 
     class Meta:
         model = Subject
@@ -67,8 +73,13 @@ class SubjectSerializer(serializers.ModelSerializer):
             'organizationName',
             'isGlobal',
             'isActive',
+            'grade',
+            'gradeLabel',
         ]
         read_only_fields = fields
+
+    def get_gradeLabel(self, obj) -> str | None:  # noqa: N802 — camelCase wire key
+        return obj.get_grade_display() if obj.grade else None
 
 
 class AdvisoryInviteCreateSerializer(serializers.Serializer):
@@ -187,3 +198,49 @@ class StudentEngagementSerializer(serializers.Serializer):
 
     def get_advisorName(self, obj) -> str:  # noqa: N802 — camelCase wire key
         return _display_name(obj.advisor)
+
+
+class StudentSubjectSerializer(serializers.Serializer):
+    """One selected subject, read off a ``StudentSubject`` row.
+
+    A plain ``Serializer`` that reads attributes through the row's ``subject``
+    relation, so this file never imports the tenancy-bearing ``StudentSubject``
+    model (``test_import_boundaries``). It projects only the catalog facts a client
+    renders — id, name, grade tag, global/private — never the engagement it hangs
+    off or the ``is_active`` bookkeeping, both of which are internal.
+    """
+
+    subjectId = serializers.IntegerField(source='subject_id', read_only=True)
+    name = serializers.CharField(source='subject.name', read_only=True)
+    grade = serializers.CharField(source='subject.grade', read_only=True, allow_null=True)
+    gradeLabel = serializers.SerializerMethodField()
+    isGlobal = serializers.BooleanField(source='subject.is_global', read_only=True)
+
+    def get_gradeLabel(self, obj) -> str | None:  # noqa: N802 — camelCase wire key
+        subject = obj.subject
+        return subject.get_grade_display() if subject.grade else None
+
+
+class EngagementSubjectsWriteSerializer(serializers.Serializer):
+    """The advisor's PUT body: the complete set of subject ids for a student.
+
+    Shape only — assignability (does this advisor own this subject?) is the
+    service's job, because that answer needs the advisor's org scope, which a
+    serializer does not have. Here we only guarantee a clean list of positive ints:
+    duplicates collapsed (ticking a box twice is not an error) and a ceiling that
+    turns a scripted 10⁴-id payload into a 400 instead of ten thousand rows.
+    ``allow_empty`` is intentional — an empty list is the "clear my selection" move.
+    """
+
+    subjectIds = serializers.ListField(
+        child=serializers.IntegerField(min_value=1),
+        allow_empty=True,
+    )
+
+    def validate_subjectIds(self, value):  # noqa: N802 — camelCase wire key
+        deduped = list(dict.fromkeys(value))
+        if len(deduped) > MAX_SUBJECTS_PER_STUDENT:
+            raise serializers.ValidationError(
+                f'حداکثر {MAX_SUBJECTS_PER_STUDENT} درس می‌توانید انتخاب کنید.'
+            )
+        return deduped

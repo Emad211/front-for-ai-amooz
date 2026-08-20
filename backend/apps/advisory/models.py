@@ -28,6 +28,20 @@ INVITE_TTL_DAYS = 14
 # minute, which is what turns "no" into a real answer instead of a rate limit.
 REJECT_BLOCK_DAYS = 30
 
+# An OPTIONAL grade tag on a subject (S4), used purely as a convenience filter in
+# the picker. It is deliberately **not** part of a subject's identity: it appears
+# in none of the unique constraints, so «حسابان دوازدهم» and «هندسه یازدهم» are
+# told apart by their names, never by this tag. ``NULL`` means "all levels" — such
+# a subject is always shown, whatever grade the filter is set to. The values mirror
+# ``accounts.StudentProfile.GRADE_CHOICES`` **by value** so the picker can pre-select
+# the student's own grade; they are duplicated here rather than imported, to keep
+# advisory free of a cross-app dependency on accounts.
+SUBJECT_GRADE_CHOICES = [
+    ('10', _('دهم')),
+    ('11', _('یازدهم')),
+    ('12', _('دوازدهم')),
+]
+
 
 class Subject(models.Model):
     """A study subject an advisor can plan and a student can log time against.
@@ -68,6 +82,19 @@ class Subject(models.Model):
         related_name='advisory_subjects',
         verbose_name=_('سازمان'),
         help_text=_('خالی بگذارید تا این درس برای همه‌ی مشاوران سراسری باشد.'),
+    )
+    # OPTIONAL. A convenience filter tag only — NOT part of identity, so it is
+    # absent from both unique constraints below and left out of clean()/save()
+    # (it does not touch ``normalized_name``). NULL = "all levels": such a subject
+    # is shown whatever grade the picker filter is set to. See SUBJECT_GRADE_CHOICES.
+    grade = models.CharField(
+        max_length=2,
+        choices=SUBJECT_GRADE_CHOICES,
+        blank=True,
+        null=True,
+        db_index=True,
+        verbose_name=_('پایه‌ی تحصیلی'),
+        help_text=_('اختیاری؛ خالی یعنی «همه‌ی پایه‌ها». فقط یک فیلترِ راحتی است، نه بخشی از هویتِ درس.'),
     )
     is_active = models.BooleanField(
         default=True,
@@ -317,3 +344,69 @@ class AdvisoryEngagement(models.Model):
             raise ValidationError({
                 'organization': _('همکاری فریلنسری نمی‌تواند سازمان داشته باشد.'),
             })
+
+
+class StudentSubject(models.Model):
+    """A subject an advisor has selected **for one specific student** (S4).
+
+    This is the first table that hangs off an ``AdvisoryEngagement`` rather than a
+    ``User`` — the tenancy-carrier pattern the whole feature is built on. "May this
+    advisor edit this selection?" is answered by the engagement's owner, through
+    ``services/scope.py`` (read) and ``services/student_subjects.py`` (write);
+    nothing here invents its own ownership rule. It is therefore **tenancy-bearing**
+    and must not be imported outside those doors (``test_import_boundaries``).
+
+    A selection is never row-deleted. Removing a subject flips ``is_active`` to
+    ``False`` and re-adding it flips it back — the same "deactivate, keep history"
+    philosophy ``Subject`` itself follows, and what lets a later plan (step 8) point
+    at a stable set of ids without the row underneath it ever vanishing.
+    """
+
+    engagement = models.ForeignKey(
+        AdvisoryEngagement,
+        on_delete=models.CASCADE,
+        related_name='subject_selections',
+        verbose_name=_('همکاری'),
+    )
+    # PROTECT, honouring the promise in Subject's own docstring: a subject a student
+    # has ever studied must not be deletable out from under a selection or a plan.
+    subject = models.ForeignKey(
+        Subject,
+        on_delete=models.PROTECT,
+        related_name='+',
+        verbose_name=_('درس'),
+    )
+    is_active = models.BooleanField(
+        default=True,
+        db_index=True,
+        verbose_name=_('فعال'),
+        help_text=_('غیرفعال یعنی از انتخاب فعلی حذف شده؛ تاریخ نگه داشته می‌شود.'),
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['subject__name']
+        constraints = [
+            # One row per (engagement, subject): re-adding a removed subject
+            # reactivates the existing row instead of inserting a duplicate. This
+            # is what makes the set-replace in student_subjects.set_engagement_subjects
+            # a get_or_create + toggle rather than a delete + re-insert.
+            models.UniqueConstraint(
+                fields=['engagement', 'subject'],
+                name='uniq_advisory_student_subject',
+                violation_error_message=_('این درس برای این دانش‌آموز از قبل ثبت شده است.'),
+            ),
+        ]
+        indexes = [
+            models.Index(
+                fields=['engagement', 'is_active'],
+                name='idx_adv_studsub_eng_active',
+            ),
+        ]
+        verbose_name = _('درسِ دانش‌آموز')
+        verbose_name_plural = _('درس‌های دانش‌آموز')
+
+    def __str__(self) -> str:
+        state = '' if self.is_active else ' (غیرفعال)'
+        return f'{self.subject} ← #{self.engagement_id}{state}'

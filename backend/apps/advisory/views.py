@@ -30,17 +30,24 @@ from .serializers import (
     AdvisorPendingInviteSerializer,
     AdvisorStudentSerializer,
     AdvisoryInviteCreateSerializer,
+    EngagementSubjectsWriteSerializer,
     StudentEngagementSerializer,
     StudentInviteSerializer,
+    StudentSubjectSerializer,
     SubjectSerializer,
 )
 from .services import invites as invite_service
+from .services import student_subjects as subject_service
 from .services.scope import (
+    advisor_engagement,
     advisor_organization_ids,
     advisor_pending_invites,
     advisor_students,
     student_active_engagement,
     student_claimable_invites,
+    # The scope *read* aliased away from the service module of the same name
+    # imported just above; both are needed here and only one can keep the bare name.
+    student_subjects as engagement_subjects,
 )
 
 
@@ -175,6 +182,114 @@ class AdvisoryInviteCreateView(APIView):
         return Response({'status': 'sent'}, status=status.HTTP_202_ACCEPTED)
 
 
+class AdvisorEngagementSubjectsView(APIView):
+    """``GET``/``PUT`` ``/api/advisory/students/<pk>/subjects/`` — the per-student picker.
+
+    ``<pk>`` is the **engagement** id (``AdvisorStudent.id``), the same tenancy-keyed
+    address every advisor route uses from step 5 on — never a user id.
+    ``scope.advisor_engagement`` resolves it out of the advisor's visible set, so a
+    foreign or unknown id is a **404, not a 403**: a 403 would confirm the engagement
+    exists and leak that some advisor works with that student.
+
+    The subject set is sent whole on ``PUT`` (a set-replace, not an append), and the
+    service — which alone holds the advisor's org scope — decides assignability. This
+    view enforces only the two things it can see without a query: that the engagement
+    is the advisor's, and that it is still ``ACTIVE`` (a picker for an ended engagement
+    would write rows nobody can ever read).
+    """
+
+    permission_classes = [IsAuthenticated, IsAdvisorUser]
+    pagination_class = None
+
+    def _student_grade(self, engagement) -> tuple[str | None, str | None]:
+        """``(code, label)`` for the student's own grade, or ``(None, None)``.
+
+        Read defensively and exactly as ``accounts`` reads the same field: a student
+        may have no ``StudentProfile`` row yet, and the grade on it may be blank. This
+        value only *pre-fills* the picker's grade filter — it gates nothing — so an
+        absent profile is a quiet ``(None, None)``. The ``hasattr`` guard is safe
+        because Django makes a reverse-one-to-one miss raise ``AttributeError``.
+        """
+        student = engagement.student
+        if not hasattr(student, 'studentprofile'):
+            return None, None
+        profile = student.studentprofile
+        grade = getattr(profile, 'grade', None)
+        if not grade:
+            return None, None
+        return grade, profile.get_grade_display()
+
+    @extend_schema(
+        tags=['advisory'],
+        summary='درس‌های انتخاب‌شده‌ی یک دانش‌آموز (خواندن)',
+        description=(
+            '`pk` شناسه‌ی همکاری است، نه شناسه‌ی کاربر؛ برای همکاریِ ناموجود یا '
+            'متعلق به مشاورِ دیگر ۴۰۴. `studentGrade` فقط برای پیش‌پُر کردنِ '
+            'فیلترِ پایه در پیکر است و چیزی را محدود نمی‌کند.'
+        ),
+        responses={
+            200: OpenApiResponse(
+                description='{studentGrade, studentGradeLabel, selectedSubjectIds[]}',
+            ),
+            404: OpenApiResponse(description='همکاری پیدا نشد'),
+        },
+    )
+    def get(self, request, pk: int):
+        engagement = advisor_engagement(request.user, pk)
+        if engagement is None:
+            return Response({'detail': 'همکاری پیدا نشد.'}, status=status.HTTP_404_NOT_FOUND)
+        grade, grade_label = self._student_grade(engagement)
+        selected = list(
+            engagement_subjects(engagement).values_list('subject_id', flat=True)
+        )
+        return Response({
+            'studentGrade': grade,
+            'studentGradeLabel': grade_label,
+            'selectedSubjectIds': selected,
+        })
+
+    @extend_schema(
+        tags=['advisory'],
+        summary='ثبت درس‌های یک دانش‌آموز (جایگزینیِ کامل)',
+        description=(
+            '`subjectIds` مجموعه‌ی کاملِ درس‌هاست؛ هرچه نیاید غیرفعال می‌شود '
+            '(حذف نمی‌شود). فقط برای همکاریِ فعال؛ روی همکاریِ در انتظار یا '
+            'پایان‌یافته ۴۰۹. درسِ خارج از فهرستِ مجازِ مشاور ۴۰۰. لیستِ خالی '
+            'یعنی «انتخاب را پاک کن».'
+        ),
+        request=EngagementSubjectsWriteSerializer,
+        responses={
+            200: StudentSubjectSerializer(many=True),
+            400: OpenApiResponse(description='درسِ خارج از فهرستِ مجاز'),
+            404: OpenApiResponse(description='همکاری پیدا نشد'),
+            409: OpenApiResponse(description='همکاری فعال نیست'),
+        },
+    )
+    def put(self, request, pk: int):
+        engagement = advisor_engagement(request.user, pk)
+        if engagement is None:
+            return Response({'detail': 'همکاری پیدا نشد.'}, status=status.HTTP_404_NOT_FOUND)
+        # Not the model's ``Status.ACTIVE`` by name — this view is forbidden from
+        # naming the engagement model (import-boundary guard); the nested enum reached
+        # through the instance is the same value without the import.
+        if engagement.status != engagement.Status.ACTIVE:
+            return Response(
+                {'detail': 'انتخاب درس فقط برای همکاریِ فعال ممکن است.'},
+                status=status.HTTP_409_CONFLICT,
+            )
+        serializer = EngagementSubjectsWriteSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            rows = subject_service.set_engagement_subjects(
+                engagement,
+                serializer.validated_data['subjectIds'],
+                advisor=request.user,
+            )
+        except subject_service.SubjectNotAssignable as exc:
+            return Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(StudentSubjectSerializer(rows, many=True).data)
+
+
 # ── student side ──────────────────────────────────────────────────────────────
 
 class StudentEngagementView(APIView):
@@ -277,3 +392,42 @@ class StudentInviteRejectView(APIView):
         except invite_service.InviteConflict as exc:
             return Response({'detail': str(exc)}, status=status.HTTP_409_CONFLICT)
         return Response({'status': 'rejected'})
+
+
+class StudentSubjectsView(APIView):
+    """``GET /api/advisory/me/subjects/`` — "what did my advisor pick for me?"
+
+    Quiet like ``StudentEngagementView``: a student with no active engagement gets
+    ``200 {"active": false, "subjects": []}``, never a 404. The advisory UI is gated
+    on ``active`` being true and the overwhelming majority of students never have an
+    advisor, so an error status for the ordinary case would be the wrong signal.
+    ``advisorName`` is present only when active, for the same reason the accept banner
+    names the advisor — the student should see *who* chose these subjects.
+    """
+
+    permission_classes = [IsAuthenticated, IsStudentRole]
+
+    @extend_schema(
+        tags=['advisory'],
+        summary='درس‌هایی که مشاور برای دانش‌آموز انتخاب کرده',
+        description=(
+            'اگر مشاور فعالی نباشد، `200` با `{"active": false, "subjects": []}` — '
+            'خطا نیست. درس‌ها همان مجموعه‌ای است که مشاور در پیکر ثبت کرده.'
+        ),
+        responses={200: OpenApiResponse(description='{active, advisorName?, subjects[]}')},
+    )
+    def get(self, request):
+        engagement = student_active_engagement(request.user)
+        if engagement is None:
+            return Response({'active': False, 'subjects': []})
+        # Reuse the engagement serializer for the name so the "first+last or username"
+        # display rule lives in exactly one place; ``advisor`` is already
+        # select_related on this queryset, so this adds no query.
+        advisor_name = StudentEngagementSerializer(engagement).data['advisorName']
+        return Response({
+            'active': True,
+            'advisorName': advisor_name,
+            'subjects': StudentSubjectSerializer(
+                engagement_subjects(engagement), many=True,
+            ).data,
+        })
