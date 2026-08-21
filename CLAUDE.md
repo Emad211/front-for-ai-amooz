@@ -40,7 +40,7 @@ front-for-ai-amooz/
 
 ## Tech stack
 
-**Frontend:** Next.js 15.5 (App Router, `output: standalone`), React 19, TypeScript strict, Tailwind 3 (HSL CSS-variable tokens), shadcn/ui + Radix, lucide, react-hook-form + zod, framer-motion, recharts, sonner, next-themes, KaTeX, Vazirmatn. (Genkit deps + `genkit:*` scripts are **dead leftovers** — `src/ai/` no longer exists; all AI work is backend.)
+**Frontend:** Next.js 15.5 (App Router, `output: standalone`), React 19, TypeScript strict, Tailwind 3 (HSL CSS-variable tokens), shadcn/ui + Radix, lucide, react-hook-form + zod, framer-motion, recharts, sonner, next-themes, KaTeX, Vazirmatn. (Genkit/firebase deps + `genkit:*` scripts were dead leftovers and have been **removed** — `src/ai/` no longer exists; all AI work is backend.)
 
 **Backend:** Django 5 + DRF, SimpleJWT, drf-spectacular (OpenAPI), Celery 5 + Redis (broker/result/cache), PostgreSQL (psycopg2), django-storages + boto3 for S3 (MinIO locally), WhiteNoise, Gunicorn. LLM via `google-genai` (Gemini) and the `openai` client pointed at Avalai. PDF: pdfplumber / pypdf / pypdfium2 (ingest), WeasyPrint (export). Media: ffmpeg.
 
@@ -193,7 +193,7 @@ Follow `.github/instructions/develop.instructions.md`. In short: explore/search 
 - **Never hardcode models/keys** — everything env-driven.
 - **Prompt keys + output-JSON keys are a byte-for-byte contract**; run `test_prompts_contract.py` after edits.
 - **`views.py` and exam-prep are split across many `views_*.py` / `_v*` modules** — grep before editing; trust `exam_prep_mistral_production.py` imports for what's live, not the newest-looking `_v4` file.
-- **Genkit / `src/ai/` is dead** — ignore those npm scripts.
+- **Genkit / `src/ai/` is dead** — the deps and npm scripts have been removed; don't reintroduce them.
 - **Cancellation checkpoints** in full-pipeline tasks are load-bearing — preserve on reorder.
 - **Adaptive regenerate resets `last_passed`/`last_score` to `None`** on purpose; submit responses reveal answers on purpose.
 - **Exam-prep live-provider calls are forbidden in dev/CI**; owner validates in deployment.
