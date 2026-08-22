@@ -15,6 +15,7 @@ from .views import (
     StudentEngagementView,
     StudentInviteAcceptView,
     StudentInviteRejectView,
+    StudentStudyLogView,
     StudentSubjectsView,
     SubjectListView,
 )
@@ -34,6 +35,11 @@ urlpatterns = [
     # student side
     path('me/engagement/', StudentEngagementView.as_view(), name='advisory_my_engagement'),
     path('me/subjects/', StudentSubjectsView.as_view(), name='advisory_my_subjects'),
+    # One route, no ``<date>`` segment: the day is a query parameter because the
+    # resource is "my log" and the date selects a slice of it. A path segment would
+    # read like an addressable row and invite the sibling URL that does not exist —
+    # someone else's day.
+    path('me/study-log/', StudentStudyLogView.as_view(), name='advisory_my_study_log'),
     path(
         'me/invites/<int:pk>/accept/',
         StudentInviteAcceptView.as_view(),

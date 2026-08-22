@@ -535,3 +535,68 @@ docstringِ `getEngagementSubjects` به «برنامه‌ی درسیِ مشتق
 بماند (وگرنه `max_length` روی **هر دو**ی `StudentProfile.grade` و `Subject.grade` بالا برود).
 
 
+---
+
+## ۱۳. ثبت اجرا — گام ۵ (گزارشِ روزانه‌ی مطالعه · `DailyLog` / `DailyLogItem`)
+
+وضعیت: **کامل، تست‌شده، آماده‌ی دیپلوی.** صفر تماس LLM، صفر Celery.
+
+### ۱۳.۱ آنچه لند شد
+
+**مدل + مهاجرت** — `models.py`: `DailyLog` (یکتای `(engagement, log_date)`؛ `mood` صحیحِ
+۱..۵ nullable — NULL یعنی «ثبت نشده» و با بدترینِ حالت یکی نیست؛ `note` TextField با سقفِ
+سریالایزری) و `DailyLogItem` (FK به **`StudentSubject`** نه `Subject` — کلیدِ اتصالِ متریکِ
+گام ۸ بدونِ مهاجرتِ بعدی؛ PROTECT؛ `actual_minutes` ≤۹۶۰ با CheckConstraint). ثابت‌های کنارِ ستون‌ها:
+`MAX_LOG_MINUTES_PER_ITEM=960`، `MAX_LOG_MINUTES_PER_DAY=1440`، `MAX_LOG_NOTE_CHARS=1000`،
+`MOOD_MIN=1/MOOD_MAX=5`. `migrations/0005_dailylog_dailylogitem`.
+
+**درِ نوشتن** — `services/daily_logs.py`: `save_day` یک **set-replaceِ یک روز کامل** است؛ ترتیبِ
+اعتبارسنجی owner→date→subjects→total پیش از هر نوشتاری (یک درسِ نامعتبر = صفر تغییر)؛ آیتم‌های
+`minutes<=0` دراپ می‌شوند؛ آیتم‌های غایب **hard-delete** (عمداً برخلافِ retire نرمِ انتخابِ درس —
+آنجا مشاور برنامه‌ای را عوض می‌کند که تاریخچه به آن وصل است؛ اینجا دانش‌آموز گزارشِ خودش را اصلاح
+می‌کند)؛ آیتم‌ها upsert تا `created_at` پس از اصلاحِ تایپی بماند؛ `mood`/`note` همیشه overwrite حتی
+به `None`/`''`؛ خروجی از `scope.student_day_log` بازخوانده می‌شود تا GET و PUT هر دو از یک مسیر
+سریالیزه شوند.
+
+**اسکوپ** — `scope.log_date_window` (جای نوشته‌شده‌ی C3: بازهٔ `[started_on, امروز]` با
+`timezone.localdate()`؛ started_onِ آینده به پنجرهٔ بستهٔ «فقط امروز» فرومی‌ریزد نه پنجرهٔ وارونه)،
+`student_logs` (prefetch بدونِ فیلترِ is_active — تاریخچه باید بخوانده شود)، `student_day_log`.
+
+**ویو + URL** — `StudentStudyLogView` (GET/PUT `/api/advisory/me/study-log/`، `IsStudentRole`).
+GET بی‌مشاور = `200 {"active": false}` ساکت با مجموعه‌کلیدِ کامل؛ GET تاریخِ بدشکل یا بیرونِ بازه =
+400؛ PUT بی‌مشاور = 409؛ بدنهٔ PUT کلِ روز است (`date` + `items` اجباری، `mood`/`note` اختیاری)؛
+پاسخِ PUT همان payloadِ GET از روی ردیفِ ذخیره‌شده است.
+
+**ادمین** — `DailyLogAdmin` **کاملاً read-only** (+inline آیتم‌ها فقط-دید)؛ D3: هیچ جای ادیتِ
+گزارشِ دانش‌آموز توسطِ اپراتور وجود ندارد.
+
+**تست‌ها** — `test_daily_logs.py` (**۲۷ تست**): idempotent بودنِ save دوم + ماندنِ `created_at`
+آیتم‌ها؛ دراپِ دقیقهٔ صفر/منفی؛ حذفِ سختِ درسِ غایب از همان روز؛ «روزِ ثبت‌شده اما خالی» ≠
+ثبت‌نشده؛ پاک‌شدنِ mood/note؛ `NotTheLogOwner`؛ دو لبهٔ پنجره (آینده/پیش از شروع)؛
+`SubjectNotInSelection` (شناسهٔ ناشناخته + درسِ حذف‌شده‌ی مشاور)؛ **ماندنِ دقیقه‌های ثبت‌شدهٔ
+درسِ حذف‌شده بینِ روزها** (سناریوی docstring مدل)؛ سقفِ مجموع ۱۴۴۰ (+ مرزِ دقیقاً ۱۴۴۰ مجاز)؛
+ماتریس API: GET ساکتِ بی‌مشاور با کلیدهای کامل، تاریخِ پیش‌فرض/صریح، بدشکل ('2026-13-45' و
+'yesterday' هر دو 400)، بیرونِ بازه 400، PUT بی‌مشاور 409 با پیام فارسی، دوبلهٔ subjectId 400،
+سقف‌های 960/mood/note 400، anon 401 و teacher+advisor 403، و معادلِ چکِ زندهٔ §۵ (PUT سپس GET
+همان تاریخ = پایدار).
+
+**فرانت** — `services/advisory-service.ts`: `getMyStudyLog(date?)` / `saveMyStudyLog(body)` با
+تایپ‌های wire (`StudyLogPayload`/`StudyLogDay`/`StudyLogItem`). هوکِ نوِ `use-active-advisor`
+(promise مشترک در سطح ماژول — مصرف‌کنندگانِ همزمان یک درخواست؛ promise بعد از settle رها می‌شود تا
+پذیرشِ دعوت بدون reload در ناوبری بعدی دیده شود؛ خطا = false-safe). صفحهٔ `(dashboard)/study-log`:
+چیپ‌های حال‌وهوای ۱..۵ با واژه‌ها «بد / نه چندان / متوسط / خوب / عالی» (صعودی؛ در RTL از راست
+شروع می‌شود) + گزینهٔ «ثبت نکردم» (= null)؛ ردیفِ دقیقه به تفکیک درس با چیپ‌های سریع و clamp به
+۹۶۰؛ ردیف‌های فقط-خواندنیِ «حذف‌شده از فهرست» برای آیتم‌های `isSelected:false` تا مجموع صادق بماند؛
+مجموع زنده با هشدار رنگی نزدیک سقف؛ شمارندهٔ یادداشت ۱۰۰۰ کاراکتری؛ استپرِ تاریخِ جلالی قفل‌شده به
+`[minDate,maxDate]`؛ **ذخیره = set-replace و re-render کامل همهٔ state از پاسخ سرور** (never from
+local guesses). ورودی شرطیِ منوی «گزارش روزانه» در pill nav هدر + نوار پایین موبایل — فقط با
+مشاور فعال؛ هنگام load هیچ رندر نمیشود (بدون فلش برای بقیه).
+
+### ۱۳.۲ وریفای انجام‌شده
+- کلِ اپ `advisory` → **۲۵۳ passed** (۲۲۶ قبلی + ۲۷ نو)، صفر تماس LLM/Celery.
+- `npx tsc --noEmit` → پاک (exit 0).
+- `next build` → سبز؛ روت `/study-log` در خروجی تولید شد.
+- چکِ زندهٔ §۵ سطر ۵ (ثبتِ امروز → refresh → ماندن): همتای خودکارش در تستِ API سبز است؛ اجرای
+  دستی به عهدهٔ اونر در دیپلوی.
+
+

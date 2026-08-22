@@ -41,6 +41,10 @@ _UNSCOPED = {'Subject'}
 #   • student_subjects.py (S4) — the set-replace for a student's subject selection;
 #     it mutates ``StudentSubject`` (get_or_create + is_active toggle) after the
 #     view has already resolved ownership through scope.advisor_engagement.
+#   • daily_logs.py (S5) — the set-replace for one day of a student's log; it
+#     upserts ``DailyLog``/``DailyLogItem`` after the view has resolved the
+#     engagement through scope.student_active_engagement, and re-checks D3 (only
+#     the student themself may write) against that engagement.
 # The list is pinned by a test below so that a further door cannot appear without
 # someone editing this comment.
 _EXEMPT_FILES = {
@@ -49,15 +53,16 @@ _EXEMPT_FILES = {
     'models.py',
     'invites.py',
     'student_subjects.py',
+    'daily_logs.py',
 }
 
 
 def _is_model_name(name: str) -> bool:
-    """``StudentSubject`` yes, ``INVITE_TTL_DAYS`` no.
+    """``DailyLog`` yes, ``MAX_LOG_NOTE_CHARS`` no.
 
     Field bounds live in ``models.py`` next to the columns they constrain, and
-    importing one carries no tenancy: a serializer importing ``INVITE_TTL_DAYS``
-    says nothing about *whose* row it validates. Treating
+    importing one carries no tenancy: the serializer needs ``MAX_LOG_NOTE_CHARS`` to
+    reject an over-long note, which says nothing about *whose* note it is. Treating
     those as leaks would force every module that validates a length onto the exempt
     list — the opposite of what the list is for.
 
@@ -203,12 +208,12 @@ def test_a_field_bound_constant_is_not_treated_as_a_model():
 
     If this predicate ever flips, every module importing a ``MAX_*`` bound gets
     flagged and the natural fix — appending it to ``_EXEMPT_FILES`` — would quietly
-    grant it permission to import ``AdvisoryEngagement`` too.
+    grant it permission to import ``DailyLog`` too.
     """
-    assert _is_model_name('AdvisoryEngagement')
+    assert _is_model_name('DailyLog')
     assert _is_model_name('StudentSubject')
-    assert not _is_model_name('INVITE_TTL_DAYS')
-    assert not _is_model_name('REJECT_BLOCK_DAYS')
+    assert not _is_model_name('MAX_LOG_NOTE_CHARS')
+    assert not _is_model_name('MOOD_MAX')
 
 
 def test_scope_is_the_only_place_that_knows_the_org_gate():
@@ -233,6 +238,7 @@ def test_the_exempt_list_does_not_grow_by_accident():
         'models.py',
         'invites.py',
         'student_subjects.py',
+        'daily_logs.py',
     }
 
 

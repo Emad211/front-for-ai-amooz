@@ -15,7 +15,10 @@ Two rules hold for every serializer below, and both are deliberate:
   ``TeacherStudentSerializer`` exposed ``inviteCode`` because a ModelSerializer
   picked it up. B5 forbids repeating it. It also keeps this file free of a
   tenancy-bearing model import, which the ``test_import_boundaries`` guard checks.
-
+  The ``MAX_*``/``MOOD_*`` field bounds imported below are *not* such an import: a
+  length ceiling says nothing about whose row it is, and validating against the
+  same constant the column is declared with is what stops a serializer and a
+  ``CheckConstraint`` from drifting into a 500.
 """
 
 from __future__ import annotations
@@ -24,7 +27,13 @@ from rest_framework import serializers
 
 from apps.commons.phone_utils import is_valid_iran_mobile, normalize_phone
 
-from .models import Subject
+from .models import (
+    MAX_LOG_MINUTES_PER_ITEM,
+    MAX_LOG_NOTE_CHARS,
+    MOOD_MAX,
+    MOOD_MIN,
+    Subject,
+)
 from .services.student_subjects import MAX_SUBJECTS_PER_STUDENT
 from .services.text import mask_phone
 
@@ -253,3 +262,115 @@ class EngagementSubjectsWriteSerializer(serializers.Serializer):
                 f'حداکثر {MAX_SUBJECTS_PER_STUDENT} درس می‌توانید انتخاب کنید.'
             )
         return deduped
+
+
+# ── S5: the daily study log ──────────────────────────────────────────────────
+
+class DailyLogItemSerializer(serializers.Serializer):
+    """One subject's minutes inside a day, read off a ``DailyLogItem`` row.
+
+    ``subjectId`` is the **catalog** id, not the ``StudentSubject`` row id — the
+    same vocabulary ``StudentSubjectSerializer`` publishes, so a client can join the
+    day's items against the subject list it already has, and no tenancy-bearing row
+    id ever reaches the wire.
+
+    ``isSelected`` is the one field here that is not obvious, and dropping it would
+    be a real bug. Items survive their subject being dropped from the student's list
+    (an advisor changing the plan must not erase minutes already studied), so a day
+    can legitimately contain a subject that is *not* in ``subjects``. A client that
+    builds its rows only from the active list would then render a total that
+    disagrees with ``totalMinutes``. This flag is how the form knows to show such a
+    row as read-only history instead.
+    """
+
+    subjectId = serializers.IntegerField(
+        source='student_subject.subject_id', read_only=True,
+    )
+    name = serializers.CharField(source='student_subject.subject.name', read_only=True)
+    minutes = serializers.IntegerField(source='actual_minutes', read_only=True)
+    isSelected = serializers.BooleanField(source='student_subject.is_active', read_only=True)
+
+
+class DailyLogSerializer(serializers.Serializer):
+    """One stored day.
+
+    ``mood`` is nullable on purpose and the null is meaningful: «not recorded» is a
+    different answer from «۱ / بد», and collapsing them would make the step-6 feed
+    read a silent day as a miserable one.
+    """
+
+    date = serializers.DateField(source='log_date', read_only=True)
+    mood = serializers.IntegerField(read_only=True, allow_null=True)
+    note = serializers.CharField(read_only=True, allow_blank=True)
+    items = DailyLogItemSerializer(many=True, read_only=True)
+    totalMinutes = serializers.SerializerMethodField()
+    updatedAt = serializers.DateTimeField(source='updated_at', read_only=True)
+
+    def get_totalMinutes(self, obj) -> int:  # noqa: N802 — camelCase wire key
+        # Summed in Python over the already-prefetched items (``scope.student_logs``),
+        # not with an aggregate: an ``.aggregate()`` here would fire one extra query
+        # per day and defeat the prefetch on the step-6 feed.
+        return sum(item.actual_minutes for item in obj.items.all())
+
+
+class DailyLogItemWriteSerializer(serializers.Serializer):
+    """One ``{subjectId, minutes}`` pair from the student's form.
+
+    ``source='subject_id'`` is deliberate: the wire key stays camelCase while
+    ``validated_data`` comes out in exactly the vocabulary ``services.daily_logs``
+    documents, so the view hands the list straight to ``save_day`` with no re-keying
+    step in between to get wrong.
+
+    ``min_value=0`` — zero is not an error, it is how the form says «this subject, no
+    minutes today»; the service drops those rather than storing a row the DB check
+    would reject anyway. The ceiling is the same constant the column is declared
+    with, so an over-long day is a 400 and never an ``IntegrityError`` 500.
+    """
+
+    subjectId = serializers.IntegerField(source='subject_id', min_value=1)
+    minutes = serializers.IntegerField(min_value=0, max_value=MAX_LOG_MINUTES_PER_ITEM)
+
+
+class DailyLogWriteSerializer(serializers.Serializer):
+    """The student's PUT body: one whole day.
+
+    Everything about the day is here, because the endpoint is a set-replace. That is
+    also why ``items`` is **required** while ``mood``/``note`` are not: an absent
+    ``items`` would silently wipe the day's minutes, so the client has to say
+    ``[]`` and mean it, whereas an absent mood clearing the mood is harmless and
+    matches «I did not answer that question».
+
+    Shape only. Whether the date is inside the engagement's window and whether each
+    subject is on this student's list are the service's job — both need the
+    engagement, which a serializer does not have.
+    """
+
+    date = serializers.DateField(source='log_date')
+    mood = serializers.IntegerField(
+        required=False, allow_null=True, min_value=MOOD_MIN, max_value=MOOD_MAX,
+    )
+    note = serializers.CharField(
+        required=False, allow_blank=True, max_length=MAX_LOG_NOTE_CHARS,
+    )
+    items = DailyLogItemWriteSerializer(many=True)
+
+    def validate_items(self, value):
+        """Reject a repeated subject, and cap the list length.
+
+        Unlike ``subjectIds`` above — where ticking a box twice is harmless and gets
+        collapsed — two entries for one subject carry two different minute counts and
+        there is no honest way to pick one. The service's dict build is last-wins as a
+        backstop; this is where it becomes a 400 the student can act on.
+
+        The ceiling is the selection ceiling: you cannot report minutes for more
+        subjects than you are allowed to have, so a scripted 10⁴-item payload is a
+        400 instead of 10⁴ upserts inside one transaction.
+        """
+        if len(value) > MAX_SUBJECTS_PER_STUDENT:
+            raise serializers.ValidationError(
+                f'حداکثر {MAX_SUBJECTS_PER_STUDENT} درس در یک روز قابل ثبت است.'
+            )
+        subject_ids = [item['subject_id'] for item in value]
+        if len(set(subject_ids)) != len(subject_ids):
+            raise serializers.ValidationError('برای هر درس فقط یک ردیف بفرستید.')
+        return value

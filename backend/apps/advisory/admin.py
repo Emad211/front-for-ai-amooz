@@ -11,11 +11,14 @@ operator can end an engagement. It is deliberately *not* creatable here — an
 engagement created by an admin would have no ``terms_accepted_at``, i.e. a student
 who never agreed to be watched.
 
+``DailyLog`` goes one step further and is registered **fully read-only**: it is the
+student's own statement about their own day, so there is no operator edit that would
+not be putting words in their mouth.
 """
 
 from django.contrib import admin
 
-from .models import AdvisoryEngagement, StudentSubject, Subject
+from .models import AdvisoryEngagement, DailyLog, DailyLogItem, StudentSubject, Subject
 
 
 @admin.register(Subject)
@@ -71,3 +74,67 @@ class StudentSubjectAdmin(admin.ModelAdmin):
     raw_id_fields = ('engagement', 'subject')
     readonly_fields = ('created_at', 'updated_at')
     list_select_related = ('subject', 'engagement', 'engagement__student')
+
+
+class DailyLogItemInline(admin.TabularInline):
+    """The day's minutes, inline under the day.
+
+    Not registered as a page of its own: an item is meaningless without its log, and
+    a standalone changelist of ``actual_minutes`` rows would be a support tool that
+    invites reading many students' study habits side by side — exactly the aggregate
+    view D1 keeps away from everyone but the student and their own advisor.
+    """
+
+    model = DailyLogItem
+    extra = 0
+    raw_id_fields = ('student_subject',)
+    readonly_fields = ('created_at', 'updated_at')
+    # Only reachable on the backend host, but an operator retyping a student's
+    # reported minutes would silently corrupt the S8 commitment ratio and there is no
+    # audit trail to notice it by. Inspection only.
+    can_delete = False
+
+    def has_add_permission(self, request, obj) -> bool:
+        return False
+
+    def has_change_permission(self, request, obj=None) -> bool:
+        return False
+
+
+@admin.register(DailyLog)
+class DailyLogAdmin(admin.ModelAdmin):
+    """Read-only support view of a student's own report of a day.
+
+    Deliberately not writable anywhere on this page. This is the *student's* account
+    of their own day (D3), and the S8 metric divides by it: an operator "fixing" a
+    number here would produce a commitment percentage that neither the student nor
+    their advisor could account for. Support needs to *see* the day to answer «my
+    yesterday vanished» — nothing more.
+
+    Retention (D2) is 730 days and is documented, not automated: no sweeper exists
+    yet, so this page is currently also the answer to "how far back does it go".
+    """
+
+    list_display = ('log_date', 'engagement', 'mood', 'total_minutes', 'updated_at')
+    list_filter = ('mood',)
+    search_fields = ('engagement__student__username', 'engagement__advisor__username')
+    raw_id_fields = ('engagement',)
+    date_hierarchy = 'log_date'
+    list_select_related = ('engagement', 'engagement__student')
+    inlines = [DailyLogItemInline]
+    readonly_fields = ('engagement', 'log_date', 'mood', 'note', 'created_at', 'updated_at')
+
+    def get_queryset(self, request):
+        # The changelist renders ``total_minutes`` per row; without this the page is
+        # one extra query per day shown.
+        return super().get_queryset(request).prefetch_related('items')
+
+    @admin.display(description='مجموع دقیقه‌ها')
+    def total_minutes(self, obj: DailyLog) -> int:
+        return sum(item.actual_minutes for item in obj.items.all())
+
+    def has_add_permission(self, request) -> bool:
+        return False
+
+    def has_change_permission(self, request, obj=None) -> bool:
+        return False

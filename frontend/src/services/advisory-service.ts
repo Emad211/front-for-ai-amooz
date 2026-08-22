@@ -133,6 +133,50 @@ export type MySubjectsResponse = {
   subjects: StudentSubjectRow[];
 };
 
+/** One subject-minute entry of a saved day log. `isSelected: false` marks a
+ * subject the advisor later removed from the student's list — its minutes stay
+ * in the day (and in the total) so history remains truthful. */
+export type StudyLogItem = {
+  subjectId: number;
+  name: string;
+  minutes: number;
+  isSelected: boolean;
+};
+
+/** The whole-day study log as the server stores it. `mood` is 1..5 or null
+ * (not recorded); `totalMinutes` is server-computed over ALL items. */
+export type StudyLogDay = {
+  date: string;
+  mood: number | null;
+  note: string;
+  items: StudyLogItem[];
+  totalMinutes: number;
+  updatedAt: string;
+};
+
+/** Wire shape shared by GET and PUT of `/advisory/me/study-log/`. `log` is null
+ * when nothing was saved for the requested day yet; `minDate`/`maxDate` bound
+ * the editable window (null = unbounded on that side). */
+export type StudyLogPayload = {
+  active: boolean;
+  advisorName?: string;
+  date: string;
+  minDate: string | null;
+  maxDate: string | null;
+  subjects: StudentSubjectRow[];
+  log: StudyLogDay | null;
+};
+
+/** PUT body — a WHOLE-day set-replace. Only currently-selected subjects may be
+ * sent (server rejects unselected ones); minutes are 0..960 each, duplicates
+ * forbidden, day total ≤ 1440, note ≤ 1000 chars, mood int 1..5 or null. */
+export type SaveStudyLogBody = {
+  date: string;
+  mood?: number | null;
+  note?: string;
+  items: { subjectId: number; minutes: number }[];
+};
+
 function getAccessToken(): string {
   if (typeof window === 'undefined') {
     throw new Error('This action must run in the browser.');
@@ -323,5 +367,31 @@ export const AdvisoryService = {
    */
   getMySubjects: async (): Promise<MySubjectsResponse> => {
     return requestJson<MySubjectsResponse>('/advisory/me/subjects/');
+  },
+
+  /**
+   * The student's study log for one day. Omitting `date` means "today".
+   * `active: false` (no advisor) arrives as a normal 200 payload, never an
+   * error; `409` would only mean the engagement ended between calls and its
+   * Persian `detail` surfaces via `requestJson`.
+   */
+  getMyStudyLog: async (date?: string): Promise<StudyLogPayload> => {
+    const query = date ? `?date=${encodeURIComponent(date)}` : '';
+    return requestJson<StudyLogPayload>(`/advisory/me/study-log/${query}`);
+  },
+
+  /**
+   * Save the whole day at once (set-replace, not a patch). The server answers
+   * with the same shape as `getMyStudyLog` — callers must re-render from THIS
+   * response so server-side normalization (totals, removed subjects) wins over
+   * local guesses. Errors are Persian `detail`s via `requestJson`: `409` no
+   * active advisor; `400` out-of-window date / unselected subject / day total
+   * over 1440 / duplicate subject / per-field over-limit.
+   */
+  saveMyStudyLog: async (body: SaveStudyLogBody): Promise<StudyLogPayload> => {
+    return requestJson<StudyLogPayload>('/advisory/me/study-log/', {
+      method: 'PUT',
+      body: JSON.stringify(body),
+    });
   },
 };

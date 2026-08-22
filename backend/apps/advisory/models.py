@@ -7,9 +7,10 @@ selection all hang off an engagement, never off a ``User``. That is what makes
 every later authorization query a join with an owner in it rather than a
 "current user" comparison that is easy to forget.
 
-Step 4 added ``StudentSubject`` (the advisor's per-student picks). Both are
-tenancy-bearing and reachable only through ``services/scope.py`` plus their
-write doors — see ``test_import_boundaries``.
+Step 4 added ``StudentSubject`` (the advisor's per-student picks) and step 5 adds
+``DailyLog`` / ``DailyLogItem`` (the student's own minutes, reported against those
+picks). All three are tenancy-bearing and reachable only through
+``services/scope.py`` plus their write doors — see ``test_import_boundaries``.
 """
 
 import datetime
@@ -446,3 +447,191 @@ class StudentSubject(models.Model):
     def __str__(self) -> str:
         state = '' if self.is_active else ' (غیرفعال)'
         return f'{self.subject} ← #{self.engagement_id}{state}'
+
+
+# ── S5: the daily study log ──────────────────────────────────────────────────
+# One item's ceiling. 960 = 16h, the same bound the sibling
+# ``WeeklyPlanItem.planned_minutes`` carries in the spec (§2), because a plan and
+# the log reporting against it must share a scale or the S8 commitment ratio
+# (actual ÷ planned) silently compares two different units. It is deliberately
+# generous: the job is to stop a fat-fingered «4500» from poisoning that metric,
+# not to argue with a student about whether they really studied twelve hours.
+MAX_LOG_MINUTES_PER_ITEM = 960
+
+# ...and one *day's* ceiling, across every subject. A day holds 1440 minutes, and
+# with up to ``MAX_SUBJECTS_PER_STUDENT`` (60) subjects the per-item cap alone would
+# still permit 57,600 — a commitment ratio of 4000%. Enforced in
+# ``services/daily_logs`` and not as a ``CheckConstraint``, because a DB check
+# cannot sum sibling rows; the per-item check below is the part the DB can hold.
+MAX_LOG_MINUTES_PER_DAY = 1440
+
+# Note length. The column stays a ``TextField`` — a note is prose, not a label, and
+# a student writing «امروز فیزیک سخت بود چون...» must not hit a column error — so the
+# bound is enforced by the serializer. This is the one place the number is defined.
+MAX_LOG_NOTE_CHARS = 1000
+
+# Mood is a 1..5 scale, not an enum: the frontend renders five faces, the S6 advisor
+# feed averages it, and neither wants named members. Bounds live here so the model
+# constraint, the serializer and the tests all read the same two numbers.
+MOOD_MIN = 1
+MOOD_MAX = 5
+
+
+class DailyLog(models.Model):
+    """One day of a student's self-reported study, hanging off the engagement (S5).
+
+    **The student writes this; the advisor only ever reads it.** That is D3, and it
+    is the reason the write door (``services/daily_logs``) takes a *student*, not an
+    actor: there is no code path by which an advisor edits a log, so there is none to
+    get the permission check wrong in. An advisor who disagrees with a number talks
+    to their student.
+
+    Why it hangs off ``AdvisoryEngagement`` and not off ``User``, when the data is
+    the student's own: the engagement is the tenancy carrier, and it carries the
+    *time window* too. ``started_on`` is the day the student accepted, so scoping
+    logs to the engagement makes C3 (no retroactive visibility) a property of the
+    schema rather than a filter someone must remember — an advisor cannot see the
+    month before they were hired because those rows belong to no engagement of
+    theirs. The cost is that a student with no advisor has nowhere to log, which is
+    correct for the MVP: this is an advisory feature, not a general study tracker.
+
+    One row per (engagement, day). A save replaces the day wholesale (set-replace on
+    the items) and never deletes the row — an existing log with zero items means «I
+    reported, and it was nothing», which is a different fact from no log at all, and
+    the S8 metric needs to tell them apart.
+
+    Retention is 730 days (D2). No sweeper ships in S5 — the MVP has no Celery — so
+    that is a documented future, not a live behaviour.
+    """
+
+    engagement = models.ForeignKey(
+        AdvisoryEngagement,
+        on_delete=models.CASCADE,
+        related_name='daily_logs',
+        verbose_name=_('همکاری'),
+    )
+    # A date, not a datetime, for the reason ``started_on`` is one: a study day is a
+    # day. Which side of midnight UTC the request landed on must not move a log.
+    log_date = models.DateField(
+        verbose_name=_('تاریخ'),
+        help_text=_('روزی که این گزارش برای آن است (میلادی؛ نمایش شمسی در فرانت‌اند).'),
+    )
+    mood = models.PositiveSmallIntegerField(
+        null=True,
+        blank=True,
+        verbose_name=_('حال و حوصله'),
+        help_text=_('عددی از ۱ تا ۵. خالی یعنی دانش‌آموز ثبت نکرده — که با «۱» یکی نیست.'),
+    )
+    note = models.TextField(
+        blank=True,
+        default='',
+        verbose_name=_('یادداشت'),
+        help_text=_('یادداشت آزاد دانش‌آموز برای آن روز.'),
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        # Newest day first: every reader of a log list — the student's own history,
+        # the S6 advisor feed — wants the most recent day at the top.
+        ordering = ['-log_date']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['engagement', 'log_date'],
+                name='uniq_advisory_daily_log',
+                violation_error_message=_('برای این روز از قبل گزارشی ثبت شده است.'),
+            ),
+            # NULL passes: «not reported» is a legal state, and a NULL-rejecting
+            # check here would force the client to invent a sentinel mood.
+            models.CheckConstraint(
+                condition=(
+                    models.Q(mood__isnull=True)
+                    | models.Q(mood__gte=MOOD_MIN, mood__lte=MOOD_MAX)
+                ),
+                name='ck_advisory_log_mood_range',
+                violation_error_message=_('حال و حوصله باید عددی بین ۱ تا ۵ باشد.'),
+            ),
+        ]
+        indexes = [
+            # (engagement, newest-first) — the shape of every read: "this student's
+            # last N days". Matches ``ordering`` so the sort is index-served.
+            models.Index(
+                fields=['engagement', '-log_date'],
+                name='idx_adv_log_eng_date',
+            ),
+        ]
+        verbose_name = _('گزارش روزانه')
+        verbose_name_plural = _('گزارش‌های روزانه')
+
+    def __str__(self) -> str:
+        return f'{self.log_date} ← #{self.engagement_id}'
+
+
+class DailyLogItem(models.Model):
+    """Minutes studied on one subject, on one day.
+
+    The FK is to ``StudentSubject``, **not to ``Subject``** — the join key decision
+    locked in S4 so that the S8 commitment metric (actual ÷ planned, grouped by the
+    subjects the advisor actually focused) needs no migration to compute. It also
+    means a log line can only ever name a subject that *was* on this student's list,
+    which is a data-integrity property no validation can be forgotten out of.
+
+    ``PROTECT`` on that FK, matching ``StudentSubject.subject``: a selection row a
+    student has logged hours against must not be deletable out from under the
+    history. It never is in practice — S4 removes a subject by flipping ``is_active``,
+    never by deleting — and PROTECT is what keeps that true if someone ever reaches
+    for ``.delete()``.
+
+    A consequence worth stating, because it looks like a bug from either end: an item
+    may point at a **deactivated** ``StudentSubject``. The student logged 40 minutes
+    of شیمی on Monday; on Tuesday the advisor dropped شیمی from the list. Monday's 40
+    minutes must not vanish. So the *write* path accepts only currently-active
+    selections (``services/daily_logs``) while the *read* path filters by neither —
+    it returns whatever was recorded. Do not "tidy up" the read with
+    ``student_subject__is_active=True``; that silently rewrites history.
+    """
+
+    log = models.ForeignKey(
+        DailyLog,
+        on_delete=models.CASCADE,
+        related_name='items',
+        verbose_name=_('گزارش روزانه'),
+    )
+    student_subject = models.ForeignKey(
+        StudentSubject,
+        on_delete=models.PROTECT,
+        related_name='log_items',
+        verbose_name=_('درسِ دانش‌آموز'),
+    )
+    actual_minutes = models.PositiveIntegerField(
+        verbose_name=_('دقیقه‌ی مطالعه'),
+        help_text=_('دقیقه‌ی واقعیِ مطالعه‌ی این درس در آن روز.'),
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['student_subject__subject__name']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['log', 'student_subject'],
+                name='uniq_advisory_daily_log_item',
+                violation_error_message=_('برای این درس در این روز از قبل دقیقه ثبت شده است.'),
+            ),
+            # Strictly positive: a zero-minute row is not data, it is a subject the
+            # student left blank, and the write door drops those instead of storing
+            # rows that would then have to be filtered out of every later average.
+            models.CheckConstraint(
+                condition=models.Q(
+                    actual_minutes__gt=0,
+                    actual_minutes__lte=MAX_LOG_MINUTES_PER_ITEM,
+                ),
+                name='ck_advisory_log_item_minutes',
+                violation_error_message=_('دقیقه‌ی مطالعه باید بین ۱ تا ۹۶۰ باشد.'),
+            ),
+        ]
+        verbose_name = _('دقیقه‌ی درس')
+        verbose_name_plural = _('دقیقه‌های درس')
+
+    def __str__(self) -> str:
+        return f'{self.student_subject_id}: {self.actual_minutes}د'

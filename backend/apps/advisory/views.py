@@ -15,6 +15,8 @@ class belongs on a route without reading the body.
 from __future__ import annotations
 
 from django.db.models import F, Q
+from django.utils import timezone
+from django.utils.dateparse import parse_date
 from drf_spectacular.utils import OpenApiParameter, OpenApiResponse, extend_schema
 from rest_framework import status
 from rest_framework.generics import ListAPIView
@@ -30,12 +32,15 @@ from .serializers import (
     AdvisorPendingInviteSerializer,
     AdvisorStudentSerializer,
     AdvisoryInviteCreateSerializer,
+    DailyLogSerializer,
+    DailyLogWriteSerializer,
     EngagementSubjectsWriteSerializer,
     StudentEngagementSerializer,
     StudentInviteSerializer,
     StudentSubjectSerializer,
     SubjectSerializer,
 )
+from .services import daily_logs as log_service
 from .services import invites as invite_service
 from .services import student_subjects as subject_service
 from .services.scope import (
@@ -44,8 +49,10 @@ from .services.scope import (
     advisor_pending_invites,
     advisor_students,
     curriculum_subjects,
+    log_date_window,
     student_active_engagement,
     student_claimable_invites,
+    student_day_log,
     # The scope *read* aliased away from the service module of the same name
     # imported just above; both are needed here and only one can keep the bare name.
     student_subjects as engagement_subjects,
@@ -449,3 +456,199 @@ class StudentSubjectsView(APIView):
                 engagement_subjects(engagement), many=True,
             ).data,
         })
+
+
+# ── S5: the daily study log ──────────────────────────────────────────────────
+
+def _study_log_payload(engagement, log_date) -> dict:
+    """Everything the study-log form needs for one date, in one shape.
+
+    GET and PUT both answer with this. That is not tidiness: the PUT response is what
+    the client re-renders from after a save, so if the two shapes could drift, a
+    successful save would be able to paint a screen that a refresh then contradicts.
+
+    ``minDate``/``maxDate`` come from ``scope.log_date_window`` — the C3 bound — and
+    are published so the date stepper can grey itself out instead of discovering the
+    limit by collecting a 400.
+
+    ``subjects`` is the *currently selected* set (the rows the student may write
+    against today), while ``log.items`` is what was actually recorded. Those two lists
+    can legitimately disagree: an item whose subject the advisor has since dropped
+    keeps its minutes and comes back with ``isSelected: false``. The form renders the
+    union — selected rows editable, unselected-but-recorded rows read-only.
+    """
+    earliest, latest = log_date_window(engagement)
+    log = student_day_log(engagement, log_date)
+    return {
+        'active': True,
+        # Reuse of the engagement serializer, as in ``StudentSubjectsView``: the
+        # "first+last or username" display rule stays in one place, and ``advisor`` is
+        # already select_related, so this costs no query.
+        'advisorName': StudentEngagementSerializer(engagement).data['advisorName'],
+        'date': log_date,
+        'minDate': earliest,
+        'maxDate': latest,
+        'subjects': StudentSubjectSerializer(
+            engagement_subjects(engagement), many=True,
+        ).data,
+        'log': DailyLogSerializer(log).data if log is not None else None,
+    }
+
+
+class StudentStudyLogView(APIView):
+    """``GET|PUT /api/advisory/me/study-log/`` — the student writes their own day.
+
+    The whole of D3 in one class: this is the *only* endpoint that writes a log, it
+    lives under ``/me/``, and it is bolted to ``IsStudentRole``. An advisor cannot
+    edit a student's report because there is nowhere for them to do it — and, for the
+    day that stops being true, ``services.daily_logs`` re-checks ownership against
+    the engagement anyway.
+
+    ``PUT`` and not ``POST``/``PATCH``: the body is the complete day and the operation
+    is idempotent (send it twice, get the same day). A ``POST`` would imply a second
+    submit creates a second row, and the unique ``(engagement, log_date)`` constraint
+    would turn that misreading into a 500.
+
+    Reads are quiet, writes are not. ``GET`` with no active advisor is a
+    ``200 {"active": false, …}`` — the ordinary state for almost every student on the
+    platform, and not an error. ``PUT`` in that state is a ``409``: there is no
+    engagement for the row to hang off, so the request cannot be honoured and saying
+    so plainly beats inventing a home for the data.
+    """
+
+    permission_classes = [IsAuthenticated, IsStudentRole]
+
+    @staticmethod
+    def _requested_date(request):
+        """``?date=YYYY-MM-DD`` → a date, or ``None`` if it was sent but unparseable.
+
+        An **absent** parameter is the normal case and means today, so it returns
+        today's date; ``None`` therefore means exactly one thing — the client sent
+        something that is not a date — and the caller turns that into a 400. Uses
+        ``timezone.localdate()`` for the same reason ``log_date_window`` does: «امروز»
+        must be the student's today, not the server's UTC one.
+
+        ``ValueError`` is caught because ``parse_date`` has *two* failure modes and
+        only one of them is a return value: it answers ``None`` for a string that is
+        not date-shaped (``'yesterday'``), but **raises** for one that is shaped right
+        and impossible (``'2026-13-45'``). Letting that escape would turn a typo into
+        a 500 on a read.
+        """
+        raw = request.query_params.get('date')
+        if not raw:
+            return timezone.localdate()
+        try:
+            return parse_date(raw)
+        except ValueError:
+            return None
+
+    @extend_schema(
+        tags=['advisory'],
+        summary='گزارش روزانه‌ی مطالعه‌ی دانش‌آموز (یک روز)',
+        description=(
+            'اگر مشاور فعالی نباشد، `200` با `{"active": false}` — خطا نیست. '
+            '`date` اختیاری است و پیش‌فرضش «امروز» است؛ باید بین `minDate` '
+            '(روزِ شروع همکاری) و `maxDate` (امروز) باشد وگرنه `400`. '
+            '`log` برای روزی که ثبت نشده `null` است.'
+        ),
+        parameters=[
+            OpenApiParameter(
+                name='date',
+                description='روز مورد نظر به میلادی (`YYYY-MM-DD`). پیش‌فرض: امروز.',
+                required=False,
+                type=str,
+            ),
+        ],
+        responses={
+            200: OpenApiResponse(
+                description='{active, advisorName?, date, minDate, maxDate, subjects[], log}',
+            ),
+            400: OpenApiResponse(description='تاریخ بدشکل یا بیرون از بازه‌ی مجاز'),
+        },
+    )
+    def get(self, request):
+        log_date = self._requested_date(request)
+        if log_date is None:
+            return Response(
+                {'detail': 'تاریخ باید به شکل YYYY-MM-DD باشد.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        engagement = student_active_engagement(request.user)
+        if engagement is None:
+            # Quiet, and with the full key set so the client needs no special case —
+            # only ``active`` decides whether the study-log button renders at all.
+            # ``minDate``/``maxDate`` are null rather than today: with no engagement
+            # there is no window, and "you may log today" would simply be false.
+            return Response({
+                'active': False,
+                'date': log_date,
+                'minDate': None,
+                'maxDate': None,
+                'subjects': [],
+                'log': None,
+            })
+
+        earliest, latest = log_date_window(engagement)
+        if not (earliest <= log_date <= latest):
+            # A 400 on a *read* looks strict, but the alternative is worse: happily
+            # answering ``log: null`` for a date the student can never write would
+            # invite a form that submits and then fails.
+            return Response(
+                {'detail': 'این تاریخ بیرون از بازه‌ی مجاز است.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        return Response(_study_log_payload(engagement, log_date))
+
+    @extend_schema(
+        tags=['advisory'],
+        summary='ثبت/به‌روزرسانی گزارش یک روز',
+        description=(
+            'بدنه، **کلِ** آن روز است: هر درسی که در `items` نباشد از آن روز پاک '
+            'می‌شود و `mood`/`note` نیامده یعنی «خالی». `minutes` صفر یعنی «نخواندم» '
+            'و ذخیره نمی‌شود. '
+            '`409` اگر مشاور فعال نداشته باشد، '
+            '`400` برای تاریخ بیرون از بازه، درسِ بیرون از فهرست، یا مجموع بیش از '
+            'یک شبانه‌روز، `403` اگر گزارش متعلق به دانش‌آموز دیگری باشد.'
+        ),
+        request=DailyLogWriteSerializer,
+        responses={
+            200: OpenApiResponse(description='همان ساختار GET، با روزِ ذخیره‌شده'),
+            400: OpenApiResponse(description='بدنه یا تاریخ یا درس نامعتبر'),
+            403: OpenApiResponse(description='گزارش دانش‌آموز دیگری'),
+            409: OpenApiResponse(description='مشاور فعالی ندارید'),
+        },
+    )
+    def put(self, request):
+        engagement = student_active_engagement(request.user)
+        if engagement is None:
+            return Response(
+                {'detail': 'برای ثبت گزارش روزانه باید مشاور فعال داشته باشید.'},
+                status=status.HTTP_409_CONFLICT,
+            )
+
+        serializer = DailyLogWriteSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+
+        try:
+            log = log_service.save_day(
+                engagement,
+                data['log_date'],
+                mood=data.get('mood'),
+                note=data.get('note', ''),
+                items=data['items'],
+                student=request.user,
+            )
+        except log_service.NotTheLogOwner as exc:
+            return Response({'detail': str(exc)}, status=status.HTTP_403_FORBIDDEN)
+        except log_service.DailyLogError as exc:
+            # The base class on purpose: out-of-window, unselected subject and
+            # over-long day are all "your request, not our state", and catching the
+            # family means a rule added to the service later fails as a 400 rather
+            # than as a 500.
+            return Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Echo the date back off the **stored** row, not off the request body, so the
+        # response cannot claim to have saved a day other than the one it saved.
+        return Response(_study_log_payload(engagement, log.log_date))

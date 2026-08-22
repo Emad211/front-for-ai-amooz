@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/utils';
 import { DASHBOARD_NAV_LINKS } from '@/constants/navigation';
+import { useActiveAdvisor } from '@/hooks/use-active-advisor';
 import { ThemeToggle } from '@/components/ui/theme-toggle';
 import { Logo } from '@/components/ui/logo';
 import { UserProfile } from '@/components/layout/user-profile';
@@ -30,6 +31,10 @@ const NavLink = ({ href, children }: NavLinkProps) => {
 };
 
 export function DashboardHeader() {
+  // null (loading) renders nothing — the entry must never flash for students
+  // without an advisor. Injected at the render site; DASHBOARD_NAV_LINKS itself
+  // stays untouched so the entry stays hidden for everyone else.
+  const { hasActiveAdvisor } = useActiveAdvisor();
   return (
     <header dir="rtl" className="h-14 sm:h-16 md:h-20 flex items-center justify-between px-3 sm:px-4 md:px-10 bg-card/80 backdrop-blur-md border-b border-border sticky top-0 z-50">
         {/* Logo */}
@@ -41,6 +46,7 @@ export function DashboardHeader() {
             {DASHBOARD_NAV_LINKS.map((link) => (
                 <NavLink key={link.href} href={link.href}>{link.label}</NavLink>
             ))}
+            {hasActiveAdvisor && <NavLink href="/study-log">گزارش روزانه</NavLink>}
         </nav>
         
         {/* Actions */}

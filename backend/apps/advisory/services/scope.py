@@ -6,20 +6,23 @@ cross-tenant leak. Advisory does not repeat that: every view asks this module fo
 a queryset that is *already* scoped, and a guard test (``test_import_boundaries``)
 keeps advisory models from being imported anywhere else.
 
-Step 3 adds the engagement queries. ``visible_logs`` / ``visible_plans`` land in
-steps 6 and 7 alongside their models, and will be built *on top of*
-``visible_engagements`` rather than beside it.
+Step 3 adds the engagement queries. Step 5 adds the student-side log reads plus
+``log_date_window``, the one place the C3 "no retroactive visibility" bound is
+written down; ``visible_logs`` / ``visible_plans`` are the *advisor*-facing reads
+and land in steps 6 and 7 with the feed and the planner that consume them, built
+on top of ``visible_engagements`` and reusing that same window.
 """
 
 from __future__ import annotations
 
+import datetime
 
 from django.db.models import Q, QuerySet
 from django.utils import timezone
 
 from apps.organizations.models import Organization, OrganizationMembership
 
-from ..models import AdvisoryEngagement, StudentSubject, Subject
+from ..models import AdvisoryEngagement, DailyLog, StudentSubject, Subject
 
 
 def advisor_organization_ids(user) -> list[int]:
@@ -267,3 +270,65 @@ def curriculum_subjects(student) -> QuerySet[Subject]:
         .filter(Q(major=major) | Q(major__isnull=True))
         .filter(Q(organization__isnull=True) | Q(organization_id__in=org_ids))
     )
+
+
+# ── S5: the daily study log ──────────────────────────────────────────────────
+
+def log_date_window(engagement) -> tuple[datetime.date, datetime.date]:
+    """The inclusive ``(earliest, latest)`` date a log may be written or read for.
+
+    **This is where C3 lives.** The upper bound is today: a study log is a report of
+    what happened, so tomorrow cannot be reported, and allowing it would let a
+    student pre-fill a week and make the S8 commitment metric a forecast instead of a
+    measurement. The lower bound is ``started_on`` — the day the student accepted —
+    which is the whole of "no retroactive visibility": an advisor hired in آبان never
+    sees مهر, and they never see it because those days are *not writable*, not because
+    a reader remembered to filter them.
+
+    ``started_on`` is nullable on the model (a PENDING row has none), and this
+    function is only ever called for an ACTIVE engagement, where the accept path set
+    it. It still guards: a NULL falls back to today, i.e. the narrowest possible
+    window (today only) rather than the widest. If that data ever goes wrong the
+    failure is "the student can only log today", not "the advisor can read the
+    student's whole life".
+
+    Returned as plain dates so callers compare with ``<=`` and the same two bounds
+    reach the write door, the wire payload (``minDate``/``maxDate``) and step 6's
+    advisor feed. Uses ``timezone.localdate()``, never ``date.today()``: the server
+    runs UTC and «امروز» must mean the student's today.
+    """
+    today = timezone.localdate()
+    started = getattr(engagement, 'started_on', None) or today
+    # A clock skew or a hand-edited row could put ``started_on`` in the future; that
+    # must collapse to an empty-but-valid window, not an inverted one.
+    return (min(started, today), today)
+
+
+def student_logs(engagement) -> QuerySet[DailyLog]:
+    """Every day this engagement has recorded, newest first, items prefetched.
+
+    Read side of the S5 write door, and the sibling of ``student_subjects``: it takes
+    an engagement the caller has already resolved (via ``student_active_engagement``
+    for the student, ``advisor_engagement`` for step 6's advisor) and does no scoping
+    of its own.
+
+    The item prefetch deliberately does **not** filter on
+    ``student_subject__is_active``. An advisor dropping a subject must not erase the
+    minutes a student already logged against it — see ``DailyLogItem``'s docstring.
+    """
+    return (
+        DailyLog.objects.filter(engagement=engagement)
+        .prefetch_related('items__student_subject__subject')
+        .order_by('-log_date')
+    )
+
+
+def student_day_log(engagement, log_date) -> DailyLog | None:
+    """One day's log, or ``None`` if the student has not reported that day.
+
+    ``None`` is the ordinary case, not an error: most days are unreported, and the
+    view answers with an empty form rather than a 404 — a 404 for "you have not
+    written today's log yet" would be absurd.
+    """
+    return student_logs(engagement).filter(log_date=log_date).first()
+
