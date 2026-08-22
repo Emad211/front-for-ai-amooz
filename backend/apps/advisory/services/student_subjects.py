@@ -14,7 +14,8 @@ pointed at it never dangles.
 
 Authorization lives one layer up: the view resolves the engagement through
 ``scope.advisor_engagement`` (404 if foreign) before calling in here, and the
-subject ids are validated against ``scope.assignable_subjects`` below. This module
+subject ids are validated against ``scope.curriculum_subjects`` — the national
+curriculum the *student's* own (grade, major) derives — below. This module
 assumes the engagement is already the advisor's; it does not re-derive ownership.
 """
 
@@ -39,19 +40,20 @@ class SubjectSelectionError(Exception):
 
 
 class SubjectNotAssignable(SubjectSelectionError):
-    """400 — the body named a subject this advisor may not assign.
+    """400 — the body named a subject outside this student's derived curriculum.
 
-    "May not assign" folds together three cases the caller must not be able to
-    tell apart: the id does not exist, it is deactivated, or it is an
-    organization-private subject of an org this advisor does not belong to. All
-    three are "not in your assignable set", and distinguishing them would leak the
-    existence of other organizations' private catalogs.
+    "Not in the curriculum" folds together the cases the caller must not be able to
+    tell apart: the id does not exist, it is deactivated, it belongs to another
+    grade or major than the student's own, or it is an organization-private subject
+    of an org the student does not belong to. All are "not derivable for this
+    student", and distinguishing them would leak both other majors' catalogs and
+    other organizations' private ones.
     """
 
     def __init__(self, subject_ids):
         self.subject_ids = list(subject_ids)
         super().__init__(
-            'یک یا چند درس انتخاب‌شده در فهرست مجاز شما نیست.'
+            'این درس در برنامه‌ی درسیِ این دانش‌آموز نیست.'
         )
 
 
@@ -71,12 +73,17 @@ def set_engagement_subjects(engagement, subject_ids, *, advisor) -> QuerySet[Stu
     An empty ``subject_ids`` is legal and means "clear the selection": nothing is
     activated and all active rows are switched off. Returns the resulting active
     set (through ``scope.student_subjects`` — the same shape the read path uses).
+
+    ``advisor`` is retained on the signature (the view still passes ``request.user``)
+    for call-site stability and to document who is acting, but assignability is now
+    a fact about the *student's* curriculum, not the advisor's org catalog — so the
+    validation set comes from ``scope.curriculum_subjects(engagement.student)``.
     """
     wanted = list(dict.fromkeys(int(s) for s in subject_ids))
 
     if wanted:
         assignable = set(
-            scope.assignable_subjects(advisor)
+            scope.curriculum_subjects(engagement.student)
             .filter(pk__in=wanted)
             .values_list('pk', flat=True)
         )

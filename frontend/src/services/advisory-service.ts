@@ -19,16 +19,20 @@ import { refreshAccessToken } from '@/services/auth-service';
 export type AdvisorySubject = {
   id: number;
   name: string;
-  /** `null` for a platform-wide subject. */
+  /** `null` for a platform-wide (national) subject. */
   organizationId: number | null;
   organizationName: string | null;
   isGlobal: boolean;
   isActive: boolean;
-  /** Grade tag, `'10'|'11'|'12'` — or `null` for an "all levels" subject. It is
-   * a *filter* only: an untagged subject is always shown, and the picker never
-   * hides a subject a student's grade does not match. */
+  /** Grade code, e.g. `'10'`. An identity axis now, not a convenience filter:
+   * `null` is a dead/legacy row that derives for nobody (it no longer means
+   * "all levels"). */
   grade: string | null;
   gradeLabel: string | null;
+  /** Major (رشته) code, e.g. `'math'`. `null` = a *general* subject shared across
+   * every major of its grade (دینی/فارسی/…); a set value is major-specific. */
+  major: string | null;
+  majorLabel: string | null;
 };
 
 /** `freelance` = the advisor invited this student directly; `org` = the student
@@ -97,10 +101,16 @@ export type StudentEngagementResponse = {
 };
 
 /** `GET /advisory/students/<engagementId>/subjects/` — what the picker opens with.
- * `studentGrade` only *pre-fills* the grade filter; it gates nothing. */
+ * `subjects` is the student's **server-derived curriculum** (the candidates the
+ * advisor may focus), computed from the student's own `(grade, major)`; the axes are
+ * echoed back only for the header and gate nothing on the client. `studentGrade`
+ * being `null` means the student has not set a grade, so nothing was derived. */
 export type EngagementSubjectsResponse = {
   studentGrade: string | null;
   studentGradeLabel: string | null;
+  studentMajor: string | null;
+  studentMajorLabel: string | null;
+  subjects: AdvisorySubject[];
   selectedSubjectIds: number[];
 };
 
@@ -274,10 +284,12 @@ export const AdvisoryService = {
   },
 
   /**
-   * Read one student's current subject selection to seed the picker. `engagementId`
-   * is the ENGAGEMENT id (`AdvisorStudent.id`), never a user id. `404` for an
-   * engagement that is missing or belongs to another advisor — the caller shows a
-   * "not found", never a "forbidden", so the existence of the pairing never leaks.
+   * Open the picker for one student: returns their server-derived curriculum
+   * (`subjects`, the candidates the advisor may focus), the currently selected
+   * subset, and the student's axes for the header. `engagementId` is the
+   * ENGAGEMENT id (`AdvisorStudent.id`), never a user id. `404` for an engagement
+   * that is missing or belongs to another advisor — the caller shows a "not found",
+   * never a "forbidden", so the existence of the pairing never leaks.
    */
   getEngagementSubjects: async (
     engagementId: number,

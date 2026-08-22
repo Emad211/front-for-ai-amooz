@@ -7,11 +7,12 @@ a queryset that is *already* scoped, and a guard test (``test_import_boundaries`
 keeps advisory models from being imported anywhere else.
 
 Step 3 adds the engagement queries. ``visible_logs`` / ``visible_plans`` land in
-steps 5 and 7 alongside their models, and will be built *on top of*
+steps 6 and 7 alongside their models, and will be built *on top of*
 ``visible_engagements`` rather than beside it.
 """
 
 from __future__ import annotations
+
 
 from django.db.models import Q, QuerySet
 from django.utils import timezone
@@ -207,3 +208,62 @@ def assignable_subjects(advisor) -> QuerySet[Subject]:
         Q(organization__isnull=True) | Q(organization_id__in=org_ids),
     )
 
+
+# ── national curriculum: subjects derived from the student's own (grade, major) ──
+
+def student_organization_ids(student) -> list[int]:
+    """The organizations whose private subjects this student may see.
+
+    The student-side mirror of ``advisor_organization_ids``, and it keeps the same
+    three live conditions — only ``org_role`` differs (``STUDENT`` not ``ADVISOR``).
+    A subject an org made private is offered to that org's students on top of the
+    national base; a student who leaves the org (membership hard-deleted) loses
+    those the moment they go, with no signal to fire — hence the live check, never
+    a stored flag. C1 again, on the student side.
+    """
+    if not student or not getattr(student, 'is_authenticated', False):
+        return []
+    return list(
+        OrganizationMembership.objects.filter(
+            user=student,
+            org_role=OrganizationMembership.OrgRole.STUDENT,
+            status=OrganizationMembership.MemberStatus.ACTIVE,
+            organization__subscription_status=Organization.SubscriptionStatus.ACTIVE,
+        )
+        .values_list('organization_id', flat=True)
+        .distinct()
+    )
+
+
+def curriculum_subjects(student) -> QuerySet[Subject]:
+    """The national curriculum a student's own (grade, major) derives — the S4
+    picker's candidate set, replacing the flat ``assignable_subjects`` catalog.
+
+    Three identity cases the query reads (see ``Subject`` model comment):
+
+    * a subject's ``grade`` must equal the student's grade — a NULL-grade row
+      (dead/legacy) derives for nobody;
+    * ``major`` must be either the student's own major **or** NULL (the general
+      subjects shared across every major of that grade);
+    * scope must be national (``organization IS NULL``) **or** an org the student
+      currently belongs to.
+
+    Defensive exactly like ``AdvisorEngagementSubjectsView._student_axes``: a
+    student with no ``StudentProfile`` — or a profile with no grade — has no
+    derivable curriculum, so the answer is an empty queryset, never an exception.
+    ``is_active=True`` is filtered here so a deactivated subject is genuinely
+    non-assignable, not merely hidden from the picker.
+    """
+    if not hasattr(student, 'studentprofile'):
+        return Subject.objects.none()
+    profile = student.studentprofile
+    grade = getattr(profile, 'grade', None)
+    if not grade:
+        return Subject.objects.none()
+    major = getattr(profile, 'major', None) or None
+    org_ids = student_organization_ids(student)
+    return (
+        Subject.objects.filter(is_active=True, grade=grade)
+        .filter(Q(major=major) | Q(major__isnull=True))
+        .filter(Q(organization__isnull=True) | Q(organization_id__in=org_ids))
+    )

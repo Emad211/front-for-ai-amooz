@@ -39,6 +39,14 @@ pytestmark = [pytest.mark.django_db, pytest.mark.api]
 
 MY_SUBJECTS_URL = '/api/advisory/me/subjects/'
 
+# The common student and the common subject share this grade, so a plain
+# ``_subject('ریاضی')`` is derivable for a plain ``_student()``. Under the national
+# curriculum a subject is assignable only when its ``(grade, major, org)`` matches
+# what the *student's own* profile derives — a blank-grade student derives nothing —
+# so the fixtures give both a concrete grade rather than relying on the old
+# "any global subject is assignable to anyone" rule, which no longer holds.
+GRADE = '10'
+
 
 def _subjects_url(pk: int) -> str:
     """The advisor's per-student picker. ``pk`` is the **engagement** id."""
@@ -57,16 +65,29 @@ def _advisor(username='adv', **kwargs):
     return baker.make(User, username=username, role=User.Role.ADVISOR, **kwargs)
 
 
-def _student(username='stu', phone='09120000001', **kwargs):
-    return baker.make(User, username=username, role=User.Role.STUDENT, phone=phone, **kwargs)
+def _student(username='stu', phone='09120000001', *, grade=GRADE, major=None, **kwargs):
+    """A student whose profile carries ``grade``/``major`` (defaults: ``GRADE``, none).
+
+    The ``post_save`` signal already made the ``StudentProfile``; this sets the two
+    curriculum axes on it, because assignability is now derived from the *student's
+    own* (grade, major). Pass ``grade=None`` for the deliberately profile-less case.
+    A ``None`` major means "no track declared" — only the general (major-NULL)
+    subjects of the grade derive, never a major-specific one.
+    """
+    user = baker.make(User, username=username, role=User.Role.STUDENT, phone=phone, **kwargs)
+    profile = user.studentprofile
+    profile.grade = grade
+    profile.major = major
+    profile.save(update_fields=['grade', 'major'])
+    return user
 
 
 def _engagement(advisor, student, *, status=Status.ACTIVE, **kwargs):
     """A **freelance** engagement in ``status`` (ACTIVE by default).
 
-    Freelance on purpose: ``scope.assignable_subjects`` then needs no organization
-    membership, so a *global* subject is assignable to any advisor — which is all
-    these tests use, keeping them about the S4 join rather than about org setup.
+    Freelance on purpose: no organization membership is needed, so the national
+    (``organization=None``) subjects the fixtures create are derivable straight from
+    the student's grade — keeping these tests about the S4 join, not org setup.
     """
     defaults = {
         'invited_phone': student.phone or '',
@@ -80,23 +101,16 @@ def _engagement(advisor, student, *, status=Status.ACTIVE, **kwargs):
     return AdvisoryEngagement.objects.create(advisor=advisor, student=student, **defaults)
 
 
-def _subject(name, *, grade=None, organization=None, is_active=True):
-    """A catalog subject. Global (``organization=None``) unless told otherwise."""
-    return baker.make(
-        Subject, name=name, grade=grade, organization=organization, is_active=is_active,
-    )
-
-
-def _set_grade(student, grade: str) -> None:
-    """Set the grade on the student's auto-created profile.
-
-    A ``post_save`` signal already made a ``StudentProfile`` when the student user
-    was created, so this updates that row rather than creating a second one (the
-    profile is a OneToOne — a second ``create`` would raise).
+def _subject(name, *, grade=GRADE, major=None, organization=None, is_active=True):
+    """A catalog subject at ``GRADE``, general (``major=None``) and national
+    (``organization=None``) unless told otherwise — i.e. derivable by default for a
+    plain ``_student()``. Pass ``grade=None`` for a dead/legacy row (derives for
+    nobody), ``major=`` for a track-specific one, ``organization=`` for a private one.
     """
-    profile = student.studentprofile
-    profile.grade = grade
-    profile.save(update_fields=['grade'])
+    return baker.make(
+        Subject, name=name, grade=grade, major=major,
+        organization=organization, is_active=is_active,
+    )
 
 
 # ── permission matrix ─────────────────────────────────────────────────────────
@@ -419,44 +433,74 @@ def test_the_mirror_names_the_advisor_when_active():
     assert resp.data['advisorName'] == 'زهرا مرادی'
 
 
-# ── grade pre-fill: a convenience filter, gating nothing ──────────────────────
+# ── the student's axes: shown in the picker header, derived from server-side ──
 
-def test_get_prefills_the_students_grade_for_the_picker_filter():
-    advisor, student = _advisor(), _student()
-    _set_grade(student, '11')
+def test_get_exposes_the_students_grade_and_major_in_the_header():
+    """The picker header names who the student is; the candidate ``subjects`` are
+    derived from these axes server-side, so the client shows them but never filters
+    on them (the old client-side grade chip is gone)."""
+    advisor, student = _advisor(), _student(grade='11', major='science')
     engagement = _engagement(advisor, student)
 
     resp = _auth(advisor).get(_subjects_url(engagement.pk))
     assert resp.status_code == 200
     assert resp.data['studentGrade'] == '11'
     assert resp.data['studentGradeLabel'] == 'یازدهم'
+    assert resp.data['studentMajor'] == 'science'
+    assert resp.data['studentMajorLabel'] == 'علوم تجربی'
 
 
-def test_get_grade_is_null_when_the_student_has_no_grade():
-    """An absent grade is a quiet ``null`` — the picker just defaults its filter to
-    «همه». It gates nothing, so a student with no profile grade is not an error."""
-    advisor, student = _advisor(), _student()  # auto-profile, grade blank
+def test_get_is_quiet_and_empty_when_the_student_has_no_grade():
+    """A student with no grade derives no curriculum, so the header reads ``null``
+    and the candidate list is empty — not an error, just nothing to focus yet."""
+    advisor, student = _advisor(), _student(grade=None)
     engagement = _engagement(advisor, student)
+    _subject('ریاضی')  # a national subject exists, but a grade-less student derives nothing
     resp = _auth(advisor).get(_subjects_url(engagement.pk))
+    assert resp.status_code == 200
     assert resp.data['studentGrade'] is None
     assert resp.data['studentGradeLabel'] is None
+    assert resp.data['studentMajor'] is None
+    assert resp.data['subjects'] == []
 
 
-def test_a_grade_tagged_subject_is_assignable_to_any_student_regardless_of_grade():
-    """Grade is a filter tag, not a gate: nothing stops an advisor assigning a
-    12th-grade subject to an 11th-grader (konkur reality), and an untagged "all
-    levels" subject is assignable to everyone."""
-    advisor, student = _advisor(), _student()
-    _set_grade(student, '11')
+def test_get_returns_the_students_derived_curriculum_as_candidates():
+    """The advisor GET no longer lists the flat catalog: ``subjects`` is exactly what
+    the student's own (grade, major) derives — the grade's general subjects plus the
+    student's own track — and nothing from another grade, another major, or a dead
+    (grade-NULL) row. This is the inline round trip of ``curriculum_subjects``.
+    """
+    advisor, student = _advisor(), _student(grade='10', major='math')
     engagement = _engagement(advisor, student)
-    twelfth = _subject('حسابان', grade='12')
-    any_level = _subject('زبان', grade=None)
+    general = _subject('ادبیات فارسی')                       # grade 10, major None → derives
+    mine = _subject('هندسه', major='math')                    # my track → derives
+    _subject('زیست', major='science')                         # another track → hidden
+    _subject('حسابان', grade='12', major='math')              # another grade → hidden
+    _subject('زبان', grade=None)                              # dead row → hidden
 
-    resp = _auth(advisor).put(
-        _subjects_url(engagement.pk), {'subjectIds': [twelfth.id, any_level.id]}, format='json',
-    )
+    resp = _auth(advisor).get(_subjects_url(engagement.pk))
     assert resp.status_code == 200
-    assert {row['subjectId'] for row in resp.data} == {twelfth.id, any_level.id}
+    assert {s['id'] for s in resp.data['subjects']} == {general.id, mine.id}
+
+
+def test_an_off_grade_or_dead_subject_is_not_in_the_curriculum_and_is_400():
+    """The S4→national reversal: grade now *gates*, it is not a filter tag.
+
+    A 12th-grade subject is not in an 11th-grader's curriculum, and a grade-less
+    (dead/legacy) row is in nobody's — both are rejected, and because assignability
+    is checked before any write opens, nothing at all is stored.
+    """
+    advisor, student = _advisor(), _student(grade='11', major='math')
+    engagement = _engagement(advisor, student)
+    off_grade = _subject('حسابان', grade='12', major='math')
+    dead = _subject('زبان', grade=None)
+
+    for bad in (off_grade, dead):
+        resp = _auth(advisor).put(
+            _subjects_url(engagement.pk), {'subjectIds': [bad.id]}, format='json',
+        )
+        assert resp.status_code == 400
+    assert StudentSubject.objects.count() == 0
 
 
 # ── wire shape: camelCase allowlist, no internal keys ─────────────────────────
@@ -465,29 +509,37 @@ def test_the_advisor_get_shape_is_an_exact_allowlist():
     advisor, student = _advisor(), _student()
     engagement = _engagement(advisor, student)
     resp = _auth(advisor).get(_subjects_url(engagement.pk))
-    assert set(resp.data) == {'studentGrade', 'studentGradeLabel', 'selectedSubjectIds'}
+    assert set(resp.data) == {
+        'studentGrade', 'studentGradeLabel', 'studentMajor', 'studentMajorLabel',
+        'subjects', 'selectedSubjectIds',
+    }
+    assert isinstance(resp.data['subjects'], list)
     assert isinstance(resp.data['selectedSubjectIds'], list)
 
 
 def test_a_selected_subject_row_is_an_exact_camelcase_allowlist():
     """The row a client renders exposes only catalog facts — never the engagement it
-    hangs off, nor the ``is_active`` bookkeeping, nor any snake_case leak."""
-    advisor, student = _advisor(), _student()
+    hangs off, nor the ``is_active`` bookkeeping, nor any snake_case leak.
+
+    The row stays five keys even though the catalog now carries ``major``: the
+    student mirror is deliberately minimal (decision 5), so ``major`` is an
+    advisor-side fact that never reaches the student.
+    """
+    advisor, student = _advisor(), _student(grade='10', major='math')
     engagement = _engagement(advisor, student)
-    graded = _subject('حسابان', grade='12')
-    global_untagged = _subject('زبان')
+    general = _subject('ادبیات فارسی')          # grade 10, major=None → shared across majors
+    track = _subject('هندسه', major='math')      # grade 10, major-specific — both derivable
 
     _auth(advisor).put(
-        _subjects_url(engagement.pk), {'subjectIds': [graded.id, global_untagged.id]}, format='json',
+        _subjects_url(engagement.pk), {'subjectIds': [general.id, track.id]}, format='json',
     )
     rows = {row['subjectId']: row for row in _auth(student).get(MY_SUBJECTS_URL).data['subjects']}
 
     for row in rows.values():
         assert set(row) == {'subjectId', 'name', 'grade', 'gradeLabel', 'isGlobal'}
 
-    assert rows[graded.id]['grade'] == '12'
-    assert rows[graded.id]['gradeLabel'] == 'دوازدهم'
-    assert rows[graded.id]['isGlobal'] is True
-    # An untagged subject reports null on both — "all levels".
-    assert rows[global_untagged.id]['grade'] is None
-    assert rows[global_untagged.id]['gradeLabel'] is None
+    assert rows[general.id]['grade'] == '10'
+    assert rows[general.id]['gradeLabel'] == 'دهم'
+    assert rows[general.id]['isGlobal'] is True
+    assert rows[track.id]['grade'] == '10'
+    assert rows[track.id]['gradeLabel'] == 'دهم'

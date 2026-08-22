@@ -15,7 +15,7 @@ class belongs on a route without reading the body.
 from __future__ import annotations
 
 from django.db.models import F, Q
-from drf_spectacular.utils import OpenApiResponse, extend_schema
+from drf_spectacular.utils import OpenApiParameter, OpenApiResponse, extend_schema
 from rest_framework import status
 from rest_framework.generics import ListAPIView
 from rest_framework.permissions import IsAuthenticated
@@ -43,6 +43,7 @@ from .services.scope import (
     advisor_organization_ids,
     advisor_pending_invites,
     advisor_students,
+    curriculum_subjects,
     student_active_engagement,
     student_claimable_invites,
     # The scope *read* aliased away from the service module of the same name
@@ -201,35 +202,45 @@ class AdvisorEngagementSubjectsView(APIView):
     permission_classes = [IsAuthenticated, IsAdvisorUser]
     pagination_class = None
 
-    def _student_grade(self, engagement) -> tuple[str | None, str | None]:
-        """``(code, label)`` for the student's own grade, or ``(None, None)``.
+    def _student_axes(self, engagement):
+        """The student's own ``(grade, gradeLabel, major, majorLabel)``.
 
-        Read defensively and exactly as ``accounts`` reads the same field: a student
-        may have no ``StudentProfile`` row yet, and the grade on it may be blank. This
-        value only *pre-fills* the picker's grade filter — it gates nothing — so an
-        absent profile is a quiet ``(None, None)``. The ``hasattr`` guard is safe
+        Read defensively and exactly as ``accounts`` reads these fields: a student
+        may have no ``StudentProfile`` row yet, and either field on it may be blank.
+        These values pre-fill the picker's header and are what the server derived the
+        candidate ``subjects`` from — they gate nothing here (the service re-derives),
+        so an absent profile is a quiet all-``None``. The ``hasattr`` guard is safe
         because Django makes a reverse-one-to-one miss raise ``AttributeError``.
         """
         student = engagement.student
         if not hasattr(student, 'studentprofile'):
-            return None, None
+            return None, None, None, None
         profile = student.studentprofile
-        grade = getattr(profile, 'grade', None)
-        if not grade:
-            return None, None
-        return grade, profile.get_grade_display()
+        grade = getattr(profile, 'grade', None) or None
+        major = getattr(profile, 'major', None) or None
+        return (
+            grade,
+            profile.get_grade_display() if grade else None,
+            major,
+            profile.get_major_display() if major else None,
+        )
 
     @extend_schema(
         tags=['advisory'],
-        summary='درس‌های انتخاب‌شده‌ی یک دانش‌آموز (خواندن)',
+        summary='درس‌های قابل‌انتخاب و انتخاب‌شده‌ی یک دانش‌آموز (خواندن)',
         description=(
             '`pk` شناسه‌ی همکاری است، نه شناسه‌ی کاربر؛ برای همکاریِ ناموجود یا '
-            'متعلق به مشاورِ دیگر ۴۰۴. `studentGrade` فقط برای پیش‌پُر کردنِ '
-            'فیلترِ پایه در پیکر است و چیزی را محدود نمی‌کند.'
+            'متعلق به مشاورِ دیگر ۴۰۴. `subjects` برنامه‌ی درسیِ مشتق‌شده از '
+            'پایه و رشته‌ی خودِ دانش‌آموز است (کاندیداهای پیکر)، و '
+            '`selectedSubjectIds` زیرمجموعه‌ای است که مشاور فوکوس کرده. '
+            '`studentGrade`/`studentMajor` فقط برای نمایش در سرصفحه‌اند.'
         ),
         responses={
             200: OpenApiResponse(
-                description='{studentGrade, studentGradeLabel, selectedSubjectIds[]}',
+                description=(
+                    '{studentGrade, studentGradeLabel, studentMajor, '
+                    'studentMajorLabel, subjects[], selectedSubjectIds[]}'
+                ),
             ),
             404: OpenApiResponse(description='همکاری پیدا نشد'),
         },
@@ -238,13 +249,20 @@ class AdvisorEngagementSubjectsView(APIView):
         engagement = advisor_engagement(request.user, pk)
         if engagement is None:
             return Response({'detail': 'همکاری پیدا نشد.'}, status=status.HTTP_404_NOT_FOUND)
-        grade, grade_label = self._student_grade(engagement)
+        grade, grade_label, major, major_label = self._student_axes(engagement)
+        # The candidate set is the student's derived curriculum — the same queryset
+        # the write door validates against — so the picker and the validator can
+        # never disagree about what is assignable.
+        candidates = curriculum_subjects(engagement.student).select_related('organization')
         selected = list(
             engagement_subjects(engagement).values_list('subject_id', flat=True)
         )
         return Response({
             'studentGrade': grade,
             'studentGradeLabel': grade_label,
+            'studentMajor': major,
+            'studentMajorLabel': major_label,
+            'subjects': SubjectSerializer(candidates, many=True).data,
             'selectedSubjectIds': selected,
         })
 

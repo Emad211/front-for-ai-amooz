@@ -16,9 +16,12 @@ import { Skeleton } from '@/components/ui/skeleton';
  * Advisor → درس‌ها (subject catalog), read-only.
  *
  * The advisor does not create subjects: the platform admin curates the shared
- * catalog and an organization curates its own. This page exists so the advisor
- * can see exactly what they will be able to assign in S4 — and so a missing
- * subject is a visible, reportable fact rather than a silently short dropdown.
+ * national catalog and an organization curates its own private additions. This
+ * page is a read-only view of that full catalog — what an advisor can actually
+ * *focus* for a given student is derived per-student from that student's own grade
+ * and major (the per-student picker), so this is a reference list, not that picker.
+ * It also makes a missing subject a visible, reportable fact rather than a silently
+ * short picker.
  *
  * Filtering is client-side because the endpoint is unpaginated by design: the
  * whole catalog is already in hand, so a round-trip per keystroke would be
@@ -68,7 +71,8 @@ export default function AdvisorSubjectsPage() {
             درس‌ها
           </h1>
           <p className="mt-1.5 text-sm text-muted-foreground">
-            فهرست درس‌هایی که می‌توانید در برنامهٔ دانش‌آموزان‌تان استفاده کنید.
+            کاتالوگِ کاملِ درس‌ها. برنامه‌ی هر دانش‌آموز از پایه و رشته‌ی خودش
+            ساخته می‌شود؛ اینجا فقط فهرست را می‌بینید.
           </p>
         </div>
         {subjects && subjects.length > 0 && (

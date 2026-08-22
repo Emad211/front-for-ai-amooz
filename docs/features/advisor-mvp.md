@@ -15,7 +15,7 @@
 | حالت کار | هم فریلنسر هم سازمانی، با **داشبورد سوییچ‌شو** (مکانیزم موجود `WorkspaceSwitcher`). |
 | جذب دانش‌آموز (فریلنسر) | مشاور با **شماره تلفن** دانش‌آموزِ *موجود* دعوت می‌فرستد. **هرگز کاربر نمی‌سازد.** |
 | جذب دانش‌آموز (سازمانی) | سازمان یک `StudyGroup` را **گروهی** به مشاور می‌سپارد. |
-| دامنه تحصیلی | **تمام سطوح**. هیچ‌جا «کنکور» یا پایه‌ی سخت‌کدشده نداریم. (گام ۴ یک **برچسبِ پایه‌ی اختیاری** روی `Subject` افزود، صرفاً برای فیلترِ راحتیِ انتخابگر؛ درسِ بی‌برچسب = همه‌ی سطوح و همیشه نمایش داده می‌شود، پس این قفل نمی‌شکند — §۱۱.) |
+| دامنه تحصیلی | **برنامه‌ی درسیِ ملی، دیتا‌محور و قابل‌بسط — نه آزمونِ سخت‌کدشده.** پایه (`grade`) و رشته (`major`) **محورهای هویتِ** درس‌اند؛ مجموعه‌ی درسِ هر دانش‌آموز از (پایه × رشته)ی **خودش** مشتق می‌شود و مشاور زیرمجموعه‌ای را فوکوس می‌کند. **رشته از دیتای خودِ دانش‌آموز** می‌آید (نه انتخابِ مشاور/سازمان). این توصیفِ گام ۴ («پایه = برچسبِ فیلتر / بی‌پایه = همه‌ی سطوح») را **وارونه** می‌کند: حالا بی‌پایه = برای هیچ‌کس مشتق نمی‌شود — بازطراحی در §۱۲. |
 | مدل زمانی | **هفته‌ای، تکرارشونده، لنگرزده به شنبه**. ماه = تجمیع هفته‌ها روی خواندن. |
 | آزمون بیرونی / OCR | **خارج از MVP**. (فاز بعد، روی زیرساخت exam-prep موجود.) |
 | LLM | **صفر تماس LLM در MVP.** تسک Celery فقط دو مورد: ارسال پیامک دعوت (صف `default`، گام ۳ — دلیل امنیتی: §۱۰.۲) و مصالحه‌گر شبانه‌ی گام ۹. |
@@ -32,12 +32,12 @@
 ## ۲. مدل داده (۷ جدول — کل MVP)
 
 ```
-Subject                                     ← لند شد در گام ۲ · grade در گام ۴ · انحراف‌ها: §۹.۲ · §۱۱
+Subject                                     ← لند شد در گام ۲ · grade در گام ۴ · بازطراحیِ ملی (grade+major هویت): §۱۲ · انحراف‌ها: §۹.۲ · §۱۱
   name(fa) · normalized_name(مشتق از name، editable=False، db_index) · is_active
-  grade(CharField(2)، '10'|'11'|'12'، null، db_index — برچسبِ فیلتر، نه هویت؛ NULL=همه‌ی سطوح)
-  organization FK(null=global) · created_at · updated_at · created_by FK SET_NULL
-  UniqueConstraint(normalized_name, organization)          ← grade عمداً در کلید یکتایی نیست
-  UniqueConstraint(normalized_name) WHERE organization IS NULL   ← لازم است: PG هر NULL را متمایز می‌بیند
+  grade(CharField(2)، '10'|'11'|'12'، null، db_index — بخشی از هویت؛ NULL=درسِ مرده، برای هیچ‌کس مشتق نمی‌شود)
+  major(CharField(20)، math|science|humanities، null، db_index — بخشی از هویت؛ NULL=درسِ عمومیِ مشترکِ همه‌ی رشته‌های آن پایه)
+  organization FK(null=ملی) · created_at · updated_at · created_by FK SET_NULL
+  UniqueConstraint(normalized_name, grade, major, organization) NULLS NOT DISTINCT   ← هویتِ چهارتایی؛ یک constraint جای دو تا (§۱۲)
 
 AdvisoryEngagement                          ← حاملِ tenancy · لند شد در گام ۳ · انحراف‌ها: §۱۰.۲
   advisor  FK User  on_delete=PROTECT       (limit_choices_to role=ADVISOR)
@@ -390,6 +390,12 @@ check + ۲ unique جزئی + ۳ ایندکس، همه با پیام فارسی)�
 
 ## ۱۱. ثبت اجرا — گام ۴ (انتخابِ درسِ دانش‌آموز · `StudentSubject`)
 
+> **بازطراحی شد در §۱۲.** گام ۴ کاتالوگِ **تخت** و سازمان‌محور ساخت؛ §۱۲ آن را به
+> **برنامه‌ی درسیِ ملیِ مشتق‌شده از (پایه × رشته)ی خودِ دانش‌آموز** تبدیل کرد. `StudentSubject`
+> و منطقِ set-replace **دست‌نخورده**اند؛ تنها **منبعِ کاندیداها** از `assignable_subjects` به
+> `curriculum_subjects` عوض شد. ردیف‌های ۱–۲ در §۱۱.۲ زیر (پایه = برچسبِ فیلتر) در §۱۲ **وارونه**
+> شده‌اند. این بخش به‌عنوانِ **رکوردِ تاریخیِ** گام ۴ دست‌نخورده نگه داشته می‌شود.
+
 وضعیت: **کامل، تست‌شده، آماده‌ی دیپلوی.** صفر تماس LLM، صفر Celery — CRUDِ خالص.
 
 چک زنده (§۵ سطر ۴): مشاور در `/advisor/students` روی «انتخاب درس‌ها»ی یک دانش‌آموزِ
@@ -437,5 +443,95 @@ import مدلِ حاملِ tenancy)، `urls.py` (`advisory_student_subjects` + `
   و تست‌های به‌روزشده‌ی مرزِ import و آلوستِ کاتالوگ.
 - `npx tsc --noEmit` → پاک.
 - چکِ زنده: به عهده‌ی اونر در دیپلوی (§۵ سطر ۴ / بالای همین بخش).
+
+
+---
+
+## ۱۲. بازطراحیِ گام ۴ — کاتالوگِ ملی + مشتق‌گیری از (پایه × رشته) + فوکوسِ مشاور
+
+وضعیت: **کامل، تست‌شده (۲۲۵ passed روی Postgresِ واقعی)، آماده‌ی دیپلوی.** صفر تماس LLM.
+این بخش **بازنگریِ گام ۴** است، نه گامی نو در پلنِ ۱۰گامیِ §۵ (گام ۵ همچنان `DailyLog` است).
+`StudentSubject` و منطقِ set-replace **دست‌نخورده** ماندند؛ تنها **منبعِ کاندیداها** عوض شد:
+از کاتالوگِ تختِ `assignable_subjects` به برنامه‌ی درسیِ مشتق‌شده‌ی `curriculum_subjects`.
+
+### چرا — گپِ منطقی که اونر گرفت
+گام ۴ کاتالوگی **تخت** و سازمان‌محور می‌ساخت و مشاور از دلِ آن هر درسی را دستی تیک می‌زد.
+تصمیمِ قفل‌شده‌ی اونر این را وارونه کرد: **رشته از دیتای خودِ دانش‌آموز** می‌آید (نه انتخابِ مشاور،
+نه تعریفِ سازمان)؛ یک **مجموعه‌ی پایه‌ی ثابتِ ملی** به‌ازای هر (پایه × رشته) برای همه یکسان است؛
+سیستم مجموعه‌ی درسِ دانش‌آموز را **خودکار مشتق می‌کند** و مشاور فقط یک **زیرمجموعه را فوکوس** می‌کند.
+«ملی + سازمانِ اختیاری»: پایه‌ی ملی برای همه، و سازمان‌ها **می‌توانند** درسِ خصوصی بیفزایند
+(`Subject.organization` نگه داشته شد؛ NULL = ملی).
+
+### تغییرِ معناییِ پایه/رشته (وارونه‌کننده‌ی §۱۱.۲ ردیف‌های ۱–۲)
+`grade` و `major` حالا **محورهای هویت‌اند**، نه برچسبِ فیلترِ راحتی:
+- `grade=NULL` → دیگر «همه‌ی سطوح» نیست؛ یعنی **درسِ مرده/legacy که برای هیچ‌کس مشتق نمی‌شود**.
+- `grade` ست، `major=NULL` → درسِ **عمومیِ مشترک** بینِ همه‌ی رشته‌های آن پایه.
+- `grade` و `major` هر دو ست → درسِ **مخصوصِ آن رشته**.
+
+### ۱۲.۱ آنچه لند شد
+
+**مدل + مهاجرت** — `models.py`: افزودنِ `major` (+ `SUBJECT_MAJOR_CHOICES`ِ محلی)، بازنگاریِ متنِ
+راهنمای `grade` به معنای هویتی، و جایگزینیِ **دو** constraintِ قدیمی (`uniq_advisory_subject_norm_org`
++ پارسلِ `uniq_advisory_subject_norm_global WHERE organization IS NULL`) با **یک**
+`UniqueConstraint(normalized_name, grade, major, organization)` با `nulls_distinct=False`
+(`UNIQUE NULLS NOT DISTINCT` — جنگو ۵+/PG۱۵+). NULLS NOT DISTINCT هر دو NULL را برابر می‌بیند، پس
+یک کلید هم ردیفِ ملی (org NULL) و هم عمومی (major NULL) را پوشش می‌دهد. `clean()` روی هر چهار ستون
+دوپلیکیت می‌گیرد؛ `save()` همچنان `normalized_name` را از `name` بازمحاسبه می‌کند (پس بودنش در lookupِ
+`get_or_create` انحراف نمی‌سازد). `migrations/0004_...`: RemoveConstraint×۲ + AddField(major) +
+AlterField(grade، متنِ نو) + AddConstraint. لیست‌های پایه/رشته **به‌ارزش آینه‌ی
+`accounts.StudentProfile`اند** (کپی، نه import — تا وابستگیِ بین‌اپی نسازد).
+
+**اسکوپ** — `services/scope.py`: تابعِ نوِ **`curriculum_subjects(student)`** قلبِ بازطراحی است — از
+`studentprofile.grade`/`major`ِ خودِ دانش‌آموز مشتق می‌کند: بی‌پروفایل یا بی‌پایه → `Subject.objects.none()`ِ
+ساکت؛ فیلترِ `is_active=True` + `grade` + (`major` دانش‌آموز **یا** `major IS NULL`) + (ملی **یا**
+سازمان‌های عضویتِ فعالِ دانش‌آموز). مکملِ نوِ **`student_organization_ids(student)`** (آینه‌ی
+`advisor_organization_ids`، فقط عضویتِ STUDENTِ فعال + اشتراکِ فعالِ سازمان). `assignable_subjects(advisor)`
+(کاتالوگِ تخت) **باقی ماند ولی دیگر منبعِ پیکر نیست**.
+
+**درِ نوشتن** — `services/student_subjects.py`: `set_engagement_subjects` حالا مقابلِ
+`curriculum_subjects(engagement.student)` اعتبارسنجی می‌کند (نه `assignable_subjects`). پارامترِ `advisor`
+روی امضا **نگه داشته شد** (پایداریِ محلِ فراخوان + مستندسازیِ اینکه کی عمل می‌کند). پیامِ
+`SubjectNotAssignable`: «این درس در برنامه‌ی درسیِ این دانش‌آموز نیست.» set-replace با toggleِ `is_active`
+در یک ترنزاکشن دست‌نخورده. `MAX_SUBJECTS_PER_STUDENT = 60`.
+
+**سریالایزر + ویو** — `SubjectSerializer`: `major`/`majorLabel` افزوده شد (کنارِ `grade`/`gradeLabel`).
+`StudentSubjectSerializer` عمداً **`major` را فاش نمی‌کند** (دیدِ دانش‌آموز کمینه می‌ماند). GETِ
+`AdvisorEngagementSubjectsView` حالا `{studentGrade, studentGradeLabel, studentMajor, studentMajorLabel,
+subjects[], selectedSubjectIds[]}` برمی‌گرداند — `subjects` همان querysetِ `curriculum_subjects` است که درِ
+نوشتن هم با آن اعتبارسنجی می‌کند، پس پیکر و اعتبارسنج هرگز سرِ «چه چیزی مجاز است» اختلاف پیدا نمی‌کنند.
+`_student_axes` پروفایل را دقیقاً مثلِ `accounts` و با گاردِ امن می‌خواند (نبودِ پروفایل = همه‌چیز `None`).
+
+**سیدینگ** — `management/commands/seed_advisory_subjects.py` (تنها نویسنده‌ی کاتالوگِ ملی) +
+`data/national_curriculum.json` (عمداً خالی تا گام ۹). فایل را **کامل** اعتبارسنجی می‌کند بعد می‌نویسد
+(یک ردیفِ خراب کلِ سید را می‌بندد، بی‌نوشتنِ نصفه)، idempotent با `get_or_create` روی چهارتاییِ هویت
+(`organization=None`)، `--dry-run`/`--file`، هشدارِ دوپلیکیتِ درون‌فایلی، پایه اجباری/رشته اختیاری،
+بی‌کلابرِ ادیتِ اسمِ ادمین. `_valid_codes` کدهای مجاز را **مستقیم از
+`Subject._meta.get_field(...).choices`** می‌خواند — پس گاردِ مرزِ import تنگ می‌ماند (فقط `Subject`
+عبور می‌کند، نه تاپلِ choices).
+
+**دیدِ دانش‌آموز — بدونِ تغییر:** `me/subjects/` و کارتِ خانه‌ی دانش‌آموز دست‌نخورده؛ مشتق‌گیریِ خودکار فقط سمتِ مشاور است.
+
+**فرانت** — `services/advisory-service.ts`: `AdvisorySubject` صاحبِ `major`/`majorLabel` شد و متنِ `grade`
+به معنای هویتی بازنویسی؛ `EngagementSubjectsResponse` صاحبِ `studentMajor`/`studentMajorLabel` + `subjects[]`؛
+docstringِ `getEngagementSubjects` به «برنامه‌ی درسیِ مشتق‌شده‌ی سمت‌سرور». `subject-picker-dialog.tsx` ساده
+شد (کاندیداها حالا سمت‌سرور مشتق می‌شوند، پس فیلترِ چیپِ سمت‌کلاینت تا حدِ زیادی حذف شد؛ خالص ۸۵− خط).
+`advisor/subjects/page.tsx` هم‌راستا شد.
+
+### ۱۲.۲ نقشه‌ی فلیپِ تست‌ها
+- **نو:** `test_curriculum_subjects.py` (۱۴ تست: سه حالتِ هویت، `.none()`ِ ساکت، گیتِ `is_active`، ملی/خصوصی×عضویت/اشتراک/تعلیق).
+- **نو:** `test_seed_advisory_subjects.py` (۱۲ تست: validate-first، idempotent-by-identity، بی‌کلابرِ ادیتِ ادمین، major-null=عمومی).
+- **به‌روز:** `test_student_subjects.py` (۳۴)، `test_subject_catalog.py` (۳۵)، `test_subjects_api.py` (۱۹).
+- گاردِ مرزِ import (`test_import_boundaries.py`) دست‌نخورده: `student_subjects.py` هنوز معاف، `_UNSCOPED={'Subject'}`.
+
+### ۱۲.۳ وریفای انجام‌شده
+- کلِ اپ `advisory` روی **Postgresِ واقعی** → **۲۲۵ passed**، صفر تماس LLM.
+- `npx tsc --noEmit` → پاک.
+- سیدِ دومِ idempotency (۰ ساخته در ران ۲) و جریانِ آنبوردینگ→پیکر→خانه: پس از پُر‌شدنِ دیتا در گام ۹ / اونر در دیپلوی.
+
+### ۱۲.۴ در انتظارِ گام ۹ (دیتا)
+لیستِ پایه‌ها + رشته‌ها + درس‌ها هنوز نیامده. با ورودِ دیتا: کدها به choiceها **افزوده** (نه جایگزین)
+می‌شوند (+ نگاشتِ `_normalize_student_grade`/`_normalize_student_major`)، `national_curriculum.json` پُر
+می‌شود (درس‌های عمومی → `major=null`)، سید اجرا و دراپ‌داونِ آنبوردینگ هم‌راستا می‌شود. کدِ پایه ≤۲ کاراکتر
+بماند (وگرنه `max_length` روی **هر دو**ی `StudentProfile.grade` و `Subject.grade` بالا برود).
 
 

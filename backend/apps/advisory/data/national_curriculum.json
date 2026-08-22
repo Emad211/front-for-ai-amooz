@@ -1,0 +1,5 @@
+{
+  "_comment": "National curriculum seed for the advisor subject picker (advisor-mvp Step 8/9). Each entry in `subjects` is {\"name\": \"<Persian subject name>\", \"grade\": \"<grade code, e.g. 10>\", \"major\": \"<major code, e.g. math — or null / omit for a *general* subject shared across every major of that grade>\"}. `grade` is REQUIRED and must be a valid SUBJECT_GRADE_CHOICES code: a gradeless subject derives for nobody, so seeding one is a mistake the loader rejects. `major` is OPTIONAL. Every seeded row is national (organization = NULL); org-private subjects are curated in Django admin, not here. This file is INTENTIONALLY empty until Step 9 of docs/features/advisor-mvp.md fills it from the real curriculum lists; run `python manage.py seed_advisory_subjects` after editing.",
+  "version": 1,
+  "subjects": []
+}

@@ -98,13 +98,16 @@ def test_serialized_fields_are_camel_case_and_hide_the_internal_key():
     item = response.data[0]
     assert set(item) == {
         'id', 'name', 'organizationId', 'organizationName', 'isGlobal', 'isActive',
-        'grade', 'gradeLabel',
+        'grade', 'gradeLabel', 'major', 'majorLabel',
     }
     assert item['isGlobal'] is True
     assert item['organizationId'] is None
-    # An untagged subject reads as "all levels" on both the raw code and the label.
+    # An untagged (dead/legacy) subject reports null on grade and major alike — it
+    # derives for nobody now, but the catalog view still serializes it faithfully.
     assert item['grade'] is None
     assert item['gradeLabel'] is None
+    assert item['major'] is None
+    assert item['majorLabel'] is None
 
 
 def test_globals_are_listed_before_org_private_subjects():

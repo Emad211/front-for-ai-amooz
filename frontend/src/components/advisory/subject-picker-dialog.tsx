@@ -31,20 +31,14 @@ import {
  * A set-replace, not a checklist you save row by row: the advisor ticks the whole
  * set and «ذخیره» sends it once, so the student's subjects only ever change on a
  * deliberate save. Everything is loaded fresh on each open — the current selection
- * can have moved since last time, and the student's grade seeds the grade filter.
+ * can have moved since last time.
  *
- * The grade chips are a *convenience filter only*. An untagged subject ("all
- * levels") is always shown, and a 12th-grader who studies grades 10–12 (the konkur
- * reality) can widen the filter to several grades at once — so the filter never
- * hides a subject the advisor legitimately wants to assign. Assignability itself is
- * decided server-side; this dialog only helps the advisor find the row.
+ * The candidate list is the student's **derived curriculum**: the server computes it
+ * from the student's own `(grade, major)` and returns it as `subjects`, so this
+ * dialog neither knows nor re-implements the derivation rule. There is no grade
+ * filter any more — the whole list already belongs to this one student's grade and
+ * major, so the only narrowing left is a text search to find a row quickly.
  */
-const GRADE_CHIPS: { code: string; label: string }[] = [
-  { code: '10', label: 'دهم' },
-  { code: '11', label: 'یازدهم' },
-  { code: '12', label: 'دوازدهم' },
-];
-
 type SubjectPickerDialogProps = {
   /** The ENGAGEMENT id (`AdvisorStudent.id`), never the student's user id. */
   engagementId: number;
@@ -59,14 +53,18 @@ export function SubjectPickerDialog({
   const [catalog, setCatalog] = useState<AdvisorySubject[] | null>(null);
   const [error, setError] = useState('');
   const [query, setQuery] = useState('');
-  // Grade filter: an empty set means «همه» (show every grade). A non-empty set
-  // shows only those grades — plus every untagged subject, always.
-  const [gradeFilter, setGradeFilter] = useState<Set<string>>(new Set());
+  // The student's own axes, echoed back by the GET purely for the header: they let
+  // the advisor see *why* this candidate set, and tell an empty-because-no-grade
+  // apart from an empty-because-no-catalog. `studentGrade === null` ⇒ the student
+  // has not set a grade, so the server derived nothing.
+  const [studentGrade, setStudentGrade] = useState<string | null>(null);
+  const [studentAxisLabel, setStudentAxisLabel] = useState('');
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [saving, setSaving] = useState(false);
 
-  // Load the assignable catalog and this student's current selection together,
-  // each time the dialog opens. The student's grade pre-selects its own chip.
+  // One call on each open: the derived curriculum, the current selection, and the
+  // student's axes for the header all arrive together. The candidate set is computed
+  // server-side, so there is nothing to merge or filter here.
   useEffect(() => {
     if (!open) return;
     let active = true;
@@ -74,16 +72,16 @@ export function SubjectPickerDialog({
     setCatalog(null);
     setQuery('');
 
-    Promise.all([
-      AdvisoryService.getSubjects(),
-      AdvisoryService.getEngagementSubjects(engagementId),
-    ])
-      .then(([subjects, current]) => {
+    AdvisoryService.getEngagementSubjects(engagementId)
+      .then((resp) => {
         if (!active) return;
-        setCatalog(subjects);
-        setSelected(new Set(current.selectedSubjectIds));
-        setGradeFilter(
-          current.studentGrade ? new Set([current.studentGrade]) : new Set(),
+        setCatalog(resp.subjects);
+        setSelected(new Set(resp.selectedSubjectIds));
+        setStudentGrade(resp.studentGrade);
+        setStudentAxisLabel(
+          [resp.studentGradeLabel, resp.studentMajorLabel]
+            .filter(Boolean)
+            .join(' · '),
         );
       })
       .catch((err: unknown) => {
@@ -97,27 +95,16 @@ export function SubjectPickerDialog({
 
   const visible = useMemo(() => {
     if (!catalog) return [];
-    return catalog.filter((s) => {
-      if (!matchesSearch(s.name, query)) return false;
-      if (gradeFilter.size === 0) return true; // «همه»
-      if (s.grade === null) return true; // untagged = all levels
-      return gradeFilter.has(s.grade);
-    });
-  }, [catalog, query, gradeFilter]);
+    // Search-only: the whole candidate set already belongs to this student's grade
+    // and major (the server derived it), so there is nothing more to gate on.
+    return catalog.filter((s) => matchesSearch(s.name, query));
+  }, [catalog, query]);
 
   const toggleSubject = (id: number) =>
     setSelected((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
       else next.add(id);
-      return next;
-    });
-
-  const toggleGrade = (code: string) =>
-    setGradeFilter((prev) => {
-      const next = new Set(prev);
-      if (next.has(code)) next.delete(code);
-      else next.add(code);
       return next;
     });
 
@@ -152,19 +139,24 @@ export function SubjectPickerDialog({
         className="flex max-h-[85vh] flex-col gap-0 p-0 sm:max-w-lg"
       >
         <DialogHeader className="space-y-1 px-5 pt-5 text-right">
-          <DialogTitle className="flex items-center gap-2 text-base">
+          <DialogTitle className="flex flex-wrap items-center gap-2 text-base">
             <BookOpen className="h-4 w-4 text-primary" />
             درس‌های «{studentName}»
+            {studentAxisLabel && (
+              <Badge variant="secondary" className="font-normal">
+                {studentAxisLabel}
+              </Badge>
+            )}
           </DialogTitle>
           <DialogDescription className="text-xs leading-relaxed">
-            درس‌ها را انتخاب کنید و «ذخیره» بزنید. هرچه انتخاب نشود کنار گذاشته
-            می‌شود. فیلترِ پایه فقط برای پیدا کردنِ سریع‌تر است و چیزی را محدود
-            نمی‌کند.
+            از برنامه‌ی درسیِ این دانش‌آموز، درس‌هایی را که می‌خواهید روی آن‌ها
+            تمرکز شود انتخاب کنید و «ذخیره» بزنید. هرچه انتخاب نشود کنار گذاشته
+            می‌شود.
           </DialogDescription>
         </DialogHeader>
 
-        {/* search + grade chips — fixed above the scrolling list */}
-        <div className="shrink-0 space-y-2.5 px-5 pt-3">
+        {/* search — fixed above the scrolling list */}
+        <div className="shrink-0 px-5 pt-3">
           <div className="relative">
             <Search className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
@@ -175,29 +167,6 @@ export function SubjectPickerDialog({
               aria-label="جستجوی درس"
               disabled={loading || !!error}
             />
-          </div>
-          <div className="flex flex-wrap gap-1.5">
-            <Button
-              type="button"
-              size="sm"
-              variant={gradeFilter.size === 0 ? 'default' : 'outline'}
-              onClick={() => setGradeFilter(new Set())}
-              className="h-7 rounded-full px-3 text-xs"
-            >
-              همه
-            </Button>
-            {GRADE_CHIPS.map((g) => (
-              <Button
-                key={g.code}
-                type="button"
-                size="sm"
-                variant={gradeFilter.has(g.code) ? 'default' : 'outline'}
-                onClick={() => toggleGrade(g.code)}
-                className="h-7 rounded-full px-3 text-xs"
-              >
-                {g.label}
-              </Button>
-            ))}
           </div>
         </div>
 
@@ -220,8 +189,12 @@ export function SubjectPickerDialog({
             )}
 
             {catalog && !error && visible.length === 0 && (
-              <p className="px-2 py-8 text-center text-sm text-muted-foreground">
-                درسی با این جستجو پیدا نشد.
+              <p className="px-2 py-8 text-center text-sm leading-relaxed text-muted-foreground">
+                {catalog.length === 0
+                  ? studentGrade === null
+                    ? 'تا وقتی دانش‌آموز پایه‌اش را در پروفایل ثبت نکند، برنامه‌ی درسی‌ای برای انتخاب نیست.'
+                    : 'برای این پایه و رشته هنوز درسی در برنامه ثبت نشده است.'
+                  : 'درسی با این جستجو پیدا نشد.'}
               </p>
             )}
 

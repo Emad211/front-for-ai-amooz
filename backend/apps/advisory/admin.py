@@ -10,6 +10,7 @@ the support tool for "my advisor disappeared" tickets, and it is the only place 
 operator can end an engagement. It is deliberately *not* creatable here — an
 engagement created by an admin would have no ``terms_accepted_at``, i.e. a student
 who never agreed to be watched.
+
 """
 
 from django.contrib import admin
@@ -19,8 +20,8 @@ from .models import AdvisoryEngagement, StudentSubject, Subject
 
 @admin.register(Subject)
 class SubjectAdmin(admin.ModelAdmin):
-    list_display = ('name', 'grade', 'scope_label', 'is_active', 'created_at')
-    list_filter = ('is_active', 'grade', 'organization')
+    list_display = ('name', 'grade', 'major', 'scope_label', 'is_active', 'created_at')
+    list_filter = ('is_active', 'grade', 'major', 'organization')
     search_fields = ('name', 'normalized_name')
     raw_id_fields = ('organization', 'created_by')
     readonly_fields = ('normalized_name', 'created_at', 'updated_at')

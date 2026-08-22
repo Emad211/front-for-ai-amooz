@@ -6,6 +6,10 @@ the **tenancy carrier** for every table after it: a plan, a log and a subject
 selection all hang off an engagement, never off a ``User``. That is what makes
 every later authorization query a join with an owner in it rather than a
 "current user" comparison that is easy to forget.
+
+Step 4 added ``StudentSubject`` (the advisor's per-student picks). Both are
+tenancy-bearing and reachable only through ``services/scope.py`` plus their
+write doors — see ``test_import_boundaries``.
 """
 
 import datetime
@@ -28,18 +32,36 @@ INVITE_TTL_DAYS = 14
 # minute, which is what turns "no" into a real answer instead of a rate limit.
 REJECT_BLOCK_DAYS = 30
 
-# An OPTIONAL grade tag on a subject (S4), used purely as a convenience filter in
-# the picker. It is deliberately **not** part of a subject's identity: it appears
-# in none of the unique constraints, so «حسابان دوازدهم» and «هندسه یازدهم» are
-# told apart by their names, never by this tag. ``NULL`` means "all levels" — such
-# a subject is always shown, whatever grade the filter is set to. The values mirror
-# ``accounts.StudentProfile.GRADE_CHOICES`` **by value** so the picker can pre-select
-# the student's own grade; they are duplicated here rather than imported, to keep
-# advisory free of a cross-app dependency on accounts.
+# ── national-curriculum identity axes ────────────────────────────────────────
+# A subject's identity is (normalized_name, grade, major, organization): the same
+# name at two grades — or in two majors — is two different subjects. This REVERSES
+# the S4 meaning of ``grade``, which used to be a non-identity "convenience filter"
+# where NULL meant "all levels". It no longer does; the three cases a derivation
+# reads (services/scope.curriculum_subjects) are:
+#
+#   * grade = NULL            → INVISIBLE to every student. A gradeless row derives
+#                               for nobody — it is dead/legacy, NOT "all grades".
+#   * grade set, major = NULL → SHARED by every major of that grade: the general
+#                               subjects (دینی/فارسی/عربی/زبان) and any grade whose
+#                               curriculum is not split by major.
+#   * grade set, major set    → specific to one major.
+#
+# Both lists mirror ``accounts.StudentProfile`` **by value**, so a student's own
+# (grade, major) selects their curriculum directly. They are duplicated here rather
+# than imported, to keep advisory free of a cross-app dependency on accounts.
 SUBJECT_GRADE_CHOICES = [
     ('10', _('دهم')),
     ('11', _('یازدهم')),
     ('12', _('دوازدهم')),
+]
+
+# Mirror of ``accounts.StudentProfile.MAJOR_CHOICES`` by value. NULL is meaningful
+# here, not "unset": a NULL-major subject is the general one shared across every
+# major of its grade (see the matrix above), so it is a first-class identity value.
+SUBJECT_MAJOR_CHOICES = [
+    ('math', _('ریاضی فیزیک')),
+    ('science', _('علوم تجربی')),
+    ('humanities', _('علوم انسانی')),
 ]
 
 
@@ -83,10 +105,10 @@ class Subject(models.Model):
         verbose_name=_('سازمان'),
         help_text=_('خالی بگذارید تا این درس برای همه‌ی مشاوران سراسری باشد.'),
     )
-    # OPTIONAL. A convenience filter tag only — NOT part of identity, so it is
-    # absent from both unique constraints below and left out of clean()/save()
-    # (it does not touch ``normalized_name``). NULL = "all levels": such a subject
-    # is shown whatever grade the picker filter is set to. See SUBJECT_GRADE_CHOICES.
+    # Part of identity (see SUBJECT_GRADE_CHOICES and the constraint below), and a
+    # gate for derivation: a NULL grade makes the subject derive for nobody. It is
+    # NOT touched by clean()/save() because it does not feed ``normalized_name`` —
+    # but it *is* one of the four columns the identity constraint keys on.
     grade = models.CharField(
         max_length=2,
         choices=SUBJECT_GRADE_CHOICES,
@@ -94,7 +116,19 @@ class Subject(models.Model):
         null=True,
         db_index=True,
         verbose_name=_('پایه‌ی تحصیلی'),
-        help_text=_('اختیاری؛ خالی یعنی «همه‌ی پایه‌ها». فقط یک فیلترِ راحتی است، نه بخشی از هویتِ درس.'),
+        help_text=_('بخشی از هویتِ درس؛ خالی یعنی این درس برای هیچ دانش‌آموزی مشتق نمی‌شود.'),
+    )
+    # The other identity axis. NULL means "general" — shared across every major of
+    # this grade — not "unset" (see the matrix on SUBJECT_MAJOR_CHOICES). Mirrors
+    # ``accounts.StudentProfile.major`` by value so a student's own major derives it.
+    major = models.CharField(
+        max_length=20,
+        choices=SUBJECT_MAJOR_CHOICES,
+        blank=True,
+        null=True,
+        db_index=True,
+        verbose_name=_('رشته‌ی تحصیلی'),
+        help_text=_('بخشی از هویتِ درس؛ خالی یعنی درسِ عمومیِ مشترک بینِ همه‌ی رشته‌های این پایه.'),
     )
     is_active = models.BooleanField(
         default=True,
@@ -116,19 +150,17 @@ class Subject(models.Model):
     class Meta:
         ordering = ['name']
         constraints = [
+            # Identity is the whole four-tuple: the same name at two grades, in two
+            # majors, or in a national row vs an org-private one are all distinct
+            # subjects. ``nulls_distinct=False`` (PG15+ ``UNIQUE NULLS NOT DISTINCT``)
+            # is load-bearing — without it PostgreSQL treats each NULL as distinct and
+            # two national rows (organization/major both NULL) with the same name slip
+            # through, exactly the fracturing ``normalized_name`` exists to prevent.
             models.UniqueConstraint(
-                fields=['normalized_name', 'organization'],
-                name='uniq_advisory_subject_norm_org',
-                violation_error_message=_('این درس در همین سازمان از قبل ثبت شده است.'),
-            ),
-            # PostgreSQL treats every NULL as distinct, so the constraint above
-            # does NOT stop two global rows with the same name. This partial one
-            # is what actually makes the global catalog unique.
-            models.UniqueConstraint(
-                fields=['normalized_name'],
-                condition=models.Q(organization__isnull=True),
-                name='uniq_advisory_subject_norm_global',
-                violation_error_message=_('این درس در فهرست سراسری از قبل ثبت شده است.'),
+                fields=['normalized_name', 'grade', 'major', 'organization'],
+                nulls_distinct=False,
+                name='uniq_advisory_subject_identity',
+                violation_error_message=_('این درس با همین پایه و رشته از قبل ثبت شده است.'),
             ),
         ]
         verbose_name = _('درس')
@@ -148,10 +180,12 @@ class Subject(models.Model):
 
         The duplicate check is repeated here on purpose. ``normalized_name`` is
         ``editable=False``, so Django's ModelForm validation excludes it, and
-        ``validate_constraints(exclude=…)`` then skips *both* constraints above —
-        meaning the admin would otherwise hit a raw ``IntegrityError`` (a 500)
-        instead of showing a field error. The DB constraints stay as the hard
-        guarantee; this is the human-readable path.
+        ``validate_constraints(exclude=…)`` then skips the identity constraint above
+        — meaning the admin would otherwise hit a raw ``IntegrityError`` (a 500)
+        instead of showing a field error. The DB constraint stays as the hard
+        guarantee; this is the human-readable path, and it must key on the same
+        four columns (``grade``/``major`` included, ``field=None`` → ``IS NULL``)
+        or it would reject a legitimately-distinct grade/major variant.
         """
         super().clean()
         self.normalized_name = normalize_subject_name(self.name)
@@ -160,13 +194,15 @@ class Subject(models.Model):
 
         duplicates = Subject.objects.filter(
             normalized_name=self.normalized_name,
+            grade=self.grade,
+            major=self.major,
             organization=self.organization,
         )
         if self.pk:
             duplicates = duplicates.exclude(pk=self.pk)
         if duplicates.exists():
             raise ValidationError({
-                'name': _('درسی با همین نام در این دامنه از قبل وجود دارد.'),
+                'name': _('درسی با همین نام، پایه و رشته در این دامنه از قبل وجود دارد.'),
             })
 
     def save(self, *args, **kwargs):

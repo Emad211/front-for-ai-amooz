@@ -15,6 +15,7 @@ Two rules hold for every serializer below, and both are deliberate:
   ``TeacherStudentSerializer`` exposed ``inviteCode`` because a ModelSerializer
   picked it up. B5 forbids repeating it. It also keeps this file free of a
   tenancy-bearing model import, which the ``test_import_boundaries`` guard checks.
+
 """
 
 from __future__ import annotations
@@ -58,11 +59,14 @@ class SubjectSerializer(serializers.ModelSerializer):
     )
     isGlobal = serializers.BooleanField(source='is_global', read_only=True)
     isActive = serializers.BooleanField(source='is_active', read_only=True)
-    # The raw code ('10'/'11'/'12') for the client's filter logic, plus a ready
-    # Persian label so no client re-implements the choice map. ``null`` on both
-    # means "all levels" — see Subject.grade.
+    # The raw codes for the client, plus ready Persian labels so no client
+    # re-implements the choice maps. Both are identity axes now (see Subject):
+    # ``grade=null`` is a dead/legacy row, ``major=null`` is a general subject
+    # shared across every major of the grade.
     grade = serializers.CharField(read_only=True, allow_null=True)
     gradeLabel = serializers.SerializerMethodField()
+    major = serializers.CharField(read_only=True, allow_null=True)
+    majorLabel = serializers.SerializerMethodField()
 
     class Meta:
         model = Subject
@@ -75,11 +79,16 @@ class SubjectSerializer(serializers.ModelSerializer):
             'isActive',
             'grade',
             'gradeLabel',
+            'major',
+            'majorLabel',
         ]
         read_only_fields = fields
 
     def get_gradeLabel(self, obj) -> str | None:  # noqa: N802 — camelCase wire key
         return obj.get_grade_display() if obj.grade else None
+
+    def get_majorLabel(self, obj) -> str | None:  # noqa: N802 — camelCase wire key
+        return obj.get_major_display() if obj.major else None
 
 
 class AdvisoryInviteCreateSerializer(serializers.Serializer):

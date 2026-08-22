@@ -34,7 +34,7 @@ _UNSCOPED = {'Subject'}
 # scope.py is the door itself; admin and migrations are Django-owned surfaces that
 # must import models by definition; tests exist to poke at models directly.
 #
-# The two write doors are added on purpose, and each *writes* tenancy rather than
+# The three write doors are added on purpose, and each *writes* tenancy rather than
 # reading across it, so there is no queryset for scope.py to hand it:
 #   • invites.py — creates the engagement row and runs the accept/reject state
 #     machine under ``select_for_update``.
@@ -43,7 +43,28 @@ _UNSCOPED = {'Subject'}
 #     view has already resolved ownership through scope.advisor_engagement.
 # The list is pinned by a test below so that a further door cannot appear without
 # someone editing this comment.
-_EXEMPT_FILES = {'scope.py', 'admin.py', 'models.py', 'invites.py', 'student_subjects.py'}
+_EXEMPT_FILES = {
+    'scope.py',
+    'admin.py',
+    'models.py',
+    'invites.py',
+    'student_subjects.py',
+}
+
+
+def _is_model_name(name: str) -> bool:
+    """``StudentSubject`` yes, ``INVITE_TTL_DAYS`` no.
+
+    Field bounds live in ``models.py`` next to the columns they constrain, and
+    importing one carries no tenancy: a serializer importing ``INVITE_TTL_DAYS``
+    says nothing about *whose* row it validates. Treating
+    those as leaks would force every module that validates a length onto the exempt
+    list — the opposite of what the list is for.
+
+    Only CapWords names (Django's class convention) count as models; SHOUT_CASE
+    constants do not.
+    """
+    return name[:1].isupper() and not name.isupper()
 
 
 def _package_of(path: Path) -> str:
@@ -107,8 +128,11 @@ def test_no_other_app_reaches_into_advisory_internals():
             continue
         for path in _python_files(app_dir):
             for module, names in _module_targets(path):
-                if module == 'apps.advisory.models' and set(names) - _UNSCOPED:
-                    offenders.append(f'{path.relative_to(APPS_DIR)} → {names}')
+                if module != 'apps.advisory.models':
+                    continue
+                leaked = {n for n in names if _is_model_name(n)} - _UNSCOPED
+                if leaked:
+                    offenders.append(f'{path.relative_to(APPS_DIR)} → {sorted(leaked)}')
     assert offenders == [], (
         'Tenancy-bearing advisory models must not be imported outside apps.advisory: '
         f'{offenders}'
@@ -127,7 +151,7 @@ def test_only_scope_imports_tenancy_bearing_models():
         for module, names in _module_targets(path):
             if module not in {'apps.advisory.models', 'apps.advisory'}:
                 continue
-            leaked = {n for n in names if n not in _UNSCOPED and n != 'models'}
+            leaked = {n for n in names if n != 'models' and _is_model_name(n)} - _UNSCOPED
             if leaked:
                 offenders.append(f'{path.relative_to(ADVISORY_DIR)} → {sorted(leaked)}')
     assert offenders == [], (
@@ -170,8 +194,21 @@ def test_relative_imports_resolve_against_their_own_package(tmp_path):
 def test_the_guard_would_catch_a_real_violation():
     """Feed the detector a known-bad import list and prove it flags it."""
     bad = [('apps.advisory.models', ['AdvisoryEngagement'])]
-    leaked = {n for module, names in bad for n in names if n not in _UNSCOPED}
+    leaked = {n for _module, names in bad for n in names if _is_model_name(n)} - _UNSCOPED
     assert leaked == {'AdvisoryEngagement'}
+
+
+def test_a_field_bound_constant_is_not_treated_as_a_model():
+    """The escape hatch that keeps the exempt list from swallowing serializers.py.
+
+    If this predicate ever flips, every module importing a ``MAX_*`` bound gets
+    flagged and the natural fix — appending it to ``_EXEMPT_FILES`` — would quietly
+    grant it permission to import ``AdvisoryEngagement`` too.
+    """
+    assert _is_model_name('AdvisoryEngagement')
+    assert _is_model_name('StudentSubject')
+    assert not _is_model_name('INVITE_TTL_DAYS')
+    assert not _is_model_name('REJECT_BLOCK_DAYS')
 
 
 def test_scope_is_the_only_place_that_knows_the_org_gate():
@@ -190,7 +227,13 @@ def test_the_exempt_list_does_not_grow_by_accident():
     editing this assertion and the comment above ``_EXEMPT_FILES``, not just
     appending a filename and watching the suite stay green.
     """
-    assert _EXEMPT_FILES == {'scope.py', 'admin.py', 'models.py', 'invites.py', 'student_subjects.py'}
+    assert _EXEMPT_FILES == {
+        'scope.py',
+        'admin.py',
+        'models.py',
+        'invites.py',
+        'student_subjects.py',
+    }
 
 
 def test_views_do_not_import_engagement_directly():

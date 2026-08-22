@@ -100,18 +100,53 @@ def test_update_fields_without_name_is_left_alone():
 # ── uniqueness ───────────────────────────────────────────────────────────────
 
 def test_two_globals_with_the_same_key_are_rejected():
-    """The partial constraint is the only thing stopping this: PG sees every NULL
-    organization as distinct, so the composite constraint alone would allow it."""
+    """Both rows are the all-NULL national tuple (grade/major/org all NULL), so
+    ``nulls_distinct=False`` on the identity constraint treats those NULLs as equal
+    and collides them. Without ``NULLS NOT DISTINCT`` PG would see every NULL as
+    unique and let the second national row through."""
     Subject.objects.create(name='ریاضی ۱')
     with pytest.raises(IntegrityError):
         with transaction.atomic():
             Subject.objects.create(name='ریاضي 1')
 
 
-def test_partial_global_constraint_actually_exists():
+def test_the_identity_constraint_actually_exists():
     names = {c.name for c in Subject._meta.constraints}
-    assert 'uniq_advisory_subject_norm_global' in names
-    assert 'uniq_advisory_subject_norm_org' in names
+    assert 'uniq_advisory_subject_identity' in names
+    # The two S4 constraints it replaced must be gone, not merely shadowed.
+    assert 'uniq_advisory_subject_norm_global' not in names
+    assert 'uniq_advisory_subject_norm_org' not in names
+
+
+def test_same_name_and_grade_in_two_majors_is_allowed():
+    """Grade and major are both identity axes: «ریاضی» in math is not «ریاضی» in
+    science, even at the same grade in the same (national) scope."""
+    Subject.objects.create(name='ریاضی', grade='10', major='math')
+    Subject.objects.create(name='ریاضی', grade='10', major='science')
+    assert Subject.objects.count() == 2
+
+
+def test_same_name_in_two_grades_is_allowed():
+    Subject.objects.create(name='ریاضی', grade='10', major='math')
+    Subject.objects.create(name='ریاضی', grade='11', major='math')
+    assert Subject.objects.count() == 2
+
+
+def test_a_general_subject_and_a_major_specific_one_coexist():
+    """A NULL major (general — shared across every major of the grade) is a first-
+    class identity value, distinct from any specific major at the same grade."""
+    Subject.objects.create(name='دینی', grade='10')  # major NULL → general
+    Subject.objects.create(name='دینی', grade='10', major='math')
+    assert Subject.objects.count() == 2
+
+
+def test_the_identical_full_tuple_is_rejected():
+    """The whole point of ``nulls_distinct=False``: an all-else-equal duplicate that
+    only shares a NULL major must still collide."""
+    Subject.objects.create(name='دینی', grade='10')
+    with pytest.raises(IntegrityError):
+        with transaction.atomic():
+            Subject.objects.create(name='دینی', grade='10')
 
 
 def test_same_key_in_two_organizations_is_allowed():
