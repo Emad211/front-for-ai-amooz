@@ -504,7 +504,9 @@ export const AdvisoryService = {
    */
   getStudentPlans: async (engagementId: number): Promise<StudyPlanOut[]> => {
     const payload: unknown = await requestJson<unknown>(
-      `/advisory/students/${engagementId}/study-plans`,
+      // Trailing slash MUST match the backend route: without it Django
+      // APPEND_SLASH-redirects and fetch downgrades the method to GET (405).
+      `/advisory/students/${engagementId}/study-plans/`,
     );
     // The backend answers `{"plans": PlanOut[]}`; a bare array is tolerated so
     // any shape drift degrades to an empty list instead of a runtime crash
@@ -532,7 +534,7 @@ export const AdvisoryService = {
     body: SaveStudyPlanDraftBody,
   ): Promise<StudyPlanOut> => {
     return requestJson<StudyPlanOut>(
-      `/advisory/students/${engagementId}/study-plan/draft`,
+      `/advisory/students/${engagementId}/study-plan/draft/`,
       { method: 'PUT', body: JSON.stringify(body) },
     );
   },
@@ -544,7 +546,7 @@ export const AdvisoryService = {
    */
   publishPlanDraft: async (engagementId: number): Promise<StudyPlanOut> => {
     return requestJson<StudyPlanOut>(
-      `/advisory/students/${engagementId}/study-plan/draft/publish`,
+      `/advisory/students/${engagementId}/study-plan/draft/publish/`,
       { method: 'POST' },
     );
   },
@@ -558,7 +560,7 @@ export const AdvisoryService = {
     planId: number,
   ): Promise<StudyPlanOut> => {
     return requestJson<StudyPlanOut>(
-      `/advisory/students/${engagementId}/study-plan/${planId}/unpublish`,
+      `/advisory/students/${engagementId}/study-plan/${planId}/unpublish/`,
       { method: 'POST' },
     );
   },
@@ -568,7 +570,7 @@ export const AdvisoryService = {
    * Quiet like every student advisory read — no advisor ⇒ `{ plans: [] }`.
    */
   getMyPlans: async (): Promise<MyPlansResponse> => {
-    const payload: unknown = await requestJson<unknown>('/advisory/me/plans');
+    const payload: unknown = await requestJson<unknown>('/advisory/me/plans/');
     if (payload && typeof payload === 'object' && !Array.isArray(payload)) {
       const obj = payload as { plans?: unknown };
       return {

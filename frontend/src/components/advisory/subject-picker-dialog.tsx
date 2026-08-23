@@ -24,6 +24,13 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 
 /**
  * The advisor's per-student subject picker.
@@ -39,6 +46,13 @@ import {
  * filter any more — the whole list already belongs to this one student's grade and
  * major, so the only narrowing left is a text search to find a row quickly.
  */
+/** Grades whose shared candidate window spans three years (دهم تا دوازدهم). */
+const HIGH_SCHOOL_GRADES = ['10', '11', '12'];
+
+/** How many rows render before the «نمایش بیشتر» button takes over — an
+ * endless wall of rows hides the search bar's purpose. */
+const INITIAL_VISIBLE = 12;
+
 type SubjectPickerDialogProps = {
   /** The ENGAGEMENT id (`AdvisorStudent.id`), never the student's user id. */
   engagementId: number;
@@ -61,6 +75,8 @@ export function SubjectPickerDialog({
   const [studentAxisLabel, setStudentAxisLabel] = useState('');
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [saving, setSaving] = useState(false);
+  const [gradeFilter, setGradeFilter] = useState<string>('all');
+  const [showAll, setShowAll] = useState(false);
 
   // One call on each open: the derived curriculum, the current selection, and the
   // student's axes for the header all arrive together. The candidate set is computed
@@ -71,6 +87,8 @@ export function SubjectPickerDialog({
     setError('');
     setCatalog(null);
     setQuery('');
+    setGradeFilter('all');
+    setShowAll(false);
 
     AdvisoryService.getEngagementSubjects(engagementId)
       .then((resp) => {
@@ -95,12 +113,30 @@ export function SubjectPickerDialog({
     };
   }, [open, engagementId]);
 
-  const visible = useMemo(() => {
+  const gradeChoices = useMemo(() => {
+    if (!catalog || !HIGH_SCHOOL_GRADES.includes(studentGrade ?? '')) return [];
+    const labels: Record<string, string> = {
+      '10': 'دهم',
+      '11': 'یازدهم',
+      '12': 'دوازدهم',
+    };
+    return HIGH_SCHOOL_GRADES.filter((g) => catalog.some((s) => s.grade === g)).map(
+      (g) => ({ value: g, label: labels[g] }),
+    );
+  }, [catalog, studentGrade]);
+
+  const filtered = useMemo(() => {
     if (!catalog) return [];
-    // Search-only: the whole candidate set already belongs to this student's grade
-    // and major (the server derived it), so there is nothing more to gate on.
-    return catalog.filter((s) => matchesSearch(s.name, query));
-  }, [catalog, query]);
+    // Search + optional grade narrow-down: the whole candidate set already
+    // belongs to this student's major (the server derived it).
+    return catalog.filter(
+      (s) =>
+        (gradeFilter === 'all' || s.grade === gradeFilter) &&
+        matchesSearch(s.name, query),
+    );
+  }, [catalog, gradeFilter, query]);
+
+  const shown = showAll ? filtered : filtered.slice(0, INITIAL_VISIBLE);
 
   const toggleSubject = (id: number) =>
     setSelected((prev) => {
@@ -157,13 +193,42 @@ export function SubjectPickerDialog({
           </DialogDescription>
         </DialogHeader>
 
+        {/* grade narrow-down — only for high-school students whose candidate
+        window spans دهم تا دوازدهم */}
+        {gradeChoices.length > 0 && (
+          <div className="shrink-0 px-5 pt-3">
+            <Select
+              value={gradeFilter}
+              onValueChange={(v) => {
+                setGradeFilter(v);
+                setShowAll(false);
+              }}
+            >
+              <SelectTrigger aria-label="فیلتر پایه" className="h-9">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">همه‌ی پایه‌ها (دهم تا دوازدهم)</SelectItem>
+                {gradeChoices.map((g) => (
+                  <SelectItem key={g.value} value={g.value}>
+                    پایه {g.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
+
         {/* search — fixed above the scrolling list */}
         <div className="shrink-0 px-5 pt-3">
           <div className="relative">
             <Search className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
               value={query}
-              onChange={(e) => setQuery(e.target.value)}
+              onChange={(e) => {
+                setQuery(e.target.value);
+                setShowAll(false);
+              }}
               placeholder="جستجوی درس…"
               className="pr-9"
               aria-label="جستجوی درس"
@@ -190,19 +255,19 @@ export function SubjectPickerDialog({
               </p>
             )}
 
-            {catalog && !error && visible.length === 0 && (
+            {catalog && !error && filtered.length === 0 && (
               <p className="px-2 py-8 text-center text-sm leading-relaxed text-muted-foreground">
                 {catalog.length === 0
                   ? studentGrade === null
                     ? 'تا وقتی دانش‌آموز پایه‌اش را در پروفایل ثبت نکند، برنامه‌ی درسی‌ای برای انتخاب نیست.'
                     : 'برای این پایه و رشته هنوز درسی در برنامه ثبت نشده است.'
-                  : 'درسی با این جستجو پیدا نشد.'}
+                  : 'درسی با این فیلترها پیدا نشد.'}
               </p>
             )}
 
             {catalog &&
               !error &&
-              visible.map((s) => {
+              shown.map((s) => {
                 const checked = selected.has(s.id);
                 return (
                   <button
@@ -235,6 +300,24 @@ export function SubjectPickerDialog({
                   </button>
                 );
               })}
+
+            {catalog && !error && filtered.length > INITIAL_VISIBLE && (
+              <div className="flex flex-col items-center gap-1.5 px-2 pb-3 pt-2">
+                {!showAll && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setShowAll(true)}
+                  >
+                    نمایش {toPersianDigits(filtered.length - INITIAL_VISIBLE)} درس
+                    بیشتر
+                  </Button>
+                )}
+                <p className="text-xs text-muted-foreground">
+                  برای پیدا کردن سریع‌تر، نام درس را جستجو کنید.
+                </p>
+              </div>
+            )}
           </div>
         </ScrollArea>
 

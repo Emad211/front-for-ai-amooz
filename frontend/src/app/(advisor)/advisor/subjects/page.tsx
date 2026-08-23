@@ -11,6 +11,13 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 
 /**
  * Advisor → درس‌ها (subject catalog), read-only.
@@ -31,6 +38,9 @@ export default function AdvisorSubjectsPage() {
   const [subjects, setSubjects] = useState<AdvisorySubject[] | null>(null);
   const [error, setError] = useState('');
   const [query, setQuery] = useState('');
+  const [gradeFilter, setGradeFilter] = useState('all');
+  const [majorFilter, setMajorFilter] = useState('all');
+  const [nameFilter, setNameFilter] = useState('all');
   const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
@@ -54,10 +64,48 @@ export default function AdvisorSubjectsPage() {
     };
   }, [reloadKey]);
 
+  const gradeOptions = useMemo(() => {
+    const seen = new Map<string, string>();
+    for (const s of subjects ?? []) {
+      if (s.grade && !seen.has(s.grade)) seen.set(s.grade, s.gradeLabel ?? s.grade);
+    }
+    return [...seen.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([value, label]) => ({ value, label }));
+  }, [subjects]);
+
+  const majorOptions = useMemo(() => {
+    const seen = new Map<string, string>();
+    for (const s of subjects ?? []) {
+      const key = s.major ?? 'general';
+      if (!seen.has(key)) seen.set(key, s.majorLabel ?? 'مشترک (همه‌ی رشته‌ها)');
+    }
+    return [...seen.entries()].map(([value, label]) => ({ value, label }));
+  }, [subjects]);
+
+  const nameOptions = useMemo(() => {
+    const seen = new Set<string>();
+    for (const s of subjects ?? []) seen.add(s.name);
+    return [...seen].sort((a, b) => a.localeCompare(b, 'fa'));
+  }, [subjects]);
+
   const visible = useMemo(
-    () => (subjects ?? []).filter((s) => matchesSearch(s.name, query)),
-    [subjects, query],
+    () =>
+      (subjects ?? []).filter(
+        (s) =>
+          (gradeFilter === 'all' || s.grade === gradeFilter) &&
+          (majorFilter === 'all' || (s.major ?? 'general') === majorFilter) &&
+          (nameFilter === 'all' || s.name === nameFilter) &&
+          matchesSearch(s.name, query),
+      ),
+    [subjects, gradeFilter, majorFilter, nameFilter, query],
   );
+
+  const filtersActive =
+    query.trim() !== '' ||
+    gradeFilter !== 'all' ||
+    majorFilter !== 'all' ||
+    nameFilter !== 'all';
 
   const globalCount = (subjects ?? []).filter((s) => s.isGlobal).length;
   const orgCount = (subjects ?? []).length - globalCount;
@@ -73,10 +121,6 @@ export default function AdvisorSubjectsPage() {
           <p className="mt-1.5 text-sm text-muted-foreground">
             کاتالوگِ کاملِ درس‌ها. برنامه‌ی هر دانش‌آموز از پایه و رشته‌ی خودش
             ساخته می‌شود؛ اینجا فقط فهرست را می‌بینید.
-          </p>
-          <p className="mt-1 text-xs text-muted-foreground/80">
-            مرجع ملی — نمایش کاملِ همهٔ رشته‌ها و پایه‌ها؛ پیکرِ هر دانش‌آموز
-            جداگانه از پایه و رشتهٔ خودش مشتق می‌شود.
           </p>
         </div>
         {subjects && subjects.length > 0 && (
@@ -141,6 +185,48 @@ export default function AdvisorSubjectsPage() {
       {/* ── the catalog ─────────────────────────────────────────────────── */}
       {subjects && subjects.length > 0 && (
         <>
+          <div className="grid gap-2 sm:grid-cols-3">
+            <Select value={gradeFilter} onValueChange={setGradeFilter}>
+              <SelectTrigger aria-label="فیلتر پایه" className="h-9">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">همه‌ی پایه‌ها</SelectItem>
+                {gradeOptions.map((o) => (
+                  <SelectItem key={o.value} value={o.value}>
+                    {o.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select value={majorFilter} onValueChange={setMajorFilter}>
+              <SelectTrigger aria-label="فیلتر رشته" className="h-9">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">همه‌ی رشته‌ها</SelectItem>
+                {majorOptions.map((o) => (
+                  <SelectItem key={o.value} value={o.value}>
+                    {o.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select value={nameFilter} onValueChange={setNameFilter}>
+              <SelectTrigger aria-label="فیلتر زیرشاخه" className="h-9">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">همه‌ی زیرشاخه‌ها</SelectItem>
+                {nameOptions.map((n) => (
+                  <SelectItem key={n} value={n}>
+                    {n}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
           <div className="relative">
             <Search className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
@@ -154,7 +240,7 @@ export default function AdvisorSubjectsPage() {
 
           {visible.length === 0 ? (
             <p className="py-8 text-center text-sm text-muted-foreground">
-              درسی با این نام پیدا نشد.
+              درسی با این فیلترها پیدا نشد.
             </p>
           ) : (
             <ul className="space-y-2">
@@ -162,7 +248,21 @@ export default function AdvisorSubjectsPage() {
                 <li key={subject.id}>
                   <Card className="border-border/50">
                     <CardContent className="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
-                      <span className="text-sm font-medium">{subject.name}</span>
+                      <div className="flex min-w-0 flex-wrap items-center gap-2">
+                        <span className="truncate text-sm font-medium">
+                          {subject.name}
+                        </span>
+                        {subject.gradeLabel && (
+                          <Badge variant="secondary" className="font-normal">
+                            {subject.gradeLabel}
+                          </Badge>
+                        )}
+                        {subject.majorLabel && (
+                          <Badge variant="outline" className="font-normal">
+                            {subject.majorLabel}
+                          </Badge>
+                        )}
+                      </div>
                       {subject.isGlobal ? (
                         <Badge variant="secondary" className="font-normal">
                           سراسری
@@ -179,7 +279,7 @@ export default function AdvisorSubjectsPage() {
             </ul>
           )}
 
-          {query.trim() !== '' && visible.length > 0 && (
+          {filtersActive && visible.length > 0 && (
             <p className="text-center text-xs text-muted-foreground">
               {toPersianDigits(visible.length)} از {toPersianDigits(subjects.length)} درس
             </p>
