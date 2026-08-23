@@ -12,6 +12,7 @@ import { StatsSkeleton } from '@/components/dashboard/stats-skeleton';
 import { PageTransition } from '@/components/ui/page-transition';
 import { ErrorState } from '@/components/shared/error-state';
 import { MySubjectsCard } from './my-subjects-card';
+import { StudyPlanCard } from '@/components/dashboard/home/study-plan-card';
 
 export default function StudentDashboard() {
   const { stats, activities, events, profile, isLoading, error, reload } = useDashboardData();
@@ -63,6 +64,8 @@ export default function StudentDashboard() {
         <StatsGrid stats={stats} />
 
         <MySubjectsCard />
+
+        <StudyPlanCard />
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 md:gap-8">
           <RecentActivity activities={activities} />

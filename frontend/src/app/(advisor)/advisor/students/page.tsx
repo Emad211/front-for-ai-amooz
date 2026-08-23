@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import Link from 'next/link';
 import { toast } from 'sonner';
 import {
   Users,
@@ -10,6 +11,7 @@ import {
   AlertCircle,
   Send,
   Building2,
+  FileText,
 } from 'lucide-react';
 
 import {
@@ -229,6 +231,12 @@ export default function AdvisorStudentsPage() {
                             از {formatPersianDate(s.startedOn)}
                           </span>
                         )}
+                        <Button asChild variant="outline" size="sm">
+                          <Link href={`/advisor/students/${s.id}`}>
+                            <FileText className="ml-2 h-4 w-4" />
+                            گزارش و برنامه
+                          </Link>
+                        </Button>
                         <SubjectPickerDialog
                           engagementId={s.id}
                           studentName={s.studentName}

@@ -177,6 +177,81 @@ export type SaveStudyLogBody = {
   items: { subjectId: number; minutes: number }[];
 };
 
+/* ── Study feed + study plans (advisor-mvp §14 — variable-horizon redesign) ── */
+
+/** Feed window as the `?days=` query param. `'all'` = since the engagement
+ * started; numeric values are clamped server-side to `started_on` (rule C3). */
+export type StudyFeedRange = '7' | '14' | '30' | 'all';
+
+/** One subject-minute row of a recorded study day. */
+export type StudyFeedItem = {
+  subjectId: number;
+  name: string;
+  minutes: number;
+};
+
+/** One recorded day of the advisor's study feed. Only days with at least one
+ * saved log arrive, ascending by `date`; `mood` is 1..5 or null (not recorded). */
+export type StudyFeedDay = {
+  date: string;
+  totalMinutes: number;
+  mood: number | null;
+  note: string;
+  items: StudyFeedItem[];
+};
+
+/** Lifecycle of a study plan. Authored as DRAFT, flipped to PUBLISHED on
+ * publish; unpublish is the rollback lever back to DRAFT. */
+export type StudyPlanStatus = 'DRAFT' | 'PUBLISHED';
+
+/** One planned (subject × day) row of a plan. `date` is the server-derived
+ * absolute date (`startDate + dayOffset`) so the client never does calendar math. */
+export type StudyPlanItemOut = {
+  dayOffset: number;
+  date: string;
+  subjectId: number;
+  name: string;
+  plannedMinutes: number;
+};
+
+/** Wire shape (`PlanOut`) shared by the feed's embedded plans, `GET …/study-plans`,
+ * and the PUT / publish / unpublish responses. */
+export type StudyPlanOut = {
+  id: number;
+  startDate: string;
+  endDate: string;
+  durationDays: number;
+  status: StudyPlanStatus;
+  items: StudyPlanItemOut[];
+};
+
+/** `GET /advisory/students/<engagementId>/study-feed/?days=…` — the advisor's
+ * read view of one student: recorded days plus the plans intersecting the range.
+ * Exactly one AdvisoryAccessLog row is written per successful read (server-side). */
+export type StudyFeedResponse = {
+  studentName: string;
+  range: { from: string; to: string };
+  days: StudyFeedDay[];
+  plans: StudyPlanOut[];
+};
+
+/** PUT body for `/advisory/students/<engagementId>/study-plan/draft` — a whole
+ * draft set-replace (upsert of the single DRAFT slot). `dayOffset` is 0-based
+ * and must be `< durationDays`; minutes 1..960; duplicate (day, subject) rows
+ * rejected. The UI shows «روز N» where N = dayOffset + 1. */
+export type SaveStudyPlanDraftBody = {
+  startDate: string;
+  durationDays: number;
+  items: { dayOffset: number; subjectId: number; plannedMinutes: number }[];
+};
+
+/** `GET /advisory/me/plans` — the student's PUBLISHED plans only, descending by
+ * start date. Quiet like every student-side advisory read: no advisor ⇒ an
+ * empty list, never an error. */
+export type MyPlansResponse = {
+  plans: StudyPlanOut[];
+};
+
 function getAccessToken(): string {
   if (typeof window === 'undefined') {
     throw new Error('This action must run in the browser.');
@@ -393,5 +468,83 @@ export const AdvisoryService = {
       method: 'PUT',
       body: JSON.stringify(body),
     });
+  },
+
+  /**
+   * The advisor's read view of one student's study activity for a window.
+   * `days='all'` means since the engagement started; numeric windows are
+   * clamped server-side to `started_on`. An invalid value answers 400 with
+   * «بازه باید یکی از ۷، ۱۴، ۳۰ یا all باشد.»; a foreign/missing engagement
+   * answers 404 (never 403) so the pairing's existence never leaks. Each
+   * successful read writes exactly one server-side access-log row.
+   */
+  getStudentStudyFeed: async (
+    engagementId: number,
+    days: StudyFeedRange,
+  ): Promise<StudyFeedResponse> => {
+    return requestJson<StudyFeedResponse>(
+      `/advisory/students/${engagementId}/study-feed/?days=${encodeURIComponent(days)}`,
+    );
+  },
+
+  /**
+   * Every plan of one student across both statuses, ascending by start date —
+   * the advisor's authoring view. Includes the single DRAFT slot when present.
+   */
+  getStudentPlans: async (engagementId: number): Promise<StudyPlanOut[]> => {
+    return requestJson<StudyPlanOut[]>(
+      `/advisory/students/${engagementId}/study-plans`,
+    );
+  },
+
+  /**
+   * Upsert the single DRAFT slot (whole-body set-replace). Server validation
+   * order mirrors save_day: ownership → start ≥ started_on → duration 1..90 →
+   * items (offset < duration, active subject, minutes 1..960, no duplicates).
+   * Violations answer 400 with their Persian `detail`, surfaced verbatim by
+   * `requestJson`. Returns the saved plan as `PlanOut`.
+   */
+  savePlanDraft: async (
+    engagementId: number,
+    body: SaveStudyPlanDraftBody,
+  ): Promise<StudyPlanOut> => {
+    return requestJson<StudyPlanOut>(
+      `/advisory/students/${engagementId}/study-plan/draft`,
+      { method: 'PUT', body: JSON.stringify(body) },
+    );
+  },
+
+  /**
+   * Flip the existing draft to PUBLISHED after re-validation. 404 when no
+   * draft exists; 400 for an empty plan, an item referencing a since-removed
+   * subject, or overlap with another PUBLISHED range (edge-touching allowed).
+   */
+  publishPlanDraft: async (engagementId: number): Promise<StudyPlanOut> => {
+    return requestJson<StudyPlanOut>(
+      `/advisory/students/${engagementId}/study-plan/draft/publish`,
+      { method: 'POST' },
+    );
+  },
+
+  /**
+   * Rollback lever: return a PUBLISHED plan to DRAFT so it can be edited and
+   * re-published. 404 for a missing/foreign plan id.
+   */
+  unpublishPlan: async (
+    engagementId: number,
+    planId: number,
+  ): Promise<StudyPlanOut> => {
+    return requestJson<StudyPlanOut>(
+      `/advisory/students/${engagementId}/study-plan/${planId}/unpublish`,
+      { method: 'POST' },
+    );
+  },
+
+  /**
+   * The student-side mirror: only PUBLISHED plans, descending by start date.
+   * Quiet like every student advisory read — no advisor ⇒ `{ plans: [] }`.
+   */
+  getMyPlans: async (): Promise<MyPlansResponse> => {
+    return requestJson<MyPlansResponse>('/advisory/me/plans');
   },
 };
