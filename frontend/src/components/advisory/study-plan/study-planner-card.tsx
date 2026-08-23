@@ -18,6 +18,7 @@ import {
   type StudyPlanOut,
 } from '@/services/advisory-service';
 import { toEnglishDigits, toPersianDigits } from '@/lib/persian-digits';
+import { adherenceColorClass, formatAdherence } from '@/lib/adherence';
 import { formatPersianDate } from '@/lib/date-utils';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -561,6 +562,16 @@ export function StudyPlannerCard({
                         >
                           {plan.status === 'PUBLISHED' ? 'منتشرشده' : 'پیش‌نویس'}
                         </Badge>
+                        {/* Step 8: per-plan adherence; quiet-null for drafts and
+                        plans with no elapsed items yet (percent is null). */}
+                        {plan.percent != null && (
+                          <Badge
+                            variant="outline"
+                            className={`font-normal tabular-nums ${adherenceColorClass(plan.percent)}`}
+                          >
+                            پایبندی {formatAdherence(plan.percent)}
+                          </Badge>
+                        )}
                         <span className="text-xs text-muted-foreground">
                           از {formatPersianDate(plan.startDate)} تا{' '}
                           {formatPersianDate(plan.endDate)}

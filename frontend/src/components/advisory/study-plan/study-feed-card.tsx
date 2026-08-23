@@ -9,6 +9,11 @@ import {
   type StudyFeedRange,
 } from '@/services/advisory-service';
 import { toPersianDigits } from '@/lib/persian-digits';
+import {
+  adherenceColorClass,
+  formatAdherence,
+  formatMoodAverage,
+} from '@/lib/adherence';
 import { formatPersianDate } from '@/lib/date-utils';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -48,6 +53,10 @@ export function StudyFeedCard({ engagementId }: StudyFeedCardProps) {
   const [range, setRange] = useState<StudyFeedRange>('7');
   const [days, setDays] = useState<StudyFeedDay[] | null>(null);
   const [rangeLabel, setRangeLabel] = useState<{ from: string; to: string } | null>(null);
+  // Step 8 aggregates — scoped to the selected range by the server; null when
+  // nothing elapsed / no mood recorded (quiet-null rendering below).
+  const [adherencePercent, setAdherencePercent] = useState<number | null>(null);
+  const [moodAverage, setMoodAverage] = useState<number | null>(null);
   const [error, setError] = useState('');
   const [reloadKey, setReloadKey] = useState(0);
 
@@ -55,12 +64,16 @@ export function StudyFeedCard({ engagementId }: StudyFeedCardProps) {
     let active = true;
     setError('');
     setDays(null);
+    setAdherencePercent(null);
+    setMoodAverage(null);
 
     AdvisoryService.getStudentStudyFeed(engagementId, range)
       .then((data) => {
         if (!active) return;
         setDays(data.days);
         setRangeLabel(data.range);
+        setAdherencePercent(data.adherencePercent ?? null);
+        setMoodAverage(data.moodAverage ?? null);
       })
       .catch((err: unknown) => {
         // Keep `days` null so the retry stays reachable and the empty state
@@ -107,6 +120,24 @@ export function StudyFeedCard({ engagementId }: StudyFeedCardProps) {
           <p className="text-xs text-muted-foreground">
             بازه: از {formatPersianDate(rangeLabel.from)} تا {formatPersianDate(rangeLabel.to)}
           </p>
+        )}
+        {/* Step 8: weighted overall adherence + mood mean for THIS range only;
+        each chip renders only when its value exists (quiet-null). */}
+        {!loading && (adherencePercent !== null || moodAverage !== null) && (
+          <div className="flex flex-wrap items-center gap-1.5 pt-1">
+            {adherencePercent !== null && (
+              <span
+                className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium tabular-nums ${adherenceColorClass(adherencePercent)}`}
+              >
+                پایبندی بازه: {formatAdherence(adherencePercent)}
+              </span>
+            )}
+            {moodAverage !== null && (
+              <span className="inline-flex items-center rounded-full bg-muted px-2.5 py-0.5 text-xs font-medium tabular-nums text-muted-foreground">
+                میانگین حال‌وهوا: {formatMoodAverage(moodAverage)}
+              </span>
+            )}
+          </div>
         )}
       </CardHeader>
 

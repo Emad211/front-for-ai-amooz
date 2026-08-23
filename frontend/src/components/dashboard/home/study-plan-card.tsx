@@ -9,6 +9,7 @@ import {
   type StudyPlanOut,
 } from '@/services/advisory-service';
 import { toPersianDigits } from '@/lib/persian-digits';
+import { adherenceColorClass, formatAdherence } from '@/lib/adherence';
 import { formatPersianDate } from '@/lib/date-utils';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -100,6 +101,39 @@ export function StudyPlanCard() {
           از {formatPersianDate(plan.startDate)} تا {formatPersianDate(plan.endDate)} ·{' '}
           {toPersianDigits(plan.durationDays)} روز
         </p>
+        {/* Step 8: adherence percent + slim bar; only for the running plan —
+        upcoming plans arrive with percent null (nothing elapsed yet). */}
+        {isCurrent && plan.percent != null && (
+          <div className="mt-2 space-y-1.5">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-xs text-muted-foreground">پایبندی به برنامه</span>
+              <span
+                className={`rounded-full px-2 py-0.5 text-xs font-semibold tabular-nums ${adherenceColorClass(plan.percent)}`}
+              >
+                {formatAdherence(plan.percent)}
+              </span>
+            </div>
+            <div
+              role="progressbar"
+              aria-valuenow={plan.percent}
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-label="پایبندی به برنامه"
+              className="h-1.5 w-full overflow-hidden rounded-full bg-muted"
+            >
+              <div
+                className={`h-full rounded-full ${
+                  plan.percent >= 80
+                    ? 'bg-emerald-500'
+                    : plan.percent >= 50
+                      ? 'bg-amber-500'
+                      : 'bg-red-500'
+                }`}
+                style={{ width: `${Math.min(100, Math.max(0, plan.percent))}%` }}
+              />
+            </div>
+          </div>
+        )}
       </CardHeader>
       <CardContent>
         {groupedItems.length === 0 ? (

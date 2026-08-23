@@ -223,6 +223,10 @@ export type StudyPlanOut = {
   durationDays: number;
   status: StudyPlanStatus;
   items: StudyPlanItemOut[];
+  /** Adherence (step 8): actual ÷ elapsed-planned minutes, rounded int, only
+   * for PUBLISHED plans; `null` when no elapsed items exist yet. Absent on
+   * older payloads — read via `plan.percent ?? null`. */
+  percent?: number | null;
 };
 
 /** `GET /advisory/students/<engagementId>/study-feed/?days=…` — the advisor's
@@ -233,6 +237,12 @@ export type StudyFeedResponse = {
   range: { from: string; to: string };
   days: StudyFeedDay[];
   plans: StudyPlanOut[];
+  /** Step 8: weighted overall adherence across PUBLISHED plans clipped to the
+   * selected range (Σactual ÷ Σplanned); `null` when nothing elapsed. */
+  adherencePercent?: number | null;
+  /** Mean of non-null day moods in range, rounded to 1 decimal; `null` when no
+   * mood was recorded at all. */
+  moodAverage?: number | null;
 };
 
 /** PUT body for `/advisory/students/<engagementId>/study-plan/draft` — a whole

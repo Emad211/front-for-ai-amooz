@@ -27,8 +27,9 @@ import {
 import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
 import { AdvisoryService } from '@/services/advisory-service';
-import type { StudyLogPayload } from '@/services/advisory-service';
+import type { StudyLogPayload, StudyPlanOut } from '@/services/advisory-service';
 import { toEnglishDigits, toPersianDigits } from '@/lib/persian-digits';
+import { adherenceColorClass, formatAdherence } from '@/lib/adherence';
 
 const MAX_MINUTES_PER_SUBJECT = 960;
 const DAY_TOTAL_CAP = 1440;
@@ -62,6 +63,13 @@ function parseMinutes(raw: string): number {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
 }
 
+/** The plan running today, else null — same string-compare rule as the
+ * dashboard home card so both surfaces always agree on "current". */
+function pickCurrentPlan(plans: StudyPlanOut[]): StudyPlanOut | null {
+  const today = todayIso();
+  return plans.find((p) => p.startDate <= today && today <= p.endDate) ?? null;
+}
+
 /** Digits-only, clamped to the per-subject server limit; '' when empty. */
 function sanitizeMinutesInput(raw: string): string {
   const digits = toEnglishDigits(raw).replace(/\D/g, '');
@@ -80,6 +88,9 @@ export default function StudyLogPage() {
   const [note, setNote] = useState('');
   const [minutesBySubject, setMinutesBySubject] = useState<Record<number, string>>({});
   const [saving, setSaving] = useState(false);
+  // Step 8: adherence of the plan running today; null ⇒ chip is not rendered
+  // (quiet-null for students without plans or with nothing elapsed yet).
+  const [planPercent, setPlanPercent] = useState<number | null>(null);
 
   const applyResponse = useCallback((data: StudyLogPayload) => {
     setPayload(data);
@@ -115,6 +126,27 @@ export default function StudyLogPage() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  // Step 8: one best-effort read of the published plans for the adherence
+  // chip. Silent on failure — this page must never block or error over a
+  // decorative metric (same quiet rule as the dashboard home card).
+  useEffect(() => {
+    let active = true;
+    AdvisoryService.getMyPlans()
+      .then((res) => {
+        if (!active) return;
+        const current = pickCurrentPlan(
+          res.plans.filter((p) => p.status === 'PUBLISHED')
+        );
+        setPlanPercent(current?.percent ?? null);
+      })
+      .catch(() => {
+        // Quiet by design — see the comment above.
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const handleShiftDay = (days: number) => {
     const next = shiftIsoDate(selectedDate, days);
@@ -226,6 +258,18 @@ export default function StudyLogPage() {
           onPrevDay={() => handleShiftDay(-1)}
           onNextDay={() => handleShiftDay(1)}
         />
+
+        {/* Step 8: adherence of the plan running today; renders nothing when
+        there is no current plan or nothing has elapsed yet (quiet-null). */}
+        {planPercent !== null && (
+          <div className="flex items-center gap-2">
+            <span
+              className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium tabular-nums ${adherenceColorClass(planPercent)}`}
+            >
+              پایبندی برنامه جاری: {formatAdherence(planPercent)}
+            </span>
+          </div>
+        )}
 
         <Card className="rounded-2xl">
           <CardHeader className="pb-3">
