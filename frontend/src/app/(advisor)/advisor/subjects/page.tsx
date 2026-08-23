@@ -74,6 +74,10 @@ export default function AdvisorSubjectsPage() {
             کاتالوگِ کاملِ درس‌ها. برنامه‌ی هر دانش‌آموز از پایه و رشته‌ی خودش
             ساخته می‌شود؛ اینجا فقط فهرست را می‌بینید.
           </p>
+          <p className="mt-1 text-xs text-muted-foreground/80">
+            مرجع ملی — نمایش کاملِ همهٔ رشته‌ها و پایه‌ها؛ پیکرِ هر دانش‌آموز
+            جداگانه از پایه و رشتهٔ خودش مشتق می‌شود.
+          </p>
         </div>
         {subjects && subjects.length > 0 && (
           <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">

@@ -9,6 +9,15 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Camera, User, Mail, Phone, GraduationCap, BookOpen, Save, X, CheckCircle2, Copy, Check } from 'lucide-react';
 import type { UserProfile } from '@/types';
+import {
+  GRADE_OPTIONS,
+  MAJOR_OPTIONS,
+  MAJOR_REQUIRED_MESSAGE,
+  isMajorRequiredGrade,
+} from '@/constants/grade-major';
+import {
+  Select, SelectTrigger, SelectValue, SelectContent, SelectItem,
+} from '@/components/ui/select';
 
 type ProfileFormProps = {
   user: UserProfile | null;
@@ -18,8 +27,9 @@ type ProfileFormProps = {
     first_name: string;
     last_name: string;
     email: string;
-    grade?: string;
-    major?: string;
+    // null explicitly clears the stored value (PATCH /accounts/me/).
+    grade?: string | null;
+    major?: string | null;
     avatar?: string;
   }) => Promise<void> | void;
 };
@@ -45,6 +55,7 @@ export function ProfileForm({ user, isLoading = false, error = null, onSave }: P
 
   const [profile, setProfile] = useState(initial);
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
+  const [majorError, setMajorError] = useState<string | null>(null);
   const [showSuccessDialog, setShowSuccessDialog] = useState(false);
   const [showEmailVerification, setShowEmailVerification] = useState(false);
   const [verificationCode] = useState('VERIFY-EMAIL-2026');
@@ -59,6 +70,17 @@ export function ProfileForm({ user, isLoading = false, error = null, onSave }: P
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { id, value } = e.target;
     setProfile((prev) => ({ ...prev, [id]: value }));
+  };
+
+  // Major applies only to grades '10'..'12'; switching to any other grade
+  // hides the field and clears its value.
+  const handleGradeChange = (grade: string) => {
+    setMajorError(null);
+    setProfile((prev) => ({
+      ...prev,
+      grade,
+      major: isMajorRequiredGrade(grade) ? prev.major : '',
+    }));
   };
 
   const handleAvatarClick = () => {
@@ -90,16 +112,25 @@ export function ProfileForm({ user, isLoading = false, error = null, onSave }: P
   };
 
   const handleSave = async () => {
+    if (isMajorRequiredGrade(profile.grade) && !profile.major) {
+      setMajorError(MAJOR_REQUIRED_MESSAGE);
+      return;
+    }
+    setMajorError(null);
     await onSave({
       first_name: profile.first_name,
       last_name: profile.last_name,
       email: profile.email,
-      grade: profile.grade || undefined,
-      major: profile.major || undefined,
+      grade: profile.grade || null,
+      // Explicit null clears a stale major for grades ≤09 (PATCH semantics).
+      major: isMajorRequiredGrade(profile.grade) ? (profile.major || null) : null,
       avatar: avatarPreview || profile.avatar || undefined,
     });
     setShowSuccessDialog(true);
   };
+
+  const gradeLabel = GRADE_OPTIONS.find((g) => g.value === profile.grade)?.label || profile.grade;
+  const majorLabel = MAJOR_OPTIONS.find((m) => m.value === profile.major)?.label || profile.major;
 
   if (!user) {
     return (
@@ -146,7 +177,7 @@ export function ProfileForm({ user, isLoading = false, error = null, onSave }: P
             <CardDescription className="text-base">
               {profile.grade || profile.major ? (
                 <>
-                  دانش‌آموز مقطع {profile.grade || 'ناشناخته'} • رشته {profile.major || 'ناشناخته'}
+                  دانش‌آموز مقطع {gradeLabel || 'ناشناخته'} • رشته {majorLabel || 'ناشناخته'}
                 </>
               ) : (
                 <>اطلاعات تکمیلی پروفایل را ثبت کنید.</>
@@ -238,26 +269,44 @@ export function ProfileForm({ user, isLoading = false, error = null, onSave }: P
               <GraduationCap className="w-4 h-4 text-primary" />
               پایه تحصیلی
             </Label>
-            <Input
-              id="grade"
-              value={profile.grade}
-              onChange={handleInputChange}
-              className="bg-background/50 border-border/50 h-12 rounded-xl focus:ring-primary/20 focus:border-primary transition-all"
-            />
+            <Select value={profile.grade} onValueChange={handleGradeChange} dir="rtl">
+              <SelectTrigger id="grade" className="bg-background/50 border-border/50 h-12 rounded-xl focus:ring-primary/20 focus:border-primary">
+                <SelectValue placeholder="انتخاب پایه" />
+              </SelectTrigger>
+              <SelectContent>
+                {GRADE_OPTIONS.map((g) => (
+                  <SelectItem key={g.value} value={g.value}>{g.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
 
-          <div className="space-y-2.5">
-            <Label htmlFor="major" className="text-sm font-semibold flex items-center gap-2 px-1">
-              <BookOpen className="w-4 h-4 text-primary" />
-              رشته تحصیلی
-            </Label>
-            <Input
-              id="major"
-              value={profile.major}
-              onChange={handleInputChange}
-              className="bg-background/50 border-border/50 h-12 rounded-xl focus:ring-primary/20 focus:border-primary transition-all"
-            />
-          </div>
+          {isMajorRequiredGrade(profile.grade) && (
+            <div className="space-y-2.5">
+              <Label htmlFor="major" className="text-sm font-semibold flex items-center gap-2 px-1">
+                <BookOpen className="w-4 h-4 text-primary" />
+                رشته تحصیلی
+              </Label>
+              <Select
+                value={profile.major}
+                onValueChange={(major) => {
+                  setMajorError(null);
+                  setProfile((prev) => ({ ...prev, major }));
+                }}
+                dir="rtl"
+              >
+                <SelectTrigger id="major" className="bg-background/50 border-border/50 h-12 rounded-xl focus:ring-primary/20 focus:border-primary">
+                  <SelectValue placeholder="انتخاب رشته" />
+                </SelectTrigger>
+                <SelectContent>
+                  {MAJOR_OPTIONS.map((m) => (
+                    <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {majorError && <p className="text-xs text-destructive px-1">{majorError}</p>}
+            </div>
+          )}
         </div>
       </CardContent>
 
