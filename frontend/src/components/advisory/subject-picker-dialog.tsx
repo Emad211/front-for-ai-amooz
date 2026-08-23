@@ -75,8 +75,10 @@ export function SubjectPickerDialog({
     AdvisoryService.getEngagementSubjects(engagementId)
       .then((resp) => {
         if (!active) return;
-        setCatalog(resp.subjects);
-        setSelected(new Set(resp.selectedSubjectIds));
+        setCatalog(Array.isArray(resp.subjects) ? resp.subjects : []);
+        setSelected(
+          new Set(Array.isArray(resp.selectedSubjectIds) ? resp.selectedSubjectIds : []),
+        );
         setStudentGrade(resp.studentGrade);
         setStudentAxisLabel(
           [resp.studentGradeLabel, resp.studentMajorLabel]

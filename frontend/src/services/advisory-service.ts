@@ -353,7 +353,8 @@ export const AdvisoryService = {
    * truncated picker is a bug.
    */
   getSubjects: async (): Promise<AdvisorySubject[]> => {
-    return requestJson<AdvisorySubject[]>('/advisory/subjects/');
+    const payload: unknown = await requestJson<unknown>('/advisory/subjects/');
+    return Array.isArray(payload) ? (payload as AdvisorySubject[]) : [];
   },
 
   /**
@@ -502,9 +503,21 @@ export const AdvisoryService = {
    * the advisor's authoring view. Includes the single DRAFT slot when present.
    */
   getStudentPlans: async (engagementId: number): Promise<StudyPlanOut[]> => {
-    return requestJson<StudyPlanOut[]>(
+    const payload: unknown = await requestJson<unknown>(
       `/advisory/students/${engagementId}/study-plans`,
     );
+    // The backend answers `{"plans": PlanOut[]}`; a bare array is tolerated so
+    // any shape drift degrades to an empty list instead of a runtime crash
+    // (`t.find is not a function`) in the planner.
+    if (Array.isArray(payload)) return payload as StudyPlanOut[];
+    if (
+      payload &&
+      typeof payload === 'object' &&
+      Array.isArray((payload as { plans?: unknown }).plans)
+    ) {
+      return (payload as { plans: StudyPlanOut[] }).plans;
+    }
+    return [];
   },
 
   /**
@@ -555,6 +568,13 @@ export const AdvisoryService = {
    * Quiet like every student advisory read — no advisor ⇒ `{ plans: [] }`.
    */
   getMyPlans: async (): Promise<MyPlansResponse> => {
-    return requestJson<MyPlansResponse>('/advisory/me/plans');
+    const payload: unknown = await requestJson<unknown>('/advisory/me/plans');
+    if (payload && typeof payload === 'object' && !Array.isArray(payload)) {
+      const obj = payload as { plans?: unknown };
+      return {
+        plans: Array.isArray(obj.plans) ? (obj.plans as StudyPlanOut[]) : [],
+      };
+    }
+    return { plans: [] };
   },
 };

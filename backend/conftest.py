@@ -10,6 +10,21 @@ app registry before Django is configured.
 import pytest
 
 
+def pytest_configure(config):
+    # Hermetic tests: the advisory auto-seed (post_migrate hook in
+    # apps/advisory/apps.py) must not run while pytest-django builds the test
+    # database — subject-API tests assert exact catalog contents. The seed
+    # command itself is covered explicitly by test_seed_advisory_subjects.py.
+    from django.apps import apps
+    from django.db.models.signals import post_migrate
+
+    advisory_config = apps.get_app_config('advisory')
+    post_migrate.disconnect(
+        advisory_config._seed_subject_catalog,
+        sender=advisory_config,
+    )
+
+
 @pytest.fixture(autouse=True)
 def _disable_throttling(settings):
     """Disable DRF throttling for every test."""

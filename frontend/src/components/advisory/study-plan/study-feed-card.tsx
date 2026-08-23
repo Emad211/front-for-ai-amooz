@@ -70,7 +70,7 @@ export function StudyFeedCard({ engagementId }: StudyFeedCardProps) {
     AdvisoryService.getStudentStudyFeed(engagementId, range)
       .then((data) => {
         if (!active) return;
-        setDays(data.days);
+        setDays(Array.isArray(data.days) ? data.days : []);
         setRangeLabel(data.range);
         setAdherencePercent(data.adherencePercent ?? null);
         setMoodAverage(data.moodAverage ?? null);

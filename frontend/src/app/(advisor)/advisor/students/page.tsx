@@ -59,8 +59,8 @@ export default function AdvisorStudentsPage() {
     AdvisoryService.getStudents()
       .then((data) => {
         if (!active) return;
-        setStudents(data.students);
-        setInvites(data.pendingInvites);
+        setStudents(Array.isArray(data.students) ? data.students : []);
+        setInvites(Array.isArray(data.pendingInvites) ? data.pendingInvites : []);
       })
       .catch((err: unknown) => {
         // Keep both lists null so the retry stays reachable and the screen never

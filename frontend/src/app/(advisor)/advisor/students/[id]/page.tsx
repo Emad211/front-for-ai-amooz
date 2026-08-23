@@ -95,8 +95,8 @@ export default function AdvisorStudentDetailPage() {
       {!loading && !error && !student && <NotFoundState />}
 
       {student && (
-        <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-2">
-          {/* First in DOM ⇒ right side under RTL: read the evidence, then plan. */}
+        <div className="mx-auto w-full max-w-4xl space-y-6">
+          {/* Read the evidence first, then plan — DOM order = visual order. */}
           <StudyFeedCard engagementId={engagementId} />
           <StudyPlannerCard
             engagementId={engagementId}

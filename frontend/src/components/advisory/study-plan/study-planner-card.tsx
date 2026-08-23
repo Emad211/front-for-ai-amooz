@@ -113,11 +113,14 @@ export function StudyPlannerCard({
     AdvisoryService.getEngagementSubjects(engagementId)
       .then((resp) => {
         if (!active) return;
-        const selectedIds = new Set(resp.selectedSubjectIds);
+        const catalog = Array.isArray(resp.subjects) ? resp.subjects : [];
+        const selectedIds = new Set(
+          Array.isArray(resp.selectedSubjectIds) ? resp.selectedSubjectIds : [],
+        );
         // Only ACTIVE selections may be planned; the derived curriculum lists
         // candidates, `selectedSubjectIds` marks what is actually focusable.
         setSubjects(
-          resp.subjects
+          catalog
             .filter((s) => selectedIds.has(s.id))
             .map((s) => ({ id: s.id, name: s.name })),
         );

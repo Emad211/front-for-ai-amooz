@@ -173,3 +173,21 @@ def test_shipped_national_curriculum_seeds_fully_and_idempotently():
     second = _seed(str(DEFAULT_DATA_FILE))
     assert Subject.objects.count() == 180
     assert '0 created, 180 already present (180 rows in file)' in second
+
+
+# ── the post_migrate auto-seed hook (apps.py ready) ─────────────────────────
+
+@pytest.mark.django_db
+def test_ready_hook_receiver_seeds_the_shipped_catalog():
+    """Regression for the live-deployment incident: the catalog existed only as
+    a manual command, so a deploy that never ran it shipped an empty Subject
+    table and every derived (grade, major) curriculum came back empty for both
+    the advisor picker and the student. The AppConfig receiver must seed the
+    shipped file through the same idempotent command, twice-proof."""
+    from apps.advisory.apps import AdvisoryConfig
+
+    assert Subject.objects.count() == 0
+    AdvisoryConfig._seed_subject_catalog()
+    assert Subject.objects.count() == 180
+    AdvisoryConfig._seed_subject_catalog()
+    assert Subject.objects.count() == 180
