@@ -84,13 +84,19 @@ class TestOnboarding:
         assert 'password' in resp.data.get('errors', resp.data)
 
     def test_rejects_already_completed_user(self):
-        # Onboarding is one-time — a completed account can't re-run it (which
-        # would change username/password with no old-password check).
+        # Onboarding is one-time — an EFFECTIVELY completed account can't re-run
+        # it (which would change username/password with no old-password check).
+        # Stored flag alone no longer counts: a pre-curriculum student must be
+        # allowed through to pick their grade/major.
         user = baker.make(
             'accounts.User', role=User.Role.STUDENT, phone='09120000022',
             is_profile_completed=True,
         )
         user.set_password('something'); user.save()
+        profile, _ = StudentProfile.objects.get_or_create(user=user)
+        profile.grade, profile.major = '10', 'math'
+        profile.save(update_fields=['grade', 'major'])
+
         c = APIClient(); c.force_authenticate(user=user)
         resp = c.post(URL, {
             'username': 'newname', 'password': PWD, 'email': 'a@b.com',

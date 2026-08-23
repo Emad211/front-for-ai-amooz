@@ -47,6 +47,27 @@ class User(AbstractUser):
     def __str__(self):
         return f"{self.username} ({self.role})"
 
+    @property
+    def is_effectively_completed(self) -> bool:
+        """Effective profile completion — the stored flag, plus the curriculum
+        keys for students.
+
+        For STUDENTS the stored flag alone lies: anyone who onboarded before the
+        advisor curriculum round carries ``is_profile_completed=True`` yet no
+        grade, so their derived subject list would stay silently empty forever.
+        The effective value therefore also demands grade (plus major on grades
+        10–12), so the frontend gate routes those users back into onboarding
+        instead of showing them a blank picker. Non-students are unaffected.
+        """
+        if not self.is_profile_completed:
+            return False
+        if self.role != self.Role.STUDENT:
+            return True
+        # Re-read from the DB — never trust the ``studentprofile`` reverse cache
+        # on a long-lived instance (same trap MeUpdateSerializer documents).
+        profile = StudentProfile.objects.filter(user_id=self.pk).first()
+        return bool(profile and profile.curriculum_keys_complete)
+
 class BaseProfile(models.Model):
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='%(class)s')
     bio = models.TextField(blank=True, null=True)
@@ -86,6 +107,25 @@ class StudentProfile(BaseProfile):
     grade = models.CharField(max_length=2, choices=GRADE_CHOICES, blank=True, null=True)
     major = models.CharField(max_length=20, choices=MAJOR_CHOICES, blank=True, null=True)
     school = models.CharField(max_length=255, blank=True, null=True)
+
+    # Grades that REQUIRE a major (owner decision, advisor-mvp Step 9): a
+    # high-schooler without a track derives no major-specific curriculum.
+    # Single source of truth — ``MeUpdateSerializer`` mirrors this constant.
+    HIGH_SCHOOL_GRADES = {'10', '11', '12'}
+
+    @property
+    def curriculum_keys_complete(self) -> bool:
+        """True when the grade is set AND (the grade is non-HS OR a major is set).
+
+        Mirrors ``MeUpdateSerializer.validate()``'s conditional-required rule so
+        the completion signal (:meth:`User.is_effectively_completed`) can never
+        disagree with what onboarding/profile writes actually accept.
+        """
+        if not self.grade:
+            return False
+        if self.grade in self.HIGH_SCHOOL_GRADES:
+            return bool(self.major)
+        return True
 
     def __str__(self):
         return f"Student: {self.user.username}"

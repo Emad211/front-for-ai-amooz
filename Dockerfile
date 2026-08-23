@@ -24,5 +24,7 @@ COPY backend/ .
 
 EXPOSE 8000
 
-# Run gunicorn with env-configurable settings.
-CMD ["sh", "-c", "python manage.py migrate --noinput && python manage.py collectstatic --noinput && gunicorn core.wsgi:application --bind 0.0.0.0:${PORT:-8000} --timeout ${GUNICORN_TIMEOUT} --workers ${GUNICORN_WORKERS} --worker-class ${GUNICORN_WORKER_CLASS} --graceful-timeout ${GUNICORN_GRACEFUL_TIMEOUT} --keep-alive ${GUNICORN_KEEP_ALIVE}"]
+# Run gunicorn with env-configurable settings. The seeder is idempotent
+# (get_or_create on identity) so re-running it every boot is free, and it is
+# what puts the national subject catalog into freshly-migrated databases.
+CMD ["sh", "-c", "python manage.py migrate --noinput && python manage.py seed_advisory_subjects && python manage.py collectstatic --noinput && gunicorn core.wsgi:application --bind 0.0.0.0:${PORT:-8000} --timeout ${GUNICORN_TIMEOUT} --workers ${GUNICORN_WORKERS} --worker-class ${GUNICORN_WORKER_CLASS} --graceful-timeout ${GUNICORN_GRACEFUL_TIMEOUT} --keep-alive ${GUNICORN_KEEP_ALIVE}"]

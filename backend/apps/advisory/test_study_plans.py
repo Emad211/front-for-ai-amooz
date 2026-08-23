@@ -760,3 +760,305 @@ class TestPlannerAPI:
     def test_a_non_student_is_rejected_on_me_plans(self):
         assert _auth(_advisor()).get('/api/advisory/me/plans/').status_code == 403
         assert APIClient().get('/api/advisory/me/plans/').status_code == 401
+
+
+# ── S8: adherence metric + mood average ───────────────────────────────────────
+
+def _log_day(engagement, student, day, minutes_by_subject, *, mood=None):
+    """One reported day through the write door; maps subject → minutes."""
+    return log_service.save_day(
+        engagement,
+        day,
+        mood=mood,
+        note='',
+        items=[
+            {'subject_id': subject.id, 'minutes': minutes}
+            for subject, minutes in minutes_by_subject.items()
+        ],
+        student=student,
+    )
+
+
+class TestPlanAdherencePercent:
+    def test_elapsed_only_denominator_excludes_future_items(self):
+        """Started 5d ago / duration 30: future-day rows stay out of the denominator."""
+        advisor, student = _advisor(), _student()
+        engagement = _engagement(advisor, student)
+        math = _subject('ریاضی')
+        math_row, = _selection(engagement, math)
+
+        plan = _plan(engagement, start=_shift(-5), duration=30,
+                     status=PlanStatus.PUBLISHED)
+        _item(plan, math_row, 0, 60)   # shift(-5) — elapsed
+        _item(plan, math_row, 2, 60)   # shift(-3) — elapsed
+        _item(plan, math_row, 10, 60)  # shift(+5) — future
+        _log_day(engagement, student, _shift(-5), {math: 30})
+        _log_day(engagement, student, _shift(-3), {math: 30})
+
+        # Elapsed planned = 120, actual = 60 ⇒ 50. Counting the future row
+        # would make the denominator 180 and the answer 33.
+        assert plan_service.plan_adherence_percent(plan, today=_today()) == 50
+
+    def test_inclusive_edges_start_and_end_days_both_count(self):
+        """Logs on the plan's first and last day are inside the window."""
+        advisor, student = _advisor(), _student()
+        engagement = _engagement(advisor, student)
+        math = _subject('ریاضی')
+        math_row, = _selection(engagement, math)
+
+        plan = _plan(engagement, start=_shift(-6), duration=7,
+                     status=PlanStatus.PUBLISHED)
+        _item(plan, math_row, 0, 40)  # shift(-6) — the start day itself
+        _item(plan, math_row, 6, 60)  # today — the end day itself
+        _log_day(engagement, student, _shift(-6), {math: 20})
+        _log_day(engagement, student, _today(), {math: 30})
+
+        # planned = 100, actual = 50 ⇒ 50. Dropping either edge breaks the
+        # symmetry: no start-day log ⇒ 30, no end-day item ⇒ 75, no end-day
+        # log ⇒ 20 — every wrong variant misses 50.
+        assert plan_service.plan_adherence_percent(plan, today=_today()) == 50
+
+    def test_minutes_logged_outside_the_plan_are_excluded_from_the_numerator(self):
+        """Before-start and after-end logs belong to no commitment of this plan."""
+        advisor, student = _advisor(), _student()
+        engagement = _engagement(advisor, student)
+        math = _subject('ریاضی')
+        math_row, = _selection(engagement, math)
+
+        plan = _plan(engagement, start=_shift(-3), duration=3,
+                     status=PlanStatus.PUBLISHED)
+        _item(plan, math_row, 0, 100)
+        _log_day(engagement, student, _shift(-10), {math: 200})  # before start
+        _log_day(engagement, student, _shift(-2), {math: 100})   # inside
+        _log_day(engagement, student, _today(), {math: 200})     # after end
+
+        assert plan_service.plan_adherence_percent(plan, today=_today()) == 100
+
+    def test_null_when_zero_items_have_elapsed(self):
+        """A plan that has not started yet has no ratio — never a misleading 0."""
+        advisor, student = _advisor(), _student()
+        engagement = _engagement(advisor, student)
+        math = _subject('ریاضی')
+        math_row, = _selection(engagement, math)
+
+        plan = _plan(engagement, start=_shift(1), duration=5,
+                     status=PlanStatus.PUBLISHED)
+        _item(plan, math_row, 0, 60)
+
+        assert plan_service.plan_adherence_percent(plan, today=_today()) is None
+
+    def test_ratio_is_rounded_to_the_nearest_integer(self):
+        advisor, student = _advisor(), _student()
+        engagement = _engagement(advisor, student)
+        math = _subject('ریاضی')
+        math_row, = _selection(engagement, math)
+
+        plan = _plan(engagement, start=_shift(-2), duration=3,
+                     status=PlanStatus.PUBLISHED)
+        _item(plan, math_row, 0, 100)
+        _item(plan, math_row, 1, 100)
+        _item(plan, math_row, 2, 100)
+        _log_day(engagement, student, _shift(-2), {math: 100})
+        _log_day(engagement, student, _shift(-1), {math: 100})
+
+        # 200 ÷ 300 = 66.67% ⇒ 67.
+        assert plan_service.plan_adherence_percent(plan, today=_today()) == 67
+
+
+class TestFeedOverallAdherence:
+    def test_weighted_across_two_differently_sized_plans_not_an_average(self):
+        """Σactual ÷ Σplanned once — a small plan's 100% cannot outweigh a big 50%."""
+        advisor, student = _advisor(), _student()
+        engagement = _engagement(advisor, student)
+        math = _subject('ریاضی')
+        math_row, = _selection(engagement, math)
+
+        big = _plan(engagement, start=_shift(-10), duration=7,
+                    status=PlanStatus.PUBLISHED)
+        for offset in range(7):
+            _item(big, math_row, offset, 10)
+        _log_day(engagement, student, _shift(-9), {math: 20})
+        _log_day(engagement, student, _shift(-7), {math: 15})
+
+        small = _plan(engagement, start=_shift(-3), duration=3,
+                      status=PlanStatus.PUBLISHED)
+        for offset in range(3):
+            _item(small, math_row, offset, 10)
+        _log_day(engagement, student, _shift(-2), {math: 30})
+
+        overall = plan_service.feed_overall_adherence(
+            engagement, [big, small], _shift(-30), _today(), today=_today(),
+        )
+
+        # (35 + 30) ÷ (70 + 30) = 65%. The naive mean of per-plan percents
+        # (50% and 100%) would read 75 — exactly the bug this shape forbids.
+        assert overall == 65
+
+    def test_range_clipping_counts_only_the_selected_window(self):
+        """A plan spanning past the range contributes only its clipped slice."""
+        advisor, student = _advisor(), _student()
+        engagement = _engagement(advisor, student)
+        math = _subject('ریاضی')
+        math_row, = _selection(engagement, math)
+
+        plan = _plan(engagement, start=_shift(-20), duration=40,
+                     status=PlanStatus.PUBLISHED)
+        _item(plan, math_row, 13, 100)  # shift(-7) — just before the 7d window
+        _item(plan, math_row, 18, 100)  # shift(-2) — inside it
+        _log_day(engagement, student, _shift(-7), {math: 80})
+        _log_day(engagement, student, _shift(-2), {math: 50})
+
+        whole = plan_service.feed_overall_adherence(
+            engagement, [plan], _shift(-30), _today(), today=_today(),
+        )
+        trailing_week = plan_service.feed_overall_adherence(
+            engagement, [plan], _shift(-6), _today(), today=_today(),
+        )
+
+        # Whole horizon: 130 ÷ 200 = 65. Clipped to the last 7 days the
+        # shift(-7) row drops out on BOTH sides: 50 ÷ 100 = 50.
+        assert whole == 65
+        assert trailing_week == 50
+
+    def test_drafts_and_out_of_range_plans_contribute_nothing(self):
+        advisor, student = _advisor(), _student()
+        engagement = _engagement(advisor, student)
+        math = _subject('ریاضی')
+        math_row, = _selection(engagement, math)
+
+        live = _plan(engagement, start=_shift(-3), duration=3,
+                     status=PlanStatus.PUBLISHED)
+        _item(live, math_row, 0, 100)
+        _log_day(engagement, student, _shift(-2), {math: 50})
+
+        scratch = _plan(engagement, start=_shift(-5), duration=10,
+                        status=PlanStatus.DRAFT)
+        _item(scratch, math_row, 0, 900)
+        future = _plan(engagement, start=_shift(5), duration=3,
+                       status=PlanStatus.PUBLISHED)
+        _item(future, math_row, 0, 900)
+
+        overall = plan_service.feed_overall_adherence(
+            engagement, [live, scratch, future], _shift(-30), _today(),
+            today=_today(),
+        )
+
+        # Only the published, in-range plan survives: 50 ÷ 100 = 50. The draft's
+        # 900 planned minutes and the future plan's clip-empty window vanish.
+        assert overall == 50
+
+    @pytest.mark.parametrize('plans', [[], None])
+    def test_null_when_there_is_nothing_to_measure(self, plans):
+        advisor, student = _advisor(), _student()
+        engagement = _engagement(advisor, student)
+
+        assert plan_service.feed_overall_adherence(
+            engagement, plans or [], _shift(-7), _today(), today=_today(),
+        ) is None
+
+    def test_null_when_surviving_plans_carry_no_elapsed_planned_minutes(self):
+        advisor, student = _advisor(), _student()
+        engagement = _engagement(advisor, student)
+        math = _subject('ریاضی')
+        math_row, = _selection(engagement, math)
+
+        future = _plan(engagement, start=_shift(1), duration=3,
+                       status=PlanStatus.PUBLISHED)
+        _item(future, math_row, 0, 60)
+        _log_day(engagement, student, _today(), {math: 45})
+
+        assert plan_service.feed_overall_adherence(
+            engagement, [future], _shift(-7), _today(), today=_today(),
+        ) is None
+
+
+class TestFeedMoodAverage:
+    def test_mean_of_non_null_moods_ignores_unrecorded_days(self):
+        days = [{'mood': 3}, {'mood': None}, {'mood': 5}]
+        assert plan_service.feed_mood_average(days) == 4.0
+
+    def test_rounded_to_one_decimal(self):
+        days = [{'mood': 4}, {'mood': 4}, {'mood': 5}]
+        assert plan_service.feed_mood_average(days) == 4.3
+
+    def test_all_null_and_empty_are_null(self):
+        assert plan_service.feed_mood_average([{'mood': None}]) is None
+        assert plan_service.feed_mood_average([]) is None
+
+
+class TestAdherenceWire:
+    def test_feed_carries_adherence_percent_and_mood_average(self):
+        advisor, student = _advisor(), _student()
+        engagement = _engagement(advisor, student)
+        math = _subject('ریاضی')
+        math_row, = _selection(engagement, math)
+
+        big = _plan(engagement, start=_shift(-10), duration=7,
+                    status=PlanStatus.PUBLISHED)
+        for offset in range(7):
+            _item(big, math_row, offset, 10)
+        _log_day(engagement, student, _shift(-9), {math: 20}, mood=3)
+        _log_day(engagement, student, _shift(-7), {math: 15})
+        small = _plan(engagement, start=_shift(-3), duration=3,
+                      status=PlanStatus.PUBLISHED)
+        for offset in range(3):
+            _item(small, math_row, offset, 10)
+        _log_day(engagement, student, _shift(-2), {math: 30}, mood=5)
+
+        resp = _auth(advisor).get(_feed_url(engagement), {'days': 'all'})
+
+        assert resp.status_code == 200
+        assert resp.data['adherencePercent'] == 65
+        assert resp.data['moodAverage'] == 4.0
+        # Every rendered plan row carries the field too.
+        assert all('percent' in plan for plan in resp.data['plans'])
+
+    def test_feed_is_quiet_null_with_no_plans_and_no_moods(self):
+        advisor, student = _advisor(), _student()
+        engagement = _engagement(advisor, student)
+        math = _subject('ریاضی')
+        _selection(engagement, math)
+        _log_day(engagement, student, _today(), {math: 30}, mood=None)
+
+        resp = _auth(advisor).get(_feed_url(engagement), {'days': '7'})
+
+        assert resp.status_code == 200
+        assert resp.data['adherencePercent'] is None
+        assert resp.data['moodAverage'] is None
+
+    def test_percent_is_null_for_a_draft_and_measured_for_published(self):
+        advisor, student = _advisor(), _student()
+        engagement = _engagement(advisor, student)
+        math = _subject('ریاضی')
+        math_row, = _selection(engagement, math)
+
+        draft = _plan(engagement, start=_shift(-3), duration=3)
+        _item(draft, math_row, 0, 60)
+        published = _plan(engagement, start=_shift(-10), duration=3,
+                          status=PlanStatus.PUBLISHED)
+        _item(published, math_row, 0, 60)
+        _log_day(engagement, student, _shift(-9), {math: 30})
+
+        listed = _auth(advisor).get(_plans_url(engagement))
+
+        assert listed.status_code == 200
+        by_id = {p['id']: p for p in listed.data['plans']}
+        assert by_id[draft.pk]['percent'] is None
+        assert by_id[published.pk]['percent'] == 50
+
+    def test_me_plans_inherits_the_percent_field(self):
+        advisor, student = _advisor(), _student()
+        engagement = _engagement(advisor, student)
+        math = _subject('ریاضی')
+        math_row, = _selection(engagement, math)
+
+        future = _plan(engagement, start=_shift(1), duration=3,
+                       status=PlanStatus.PUBLISHED)
+        _item(future, math_row, 0, 60)
+
+        seen = _auth(student).get('/api/advisory/me/plans/')
+
+        assert seen.status_code == 200
+        assert seen.data['plans'][0]['id'] == future.pk
+        # Nothing has elapsed yet ⇒ quiet null on the student's side too.
+        assert seen.data['plans'][0]['percent'] is None

@@ -712,7 +712,10 @@ class AdvisorStudyFeedView(APIView):
         ],
         responses={
             200: OpenApiResponse(
-                description='{studentName, range:{from,to}, days[], plans[]}',
+                description=(
+                    '{studentName, range:{from,to}, days[], plans[], '
+                    'adherencePercent, moodAverage}'
+                ),
             ),
             400: OpenApiResponse(description='بازه‌ی نامعتبر'),
             404: OpenApiResponse(description='همکاری پیدا نشد'),
@@ -745,11 +748,18 @@ class AdvisorStudyFeedView(APIView):
             and plan.end_date >= from_date
         ]
 
+        days_data = FeedDaySerializer(logs, many=True).data
         payload = {
             'studentName': _display_name(engagement.student),
             'range': {'from': from_date, 'to': to_date},
-            'days': FeedDaySerializer(logs, many=True).data,
+            'days': days_data,
             'plans': StudyPlanOutSerializer(plans, many=True).data,
+            # S8 chips — quiet-None when there is nothing to measure; the null
+            # and clipping rules live on the two service helpers.
+            'adherencePercent': plan_service.feed_overall_adherence(
+                engagement, plans, from_date, to_date,
+            ),
+            'moodAverage': plan_service.feed_mood_average(days_data),
         }
         # After the payload, before the answer: a failed read above returned
         # early, so this row lands only for a successful 200 — exactly one.

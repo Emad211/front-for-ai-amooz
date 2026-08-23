@@ -19,6 +19,11 @@ Three public functions, mirroring the two-state lifecycle:
   ``select_for_update``.
 * ``unpublish_plan`` — the §5 rollback lever: PUBLISHED → DRAFT.
 
+Step 8 (S8) adds three **read-side, pure** metric helpers at the bottom of this
+module — ``plan_adherence_percent``, ``feed_overall_adherence`` and
+``feed_mood_average``. They write nothing; they only measure what the write
+door above has already made true.
+
 Validation order in ``save_draft`` mirrors ``daily_logs.save_day`` exactly:
 start → duration → items (offset → subject → minutes → duplicates), all checked
 **before any write**, so a request with one bad row changes nothing at all.
@@ -28,7 +33,10 @@ Ownership is not re-checked here: the view resolves the engagement through
 
 from __future__ import annotations
 
+import datetime
+
 from django.db import transaction
+from django.db.models import Sum
 from django.utils import timezone
 
 from ..models import (
@@ -36,6 +44,7 @@ from ..models import (
     MAX_PLAN_MINUTES_PER_ITEM,
     STUDY_FEED_VIEW_ACTION,
     AdvisoryAccessLog,
+    DailyLogItem,
     StudyPlan,
     StudyPlanItem,
 )
@@ -328,3 +337,131 @@ def record_study_feed_view(engagement, reader) -> None:
         engagement=engagement,
         action=STUDY_FEED_VIEW_ACTION,
     )
+
+
+# ── S8: the commitment metric (read-side, pure) ──────────────────────────────
+
+def _logged_minutes(engagement, start_date, end_date) -> int:
+    """Σ actual minutes reported on this engagement inside the inclusive window.
+
+    One aggregate over ``DailyLogItem`` — the numerator half of every adherence
+    ratio. Minutes outside the window are not "missed", they are *unmeasured*:
+    a log from before the plan began belongs to no commitment of this plan, and
+    counting it would let a hard-working week before the plan inflate (or, via
+    the ratio's denominator staying fixed, distort) the percentage.
+    """
+    total = DailyLogItem.objects.filter(
+        log__engagement=engagement,
+        log__log_date__gte=start_date,
+        log__log_date__lte=end_date,
+    ).aggregate(total=Sum('actual_minutes'))['total']
+    return int(total or 0)
+
+
+def _planned_minutes_between(plan, start_date, end_date) -> int:
+    """Σ planned minutes of the plan's rows whose computed date is in the window.
+
+    An item has no date column — its day is ``start_date + day_offset``, the
+    same arithmetic ``StudyPlanItemOutSerializer.get_date`` publishes. Summing
+    in Python over ``plan.items.all()`` rides the scope prefetch wherever the
+    caller came through ``scope.advisor_plans`` / ``student_published_plans``,
+    so this costs no extra query on the wire paths.
+    """
+    return sum(
+        item.planned_minutes
+        for item in plan.items.all()
+        if start_date <= plan.start_date + datetime.timedelta(days=item.day_offset) <= end_date
+    )
+
+
+def plan_adherence_percent(plan, today=None) -> int | None:
+    """The one plan's adherence: ``round(actual ÷ planned × 100)``, or ``None``.
+
+    The locked S8 shape:
+
+    * **Numerator** — minutes logged on ``plan.engagement`` with
+      ``log_date ∈ [plan.start_date .. min(plan.end_date, today)]``. Inclusive
+      edges: the start day and the end day both belong to the window. Anything
+      logged outside the plan's horizon is excluded entirely, which is what
+      keeps the ratio an honest measurement of *this* commitment.
+    * **Denominator** — planned minutes of rows whose date ≤ today only. A plan
+      still underway is measured against what has **elapsed**, never against
+      what is still to come: counting future days would punish a student for
+      days that have not happened yet.
+    * ``planned == 0`` ⇒ ``None`` — a plan with nothing elapsed yet (or nothing
+      at all) has no ratio; rendering it as 0% would read as «did nothing».
+
+    ``today`` defaults to ``timezone.localdate()`` («امروز», student-local);
+    tests pass it explicitly for determinism. Status-blind by design — whether
+    a DRAFT deserves a percent at all is the serializer's rule (it answers
+    ``None`` unless PUBLISHED), not this formula's business.
+    """
+    if today is None:
+        today = timezone.localdate()
+    window_end = min(plan.end_date, today)
+    if window_end < plan.start_date:
+        # The plan has not started yet: zero elapsed items ⇒ no measurement.
+        return None
+
+    planned = sum(
+        item.planned_minutes
+        for item in plan.items.all()
+        if plan.start_date + datetime.timedelta(days=item.day_offset) <= today
+    )
+    if planned <= 0:
+        return None
+
+    actual = _logged_minutes(engagement=plan.engagement,
+                             start_date=plan.start_date, end_date=window_end)
+    return round(actual / planned * 100)
+
+
+def feed_overall_adherence(engagement, plans, date_from, date_to, today=None) -> int | None:
+    """One weighted chip for the study feed: Σactual ÷ Σplanned across plans.
+
+    Never an average of percentages — a 100% week on a 3-day plan must not
+    outweigh a 50% month on a 30-day plan, so the two sums are taken first and
+    divided once. Each **PUBLISHED** plan's window is clipped to the feed's
+    selected range (and to today): ``[max(start, from), min(end, to, today)]``.
+    A clip that comes out empty (the plan lies wholly outside the range or in
+    the future) contributes nothing; survivors contribute both their clipped
+    actual and their clipped planned, so the chip always describes exactly the
+    range the advisor is looking at. No survivor with planned minutes ⇒
+    ``None`` — quiet-null, per the owner rule for empty feeds.
+    """
+    if today is None:
+        today = timezone.localdate()
+
+    total_actual = 0
+    total_planned = 0
+    for plan in plans:
+        if plan.status != StudyPlan.Status.PUBLISHED:
+            continue
+        clip_start = max(plan.start_date, date_from)
+        clip_end = min(plan.end_date, date_to, today)
+        if clip_start > clip_end:
+            continue
+        total_actual += _logged_minutes(
+            engagement=engagement, start_date=clip_start, end_date=clip_end,
+        )
+        total_planned += _planned_minutes_between(
+            plan, start_date=clip_start, end_date=clip_end,
+        )
+
+    if total_planned <= 0:
+        return None
+    return round(total_actual / total_planned * 100)
+
+
+def feed_mood_average(days) -> float | None:
+    """Mean of the non-null ``days[].mood`` values, rounded to 1 decimal.
+
+    Takes the **serialized** feed-day dicts (the wire shape the view already
+    built), so the null-meaningful mood convention survives the hop: a day with
+    ``mood=None`` is «not recorded» and drops out of the mean rather than
+    dragging it down. All days unrecorded (or no days at all) ⇒ ``None``.
+    """
+    moods = [day['mood'] for day in days if day.get('mood') is not None]
+    if not moods:
+        return None
+    return round(sum(moods) / len(moods), 1)

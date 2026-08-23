@@ -37,6 +37,7 @@ from .models import (
     Subject,
 )
 from .services.student_subjects import MAX_SUBJECTS_PER_STUDENT
+from .services.study_plans import plan_adherence_percent
 from .services.text import mask_phone
 
 
@@ -418,10 +419,22 @@ class StudyPlanOutSerializer(serializers.Serializer):
     endDate = serializers.SerializerMethodField()
     durationDays = serializers.IntegerField(source='duration_days', read_only=True)
     status = serializers.CharField(read_only=True)
+    percent = serializers.SerializerMethodField()
     items = StudyPlanItemOutSerializer(many=True, read_only=True)
 
     def get_endDate(self, obj):  # noqa: N802 — camelCase wire key
         return obj.end_date
+
+    def get_percent(self, obj) -> int | None:  # noqa: N802 — camelCase wire key
+        """Adherence percent; ``None`` unless the plan is PUBLISHED.
+
+        A draft promises nothing yet, so it carries no measurement rather than
+        a misleading ``0``. The status test reads the instance's nested enum —
+        not a model import — for the same import-boundary reason views do.
+        """
+        if obj.status != obj.Status.PUBLISHED:
+            return None
+        return plan_adherence_percent(obj)
 
 
 class StudyPlanDraftItemWriteSerializer(serializers.Serializer):

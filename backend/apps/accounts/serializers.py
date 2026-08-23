@@ -29,7 +29,10 @@ class MeSerializer(serializers.Serializer):
     role = serializers.CharField(read_only=True, help_text="Role of the user (STUDENT/TEACHER/ADMIN).")
     is_staff = serializers.BooleanField(read_only=True, help_text="Indicates if the user can access admin resources.")
     is_superuser = serializers.BooleanField(read_only=True, help_text="Indicates if the user is a Django superuser.")
-    is_profile_completed = serializers.BooleanField(read_only=True, help_text="Indicates if the user has completed their profile.")
+    is_profile_completed = serializers.SerializerMethodField(
+        help_text="Indicates if the user has completed their profile. For students "
+                  "this also requires their grade/major curriculum keys."
+    )
     is_freelancer = serializers.BooleanField(read_only=True, help_text="TEACHER only: may use a personal (freelancer) workspace. False = org-only.")
 
     join_date = serializers.DateTimeField(source='date_joined', read_only=True)
@@ -78,6 +81,13 @@ class MeSerializer(serializers.Serializer):
         return obj.studentprofile.get_major_display() if major else None
 
     @extend_schema_field(OpenApiTypes.BOOL)
+    def get_is_profile_completed(self, obj) -> bool:
+        # Effective, not stored: a pre-curriculum student (stored flag True, no
+        # grade) must surface as incomplete so the frontend gate routes them
+        # back into onboarding instead of leaving their subject picker empty.
+        return obj.is_effectively_completed
+
+    @extend_schema_field(OpenApiTypes.BOOL)
     def get_is_verified(self, obj) -> bool:
         if getattr(obj, 'role', None) == User.Role.TEACHER and hasattr(obj, 'teacherprofile'):
             return bool(getattr(obj.teacherprofile, 'verification_status', False))
@@ -120,7 +130,8 @@ class MeUpdateSerializer(serializers.Serializer):
         'theology': 'علوم و معارف اسلامی',
         'technical': 'فنی و حرفه‌ای و کاردانش',
     }
-    HIGH_SCHOOL_GRADES = {'10', '11', '12'}
+    # Mirror of StudentProfile.HIGH_SCHOOL_GRADES (the single source lives there).
+    HIGH_SCHOOL_GRADES = StudentProfile.HIGH_SCHOOL_GRADES
     MAJOR_REQUIRED_FOR_HS_ERROR = 'برای پایه‌های دهم تا دوازدهم انتخاب رشته الزامی است.'
 
     def _normalize_student_grade(self, raw: str | None) -> str | None:
@@ -325,7 +336,9 @@ class OnboardingSerializer(serializers.Serializer):
     password = serializers.CharField(min_length=8, write_only=True)
     email = serializers.EmailField()
     phone = serializers.CharField(max_length=32)
-    first_name = serializers.CharField(max_length=150)
+    # allow_blank so a re-onboarding pre-curriculum student (who may never have
+    # had a first name) can pass without inventing one.
+    first_name = serializers.CharField(max_length=150, allow_blank=True)
     last_name = serializers.CharField(max_length=150, required=False, allow_blank=True)
     # Light, role-specific profile (optional) — handed to MeUpdateSerializer.
     grade = serializers.CharField(required=False, allow_blank=True, allow_null=True)

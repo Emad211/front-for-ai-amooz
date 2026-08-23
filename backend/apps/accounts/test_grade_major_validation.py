@@ -160,3 +160,139 @@ class TestOnboardingConditionalMajor:
         assert resp.status_code == 200, resp.content
         prof = _profile(user)
         assert prof.grade == '12' and prof.major == 'technical'
+
+
+# ── effective completion (pre-curriculum students) ───────────────────────────
+#
+# A student who onboarded before the curriculum round carries the stored flag
+# but no grade: their derived subject list stays silently empty. The completion
+# signal must surface them as INCOMPLETE so the frontend gate routes them back
+# into onboarding, and the onboarding endpoint must accept their re-completion.
+
+BLOCKED = 'حساب شما قبلاً تکمیل شده است.'
+
+
+class TestEffectiveProfileCompletion:
+    def _completed_shell(self, phone, username):
+        """A student whose stored flag says completed but who has no curriculum
+        keys — the exact shape of every pre-round production account."""
+        user, _ = get_or_create_student_by_phone(phone)
+        user.username = username
+        user.is_profile_completed = True
+        user.save()
+        return user
+
+    def test_me_reports_incomplete_without_grade(self, student_client, student_user):
+        student_user.is_profile_completed = True
+        student_user.save()
+
+        resp = student_client.get(ME_URL)
+
+        assert resp.status_code == 200
+        assert resp.data['is_profile_completed'] is False
+
+    def test_hs_grade_without_major_still_incomplete(self, student_client, student_user):
+        student_user.is_profile_completed = True
+        student_user.save()
+        prof = _profile(student_user)
+        prof.grade = '10'
+        prof.save(update_fields=['grade'])
+
+        resp = student_client.get(ME_URL)
+
+        assert resp.status_code == 200
+        assert resp.data['is_profile_completed'] is False
+
+    def test_hs_grade_plus_major_is_complete(self, student_client, student_user):
+        student_user.is_profile_completed = True
+        student_user.save()
+        prof = _profile(student_user)
+        prof.grade, prof.major = '10', 'math'
+        prof.save(update_fields=['grade', 'major'])
+
+        resp = student_client.get(ME_URL)
+
+        assert resp.status_code == 200
+        assert resp.data['is_profile_completed'] is True
+
+    def test_middle_schooler_needs_only_the_grade(self, student_client, student_user):
+        student_user.is_profile_completed = True
+        student_user.save()
+        prof = _profile(student_user)
+        prof.grade = '07'
+        prof.save(update_fields=['grade'])
+
+        resp = student_client.get(ME_URL)
+
+        assert resp.status_code == 200
+        assert resp.data['is_profile_completed'] is True
+
+    def test_non_student_flag_alone_is_enough(self, teacher_client, teacher_user):
+        teacher_user.is_profile_completed = True
+        teacher_user.save()
+
+        resp = teacher_client.get(ME_URL)
+
+        assert resp.status_code == 200
+        assert resp.data['is_profile_completed'] is True
+
+    def test_stored_false_stays_false_for_students(self, student_client, student_user):
+        # A brand-new student (flag False) must never read as complete even if
+        # someone seeded their profile keys out-of-band.
+        student_user.is_profile_completed = False
+        student_user.save()
+        prof = _profile(student_user)
+        prof.grade, prof.major = '11', 'science'
+        prof.save(update_fields=['grade', 'major'])
+
+        resp = student_client.get(ME_URL)
+
+        assert resp.status_code == 200
+        assert resp.data['is_profile_completed'] is False
+
+    def test_pre_curriculum_student_can_recomplete_onboarding(self):
+        user = self._completed_shell('09120000401', 'legacy_recomplete')
+        client = APIClient()
+        client.force_authenticate(user=user)
+
+        resp = client.post(ONBOARDING_URL, {
+            'username': 'legacy_recomplete', 'password': PWD, 'email': 'l@b.com',
+            'phone': '09120000401', 'first_name': '',
+            'grade': 'یازدهم', 'major': 'علوم انسانی',
+        }, format='json')
+
+        assert resp.status_code == 200, resp.content
+        user.refresh_from_db()
+        prof = _profile(user)
+        assert prof.grade == '11' and prof.major == 'humanities'
+        assert user.is_effectively_completed is True
+
+    def test_blank_first_name_accepted_on_recompletion(self):
+        user = self._completed_shell('09120000402', 'legacy_blankname')
+        client = APIClient()
+        client.force_authenticate(user=user)
+
+        resp = client.post(ONBOARDING_URL, {
+            'username': 'legacy_blankname2', 'password': PWD, 'email': 'm@b.com',
+            'phone': '09120000402', 'first_name': '', 'last_name': '',
+            'grade': 'پایه ششم',
+        }, format='json')
+
+        assert resp.status_code == 200, resp.content
+
+    def test_truly_completed_student_still_blocked(self, student_user):
+        student_user.is_profile_completed = True
+        student_user.save()
+        prof = _profile(student_user)
+        prof.grade, prof.major = '10', 'math'
+        prof.save(update_fields=['grade', 'major'])
+        client = APIClient()
+        client.force_authenticate(user=student_user)
+
+        resp = client.post(ONBOARDING_URL, {
+            'username': 'whatever', 'password': PWD, 'email': 'n@b.com',
+            'phone': '09120000499', 'first_name': 'x',
+        }, format='json')
+
+        assert resp.status_code == 400
+        assert BLOCKED in resp.data['detail']
