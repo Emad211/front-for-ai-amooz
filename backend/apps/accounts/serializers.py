@@ -97,32 +97,46 @@ class MeUpdateSerializer(serializers.Serializer):
     grade = serializers.CharField(required=False, allow_blank=True, allow_null=True)
     major = serializers.CharField(required=False, allow_blank=True, allow_null=True)
 
+    # Value-mirrors of ``StudentProfile.GRADE_CHOICES``/``MAJOR_CHOICES``: a client
+    # may submit either the code or its Persian label.
+    GRADE_LABELS = {
+        '01': 'پایه اول',
+        '02': 'پایه دوم',
+        '03': 'پایه سوم',
+        '04': 'پایه چهارم',
+        '05': 'پایه پنجم',
+        '06': 'پایه ششم',
+        '07': 'هفتم',
+        '08': 'هشتم',
+        '09': 'نهم',
+        '10': 'دهم',
+        '11': 'یازدهم',
+        '12': 'دوازدهم',
+    }
+    MAJOR_LABELS = {
+        'math': 'ریاضی فیزیک',
+        'science': 'علوم تجربی',
+        'humanities': 'علوم انسانی',
+        'theology': 'علوم و معارف اسلامی',
+        'technical': 'فنی و حرفه‌ای و کاردانش',
+    }
+    HIGH_SCHOOL_GRADES = {'10', '11', '12'}
+    MAJOR_REQUIRED_FOR_HS_ERROR = 'برای پایه‌های دهم تا دوازدهم انتخاب رشته الزامی است.'
+
     def _normalize_student_grade(self, raw: str | None) -> str | None:
         s = (raw or '').strip()
         if not s:
             return None
-        mapping = {
-            '10': '10',
-            '11': '11',
-            '12': '12',
-            'دهم': '10',
-            'یازدهم': '11',
-            'دوازدهم': '12',
-        }
+        mapping = {code: code for code in self.GRADE_LABELS}
+        mapping.update({label: code for code, label in self.GRADE_LABELS.items()})
         return mapping.get(s)
 
     def _normalize_student_major(self, raw: str | None) -> str | None:
         s = (raw or '').strip()
         if not s:
             return None
-        mapping = {
-            'math': 'math',
-            'science': 'science',
-            'humanities': 'humanities',
-            'ریاضی فیزیک': 'math',
-            'علوم تجربی': 'science',
-            'علوم انسانی': 'humanities',
-        }
+        mapping = {code: code for code in self.MAJOR_LABELS}
+        mapping.update({label: code for code, label in self.MAJOR_LABELS.items()})
         return mapping.get(s)
 
     def validate_grade(self, value: str | None) -> str | None:
@@ -142,6 +156,50 @@ class MeUpdateSerializer(serializers.Serializer):
         if value and normalized is None:
             raise serializers.ValidationError('رشته تحصیلی نامعتبر است.')
         return normalized
+
+    def validate(self, attrs):
+        """Cross-field grade/major rule (owner decision, advisor-mvp Step 9):
+
+        * effective grade ∈ {10,11,12} ⇒ effective major must be non-null — a
+          high-schooler without a track derives no major-specific curriculum;
+        * effective grade ≤ 09 ⇒ any submitted major is ignored/nulled (those
+          grades have no tracks; عمومی is never a stored code).
+
+        "Effective" = submitted value if present, else the profile's current
+        value — so a partial update cannot null a high-schooler's major, and a
+        student moving down to ≤09 clears theirs in the same request.
+
+        The profile is re-read from the DB, never through the (possibly stale)
+        ``user.studentprofile`` reverse cache: the post_save signal touches that
+        descriptor, so a caller holding a long-lived user instance would see the
+        creation-time snapshot instead of committed changes.
+        """
+        user = self.instance
+        if not user or getattr(user, 'role', None) != User.Role.STUDENT:
+            return attrs
+
+        profile = StudentProfile.objects.filter(user=user).first()
+
+        if 'grade' in attrs:
+            effective_grade = attrs.get('grade')
+        else:
+            effective_grade = profile.grade if profile else None
+        if effective_grade is None:
+            return attrs
+
+        if effective_grade in self.HIGH_SCHOOL_GRADES:
+            effective_major = (
+                attrs.get('major')
+                if 'major' in attrs
+                else (profile.major if profile else None)
+            )
+            if not effective_major:
+                raise serializers.ValidationError({'major': self.MAJOR_REQUIRED_FOR_HS_ERROR})
+        else:
+            # Grades 01..09 have no majors: drop whatever was submitted and
+            # clear any stale stored track in the same write.
+            attrs['major'] = None
+        return attrs
 
     def validate_email(self, value: str) -> str:
         # Allow setting/updating email (including first-time set). Normalize to lowercase.

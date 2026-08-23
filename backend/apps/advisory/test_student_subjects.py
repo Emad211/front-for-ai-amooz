@@ -466,33 +466,35 @@ def test_get_is_quiet_and_empty_when_the_student_has_no_grade():
 
 def test_get_returns_the_students_derived_curriculum_as_candidates():
     """The advisor GET no longer lists the flat catalog: ``subjects`` is exactly what
-    the student's own (grade, major) derives — the grade's general subjects plus the
-    student's own track — and nothing from another grade, another major, or a dead
-    (grade-NULL) row. This is the inline round trip of ``curriculum_subjects``.
+    the student's own (grade, major) derives — the HS band's general subjects plus
+    the student's own track across 10–12 — and nothing from another major, an
+    out-of-band grade, or a dead (grade-NULL) row. Inline round trip of
+    ``curriculum_subjects``.
     """
     advisor, student = _advisor(), _student(grade='10', major='math')
     engagement = _engagement(advisor, student)
     general = _subject('ادبیات فارسی')                       # grade 10, major None → derives
     mine = _subject('هندسه', major='math')                    # my track → derives
+    band_mine = _subject('حسابان', grade='12', major='math')  # same band, my track → derives too
     _subject('زیست', major='science')                         # another track → hidden
-    _subject('حسابان', grade='12', major='math')              # another grade → hidden
+    _subject('ریاضی نهم', grade='09')                         # out-of-band grade → hidden
     _subject('زبان', grade=None)                              # dead row → hidden
 
     resp = _auth(advisor).get(_subjects_url(engagement.pk))
     assert resp.status_code == 200
-    assert {s['id'] for s in resp.data['subjects']} == {general.id, mine.id}
+    assert {s['id'] for s in resp.data['subjects']} == {general.id, mine.id, band_mine.id}
 
 
 def test_an_off_grade_or_dead_subject_is_not_in_the_curriculum_and_is_400():
     """The S4→national reversal: grade now *gates*, it is not a filter tag.
 
-    A 12th-grade subject is not in an 11th-grader's curriculum, and a grade-less
-    (dead/legacy) row is in nobody's — both are rejected, and because assignability
-    is checked before any write opens, nothing at all is stored.
+    A 9th-grade subject is outside an 11th-grader's HS window (10–12 only), and a
+    grade-less (dead/legacy) row is in nobody's — both are rejected, and because
+    assignability is checked before any write opens, nothing at all is stored.
     """
     advisor, student = _advisor(), _student(grade='11', major='math')
     engagement = _engagement(advisor, student)
-    off_grade = _subject('حسابان', grade='12', major='math')
+    off_grade = _subject('ریاضی نهم', grade='09')
     dead = _subject('زبان', grade=None)
 
     for bad in (off_grade, dead):

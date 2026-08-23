@@ -58,7 +58,19 @@ class BaseProfile(models.Model):
         abstract = True
 
 class StudentProfile(BaseProfile):
+    # Deliberate value-copy of ``apps.advisory.models.SUBJECT_GRADE_CHOICES`` (not
+    # an import — no cross-app dependency). A student's own grade selects their
+    # derived curriculum, so both sides must accept the same codes.
     GRADE_CHOICES = [
+        ('01', 'پایه اول'),
+        ('02', 'پایه دوم'),
+        ('03', 'پایه سوم'),
+        ('04', 'پایه چهارم'),
+        ('05', 'پایه پنجم'),
+        ('06', 'پایه ششم'),
+        ('07', 'هفتم'),
+        ('08', 'هشتم'),
+        ('09', 'نهم'),
         ('10', 'دهم'),
         ('11', 'یازدهم'),
         ('12', 'دوازدهم'),
@@ -67,6 +79,8 @@ class StudentProfile(BaseProfile):
         ('math', 'ریاضی فیزیک'),
         ('science', 'علوم تجربی'),
         ('humanities', 'علوم انسانی'),
+        ('theology', 'علوم و معارف اسلامی'),
+        ('technical', 'فنی و حرفه‌ای و کاردانش'),
     ]
     
     grade = models.CharField(max_length=2, choices=GRADE_CHOICES, blank=True, null=True)

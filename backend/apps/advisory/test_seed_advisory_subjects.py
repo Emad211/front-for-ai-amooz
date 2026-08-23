@@ -155,3 +155,21 @@ def test_dry_run_writes_nothing(tmp_path):
 def test_missing_file_errors(tmp_path):
     with pytest.raises(CommandError):
         _seed(str(tmp_path / 'does-not-exist.json'))
+
+
+# ── the shipped catalog (Step 9): the real file must seed clean & idempotent ──
+
+def test_shipped_national_curriculum_seeds_fully_and_idempotently():
+    """The version-controlled ``national_curriculum.json`` is the real national
+    catalog (180 rows after the Step 9 conversion rules). It must validate whole,
+    create exactly its row count on a fresh DB, and re-seed as a strict no-op —
+    the same idempotency proof the deployment run makes by hand."""
+    from apps.advisory.management.commands.seed_advisory_subjects import DEFAULT_DATA_FILE
+
+    first = _seed(str(DEFAULT_DATA_FILE))
+    assert Subject.objects.count() == 180
+    assert '180 created, 0 already present (180 rows in file)' in first
+
+    second = _seed(str(DEFAULT_DATA_FILE))
+    assert Subject.objects.count() == 180
+    assert '0 created, 180 already present (180 rows in file)' in second

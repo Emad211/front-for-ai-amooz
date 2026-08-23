@@ -51,6 +51,15 @@ REJECT_BLOCK_DAYS = 30
 # (grade, major) selects their curriculum directly. They are duplicated here rather
 # than imported, to keep advisory free of a cross-app dependency on accounts.
 SUBJECT_GRADE_CHOICES = [
+    ('01', _('پایه اول')),
+    ('02', _('پایه دوم')),
+    ('03', _('پایه سوم')),
+    ('04', _('پایه چهارم')),
+    ('05', _('پایه پنجم')),
+    ('06', _('پایه ششم')),
+    ('07', _('هفتم')),
+    ('08', _('هشتم')),
+    ('09', _('نهم')),
     ('10', _('دهم')),
     ('11', _('یازدهم')),
     ('12', _('دوازدهم')),
@@ -59,10 +68,15 @@ SUBJECT_GRADE_CHOICES = [
 # Mirror of ``accounts.StudentProfile.MAJOR_CHOICES`` by value. NULL is meaningful
 # here, not "unset": a NULL-major subject is the general one shared across every
 # major of its grade (see the matrix above), so it is a first-class identity value.
+# ``theology``/``technical`` arrived with the national-curriculum ingest (Step 9);
+# ``technical`` rows are kept out of catalog v1 by the conversion rules, but the
+# code stays valid so org-curated subjects may still use it.
 SUBJECT_MAJOR_CHOICES = [
     ('math', _('ریاضی فیزیک')),
     ('science', _('علوم تجربی')),
     ('humanities', _('علوم انسانی')),
+    ('theology', _('علوم و معارف اسلامی')),
+    ('technical', _('فنی و حرفه‌ای و کاردانش')),
 ]
 
 

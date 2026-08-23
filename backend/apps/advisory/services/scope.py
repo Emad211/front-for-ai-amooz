@@ -221,6 +221,12 @@ def assignable_subjects(advisor) -> QuerySet[Subject]:
 
 # ── national curriculum: subjects derived from the student's own (grade, major) ──
 
+# The high-school band whose candidate window is shared: a student in any of these
+# three grades derives from ALL THREE grades (own-major ∪ general rows), not just
+# their own — a دوازدهمی still studies/retakes یازدهم and دهم courses. Every other
+# grade ('01'..'09') is exact-own-grade only.
+HIGH_SCHOOL_GRADES = ['10', '11', '12']
+
 def student_organization_ids(student) -> list[int]:
     """The organizations whose private subjects this student may see.
 
@@ -251,8 +257,10 @@ def curriculum_subjects(student) -> QuerySet[Subject]:
 
     Three identity cases the query reads (see ``Subject`` model comment):
 
-    * a subject's ``grade`` must equal the student's grade — a NULL-grade row
-      (dead/legacy) derives for nobody;
+    * ``grade``: for a high-school student (``HIGH_SCHOOL_GRADES``) candidates span
+      ALL THREE grades — the band shares one curriculum, so a دوازدهمی still sees
+      the دهم/یازدهم courses they study or retake. Every other grade is EXACT own
+      grade only. A NULL-grade row (dead/legacy) still derives for nobody;
     * ``major`` must be either the student's own major **or** NULL (the general
       subjects shared across every major of that grade);
     * scope must be national (``organization IS NULL``) **or** an org the student
@@ -272,8 +280,14 @@ def curriculum_subjects(student) -> QuerySet[Subject]:
         return Subject.objects.none()
     major = getattr(profile, 'major', None) or None
     org_ids = student_organization_ids(student)
+    grade_filter = (
+        Q(grade__in=HIGH_SCHOOL_GRADES)
+        if grade in HIGH_SCHOOL_GRADES
+        else Q(grade=grade)
+    )
     return (
-        Subject.objects.filter(is_active=True, grade=grade)
+        Subject.objects.filter(is_active=True)
+        .filter(grade_filter)
         .filter(Q(major=major) | Q(major__isnull=True))
         .filter(Q(organization__isnull=True) | Q(organization_id__in=org_ids))
     )
