@@ -600,3 +600,135 @@ local guesses). ورودی شرطیِ منوی «گزارش روزانه» در 
   دستی به عهدهٔ اونر در دیپلوی.
 
 
+---
+
+## ۱۴. بازطراحی گام‌های ۶–۸ — افق متغیر به‌جای هفتهٔ شنبه‌ای (تصمیم اونر، 2026-08-23)
+
+> **این بخش تصمیم قفل‌شدهٔ «مدل زمانی» در §۱ را وارونه می‌کند** — همان کاری که §۱۲ با گام ۴ کرد.
+> برنامه‌ریزی دیگر «هفتگیِ لنگر به شنبه» نیست: مشاور برای هر برنامه **تاریخ شروعِ آزاد** و
+> **طول دلخواه** انتخاب می‌کند — چیپ‌های ۷/۱۴/۳۰ روز یا «دلخواه» تا سقف **۹۰ روز**. فیدِ مطالعه هم
+> به‌جای پنجرهٔ ثابت ۷روزه، همین گزینه‌ها + حالت «از شروع» را دارد. جدول‌ها چون هنوز مهاجرت
+> نداشتند، از `WeeklyPlan/WeeklyPlanItem` به **`StudyPlan/StudyPlanItem`** تغییر نام یافتند
+> (آخرین فرصت تمیز). تکرارِ خودکار برنامه‌ها در MVP نیست — پایان هر بازه = مشاور پلن بعدی را می‌سازد.
+> ردیف‌های گام ۶–۸ در §۵ و بلوک جداول §۲ با این بخش بازنویسی معنا می‌شوند؛ متن قبلی رکورد تاریخی است.
+
+### ۱۴.۱ مدل داده (سه جدول نو — migration 0006)
+
+```
+StudyPlan                                    ← افق متغیر · گام ۷ (بازطراحی §۱۴)
+  engagement FK PROTECT                      ← حامل tenancy مثل بقیه
+  start_date DateField                       ← آزاد؛ ≥ started_on (قاعده C3 برای نوشتن)
+  duration_days PositiveSmallInt             ← CheckConstraint 1..90
+  status DRAFT|PUBLISHED                     ← همان چرخهٔ §۵ گام ۷
+  created_at · updated_at
+  PartialUniqueConstraint: فقط «یک» DRAFT per engagement   ← اسلات پیش‌نویس
+  Index (engagement, status, start_date)
+  ⚠ عدم‌همپوشانی با PUBLISHED ها قانونِ سرویس است (مقایسه با ردیف‌های همسایه؛ constraint نمی‌شود).
+
+StudyPlanItem                                ← کلید اتصال S8 مثل DailyLogItem → StudentSubject
+  plan FK PROTECT related_name='items'
+  day_offset SmallInt                        ← CheckConstraint 0..89 ؛ سقفِ واقعی < duration_days در سرویس
+  student_subject FK PROTECT                 ← همان تصمیم DailyLogItem؛ PROTECT
+  planned_minutes PositiveSmallInt           ← CheckConstraint 1..960 (هم‌مقیاس با actual)
+  UniqueConstraint (plan, day_offset, student_subject)
+
+AdvisoryAccessLog                            ← D4: از لحظهٔ روشن‌شدن خواندن نوشته می‌شود؛ backfill ندارد
+  reader FK User SET_NULL null               ← append-only؛ هیچ API نمی‌نویسد/نمی‌خواندش
+  engagement FK PROTECT · action CharField(32) ('study_feed_view') · accessed_at auto db_index
+  Indexes (engagement,-accessed_at) · (reader,-accessed_at) · ادمین کاملاً read-only
+```
+
+### ۱۴.۲ اندپوینت‌ها و قرارداد wire (کلیدها camelCase)
+
+مشاور (`IsAdvisorUser`؛ pk = engagement id؛ حلّ از `scope.advisor_engagement` → None ⇒ **404 نه 403**):
+| متد مسیر | رفتار |
+|---|---|
+| `GET students/<pk>/study-feed/?days=7\|14\|30\|all` | فید مطالعه؛ پارامتر نامعتبر ⇒ 400 «بازه باید یکی از ۷، ۱۴، ۳۰ یا all باشد.»؛ روی موفقیت **دقیقاً یک** `AdvisoryAccessLog(action='study_feed_view')` |
+| `PUT students/<pk>/study-plan/draft` | upsert اسلات پیش‌نویس (set-replace کامل بدنه) |
+| `POST students/<pk>/study-plan/draft/publish` | اعتبارسنجی مجدد → PUBLISHED |
+| `POST students/<pk>/study-plan/<plan_id>/unpublish` | اهرم rollback §۵: برگشت به DRAFT |
+| `GET students/<pk>/study-plans` | همه وضعیت‌ها، صعودی start_date |
+
+دانش‌آموز (`IsStudentRole`): `GET me/plans` → `{plans:[…]}` فقط PUBLISHED نزولی؛ بی‌مشاور = ساکت `{plans:[]}`.
+
+شکل فید:
+```jsonc
+{ "studentName": "...", "range": {"from":"YYYY-MM-DD","to":"YYYY-MM-DD"},
+  "days": [ {"date","totalMinutes","mood","note",
+             "items":[{"subjectId","name","minutes"}]} ],      // فقط روزهای ثبت‌شده، صعودی
+  "plans": [ {"id","startDate","endDate","durationDays","status":"PUBLISHED",
+              "items":[{"dayOffset","date","subjectId","name","plannedMinutes"}]} ] } // تقاطع با بازه
+```
+`from`: عددی ⇒ `max(started_on, today-(days-1))` (کلمپ C3)؛ all ⇒ started_on؛ `to`=امروز.
+
+بدنه draft: `{startDate, durationDays, items:[{dayOffset, subjectId, plannedMinutes}]}`؛ پاسخ PUT/PUBLISH/UNPUBLISH = شکل PlanOut همان پلن.
+
+### ۱۴.۳ قواعد درِ نوشتن (`services/study_plans.py` — معافِ گارد مرز)
+
+ترتیب اعتبارسنجی mirrorِ `save_day`: مالکیت مشاور → شروع (`start_date >= started_on` else 400
+«تاریخ شروع نمی‌تواند پیش از شروع همکاری باشد.») → طول (1..90 else «طول برنامه باید بین ۱ و ۹۰ روز
+باشد.») → آیتم‌ها: `day_offset < duration_days` («روز N خارج از طول برنامه است.»)، موضوع جزو
+انتخاب فعال («این درس در فهرست درس‌های شما نیست.»)، دقیقه 1..960، دوبله `(day_offset,subject)`
+400 («برای هر روز و درس فقط یک ردیف بفرستید.»). سپس atomic: upsert اسلات DRAFT + set-replace
+آیتم‌ها (پیش‌نویس تاریخچه ارزشمند ندارد — برخلاف DailyLogItem مستند شود).
+
+**publish**: پیش‌نویس موجود نیست ⇒ 404؛ خالی ⇒ 400 «برنامهٔ خالی قابل انتشار نیست.»؛
+اعتبارسنجی مجددِ آیتم‌ها مقابلِ انتخاب‌های فعلی (درس حذف‌شده وسط راه ⇒ 400)؛ **عدم‌همپوشانی**
+با سایر PUBLISHED ها: تقاطع `[start, start+duration-1]` — لمسِ لبه‌ها (پایان==شروع دیگری)
+مجاز؛ تخلف ⇒ 400 «این بازه با برنامهٔ منتشرشدهٔ دیگری همپوشانی دارد.»؛ فلیپ زیر
+`select_for_update`.
+
+### ۱۴.۴ ماتریس تست حداقلی (§6 ادامه دارد)
+idempotence پیش‌نویس + جایگزینی wholesale؛ تک-پیش‌نویسی؛ publish→me/plans می‌بیند؛ unpublish→
+غیب می‌شود؛ ردّ همپوشانی + مجوزِ لمسِ لبه؛ خالی/درس-حذف‌شده هنگام publish؛ شروع پیش از همکاری؛
+طول 0/91 رد و 1/90 قبول؛ offset==duration رد / duration-1 قبول؛ موضوع غیرفعال؛ دوبله؛ دقیقه
+0/961؛ مشاور دیگر 404؛ دانش‌آموز→403؛ anon→401؛ فید: چهار حالت days، کلمپ C3 (شروع دیروز ⇒
+from=started_on)، فقط روزهای ثبت‌شده صعودی، فیلتر تقاطع پلن‌ها، **AccessLog: دقیقاً +۱ ردیف per
+خواندن موفق با reader/action درست، و هیچ ردیفی روی 400/404/403**.
+
+### ۱۴.۵ فرانت (گام‌های ۶+۷)
+صفحهٔ جزئیات دانش‌آموز مشاور `(advisor)/advisor/students/[id]`: چیپ‌های بازهٔ فید
+(۷/۱۴/۳۰/از شروع)، لیست روزها (مجموع/حال‌وهوا/نوت/آیتم‌ها) و پلنر: انتخابگر تاریخ جلالی +
+چیپ‌های طول ۷/۱۴/۳۰/دلخواه≤۹۰ + ادیتور ردیفی {روز(۱..N), درس(select از فعال‌ها), دقیقه} +
+ذخیره پیش‌نویس/انتشار/لغو انتشار. دانش‌آموز: کارت «برنامه مطالعه» در home (نزدیک‌ترین PUBLISHED
+جاری/آینده با آیتم‌ها).
+
+
+---
+
+## ۱۵. ثبت اجرا — گام‌های ۶+۷ (فید مطالعه + برنامهٔ افق‌متغیر)
+
+وضعیت: **کامل، تست‌شده، آمادهٔ دیپلوی.** صفر تماس LLM/Celery. طبق §۱۴ ساخته شد.
+
+### ۱۵.۱ آنچه لند شد (بک‌اند)
+`migrations/0006`: سه جدول §۱۴.۱ با همهٔ constraint/indexها (اسلاتِ تک-DRAFT جزئی؛ بازهٔ
+day_offset 0..89 با سقف واقعی در سرویس). `scope.py`: چهار خوانِ نو (`feed_date_range` با کلمپ C3،
+`advisor_feed_logs` صعودی، `advisor_plans`، `student_published_plans` نزولی).
+`services/study_plans.py` (درِ نوشتن معافِ گارد مرز): `_validate_body` با همان ترتیب save_day
+(شروع→طول→offset→موضوع→دقیقه→دوبله) پیش از هر نوشتاری؛ `save_draft` با قفل ردیف engagement
+(مسابقهٔ دو PUT پشت partial unique می‌بَرد) و hard-replace آیتم‌ها؛ `publish_draft` زیر
+select_for_update با ۴۰۴/خالی/درسِ کهنه/همپوشانیِ اکید (لمسِ لبه مجاز)؛ `unpublish_plan`
+اهرمِ rollback — برخورد با اسلات DRAFT به نفعِ rollback حل می‌شود (پیش‌نویسِ هیچ‌وقت-دیده‌نشده
+حذف؛ اول آیتم‌ها چون FK پروتکت است)؛ `record_study_feed_view` تنها روی ۲۰۰ موفق یک ردیف D4.
+ویوها: شش کلاس نو (فید/draft/publish/unpublish/list/me-plans)؛ فید payload + AccessLog «بعد از
+payload، قبل از پاسخ». ادمین: `AdvisoryAccessLogAdmin` کاملاً read-only.
+
+### ۱۵.۲ فرانت
+`advisory-service.ts`: تایپ‌های §۱۴.۲ + شش تابع. صفحهٔ نو `(advisor)/advisor/students/[id]`
+(روتر داینامیک): هدر با نام دانش‌آموز (از رستر)، کارت **گزارش مطالعه** (چیپ‌های ۷/۱۴/۳۰/از شروع؛
+روزها با تاریخ جلالی، مجموع فارسی، چیپ واژه‌ای mood، نوت، ردیف درس-دقیقه) و کارت **برنامه‌ریزی**
+(pیکر جلالی date-only نو با react-day-picker/persian + minDate=startedOn، چیپ‌های طول + دلخواه≤۹۰،
+ادیتور ردیفی با اعتبارسنجی کلاینت هم‌پیام سرور، مجموع زنده، ذخیره/انتشار [اول save سپس publish]
+/لغو انتشار فقط روی منتشرشده‌ها). لینک «گزارش و برنامه» از رستر. کارت «برنامه مطالعه» در home
+دانش‌آموز (جاری یا نزدیک‌ترین آینده؛ quiet-null).
+
+### ۱۵.۳ وریفای انجام‌شده
+- کل اپ advisory → **۳۰۰ passed** (۲۵۳ قبلی + ۴۷ نو: ماتریس کامل §۱۴.۴ شامل کلمپ C3، لمسِ لبه،
+  حسابداری AccessLog [+۱ موفق / صفر روی خطا]).
+- `npx tsc --noEmit` پاک؛ `next build` سبز با روتر نو `/advisor/students/[id]`.
+- چک زنده §۵ (فید مشاور دیروز را می‌بیند؛ انتشار → دانش‌آموز می‌بیند): همتای خودکار در تست‌ها
+  سبز؛ اجرای دستی به عهدهٔ اونر در دیپلوی.
+
+
+
+

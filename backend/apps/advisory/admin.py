@@ -18,7 +18,14 @@ not be putting words in their mouth.
 
 from django.contrib import admin
 
-from .models import AdvisoryEngagement, DailyLog, DailyLogItem, StudentSubject, Subject
+from .models import (
+    AdvisoryAccessLog,
+    AdvisoryEngagement,
+    DailyLog,
+    DailyLogItem,
+    StudentSubject,
+    Subject,
+)
 
 
 @admin.register(Subject)
@@ -137,4 +144,37 @@ class DailyLogAdmin(admin.ModelAdmin):
         return False
 
     def has_change_permission(self, request, obj=None) -> bool:
+        return False
+
+
+@admin.register(AdvisoryAccessLog)
+class AdvisoryAccessLogAdmin(admin.ModelAdmin):
+    """Read-only audit surface for D4 — who read which engagement's data, when.
+
+    Fully read-only like ``DailyLogAdmin``, and for a starker reason: this is an
+    audit trail. An operator editing or planting a row would corrupt the only
+    answer the platform has to «who looked at this student», so nothing here can
+    be added, changed or deleted. Rows are appended by
+    ``services.study_plans.record_study_feed_view`` and by nothing else.
+    """
+
+    list_display = ('action', 'engagement', 'reader', 'accessed_at')
+    search_fields = (
+        'engagement__student__username',
+        'engagement__advisor__username',
+        'reader__username',
+        'action',
+    )
+    raw_id_fields = ('engagement', 'reader')
+    date_hierarchy = 'accessed_at'
+    list_select_related = ('engagement', 'engagement__student', 'reader')
+    readonly_fields = ('reader', 'engagement', 'action', 'accessed_at')
+
+    def has_add_permission(self, request) -> bool:
+        return False
+
+    def has_change_permission(self, request, obj=None) -> bool:
+        return False
+
+    def has_delete_permission(self, request, obj=None) -> bool:
         return False

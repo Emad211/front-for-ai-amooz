@@ -45,6 +45,10 @@ _UNSCOPED = {'Subject'}
 #     upserts ``DailyLog``/``DailyLogItem`` after the view has resolved the
 #     engagement through scope.student_active_engagement, and re-checks D3 (only
 #     the student themself may write) against that engagement.
+#   • study_plans.py (S7, §14) — the draft upsert / publish / unpublish state
+#     machine for ``StudyPlan``/``StudyPlanItem`` plus the append-only
+#     ``AdvisoryAccessLog`` write; it mutates after the view has resolved the
+#     engagement through scope.advisor_engagement.
 # The list is pinned by a test below so that a further door cannot appear without
 # someone editing this comment.
 _EXEMPT_FILES = {
@@ -54,6 +58,7 @@ _EXEMPT_FILES = {
     'invites.py',
     'student_subjects.py',
     'daily_logs.py',
+    'study_plans.py',
 }
 
 
@@ -239,6 +244,7 @@ def test_the_exempt_list_does_not_grow_by_accident():
         'invites.py',
         'student_subjects.py',
         'daily_logs.py',
+        'study_plans.py',
     }
 
 

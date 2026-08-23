@@ -635,3 +635,263 @@ class DailyLogItem(models.Model):
 
     def __str__(self) -> str:
         return f'{self.student_subject_id}: {self.actual_minutes}د'
+
+
+# ── S7 (§14 redesign): the study plan — a variable horizon, not a week ───────
+# The longest horizon a plan may span. §14 replaced the Saturday-anchored week
+# with a free start date plus a length of 7/14/30 or «custom» up to this ceiling;
+# 90 days is also why ``StudyPlanItem.day_offset`` is checked against 0..89.
+MAX_PLAN_DURATION_DAYS = 90
+
+# The DB-side bound on one item's day offset. The *real* cap —
+# ``day_offset < duration_days`` — cannot be a column check (it compares sibling
+# columns of the parent row), so it lives in ``services/study_plans``; this check
+# only stops a corrupt row from carrying an offset no legal plan could address.
+MAX_PLAN_DAY_OFFSET = MAX_PLAN_DURATION_DAYS - 1
+
+# One planned item's ceiling, on the same scale as the log's ``actual_minutes``
+# (960 = 16h): the S8 commitment ratio divides actual by planned, so both sides
+# must share their unit or the percentage silently compares two different things.
+MAX_PLAN_MINUTES_PER_ITEM = MAX_LOG_MINUTES_PER_ITEM
+
+# The one action ``AdvisoryAccessLog`` records in the MVP: the advisor opening a
+# student's study feed (D4 — reads are logged from the moment they exist).
+STUDY_FEED_VIEW_ACTION = 'study_feed_view'
+
+
+class StudyPlan(models.Model):
+    """A plan the advisor lays over a **variable horizon** (S7, redesigned in §14).
+
+    Not a week anchored to Saturday anymore: the advisor picks any ``start_date``
+    (never before ``started_on`` — C3 for writes) and any length of 1..90 days,
+    which is what lets «۷/۱۴/۳۰ روز» be chips on the frontend rather than schema.
+    Like every advisory table it hangs off the engagement — the tenancy carrier —
+    so "may this advisor edit this plan?" stays the same single join as everywhere
+    else, answered by ``services/scope.py``.
+
+    Lifecycle is two states::
+
+        DRAFT ──publish──▶ PUBLISHED ──unpublish──▶ DRAFT   (the §5 rollback lever)
+
+    Exactly **one** DRAFT per engagement (partial unique constraint below): the
+    draft is a scratch slot the planner form upserts wholesale, not a document
+    history. Several PUBLISHED plans may coexist; that they must not overlap in
+    time is a *service* rule (``services/study_plans.publish_draft``), not a
+    constraint — exclusion constraints over computed end dates are not worth the
+    migration complexity for an MVP where one advisor writes one student's plans.
+
+    There is no automatic repetition in the MVP: when a horizon ends, the advisor
+    builds the next plan.
+    """
+
+    class Status(models.TextChoices):
+        DRAFT = 'DRAFT', _('پیش‌نویس')
+        PUBLISHED = 'PUBLISHED', _('منتشرشده')
+
+    engagement = models.ForeignKey(
+        AdvisoryEngagement,
+        on_delete=models.PROTECT,
+        related_name='study_plans',
+        verbose_name=_('همکاری'),
+    )
+    # Free start, but never before the engagement began: a plan starting before
+    # ``started_on`` would promise work in days the advisor was not yet party to
+    # (C3). Enforced by the write door, not here — the model cannot see whether a
+    # caller already resolved ownership, and a constraint would fire as a 500.
+    start_date = models.DateField(
+        verbose_name=_('تاریخ شروع'),
+        help_text=_('آزاد؛ نباید پیش از شروع همکاری باشد (قاعده‌ی C3 برای نوشتن).'),
+    )
+    duration_days = models.PositiveSmallIntegerField(
+        verbose_name=_('طول برنامه (روز)'),
+        help_text=_('بین ۱ و ۹۰ روز؛ چیپ‌های ۷/۱۴/۳۰ فقط میان‌برهای همین عددند.'),
+    )
+    status = models.CharField(
+        max_length=10,
+        choices=Status.choices,
+        default=Status.DRAFT,
+        db_index=True,
+        verbose_name=_('وضعیت'),
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['start_date', 'id']
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(
+                    duration_days__gte=1,
+                    duration_days__lte=MAX_PLAN_DURATION_DAYS,
+                ),
+                name='ck_advisory_study_plan_duration',
+                violation_error_message=_('طول برنامه باید بین ۱ و ۹۰ روز باشد.'),
+            ),
+            # The single draft slot. Partial on purpose: many PUBLISHED plans may
+            # coexist (a rolling calendar), but the scratch space is one row the
+            # planner form owns outright.
+            models.UniqueConstraint(
+                fields=['engagement'],
+                condition=models.Q(status='DRAFT'),
+                name='uniq_advisory_study_plan_draft_slot',
+                violation_error_message=_('برای این همکاری از قبل یک پیش‌نویس وجود دارد.'),
+            ),
+        ]
+        indexes = [
+            # The shape of every read: "this engagement's plans by status, in
+            # calendar order" — the advisor's list and the feed's intersection
+            # filter both walk exactly this index.
+            models.Index(
+                fields=['engagement', 'status', 'start_date'],
+                name='idx_adv_plan_eng_status_start',
+            ),
+        ]
+        verbose_name = _('برنامه‌ی مطالعه')
+        verbose_name_plural = _('برنامه‌های مطالعه')
+
+    def __str__(self) -> str:
+        return f'{self.start_date}+{self.duration_days}d ({self.get_status_display()}) ← #{self.engagement_id}'
+
+    @property
+    def end_date(self):
+        """The last covered day, inclusive — ``start + duration - 1``.
+
+        A 7-day plan starting Monday covers Mon..Sun, so its end is start+6.
+        Overlap comparisons (``services/study_plans``) use this same inclusive
+        convention, which is what makes edge-touching plans legal.
+        """
+        return self.start_date + datetime.timedelta(days=self.duration_days - 1)
+
+
+class StudyPlanItem(models.Model):
+    """«On day N of the plan, study subject S for M minutes» (S7).
+
+    The join key is ``StudentSubject``, the same decision ``DailyLogItem`` made
+    (S8): the commitment metric divides logged minutes by planned minutes grouped
+    per subject, and keying both on the selection row needs no migration to
+    compute. ``PROTECT`` matches that sibling too — a selection a plan ever named
+    must not be deletable out from under it (and in practice never is: S4 retires
+    selections by flipping ``is_active``, never deleting).
+
+    ``day_offset`` is relative to the plan's ``start_date`` (0-based), which is
+    what makes a plan movable: shift the start, keep the items. The DB check only
+    holds the absolute 0..89 bound; the real rule — strictly less than the parent
+    plan's ``duration_days`` — compares across tables and therefore lives in the
+    write door.
+
+    Unlike ``DailyLogItem``, items of a **draft** are hard-replaced on every save
+    and a superseded draft can be deleted outright: a draft has no history value —
+    it is the advisor's unsent scratchpad, not a record of anything that happened.
+    Published plans' items are the durable half and are never rewritten except by
+    unpublish → re-draft.
+    """
+
+    plan = models.ForeignKey(
+        StudyPlan,
+        on_delete=models.PROTECT,
+        related_name='items',
+        verbose_name=_('برنامه'),
+    )
+    day_offset = models.SmallIntegerField(
+        verbose_name=_('روزِ برنامه (صفر-مبنا)'),
+        help_text=_('۰ یعنی همان روزِ شروع؛ باید کمتر از طول برنامه باشد.'),
+    )
+    student_subject = models.ForeignKey(
+        StudentSubject,
+        on_delete=models.PROTECT,
+        related_name='plan_items',
+        verbose_name=_('درسِ دانش‌آموز'),
+    )
+    planned_minutes = models.PositiveSmallIntegerField(
+        verbose_name=_('دقیقه‌ی برنامه‌ریزی‌شده'),
+        help_text=_('هم‌مقیاس با دقیقه‌ی واقعیِ گزارش روزانه، تا نسبتِ تعهد معنا داشته باشد.'),
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['day_offset', 'student_subject__subject__name']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['plan', 'day_offset', 'student_subject'],
+                name='uniq_advisory_plan_item_row',
+                violation_error_message=_('برای هر روز و درس فقط یک ردیف بفرستید.'),
+            ),
+            models.CheckConstraint(
+                condition=models.Q(
+                    day_offset__gte=0,
+                    day_offset__lte=MAX_PLAN_DAY_OFFSET,
+                ),
+                name='ck_advisory_plan_item_day_offset',
+                violation_error_message=_('روزِ برنامه باید بین ۰ و ۸۹ باشد.'),
+            ),
+            models.CheckConstraint(
+                condition=models.Q(
+                    planned_minutes__gte=1,
+                    planned_minutes__lte=MAX_PLAN_MINUTES_PER_ITEM,
+                ),
+                name='ck_advisory_plan_item_minutes',
+                violation_error_message=_('دقیقه‌ی برنامه‌ریزی‌شده باید بین ۱ تا ۹۶۰ باشد.'),
+            ),
+        ]
+        verbose_name = _('ردیف برنامه')
+        verbose_name_plural = _('ردیف‌های برنامه')
+
+    def __str__(self) -> str:
+        return f'day {self.day_offset}: {self.student_subject_id} {self.planned_minutes}د'
+
+
+class AdvisoryAccessLog(models.Model):
+    """One append-only line: *someone read this engagement's data* (D4).
+
+    From the moment reading leaves the pair who already know the data — i.e. from
+    step 6's advisor feed — the read itself is recorded. Nothing reads this table
+    through the API and nothing edits it: it exists so that «who looked at this
+    student, when» has an answer that does not depend on anyone's memory, and so a
+    future audit surface inherits rows from day one (there is deliberately no
+    backfill — before this table existed, reads were simply unlogged).
+
+    ``reader`` is ``SET_NULL``: a deleted account must not take the evidence of
+    its reads with it. ``engagement`` is ``PROTECT``: the log is about that
+    relationship and must outlive any attempt to tidy it away. The admin page is
+    fully read-only — an editable audit trail is a contradiction.
+    """
+
+    reader = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='+',
+        verbose_name=_('خواننده'),
+    )
+    engagement = models.ForeignKey(
+        AdvisoryEngagement,
+        on_delete=models.PROTECT,
+        related_name='access_logs',
+        verbose_name=_('همکاری'),
+    )
+    action = models.CharField(
+        max_length=32,
+        verbose_name=_('کنش'),
+        help_text=_("مثلاً 'study_feed_view' — باز کردن فید مطالعه توسط مشاور."),
+    )
+    accessed_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        ordering = ['-accessed_at']
+        indexes = [
+            models.Index(
+                fields=['engagement', '-accessed_at'],
+                name='idx_adv_accesslog_eng_time',
+            ),
+            models.Index(
+                fields=['reader', '-accessed_at'],
+                name='idx_adv_accesslog_reader_time',
+            ),
+        ]
+        verbose_name = _('ثبت دسترسی')
+        verbose_name_plural = _('ثبت‌های دسترسی')
+
+    def __str__(self) -> str:
+        return f'{self.action} ← #{self.engagement_id}'

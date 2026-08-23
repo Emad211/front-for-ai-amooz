@@ -11,10 +11,16 @@ from django.urls import path
 from .views import (
     AdvisorEngagementSubjectsView,
     AdvisorStudentListView,
+    AdvisorStudyFeedView,
+    AdvisorStudyPlanDraftView,
+    AdvisorStudyPlanPublishView,
+    AdvisorStudyPlanUnpublishView,
+    AdvisorStudyPlansView,
     AdvisoryInviteCreateView,
     StudentEngagementView,
     StudentInviteAcceptView,
     StudentInviteRejectView,
+    StudentPlansView,
     StudentStudyLogView,
     StudentSubjectsView,
     SubjectListView,
@@ -30,11 +36,37 @@ urlpatterns = [
         AdvisorEngagementSubjectsView.as_view(),
         name='advisory_student_subjects',
     ),
+    path(
+        'students/<int:pk>/study-feed/',
+        AdvisorStudyFeedView.as_view(),
+        name='advisory_student_study_feed',
+    ),
+    path(
+        'students/<int:pk>/study-plan/draft/',
+        AdvisorStudyPlanDraftView.as_view(),
+        name='advisory_student_plan_draft',
+    ),
+    path(
+        'students/<int:pk>/study-plan/draft/publish/',
+        AdvisorStudyPlanPublishView.as_view(),
+        name='advisory_student_plan_publish',
+    ),
+    path(
+        'students/<int:pk>/study-plan/<int:plan_id>/unpublish/',
+        AdvisorStudyPlanUnpublishView.as_view(),
+        name='advisory_student_plan_unpublish',
+    ),
+    path(
+        'students/<int:pk>/study-plans/',
+        AdvisorStudyPlansView.as_view(),
+        name='advisory_student_plans',
+    ),
     path('invites/', AdvisoryInviteCreateView.as_view(), name='advisory_invite_create'),
 
     # student side
     path('me/engagement/', StudentEngagementView.as_view(), name='advisory_my_engagement'),
     path('me/subjects/', StudentSubjectsView.as_view(), name='advisory_my_subjects'),
+    path('me/plans/', StudentPlansView.as_view(), name='advisory_my_plans'),
     # One route, no ``<date>`` segment: the day is a query parameter because the
     # resource is "my log" and the date selects a slice of it. A path segment would
     # read like an addressable row and invite the sibling URL that does not exist —

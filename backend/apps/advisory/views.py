@@ -35,24 +35,33 @@ from .serializers import (
     DailyLogSerializer,
     DailyLogWriteSerializer,
     EngagementSubjectsWriteSerializer,
+    FeedDaySerializer,
     StudentEngagementSerializer,
     StudentInviteSerializer,
     StudentSubjectSerializer,
+    StudyPlanDraftWriteSerializer,
+    StudyPlanOutSerializer,
     SubjectSerializer,
+    _display_name,
 )
 from .services import daily_logs as log_service
 from .services import invites as invite_service
 from .services import student_subjects as subject_service
+from .services import study_plans as plan_service
 from .services.scope import (
     advisor_engagement,
+    advisor_feed_logs,
     advisor_organization_ids,
     advisor_pending_invites,
+    advisor_plans,
     advisor_students,
     curriculum_subjects,
+    feed_date_range,
     log_date_window,
     student_active_engagement,
     student_claimable_invites,
     student_day_log,
+    student_published_plans,
     # The scope *read* aliased away from the service module of the same name
     # imported just above; both are needed here and only one can keep the bare name.
     student_subjects as engagement_subjects,
@@ -652,3 +661,270 @@ class StudentStudyLogView(APIView):
         # Echo the date back off the **stored** row, not off the request body, so the
         # response cannot claim to have saved a day other than the one it saved.
         return Response(_study_log_payload(engagement, log.log_date))
+
+
+# ── S6/S7 (§14): the advisor's study feed and study planner ──────────────────
+
+def _resolve_engagement_or_404(request, pk: int):
+    """The shared first line of every advisor route below.
+
+    ``scope.advisor_engagement`` answers ``None`` for both "no such id" and "not
+    yours", and the view turns that into a **404, not a 403** — a 403 would
+    confirm the engagement exists and leak that some advisor works with that
+    student. Returns ``(engagement, None)`` or ``(None, response)``.
+    """
+    engagement = advisor_engagement(request.user, pk)
+    if engagement is None:
+        return None, Response(
+            {'detail': 'همکاری پیدا نشد.'}, status=status.HTTP_404_NOT_FOUND,
+        )
+    return engagement, None
+
+
+class AdvisorStudyFeedView(APIView):
+    """``GET /api/advisory/students/<pk>/study-feed/?days=7|14|30|all`` (S6).
+
+    The advisor's window onto the student's reported days plus the published
+    plans intersecting that window. ``days`` selects the horizon; anything else
+    is a 400 with the exact Persian message the frontend chips map to. On a
+    successful 200 exactly **one** ``AdvisoryAccessLog(action='study_feed_view')``
+    row is appended (D4) — and on any error none is, so the audit trail counts
+    successful reads only.
+    """
+
+    permission_classes = [IsAuthenticated, IsAdvisorUser]
+
+    @extend_schema(
+        tags=['advisory'],
+        summary='فید مطالعه‌ی یک دانش‌آموز برای مشاور',
+        description=(
+            '`pk` شناسه‌ی همکاری است؛ همکاریِ ناموجود یا متعلق به مشاورِ دیگر ۴۰۴. '
+            '`days` یکی از ۷، ۱۴، ۳۰ یا `all` (از شروع همکاری)؛ مقدار نامعتبر ۴۰۰. '
+            'شروعِ بازه هرگز پیش از شروعِ همکاری نمی‌رود (کلمپ C3).'
+        ),
+        parameters=[
+            OpenApiParameter(
+                name='days',
+                description='طول بازه: 7 | 14 | 30 | all. پیش‌فرض: 7.',
+                required=False,
+                type=str,
+            ),
+        ],
+        responses={
+            200: OpenApiResponse(
+                description='{studentName, range:{from,to}, days[], plans[]}',
+            ),
+            400: OpenApiResponse(description='بازه‌ی نامعتبر'),
+            404: OpenApiResponse(description='همکاری پیدا نشد'),
+        },
+    )
+    def get(self, request, pk: int):
+        engagement, error = _resolve_engagement_or_404(request, pk)
+        if error is not None:
+            return error
+
+        raw_days = request.query_params.get('days', '7')
+        if raw_days not in {'7', '14', '30', 'all'}:
+            return Response(
+                {'detail': 'بازه باید یکی از ۷، ۱۴، ۳۰ یا all باشد.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        days = None if raw_days == 'all' else int(raw_days)
+
+        from_date, to_date = feed_date_range(engagement, days)
+        logs = advisor_feed_logs(engagement, from_date, to_date)
+
+        # Plan intersection in Python: the horizon end is computed
+        # (start + duration - 1), and the plan count per engagement is small.
+        # The nested enum keeps this file free of a tenancy-model import.
+        plans = [
+            plan
+            for plan in advisor_plans(engagement)
+            if plan.status == plan.Status.PUBLISHED
+            and plan.start_date <= to_date
+            and plan.end_date >= from_date
+        ]
+
+        payload = {
+            'studentName': _display_name(engagement.student),
+            'range': {'from': from_date, 'to': to_date},
+            'days': FeedDaySerializer(logs, many=True).data,
+            'plans': StudyPlanOutSerializer(plans, many=True).data,
+        }
+        # After the payload, before the answer: a failed read above returned
+        # early, so this row lands only for a successful 200 — exactly one.
+        plan_service.record_study_feed_view(engagement, request.user)
+        return Response(payload)
+
+
+class AdvisorStudyPlanDraftView(APIView):
+    """``PUT /api/advisory/students/<pk>/study-plan/draft/`` (S7).
+
+    Upserts the engagement's **single** DRAFT slot wholesale: the body is the
+    whole draft and omitted rows are gone. The answer is the stored plan in the
+    same ``PlanOut`` shape publish/unpublish answer with, so one client renderer
+    covers all three.
+    """
+
+    permission_classes = [IsAuthenticated, IsAdvisorUser]
+
+    @extend_schema(
+        tags=['advisory'],
+        summary='ذخیره‌ی پیش‌نویس برنامه‌ی مطالعه (جایگزینی کامل)',
+        description=(
+            'بدنه `{startDate, durationDays, items:[{dayOffset, subjectId, '
+            'plannedMinutes}]}` کلِ اسلات پیش‌نویس را عوض می‌کند. ترتیب خطاها: '
+            'شروعِ پیش از همکاری، طول بیرون از ۱..۹۰، روزِ بیرون از طول، درسِ '
+            'غیرفعال، دقیقه‌ی بیرون از ۱..۹۶۰، ردیفِ تکراری — همه ۴۰۰.'
+        ),
+        request=StudyPlanDraftWriteSerializer,
+        responses={
+            200: StudyPlanOutSerializer,
+            400: OpenApiResponse(description='بدنه‌ی نامعتبر'),
+            404: OpenApiResponse(description='همکاری پیدا نشد'),
+        },
+    )
+    def put(self, request, pk: int):
+        engagement, error = _resolve_engagement_or_404(request, pk)
+        if error is not None:
+            return error
+
+        serializer = StudyPlanDraftWriteSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+
+        try:
+            plan = plan_service.save_draft(
+                engagement,
+                start_date=data['start_date'],
+                duration_days=data['duration_days'],
+                items=data['items'],
+            )
+        except plan_service.StudyPlanError as exc:
+            # The base class on purpose: every rule the door adds later must fail
+            # as a 400 the advisor can act on, never as a 500.
+            return Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(StudyPlanOutSerializer(plan).data)
+
+
+class AdvisorStudyPlansView(APIView):
+    """``GET /api/advisory/students/<pk>/study-plans/`` — every status, calendar order.
+
+    The planner's list view: drafts and published plans side by side, ascending
+    by start date, so the advisor sees what is live and what is still scratch.
+    """
+
+    permission_classes = [IsAuthenticated, IsAdvisorUser]
+
+    @extend_schema(
+        tags=['advisory'],
+        summary='همه‌ی برنامه‌های مطالعه‌ی یک دانش‌آموز',
+        description='پیش‌نویس و منتشرشده با هم، صعودی بر اساس تاریخ شروع.',
+        responses={
+            200: OpenApiResponse(description='{plans: PlanOut[]}'),
+            404: OpenApiResponse(description='همکاری پیدا نشد'),
+        },
+    )
+    def get(self, request, pk: int):
+        engagement, error = _resolve_engagement_or_404(request, pk)
+        if error is not None:
+            return error
+        plans = advisor_plans(engagement)
+        return Response({'plans': StudyPlanOutSerializer(plans, many=True).data})
+
+
+class AdvisorStudyPlanPublishView(APIView):
+    """``POST /api/advisory/students/<pk>/study-plan/draft/publish/`` (S7).
+
+    Re-validates the draft against the *current* state — selections may have
+    changed since it was saved — then checks overlap with the other PUBLISHED
+    plans and flips it. No draft is a 404 (nothing to publish), an empty or
+    stale draft a 400.
+    """
+
+    permission_classes = [IsAuthenticated, IsAdvisorUser]
+
+    @extend_schema(
+        tags=['advisory'],
+        summary='انتشار پیش‌نویس برنامه‌ی مطالعه',
+        description=(
+            'اعتبارسنجی دوباره مقابل انتخاب‌های فعلی؛ خالی ⇒ ۴۰۰، درسِ حذف‌شده '
+            '⇒ ۴۰۰، همپوشانی با برنامهٔ منتشرشدهٔ دیگر ⇒ ۴۰۰ (لمسِ لبه مجاز است)، '
+            'پیش‌نویسی که نیست ⇒ ۴۰۴.'
+        ),
+        request=None,
+        responses={
+            200: StudyPlanOutSerializer,
+            400: OpenApiResponse(description='خالی / درسِ حذف‌شده / همپوشانی'),
+            404: OpenApiResponse(description='پیش‌نویس یا همکاری پیدا نشد'),
+        },
+    )
+    def post(self, request, pk: int):
+        engagement, error = _resolve_engagement_or_404(request, pk)
+        if error is not None:
+            return error
+
+        try:
+            plan = plan_service.publish_draft(engagement)
+        except plan_service.PlanNotFound as exc:
+            return Response({'detail': str(exc)}, status=status.HTTP_404_NOT_FOUND)
+        except plan_service.StudyPlanError as exc:
+            return Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(StudyPlanOutSerializer(plan).data)
+
+
+class AdvisorStudyPlanUnpublishView(APIView):
+    """``POST /api/advisory/students/<pk>/study-plan/<plan_id>/unpublish/`` (S7).
+
+    The §5 rollback lever: the plan leaves the student's view by returning to the
+    draft slot. A plan id that is not a PUBLISHED plan of **this** engagement is
+    a 404 — foreign ids and nonexistent ones are indistinguishable, same as the
+    engagement-level convention.
+    """
+
+    permission_classes = [IsAuthenticated, IsAdvisorUser]
+
+    @extend_schema(
+        tags=['advisory'],
+        summary='لغو انتشار برنامه‌ی مطالعه',
+        description='برنامهٔ منتشرشده به پیش‌نویس برمی‌گردد و از دید دانش‌آموز محو می‌شود.',
+        request=None,
+        responses={
+            200: StudyPlanOutSerializer,
+            404: OpenApiResponse(description='برنامه یا همکاری پیدا نشد'),
+        },
+    )
+    def post(self, request, pk: int, plan_id: int):
+        engagement, error = _resolve_engagement_or_404(request, pk)
+        if error is not None:
+            return error
+
+        try:
+            plan = plan_service.unpublish_plan(engagement, plan_id)
+        except plan_service.PlanNotFound as exc:
+            return Response({'detail': str(exc)}, status=status.HTTP_404_NOT_FOUND)
+        except plan_service.StudyPlanError as exc:
+            return Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(StudyPlanOutSerializer(plan).data)
+
+
+class StudentPlansView(APIView):
+    """``GET /api/advisory/me/plans/`` — the student's published plans.
+
+    Quiet like every ``me/`` read: no active advisor is the ordinary state and
+    answers ``200 {"plans": []}``, never a 404. Only PUBLISHED plans appear —
+    publishing is precisely the act of making a plan visible here — newest
+    horizon first so the client's «next up» card is the first element.
+    """
+
+    permission_classes = [IsAuthenticated, IsStudentRole]
+
+    @extend_schema(
+        tags=['advisory'],
+        summary='برنامه‌های مطالعه‌ی منتشرشده‌ی دانش‌آموز',
+        description='بی‌مشاور `200 {"plans": []}` — خطا نیست. فقط منتشرشده‌ها، نزولی.',
+        responses={200: OpenApiResponse(description='{plans: PlanOut[]}')},
+    )
+    def get(self, request):
+        plans = student_published_plans(request.user)
+        return Response({'plans': StudyPlanOutSerializer(plans, many=True).data})

@@ -23,6 +23,8 @@ Two rules hold for every serializer below, and both are deliberate:
 
 from __future__ import annotations
 
+import datetime
+
 from rest_framework import serializers
 
 from apps.commons.phone_utils import is_valid_iran_mobile, normalize_phone
@@ -374,3 +376,107 @@ class DailyLogWriteSerializer(serializers.Serializer):
         if len(set(subject_ids)) != len(subject_ids):
             raise serializers.ValidationError('برای هر درس فقط یک ردیف بفرستید.')
         return value
+
+
+# ── S6/S7 (§14): the study feed and the study planner ────────────────────────
+
+class StudyPlanItemOutSerializer(serializers.Serializer):
+    """One planned row, read off a ``StudyPlanItem``.
+
+    ``subjectId`` is the catalog id — the same vocabulary every other advisory
+    serializer publishes. ``date`` is computed (``start_date + day_offset``)
+    rather than stored: the plan stays movable, shifting its start without
+    rewriting a single item row.
+    """
+
+    dayOffset = serializers.IntegerField(source='day_offset', read_only=True)
+    date = serializers.SerializerMethodField()
+    subjectId = serializers.IntegerField(
+        source='student_subject.subject_id', read_only=True,
+    )
+    name = serializers.CharField(source='student_subject.subject.name', read_only=True)
+    plannedMinutes = serializers.IntegerField(
+        source='planned_minutes', read_only=True,
+    )
+
+    def get_date(self, obj):  # noqa: N802 — camelCase wire key
+        return obj.plan.start_date + datetime.timedelta(days=obj.day_offset)
+
+
+class StudyPlanOutSerializer(serializers.Serializer):
+    """The one plan shape (``PlanOut``) every plan answer reuses.
+
+    PUT draft, publish and unpublish all respond with this same serializer off
+    the **stored** row, so a successful write can never paint a state a refresh
+    would contradict — the same rule ``_study_log_payload`` enforces for S5.
+    ``endDate`` is inclusive: ``start + duration - 1``, matching the overlap
+    arithmetic the service publishes.
+    """
+
+    id = serializers.IntegerField(read_only=True)
+    startDate = serializers.DateField(source='start_date', read_only=True)
+    endDate = serializers.SerializerMethodField()
+    durationDays = serializers.IntegerField(source='duration_days', read_only=True)
+    status = serializers.CharField(read_only=True)
+    items = StudyPlanItemOutSerializer(many=True, read_only=True)
+
+    def get_endDate(self, obj):  # noqa: N802 — camelCase wire key
+        return obj.end_date
+
+
+class StudyPlanDraftItemWriteSerializer(serializers.Serializer):
+    """One ``{dayOffset, subjectId, plannedMinutes}`` row of the draft body.
+
+    Shape only, deliberately without bounds: the exact Persian messages and
+    their *order* (offset → subject → minutes → duplicates) are the service's
+    contract (§14.3), and a serializer-level bound would answer first with a
+    generic DRF message instead.
+    """
+
+    dayOffset = serializers.IntegerField(source='day_offset')
+    subjectId = serializers.IntegerField(source='subject_id', min_value=1)
+    plannedMinutes = serializers.IntegerField(source='planned_minutes')
+
+
+class StudyPlanDraftWriteSerializer(serializers.Serializer):
+    """The advisor's PUT body: the whole draft slot, set-replace semantics.
+
+    Everything about the draft is here because the endpoint upserts the single
+    DRAFT row wholesale — an omitted field means «cleared», never «unchanged».
+    Whether the start predates the engagement, whether the length fits 1..90 and
+    whether each row is legal are the service's job; this only guarantees typed,
+    parseable input.
+    """
+
+    startDate = serializers.DateField(source='start_date')
+    durationDays = serializers.IntegerField(source='duration_days')
+    items = StudyPlanDraftItemWriteSerializer(many=True)
+
+
+class FeedDayItemSerializer(serializers.Serializer):
+    """One subject's minutes inside a feed day — no ``isSelected`` here.
+
+    Unlike the S5 form payload, the feed is a read-only report: it renders what
+    was recorded, selected or not, and has no editable rows to flag.
+    """
+
+    subjectId = serializers.IntegerField(
+        source='student_subject.subject_id', read_only=True,
+    )
+    name = serializers.CharField(source='student_subject.subject.name', read_only=True)
+    minutes = serializers.IntegerField(source='actual_minutes', read_only=True)
+
+
+class FeedDaySerializer(serializers.Serializer):
+    """One logged day inside the advisor's study feed."""
+
+    date = serializers.DateField(source='log_date', read_only=True)
+    totalMinutes = serializers.SerializerMethodField()
+    mood = serializers.IntegerField(read_only=True, allow_null=True)
+    note = serializers.CharField(read_only=True, allow_blank=True)
+    items = FeedDayItemSerializer(many=True, read_only=True)
+
+    def get_totalMinutes(self, obj) -> int:  # noqa: N802 — camelCase wire key
+        # Summed over the prefetched items (``scope.advisor_feed_logs``), not
+        # with an aggregate — same reasoning as ``DailyLogSerializer``.
+        return sum(item.actual_minutes for item in obj.items.all())

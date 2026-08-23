@@ -17,12 +17,19 @@ from __future__ import annotations
 
 import datetime
 
-from django.db.models import Q, QuerySet
+from django.db.models import Prefetch, Q, QuerySet
 from django.utils import timezone
 
 from apps.organizations.models import Organization, OrganizationMembership
 
-from ..models import AdvisoryEngagement, DailyLog, StudentSubject, Subject
+from ..models import (
+    AdvisoryEngagement,
+    DailyLog,
+    StudentSubject,
+    StudyPlan,
+    StudyPlanItem,
+    Subject,
+)
 
 
 def advisor_organization_ids(user) -> list[int]:
@@ -331,4 +338,95 @@ def student_day_log(engagement, log_date) -> DailyLog | None:
     written today's log yet" would be absurd.
     """
     return student_logs(engagement).filter(log_date=log_date).first()
+
+
+# ── S6/S7 (§14): the advisor's feed and plan reads ───────────────────────────
+
+def feed_date_range(engagement, days: int | None) -> tuple[datetime.date, datetime.date]:
+    """The inclusive ``(from, to)`` window the study feed covers.
+
+    ``days=None`` means «از شروع» — the whole engagement from ``started_on`` to
+    today. A numeric ``days`` asks for the trailing ``days`` days, but C3 clamps
+    it: an advisor hired yesterday who taps «۳۰ روز» still gets a window starting
+    at ``started_on``, because the days before the engagement belong to no
+    engagement of theirs. So ``from = max(started_on, today - (days - 1))`` and
+    ``to = today`` — the same bound ``log_date_window`` writes down for writes,
+    now read from the advisor's side.
+
+    Defensive exactly like ``log_date_window``: a NULL ``started_on`` (impossible
+    for an ACTIVE engagement) collapses to today rather than widening, and a
+    future-dated row collapses into an empty-but-valid window.
+    """
+    today = timezone.localdate()
+    started = getattr(engagement, 'started_on', None) or today
+    started = min(started, today)
+    if days is None:
+        return (started, today)
+    return (max(started, today - datetime.timedelta(days=days - 1)), today)
+
+
+def advisor_feed_logs(engagement, from_date, to_date) -> QuerySet[DailyLog]:
+    """The engagement's logged days inside ``[from_date, to_date]``, oldest first.
+
+    Takes a resolved engagement (the caller proved ownership via
+    ``scope.advisor_engagement``), so it does no scoping of its own. Items come
+    prefetched and deliberately unfiltered by current selection — minutes already
+    recorded survive their subject being dropped (see ``DailyLogItem``).
+    """
+    return (
+        DailyLog.objects.filter(
+            engagement=engagement,
+            log_date__gte=from_date,
+            log_date__lte=to_date,
+        )
+        .prefetch_related('items__student_subject__subject')
+        .order_by('log_date')
+    )
+
+
+def advisor_plans(engagement) -> QuerySet[StudyPlan]:
+    """Every plan of this engagement — DRAFT and PUBLISHED — earliest start first.
+
+    The advisor planner list reads through this; the student never does (their
+    side sees only PUBLISHED rows via ``student_published_plans``). Items come
+    prefetched with their parent plan and subject so ``StudyPlanOutSerializer``
+    renders its computed per-item dates without a single extra query.
+    """
+    return (
+        StudyPlan.objects.filter(engagement=engagement)
+        .prefetch_related(_plan_items_prefetch())
+        .order_by('start_date', 'id')
+    )
+
+
+def student_published_plans(student) -> QuerySet[StudyPlan]:
+    """The PUBLISHED plans of the student's active engagement, newest first.
+
+    Quiet by construction: a student with no active advisor gets an empty
+    queryset, which the view renders as ``{"plans": []}`` — the ordinary state
+    for most students, never an error. Drafts are invisible here by definition:
+    publishing is precisely the act of making a plan visible to the student.
+    """
+    engagement = student_active_engagement(student)
+    if engagement is None:
+        return StudyPlan.objects.none()
+    return (
+        StudyPlan.objects.filter(
+            engagement=engagement,
+            status=StudyPlan.Status.PUBLISHED,
+        )
+        .prefetch_related(_plan_items_prefetch())
+        .order_by('-start_date', '-id')
+    )
+
+
+def _plan_items_prefetch() -> Prefetch:
+    """The shared item prefetch: parent plan and subject joined, items ordered."""
+    return Prefetch(
+        'items',
+        queryset=(
+            StudyPlanItem.objects.select_related('plan', 'student_subject__subject')
+            .order_by('day_offset', 'student_subject__subject__name')
+        ),
+    )
 
