@@ -299,12 +299,20 @@ class DailyLogSerializer(serializers.Serializer):
 
     ``mood`` is nullable on purpose and the null is meaningful: «not recorded» is a
     different answer from «۱ / بد», and collapsing them would make the step-6 feed
-    read a silent day as a miserable one.
+    read a silent day as a miserable one. ``testPercent`` follows the same rule:
+    ``null`` is «not recorded», distinct from an honest «۰».
     """
 
     date = serializers.DateField(source='log_date', read_only=True)
     mood = serializers.IntegerField(read_only=True, allow_null=True)
     note = serializers.CharField(read_only=True, allow_blank=True)
+    # Restart plan step 1: the PDF-derived enrichment, additive camelCase keys.
+    dayGoal = serializers.CharField(source='day_goal', read_only=True)
+    motivationNote = serializers.CharField(source='motivation_note', read_only=True)
+    testsTaken = serializers.IntegerField(source='tests_taken', read_only=True)
+    testPercent = serializers.IntegerField(
+        source='test_percent', read_only=True, allow_null=True,
+    )
     items = DailyLogItemSerializer(many=True, read_only=True)
     totalMinutes = serializers.SerializerMethodField()
     updatedAt = serializers.DateTimeField(source='updated_at', read_only=True)
@@ -343,6 +351,11 @@ class DailyLogWriteSerializer(serializers.Serializer):
     ``[]`` and mean it, whereas an absent mood clearing the mood is harmless and
     matches «I did not answer that question».
 
+    The four enrichment keys (``dayGoal``/``motivationNote``/``testsTaken``/
+    ``testPercent``) are the one deliberate exception: an absent key leaves the
+    stored column untouched, so a client written before they existed cannot erase
+    data it never sent. Sending a key — even as ``null``/``''`` — overwrites.
+
     Shape only. Whether the date is inside the engagement's window and whether each
     subject is on this student's list are the service's job — both need the
     engagement, which a serializer does not have.
@@ -355,7 +368,32 @@ class DailyLogWriteSerializer(serializers.Serializer):
     note = serializers.CharField(
         required=False, allow_blank=True, max_length=MAX_LOG_NOTE_CHARS,
     )
+    # Restart plan step 1: optional enrichment. An ABSENT key leaves the stored
+    # column untouched (legacy payloads must not wipe what they don't know
+    # about); a PRESENT key overwrites wholesale. Range messages are Persian
+    # here rather than field-level ``min_value``/``max_value`` so the 400 the
+    # student sees is actionable in their own language.
+    dayGoal = serializers.CharField(
+        source='day_goal', required=False, allow_blank=True, max_length=200,
+    )
+    motivationNote = serializers.CharField(
+        source='motivation_note', required=False, allow_blank=True, max_length=200,
+    )
+    testsTaken = serializers.IntegerField(source='tests_taken', required=False)
+    testPercent = serializers.IntegerField(
+        source='test_percent', required=False, allow_null=True,
+    )
     items = DailyLogItemWriteSerializer(many=True)
+
+    def validate_testsTaken(self, value):  # noqa: N802 — camelCase wire key
+        if value < 0:
+            raise serializers.ValidationError('تعداد تست نمی‌تواند عددی منفی باشد.')
+        return value
+
+    def validate_testPercent(self, value):  # noqa: N802 — camelCase wire key
+        if value is not None and not (0 <= value <= 100):
+            raise serializers.ValidationError('درصد آزمون باید عددی بین ۰ تا ۱۰۰ باشد.')
+        return value
 
     def validate_items(self, value):
         """Reject a repeated subject, and cap the list length.
@@ -487,6 +525,11 @@ class FeedDaySerializer(serializers.Serializer):
     totalMinutes = serializers.SerializerMethodField()
     mood = serializers.IntegerField(read_only=True, allow_null=True)
     note = serializers.CharField(read_only=True, allow_blank=True)
+    # Restart plan step 1: the feed renders the «تست»/«درصد» chips off these.
+    testsTaken = serializers.IntegerField(source='tests_taken', read_only=True)
+    testPercent = serializers.IntegerField(
+        source='test_percent', read_only=True, allow_null=True,
+    )
     items = FeedDayItemSerializer(many=True, read_only=True)
 
     def get_totalMinutes(self, obj) -> int:  # noqa: N802 — camelCase wire key

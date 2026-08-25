@@ -98,7 +98,25 @@ class DailyTotalTooLarge(DailyLogError):
         )
 
 
-def save_day(engagement, log_date, *, mood, note, items, student) -> DailyLog:
+# Marks «this enrichment key was not sent». A real value — including ``None``
+# for ``test_percent`` or ``''`` for the two text fields — always means
+# overwrite; only ``_UNSET`` means leave the stored column alone.
+_UNSET = object()
+
+
+def save_day(
+    engagement,
+    log_date,
+    *,
+    mood,
+    note,
+    items,
+    student,
+    day_goal=_UNSET,
+    motivation_note=_UNSET,
+    tests_taken=_UNSET,
+    test_percent=_UNSET,
+) -> DailyLog:
     """Make the stored day equal exactly what was sent, and return it.
 
     ``items`` is an iterable of ``{'subject_id': int, 'minutes': int}`` — keyed on
@@ -129,6 +147,12 @@ def save_day(engagement, log_date, *, mood, note, items, student) -> DailyLog:
 
     ``mood`` and ``note`` are always overwritten, including back to ``None``/``''`` —
     the body is the whole day, so an omitted mood means «cleared», not «unchanged».
+
+    The four enrichment fields (``day_goal``, ``motivation_note``, ``tests_taken``,
+    ``test_percent`` — restart plan step 1) follow the opposite rule **on purpose**:
+    left at ``_UNSET`` they leave the stored column untouched, so a legacy payload
+    that predates them cannot wipe data it knows nothing about. A caller that passes
+    a real value overwrites wholesale, including back to ``''``/``0``/``None``.
     """
     if engagement.student_id != getattr(student, 'pk', None):
         raise NotTheLogOwner()
@@ -159,16 +183,34 @@ def save_day(engagement, log_date, *, mood, note, items, student) -> DailyLog:
     if missing:
         raise SubjectNotInSelection(missing)
 
+    # Enrichment keys the caller actually sent (``_UNSET`` filtered out). They
+    # ride the same get_or_create/update path as mood/note so a create and an
+    # update land on one code shape.
+    sent_enrichment = {
+        field: value
+        for field, value in (
+            ('day_goal', day_goal),
+            ('motivation_note', motivation_note),
+            ('tests_taken', tests_taken),
+            ('test_percent', test_percent),
+        )
+        if value is not _UNSET
+    }
+
     with transaction.atomic():
         log, created = DailyLog.objects.get_or_create(
             engagement=engagement,
             log_date=log_date,
-            defaults={'mood': mood, 'note': note or ''},
+            defaults={'mood': mood, 'note': note or '', **sent_enrichment},
         )
         if not created:
+            update_fields = ['mood', 'note', 'updated_at']
             log.mood = mood
             log.note = note or ''
-            log.save(update_fields=['mood', 'note', 'updated_at'])
+            for field, value in sent_enrichment.items():
+                setattr(log, field, value)
+                update_fields.append(field)
+            log.save(update_fields=update_fields)
 
         keep_row_ids = []
         for subject_id, minutes in wanted.items():

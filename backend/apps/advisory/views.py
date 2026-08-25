@@ -616,6 +616,9 @@ class StudentStudyLogView(APIView):
             'بدنه، **کلِ** آن روز است: هر درسی که در `items` نباشد از آن روز پاک '
             'می‌شود و `mood`/`note` نیامده یعنی «خالی». `minutes` صفر یعنی «نخواندم» '
             'و ذخیره نمی‌شود. '
+            'چهار فیلد اختیاری `dayGoal`/`motivationNote`/`testsTaken`/`testPercent` '
+            'نیز قابل ثبت‌اند؛ نیامدنِ آن‌ها یعنی «بدون تغییر» و آمدنشان جایگزین کامل '
+            '(حتی با خالی/صفر/null). '
             '`409` اگر مشاور فعال نداشته باشد، '
             '`400` برای تاریخ بیرون از بازه، درسِ بیرون از فهرست، یا مجموع بیش از '
             'یک شبانه‌روز، `403` اگر گزارش متعلق به دانش‌آموز دیگری باشد.'
@@ -640,6 +643,16 @@ class StudentStudyLogView(APIView):
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
 
+        # Restart plan step 1: forward ONLY the enrichment keys the client sent
+        # — ``validated_data`` carries a key just when it was present on the
+        # wire, and save_day's ``_UNSET`` default turns absence into «untouched»
+        # so legacy payloads cannot wipe columns they never knew about.
+        enrichment = {
+            key: data[key]
+            for key in ('day_goal', 'motivation_note', 'tests_taken', 'test_percent')
+            if key in data
+        }
+
         try:
             log = log_service.save_day(
                 engagement,
@@ -648,6 +661,7 @@ class StudentStudyLogView(APIView):
                 note=data.get('note', ''),
                 items=data['items'],
                 student=request.user,
+                **enrichment,
             )
         except log_service.NotTheLogOwner as exc:
             return Response({'detail': str(exc)}, status=status.HTTP_403_FORBIDDEN)

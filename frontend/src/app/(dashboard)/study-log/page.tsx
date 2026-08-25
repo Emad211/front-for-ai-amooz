@@ -15,6 +15,7 @@ import { toast } from 'sonner';
 import { MoodSelector } from '@/components/dashboard/study-log/mood-selector';
 import { StudyLogHeader } from '@/components/dashboard/study-log/study-log-header';
 import { SubjectMinuteRows } from '@/components/dashboard/study-log/subject-minute-rows';
+import { DayEnrichmentFields } from '@/components/dashboard/study-log/day-enrichment-fields';
 import { ErrorState } from '@/components/shared/error-state';
 import { Button } from '@/components/ui/button';
 import {
@@ -36,6 +37,9 @@ const DAY_TOTAL_CAP = 1440;
 /** ~85% of the cap: start warning before the hard server limit. */
 const DAY_TOTAL_WARNING = 1200;
 const NOTE_MAX_LENGTH = 1000;
+/** Restart step 1: هدف روز / جمله انگیزشی share this ceiling (server column). */
+const ENRICHMENT_TEXT_MAX_LENGTH = 200;
+const TEST_PERCENT_MAX = 100;
 
 type PagePhase = 'loading' | 'error' | 'inactive' | 'ready';
 
@@ -77,6 +81,18 @@ function sanitizeMinutesInput(raw: string): string {
   return String(Math.min(Number.parseInt(digits, 10), MAX_MINUTES_PER_SUBJECT));
 }
 
+/** Digits-only count (تعداد تست); '' when empty. */
+function sanitizeCountInput(raw: string): string {
+  return toEnglishDigits(raw).replace(/\D/g, '');
+}
+
+/** Digits-only, clamped to the 0..100 percent bound; '' when empty. */
+function sanitizePercentInput(raw: string): string {
+  const digits = sanitizeCountInput(raw);
+  if (!digits) return '';
+  return String(Math.min(Number.parseInt(digits, 10), TEST_PERCENT_MAX));
+}
+
 export default function StudyLogPage() {
   const [phase, setPhase] = useState<PagePhase>('loading');
   const [errorMessage, setErrorMessage] = useState('');
@@ -87,6 +103,13 @@ export default function StudyLogPage() {
   const [mood, setMood] = useState<number | null>(null);
   const [note, setNote] = useState('');
   const [minutesBySubject, setMinutesBySubject] = useState<Record<number, string>>({});
+  // Restart step 1: the four enrichment inputs hold RAW strings (the numeric
+  // ones are digits-sanitized on change); '' means «empty field», which maps
+  // to testsTaken=0 / testPercent=null on the wire.
+  const [dayGoal, setDayGoal] = useState('');
+  const [motivationNote, setMotivationNote] = useState('');
+  const [testsTakenRaw, setTestsTakenRaw] = useState('');
+  const [testPercentRaw, setTestPercentRaw] = useState('');
   const [saving, setSaving] = useState(false);
   // Step 8: adherence of the plan running today; null ⇒ chip is not rendered
   // (quiet-null for students without plans or with nothing elapsed yet).
@@ -104,6 +127,13 @@ export default function StudyLogPage() {
       }
     }
     setMinutesBySubject(nextMinutes);
+    // Restart step 1: hydrate the enrichment fields off the stored day.
+    setDayGoal(data.log?.dayGoal ?? '');
+    setMotivationNote(data.log?.motivationNote ?? '');
+    setTestsTakenRaw(data.log && data.log.testsTaken > 0 ? String(data.log.testsTaken) : '');
+    setTestPercentRaw(
+      data.log && data.log.testPercent !== null ? String(data.log.testPercent) : ''
+    );
   }, []);
 
   const load = useCallback(
@@ -166,7 +196,30 @@ export default function StudyLogPage() {
     });
   };
 
+  // Client-side validation before submit (restart step 1): the numeric inputs
+  // are digits-sanitized on change, so the only reachable failure is a percent
+  // above 100 typed before the clamp — guarded here as defense in depth.
+  const buildEnrichmentBody = (): { dayGoal: string; motivationNote: string; testsTaken: number; testPercent: number | null } | null => {
+    const testsTaken = testsTakenRaw ? Number.parseInt(testsTakenRaw, 10) : 0;
+    if (!Number.isFinite(testsTaken) || testsTaken < 0) {
+      toast.error('تعداد تست باید عددی بزرگ‌تر یا مساوی صفر باشد.');
+      return null;
+    }
+    if (!testPercentRaw) {
+      return { dayGoal, motivationNote, testsTaken, testPercent: null };
+    }
+    const testPercent = Number.parseInt(testPercentRaw, 10);
+    if (!Number.isFinite(testPercent) || testPercent < 0 || testPercent > TEST_PERCENT_MAX) {
+      toast.error('درصد آزمون باید عددی بین ۰ تا ۱۰۰ باشد.');
+      return null;
+    }
+    return { dayGoal, motivationNote, testsTaken, testPercent };
+  };
+
   const handleSave = async () => {
+    const enrichment = buildEnrichmentBody();
+    if (enrichment === null) return;
+
     setSaving(true);
     try {
       // WHOLE-day payload: only entries with minutes > 0 are sent; an empty
@@ -183,6 +236,7 @@ export default function StudyLogPage() {
         mood,
         note,
         items,
+        ...enrichment,
       });
       applyResponse(response);
       toast.success('گزارش امروز ثبت شد');
@@ -278,6 +332,26 @@ export default function StudyLogPage() {
           </CardHeader>
           <CardContent>
             <MoodSelector value={mood} onChange={setMood} disabled={saving} />
+          </CardContent>
+        </Card>
+
+        <Card className="rounded-2xl">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base">هدف و آزمون امروز</CardTitle>
+            <CardDescription>هدف‌گذاری، جمله انگیزشی و نتیجهٔ آزمون‌های امروزت را ثبت کن.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <DayEnrichmentFields
+              dayGoal={dayGoal}
+              motivationNote={motivationNote}
+              testsTaken={testsTakenRaw}
+              testPercent={testPercentRaw}
+              onDayGoalChange={(value) => setDayGoal(value.slice(0, ENRICHMENT_TEXT_MAX_LENGTH))}
+              onMotivationNoteChange={(value) => setMotivationNote(value.slice(0, ENRICHMENT_TEXT_MAX_LENGTH))}
+              onTestsTakenChange={(value) => setTestsTakenRaw(sanitizeCountInput(value))}
+              onTestPercentChange={(value) => setTestPercentRaw(sanitizePercentInput(value))}
+              disabled={saving}
+            />
           </CardContent>
         </Card>
 

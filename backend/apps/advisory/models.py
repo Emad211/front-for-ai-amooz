@@ -17,6 +17,7 @@ import datetime
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
+from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
@@ -541,6 +542,37 @@ class DailyLog(models.Model):
         default='',
         verbose_name=_('یادداشت'),
         help_text=_('یادداشت آزاد دانش‌آموز برای آن روز.'),
+    )
+    # ── Restart plan, step 1 (wave-1 unit B): PDF-derived day enrichment ─────
+    # Four additive columns from the paper checklist (PDF ص۸-۹). «رضایت»
+    # deliberately gets NO new column — the existing ``mood`` above IS the
+    # satisfaction metric; these four only add what mood cannot carry.
+    day_goal = models.CharField(
+        max_length=200,
+        blank=True,
+        default='',
+        verbose_name=_('هدف روز'),
+        help_text=_('هدف‌گذاری دانش‌آموز برای امروز.'),
+    )
+    motivation_note = models.CharField(
+        max_length=200,
+        blank=True,
+        default='',
+        verbose_name=_('جمله انگیزشی'),
+        help_text=_('شعار یا جمله انگیزشی که دانش‌آموز برای امروز نوشته است.'),
+    )
+    tests_taken = models.PositiveIntegerField(
+        default=0,
+        verbose_name=_('تعداد تست'),
+        help_text=_('تعداد تست‌هایی که امروز زده شده است.'),
+    )
+    # Nullable like ``mood``: «ثبت نکردم» must stay distinguishable from «۰٪».
+    test_percent = models.PositiveSmallIntegerField(
+        null=True,
+        blank=True,
+        validators=[MinValueValidator(0), MaxValueValidator(100)],
+        verbose_name=_('درصد آزمون'),
+        help_text=_('درصد آزمون امروز؛ خالی یعنی ثبت نشده — که با «۰» یکی نیست.'),
     )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

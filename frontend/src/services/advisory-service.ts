@@ -149,6 +149,12 @@ export type StudyLogDay = {
   date: string;
   mood: number | null;
   note: string;
+  /** Restart step 1 (wave-1 unit B): the PDF-derived enrichment. `testPercent`
+   * is null when not recorded — distinct from an honest 0. */
+  dayGoal: string;
+  motivationNote: string;
+  testsTaken: number;
+  testPercent: number | null;
   items: StudyLogItem[];
   totalMinutes: number;
   updatedAt: string;
@@ -169,11 +175,19 @@ export type StudyLogPayload = {
 
 /** PUT body — a WHOLE-day set-replace. Only currently-selected subjects may be
  * sent (server rejects unselected ones); minutes are 0..960 each, duplicates
- * forbidden, day total ≤ 1440, note ≤ 1000 chars, mood int 1..5 or null. */
+ * forbidden, day total ≤ 1440, note ≤ 1000 chars, mood int 1..5 or null.
+ *
+ * The four enrichment keys are the one exception to "absent = cleared": ABSENT
+ * leaves the stored value untouched server-side (legacy-payload safety), while
+ * PRESENT overwrites wholesale — even with '' / 0 / null. */
 export type SaveStudyLogBody = {
   date: string;
   mood?: number | null;
   note?: string;
+  dayGoal?: string;
+  motivationNote?: string;
+  testsTaken?: number;
+  testPercent?: number | null;
   items: { subjectId: number; minutes: number }[];
 };
 
@@ -197,6 +211,11 @@ export type StudyFeedDay = {
   totalMinutes: number;
   mood: number | null;
   note: string;
+  /** Wave-1 unit B: tests taken (> 0 renders the «تست» chip) and exam percent
+   * (non-null renders the «درصد» chip). Optional — absent on payloads saved
+   * before the enrichment shipped; read via `?? 0` / `?? null`. */
+  testsTaken?: number;
+  testPercent?: number | null;
   items: StudyFeedItem[];
 };
 

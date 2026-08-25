@@ -576,6 +576,177 @@ def test_put_rejects_out_of_bounds_fields(mutation):
     assert DailyLog.objects.count() == 0
 
 
+# ── Wave-1 unit B: the four PDF-derived enrichment fields ────────────────────
+
+PERSIAN_PERCENT_MESSAGE = 'درصد آزمون باید عددی بین ۰ تا ۱۰۰ باشد.'
+
+
+def _enriched_body(log_date, math_id, **overrides):
+    """A valid PUT body carrying all four enrichment keys, overridable per test."""
+    body = {
+        'date': _iso(log_date),
+        'mood': 4,
+        'note': 'یادداشت',
+        'items': [{'subjectId': math_id, 'minutes': 30}],
+        'dayGoal': 'تمرین فصل سه',
+        'motivationNote': 'پیوسته بودن کلید موفقیت است',
+        'testsTaken': 12,
+        'testPercent': 85,
+    }
+    body.update(overrides)
+    return body
+
+
+def test_put_roundtrips_all_four_enrichment_fields():
+    """Save the four PDF-derived fields and read them back through the same door."""
+    advisor, student = _advisor(), _student()
+    engagement = _engagement(advisor, student)
+    math = _subject('ریاضی')
+    _selection(engagement, math)
+    today = timezone.localdate()
+
+    put = _auth(student).put(
+        STUDY_LOG_URL,
+        _enriched_body(today, math.id),
+        format='json',
+    )
+    assert put.status_code == 200
+    assert put.data['log']['dayGoal'] == 'تمرین فصل سه'
+    assert put.data['log']['motivationNote'] == 'پیوسته بودن کلید موفقیت است'
+    assert put.data['log']['testsTaken'] == 12
+    assert put.data['log']['testPercent'] == 85
+
+    seen = _auth(student).get(STUDY_LOG_URL, {'date': _iso(today)})
+    assert seen.status_code == 200
+    assert seen.data['log']['dayGoal'] == 'تمرین فصل سه'
+    assert seen.data['log']['motivationNote'] == 'پیوسته بودن کلید موفقیت است'
+    assert seen.data['log']['testsTaken'] == 12
+    assert seen.data['log']['testPercent'] == 85
+
+
+@pytest.mark.parametrize('bad_percent', [-1, 101])
+def test_put_rejects_test_percent_outside_zero_to_hundred_with_persian_detail(bad_percent):
+    """The 0..100 bound answers 400 with a Persian message, never a 500."""
+    advisor, student = _advisor(), _student()
+    engagement = _engagement(advisor, student)
+    math = _subject('ریاضی')
+    _selection(engagement, math)
+
+    resp = _auth(student).put(
+        STUDY_LOG_URL,
+        _enriched_body(timezone.localdate(), math.id, testPercent=bad_percent),
+        format='json',
+    )
+    assert resp.status_code == 400
+    assert PERSIAN_PERCENT_MESSAGE in _flat_errors(resp.data)
+    assert DailyLog.objects.count() == 0
+
+
+def test_put_rejects_negative_tests_taken():
+    """«تعداد تست» counts things; a negative count is a malformed report."""
+    advisor, student = _advisor(), _student()
+    engagement = _engagement(advisor, student)
+    math = _subject('ریاضی')
+    _selection(engagement, math)
+
+    resp = _auth(student).put(
+        STUDY_LOG_URL,
+        _enriched_body(timezone.localdate(), math.id, testsTaken=-5),
+        format='json',
+    )
+    assert resp.status_code == 400
+    assert DailyLog.objects.count() == 0
+
+
+def test_a_legacy_payload_without_new_keys_leaves_enrichment_untouched():
+    """The compatibility rule the whole unit hangs off: a client written before
+    the enrichment existed cannot erase columns it never sends."""
+    advisor, student = _advisor(), _student()
+    engagement = _engagement(advisor, student)
+    math = _subject('ریاضی')
+    _selection(engagement, math)
+    today = timezone.localdate()
+
+    first = _auth(student).put(STUDY_LOG_URL, _enriched_body(today, math.id), format='json')
+    assert first.status_code == 200
+
+    legacy = {
+        'date': _iso(today),
+        'mood': 2,
+        'note': 'بدنهٔ قدیمی',
+        'items': [{'subjectId': math.id, 'minutes': 50}],
+    }
+    second = _auth(student).put(STUDY_LOG_URL, legacy, format='json')
+    assert second.status_code == 200
+    assert second.data['log']['dayGoal'] == 'تمرین فصل سه'
+    assert second.data['log']['motivationNote'] == 'پیوسته بودن کلید موفقیت است'
+    assert second.data['log']['testsTaken'] == 12
+    assert second.data['log']['testPercent'] == 85
+
+
+def test_present_but_empty_enrichment_keys_overwrite_including_back_to_null():
+    """Absence means «untouched», so clearing must be explicit: an empty string,
+    a zero and a null each overwrite their column when the key IS sent."""
+    advisor, student = _advisor(), _student()
+    engagement = _engagement(advisor, student)
+    math = _subject('ریاضی')
+    _selection(engagement, math)
+    today = timezone.localdate()
+
+    _auth(student).put(STUDY_LOG_URL, _enriched_body(today, math.id), format='json')
+
+    cleared = _auth(student).put(
+        STUDY_LOG_URL,
+        {
+            'date': _iso(today),
+            'items': [{'subjectId': math.id, 'minutes': 30}],
+            'dayGoal': '',
+            'motivationNote': '',
+            'testsTaken': 0,
+            'testPercent': None,
+        },
+        format='json',
+    )
+    assert cleared.status_code == 200
+    assert cleared.data['log']['dayGoal'] == ''
+    assert cleared.data['log']['motivationNote'] == ''
+    assert cleared.data['log']['testsTaken'] == 0
+    assert cleared.data['log']['testPercent'] is None
+
+
+def test_service_save_day_without_enrichment_kwargs_leaves_the_columns_untouched():
+    """The store-level mirror of the legacy-payload rule: callers that do not
+    pass the four kwargs change nothing they did not name."""
+    advisor, student = _advisor(), _student()
+    engagement = _engagement(advisor, student)
+    math = _subject('ریاضی')
+    _selection(engagement, math)
+    today = timezone.localdate()
+
+    first = log_service.save_day(
+        engagement, today,
+        mood=3, note='',
+        items=[{'subject_id': math.id, 'minutes': 30}],
+        student=student,
+        day_goal='هدف روز',
+        motivation_note='انگیزه',
+        tests_taken=5,
+        test_percent=60,
+    )
+    second = log_service.save_day(
+        engagement, today,
+        mood=None, note='',
+        items=[{'subject_id': math.id, 'minutes': 30}],
+        student=student,
+    )
+
+    assert second.pk == first.pk
+    assert second.day_goal == 'هدف روز'
+    assert second.motivation_note == 'انگیزه'
+    assert second.tests_taken == 5
+    assert second.test_percent == 60
+
+
 # ── API: the permission matrix ────────────────────────────────────────────────
 
 @pytest.mark.permission

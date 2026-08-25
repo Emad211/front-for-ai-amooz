@@ -188,6 +188,18 @@ export function StudyFeedCard({ engagementId }: StudyFeedCardProps) {
                       {MOOD_LABELS[day.mood]}
                     </Badge>
                   )}
+                  {/* Restart step 1: enrichment chips — «تست» only when tests
+                  were taken, «درصد» only when a percent was recorded. */}
+                  {(day.testsTaken ?? 0) > 0 && (
+                    <Badge variant="outline" className="font-normal tabular-nums">
+                      تست: {toPersianDigits(day.testsTaken ?? 0)}
+                    </Badge>
+                  )}
+                  {(day.testPercent ?? null) !== null && (
+                    <Badge variant="outline" className="font-normal tabular-nums">
+                      درصد: {toPersianDigits(day.testPercent ?? 0)}٪
+                    </Badge>
+                  )}
                 </div>
                 <span className="text-xs font-medium tabular-nums text-muted-foreground">
                   مجموع: {toPersianDigits(day.totalMinutes)} دقیقه
