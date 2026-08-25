@@ -1,8 +1,8 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { Suspense, useEffect, useState } from 'react';
 import Link from 'next/link';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { AlertCircle, ArrowRight, RefreshCw, Users } from 'lucide-react';
 
 import {
@@ -14,10 +14,42 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { StudyFeedCard } from '@/components/advisory/study-plan/study-feed-card';
 import { StudyPlannerCard } from '@/components/advisory/study-plan/study-planner-card';
+import {
+  resolveStudentDetailTab,
+  StudentDetailTabKey,
+  StudentDetailTabs,
+  StudentDetailTabPlaceholder,
+} from '@/components/advisory/student-detail-tabs';
 
 /**
- * Advisor → one student's detail («گزارش و برنامه»).
+ * Advisor → one student's detail («گزارش و برنامه»), split into 7 query-param
+ * tabs (`?tab=feed|plan|exams|intake|assess|month|challenges`, default feed).
  *
+ * Next.js 15: useSearchParams() opts its subtree out of static prerender, so
+ * every consumer of it must sit inside a <Suspense> boundary or
+ * `next build` fails with "missing suspense boundary with useSearchParams".
+ * The default export therefore only wraps the interactive content in Suspense;
+ * everything else lives in AdvisorStudentDetailContent below.
+ */
+export default function AdvisorStudentDetailPage() {
+  return (
+    <Suspense fallback={<PageFallback />}>
+      <AdvisorStudentDetailContent />
+    </Suspense>
+  );
+}
+
+function PageFallback() {
+  return (
+    <div className="space-y-6" aria-busy="true" aria-live="polite">
+      <span className="sr-only">در حال بارگذاری…</span>
+      <Skeleton className="mx-auto h-11 w-full max-w-4xl rounded-full" />
+      <Skeleton className="mx-auto h-40 w-full max-w-4xl rounded-2xl" />
+    </div>
+  );
+}
+
+/**
  * The route param is the ENGAGEMENT id — the same key every advisory route is
  * addressed by. The roster is fetched once to resolve the student's name and
  * engagement start: the name anchors the header immediately, and `startedOn`
@@ -25,11 +57,21 @@ import { StudyPlannerCard } from '@/components/advisory/study-plan/study-planner
  * enforced again server-side). A missing/foreign id resolves to a "not found"
  * state, never "forbidden" — mirroring the API's 404-not-403 leak posture.
  */
-export default function AdvisorStudentDetailPage() {
+function AdvisorStudentDetailContent() {
   const params = useParams<{ id: string }>();
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const rawId = params?.id ?? '';
   const engagementId = Number(rawId);
   const validId = Number.isInteger(engagementId) && engagementId > 0;
+
+  const activeTab = resolveStudentDetailTab(searchParams.get('tab'));
+
+  // Tabs are view state: replace() avoids polluting history, scroll:false
+  // keeps the reader's position while switching.
+  const handleTabChange = (key: StudentDetailTabKey) => {
+    router.replace(`/advisor/students/${rawId}?tab=${key}`, { scroll: false });
+  };
 
   const [student, setStudent] = useState<AdvisorStudent | null>(null);
   const [error, setError] = useState('');
@@ -96,13 +138,22 @@ export default function AdvisorStudentDetailPage() {
 
       {student && (
         <div className="mx-auto w-full max-w-4xl space-y-6">
-          {/* Read the evidence first, then plan — DOM order = visual order. */}
-          <StudyFeedCard engagementId={engagementId} />
-          <StudyPlannerCard
-            engagementId={engagementId}
-            studentName={student.studentName}
-            startedOn={student.startedOn}
-          />
+          <StudentDetailTabs activeTab={activeTab} onTabChange={handleTabChange} />
+
+          {/* Read the evidence first, then plan — DOM order = visual order.
+          Tabs whose cards have not landed yet render the «به‌زودی» placeholder
+          so the IA stays stable until their waves arrive. */}
+          {activeTab === 'feed' && <StudyFeedCard engagementId={engagementId} />}
+          {activeTab === 'plan' && (
+            <StudyPlannerCard
+              engagementId={engagementId}
+              studentName={student.studentName}
+              startedOn={student.startedOn}
+            />
+          )}
+          {activeTab !== 'feed' && activeTab !== 'plan' && (
+            <StudentDetailTabPlaceholder tabKey={activeTab} />
+          )}
         </div>
       )}
     </div>
