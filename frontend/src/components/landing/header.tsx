@@ -82,9 +82,7 @@ export const LandingHeader = () => {
             </SheetContent>
           </Sheet>
 
-          <Link href="/" aria-label="AI-Amooz" className="shrink-0">
-            <Logo imageSize="md" />
-          </Link>
+          <Logo imageSize="md" className="shrink-0" />
         </div>
       </div>
     </header>
