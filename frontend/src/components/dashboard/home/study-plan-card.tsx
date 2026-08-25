@@ -29,6 +29,13 @@ function todayIso(): string {
   return `${now.getFullYear()}-${month}-${day}`;
 }
 
+/** Restart step 4: mastery-color wire code → dot class. */
+const MASTERY_DOT_CLASS: Record<string, string> = {
+  RED: 'bg-red-500',
+  YELLOW: 'bg-yellow-400',
+  GREEN: 'bg-emerald-500',
+};
+
 /** The plan running today, else the nearest future one; null when neither. */
 function pickCurrentOrNext(plans: StudyPlanOut[]): StudyPlanOut | null {
   const today = todayIso();
@@ -157,7 +164,15 @@ export function StudyPlanCard() {
                         key={`${item.subjectId}`}
                         className="flex items-center justify-between gap-2 text-xs"
                       >
-                        <span className="min-w-0 truncate">{item.name}</span>
+                        <span className="flex min-w-0 items-center gap-1.5">
+                          {item.masteryColor && MASTERY_DOT_CLASS[item.masteryColor] && (
+                            <span
+                              aria-hidden
+                              className={`h-2 w-2 shrink-0 rounded-full ${MASTERY_DOT_CLASS[item.masteryColor]}`}
+                            />
+                          )}
+                          <span className="min-w-0 truncate">{item.name}</span>
+                        </span>
                         <span className="shrink-0 tabular-nums text-muted-foreground">
                           {toPersianDigits(item.plannedMinutes)} دقیقه
                         </span>

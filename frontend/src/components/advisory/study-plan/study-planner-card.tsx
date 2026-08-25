@@ -15,6 +15,7 @@ import {
 import {
   AdvisoryService,
   type SaveStudyPlanDraftBody,
+  type StudyPlanDayNote,
   type StudyPlanOut,
 } from '@/services/advisory-service';
 import { toEnglishDigits, toPersianDigits } from '@/lib/persian-digits';
@@ -32,20 +33,45 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { ChevronDown, ChevronUp } from 'lucide-react';
 import { JalaliDatePicker } from './jalali-date-picker';
 
 /** Preset horizons plus «دلخواه»; the wire only ever receives a plain count. */
 type DurationMode = '7' | '14' | '30' | 'custom';
 
-/** One editable row. `minutes` stays a raw string so half-typed Persian-digit
- * input never fights the cursor; it is parsed (and rejected) on save. */
+/** Mastery colors as the wire codes with their chip labels; '' = unset. */
+const MASTERY_COLORS: { value: 'RED' | 'YELLOW' | 'GREEN'; label: string }[] = [
+  { value: 'RED', label: '🔴 قرمز' },
+  { value: 'YELLOW', label: '🟡 زرد' },
+  { value: 'GREEN', label: '🟢 سبز' },
+];
+
+/** The four note fields of one day, in render order. */
+const DAY_NOTE_FIELDS = [
+  { key: 'school', label: 'مدرسه' },
+  { key: 'exams', label: 'امتحان' },
+  { key: 'konkurClass', label: 'کلاس کنکور' },
+  { key: 'preReading', label: 'پیش‌خوانی' },
+] as const;
+
+/** One editable row. `minutes`/`testMinutes` stay raw strings so half-typed
+ * Persian-digit input never fights the cursor; both are parsed on save. */
 type PlannerRow = {
   uid: number;
   /** 0-based on the wire; the UI shows «روز N» where N = dayOffset + 1. */
   dayOffset: number;
   subjectId: number | null;
   minutes: string;
+  topic: string;
+  unitLabel: string;
+  testMinutes: string;
+  masteryColor: '' | 'RED' | 'YELLOW' | 'GREEN';
 };
+
+/** Persian-digit-tolerant digit sanitizer (same pattern as study-log). */
+function sanitizeDigits(raw: string): string {
+  return toEnglishDigits(raw).replace(/\D/g, '');
+}
 
 type ActiveSubject = {
   id: number;
@@ -91,6 +117,10 @@ export function StudyPlannerCard({
   const [durationMode, setDurationMode] = useState<DurationMode>('7');
   const [customDuration, setCustomDuration] = useState('');
   const [rows, setRows] = useState<PlannerRow[]>([]);
+  // Restart step 4: per-day notes keyed '0'..'6', collapsed by default so the
+  // 7×4 grid never pushes the rows editor off-screen until asked for.
+  const [dayNotes, setDayNotes] = useState<Record<string, StudyPlanDayNote>>({});
+  const [showDayNotes, setShowDayNotes] = useState(false);
 
   const [saving, setSaving] = useState(false);
   const [publishing, setPublishing] = useState(false);
@@ -161,8 +191,16 @@ export function StudyPlannerCard({
                 dayOffset: item.dayOffset,
                 subjectId: item.subjectId,
                 minutes: String(item.plannedMinutes),
+                topic: item.topic ?? '',
+                unitLabel: item.unitLabel ?? '',
+                testMinutes:
+                  item.testMinutes === null || item.testMinutes === undefined
+                    ? ''
+                    : String(item.testMinutes),
+                masteryColor: item.masteryColor ?? '',
               })),
             );
+            setDayNotes(draft.dayNotes ?? {});
           }
         }
       })
@@ -213,6 +251,18 @@ export function StudyPlannerCard({
       if (!Number.isInteger(minutes) || minutes < 1 || minutes > 960) {
         return 'دقیقه‌ی هر ردیف باید عددی بین ۱ و ۹۶۰ باشد.';
       }
+      // Restart step 4: empty test-minutes means «not set»; a filled field must
+      // be an integer inside 0..480 — the server's exact message, mirrored.
+      if (row.testMinutes.trim() !== '') {
+        const testMinutes = Number(sanitizeDigits(row.testMinutes));
+        if (
+          !Number.isInteger(testMinutes) ||
+          testMinutes < 0 ||
+          testMinutes > 480
+        ) {
+          return 'زمان تست باید بین ۰ تا ۴۸۰ دقیقه باشد.';
+        }
+      }
       if (row.dayOffset >= durationDays) {
         return `روز ${toPersianDigits(row.dayOffset + 1)} خارج از طول برنامه است.`;
       }
@@ -233,10 +283,42 @@ export function StudyPlannerCard({
       const subjectId = row.subjectId;
       const minutes = Number(toEnglishDigits(row.minutes));
       if (subjectId === null || !Number.isInteger(minutes)) continue;
-      items.push({ dayOffset: row.dayOffset, subjectId, plannedMinutes: minutes });
+      const item: SaveStudyPlanDraftBody['items'][number] = {
+        dayOffset: row.dayOffset,
+        subjectId,
+        plannedMinutes: minutes,
+      };
+      // Enrichment keys ride along only when the advisor filled them, so an
+      // untouched row stores the column defaults instead of empty noise.
+      if (row.topic.trim()) item.topic = row.topic.trim();
+      if (row.unitLabel.trim()) item.unitLabel = row.unitLabel.trim();
+      if (row.testMinutes.trim() !== '') {
+        item.testMinutes = Number(sanitizeDigits(row.testMinutes));
+      }
+      if (row.masteryColor) item.masteryColor = row.masteryColor;
+      items.push(item);
     }
     items.sort((a, b) => a.dayOffset - b.dayOffset || a.subjectId - b.subjectId);
-    return { startDate, durationDays: durationDays ?? 0, items };
+
+    // Wire rule: an all-empty grid OMITS dayNotes entirely, because the server
+    // treats an absent key as «keep stored notes» and only a present key
+    // (even {}) replaces them.
+    const notes: Record<string, StudyPlanDayNote> = {};
+    for (const [dayKey, block] of Object.entries(dayNotes)) {
+      const cleaned: StudyPlanDayNote = {};
+      for (const { key } of DAY_NOTE_FIELDS) {
+        const value = (block?.[key] ?? '').trim();
+        if (value) cleaned[key] = value;
+      }
+      if (Object.keys(cleaned).length > 0) notes[dayKey] = cleaned;
+    }
+
+    return {
+      startDate,
+      durationDays: durationDays ?? 0,
+      items,
+      ...(Object.keys(notes).length > 0 ? { dayNotes: notes } : {}),
+    };
   };
 
   const refetchPlans = () => {
@@ -302,8 +384,28 @@ export function StudyPlannerCard({
   const addRow = () => {
     setRows((prev) => [
       ...prev,
-      { uid: nextUid(), dayOffset: 0, subjectId: null, minutes: '' },
+      {
+        uid: nextUid(),
+        dayOffset: 0,
+        subjectId: null,
+        minutes: '',
+        topic: '',
+        unitLabel: '',
+        testMinutes: '',
+        masteryColor: '',
+      },
     ]);
+  };
+
+  const setDayNote = (
+    dayKey: string,
+    field: (typeof DAY_NOTE_FIELDS)[number]['key'],
+    value: string,
+  ) => {
+    setDayNotes((prev) => ({
+      ...prev,
+      [dayKey]: { ...prev[dayKey], [field]: value },
+    }));
   };
 
   const updateRow = (uid: number, patch: Partial<Omit<PlannerRow, 'uid'>>) => {
@@ -428,62 +530,114 @@ export function StudyPlannerCard({
                 {rows.map((row) => (
                   <li
                     key={row.uid}
-                    className="grid grid-cols-[5.5rem_1fr_6rem_2rem] items-center gap-2"
+                    className="space-y-2 rounded-lg border border-border/50 p-2"
                   >
-                    <Select
-                      value={String(row.dayOffset)}
-                      onValueChange={(value) => updateRow(row.uid, { dayOffset: Number(value) })}
-                    >
-                      <SelectTrigger aria-label="روز برنامه" className="h-9">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {(durationDays === null
-                          ? []
-                          : Array.from({ length: durationDays }, (_, i) => i)
-                        ).map((offset) => (
-                          <SelectItem key={offset} value={String(offset)}>
-                            روز {toPersianDigits(offset + 1)}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    <div className="grid grid-cols-[5.5rem_1fr_6rem_2rem] items-center gap-2">
+                      <Select
+                        value={String(row.dayOffset)}
+                        onValueChange={(value) => updateRow(row.uid, { dayOffset: Number(value) })}
+                      >
+                        <SelectTrigger aria-label="روز برنامه" className="h-9">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {(durationDays === null
+                            ? []
+                            : Array.from({ length: durationDays }, (_, i) => i)
+                          ).map((offset) => (
+                            <SelectItem key={offset} value={String(offset)}>
+                              روز {toPersianDigits(offset + 1)}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
 
-                    <Select
-                      value={row.subjectId === null ? '' : String(row.subjectId)}
-                      onValueChange={(value) => updateRow(row.uid, { subjectId: Number(value) })}
-                    >
-                      <SelectTrigger aria-label="درس" className="h-9">
-                        <SelectValue placeholder="درس…" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {subjects.map((subject) => (
-                          <SelectItem key={subject.id} value={String(subject.id)}>
-                            {subject.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                      <Select
+                        value={row.subjectId === null ? '' : String(row.subjectId)}
+                        onValueChange={(value) => updateRow(row.uid, { subjectId: Number(value) })}
+                      >
+                        <SelectTrigger aria-label="درس" className="h-9">
+                          <SelectValue placeholder="درس…" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {subjects.map((subject) => (
+                            <SelectItem key={subject.id} value={String(subject.id)}>
+                              {subject.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
 
-                    <Input
-                      value={row.minutes}
-                      onChange={(e) => updateRow(row.uid, { minutes: e.target.value })}
-                      placeholder="دقیقه"
-                      inputMode="numeric"
-                      aria-label="دقیقه‌ی مطالعه"
-                      className="h-9 text-center tabular-nums"
-                    />
+                      <Input
+                        value={row.minutes}
+                        onChange={(e) => updateRow(row.uid, { minutes: e.target.value })}
+                        placeholder="دقیقه"
+                        inputMode="numeric"
+                        aria-label="دقیقه‌ی مطالعه"
+                        className="h-9 text-center tabular-nums"
+                      />
 
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      aria-label="حذف ردیف"
-                      className="h-9 w-9 text-muted-foreground hover:text-destructive"
-                      onClick={() => removeRow(row.uid)}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        aria-label="حذف ردیف"
+                        className="h-9 w-9 text-muted-foreground hover:text-destructive"
+                        onClick={() => removeRow(row.uid)}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+
+                    {/* Restart step 4: the enrichment line — what to study,
+                    in which unit, how much test-solving, mastery color. */}
+                    <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                      <Input
+                        value={row.topic}
+                        onChange={(e) => updateRow(row.uid, { topic: e.target.value })}
+                        placeholder="موضوع"
+                        maxLength={200}
+                        aria-label="موضوع"
+                        className="h-9 text-xs"
+                      />
+                      <Input
+                        value={row.unitLabel}
+                        onChange={(e) => updateRow(row.uid, { unitLabel: e.target.value })}
+                        placeholder="واحد"
+                        maxLength={60}
+                        aria-label="واحد"
+                        className="h-9 text-xs"
+                      />
+                      <Input
+                        value={row.testMinutes}
+                        onChange={(e) =>
+                          updateRow(row.uid, { testMinutes: sanitizeDigits(e.target.value) })
+                        }
+                        placeholder="زمان تست (دقیقه)"
+                        inputMode="numeric"
+                        aria-label="زمان تست بر حسب دقیقه"
+                        className="h-9 text-center text-xs tabular-nums"
+                      />
+                      <Select
+                        value={row.masteryColor}
+                        onValueChange={(value) =>
+                          updateRow(row.uid, {
+                            masteryColor: value as PlannerRow['masteryColor'],
+                          })
+                        }
+                      >
+                        <SelectTrigger aria-label="رنگ تسلط" className="h-9 text-xs">
+                          <SelectValue placeholder="رنگ تسلط…" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {MASTERY_COLORS.map((color) => (
+                            <SelectItem key={color.value} value={color.value}>
+                              {color.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
                   </li>
                 ))}
               </ul>
@@ -508,6 +662,57 @@ export function StudyPlannerCard({
                 <p className="text-xs text-destructive">طول برنامه باید بین ۱ و ۹۰ روز باشد.</p>
               )}
             </>
+          )}
+        </div>
+
+        {/* ── day notes: 7 days × 4 fields, collapsed by default ─────────── */}
+        <div className="rounded-xl border border-border/60">
+          <button
+            type="button"
+            onClick={() => setShowDayNotes((v) => !v)}
+            aria-expanded={showDayNotes}
+            className="flex w-full items-center justify-between gap-2 px-3 py-2.5 text-right"
+          >
+            <span className="text-sm font-medium">یادداشت روزها</span>
+            <span className="flex items-center gap-1 text-xs text-muted-foreground">
+              {showDayNotes ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+              {showDayNotes ? 'بستن' : 'نمایش'}
+            </span>
+          </button>
+          {showDayNotes && (
+            <div className="space-y-2 border-t border-border/60 p-3">
+              {(durationDays === null
+                ? []
+                : Array.from({ length: Math.min(durationDays, 7) }, (_, i) => i)
+              ).map((offset) => {
+                const dayKey = String(offset);
+                return (
+                  <div key={dayKey} className="space-y-1.5">
+                    <p className="text-xs font-medium text-muted-foreground">
+                      روز {toPersianDigits(offset + 1)}
+                    </p>
+                    <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4">
+                      {DAY_NOTE_FIELDS.map(({ key, label }) => (
+                        <Input
+                          key={key}
+                          value={dayNotes[dayKey]?.[key] ?? ''}
+                          onChange={(e) => setDayNote(dayKey, key, e.target.value)}
+                          placeholder={label}
+                          maxLength={120}
+                          aria-label={`${label} — روز ${toPersianDigits(offset + 1)}`}
+                          className="h-8 text-xs"
+                        />
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+              {durationDays !== null && durationDays > 7 && (
+                <p className="text-xs leading-relaxed text-muted-foreground">
+                  یادداشت روزها برای هفتۀ اول برنامه ثبت می‌شود.
+                </p>
+              )}
+            </div>
           )}
         </div>
 

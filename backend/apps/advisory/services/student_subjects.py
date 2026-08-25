@@ -25,7 +25,7 @@ from django.db import transaction
 from django.db.models import QuerySet
 from django.utils import timezone
 
-from ..models import StudentSubject
+from ..models import SUBJECT_SOURCE_CHOICES, StudentSubject
 from . import scope
 
 # A defensive ceiling on one write. The picker offers a curated catalog, not free
@@ -33,6 +33,8 @@ from . import scope
 # ``EngagementSubjectsWriteSerializer`` imports this constant and enforces it, so
 # the value lives next to the store it protects and there is exactly one of it.
 MAX_SUBJECTS_PER_STUDENT = 60
+
+_VALID_SOURCE_CODES = {code for code, _label in SUBJECT_SOURCE_CHOICES}
 
 
 class SubjectSelectionError(Exception):
@@ -57,7 +59,23 @@ class SubjectNotAssignable(SubjectSelectionError):
         )
 
 
-def set_engagement_subjects(engagement, subject_ids, *, advisor) -> QuerySet[StudentSubject]:
+class InvalidSource(SubjectSelectionError):
+    """400 — a ``sources`` entry violates the step-3 contract.
+
+    Two shapes fold into one family so the view needs a single catch clause:
+    a *code* outside the five allowed ones answers with the generic message,
+    while a key naming a subject id absent from the same request's ``subjectIds``
+    answers with its own — the advisor can fix the second by re-reading their
+    payload, which the generic wording would not point at.
+    """
+
+    def __init__(self, message: str = 'منبع انتخابی معتبر نیست.'):
+        super().__init__(message)
+
+
+def set_engagement_subjects(
+    engagement, subject_ids, *, advisor, sources=None,
+) -> QuerySet[StudentSubject]:
     """Make the engagement's active subject set equal ``subject_ids`` exactly.
 
     ``subject_ids`` is de-duplicated first; assignability is checked **before** any
@@ -78,6 +96,13 @@ def set_engagement_subjects(engagement, subject_ids, *, advisor) -> QuerySet[Stu
     for call-site stability and to document who is acting, but assignability is now
     a fact about the *student's* curriculum, not the advisor's org catalog — so the
     validation set comes from ``scope.curriculum_subjects(engagement.student)``.
+
+    ``sources`` (restart step 3) optionally maps ``{subject_id: source_code}`` for
+    ids in this same request. It is validated before any write alongside
+    assignability, so one bad entry changes nothing at all. An absent map — or an
+    absent key for an id that IS in ``subject_ids`` — leaves that row's stored
+    source untouched (legacy-payload safety), and deactivated rows never have
+    theirs rewritten.
     """
     wanted = list(dict.fromkeys(int(s) for s in subject_ids))
 
@@ -91,16 +116,36 @@ def set_engagement_subjects(engagement, subject_ids, *, advisor) -> QuerySet[Stu
         if foreign:
             raise SubjectNotAssignable(foreign)
 
+    if sources is not None:
+        for sid, code in sources.items():
+            if int(sid) not in wanted:
+                raise InvalidSource('منبع برای درسی خارج از فهرست ارسال شده است.')
+            if code not in _VALID_SOURCE_CODES:
+                raise InvalidSource()
+
     with transaction.atomic():
         for sid in wanted:
+            row_source = None if sources is None else sources.get(sid)
+            defaults = {'is_active': True}
+            if row_source is not None:
+                defaults['source'] = row_source
             row, created = StudentSubject.objects.get_or_create(
                 engagement=engagement,
                 subject_id=sid,
-                defaults={'is_active': True},
+                defaults=defaults,
             )
+            dirty = []
             if not created and not row.is_active:
                 row.is_active = True
-                row.save(update_fields=['is_active', 'updated_at'])
+                dirty.append('is_active')
+            # Only a key present in THIS request rewrites the column; absence
+            # means «untouched» so a legacy PUT cannot wipe what it never knew.
+            if row_source is not None and row.source != row_source:
+                row.source = row_source
+                dirty.append('source')
+            if dirty:
+                dirty.append('updated_at')
+                row.save(update_fields=dirty)
 
         (
             StudentSubject.objects.filter(engagement=engagement, is_active=True)

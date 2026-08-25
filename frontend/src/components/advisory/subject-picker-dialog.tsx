@@ -53,6 +53,17 @@ const HIGH_SCHOOL_GRADES = ['10', '11', '12'];
  * endless wall of rows hides the search bar's purpose. */
 const INITIAL_VISIBLE = 12;
 
+/** Restart step 3: raw source code → Persian label. Single source of truth for
+ * both this picker's Select and the student-side my-subjects badge; the backend
+ * ships only the raw code on the wire. */
+export const SUBJECT_SOURCE_LABELS: Record<string, string> = {
+  TEXTBOOK: 'کتاب درسی',
+  TEACHER_BOOKLET: 'جزوه معلم',
+  VIDEO: 'فیلم',
+  KONKUR_BOOKLET: 'جزوه/دفترنامۀ کنکور',
+  OTHER: 'سایر',
+};
+
 type SubjectPickerDialogProps = {
   /** The ENGAGEMENT id (`AdvisorStudent.id`), never the student's user id. */
   engagementId: number;
@@ -74,6 +85,10 @@ export function SubjectPickerDialog({
   const [studentGrade, setStudentGrade] = useState<string | null>(null);
   const [studentAxisLabel, setStudentAxisLabel] = useState('');
   const [selected, setSelected] = useState<Set<number>>(new Set());
+  // Restart step 3: per-row source code, keyed by subject id. Prefilled from
+  // `selectedSources` on each open so re-opening shows what is already stored;
+  // only entries with a value are sent on save.
+  const [sources, setSources] = useState<Record<number, string>>({});
   const [saving, setSaving] = useState(false);
   const [gradeFilter, setGradeFilter] = useState<string>('all');
   const [showAll, setShowAll] = useState(false);
@@ -97,6 +112,11 @@ export function SubjectPickerDialog({
         setSelected(
           new Set(Array.isArray(resp.selectedSubjectIds) ? resp.selectedSubjectIds : []),
         );
+        const storedSources: Record<number, string> = {};
+        for (const [key, code] of Object.entries(resp.selectedSources ?? {})) {
+          storedSources[Number(key)] = code;
+        }
+        setSources(storedSources);
         setStudentGrade(resp.studentGrade);
         setStudentAxisLabel(
           [resp.studentGradeLabel, resp.studentMajorLabel]
@@ -146,15 +166,35 @@ export function SubjectPickerDialog({
       return next;
     });
 
+  const setSource = (id: number, code: string) =>
+    setSources((prev) => {
+      const next = { ...prev };
+      if (code) next[id] = code;
+      else delete next[id];
+      return next;
+    });
+
   const save = async () => {
     setSaving(true);
     try {
-      await AdvisoryService.setEngagementSubjects(engagementId, [...selected]);
+      // Only checked rows may carry a source — the server rejects keys outside
+      // the same request's subjectIds, and empty values mean «no choice».
+      const sourcesPayload: Record<string, string> = {};
+      for (const id of selected) {
+        const code = sources[id];
+        if (code) sourcesPayload[String(id)] = code;
+      }
+      await AdvisoryService.setEngagementSubjects(
+        engagementId,
+        [...selected],
+        sourcesPayload,
+      );
       toast.success(`درس‌های «${studentName}» ذخیره شد.`);
       setOpen(false);
     } catch (err: unknown) {
-      // 409 (engagement not active) and 400 (subject not assignable) surface their
-      // Persian detail here; the advisor learns why without a status code.
+      // 409 (engagement not active) and 400 (subject not assignable / bad
+      // source) surface their Persian detail here; the advisor learns why
+      // without a status code.
       toast.error(err instanceof Error ? err.message : 'ذخیره‌ی درس‌ها ناموفق بود.');
     } finally {
       setSaving(false);
@@ -270,34 +310,58 @@ export function SubjectPickerDialog({
               shown.map((s) => {
                 const checked = selected.has(s.id);
                 return (
-                  <button
+                  <div
                     key={s.id}
-                    type="button"
-                    role="checkbox"
-                    aria-checked={checked}
-                    onClick={() => toggleSubject(s.id)}
-                    className="flex w-full items-center gap-3 rounded-lg px-2 py-2 text-right transition-colors hover:bg-muted/60"
+                    className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 transition-colors hover:bg-muted/60"
                   >
-                    <Checkbox
-                      checked={checked}
-                      tabIndex={-1}
-                      className="pointer-events-none"
-                    />
-                    <span className="min-w-0 flex-1 truncate text-sm">{s.name}</span>
-                    <span className="flex shrink-0 items-center gap-1.5">
-                      {s.gradeLabel && (
-                        <Badge variant="secondary" className="font-normal">
-                          {s.gradeLabel}
-                        </Badge>
-                      )}
-                      {!s.isGlobal && (
-                        <Badge variant="outline" className="gap-1 font-normal">
-                          <Building2 className="h-3 w-3" />
-                          {s.organizationName || 'سازمانی'}
-                        </Badge>
-                      )}
-                    </span>
-                  </button>
+                    <button
+                      type="button"
+                      role="checkbox"
+                      aria-checked={checked}
+                      onClick={() => toggleSubject(s.id)}
+                      className="flex min-w-0 flex-1 items-center gap-3 text-right"
+                    >
+                      <Checkbox
+                        checked={checked}
+                        tabIndex={-1}
+                        className="pointer-events-none"
+                      />
+                      <span className="min-w-0 flex-1 truncate text-sm">{s.name}</span>
+                      <span className="flex shrink-0 items-center gap-1.5">
+                        {s.gradeLabel && (
+                          <Badge variant="secondary" className="font-normal">
+                            {s.gradeLabel}
+                          </Badge>
+                        )}
+                        {!s.isGlobal && (
+                          <Badge variant="outline" className="gap-1 font-normal">
+                            <Building2 className="h-3 w-3" />
+                            {s.organizationName || 'سازمانی'}
+                          </Badge>
+                        )}
+                      </span>
+                    </button>
+                    {checked && (
+                      <Select
+                        value={sources[s.id] ?? ''}
+                        onValueChange={(value) => setSource(s.id, value)}
+                      >
+                        <SelectTrigger
+                          aria-label={`منبع مطالعۀ ${s.name}`}
+                          className="h-8 w-32 shrink-0 text-xs"
+                        >
+                          <SelectValue placeholder="—" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {Object.entries(SUBJECT_SOURCE_LABELS).map(([code, label]) => (
+                            <SelectItem key={code} value={code}>
+                              {label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    )}
+                  </div>
                 );
               })}
 

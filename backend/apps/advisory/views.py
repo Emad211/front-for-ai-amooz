@@ -270,9 +270,14 @@ class AdvisorEngagementSubjectsView(APIView):
         # the write door validates against — so the picker and the validator can
         # never disagree about what is assignable.
         candidates = curriculum_subjects(engagement.student).select_related('organization')
-        selected = list(
-            engagement_subjects(engagement).values_list('subject_id', flat=True)
-        )
+        selected = []
+        selected_sources = {}
+        # Restart step 3: the picker prefills each row's source Select from what
+        # is already stored, keyed by catalog subject id as strings (JSON keys).
+        for row in engagement_subjects(engagement):
+            selected.append(row.subject_id)
+            if row.source:
+                selected_sources[str(row.subject_id)] = row.source
         return Response({
             'studentGrade': grade,
             'studentGradeLabel': grade_label,
@@ -280,6 +285,7 @@ class AdvisorEngagementSubjectsView(APIView):
             'studentMajorLabel': major_label,
             'subjects': SubjectSerializer(candidates, many=True).data,
             'selectedSubjectIds': selected,
+            'selectedSources': selected_sources,
         })
 
     @extend_schema(
@@ -313,13 +319,39 @@ class AdvisorEngagementSubjectsView(APIView):
             )
         serializer = EngagementSubjectsWriteSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
+
+        sources = None
+        raw_sources = (
+            request.data.get('sources')
+            if isinstance(request.data, dict)
+            else None
+        )
+        if raw_sources is not None:
+            if not isinstance(raw_sources, dict):
+                return Response(
+                    {'detail': 'شناسۀ درس در sources نامعتبر است.'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            # JSON object keys are strings; coerce to the ints the service speaks,
+            # failing closed on anything non-numeric rather than guessing.
+            sources = {}
+            for key, code in raw_sources.items():
+                try:
+                    sources[int(key)] = code
+                except (TypeError, ValueError):
+                    return Response(
+                        {'detail': 'شناسۀ درس در sources نامعتبر است.'},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+
         try:
             rows = subject_service.set_engagement_subjects(
                 engagement,
                 serializer.validated_data['subjectIds'],
                 advisor=request.user,
+                sources=sources,
             )
-        except subject_service.SubjectNotAssignable as exc:
+        except subject_service.SubjectSelectionError as exc:
             return Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         return Response(StudentSubjectSerializer(rows, many=True).data)
 
@@ -763,6 +795,9 @@ class AdvisorStudyFeedView(APIView):
         ]
 
         days_data = FeedDaySerializer(logs, many=True).data
+        # Restart step 4: stamp «جبران‌نشده» onto the serialized day items from
+        # the PUBLISHED plans of each date's week (pure, in-place, additive).
+        plan_service.attach_uncompensated_flags(days_data, plans)
         payload = {
             'studentName': _display_name(engagement.student),
             'range': {'from': from_date, 'to': to_date},
@@ -823,6 +858,9 @@ class AdvisorStudyPlanDraftView(APIView):
                 start_date=data['start_date'],
                 duration_days=data['duration_days'],
                 items=data['items'],
+                # Absent key ⇒ UNSET ⇒ stored day notes untouched (legacy
+                # planner payloads must not wipe what they never sent).
+                day_notes=data.get('day_notes', plan_service.UNSET),
             )
         except plan_service.StudyPlanError as exc:
             # The base class on purpose: every rule the door adds later must fail

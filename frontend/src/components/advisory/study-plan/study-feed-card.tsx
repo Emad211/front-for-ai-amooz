@@ -38,6 +38,13 @@ const MOOD_LABELS: Record<number, string> = {
   5: 'عالی',
 };
 
+/** Restart step 4: mastery-color wire code → dot class. */
+const MASTERY_DOT_CLASS: Record<string, string> = {
+  RED: 'bg-red-500',
+  YELLOW: 'bg-yellow-400',
+  GREEN: 'bg-emerald-500',
+};
+
 type StudyFeedCardProps = {
   engagementId: number;
 };
@@ -215,17 +222,44 @@ export function StudyFeedCard({ engagementId }: StudyFeedCardProps) {
 
               {day.items.length > 0 && (
                 <ul className="mt-2 space-y-1 border-t border-border/40 pt-2">
-                  {day.items.map((item) => (
-                    <li
-                      key={`${item.subjectId}`}
-                      className="flex items-center justify-between gap-2 text-xs"
-                    >
-                      <span className="min-w-0 truncate">{item.name}</span>
-                      <span className="shrink-0 tabular-nums text-muted-foreground">
-                        {toPersianDigits(item.minutes)} دقیقه
-                      </span>
-                    </li>
-                  ))}
+                  {day.items.map((item) => {
+                    const detail: string[] = [];
+                    if (item.topic?.trim()) detail.push(item.topic.trim());
+                    if (item.unitLabel?.trim()) detail.push(`واحد ${item.unitLabel.trim()}`);
+                    return (
+                      <li
+                        key={`${item.subjectId}`}
+                        className="space-y-0.5 text-xs"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="flex min-w-0 items-center gap-1.5">
+                            {/* Mastery dot rides the plan slot's color; absent
+                            when the item matches no published-plan slot. */}
+                            {item.masteryColor && MASTERY_DOT_CLASS[item.masteryColor] && (
+                              <span
+                                aria-hidden
+                                className={`h-2 w-2 shrink-0 rounded-full ${MASTERY_DOT_CLASS[item.masteryColor]}`}
+                              />
+                            )}
+                            <span className="min-w-0 truncate">{item.name}</span>
+                            {item.uncompensated === true && (
+                              <Badge variant="destructive" className="px-1.5 py-0 text-[10px]">
+                                جبران‌نشده
+                              </Badge>
+                            )}
+                          </span>
+                          <span className="shrink-0 tabular-nums text-muted-foreground">
+                            {toPersianDigits(item.minutes)} دقیقه
+                          </span>
+                        </div>
+                        {detail.length > 0 && (
+                          <p className="truncate ps-3.5 text-[11px] leading-relaxed text-muted-foreground">
+                            {detail.join(' · ')}
+                          </p>
+                        )}
+                      </li>
+                    );
+                  })}
                 </ul>
               )}
             </article>

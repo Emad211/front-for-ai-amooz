@@ -7,6 +7,7 @@ import {
   AdvisoryService,
   type MySubjectsResponse,
 } from '@/services/advisory-service';
+import { SUBJECT_SOURCE_LABELS } from '@/components/advisory/subject-picker-dialog';
 import { toPersianDigits } from '@/lib/persian-digits';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -63,6 +64,11 @@ export function MySubjectsCard() {
             <li key={s.subjectId}>
               <span className="inline-flex items-center gap-1.5 rounded-full border bg-background px-3 py-1.5 text-sm">
                 {s.name}
+                {s.source && SUBJECT_SOURCE_LABELS[s.source] && (
+                  <Badge variant="outline" className="font-normal">
+                    {SUBJECT_SOURCE_LABELS[s.source]}
+                  </Badge>
+                )}
                 {s.gradeLabel && (
                   <Badge variant="secondary" className="font-normal">
                     {s.gradeLabel}

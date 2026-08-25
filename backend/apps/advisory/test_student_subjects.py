@@ -513,19 +513,22 @@ def test_the_advisor_get_shape_is_an_exact_allowlist():
     resp = _auth(advisor).get(_subjects_url(engagement.pk))
     assert set(resp.data) == {
         'studentGrade', 'studentGradeLabel', 'studentMajor', 'studentMajorLabel',
-        'subjects', 'selectedSubjectIds',
+        'subjects', 'selectedSubjectIds', 'selectedSources',
     }
     assert isinstance(resp.data['subjects'], list)
     assert isinstance(resp.data['selectedSubjectIds'], list)
+    assert isinstance(resp.data['selectedSources'], dict)
 
 
 def test_a_selected_subject_row_is_an_exact_camelcase_allowlist():
     """The row a client renders exposes only catalog facts — never the engagement it
     hangs off, nor the ``is_active`` bookkeeping, nor any snake_case leak.
 
-    The row stays five keys even though the catalog now carries ``major``: the
+    The row stays six keys even though the catalog now carries ``major``: the
     student mirror is deliberately minimal (decision 5), so ``major`` is an
-    advisor-side fact that never reaches the student.
+    advisor-side fact that never reaches the student. ``source`` (restart step 3)
+    is the one addition: it is the student's own study-source fact, so both sides
+    see it as the raw code or null.
     """
     advisor, student = _advisor(), _student(grade='10', major='math')
     engagement = _engagement(advisor, student)
@@ -538,10 +541,166 @@ def test_a_selected_subject_row_is_an_exact_camelcase_allowlist():
     rows = {row['subjectId']: row for row in _auth(student).get(MY_SUBJECTS_URL).data['subjects']}
 
     for row in rows.values():
-        assert set(row) == {'subjectId', 'name', 'grade', 'gradeLabel', 'isGlobal'}
+        assert set(row) == {'subjectId', 'name', 'grade', 'gradeLabel', 'isGlobal', 'source'}
 
     assert rows[general.id]['grade'] == '10'
     assert rows[general.id]['gradeLabel'] == 'دهم'
     assert rows[general.id]['isGlobal'] is True
     assert rows[track.id]['grade'] == '10'
     assert rows[track.id]['gradeLabel'] == 'دهم'
+
+
+# ── restart step 3 (wave-2 phase 1): the per-subject study source ─────────────
+
+SOURCE_ROUNDTRIP_BODY = lambda ids, sources: {  # noqa: E731 — tiny local builder
+    'subjectIds': ids, 'sources': sources,
+}
+
+
+class TestSubjectSource:
+    """The five-code study source on ``StudentSubject``: set through the picker,
+    mirrored to the student, untouched by legacy payloads and by deactivation."""
+
+    def test_roundtrip_put_with_sources_reaches_both_sides(self):
+        advisor, student = _advisor(), _student()
+        engagement = _engagement(advisor, student)
+        math, physics = _subject('ریاضی'), _subject('فیزیک')
+
+        put = _auth(advisor).put(
+            _subjects_url(engagement.pk),
+            SOURCE_ROUNDTRIP_BODY(
+                [math.id, physics.id],
+                {str(math.id): 'TEXTBOOK', str(physics.id): 'VIDEO'},
+            ),
+            format='json',
+        )
+        assert put.status_code == 200
+        by_id = {row['subjectId']: row for row in put.data}
+        assert by_id[math.id]['source'] == 'TEXTBOOK'
+        assert by_id[physics.id]['source'] == 'VIDEO'
+
+        # Advisor re-read prefills the picker from selectedSources…
+        seen = _auth(advisor).get(_subjects_url(engagement.pk))
+        assert seen.status_code == 200
+        assert seen.data['selectedSources'] == {
+            str(math.id): 'TEXTBOOK', str(physics.id): 'VIDEO',
+        }
+
+        # …and the student mirror carries the same raw codes.
+        mirror = _auth(student).get(MY_SUBJECTS_URL)
+        rows = {row['subjectId']: row for row in mirror.data['subjects']}
+        assert rows[math.id]['source'] == 'TEXTBOOK'
+        assert rows[physics.id]['source'] == 'VIDEO'
+
+    def test_unsourced_rows_read_null_and_absent_keys_stay_null(self):
+        advisor, student = _advisor(), _student()
+        engagement = _engagement(advisor, student)
+        math, physics = _subject('ریاضی'), _subject('فیزیک')
+
+        put = _auth(advisor).put(
+            _subjects_url(engagement.pk),
+            SOURCE_ROUNDTRIP_BODY([math.id, physics.id], {str(math.id): 'OTHER'}),
+            format='json',
+        )
+        by_id = {row['subjectId']: row for row in put.data}
+        assert by_id[math.id]['source'] == 'OTHER'
+        assert by_id[physics.id]['source'] is None
+
+    def test_an_unknown_source_code_is_400_with_the_exact_message(self):
+        advisor, student = _advisor(), _student()
+        engagement = _engagement(advisor, student)
+        math = _subject('ریاضی')
+
+        resp = _auth(advisor).put(
+            _subjects_url(engagement.pk),
+            SOURCE_ROUNDTRIP_BODY([math.id], {str(math.id): 'PDF'}),
+            format='json',
+        )
+        assert resp.status_code == 400
+        assert resp.data['detail'] == 'منبع انتخابی معتبر نیست.'
+        assert StudentSubject.objects.count() == 0
+
+    def test_a_source_key_outside_subject_ids_is_400(self):
+        advisor, student = _advisor(), _student()
+        engagement = _engagement(advisor, student)
+        math, dropped = _subject('ریاضی'), _subject('فیزیک')
+
+        resp = _auth(advisor).put(
+            _subjects_url(engagement.pk),
+            SOURCE_ROUNDTRIP_BODY([math.id], {str(dropped.id): 'TEXTBOOK'}),
+            format='json',
+        )
+        assert resp.status_code == 400
+        assert resp.data['detail'] == 'منبع برای درسی خارج از فهرست ارسال شده است.'
+        assert StudentSubject.objects.count() == 0
+
+    def test_a_non_numeric_sources_key_is_400(self):
+        """JSON object keys are strings; anything non-numeric fails closed."""
+        advisor, student = _advisor(), _student()
+        engagement = _engagement(advisor, student)
+        math = _subject('ریاضی')
+
+        resp = _auth(advisor).put(
+            _subjects_url(engagement.pk),
+            SOURCE_ROUNDTRIP_BODY([math.id], {'abc': 'TEXTBOOK'}),
+            format='json',
+        )
+        assert resp.status_code == 400
+        assert resp.data['detail'] == 'شناسۀ درس در sources نامعتبر است.'
+        assert StudentSubject.objects.count() == 0
+
+    def test_a_legacy_put_without_sources_leaves_stored_sources_untouched(self):
+        advisor, student = _advisor(), _student()
+        engagement = _engagement(advisor, student)
+        math, physics = _subject('ریاضی'), _subject('فیزیک')
+        client = _auth(advisor)
+        url = _subjects_url(engagement.pk)
+
+        client.put(
+            url,
+            SOURCE_ROUNDTRIP_BODY([math.id, physics.id], {str(math.id): 'TEACHER_BOOKLET'}),
+            format='json',
+        )
+        # A pre-step-3 client sends only subjectIds — nothing may be wiped.
+        legacy = client.put(url, {'subjectIds': [math.id, physics.id]}, format='json')
+        assert legacy.status_code == 200
+        by_id = {row['subjectId']: row for row in legacy.data}
+        assert by_id[math.id]['source'] == 'TEACHER_BOOKLET'
+        assert by_id[physics.id]['source'] is None
+
+    def test_removing_a_subject_keeps_its_row_and_last_source(self):
+        """Deactivation never deletes: the retired row keeps its last source so
+        re-adding the subject restores the answer without a re-entry."""
+        advisor, student = _advisor(), _student()
+        engagement = _engagement(advisor, student)
+        math = _subject('ریاضی')
+        client = _auth(advisor)
+        url = _subjects_url(engagement.pk)
+
+        client.put(url, SOURCE_ROUNDTRIP_BODY([math.id], {str(math.id): 'KONKUR_BOOKLET'}),
+                   format='json')
+        client.put(url, {'subjectIds': []}, format='json')
+
+        row = StudentSubject.objects.get(engagement=engagement, subject=math)
+        assert row.is_active is False
+        assert row.source == 'KONKUR_BOOKLET'
+
+        # Re-adding without a source key brings the stored one back.
+        readded = client.put(url, {'subjectIds': [math.id]}, format='json')
+        assert readded.data[0]['source'] == 'KONKUR_BOOKLET'
+
+    def test_updating_an_existing_rows_source_overwrites(self):
+        advisor, student = _advisor(), _student()
+        engagement = _engagement(advisor, student)
+        math = _subject('ریاضی')
+        client = _auth(advisor)
+        url = _subjects_url(engagement.pk)
+
+        client.put(url, SOURCE_ROUNDTRIP_BODY([math.id], {str(math.id): 'VIDEO'}),
+                   format='json')
+        updated = client.put(
+            url, SOURCE_ROUNDTRIP_BODY([math.id], {str(math.id): 'TEXTBOOK'}),
+            format='json',
+        )
+        assert updated.data[0]['source'] == 'TEXTBOOK'
+        assert StudentSubject.objects.filter(engagement=engagement).count() == 1

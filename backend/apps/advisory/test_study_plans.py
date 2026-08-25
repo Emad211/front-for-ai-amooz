@@ -26,6 +26,7 @@ from rest_framework.test import APIClient
 from apps.advisory.models import (
     MAX_PLAN_DURATION_DAYS,
     MAX_PLAN_MINUTES_PER_ITEM,
+    MAX_PLAN_TEST_MINUTES,
     AdvisoryAccessLog,
     AdvisoryEngagement,
     StudentSubject,
@@ -619,12 +620,18 @@ class TestPlannerAPI:
         assert body['endDate'] == _shift(6)
         assert body['durationDays'] == 7
         assert body['status'] == 'DRAFT'
+        assert body['dayNotes'] == {}
         assert body['items'] == [{
             'dayOffset': 0,
             'date': _today(),
             'subjectId': math.id,
             'name': 'ریاضی',
             'plannedMinutes': 60,
+            # Restart step 4: enrichment columns default on a legacy-shaped PUT.
+            'topic': '',
+            'unitLabel': '',
+            'testMinutes': None,
+            'masteryColor': None,
         }]
 
         listed = _auth(advisor).get(_plans_url(engagement))
@@ -1062,3 +1069,405 @@ class TestAdherenceWire:
         assert seen.data['plans'][0]['id'] == future.pk
         # Nothing has elapsed yet ⇒ quiet null on the student's side too.
         assert seen.data['plans'][0]['percent'] is None
+
+
+# ── restart step 4 (wave-2 phase 2): row enrichment + day notes ───────────────
+
+def _enriched_item(**overrides):
+    """A draft item dict with every enrichment key at a legal value."""
+    base = {
+        'day_offset': 0,
+        'subject_id': None,
+        'planned_minutes': 60,
+        'topic': 'مشتق',
+        'unit_label': 'فصل ۲',
+        'test_minutes': 30,
+        'mastery_color': 'RED',
+    }
+    base.update(overrides)
+    return base
+
+
+class TestDraftEnrichment:
+    """The four per-row enrichment columns and the plan-level ``day_notes``."""
+
+    def test_all_four_fields_and_day_notes_roundtrip(self):
+        advisor, student = _advisor(), _student()
+        engagement = _engagement(advisor, student)
+        math = _subject('ریاضی')
+        _selection(engagement, math)
+
+        plan = plan_service.save_draft(
+            engagement,
+            start_date=_today(),
+            duration_days=7,
+            items=[_enriched_item(subject_id=math.id)],
+            day_notes={'0': {'school': 'آزمون ریاضی', 'preReading': 'مرور جزوه'},
+                       '3': {'konkurClass': 'کلاس فیزیک'}},
+        )
+
+        item = plan.items.get()
+        assert item.topic == 'مشتق'
+        assert item.unit_label == 'فصل ۲'
+        assert item.test_minutes == 30
+        assert item.mastery_color == 'RED'
+        assert plan.day_notes == {
+            '0': {'school': 'آزمون ریاضی', 'preReading': 'مرور جزوه'},
+            '3': {'konkurClass': 'کلاس فیزیک'},
+        }
+
+    @pytest.mark.parametrize('minutes', [0, MAX_PLAN_TEST_MINUTES])
+    def test_test_minutes_boundaries_are_accepted(self, minutes):
+        advisor, student = _advisor(), _student()
+        engagement = _engagement(advisor, student)
+        math = _subject('ریاضی')
+        _selection(engagement, math)
+
+        plan = plan_service.save_draft(
+            engagement, start_date=_today(), duration_days=7,
+            items=[_enriched_item(subject_id=math.id, test_minutes=minutes)],
+        )
+        assert plan.items.get().test_minutes == minutes
+
+    @pytest.mark.parametrize('minutes', [-1, 481])
+    def test_test_minutes_outside_0_480_is_rejected(self, minutes):
+        advisor, student = _advisor(), _student()
+        engagement = _engagement(advisor, student)
+        math = _subject('ریاضی')
+        _selection(engagement, math)
+
+        with pytest.raises(plan_service.TestMinutesOutOfRange):
+            plan_service.save_draft(
+                engagement, start_date=_today(), duration_days=7,
+                items=[_enriched_item(subject_id=math.id, test_minutes=minutes)],
+            )
+        assert StudyPlan.objects.count() == 0
+
+    def test_a_non_integer_test_minutes_is_rejected(self):
+        advisor, student = _advisor(), _student()
+        engagement = _engagement(advisor, student)
+        math = _subject('ریاضی')
+        _selection(engagement, math)
+
+        with pytest.raises(plan_service.TestMinutesOutOfRange):
+            plan_service.save_draft(
+                engagement, start_date=_today(), duration_days=7,
+                items=[_enriched_item(subject_id=math.id, test_minutes='سی')],
+            )
+        assert StudyPlan.objects.count() == 0
+
+    def test_an_unknown_mastery_color_is_rejected_with_the_exact_message(self):
+        advisor, student = _advisor(), _student()
+        engagement = _engagement(advisor, student)
+        math = _subject('ریاضی')
+        _selection(engagement, math)
+
+        with pytest.raises(plan_service.InvalidMasteryColor):
+            plan_service.save_draft(
+                engagement, start_date=_today(), duration_days=7,
+                items=[_enriched_item(subject_id=math.id, mastery_color='BLUE')],
+            )
+        assert StudyPlan.objects.count() == 0
+
+    def test_an_over_long_topic_is_rejected_before_any_write(self):
+        advisor, student = _advisor(), _student()
+        engagement = _engagement(advisor, student)
+        math = _subject('ریاضی')
+        _selection(engagement, math)
+
+        with pytest.raises(plan_service.TopicTooLong):
+            plan_service.save_draft(
+                engagement, start_date=_today(), duration_days=7,
+                items=[_enriched_item(subject_id=math.id, topic='x' * 201)],
+            )
+        assert StudyPlanItem.objects.count() == 0
+
+    def test_day_notes_key_seven_is_rejected(self):
+        advisor, student = _advisor(), _student()
+        engagement = _engagement(advisor, student)
+        math = _subject('ریاضی')
+        _selection(engagement, math)
+
+        with pytest.raises(plan_service.InvalidDayNotes):
+            plan_service.save_draft(
+                engagement, start_date=_today(), duration_days=7, items=[],
+                day_notes={'7': {'school': 'نامعتبر'}},
+            )
+        assert StudyPlan.objects.count() == 0
+
+    def test_day_notes_int_key_is_rejected_like_string_out_of_range(self):
+        """JSON keys are strings; an int key can only bypass JSON — reject it."""
+        advisor, student = _advisor(), _student()
+        engagement = _engagement(advisor, student)
+        math = _subject('ریاضی')
+        _selection(engagement, math)
+
+        with pytest.raises(plan_service.InvalidDayNotes):
+            plan_service.save_draft(
+                engagement, start_date=_today(), duration_days=7, items=[],
+                day_notes={7: {'school': 'نامعتبر'}},
+            )
+
+    def test_day_notes_unknown_field_is_rejected(self):
+        advisor, student = _advisor(), _student()
+        engagement = _engagement(advisor, student)
+        math = _subject('ریاضی')
+        _selection(engagement, math)
+
+        with pytest.raises(plan_service.InvalidDayNotes):
+            plan_service.save_draft(
+                engagement, start_date=_today(), duration_days=7, items=[],
+                day_notes={'0': {'hobby': 'شطرنج'}},
+            )
+
+    def test_day_notes_over_long_text_is_rejected(self):
+        advisor, student = _advisor(), _student()
+        engagement = _engagement(advisor, student)
+        math = _subject('ریاضی')
+        _selection(engagement, math)
+
+        with pytest.raises(plan_service.InvalidDayNotes):
+            plan_service.save_draft(
+                engagement, start_date=_today(), duration_days=7, items=[],
+                day_notes={'1': {'exams': 'x' * 121}},
+            )
+
+    def test_legacy_save_leaves_enrichment_and_day_notes_untouched(self):
+        """A pre-step-4 caller sends only the three core keys: enrichment stores
+        column defaults AND previously saved day notes survive."""
+        advisor, student = _advisor(), _student()
+        engagement = _engagement(advisor, student)
+        math = _subject('ریاضی')
+        _selection(engagement, math)
+
+        first = plan_service.save_draft(
+            engagement, start_date=_today(), duration_days=7,
+            items=[{'day_offset': 0, 'subject_id': math.id, 'planned_minutes': 60}],
+            day_notes={'2': {'school': 'اردو'}},
+        )
+        second = plan_service.save_draft(
+            engagement, start_date=_today(), duration_days=7,
+            items=[{'day_offset': 0, 'subject_id': math.id, 'planned_minutes': 90}],
+        )
+
+        item = second.items.get()
+        assert item.planned_minutes == 90
+        assert item.topic == ''
+        assert item.unit_label == ''
+        assert item.test_minutes is None
+        assert item.mastery_color is None
+        assert second.day_notes == first.day_notes == {'2': {'school': 'اردو'}}
+
+    def test_explicit_empty_day_notes_clears_stored_notes(self):
+        advisor, student = _advisor(), _student()
+        engagement = _engagement(advisor, student)
+        math = _subject('ریاضی')
+        _selection(engagement, math)
+
+        plan_service.save_draft(
+            engagement, start_date=_today(), duration_days=7, items=[],
+            day_notes={'0': {'school': 'اردو'}},
+        )
+        cleared = plan_service.save_draft(
+            engagement, start_date=_today(), duration_days=7, items=[],
+            day_notes={},
+        )
+        assert cleared.day_notes == {}
+
+
+class TestEnrichmentWire:
+    """PlanOut carries the new keys end-to-end through PUT / publish / mirror."""
+
+    def test_put_draft_returns_enrichment_and_day_notes(self):
+        advisor, student = _advisor(), _student()
+        engagement = _engagement(advisor, student)
+        math = _subject('ریاضی')
+        _selection(engagement, math)
+
+        body = _draft_body(_today(), 7, [(0, math.id, 60)])
+        body['items'][0].update({
+            'topic': 'حد و پیوستگی', 'unitLabel': 'فصل ۱',
+            'testMinutes': 45, 'masteryColor': 'YELLOW',
+        })
+        body['dayNotes'] = {'0': {'school': 'زنگ اول آزمون'}, '6': {'preReading': 'مرور'}}
+
+        put = _auth(advisor).put(_draft_url(engagement), body, format='json')
+        assert put.status_code == 200
+        assert put.data['dayNotes'] == {
+            '0': {'school': 'زنگ اول آزمون'}, '6': {'preReading': 'مرور'},
+        }
+        item = put.data['items'][0]
+        assert item['topic'] == 'حد و پیوستگی'
+        assert item['unitLabel'] == 'فصل ۱'
+        assert item['testMinutes'] == 45
+        assert item['masteryColor'] == 'YELLOW'
+
+    def test_publish_keeps_the_new_keys_and_the_student_mirror_carries_them(self):
+        advisor, student = _advisor(), _student()
+        engagement = _engagement(advisor, student)
+        math = _subject('ریاضی')
+        _selection(engagement, math)
+
+        body = _draft_body(_today(), 7, [(0, math.id, 60)])
+        body['items'][0].update({
+            'topic': 'مشتق', 'masteryColor': 'GREEN', 'testMinutes': 20,
+        })
+        _auth(advisor).put(_draft_url(engagement), body, format='json')
+
+        published = _auth(advisor).post(_publish_url(engagement))
+        assert published.status_code == 200
+        assert published.data['status'] == 'PUBLISHED'
+        assert published.data['items'][0]['masteryColor'] == 'GREEN'
+        assert published.data['items'][0]['topic'] == 'مشتق'
+
+        seen = _auth(student).get('/api/advisory/me/plans/')
+        item = seen.data['plans'][0]['items'][0]
+        assert item['unitLabel'] == ''
+        assert item['testMinutes'] == 20
+        assert item['masteryColor'] == 'GREEN'
+
+    def test_api_rejects_bad_day_notes_with_the_exact_message(self):
+        advisor, student = _advisor(), _student()
+        engagement = _engagement(advisor, student)
+        math = _subject('ریاضی')
+        _selection(engagement, math)
+
+        body = _draft_body(_today(), 7, [(0, math.id, 60)])
+        body['dayNotes'] = {'9': {'school': 'بیرون از هفته'}}
+        resp = _auth(advisor).put(_draft_url(engagement), body, format='json')
+        assert resp.status_code == 400
+        assert resp.data['detail'] == 'یادداشت روزها نامعتبر است.'
+
+    def test_api_rejects_bad_mastery_color_with_the_exact_message(self):
+        advisor, student = _advisor(), _student()
+        engagement = _engagement(advisor, student)
+        math = _subject('ریاضی')
+        _selection(engagement, math)
+
+        body = _draft_body(_today(), 7, [(0, math.id, 60)])
+        body['items'][0]['masteryColor'] = 'PURPLE'
+        resp = _auth(advisor).put(_draft_url(engagement), body, format='json')
+        assert resp.status_code == 400
+        assert resp.data['detail'] == 'رنگ تسلط نامعتبر است.'
+
+    def test_api_rejects_out_of_range_test_minutes_with_the_exact_message(self):
+        advisor, student = _advisor(), _student()
+        engagement = _engagement(advisor, student)
+        math = _subject('ریاضی')
+        _selection(engagement, math)
+
+        body = _draft_body(_today(), 7, [(0, math.id, 60)])
+        body['items'][0]['testMinutes'] = 481
+        resp = _auth(advisor).put(_draft_url(engagement), body, format='json')
+        assert resp.status_code == 400
+        assert resp.data['detail'] == 'زمان تست باید بین ۰ تا ۴۸۰ دقیقه باشد.'
+
+
+class TestFeedUncompensated:
+    """The «جبران‌نشده» flag over PUBLISHED plans of each date's week."""
+
+    def _week_start(self):
+        from apps.advisory.services.calendar import week_start_of
+        return week_start_of(_today())
+
+    def test_planned_but_unlogged_slot_surfaces_as_uncompensated_true(self):
+        advisor, student = _advisor(), _student()
+        engagement = _engagement(advisor, student, started_on=_shift(-30))
+        math, physics = _subject('ریاضی'), _subject('فیزیک')
+        math_row, physics_row = _selection(engagement, math, physics)
+
+        ws = self._week_start()
+        today_offset = (_today() - ws).days
+        plan = _plan(engagement, start=ws, duration=7, status=PlanStatus.PUBLISHED)
+        _item(plan, math_row, today_offset, 45)
+        _item(plan, physics_row, today_offset, 45)
+        # The student logged only physics today — math's 45 planned minutes
+        # were never compensated.
+        _log_day(engagement, student, _today(), {physics: 10})
+
+        resp = _auth(advisor).get(_feed_url(engagement), {'days': '7'})
+
+        assert resp.status_code == 200
+        today = next(d for d in resp.data['days'] if d['date'] == _iso(_today()))
+        by_subject = {i['subjectId']: i for i in today['items']}
+        assert set(by_subject) == {math.id, physics.id}
+        assert by_subject[math.id]['uncompensated'] is True
+        assert by_subject[math.id]['minutes'] == 0
+        assert by_subject[physics.id]['uncompensated'] is False
+        assert by_subject[physics.id]['minutes'] == 10
+        # Slot detail rides along on both.
+        assert by_subject[math.id]['name'] == 'ریاضی'
+        assert by_subject[physics.id]['masteryColor'] is None
+
+    def test_logged_minutes_make_the_matching_slot_false_not_true(self):
+        advisor, student = _advisor(), _student()
+        engagement = _engagement(advisor, student, started_on=_shift(-30))
+        math = _subject('ریاضی')
+        math_row, = _selection(engagement, math)
+
+        ws = self._week_start()
+        today_offset = (_today() - ws).days
+        plan = _plan(engagement, start=ws, duration=7, status=PlanStatus.PUBLISHED)
+        _item(plan, math_row, today_offset, 45)
+        _log_day(engagement, student, _today(), {math: 10})
+
+        resp = _auth(advisor).get(_feed_url(engagement), {'days': '7'})
+
+        today = next(d for d in resp.data['days'] if d['date'] == _iso(_today()))
+        assert len(today['items']) == 1
+        assert today['items'][0]['uncompensated'] is False
+        assert today['totalMinutes'] == 10
+
+    def test_a_week_without_a_published_plan_carries_no_flag_at_all(self):
+        advisor, student = _advisor(), _student()
+        engagement = _engagement(advisor, student, started_on=_shift(-30))
+        math = _subject('ریاضی')
+        _selection(engagement, math)
+
+        # A PUBLISHED plan covering LAST week only — today's week is bare.
+        last_week_start = self._week_start() - datetime.timedelta(days=7)
+        _plan(engagement, start=last_week_start, duration=7,
+              status=PlanStatus.PUBLISHED)
+        _log_day(engagement, student, _today(), {math: 25})
+
+        resp = _auth(advisor).get(_feed_url(engagement), {'days': '7'})
+
+        today = next(d for d in resp.data['days'] if d['date'] == _iso(_today()))
+        assert today['items'], 'the logged day must still render its item'
+        for item in today['items']:
+            assert 'uncompensated' not in item
+
+    def test_draft_plan_slots_never_flag(self):
+        advisor, student = _advisor(), _student()
+        engagement = _engagement(advisor, student, started_on=_shift(-30))
+        math = _subject('ریاضی')
+        math_row, = _selection(engagement, math)
+
+        ws = self._week_start()
+        today_offset = (_today() - ws).days
+        draft = _plan(engagement, start=ws, duration=7)  # DRAFT: invisible
+        _item(draft, math_row, today_offset, 45)
+        _log_day(engagement, student, _today(), {math: 5})
+
+        resp = _auth(advisor).get(_feed_url(engagement), {'days': '7'})
+
+        today = next(d for d in resp.data['days'] if d['date'] == _iso(_today()))
+        assert len(today['items']) == 1
+        assert 'uncompensated' not in today['items'][0]
+
+    def test_total_minutes_ignore_injected_uncompensated_rows(self):
+        advisor, student = _advisor(), _student()
+        engagement = _engagement(advisor, student, started_on=_shift(-30))
+        math = _subject('ریاضی')
+        math_row, = _selection(engagement, math)
+
+        ws = self._week_start()
+        today_offset = (_today() - ws).days
+        plan = _plan(engagement, start=ws, duration=7, status=PlanStatus.PUBLISHED)
+        _item(plan, math_row, today_offset, 45)
+        _log_day(engagement, student, _today(), {math: 15})
+
+        resp = _auth(advisor).get(_feed_url(engagement), {'days': '7'})
+
+        today = next(d for d in resp.data['days'] if d['date'] == _iso(_today()))
+        assert today['totalMinutes'] == 15

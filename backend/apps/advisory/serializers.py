@@ -236,6 +236,10 @@ class StudentSubjectSerializer(serializers.Serializer):
     grade = serializers.CharField(source='subject.grade', read_only=True, allow_null=True)
     gradeLabel = serializers.SerializerMethodField()
     isGlobal = serializers.BooleanField(source='subject.is_global', read_only=True)
+    # Restart step 3: the raw source code (or null = «not chosen»). The Persian
+    # label is the frontend's job — it owns SUBJECT_SOURCE_LABELS for both the
+    # picker and the student mirror, so there is exactly one label map.
+    source = serializers.CharField(read_only=True, allow_null=True)
 
     def get_gradeLabel(self, obj) -> str | None:  # noqa: N802 — camelCase wire key
         subject = obj.subject
@@ -437,6 +441,16 @@ class StudyPlanItemOutSerializer(serializers.Serializer):
     plannedMinutes = serializers.IntegerField(
         source='planned_minutes', read_only=True,
     )
+    # Restart step 4: per-row enrichment, additive. ``testMinutes`` is null when
+    # the advisor set no test budget — distinct from an honest 0.
+    topic = serializers.CharField(read_only=True)
+    unitLabel = serializers.CharField(source='unit_label', read_only=True)
+    testMinutes = serializers.IntegerField(
+        source='test_minutes', read_only=True, allow_null=True,
+    )
+    masteryColor = serializers.CharField(
+        source='mastery_color', read_only=True, allow_null=True,
+    )
 
     def get_date(self, obj):  # noqa: N802 — camelCase wire key
         return obj.plan.start_date + datetime.timedelta(days=obj.day_offset)
@@ -459,6 +473,9 @@ class StudyPlanOutSerializer(serializers.Serializer):
     status = serializers.CharField(read_only=True)
     percent = serializers.SerializerMethodField()
     items = StudyPlanItemOutSerializer(many=True, read_only=True)
+    # Restart step 4: the per-day note blocks, additive. Always a dict (the
+    # column defaults to {}), keyed '0'..'6' as strings.
+    dayNotes = serializers.JSONField(source='day_notes', read_only=True)
 
     def get_endDate(self, obj):  # noqa: N802 — camelCase wire key
         return obj.end_date
@@ -482,11 +499,24 @@ class StudyPlanDraftItemWriteSerializer(serializers.Serializer):
     their *order* (offset → subject → minutes → duplicates) are the service's
     contract (§14.3), and a serializer-level bound would answer first with a
     generic DRF message instead.
+
+    Restart step 4 adds four optional enrichment keys on the same terms — the
+    service owns their bounds and messages; absent keys store column defaults.
     """
 
     dayOffset = serializers.IntegerField(source='day_offset')
     subjectId = serializers.IntegerField(source='subject_id', min_value=1)
     plannedMinutes = serializers.IntegerField(source='planned_minutes')
+    topic = serializers.CharField(required=False, allow_blank=True)
+    unitLabel = serializers.CharField(
+        source='unit_label', required=False, allow_blank=True,
+    )
+    testMinutes = serializers.IntegerField(
+        source='test_minutes', required=False, allow_null=True,
+    )
+    masteryColor = serializers.CharField(
+        source='mastery_color', required=False, allow_null=True, allow_blank=True,
+    )
 
 
 class StudyPlanDraftWriteSerializer(serializers.Serializer):
@@ -497,11 +527,17 @@ class StudyPlanDraftWriteSerializer(serializers.Serializer):
     Whether the start predates the engagement, whether the length fits 1..90 and
     whether each row is legal are the service's job; this only guarantees typed,
     parseable input.
+
+    The one deliberate exception is ``dayNotes`` (restart step 4): an ABSENT key
+    leaves the stored notes untouched (legacy-payload safety, same rule as the
+    daily-log enrichment), while a PRESENT key replaces them wholesale. Its shape
+    is validated in the service, which owns the exact Persian message.
     """
 
     startDate = serializers.DateField(source='start_date')
     durationDays = serializers.IntegerField(source='duration_days')
     items = StudyPlanDraftItemWriteSerializer(many=True)
+    dayNotes = serializers.JSONField(source='day_notes', required=False)
 
 
 class FeedDayItemSerializer(serializers.Serializer):

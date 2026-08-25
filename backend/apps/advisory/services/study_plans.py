@@ -42,6 +42,10 @@ from django.utils import timezone
 from ..models import (
     MAX_PLAN_DURATION_DAYS,
     MAX_PLAN_MINUTES_PER_ITEM,
+    MAX_PLAN_TEST_MINUTES,
+    MASTERY_COLOR_CHOICES,
+    DAY_NOTE_FIELDS,
+    MAX_DAY_NOTE_CHARS,
     STUDY_FEED_VIEW_ACTION,
     AdvisoryAccessLog,
     DailyLogItem,
@@ -49,6 +53,12 @@ from ..models import (
     StudyPlanItem,
 )
 from . import scope
+from .calendar import week_start_of
+
+# Sentinel for «the client did not send this plan-level key»: an absent
+# ``dayNotes`` must leave the stored column untouched so a legacy planner PUT
+# cannot wipe notes it never knew about, while an explicit ``{}`` clears them.
+UNSET = object()
 
 
 class StudyPlanError(Exception):
@@ -104,6 +114,49 @@ class DuplicatePlanRow(StudyPlanError):
         super().__init__('برای هر روز و درس فقط یک ردیف بفرستید.')
 
 
+# ── restart step 4 (wave-2 phase 2): per-row enrichment + day notes ──────────
+
+class TopicTooLong(StudyPlanError):
+    """400 — a row's topic exceeds the 200-char column bound."""
+
+    def __init__(self):
+        super().__init__('موضوع نمی‌تواند بیش از ۲۰۰ نویسه باشد.')
+
+
+class UnitLabelTooLong(StudyPlanError):
+    """400 — a row's unit label exceeds the 60-char column bound."""
+
+    def __init__(self):
+        super().__init__('واحد نمی‌تواند بیش از ۶۰ نویسه باشد.')
+
+
+class TestMinutesOutOfRange(StudyPlanError):
+    """400 — test minutes outside 0..480 (or not an integer at all)."""
+
+    def __init__(self):
+        super().__init__('زمان تست باید بین ۰ تا ۴۸۰ دقیقه باشد.')
+
+
+class InvalidMasteryColor(StudyPlanError):
+    """400 — a mastery color outside RED/YELLOW/GREEN."""
+
+    def __init__(self):
+        super().__init__('رنگ تسلط نامعتبر است.')
+
+
+class InvalidDayNotes(StudyPlanError):
+    """400 — ``day_notes`` violates the allowed shape.
+
+    Every violation folds into one message on purpose: keys outside '0'..'6',
+    non-string keys, unknown sub-fields, non-string values and over-long texts
+    are all «your payload does not match the day-note shape», and enumerating
+    them separately would only invite clients to probe the validator.
+    """
+
+    def __init__(self):
+        super().__init__('یادداشت روزها نامعتبر است.')
+
+
 class PlanNotFound(StudyPlanError):
     """404 — no such draft/plan **for this engagement**.
 
@@ -130,11 +183,40 @@ class PlanOverlap(StudyPlanError):
         super().__init__('این بازه با برنامهٔ منتشرشدهٔ دیگری همپوشانی دارد.')
 
 
-def _validate_body(engagement, start_date, duration_days, items) -> list[dict]:
+def _validate_day_notes(day_notes) -> dict:
+    """Validate the day-note shape and return it unchanged.
+
+    Allowed: ``{"<0..6>": {"school"|"exams"|"konkurClass"|"preReading": str≤120}}``.
+    Keys must be strings (an int ``7`` is as wrong as the string ``'7'`` — JSON
+    object keys are strings on the wire, so a non-string key can only come from a
+    caller bypassing JSON). Anything else raises ``InvalidDayNotes``.
+    """
+    if not isinstance(day_notes, dict):
+        raise InvalidDayNotes()
+    allowed_days = {str(d) for d in range(7)}
+    for key, block in day_notes.items():
+        if not isinstance(key, str) or key not in allowed_days:
+            raise InvalidDayNotes()
+        if not isinstance(block, dict):
+            raise InvalidDayNotes()
+        for sub_key, value in block.items():
+            if sub_key not in DAY_NOTE_FIELDS:
+                raise InvalidDayNotes()
+            if not isinstance(value, str) or len(value) > MAX_DAY_NOTE_CHARS:
+                raise InvalidDayNotes()
+    return day_notes
+
+
+def _validate_body(
+    engagement, start_date, duration_days, items, day_notes=UNSET,
+) -> list[dict]:
     """Run the full validation order and return normalized item dicts.
 
-    Returns ``[{'day_offset': int, 'subject_id': int, 'planned_minutes': int}]``
-    — the exact vocabulary the set-replace consumes. Raises before any write.
+    Returns ``[{'day_offset', 'subject_id', 'planned_minutes', 'topic',
+    'unit_label', 'test_minutes', 'mastery_color'}]`` — the exact vocabulary the
+    set-replace consumes. Raises before any write. Enrichment checks run per row
+    after the core bounds (offset → subject → minutes) and before the duplicate
+    scan; plan-level ``day_notes`` validates last.
     """
     started = getattr(engagement, 'started_on', None) or timezone.localdate()
     if start_date < started:
@@ -145,14 +227,21 @@ def _validate_body(engagement, start_date, duration_days, items) -> list[dict]:
     ):
         raise InvalidPlanDuration()
 
-    wanted = [
-        {
+    wanted = []
+    for item in items:
+        test_minutes = item.get('test_minutes')
+        if test_minutes is not None:
+            if isinstance(test_minutes, bool) or not isinstance(test_minutes, int):
+                raise TestMinutesOutOfRange()
+        wanted.append({
             'day_offset': int(item['day_offset']),
             'subject_id': int(item['subject_id']),
             'planned_minutes': int(item['planned_minutes']),
-        }
-        for item in items
-    ]
+            'topic': str(item.get('topic') or ''),
+            'unit_label': str(item.get('unit_label') or ''),
+            'test_minutes': test_minutes,
+            'mastery_color': item.get('mastery_color') or None,
+        })
 
     for row in wanted:
         if not (0 <= row['day_offset'] < duration_days):
@@ -172,9 +261,21 @@ def _validate_body(engagement, start_date, duration_days, items) -> list[dict]:
     if missing:
         raise SubjectNotInSelection(missing)
 
+    valid_colors = {code for code, _label in MASTERY_COLOR_CHOICES}
     for row in wanted:
         if not (1 <= row['planned_minutes'] <= MAX_PLAN_MINUTES_PER_ITEM):
             raise PlannedMinutesOutOfRange()
+        # Restart step 4 enrichment — column bounds first, then enum/range.
+        if len(row['topic']) > 200:
+            raise TopicTooLong()
+        if len(row['unit_label']) > 60:
+            raise UnitLabelTooLong()
+        if row['test_minutes'] is not None and not (
+            0 <= row['test_minutes'] <= MAX_PLAN_TEST_MINUTES
+        ):
+            raise TestMinutesOutOfRange()
+        if row['mastery_color'] is not None and row['mastery_color'] not in valid_colors:
+            raise InvalidMasteryColor()
 
     seen = set()
     for row in wanted:
@@ -182,6 +283,9 @@ def _validate_body(engagement, start_date, duration_days, items) -> list[dict]:
         if key in seen:
             raise DuplicatePlanRow()
         seen.add(key)
+
+    if day_notes is not UNSET:
+        _validate_day_notes(day_notes)
 
     return wanted
 
@@ -196,7 +300,9 @@ def _selected_row_id(engagement, subject_id) -> int | None:
     )
 
 
-def save_draft(engagement, *, start_date, duration_days, items) -> StudyPlan:
+def save_draft(
+    engagement, *, start_date, duration_days, items, day_notes=UNSET,
+) -> StudyPlan:
     """Make the engagement's single DRAFT slot equal exactly what was sent.
 
     The slot is upserted (one DRAFT row per engagement, by constraint) and its
@@ -204,8 +310,15 @@ def save_draft(engagement, *, start_date, duration_days, items) -> StudyPlan:
     log's ``update_or_create`` there is nothing to preserve across saves.
     Concurrent savers serialize on the engagement row lock, which is what keeps
     the get_or_create from racing past the partial unique constraint.
+
+    ``day_notes`` (restart step 4) follows the daily-log enrichment rule instead:
+    ``UNSET`` (the default — the key was absent from the request) leaves the
+    stored column untouched so legacy planner payloads cannot wipe notes they
+    never knew about; any present value, including ``{}``, replaces it wholesale.
+    Items may optionally carry ``topic``/``unit_label``/``test_minutes``/
+    ``mastery_color``; absent ones store the column defaults.
     """
-    wanted = _validate_body(engagement, start_date, duration_days, items)
+    wanted = _validate_body(engagement, start_date, duration_days, items, day_notes)
 
     with transaction.atomic():
         # Row-level lock on the tenancy carrier: two racing PUTs then resolve the
@@ -218,7 +331,11 @@ def save_draft(engagement, *, start_date, duration_days, items) -> StudyPlan:
         )
         plan.start_date = start_date
         plan.duration_days = duration_days
-        plan.save(update_fields=['start_date', 'duration_days', 'updated_at'])
+        update_fields = ['start_date', 'duration_days', 'updated_at']
+        if day_notes is not UNSET:
+            plan.day_notes = day_notes
+            update_fields.append('day_notes')
+        plan.save(update_fields=update_fields)
 
         plan.items.all().delete()
         StudyPlanItem.objects.bulk_create([
@@ -227,6 +344,10 @@ def save_draft(engagement, *, start_date, duration_days, items) -> StudyPlan:
                 day_offset=row['day_offset'],
                 student_subject_id=_selected_row_id(engagement, row['subject_id']),
                 planned_minutes=row['planned_minutes'],
+                topic=row['topic'],
+                unit_label=row['unit_label'],
+                test_minutes=row['test_minutes'],
+                mastery_color=row['mastery_color'],
             )
             for row in wanted
         ])
@@ -465,3 +586,96 @@ def feed_mood_average(days) -> float | None:
     if not moods:
         return None
     return round(sum(moods) / len(moods), 1)
+
+
+# ── restart step 4 (wave-2 phase 2): the «جبران‌نشده» feed flag ───────────────
+
+def attach_uncompensated_flags(days_data, plans) -> None:
+    """Stamp each serialized feed day's items with the uncompensated flag, in place.
+
+    Behavioral definition (restart step 4, pinned by tests): for a feed day ``D``,
+    let ``W = week_start_of(D)``. Only when **some PUBLISHED plan intersects**
+    ``[W, W+6]`` does the flag exist on that day at all. Within such a week:
+
+    * a logged item whose ``(D, subject)`` matches a PUBLISHED-plan slot with
+      ``planned_minutes > 0`` gets ``uncompensated: true`` iff the actual minutes
+      recorded for that same ``(student_subject, date)`` sum to zero — else
+      ``false``;
+    * a slot with **no** logged minutes for its date surfaces as an injected row
+      ``{subjectId, name, minutes: 0, uncompensated: true}`` so the advisor sees
+      the missed commitment on the day it happened («ردیف‌های جبران‌نشده را نشان
+      بده»);
+    * an item matching no slot carries no flag key at all.
+
+    Pure and additive over the already-serialized dicts: reads only prefetched
+    plan items, mutates nothing in the DB, never removes a key the serializer
+    wrote. ``totalMinutes`` was computed during serialization from the stored
+    rows only, so injected zero-minute rows cannot distort it.
+    """
+    published = [p for p in plans if p.status == StudyPlan.Status.PUBLISHED]
+    if not published or not days_data:
+        return
+
+    slots_by_date: dict[datetime.date, dict[int, dict]] = {}
+    for plan in published:
+        for item in plan.items.all():
+            if item.planned_minutes <= 0:
+                continue
+            slot_date = plan.start_date + datetime.timedelta(days=item.day_offset)
+            slots_by_date.setdefault(slot_date, {})[item.student_subject.subject_id] = {
+                'name': item.student_subject.subject.name,
+                'topic': item.topic,
+                'unit_label': item.unit_label,
+                'mastery_color': item.mastery_color,
+            }
+
+    week_has_plan: dict[datetime.date, bool] = {}
+
+    def _covers_week(plan, week_start: datetime.date) -> bool:
+        week_end = week_start + datetime.timedelta(days=6)
+        return plan.start_date <= week_end and plan.end_date >= week_start
+
+    for day in days_data:
+        raw_date = day.get('date')
+        if isinstance(raw_date, str):
+            log_date = datetime.date.fromisoformat(raw_date)
+        elif isinstance(raw_date, datetime.date):
+            log_date = raw_date
+        else:
+            continue
+
+        week_start = week_start_of(log_date)
+        if week_start not in week_has_plan:
+            week_has_plan[week_start] = any(
+                _covers_week(p, week_start) for p in published
+            )
+        if not week_has_plan[week_start]:
+            # A week without any PUBLISHED plan: the flag must not appear at all.
+            continue
+
+        day_slots = slots_by_date.get(log_date, {})
+        logged_ids = set()
+        for item in day['items']:
+            sid = item.get('subjectId')
+            meta = day_slots.get(sid)
+            if meta is None:
+                continue
+            logged_ids.add(sid)
+            item['uncompensated'] = item.get('minutes', 0) == 0
+            # Slot detail rides along so the client can render topic/unit/color.
+            item.setdefault('topic', meta['topic'])
+            item.setdefault('unitLabel', meta['unit_label'])
+            item.setdefault('masteryColor', meta['mastery_color'])
+
+        for sid, meta in day_slots.items():
+            if sid in logged_ids:
+                continue
+            day['items'].append({
+                'subjectId': sid,
+                'name': meta['name'],
+                'minutes': 0,
+                'uncompensated': True,
+                'topic': meta['topic'],
+                'unitLabel': meta['unit_label'],
+                'masteryColor': meta['mastery_color'],
+            })

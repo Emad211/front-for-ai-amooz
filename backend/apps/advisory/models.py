@@ -80,6 +80,18 @@ SUBJECT_MAJOR_CHOICES = [
     ('technical', _('فنی و حرفه‌ای و کاردانش')),
 ]
 
+# Restart plan, step 3 (wave-2 phase 1): which physical source each selected
+# subject is studied from (PDF ص۵). The raw codes are the wire contract; the
+# Persian labels are rendered client-side from the same map the picker ships,
+# so both live here next to the column they describe.
+SUBJECT_SOURCE_CHOICES = [
+    ('TEXTBOOK', _('کتاب درسی')),
+    ('TEACHER_BOOKLET', _('جزوه معلم')),
+    ('VIDEO', _('فیلم')),
+    ('KONKUR_BOOKLET', _('جزوه/دفترنامۀ کنکور')),
+    ('OTHER', _('سایر')),
+]
+
 
 class Subject(models.Model):
     """A study subject an advisor can plan and a student can log time against.
@@ -434,6 +446,18 @@ class StudentSubject(models.Model):
         verbose_name=_('فعال'),
         help_text=_('غیرفعال یعنی از انتخاب فعلی حذف شده؛ تاریخ نگه داشته می‌شود.'),
     )
+    # Restart step 3: which source the student studies this subject from.
+    # Nullable, not defaulted: «مشاور هنوز انتخاب نکرده» must stay distinct from
+    # any of the five codes, and a deactivated row keeps its last source so the
+    # history a plan pointed at never loses its answer.
+    source = models.CharField(
+        max_length=20,
+        null=True,
+        blank=True,
+        choices=SUBJECT_SOURCE_CHOICES,
+        verbose_name=_('منبع مطالعه'),
+        help_text=_('منبعی که دانش‌آموز این درس را با آن می‌خواند؛ خالی یعنی ثبت نشده.'),
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -700,6 +724,24 @@ MAX_PLAN_DAY_OFFSET = MAX_PLAN_DURATION_DAYS - 1
 # must share their unit or the percentage silently compares two different things.
 MAX_PLAN_MINUTES_PER_ITEM = MAX_LOG_MINUTES_PER_ITEM
 
+# Restart plan, step 4 (wave-2 phase 2): per-row enrichment bounds. ``test_minutes``
+# is a *within-a-study-block* budget, not a second duration column, so it is capped
+# well under the row's own 960-minute study ceiling; nullable because «مشاور
+# زمانی برای تست نگذاشته» stays distinct from an honest «۰».
+MAX_PLAN_TEST_MINUTES = 480
+
+MASTERY_COLOR_CHOICES = [
+    ('RED', _('قرمز')),
+    ('YELLOW', _('زرد')),
+    ('GREEN', _('سبز')),
+]
+
+# The allowed sub-keys of one day's note block and their ceiling. The shape is
+# validated by hand in services/study_plans.save_draft (not JSON schema) per the
+# restart plan; these constants are the single definition both sides read.
+DAY_NOTE_FIELDS = ('school', 'exams', 'konkurClass', 'preReading')
+MAX_DAY_NOTE_CHARS = 120
+
 # The one action ``AdvisoryAccessLog`` records in the MVP: the advisor opening a
 # student's study feed (D4 — reads are logged from the moment they exist).
 STUDY_FEED_VIEW_ACTION = 'study_feed_view'
@@ -758,6 +800,15 @@ class StudyPlan(models.Model):
         default=Status.DRAFT,
         db_index=True,
         verbose_name=_('وضعیت'),
+    )
+    # Restart step 4: per-day notes (school / exams / konkur class / pre-reading),
+    # keyed '0'..'6' as strings. Shape is enforced by the write door, not here —
+    # a JSONField cannot express «str ≤ 120 under known keys only».
+    day_notes = models.JSONField(
+        default=dict,
+        blank=True,
+        verbose_name=_('یادداشت روزها'),
+        help_text=_('شکل مجاز: {"<0..6>": {"school": str≤120, "exams": …, "konkurClass": …, "preReading": …}}'),
     )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -851,6 +902,35 @@ class StudyPlanItem(models.Model):
     planned_minutes = models.PositiveSmallIntegerField(
         verbose_name=_('دقیقه‌ی برنامه‌ریزی‌شده'),
         help_text=_('هم‌مقیاس با دقیقه‌ی واقعیِ گزارش روزانه، تا نسبتِ تعهد معنا داشته باشد.'),
+    )
+    # Restart step 4: what exactly to study, in which unit, how much of it is
+    # test-solving, and the advisor's mastery color for the subject. All optional:
+    # a row written before this enrichment (or without the detail) stays legal.
+    topic = models.CharField(
+        max_length=200,
+        blank=True,
+        default='',
+        verbose_name=_('موضوع'),
+    )
+    unit_label = models.CharField(
+        max_length=60,
+        blank=True,
+        default='',
+        verbose_name=_('واحد'),
+    )
+    test_minutes = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        validators=[MinValueValidator(0), MaxValueValidator(MAX_PLAN_TEST_MINUTES)],
+        verbose_name=_('زمان تست'),
+        help_text=_('۰ تا ۴۸۰ دقیقه؛ خالی یعنی مشاور زمانی مشخص نکرده — که با «۰» یکی نیست.'),
+    )
+    mastery_color = models.CharField(
+        max_length=6,
+        null=True,
+        blank=True,
+        choices=MASTERY_COLOR_CHOICES,
+        verbose_name=_('رنگ تسلط'),
     )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

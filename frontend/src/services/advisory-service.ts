@@ -112,16 +112,23 @@ export type EngagementSubjectsResponse = {
   studentMajorLabel: string | null;
   subjects: AdvisorySubject[];
   selectedSubjectIds: number[];
+  /** Restart step 3 (wave-2): currently stored source per selected subject,
+   * keyed by catalog subject id as a STRING (JSON object keys). Absent key =
+   * no source stored yet — read via `resp.selectedSources ?? {}`. */
+  selectedSources?: Record<string, string>;
 };
 
 /** One selected subject, as it appears on both the advisor `PUT` response and the
- * student's mirror. A catalog fact only — never the engagement it hangs off. */
+ * student's mirror. A catalog fact only — never the engagement it hangs off.
+ * `source` is the raw code (`SUBJECT_SOURCE_LABELS` in subject-picker-dialog
+ * renders the Persian label); `null` = not chosen yet. */
 export type StudentSubjectRow = {
   subjectId: number;
   name: string;
   grade: string | null;
   gradeLabel: string | null;
   isGlobal: boolean;
+  source?: string | null;
 };
 
 /** `GET /advisory/me/subjects/` — the student's view of what their advisor picked.
@@ -197,11 +204,20 @@ export type SaveStudyLogBody = {
  * started; numeric values are clamped server-side to `started_on` (rule C3). */
 export type StudyFeedRange = '7' | '14' | '30' | 'all';
 
-/** One subject-minute row of a recorded study day. */
+/** One subject-minute row of a recorded study day. Restart step 4 adds the
+ * plan-slot detail a matching PUBLISHED-plan slot lends the row (`topic`,
+ * `unitLabel`, `masteryColor`) plus the «جبران‌نشده» flag; all absent when the
+ * item matches no slot or its week has no published plan. A synthetic
+ * `uncompensated: true` row with `minutes: 0` is injected for planned-but-
+ * unlogged slots so missed commitments surface on their day. */
 export type StudyFeedItem = {
   subjectId: number;
   name: string;
   minutes: number;
+  topic?: string;
+  unitLabel?: string;
+  masteryColor?: string | null;
+  uncompensated?: boolean;
 };
 
 /** One recorded day of the advisor's study feed. Only days with at least one
@@ -224,14 +240,25 @@ export type StudyFeedDay = {
 export type StudyPlanStatus = 'DRAFT' | 'PUBLISHED';
 
 /** One planned (subject × day) row of a plan. `date` is the server-derived
- * absolute date (`startDate + dayOffset`) so the client never does calendar math. */
+ * absolute date (`startDate + dayOffset`) so the client never does calendar math.
+ * Restart step 4 adds optional enrichment: `testMinutes` null = no test budget
+ * set; `masteryColor` one of RED/YELLOW/GREEN or null. Read via `?? null`. */
 export type StudyPlanItemOut = {
   dayOffset: number;
   date: string;
   subjectId: number;
   name: string;
   plannedMinutes: number;
+  topic?: string;
+  unitLabel?: string;
+  testMinutes?: number | null;
+  masteryColor?: 'RED' | 'YELLOW' | 'GREEN' | null;
 };
+
+/** Shape of one day's note block inside `dayNotes`. */
+export type StudyPlanDayNote = Partial<
+  Record<'school' | 'exams' | 'konkurClass' | 'preReading', string>
+>;
 
 /** Wire shape (`PlanOut`) shared by the feed's embedded plans, `GET …/study-plans`,
  * and the PUT / publish / unpublish responses. */
@@ -246,6 +273,9 @@ export type StudyPlanOut = {
    * for PUBLISHED plans; `null` when no elapsed items exist yet. Absent on
    * older payloads — read via `plan.percent ?? null`. */
   percent?: number | null;
+  /** Restart step 4: per-day notes keyed '0'..'6' (strings). Always a dict on
+   * the wire; absent on payloads saved before the enrichment shipped. */
+  dayNotes?: Record<string, StudyPlanDayNote>;
 };
 
 /** `GET /advisory/students/<engagementId>/study-feed/?days=…` — the advisor's
@@ -267,11 +297,24 @@ export type StudyFeedResponse = {
 /** PUT body for `/advisory/students/<engagementId>/study-plan/draft` — a whole
  * draft set-replace (upsert of the single DRAFT slot). `dayOffset` is 0-based
  * and must be `< durationDays`; minutes 1..960; duplicate (day, subject) rows
- * rejected. The UI shows «روز N» where N = dayOffset + 1. */
+ * rejected. The UI shows «روز N» where N = dayOffset + 1.
+ *
+ * Restart step 4: per-row enrichment keys are optional (absent = column
+ * default); `dayNotes` is optional at plan level — ABSENT leaves stored notes
+ * untouched server-side, PRESENT (even `{}`) replaces them wholesale. */
 export type SaveStudyPlanDraftBody = {
   startDate: string;
   durationDays: number;
-  items: { dayOffset: number; subjectId: number; plannedMinutes: number }[];
+  items: {
+    dayOffset: number;
+    subjectId: number;
+    plannedMinutes: number;
+    topic?: string;
+    unitLabel?: string;
+    testMinutes?: number | null;
+    masteryColor?: 'RED' | 'YELLOW' | 'GREEN' | null;
+  }[];
+  dayNotes?: Record<string, StudyPlanDayNote>;
 };
 
 /** `GET /advisory/me/plans` — the student's PUBLISHED plans only, descending by
@@ -453,14 +496,23 @@ export const AdvisoryService = {
    * deactivated server-side, an empty array clears the selection. Returns the new
    * active set. `409` if the engagement is not ACTIVE, `400` for a subject the
    * advisor may not assign — both surface their Persian `detail` via `requestJson`.
+   *
+   * Restart step 3: `sources` optionally maps subject id → raw source code for
+   * ids in THIS request. Keys must be STRINGS (JSON object keys); an absent map
+   * leaves every stored source untouched server-side.
    */
   setEngagementSubjects: async (
     engagementId: number,
     subjectIds: number[],
+    sources?: Record<string, string>,
   ): Promise<StudentSubjectRow[]> => {
+    const body: Record<string, unknown> = { subjectIds };
+    if (sources && Object.keys(sources).length > 0) {
+      body.sources = sources;
+    }
     return requestJson<StudentSubjectRow[]>(
       `/advisory/students/${engagementId}/subjects/`,
-      { method: 'PUT', body: JSON.stringify({ subjectIds }) },
+      { method: 'PUT', body: JSON.stringify(body) },
     );
   },
 
