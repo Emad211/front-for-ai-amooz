@@ -314,12 +314,18 @@ export function SubjectPickerDialog({
                     key={s.id}
                     className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 transition-colors hover:bg-muted/60"
                   >
-                    <button
-                      type="button"
+                    <div
                       role="checkbox"
                       aria-checked={checked}
+                      tabIndex={0}
                       onClick={() => toggleSubject(s.id)}
-                      className="flex min-w-0 flex-1 items-center gap-3 text-right"
+                      onKeyDown={(e) => {
+                        if (e.key === ' ' || e.key === 'Enter') {
+                          e.preventDefault();
+                          toggleSubject(s.id);
+                        }
+                      }}
+                      className="flex min-w-0 flex-1 cursor-pointer select-none items-center gap-3 text-right"
                     >
                       <Checkbox
                         checked={checked}
@@ -340,7 +346,7 @@ export function SubjectPickerDialog({
                           </Badge>
                         )}
                       </span>
-                    </button>
+                    </div>
                     {checked && (
                       <Select
                         value={sources[s.id] ?? ''}
