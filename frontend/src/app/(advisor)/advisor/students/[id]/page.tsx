@@ -17,6 +17,8 @@ import { StudyPlannerCard } from '@/components/advisory/study-plan/study-planner
 import { IntakeCard } from '@/components/advisory/intake-card';
 import { WeeklyAssessmentCard } from '@/components/advisory/weekly-assessment-card';
 import { CallLogCard } from '@/components/advisory/call-log-card';
+import { ExamScoresCard } from '@/components/advisory/exam-scores-card';
+import { ExamAnalysisCard } from '@/components/advisory/exam-analysis-card';
 import {
   resolveStudentDetailTab,
   StudentDetailTabKey,
@@ -155,6 +157,12 @@ function AdvisorStudentDetailContent() {
             />
           )}
           {activeTab === 'intake' && <IntakeCard engagementId={engagementId} />}
+          {activeTab === 'exams' && (
+            <div className="space-y-6">
+              <ExamScoresCard engagementId={engagementId} />
+              <ExamAnalysisCard engagementId={engagementId} />
+            </div>
+          )}
           {activeTab === 'assess' && (
             <div className="space-y-6">
               <WeeklyAssessmentCard engagementId={engagementId} />
@@ -163,6 +171,7 @@ function AdvisorStudentDetailContent() {
           )}
           {activeTab !== 'feed' &&
             activeTab !== 'plan' &&
+            activeTab !== 'exams' &&
             activeTab !== 'intake' &&
             activeTab !== 'assess' && (
               <StudentDetailTabPlaceholder tabKey={activeTab} />

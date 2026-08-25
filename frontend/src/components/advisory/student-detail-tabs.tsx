@@ -38,11 +38,7 @@ type StudentDetailTab = {
 export const STUDENT_DETAIL_TABS: readonly StudentDetailTab[] = [
   { key: 'feed', label: 'گزارش' },
   { key: 'plan', label: 'برنامه' },
-  {
-    key: 'exams',
-    label: 'آزمون‌ها',
-    soonHint: 'ثبت نمرات و تحلیل کارنامه به‌زودی اینجا فعال می‌شود.',
-  },
+  { key: 'exams', label: 'آزمون‌ها' },
   {
     key: 'intake',
     label: 'شناخت',

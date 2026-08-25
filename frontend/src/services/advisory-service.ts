@@ -417,6 +417,127 @@ export type SaveCallLogBody = {
   note?: string;
 };
 
+/* ── Restart wave 4: exam scores (step 5) + exam analyses (step 6) ── */
+
+/** Kind of an exam score row, as stored on the wire. */
+export type ExamScoreKind =
+  | 'SCHOOL'
+  | 'PERSONAL'
+  | 'CLASS_C'
+  | 'ONLINE'
+  | 'NATIONAL'
+  | 'ADVISOR';
+
+/** The advisor's qualitative verdict on one exam. */
+export type ExamScoreRating = 'EXCELLENT' | 'GOOD' | 'FAIR' | 'WEAK';
+
+/** Grade band of an exam-analysis report card. */
+export type ExamGradeBand = 'G10' | 'G11' | 'G12S1' | 'G12S2';
+
+/** One saved exam score (restart step 5). `examDate` is ISO `YYYY-MM-DD`
+ * (Jalali display is a client concern — never send Jalali strings);
+ * `scorePercent` is 0..100; `tara` (تراز) and the rating are optional. */
+export type ExamScore = {
+  id: number;
+  title: string;
+  /** Optional link into the subject catalog; not wired in the v1 UI. */
+  subjectId: number | null;
+  subjectName: string | null;
+  examKind: ExamScoreKind;
+  examDate: string;
+  scorePercent: number;
+  tara: number | null;
+  advisorRating: ExamScoreRating | null;
+  advisorNote: string;
+};
+
+/** POST body for a new exam score. */
+export type CreateExamScoreBody = {
+  title: string;
+  examKind: ExamScoreKind;
+  examDate: string;
+  scorePercent: number;
+  tara?: number | null;
+  advisorRating?: ExamScoreRating | null;
+  advisorNote?: string;
+  subjectId?: number | null;
+};
+
+/** PATCH body for one score — the UI sends ONLY the keys that changed. */
+export type UpdateExamScoreBody = Partial<CreateExamScoreBody>;
+
+/** One subject row of an exam analysis. All counts are ≥ 0 integers;
+ * `subjectName` is free text (every institute names subjects its own way). */
+export type ExamAnalysisRow = {
+  subjectName: string;
+  wrongCount: number;
+  skippedCount: number;
+  doubtfulTotal: number;
+  doubtfulWrong: number;
+  doubtfulSkipped: number;
+  doubtfulCorrect: number;
+  causeNote: string;
+};
+
+/** One per-question note of an exam analysis; question numbers are unique
+ * per analysis (server UniqueConstraint) and bounded 1..300. */
+export type ExamAnalysisNote = {
+  questionNumber: number;
+  subjectName: string;
+  note: string;
+};
+
+/** One saved exam analysis / report card (restart step 6). Every metric is
+ * optional on the wire; `rows`/`notes` always arrive as arrays. */
+export type ExamAnalysis = {
+  id: number;
+  examNumber: number | null;
+  examDate: string | null;
+  gradeBand: ExamGradeBand | null;
+  totalTara: number | null;
+  nationalRank: number | null;
+  regionRank: number | null;
+  cityRank: number | null;
+  highestPercent: number | null;
+  lowestPercent: number | null;
+  taraDelta: number | null;
+  advisorReport: string;
+  rows: ExamAnalysisRow[];
+  notes: ExamAnalysisNote[];
+};
+
+/** POST body for a new analysis, and the WHOLE body of every PUT — PUT is a
+ * set-replace: rows and notes ride along in full, whatever is omitted is
+ * deleted server-side. */
+export type ExamAnalysisWriteBody = {
+  examNumber?: number | null;
+  examDate?: string | null;
+  gradeBand?: ExamGradeBand | null;
+  totalTara?: number | null;
+  nationalRank?: number | null;
+  regionRank?: number | null;
+  cityRank?: number | null;
+  highestPercent?: number | null;
+  lowestPercent?: number | null;
+  taraDelta?: number | null;
+  advisorReport?: string;
+  rows: ExamAnalysisRow[];
+  notes: ExamAnalysisNote[];
+};
+
+/** `GET /advisory/me/exam-scores/` — the student mirror. Quiet: no active
+ * advisor ⇒ `{ active: false, scores: [] }`, never an error. */
+export type MyExamScoresResponse = {
+  active: boolean;
+  scores: ExamScore[];
+};
+
+/** `GET /advisory/me/exam-analyses/` — the student mirror, same quiet rule. */
+export type MyExamAnalysesResponse = {
+  active: boolean;
+  analyses: ExamAnalysis[];
+};
+
 /** Coerce an unknown wire payload into a safe `IntakePayload` (the t.find
  * regression lesson: never trust list/object shapes). */
 function normalizeIntakePayload(payload: unknown): IntakePayload {
@@ -519,6 +640,170 @@ function normalizeCallLogItem(payload: unknown): CallLogItem | null {
     callDate: typeof obj.callDate === 'string' && obj.callDate ? obj.callDate : null,
     topic: typeof obj.topic === 'string' ? obj.topic : '',
     note: typeof obj.note === 'string' ? obj.note : '',
+  };
+}
+
+/* ── Restart wave 4 normalizers ──────────────────────────────────────── */
+
+const EXAM_SCORE_KINDS: readonly ExamScoreKind[] = [
+  'SCHOOL',
+  'PERSONAL',
+  'CLASS_C',
+  'ONLINE',
+  'NATIONAL',
+  'ADVISOR',
+];
+
+const EXAM_SCORE_RATINGS: readonly ExamScoreRating[] = [
+  'EXCELLENT',
+  'GOOD',
+  'FAIR',
+  'WEAK',
+];
+
+const EXAM_GRADE_BANDS: readonly ExamGradeBand[] = [
+  'G10',
+  'G11',
+  'G12S1',
+  'G12S2',
+];
+
+function nullableNumber(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+function nullableString(value: unknown): string | null {
+  return typeof value === 'string' && value ? value : null;
+}
+
+function coerceEnum<T extends string>(
+  value: unknown,
+  allowed: readonly T[],
+  fallback: T,
+): T {
+  return allowed.includes(value as T) ? (value as T) : fallback;
+}
+
+function nullableEnum<T extends string>(
+  value: unknown,
+  allowed: readonly T[],
+): T | null {
+  return allowed.includes(value as T) ? (value as T) : null;
+}
+
+function normalizeExamScore(payload: unknown): ExamScore | null {
+  if (!payload || typeof payload !== 'object') return null;
+  const obj = payload as Record<string, unknown>;
+  const id = nullableNumber(obj.id);
+  if (id === null) return null;
+  return {
+    id,
+    title: typeof obj.title === 'string' ? obj.title : '',
+    subjectId: nullableNumber(obj.subjectId),
+    subjectName: nullableString(obj.subjectName),
+    examKind: coerceEnum(obj.examKind, EXAM_SCORE_KINDS, 'SCHOOL'),
+    examDate: typeof obj.examDate === 'string' ? obj.examDate : '',
+    scorePercent: nullableNumber(obj.scorePercent) ?? 0,
+    tara: nullableNumber(obj.tara),
+    advisorRating: nullableEnum(obj.advisorRating, EXAM_SCORE_RATINGS),
+    advisorNote: typeof obj.advisorNote === 'string' ? obj.advisorNote : '',
+  };
+}
+
+function normalizeExamScoreList(payload: unknown): ExamScore[] {
+  if (!Array.isArray(payload)) return [];
+  const list: ExamScore[] = [];
+  for (const raw of payload) {
+    const item = normalizeExamScore(raw);
+    if (item) list.push(item);
+  }
+  return list;
+}
+
+function normalizeExamAnalysis(payload: unknown): ExamAnalysis | null {
+  if (!payload || typeof payload !== 'object') return null;
+  const obj = payload as Record<string, unknown>;
+  const id = nullableNumber(obj.id);
+  if (id === null) return null;
+
+  const rows: ExamAnalysisRow[] = [];
+  if (Array.isArray(obj.rows)) {
+    for (const raw of obj.rows) {
+      if (!raw || typeof raw !== 'object') continue;
+      const r = raw as Record<string, unknown>;
+      rows.push({
+        subjectName: typeof r.subjectName === 'string' ? r.subjectName : '',
+        wrongCount: nullableNumber(r.wrongCount) ?? 0,
+        skippedCount: nullableNumber(r.skippedCount) ?? 0,
+        doubtfulTotal: nullableNumber(r.doubtfulTotal) ?? 0,
+        doubtfulWrong: nullableNumber(r.doubtfulWrong) ?? 0,
+        doubtfulSkipped: nullableNumber(r.doubtfulSkipped) ?? 0,
+        doubtfulCorrect: nullableNumber(r.doubtfulCorrect) ?? 0,
+        causeNote: typeof r.causeNote === 'string' ? r.causeNote : '',
+      });
+    }
+  }
+
+  const notes: ExamAnalysisNote[] = [];
+  if (Array.isArray(obj.notes)) {
+    for (const raw of obj.notes) {
+      if (!raw || typeof raw !== 'object') continue;
+      const n = raw as Record<string, unknown>;
+      notes.push({
+        questionNumber: nullableNumber(n.questionNumber) ?? 0,
+        subjectName: typeof n.subjectName === 'string' ? n.subjectName : '',
+        note: typeof n.note === 'string' ? n.note : '',
+      });
+    }
+  }
+
+  return {
+    id,
+    examNumber: nullableNumber(obj.examNumber),
+    examDate: nullableString(obj.examDate),
+    gradeBand: nullableEnum(obj.gradeBand, EXAM_GRADE_BANDS),
+    totalTara: nullableNumber(obj.totalTara),
+    nationalRank: nullableNumber(obj.nationalRank),
+    regionRank: nullableNumber(obj.regionRank),
+    cityRank: nullableNumber(obj.cityRank),
+    highestPercent: nullableNumber(obj.highestPercent),
+    lowestPercent: nullableNumber(obj.lowestPercent),
+    taraDelta: nullableNumber(obj.taraDelta),
+    advisorReport: typeof obj.advisorReport === 'string' ? obj.advisorReport : '',
+    rows,
+    notes,
+  };
+}
+
+function normalizeExamAnalysisList(payload: unknown): ExamAnalysis[] {
+  if (!Array.isArray(payload)) return [];
+  const list: ExamAnalysis[] = [];
+  for (const raw of payload) {
+    const item = normalizeExamAnalysis(raw);
+    if (item) list.push(item);
+  }
+  return list;
+}
+
+function normalizeMyExamScores(payload: unknown): MyExamScoresResponse {
+  const obj =
+    payload && typeof payload === 'object'
+      ? (payload as Record<string, unknown>)
+      : {};
+  return {
+    active: obj.active === true,
+    scores: normalizeExamScoreList(obj.scores),
+  };
+}
+
+function normalizeMyExamAnalyses(payload: unknown): MyExamAnalysesResponse {
+  const obj =
+    payload && typeof payload === 'object'
+      ? (payload as Record<string, unknown>)
+      : {};
+  return {
+    active: obj.active === true,
+    analyses: normalizeExamAnalysisList(obj.analyses),
   };
 }
 
@@ -971,5 +1256,154 @@ export const AdvisoryService = {
       { method: 'PUT', body: JSON.stringify(body) },
     );
     return normalizeCallLogItem(saved);
+  },
+
+  /* ── Restart wave 4 ──────────────────────────────────────────────────── */
+
+  /**
+   * One student's exam scores (restart step 5), descending by exam date.
+   * The roster cap (40 rows per engagement) is enforced server-side; crossing
+   * it answers 400 «سقف ثبت نمرات پر شده است.» whose Persian detail surfaces
+   * verbatim via `requestJson`.
+   */
+  getExamScores: async (engagementId: number): Promise<ExamScore[]> => {
+    const payload: unknown = await requestJson<unknown>(
+      `/advisory/students/${engagementId}/exam-scores/`,
+    );
+    return normalizeExamScoreList(payload);
+  },
+
+  /**
+   * Create one exam score. Validation errors (percent outside 0..100, unknown
+   * kind, cap reached) answer 400 with their Persian detail — surfaced
+   * verbatim by `requestJson`. Returns the stored row.
+   */
+  createExamScore: async (
+    engagementId: number,
+    body: CreateExamScoreBody,
+  ): Promise<ExamScore> => {
+    const saved: unknown = await requestJson<unknown>(
+      `/advisory/students/${engagementId}/exam-scores/`,
+      { method: 'POST', body: JSON.stringify(body) },
+    );
+    const item = normalizeExamScore(saved);
+    if (!item) throw new Error('پاسخ سرور برای نمرۀ ذخیره‌شده نامعتبر بود.');
+    return item;
+  },
+
+  /**
+   * Partially update ONE score: only the keys present in `patch` change
+   * server-side; everything absent stays as stored. A missing/foreign score
+   * answers 404 like every other advisor detail route.
+   */
+  updateExamScore: async (
+    engagementId: number,
+    scoreId: number,
+    patch: UpdateExamScoreBody,
+  ): Promise<ExamScore> => {
+    const saved: unknown = await requestJson<unknown>(
+      `/advisory/students/${engagementId}/exam-scores/${scoreId}/`,
+      { method: 'PATCH', body: JSON.stringify(patch) },
+    );
+    const item = normalizeExamScore(saved);
+    if (!item) throw new Error('پاسخ سرور برای نمرۀ ویرایش‌شده نامعتبر بود.');
+    return item;
+  },
+
+  /**
+   * Delete one score permanently. Terminal — there is no undo route.
+   */
+  deleteExamScore: async (
+    engagementId: number,
+    scoreId: number,
+  ): Promise<void> => {
+    await requestJson<unknown>(
+      `/advisory/students/${engagementId}/exam-scores/${scoreId}/`,
+      { method: 'DELETE' },
+    );
+  },
+
+  /**
+   * The student-side mirror of the exam scores. Quiet like every student
+   * advisory read: no active advisor ⇒ `{ active: false, scores: [] }`.
+   */
+  getMyExamScores: async (): Promise<MyExamScoresResponse> => {
+    const payload: unknown = await requestJson<unknown>(
+      '/advisory/me/exam-scores/',
+    );
+    return normalizeMyExamScores(payload);
+  },
+
+  /**
+   * One student's exam analyses / report cards (restart step 6), descending
+   * by exam date. Rows and notes arrive embedded in each item.
+   */
+  getExamAnalyses: async (engagementId: number): Promise<ExamAnalysis[]> => {
+    const payload: unknown = await requestJson<unknown>(
+      `/advisory/students/${engagementId}/exam-analyses/`,
+    );
+    return normalizeExamAnalysisList(payload);
+  },
+
+  /**
+   * Create one analysis with its rows and notes in a single transaction.
+   * Duplicate question numbers inside `notes` answer 400 «شمارهٔ سؤال تکراری
+   * است.»; out-of-range numbers and illogical doubtful counts answer 400 too
+   * — all Persian details surface verbatim via `requestJson`.
+   */
+  createExamAnalysis: async (
+    engagementId: number,
+    body: ExamAnalysisWriteBody,
+  ): Promise<ExamAnalysis> => {
+    const saved: unknown = await requestJson<unknown>(
+      `/advisory/students/${engagementId}/exam-analyses/`,
+      { method: 'POST', body: JSON.stringify(body) },
+    );
+    const item = normalizeExamAnalysis(saved);
+    if (!item) throw new Error('پاسخ سرور برای تحلیل ذخیره‌شده نامعتبر بود.');
+    return item;
+  },
+
+  /**
+   * WHOLE set-replace of one analysis: rows and notes ride along in full —
+   * whatever the payload omits is deleted server-side. Send the entire
+   * object every time, never a diff. Missing/foreign id ⇒ 404.
+   */
+  replaceExamAnalysis: async (
+    engagementId: number,
+    analysisId: number,
+    body: ExamAnalysisWriteBody,
+  ): Promise<ExamAnalysis> => {
+    const saved: unknown = await requestJson<unknown>(
+      `/advisory/students/${engagementId}/exam-analyses/${analysisId}/`,
+      { method: 'PUT', body: JSON.stringify(body) },
+    );
+    const item = normalizeExamAnalysis(saved);
+    if (!item) throw new Error('پاسخ سرور برای تحلیل ویرایش‌شده نامعتبر بود.');
+    return item;
+  },
+
+  /**
+   * Delete one analysis together with its rows and notes. Terminal.
+   */
+  deleteExamAnalysis: async (
+    engagementId: number,
+    analysisId: number,
+  ): Promise<void> => {
+    await requestJson<unknown>(
+      `/advisory/students/${engagementId}/exam-analyses/${analysisId}/`,
+      { method: 'DELETE' },
+    );
+  },
+
+  /**
+   * The student-side mirror of the analyses. Quiet: no active advisor ⇒
+   * `{ active: false, analyses: [] }`, never an error.
+   */
+  getMyExamAnalyses: async (): Promise<MyExamAnalysesResponse> => {
+    const payload: unknown = await requestJson<unknown>(
+      '/advisory/me/exam-analyses/',
+    );
+    return normalizeMyExamAnalyses(payload);
   },
 };
