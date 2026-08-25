@@ -59,6 +59,10 @@ _UNSCOPED = {'Subject'}
 #   • calls.py (restart step 10) — the call-log upsert/list materializer for
 #     ``WeeklyCallLog`` after the view has resolved the engagement through
 #     scope.advisor_engagement.
+#   • exam_records.py (restart steps 5+6) — create/update/delete for
+#     ``StudyExamScore`` and set-replace for ``StudyExamAnalysis`` (+ rows/
+#     notes) after the view has resolved the engagement through
+#     scope.advisor_engagement.
 # The list is pinned by a test below so that a further door cannot appear without
 # someone editing this comment.
 _EXEMPT_FILES = {
@@ -72,6 +76,7 @@ _EXEMPT_FILES = {
     'intake.py',
     'assessments.py',
     'calls.py',
+    'exam_records.py',
 }
 
 
@@ -261,6 +266,7 @@ def test_the_exempt_list_does_not_grow_by_accident():
         'intake.py',
         'assessments.py',
         'calls.py',
+        'exam_records.py',
     }
 
 

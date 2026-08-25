@@ -1340,4 +1340,330 @@ class WeeklyCallLog(models.Model):
         return f'{self.week_start} call ← #{self.engagement_id}'
 
 
+# ── Restart wave 4 (steps 5, 6): exam scores and exam analyses ───────────────
+#
+# Two modules from the restart plan (docs/features/advisor-restart-plan.md
+# §۵ گام ۵ / گام ۶), both hanging off the engagement — the tenancy carrier —
+# like every advisory table before them. Reads resolve through
+# ``services/scope.py``; every write goes through the single door
+# ``services/exam_records.py`` (pinned in ``test_import_boundaries``' exempt
+# list). Step 6 builds directly on step 5's files: same door, same module.
+
+# Restart step 5 (PDF ص۴۲): what kind of exam a score row describes.
+# ``CLASS_C`` (the trailing C disambiguates from the platform-wide ``Class``
+# concept) is a konkur-prep institute class exam.
+EXAM_KIND_CHOICES = [
+    ('SCHOOL', _('مدرسه')),
+    ('PERSONAL', _('شخصی')),
+    ('CLASS_C', _('کلاس')),
+    ('ONLINE', _('آنلاین')),
+    ('NATIONAL', _('کنکور کشوری')),
+    ('ADVISOR', _('آزمون مشاور')),
+]
+
+# The advisor's qualitative verdict on one exam (restart step 5).
+ADVISOR_RATING_CHOICES = [
+    ('EXCELLENT', _('عالی')),
+    ('GOOD', _('خوب')),
+    ('FAIR', _('متوسط')),
+    ('WEAK', _('ضعیف')),
+]
+
+
+class StudyExamScore(models.Model):
+    """One row of the «نمرات کسب‌شده» table (restart step 5, PDF ص۴۲).
+
+    One exam with its kind, percent, تراز, date and the advisor's verdict.
+    Rows hang off the engagement and are capped at
+    ``services.exam_records.MAX_EXAM_SCORES`` per engagement — a service rule,
+    not a constraint, because a DB check cannot count sibling rows.
+
+    ``subject`` is an *optional* link into the catalog (``PROTECT``, like every
+    other reference to ``Subject``): most rows name their exam freely in
+    ``title`` and only some map onto a catalog row. ``created_by`` records
+    which advisor entered the row (``SET_NULL`` per ق۷).
+    """
+
+    engagement = models.ForeignKey(
+        AdvisoryEngagement,
+        on_delete=models.CASCADE,
+        related_name='exam_scores',
+        verbose_name=_('همکاری'),
+    )
+    title = models.CharField(
+        max_length=120,
+        verbose_name=_('عنوان آزمون'),
+        help_text=_('نام آزادِ آزمون یا درس، همان‌طور که مشاور می‌نویسد.'),
+    )
+    subject = models.ForeignKey(
+        Subject,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name='+',
+        verbose_name=_('درس'),
+        help_text=_('پیوند اختیاری به کاتالوگ درس؛ خالی یعنی بدون پیوند.'),
+    )
+    exam_kind = models.CharField(
+        max_length=10,
+        choices=EXAM_KIND_CHOICES,
+        verbose_name=_('نوع آزمون'),
+    )
+    exam_date = models.DateField(
+        verbose_name=_('تاریخ آزمون'),
+        help_text=_('میلادی؛ نمایش شمسی در فرانت‌اند.'),
+    )
+    score_percent = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        validators=[MinValueValidator(0), MaxValueValidator(100)],
+        verbose_name=_('درصد'),
+    )
+    # Nullable, not defaulted: «تراز ثبت نشده» must stay distinct from «۰».
+    tara = models.IntegerField(
+        null=True,
+        blank=True,
+        verbose_name=_('تراز کل'),
+    )
+    advisor_rating = models.CharField(
+        max_length=10,
+        null=True,
+        blank=True,
+        choices=ADVISOR_RATING_CHOICES,
+        verbose_name=_('ارزیابی مشاور'),
+    )
+    advisor_note = models.TextField(
+        blank=True,
+        default='',
+        verbose_name=_('یادداشت مشاور'),
+    )
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name='+',
+        verbose_name=_('ایجادکننده'),
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        # Newest exam first — the shape of both readers (advisor table and
+        # student mirror). Matches the (engagement, -exam_date) index below so
+        # the sort is index-served; ``-id`` breaks same-day ties stably.
+        ordering = ['-exam_date', '-id']
+        indexes = [
+            models.Index(
+                fields=['engagement', '-exam_date'],
+                name='idx_adv_examscore_eng_date',
+            ),
+        ]
+        verbose_name = _('نمرۀ آزمون')
+        verbose_name_plural = _('نمرات آزمون')
+
+    def __str__(self) -> str:
+        return f'{self.title} {self.score_percent}% ← #{self.engagement_id}'
+
+
+# Restart step 6 (PDF ص۱۷-۲۰): which grade band a report card belongs to.
+GRADE_BAND_CHOICES = [
+    ('G10', _('دهم')),
+    ('G11', _('یازدهم')),
+    ('G12S1', _('دوازدهم نیمسال اول')),
+    ('G12S2', _('دوازدهم نیمسال دوم')),
+]
+
+# The answer-sheet bound (PDF ص۴۳-۴۴): question numbers are 1..300. The model
+# validator holds the absolute band; the duplicate rule comparing sibling notes
+# lives in the write door.
+MAX_ANALYSIS_QUESTION_NUMBER = 300
+
+
+class StudyExamAnalysis(models.Model):
+    """One post-exam report-card analysis (restart step 6, PDF ص۱۷-۲۰).
+
+    The کارنامه metrics (تراز/رتبه‌ها/درصدها/دلتا) plus the advisor's free-text
+    report. Every metric column is nullable — an institute's report card rarely
+    fills every box, and «ثبت نشده» must stay distinct from «۰» everywhere.
+    The per-subject rows and per-question notes live in ``rows``/``notes`` and
+    are replaced wholesale on every save by ``services.exam_records``.
+
+    Unlike the score rows above there is no ``created_by``: the analysis is a
+    living document of the engagement, not an attributed entry.
+    """
+
+    engagement = models.ForeignKey(
+        AdvisoryEngagement,
+        on_delete=models.CASCADE,
+        related_name='exam_analyses',
+        verbose_name=_('همکاری'),
+    )
+    exam_number = models.PositiveSmallIntegerField(
+        null=True,
+        blank=True,
+        verbose_name=_('شمارهٔ آزمون'),
+    )
+    exam_date = models.DateField(
+        null=True,
+        blank=True,
+        verbose_name=_('تاریخ آزمون'),
+        help_text=_('میلادی؛ نمایش شمسی در فرانت‌اند.'),
+    )
+    grade_band = models.CharField(
+        max_length=10,
+        null=True,
+        blank=True,
+        choices=GRADE_BAND_CHOICES,
+        verbose_name=_('بازهٔ پایه'),
+    )
+    total_tara = models.IntegerField(
+        null=True,
+        blank=True,
+        verbose_name=_('تراز کل'),
+    )
+    national_rank = models.IntegerField(
+        null=True,
+        blank=True,
+        verbose_name=_('رتبهٔ کشوری'),
+    )
+    region_rank = models.IntegerField(
+        null=True,
+        blank=True,
+        verbose_name=_('رتبهٔ منطقه'),
+    )
+    city_rank = models.IntegerField(
+        null=True,
+        blank=True,
+        verbose_name=_('رتبهٔ شهر'),
+    )
+    highest_percent = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        validators=[MinValueValidator(0), MaxValueValidator(100)],
+        verbose_name=_('بالاترین درصد'),
+    )
+    lowest_percent = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        validators=[MinValueValidator(0), MaxValueValidator(100)],
+        verbose_name=_('پایین‌ترین درصد'),
+    )
+    # Signed on purpose: a negative delta («تراز نسبت به آزمون قبل کم شده») is
+    # the interesting case, not an error.
+    tara_delta = models.SmallIntegerField(
+        null=True,
+        blank=True,
+        verbose_name=_('تغییر تراز'),
+    )
+    advisor_report = models.TextField(
+        blank=True,
+        default='',
+        verbose_name=_('گزارش مشاور'),
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-exam_date', '-id']
+        verbose_name = _('تحلیل آزمون')
+        verbose_name_plural = _('تحلیل‌های آزمون')
+
+    def __str__(self) -> str:
+        return f'analysis {self.exam_date or self.pk} ← #{self.engagement_id}'
+
+
+class StudyExamAnalysisRow(models.Model):
+    """One subject's line of an analysis: غلط/نزده/شک‌دار + علت (step 6).
+
+    ``subject_name`` is free text, not a catalog FK — each institute names its
+    own subjects on the report card, and forcing them into the national catalog
+    would corrupt both. The doubtful counters are each bounded by their row's
+    ``doubtful_total``; that comparison spans sibling columns of one row's
+    payload, so it is a write-door rule, not a constraint.
+    """
+
+    analysis = models.ForeignKey(
+        StudyExamAnalysis,
+        on_delete=models.CASCADE,
+        related_name='rows',
+        verbose_name=_('تحلیل'),
+    )
+    subject_name = models.CharField(
+        max_length=120,
+        verbose_name=_('نام درس'),
+    )
+    wrong_count = models.PositiveIntegerField(default=0, verbose_name=_('غلط'))
+    skipped_count = models.PositiveIntegerField(default=0, verbose_name=_('نزده'))
+    doubtful_total = models.PositiveIntegerField(default=0, verbose_name=_('شک‌دار کل'))
+    doubtful_wrong = models.PositiveIntegerField(default=0, verbose_name=_('شک‌دار غلط'))
+    doubtful_skipped = models.PositiveIntegerField(default=0, verbose_name=_('شک‌دار نزده'))
+    doubtful_correct = models.PositiveIntegerField(default=0, verbose_name=_('شک‌دار درست'))
+    cause_note = models.CharField(
+        max_length=300,
+        blank=True,
+        default='',
+        verbose_name=_('علت'),
+    )
+
+    class Meta:
+        # Insertion order: the advisor wrote the rows in a deliberate order.
+        ordering = ['id']
+        verbose_name = _('ردیف تحلیل درس')
+        verbose_name_plural = _('ردیف‌های تحلیل')
+
+    def __str__(self) -> str:
+        return f'{self.subject_name} ← #{self.analysis_id}'
+
+
+class StudyExamAnalysisNote(models.Model):
+    """One «نکتهٔ مهم» pinned to a single question number (step 6, ص۳۵-۳۶).
+
+    One note per (analysis, question): two notes on the same question are a
+    data-entry mistake the wire rejects with a Persian message naming the
+    question, enforced by the write door ahead of the constraint below.
+    """
+
+    analysis = models.ForeignKey(
+        StudyExamAnalysis,
+        on_delete=models.CASCADE,
+        related_name='notes',
+        verbose_name=_('تحلیل'),
+    )
+    question_number = models.PositiveSmallIntegerField(
+        validators=[
+            MinValueValidator(1),
+            MaxValueValidator(MAX_ANALYSIS_QUESTION_NUMBER),
+        ],
+        verbose_name=_('شمارهٔ سؤال'),
+    )
+    subject_name = models.CharField(
+        max_length=120,
+        verbose_name=_('نام درس'),
+    )
+    note = models.TextField(
+        blank=True,
+        default='',
+        verbose_name=_('یادداشت'),
+    )
+
+    class Meta:
+        ordering = ['question_number']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['analysis', 'question_number'],
+                name='uniq_advisory_analysis_note_question',
+                violation_error_message=_('برای هر سؤال فقط یک یادداشت بفرستید.'),
+            ),
+        ]
+        verbose_name = _('یادداشت سؤال')
+        verbose_name_plural = _('یادداشت‌های سؤال')
+
+    def __str__(self) -> str:
+        return f'q{self.question_number} ← #{self.analysis_id}'
+
+
 

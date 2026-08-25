@@ -25,6 +25,14 @@ from .views import (
     StudentSubjectsView,
     SubjectListView,
 )
+from .views_exams import (
+    AdvisorExamAnalysesView,
+    AdvisorExamAnalysisDetailView,
+    AdvisorExamScoreDetailView,
+    AdvisorExamScoresView,
+    StudentExamAnalysesView,
+    StudentExamScoresView,
+)
 from .views_intake import AdvisorIntakeView, StudentIntakeView
 from .views_monthly import AdvisorCallLogsView, AdvisorWeeklyAssessmentsView
 
@@ -79,6 +87,28 @@ urlpatterns = [
         AdvisorCallLogsView.as_view(),
         name='advisory_student_call_logs',
     ),
+    # Restart wave 4, step 5: exam scores (list/create + detail + mirror).
+    path(
+        'students/<int:pk>/exam-scores/',
+        AdvisorExamScoresView.as_view(),
+        name='advisory_student_exam_scores',
+    ),
+    path(
+        'students/<int:pk>/exam-scores/<int:score_id>/',
+        AdvisorExamScoreDetailView.as_view(),
+        name='advisory_student_exam_score_detail',
+    ),
+    # Restart wave 4, step 6: exam analyses (list/create + detail + mirror).
+    path(
+        'students/<int:pk>/exam-analyses/',
+        AdvisorExamAnalysesView.as_view(),
+        name='advisory_student_exam_analyses',
+    ),
+    path(
+        'students/<int:pk>/exam-analyses/<int:analysis_id>/',
+        AdvisorExamAnalysisDetailView.as_view(),
+        name='advisory_student_exam_analysis_detail',
+    ),
     path('invites/', AdvisoryInviteCreateView.as_view(), name='advisory_invite_create'),
 
     # student side
@@ -87,6 +117,14 @@ urlpatterns = [
     path('me/plans/', StudentPlansView.as_view(), name='advisory_my_plans'),
     # Restart wave 3, step 2: the student's own intake form.
     path('me/intake/', StudentIntakeView.as_view(), name='advisory_my_intake'),
+    # Restart wave 4, step 5: the student's read-only exam-score mirror.
+    path('me/exam-scores/', StudentExamScoresView.as_view(), name='advisory_my_exam_scores'),
+    # Restart wave 4, step 6: the student's read-only analysis mirror.
+    path(
+        'me/exam-analyses/',
+        StudentExamAnalysesView.as_view(),
+        name='advisory_my_exam_analyses',
+    ),
     # One route, no ``<date>`` segment: the day is a query parameter because the
     # resource is "my log" and the date selects a slice of it. A path segment would
     # read like an addressable row and invite the sibling URL that does not exist —

@@ -728,3 +728,239 @@ class CallLogWriteSerializer(serializers.Serializer):
     callDate = serializers.DateField(source='call_date', required=False, allow_null=True)
     topic = serializers.CharField(required=False, allow_blank=True, max_length=200)
     note = serializers.CharField(required=False, allow_blank=True)
+
+
+# ── Restart wave 4: exam scores (step 5) and exam analyses (step 6) ──────────
+#
+# Same split as the rest of the file: read serializers project stored rows,
+# write serializers are shape-only — every domain bound and its pinned Persian
+# message is services/exam_records.py's contract, so a serializer-level rule
+# can never answer first where the wire pins a specific message.
+
+
+class ExamScoreItemSerializer(serializers.Serializer):
+    """One row of the «نمرات کسب‌شده» table, read off a ``StudyExamScore``.
+
+    ``subjectId``/``subjectName`` are null when the row carries no catalog
+    link — most rows name their exam freely in ``title``.
+    """
+
+    id = serializers.IntegerField(read_only=True)
+    title = serializers.CharField(read_only=True)
+    subjectId = serializers.IntegerField(
+        source='subject_id', read_only=True, allow_null=True,
+    )
+    subjectName = serializers.CharField(
+        source='subject.name', read_only=True, default=None,
+    )
+    examKind = serializers.CharField(source='exam_kind', read_only=True)
+    examDate = serializers.DateField(source='exam_date', read_only=True)
+    scorePercent = serializers.DecimalField(
+        source='score_percent', read_only=True,
+        max_digits=5, decimal_places=2, coerce_to_string=False,
+    )
+    tara = serializers.IntegerField(read_only=True, allow_null=True)
+    advisorRating = serializers.CharField(
+        source='advisor_rating', read_only=True, allow_null=True,
+    )
+    advisorNote = serializers.CharField(source='advisor_note', read_only=True)
+
+
+class ExamScoreWriteSerializer(serializers.Serializer):
+    """The POST body: one new score row.
+
+    Shape only. The four required keys are what a row cannot exist without;
+    everything else defaults to null/empty. Loose digits on ``scorePercent``
+    on purpose — any plausible number parses here so an out-of-range value
+    reaches the service's pinned «درصد باید بین ۰ تا ۱۰۰ باشد.» instead of a
+    generic DRF digit-count error.
+    """
+
+    title = serializers.CharField(max_length=120)
+    subjectId = serializers.IntegerField(
+        source='subject_id', required=False, allow_null=True,
+    )
+    examKind = serializers.CharField(source='exam_kind')
+    examDate = serializers.DateField(source='exam_date')
+    scorePercent = serializers.DecimalField(
+        source='score_percent', max_digits=10, decimal_places=2,
+    )
+    tara = serializers.IntegerField(required=False, allow_null=True)
+    advisorRating = serializers.CharField(
+        source='advisor_rating', required=False, allow_null=True, allow_blank=True,
+    )
+    advisorNote = serializers.CharField(
+        source='advisor_note', required=False, allow_blank=True,
+    )
+
+
+class ExamScorePatchSerializer(ExamScoreWriteSerializer):
+    """The PATCH body: every key optional; only provided keys change."""
+
+    title = serializers.CharField(required=False, max_length=120)
+    examKind = serializers.CharField(source='exam_kind', required=False)
+    examDate = serializers.DateField(source='exam_date', required=False)
+    scorePercent = serializers.DecimalField(
+        source='score_percent', required=False, max_digits=10, decimal_places=2,
+    )
+
+
+class ExamAnalysisRowItemSerializer(serializers.Serializer):
+    """One subject row of a stored analysis."""
+
+    subjectName = serializers.CharField(source='subject_name', read_only=True)
+    wrongCount = serializers.IntegerField(source='wrong_count', read_only=True)
+    skippedCount = serializers.IntegerField(source='skipped_count', read_only=True)
+    doubtfulTotal = serializers.IntegerField(
+        source='doubtful_total', read_only=True,
+    )
+    doubtfulWrong = serializers.IntegerField(
+        source='doubtful_wrong', read_only=True,
+    )
+    doubtfulSkipped = serializers.IntegerField(
+        source='doubtful_skipped', read_only=True,
+    )
+    doubtfulCorrect = serializers.IntegerField(
+        source='doubtful_correct', read_only=True,
+    )
+    causeNote = serializers.CharField(source='cause_note', read_only=True)
+
+
+class ExamAnalysisNoteItemSerializer(serializers.Serializer):
+    """One per-question note of a stored analysis."""
+
+    questionNumber = serializers.IntegerField(
+        source='question_number', read_only=True,
+    )
+    subjectName = serializers.CharField(source='subject_name', read_only=True)
+    note = serializers.CharField(read_only=True)
+
+
+class ExamAnalysisItemSerializer(serializers.Serializer):
+    """One analysis in the wire shape shared by list, detail and mirror.
+
+    Every metric is ``null`` when never recorded — distinct from an honest
+    ``0``. ``rows`` keeps insertion order; ``notes`` come ordered by question
+    number.
+    """
+
+    id = serializers.IntegerField(read_only=True)
+    examNumber = serializers.IntegerField(
+        source='exam_number', read_only=True, allow_null=True,
+    )
+    examDate = serializers.DateField(source='exam_date', read_only=True, allow_null=True)
+    gradeBand = serializers.CharField(
+        source='grade_band', read_only=True, allow_null=True,
+    )
+    totalTara = serializers.IntegerField(
+        source='total_tara', read_only=True, allow_null=True,
+    )
+    nationalRank = serializers.IntegerField(
+        source='national_rank', read_only=True, allow_null=True,
+    )
+    regionRank = serializers.IntegerField(
+        source='region_rank', read_only=True, allow_null=True,
+    )
+    cityRank = serializers.IntegerField(
+        source='city_rank', read_only=True, allow_null=True,
+    )
+    highestPercent = serializers.DecimalField(
+        source='highest_percent', read_only=True,
+        max_digits=5, decimal_places=2, coerce_to_string=False, allow_null=True,
+    )
+    lowestPercent = serializers.DecimalField(
+        source='lowest_percent', read_only=True,
+        max_digits=5, decimal_places=2, coerce_to_string=False, allow_null=True,
+    )
+    taraDelta = serializers.IntegerField(
+        source='tara_delta', read_only=True, allow_null=True,
+    )
+    advisorReport = serializers.CharField(source='advisor_report', read_only=True)
+    rows = ExamAnalysisRowItemSerializer(many=True, read_only=True)
+    notes = ExamAnalysisNoteItemSerializer(many=True, read_only=True)
+
+
+class ExamAnalysisRowWriteSerializer(serializers.Serializer):
+    """One subject row of the create/PUT body. Shape only — the count bounds,
+    the doubtful sub-counter rule and their pinned Persian messages are the
+    service's contract."""
+
+    subjectName = serializers.CharField(source='subject_name')
+    wrongCount = serializers.IntegerField(
+        source='wrong_count', required=False,
+    )
+    skippedCount = serializers.IntegerField(
+        source='skipped_count', required=False,
+    )
+    doubtfulTotal = serializers.IntegerField(
+        source='doubtful_total', required=False,
+    )
+    doubtfulWrong = serializers.IntegerField(
+        source='doubtful_wrong', required=False,
+    )
+    doubtfulSkipped = serializers.IntegerField(
+        source='doubtful_skipped', required=False,
+    )
+    doubtfulCorrect = serializers.IntegerField(
+        source='doubtful_correct', required=False,
+    )
+    causeNote = serializers.CharField(
+        source='cause_note', required=False, allow_blank=True, max_length=300,
+    )
+
+
+class ExamAnalysisNoteWriteSerializer(serializers.Serializer):
+    """One per-question note of the create/PUT body. Shape only."""
+
+    questionNumber = serializers.IntegerField(source='question_number')
+    subjectName = serializers.CharField(source='subject_name')
+    note = serializers.CharField(required=False, allow_blank=True)
+
+
+class ExamAnalysisWriteSerializer(serializers.Serializer):
+    """The POST/PUT body: the whole analysis document.
+
+    ``rows`` and ``notes`` are required so clearing them is always an explicit
+    ``[]`` — same rule as the intake form's ``classes``. Loose digits on the
+    percent fields on purpose: any plausible number parses here so an
+    out-of-range value reaches the service's pinned Persian message instead of
+    a generic DRF digit-count error.
+    """
+
+    examNumber = serializers.IntegerField(
+        source='exam_number', required=False, allow_null=True,
+    )
+    examDate = serializers.DateField(
+        source='exam_date', required=False, allow_null=True,
+    )
+    gradeBand = serializers.CharField(
+        source='grade_band', required=False, allow_null=True, allow_blank=True,
+    )
+    totalTara = serializers.IntegerField(
+        source='total_tara', required=False, allow_null=True,
+    )
+    nationalRank = serializers.IntegerField(
+        source='national_rank', required=False, allow_null=True,
+    )
+    regionRank = serializers.IntegerField(
+        source='region_rank', required=False, allow_null=True,
+    )
+    cityRank = serializers.IntegerField(
+        source='city_rank', required=False, allow_null=True,
+    )
+    highestPercent = serializers.DecimalField(
+        source='highest_percent', required=False, allow_null=True,
+        max_digits=10, decimal_places=2,
+    )
+    lowestPercent = serializers.DecimalField(
+        source='lowest_percent', required=False, allow_null=True,
+        max_digits=10, decimal_places=2,
+    )
+    taraDelta = serializers.IntegerField(
+        source='tara_delta', required=False, allow_null=True,
+    )
+    advisorReport = serializers.CharField(
+        source='advisor_report', required=False, allow_blank=True,
+    )
+    rows = ExamAnalysisRowWriteSerializer(many=True)
+    notes = ExamAnalysisNoteWriteSerializer(many=True)
