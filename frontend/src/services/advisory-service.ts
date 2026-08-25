@@ -324,6 +324,204 @@ export type MyPlansResponse = {
   plans: StudyPlanOut[];
 };
 
+/* ── Restart wave 3: intake (step 2), weekly assessments (step 7), call logs (step 10) ── */
+
+/** One class row of the intake form. `weekday` is 0=شنبه..6=جمعه; `startTime`/
+ * `endTime` are `HH:MM` strings or null when unset. */
+export type IntakeClass = {
+  name: string;
+  teacher: string;
+  weekday: number;
+  startTime: string | null;
+  endTime: string | null;
+  order: number;
+};
+
+/** Restart step 2 — the whole «شناخت» profile. Every PUT is a WHOLE set-replace:
+ * whatever the payload omits is cleared server-side, classes included. */
+export type IntakePayload = {
+  school: string;
+  city: string;
+  /** Decimal 0..20 or null when not recorded — null is distinct from 0. */
+  lastGpa: number | null;
+  targetMajor: string;
+  targetUniversity: string;
+  mockExamInstitute: string;
+  /** Minutes 0..1440 or null when not recorded. */
+  freeDayMinutes: number | null;
+  classes: IntakeClass[];
+};
+
+/** `GET|PUT /advisory/me/intake/` — the student-side mirror. `active:false`
+ * (no advisor) arrives as a normal 200 with `intake:null`; PUT without an
+ * active advisor answers 409 «ابتدا مشاور خود را تأیید کنید.» */
+export type MyIntakeResponse = {
+  active: boolean;
+  intake: IntakePayload | null;
+};
+
+/** One of the 15 weekly-assessment criteria, serialized from the backend's
+ * canonical list — the client NEVER hardcodes labels, it renders from this. */
+export type WeeklyAssessmentCriterion = {
+  code: string;
+  label: string;
+};
+
+/** One saved week of the advisor's weekly assessment. `scores` maps criterion
+ * code → int 1..5; `average` is the server-computed mean (or null). */
+export type WeeklyAssessmentItem = {
+  weekStart: string;
+  scores: Record<string, number>;
+  advisorSummary: string;
+  average: number | null;
+};
+
+/** `GET /advisory/students/<engagementId>/weekly-assessments/` — criteria meta
+ * plus saved weeks, descending by `weekStart`. */
+export type WeeklyAssessmentsResponse = {
+  criteria: WeeklyAssessmentCriterion[];
+  assessments: WeeklyAssessmentItem[];
+};
+
+/** PUT body for one week's upsert (unique per engagement+weekStart). The
+ * backend requires ALL criteria scored 1..5 — an incomplete map answers 400
+ * naming the missing criterion. */
+export type SaveWeeklyAssessmentBody = {
+  scores: Record<string, number>;
+  advisorSummary: string;
+};
+
+/** One row of the weekly call-log plan. `callDate` is ISO or null when the
+ * call has not been dated yet. */
+export type CallLogItem = {
+  weekStart: string;
+  done: boolean;
+  callDate: string | null;
+  topic: string;
+  note: string;
+};
+
+/** `GET /advisory/students/<engagementId>/call-logs/` — the four most recent
+ * weeks, absent ones filled virtually with `done:false`. */
+export type CallLogsResponse = {
+  weeks: CallLogItem[];
+};
+
+/** PUT body for one call-log row upsert. Keys ride along explicitly every time
+ * (repo-wide set-replace posture): a cleared field is sent as ''/null, not
+ * omitted, so "absent = keep stored" ambiguity never arises. */
+export type SaveCallLogBody = {
+  done: boolean;
+  callDate?: string | null;
+  topic?: string;
+  note?: string;
+};
+
+/** Coerce an unknown wire payload into a safe `IntakePayload` (the t.find
+ * regression lesson: never trust list/object shapes). */
+function normalizeIntakePayload(payload: unknown): IntakePayload {
+  const obj =
+    payload && typeof payload === 'object'
+      ? (payload as Record<string, unknown>)
+      : {};
+  const rawClasses = Array.isArray(obj.classes) ? obj.classes : [];
+  const classes: IntakeClass[] = [];
+  for (const raw of rawClasses) {
+    if (!raw || typeof raw !== 'object') continue;
+    const c = raw as Record<string, unknown>;
+    classes.push({
+      name: typeof c.name === 'string' ? c.name : '',
+      teacher: typeof c.teacher === 'string' ? c.teacher : '',
+      weekday: typeof c.weekday === 'number' ? c.weekday : 0,
+      startTime: typeof c.startTime === 'string' && c.startTime ? c.startTime : null,
+      endTime: typeof c.endTime === 'string' && c.endTime ? c.endTime : null,
+      order: typeof c.order === 'number' ? c.order : 0,
+    });
+  }
+  return {
+    school: typeof obj.school === 'string' ? obj.school : '',
+    city: typeof obj.city === 'string' ? obj.city : '',
+    lastGpa: typeof obj.lastGpa === 'number' ? obj.lastGpa : null,
+    targetMajor: typeof obj.targetMajor === 'string' ? obj.targetMajor : '',
+    targetUniversity:
+      typeof obj.targetUniversity === 'string' ? obj.targetUniversity : '',
+    mockExamInstitute:
+      typeof obj.mockExamInstitute === 'string' ? obj.mockExamInstitute : '',
+    freeDayMinutes:
+      typeof obj.freeDayMinutes === 'number' ? obj.freeDayMinutes : null,
+    classes,
+  };
+}
+
+function normalizeMyIntake(payload: unknown): MyIntakeResponse {
+  const obj =
+    payload && typeof payload === 'object'
+      ? (payload as Record<string, unknown>)
+      : {};
+  return {
+    active: obj.active === true,
+    intake: obj.intake == null ? null : normalizeIntakePayload(obj.intake),
+  };
+}
+
+function normalizeWeeklyAssessmentItem(
+  payload: unknown,
+): WeeklyAssessmentItem | null {
+  if (!payload || typeof payload !== 'object') return null;
+  const obj = payload as Record<string, unknown>;
+  const scores: Record<string, number> = {};
+  if (obj.scores && typeof obj.scores === 'object') {
+    for (const [code, value] of Object.entries(
+      obj.scores as Record<string, unknown>,
+    )) {
+      if (typeof value === 'number') scores[code] = value;
+    }
+  }
+  return {
+    weekStart: typeof obj.weekStart === 'string' ? obj.weekStart : '',
+    scores,
+    advisorSummary: typeof obj.advisorSummary === 'string' ? obj.advisorSummary : '',
+    average: typeof obj.average === 'number' ? obj.average : null,
+  };
+}
+
+function normalizeWeeklyAssessments(payload: unknown): WeeklyAssessmentsResponse {
+  const obj =
+    payload && typeof payload === 'object'
+      ? (payload as Record<string, unknown>)
+      : {};
+  const criteria: WeeklyAssessmentCriterion[] = [];
+  if (Array.isArray(obj.criteria)) {
+    for (const raw of obj.criteria) {
+      if (!raw || typeof raw !== 'object') continue;
+      const c = raw as Record<string, unknown>;
+      if (typeof c.code === 'string' && typeof c.label === 'string') {
+        criteria.push({ code: c.code, label: c.label });
+      }
+    }
+  }
+  const assessments: WeeklyAssessmentItem[] = [];
+  if (Array.isArray(obj.assessments)) {
+    for (const raw of obj.assessments) {
+      const item = normalizeWeeklyAssessmentItem(raw);
+      if (item) assessments.push(item);
+    }
+  }
+  return { criteria, assessments };
+}
+
+function normalizeCallLogItem(payload: unknown): CallLogItem | null {
+  if (!payload || typeof payload !== 'object') return null;
+  const obj = payload as Record<string, unknown>;
+  return {
+    weekStart: typeof obj.weekStart === 'string' ? obj.weekStart : '',
+    done: obj.done === true,
+    callDate: typeof obj.callDate === 'string' && obj.callDate ? obj.callDate : null,
+    topic: typeof obj.topic === 'string' ? obj.topic : '',
+    note: typeof obj.note === 'string' ? obj.note : '',
+  };
+}
+
 function getAccessToken(): string {
   if (typeof window === 'undefined') {
     throw new Error('This action must run in the browser.');
@@ -649,5 +847,129 @@ export const AdvisoryService = {
       };
     }
     return { plans: [] };
+  },
+
+  /* ── Restart wave 3 ──────────────────────────────────────────────────── */
+
+  /**
+   * One student's «شناخت» profile (restart step 2). The server initializes an
+   * empty profile on first read, so GET always answers 200 for an owned
+   * engagement; a missing/foreign engagement answers 404 like every other
+   * advisor route.
+   */
+  getIntake: async (engagementId: number): Promise<IntakePayload> => {
+    const payload: unknown = await requestJson<unknown>(
+      `/advisory/students/${engagementId}/intake/`,
+    );
+    return normalizeIntakePayload(payload);
+  },
+
+  /**
+   * WHOLE set-replace of the intake profile, classes included (row cap 10,
+   * weekday 0..6, end>start when both set — violations answer 400 with their
+   * Persian detail). Returns the stored profile so callers re-render from the
+   * server's normalization, never from local guesses.
+   */
+  putIntake: async (
+    engagementId: number,
+    payload: IntakePayload,
+  ): Promise<IntakePayload> => {
+    const saved: unknown = await requestJson<unknown>(
+      `/advisory/students/${engagementId}/intake/`,
+      { method: 'PUT', body: JSON.stringify(payload) },
+    );
+    return normalizeIntakePayload(saved);
+  },
+
+  /**
+   * The student-side mirror read. Quiet: no active advisor ⇒
+   * `{ active: false, intake: null }`, never an error.
+   */
+  getMyIntake: async (): Promise<MyIntakeResponse> => {
+    const payload: unknown = await requestJson<unknown>('/advisory/me/intake/');
+    return normalizeMyIntake(payload);
+  },
+
+  /**
+   * Student-side intake save. `409` «ابتدا مشاور خود را تأیید کنید.» when no
+   * active advisor; validation errors mirror the advisor route.
+   */
+  putMyIntake: async (payload: IntakePayload): Promise<MyIntakeResponse> => {
+    const saved: unknown = await requestJson<unknown>('/advisory/me/intake/', {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    });
+    return normalizeMyIntake(saved);
+  },
+
+  /**
+   * Criteria meta + saved weekly assessments (step 7), descending by weekStart.
+   * Labels come from the server's canonical list — render from them, never
+   * hardcode.
+   */
+  getWeeklyAssessments: async (
+    engagementId: number,
+  ): Promise<WeeklyAssessmentsResponse> => {
+    const payload: unknown = await requestJson<unknown>(
+      `/advisory/students/${engagementId}/weekly-assessments/`,
+    );
+    return normalizeWeeklyAssessments(payload);
+  },
+
+  /**
+   * Upsert ONE week's assessment (`?week_start=` must be a Saturday — else
+   * 400). All criteria must be scored 1..5 or the 400 names the missing one;
+   * its Persian detail surfaces verbatim via `requestJson`. Returns the saved
+   * item.
+   */
+  putWeeklyAssessment: async (
+    engagementId: number,
+    weekStart: string,
+    body: SaveWeeklyAssessmentBody,
+  ): Promise<WeeklyAssessmentItem | null> => {
+    const saved: unknown = await requestJson<unknown>(
+      `/advisory/students/${engagementId}/weekly-assessments/?week_start=${encodeURIComponent(weekStart)}`,
+      { method: 'PUT', body: JSON.stringify(body) },
+    );
+    return normalizeWeeklyAssessmentItem(saved);
+  },
+
+  /**
+   * The four most recent call-log weeks (step 10); absent weeks arrive filled
+   * virtually with `done:false`.
+   */
+  getCallLogs: async (engagementId: number): Promise<CallLogsResponse> => {
+    const payload: unknown = await requestJson<unknown>(
+      `/advisory/students/${engagementId}/call-logs/`,
+    );
+    const obj =
+      payload && typeof payload === 'object'
+        ? (payload as Record<string, unknown>)
+        : {};
+    const weeks: CallLogItem[] = [];
+    if (Array.isArray(obj.weeks)) {
+      for (const raw of obj.weeks) {
+        const item = normalizeCallLogItem(raw);
+        if (item && item.weekStart) weeks.push(item);
+      }
+    }
+    return { weeks };
+  },
+
+  /**
+   * Upsert ONE call-log row (`?week_start=` Saturday-anchored). Fields ride
+   * along explicitly every save so a cleared topic/note/date actually clears.
+   * Non-Saturday week_start ⇒ 400 with its Persian detail.
+   */
+  putCallLog: async (
+    engagementId: number,
+    weekStart: string,
+    body: SaveCallLogBody,
+  ): Promise<CallLogItem | null> => {
+    const saved: unknown = await requestJson<unknown>(
+      `/advisory/students/${engagementId}/call-logs/?week_start=${encodeURIComponent(weekStart)}`,
+      { method: 'PUT', body: JSON.stringify(body) },
+    );
+    return normalizeCallLogItem(saved);
   },
 };

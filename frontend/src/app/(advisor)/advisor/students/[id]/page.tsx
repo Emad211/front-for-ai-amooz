@@ -14,6 +14,9 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { StudyFeedCard } from '@/components/advisory/study-plan/study-feed-card';
 import { StudyPlannerCard } from '@/components/advisory/study-plan/study-planner-card';
+import { IntakeCard } from '@/components/advisory/intake-card';
+import { WeeklyAssessmentCard } from '@/components/advisory/weekly-assessment-card';
+import { CallLogCard } from '@/components/advisory/call-log-card';
 import {
   resolveStudentDetailTab,
   StudentDetailTabKey,
@@ -151,9 +154,19 @@ function AdvisorStudentDetailContent() {
               startedOn={student.startedOn}
             />
           )}
-          {activeTab !== 'feed' && activeTab !== 'plan' && (
-            <StudentDetailTabPlaceholder tabKey={activeTab} />
+          {activeTab === 'intake' && <IntakeCard engagementId={engagementId} />}
+          {activeTab === 'assess' && (
+            <div className="space-y-6">
+              <WeeklyAssessmentCard engagementId={engagementId} />
+              <CallLogCard engagementId={engagementId} />
+            </div>
           )}
+          {activeTab !== 'feed' &&
+            activeTab !== 'plan' &&
+            activeTab !== 'intake' &&
+            activeTab !== 'assess' && (
+              <StudentDetailTabPlaceholder tabKey={activeTab} />
+            )}
         </div>
       )}
     </div>

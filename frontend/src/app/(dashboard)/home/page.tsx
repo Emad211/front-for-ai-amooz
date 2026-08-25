@@ -13,6 +13,7 @@ import { PageTransition } from '@/components/ui/page-transition';
 import { ErrorState } from '@/components/shared/error-state';
 import { MySubjectsCard } from './my-subjects-card';
 import { StudyPlanCard } from '@/components/dashboard/home/study-plan-card';
+import { MyIntakeCard } from '@/components/dashboard/advisory/my-intake-card';
 
 export default function StudentDashboard() {
   const { stats, activities, events, profile, isLoading, error, reload } = useDashboardData();
@@ -64,6 +65,8 @@ export default function StudentDashboard() {
         <StatsGrid stats={stats} />
 
         <MySubjectsCard />
+
+        <MyIntakeCard />
 
         <StudyPlanCard />
 
