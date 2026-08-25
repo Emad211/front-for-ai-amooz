@@ -49,6 +49,16 @@ _UNSCOPED = {'Subject'}
 #     machine for ``StudyPlan``/``StudyPlanItem`` plus the append-only
 #     ``AdvisoryAccessLog`` write; it mutates after the view has resolved the
 #     engagement through scope.advisor_engagement.
+#   • intake.py (restart step 2) — the set-replace for the intake form; it
+#     rebuilds ``AdvisoryIntakeProfile``/``AdvisoryIntakeClass`` after the view
+#     has resolved ownership through scope.advisor_engagement or
+#     scope.student_active_engagement.
+#   • assessments.py (restart step 7) — the weekly-assessment upsert for
+#     ``WeeklyAssessment`` after the view has resolved the engagement through
+#     scope.advisor_engagement.
+#   • calls.py (restart step 10) — the call-log upsert/list materializer for
+#     ``WeeklyCallLog`` after the view has resolved the engagement through
+#     scope.advisor_engagement.
 # The list is pinned by a test below so that a further door cannot appear without
 # someone editing this comment.
 _EXEMPT_FILES = {
@@ -59,6 +69,9 @@ _EXEMPT_FILES = {
     'student_subjects.py',
     'daily_logs.py',
     'study_plans.py',
+    'intake.py',
+    'assessments.py',
+    'calls.py',
 }
 
 
@@ -245,6 +258,9 @@ def test_the_exempt_list_does_not_grow_by_accident():
         'student_subjects.py',
         'daily_logs.py',
         'study_plans.py',
+        'intake.py',
+        'assessments.py',
+        'calls.py',
     }
 
 

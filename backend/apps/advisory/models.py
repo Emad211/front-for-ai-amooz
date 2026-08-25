@@ -22,6 +22,7 @@ from django.db import models
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 
+from .services.calendar import ensure_saturday
 from .services.text import normalize_subject_name
 
 # How long an unanswered invite stays claimable (B6). Long enough that a student
@@ -1021,3 +1022,322 @@ class AdvisoryAccessLog(models.Model):
 
     def __str__(self) -> str:
         return f'{self.action} ← #{self.engagement_id}'
+
+
+# ── Restart wave 3 (steps 2, 7, 10): intake, weekly assessment, call log ─────
+#
+# Three independent modules from the restart plan (docs/features/advisor-
+# restart-plan.md §۵ گام ۲ / گام ۷ / گام ۱۰), all hanging off the engagement —
+# the tenancy carrier — like every advisory table before them. Reads go through
+# ``services/scope.py``; writes through the three new doors ``services/intake.py``,
+# ``services/assessments.py`` and ``services/calls.py`` (each pinned in
+# ``test_import_boundaries``' exempt list).
+
+
+def _validate_saturday_week_start(value):
+    """Model-level guard converting ``calendar.ensure_saturday``'s ValueError.
+
+    ق۴: the Saturday formula is written once in ``services/calendar.py`` and
+    every week-anchored column validates through it — never a local copy. The
+    wrapper only translates the exception type so Django field validation (and
+    therefore the admin) can surface it as a normal ``ValidationError``.
+    """
+    try:
+        ensure_saturday(value)
+    except ValueError as exc:
+        raise ValidationError(_('تاریخ باید شنبه باشد.')) from exc
+
+
+# The Iranian school week: 0 = شنبه … 6 = جمعه. The wire sends the raw int;
+# these labels exist for the admin and for any server-side rendering.
+INTAKE_WEEKDAY_CHOICES = [
+    (0, _('شنبه')),
+    (1, _('یکشنبه')),
+    (2, _('دوشنبه')),
+    (3, _('سه‌شنبه')),
+    (4, _('چهارشنبه')),
+    (5, _('پنج‌شنبه')),
+    (6, _('جمعه')),
+]
+
+
+class AdvisoryIntakeProfile(models.Model):
+    """The digital «اطلاعات فردی دانش‌آموز» page (restart step 2, PDF ص۱).
+
+    One row per engagement (OneToOne) holding the student's context an advisor
+    needs before planning: school, city, last year's GPA, target major and
+    university, mock-exam institute, and how many minutes of self-directed
+    study a free day holds. The class timetable lives in
+    ``AdvisoryIntakeClass`` rows under ``classes``.
+
+    The row is created lazily by ``services.intake.get_or_init_intake`` — a
+    never-filled form reads back as the all-empty default payload, not a 404.
+    ``updated_by`` records whoever saved last (advisor *or* student; both may
+    write this form) and is ``SET_NULL`` per ق۷: deleting an account must not
+    delete the fact that the form was filled.
+    """
+
+    engagement = models.OneToOneField(
+        AdvisoryEngagement,
+        on_delete=models.CASCADE,
+        related_name='intake',
+        verbose_name=_('همکاری'),
+    )
+    school = models.CharField(
+        max_length=120,
+        blank=True,
+        default='',
+        verbose_name=_('مدرسه'),
+    )
+    city = models.CharField(
+        max_length=60,
+        blank=True,
+        default='',
+        verbose_name=_('شهر'),
+    )
+    # Nullable, not defaulted: «معدل سال گذشته را نگرفته‌ام» must stay distinct
+    # from an honest «۰». The 0..20 band mirrors the Iranian grading scale.
+    last_gpa = models.DecimalField(
+        max_digits=4,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        validators=[MinValueValidator(0), MaxValueValidator(20)],
+        verbose_name=_('معدل سال گذشته'),
+        help_text=_('عددی بین ۰ تا ۲۰؛ خالی یعنی ثبت نشده.'),
+    )
+    target_major = models.CharField(
+        max_length=120,
+        blank=True,
+        default='',
+        verbose_name=_('رشتهٔ هدف'),
+    )
+    target_university = models.CharField(
+        max_length=120,
+        blank=True,
+        default='',
+        verbose_name=_('دانشگاه هدف'),
+    )
+    mock_exam_institute = models.CharField(
+        max_length=120,
+        blank=True,
+        default='',
+        verbose_name=_('مؤسسۀ آزمون آزمایشی'),
+    )
+    # A free day holds at most 1440 minutes — the same physical bound the daily
+    # log's day ceiling uses, so no answer here can promise more than a day has.
+    free_day_minutes = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        validators=[MinValueValidator(0), MaxValueValidator(1440)],
+        verbose_name=_('میانگین مطالعۀ روز آزاد (دقیقه)'),
+        help_text=_('۰ تا ۱۴۴۰ دقیقه؛ خالی یعنی ثبت نشده.'),
+    )
+    updated_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name='+',
+        verbose_name=_('آخرین ویرایشگر'),
+    )
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = _('پروفایل شناخت')
+        verbose_name_plural = _('پروفایل‌های شناخت')
+
+    def __str__(self) -> str:
+        return f'intake ← #{self.engagement_id}'
+
+
+class AdvisoryIntakeClass(models.Model):
+    """One row of the intake's weekly class timetable (restart step 2).
+
+    Rows are rebuilt wholesale on every save (set-replace, like every advisory
+    PUT) — there is no history to preserve because the table describes the
+    student's *current* schedule, not a record of past terms. The row cap (10)
+    is a service rule (``services.intake.MAX_INTAKE_CLASSES``), not a constraint:
+    a DB check cannot count sibling rows.
+
+    ``weekday`` follows the Iranian week with 0 = شنبه; ``start_time``/
+    ``end_time`` are both optional and, when both present, must satisfy
+    end > start — enforced by the write door with the Persian message.
+    """
+
+    intake = models.ForeignKey(
+        AdvisoryIntakeProfile,
+        on_delete=models.CASCADE,
+        related_name='classes',
+        verbose_name=_('پروفایل شناخت'),
+    )
+    name = models.CharField(
+        max_length=120,
+        verbose_name=_('نام کلاس'),
+    )
+    teacher = models.CharField(
+        max_length=120,
+        blank=True,
+        default='',
+        verbose_name=_('دبیر'),
+    )
+    weekday = models.PositiveSmallIntegerField(
+        choices=INTAKE_WEEKDAY_CHOICES,
+        verbose_name=_('روز هفته'),
+        help_text=_('۰ = شنبه تا ۶ = جمعه.'),
+    )
+    start_time = models.TimeField(
+        null=True,
+        blank=True,
+        verbose_name=_('ساعت شروع'),
+    )
+    end_time = models.TimeField(
+        null=True,
+        blank=True,
+        verbose_name=_('ساعت پایان'),
+    )
+    order = models.PositiveSmallIntegerField(
+        default=0,
+        verbose_name=_('ترتیب'),
+    )
+
+    class Meta:
+        ordering = ['order', 'id']
+        verbose_name = _('کلاس شناخت')
+        verbose_name_plural = _('کلاس‌های شناخت')
+
+    def __str__(self) -> str:
+        return f'{self.name} ({self.weekday}) ← #{self.intake_id}'
+
+
+
+class WeeklyAssessment(models.Model):
+    """One week of the advisor's 15-criteria assessment (restart step 7, PDF ص۱۰).
+
+    The advisor scores the student 1..5 on each of the fifteen criteria listed
+    in ``services.assessments.WEEKLY_ASSESSMENT_CRITERIA`` — the single source
+    both the validation and the wire's ``criteria`` list read — plus a free-text
+    summary. ``scores`` is a JSON object ``{"<code>": 1..5}`` rather than fifteen
+    columns because the criterion set is a stable *contract* (codes are JSON
+    keys; changing one after launch is a data migration), not a schema question.
+
+    This is advisor-internal by locked decision: **no student route exists**
+    (گام ۷: «سمت دانش‌آموز: هیچ روت»). One row per ``(engagement, week_start)``
+    via the unique constraint below; re-saving a week is an update, never a
+    second row.
+    """
+
+    engagement = models.ForeignKey(
+        AdvisoryEngagement,
+        on_delete=models.CASCADE,
+        related_name='weekly_assessments',
+        verbose_name=_('همکاری'),
+    )
+    # Saturday-anchored (ق۴) and validated at the column level through
+    # ``calendar.ensure_saturday`` so no code path can store a mid-week anchor.
+    week_start = models.DateField(
+        validators=[_validate_saturday_week_start],
+        verbose_name=_('شروع هفته'),
+        help_text=_('شنبهٔ آغاز هفته (میلادی).'),
+    )
+    scores = models.JSONField(
+        default=dict,
+        verbose_name=_('امتیاز معیارها'),
+        help_text=_('شکل: {"<code>": 1..5} برای هر ۱۵ معیار.'),
+    )
+    advisor_summary = models.TextField(
+        blank=True,
+        default='',
+        verbose_name=_('جمع‌بندی مشاور'),
+    )
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name='+',
+        verbose_name=_('ایجادکننده'),
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-week_start']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['engagement', 'week_start'],
+                name='uniq_advisory_weekly_assessment',
+                violation_error_message=_('برای این هفته از قبل ارزیابی ثبت شده است.'),
+            ),
+        ]
+        verbose_name = _('ارزیابی هفتگی')
+        verbose_name_plural = _('ارزیابی‌های هفتگی')
+
+    def __str__(self) -> str:
+        return f'{self.week_start} ← #{self.engagement_id}'
+
+
+
+class WeeklyCallLog(models.Model):
+    """One week of the advisor's weekly-call checklist (restart step 10, PDF ص۳۸).
+
+    A stored row records what actually happened on that week's call (done,
+    date, topic as possibly edited by the advisor, note). Weeks with **no**
+    row are not missing data — ``services.calls.list_call_logs`` materializes
+    them virtually with the rotating default topic for that engagement-week,
+    and a stored topic always wins over the default. Like the weekly
+    assessment this is advisor-internal: **no student route exists**.
+
+    Absent optional keys on PUT keep the stored values (upsert semantics), so
+    the advisor can tick «انجام شد» without retyping the note.
+    """
+
+    engagement = models.ForeignKey(
+        AdvisoryEngagement,
+        on_delete=models.CASCADE,
+        related_name='call_logs',
+        verbose_name=_('همکاری'),
+    )
+    # Same Saturday anchor rule as WeeklyAssessment — one formula, one validator.
+    week_start = models.DateField(
+        validators=[_validate_saturday_week_start],
+        verbose_name=_('شروع هفته'),
+        help_text=_('شنبهٔ آغاز هفته (میلادی).'),
+    )
+    done = models.BooleanField(
+        default=False,
+        verbose_name=_('انجام شد'),
+    )
+    call_date = models.DateField(
+        null=True,
+        blank=True,
+        verbose_name=_('تاریخ تماس'),
+    )
+    topic = models.CharField(
+        max_length=200,
+        blank=True,
+        default='',
+        verbose_name=_('موضوع'),
+    )
+    note = models.TextField(
+        blank=True,
+        default='',
+        verbose_name=_('یادداشت'),
+    )
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-week_start']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['engagement', 'week_start'],
+                name='uniq_advisory_weekly_call_log',
+                violation_error_message=_('برای این هفته از قبل تماسی ثبت شده است.'),
+            ),
+        ]
+        verbose_name = _('تماس هفتگی')
+        verbose_name_plural = _('تماس‌های هفتگی')
+
+    def __str__(self) -> str:
+        return f'{self.week_start} call ← #{self.engagement_id}'
+
+
+

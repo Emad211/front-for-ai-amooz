@@ -36,6 +36,7 @@ from .models import (
     MOOD_MIN,
     Subject,
 )
+from .services.assessments import assessment_average
 from .services.student_subjects import MAX_SUBJECTS_PER_STUDENT
 from .services.study_plans import plan_adherence_percent
 from .services.text import mask_phone
@@ -572,3 +573,158 @@ class FeedDaySerializer(serializers.Serializer):
         # Summed over the prefetched items (``scope.advisor_feed_logs``), not
         # with an aggregate — same reasoning as ``DailyLogSerializer``.
         return sum(item.actual_minutes for item in obj.items.all())
+
+
+# ── Restart wave 3: intake (step 2), weekly assessment (step 7), call log ────
+#
+# Same split as the rest of the file: read serializers project stored rows,
+# write serializers are shape-only — the exact Persian validation messages and
+# their order are the services' contract (services/intake.py, services/
+# assessments.py, services/calls.py), so a serializer-level bound can never
+# answer first with a generic DRF message where the wire pins a Persian one.
+
+
+def _hhmm(value):
+    """A ``datetime.time`` as ``HH:MM``, or ``None`` — the intake wire format."""
+    return value.strftime('%H:%M') if value is not None else None
+
+
+class IntakeClassOutSerializer(serializers.Serializer):
+    """One class row of the intake payload, read off an ``AdvisoryIntakeClass``."""
+
+    name = serializers.CharField(read_only=True)
+    teacher = serializers.CharField(read_only=True)
+    weekday = serializers.IntegerField(read_only=True)
+    startTime = serializers.SerializerMethodField()
+    endTime = serializers.SerializerMethodField()
+    order = serializers.IntegerField(read_only=True)
+
+    def get_startTime(self, obj):  # noqa: N802 — camelCase wire key
+        return _hhmm(obj.start_time)
+
+    def get_endTime(self, obj):  # noqa: N802 — camelCase wire key
+        return _hhmm(obj.end_time)
+
+
+class IntakePayloadSerializer(serializers.Serializer):
+    """The whole intake form as one object — GET response and PUT response alike.
+
+    Both verbs answer with this off the **stored** profile, so a successful save
+    can never paint a state a refresh would contradict. ``lastGpa``/``freeDayMinutes``
+    are ``null`` when never recorded, which is distinct from an honest ``0``.
+    """
+
+    school = serializers.CharField(read_only=True)
+    city = serializers.CharField(read_only=True)
+    lastGpa = serializers.DecimalField(
+        source='last_gpa', read_only=True, allow_null=True,
+        max_digits=4, decimal_places=2, coerce_to_string=False,
+    )
+    targetMajor = serializers.CharField(source='target_major', read_only=True)
+    targetUniversity = serializers.CharField(source='target_university', read_only=True)
+    mockExamInstitute = serializers.CharField(source='mock_exam_institute', read_only=True)
+    freeDayMinutes = serializers.IntegerField(
+        source='free_day_minutes', read_only=True, allow_null=True,
+    )
+    classes = IntakeClassOutSerializer(many=True, source='classes.all')
+
+
+class IntakeClassWriteSerializer(serializers.Serializer):
+    """One ``{name, teacher, weekday, startTime, endTime, order}`` row of the body.
+
+    Shape only: the weekday band, the end>start rule and the row cap are the
+    service's pinned Persian messages. Times accept ``HH:MM`` or null.
+    """
+
+    name = serializers.CharField(max_length=120)
+    teacher = serializers.CharField(required=False, allow_blank=True, max_length=120)
+    weekday = serializers.IntegerField()
+    startTime = serializers.TimeField(source='start_time', required=False, allow_null=True)
+    endTime = serializers.TimeField(source='end_time', required=False, allow_null=True)
+    order = serializers.IntegerField(required=False)
+
+
+class IntakeWriteSerializer(serializers.Serializer):
+    """The intake PUT body: the complete form, set-replace semantics.
+
+    Every scalar is optional on the wire because absence means «cleared» — the
+    endpoint replaces the form wholesale, like every advisory PUT. ``classes``
+    is required so clearing the timetable is always an explicit ``[]``.
+    """
+
+    school = serializers.CharField(required=False, allow_blank=True, max_length=120)
+    city = serializers.CharField(required=False, allow_blank=True, max_length=60)
+    # Loose digits on purpose: any plausible GPA parses here, and the 0..20
+    # band itself stays the service's pinned Persian message.
+    lastGpa = serializers.DecimalField(
+        source='last_gpa', required=False, allow_null=True,
+        max_digits=5, decimal_places=2,
+    )
+    targetMajor = serializers.CharField(
+        source='target_major', required=False, allow_blank=True, max_length=120,
+    )
+    targetUniversity = serializers.CharField(
+        source='target_university', required=False, allow_blank=True, max_length=120,
+    )
+    mockExamInstitute = serializers.CharField(
+        source='mock_exam_institute', required=False, allow_blank=True, max_length=120,
+    )
+    freeDayMinutes = serializers.IntegerField(
+        source='free_day_minutes', required=False, allow_null=True,
+    )
+    classes = IntakeClassWriteSerializer(many=True)
+
+
+class WeeklyAssessmentItemSerializer(serializers.Serializer):
+    """One week's assessment in the wire shape shared by list and upsert."""
+
+    weekStart = serializers.DateField(source='week_start', read_only=True)
+    scores = serializers.JSONField(read_only=True)
+    advisorSummary = serializers.CharField(source='advisor_summary', read_only=True)
+    average = serializers.SerializerMethodField()
+
+    def get_average(self, obj) -> float:  # noqa: N802 — camelCase wire key
+        return assessment_average(obj.scores)
+
+
+class WeeklyAssessmentWriteSerializer(serializers.Serializer):
+    """The assessment PUT body: all 15 scores plus the optional text summary.
+
+    ``scores`` rides through as raw JSON because every failure shape (missing
+    criterion, unknown code, non-int, out of 1..5) has its own pinned Persian
+    message owned by ``services.assessments.validate_scores``.
+    """
+
+    scores = serializers.JSONField()
+    advisorSummary = serializers.CharField(
+        source='advisor_summary', required=False, allow_blank=True,
+    )
+
+
+class CallLogItemSerializer(serializers.Serializer):
+    """One week of the call checklist — works off dicts and rows alike.
+
+    The service builds plain dicts (stored *and* virtual weeks share one shape),
+    and DRF's attribute lookup falls back to mapping keys, so this single
+    serializer covers both without a second code path.
+    """
+
+    weekStart = serializers.DateField(read_only=True)
+    done = serializers.BooleanField(read_only=True)
+    callDate = serializers.DateField(read_only=True, allow_null=True)
+    topic = serializers.CharField(read_only=True)
+    note = serializers.CharField(read_only=True, allow_blank=True)
+
+
+class CallLogWriteSerializer(serializers.Serializer):
+    """The call-log PUT body: ``done`` required; the rest keep-when-absent.
+
+    Absent ``callDate``/``topic``/``note`` keys mean «unchanged» (upsert
+    semantics — unlike the intake form, these fields accumulate). Sending a key
+    overwrites it, including back to null/empty.
+    """
+
+    done = serializers.BooleanField()
+    callDate = serializers.DateField(source='call_date', required=False, allow_null=True)
+    topic = serializers.CharField(required=False, allow_blank=True, max_length=200)
+    note = serializers.CharField(required=False, allow_blank=True)

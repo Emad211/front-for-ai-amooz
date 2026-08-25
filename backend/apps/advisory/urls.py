@@ -25,6 +25,8 @@ from .views import (
     StudentSubjectsView,
     SubjectListView,
 )
+from .views_intake import AdvisorIntakeView, StudentIntakeView
+from .views_monthly import AdvisorCallLogsView, AdvisorWeeklyAssessmentsView
 
 urlpatterns = [
     path('subjects/', SubjectListView.as_view(), name='advisory_subject_list'),
@@ -61,12 +63,30 @@ urlpatterns = [
         AdvisorStudyPlansView.as_view(),
         name='advisory_student_plans',
     ),
+    # Restart wave 3 (steps 2, 7, 10): intake, weekly assessments, call logs.
+    path(
+        'students/<int:pk>/intake/',
+        AdvisorIntakeView.as_view(),
+        name='advisory_student_intake',
+    ),
+    path(
+        'students/<int:pk>/weekly-assessments/',
+        AdvisorWeeklyAssessmentsView.as_view(),
+        name='advisory_student_weekly_assessments',
+    ),
+    path(
+        'students/<int:pk>/call-logs/',
+        AdvisorCallLogsView.as_view(),
+        name='advisory_student_call_logs',
+    ),
     path('invites/', AdvisoryInviteCreateView.as_view(), name='advisory_invite_create'),
 
     # student side
     path('me/engagement/', StudentEngagementView.as_view(), name='advisory_my_engagement'),
     path('me/subjects/', StudentSubjectsView.as_view(), name='advisory_my_subjects'),
     path('me/plans/', StudentPlansView.as_view(), name='advisory_my_plans'),
+    # Restart wave 3, step 2: the student's own intake form.
+    path('me/intake/', StudentIntakeView.as_view(), name='advisory_my_intake'),
     # One route, no ``<date>`` segment: the day is a query parameter because the
     # resource is "my log" and the date selects a slice of it. A path segment would
     # read like an addressable row and invite the sibling URL that does not exist —
