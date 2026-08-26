@@ -11,6 +11,11 @@ import { requestJson } from '@/services/advisory-service';
 
 const RAW_API_URL = (process.env.NEXT_PUBLIC_API_URL ?? '').replace(/\/$/, '');
 
+// Same normalization `advisory-service.ts` applies: accept the env value with
+// or without the trailing `/api`. Without this, the blob download hit
+// `:8000/advisory/...` (404) instead of `:8000/api/advisory/...`.
+const API_URL = RAW_API_URL.endsWith('/api') ? RAW_API_URL : `${RAW_API_URL}/api`;
+
 /* ── Wire shapes (camelCase mirrors of the backend payloads) ─────────────── */
 
 /** One day row of the planner report. Dates are ISO `YYYY-MM-DD`. */
@@ -147,7 +152,7 @@ export async function downloadPlannerReportXlsx(
     throw new Error('NEXT_PUBLIC_API_URL تنظیم نشده است.');
   }
 
-  const url = reportsUrl(`${RAW_API_URL}/advisory/students/${engagementId}/reports/planner/`, {
+  const url = reportsUrl(`${API_URL}/advisory/students/${engagementId}/reports/planner/`, {
     from,
     to,
     format: 'xlsx',
