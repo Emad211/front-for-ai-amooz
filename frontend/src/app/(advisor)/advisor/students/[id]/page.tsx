@@ -13,6 +13,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { StudyFeedCard } from '@/components/advisory/study-plan/study-feed-card';
+import { PlannerReportCard } from '@/components/advisory/reports/planner-report-card';
 import { StudyPlannerCard } from '@/components/advisory/study-plan/study-planner-card';
 import { IntakeCard } from '@/components/advisory/intake-card';
 import { WeeklyAssessmentCard } from '@/components/advisory/weekly-assessment-card';
@@ -150,7 +151,12 @@ function AdvisorStudentDetailContent() {
           {/* Read the evidence first, then plan — DOM order = visual order.
           Tabs whose cards have not landed yet render the «به‌زودی» placeholder
           so the IA stays stable until their waves arrive. */}
-          {activeTab === 'feed' && <StudyFeedCard engagementId={engagementId} />}
+          {activeTab === 'feed' && (
+            <div className="space-y-6">
+              <StudyFeedCard engagementId={engagementId} />
+              <PlannerReportCard engagementId={engagementId} />
+            </div>
+          )}
           {activeTab === 'plan' && (
             <StudyPlannerCard
               engagementId={engagementId}
