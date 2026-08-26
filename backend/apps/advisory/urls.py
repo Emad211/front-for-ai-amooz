@@ -46,6 +46,7 @@ from .views_monthly import (
     StudentChallengesView,
     StudentMonthlyOutlookView,
 )
+from .views_overview import AdvisorOverviewView
 
 
 class ISODateConverter:
@@ -73,6 +74,7 @@ urlpatterns = [
     path('subjects/', SubjectListView.as_view(), name='advisory_subject_list'),
 
     # advisor side
+    path('overview/', AdvisorOverviewView.as_view(), name='advisory_overview'),
     path('students/', AdvisorStudentListView.as_view(), name='advisory_student_list'),
     path(
         'students/<int:pk>/subjects/',

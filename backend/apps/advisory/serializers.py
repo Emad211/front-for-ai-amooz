@@ -1135,3 +1135,42 @@ class ChallengeDaysWriteSerializer(serializers.Serializer):
     """
 
     days = serializers.ListField(child=serializers.JSONField())
+
+
+# ── advisor cockpit overview (``GET /api/advisory/overview/``) ────────────────
+#
+# Read-only projections of the plain dicts ``services.overview.advisor_overview``
+# builds. Plain ``Serializer``, not ``ModelSerializer`` — same allowlist rule as
+# every engagement serializer above: the wire shape is exactly what the cockpit
+# contract names, and cannot grow when a column is added. The service returns
+# snake_case keys; these fields rename them onto the camelCase wire.
+
+
+class OverviewMetricsSerializer(serializers.Serializer):
+    """The three roster-level numbers above the student table."""
+
+    activeStudents = serializers.IntegerField(source='active_students')
+    pendingInvites = serializers.IntegerField(source='pending_invites')
+    averageAdherence7d = serializers.FloatField(
+        source='average_adherence_7d', allow_null=True,
+    )
+
+
+class OverviewStudentRowSerializer(serializers.Serializer):
+    """One ACTIVE engagement's live row of the cockpit table."""
+
+    engagementId = serializers.IntegerField(source='engagement_id')
+    adherence7d = serializers.FloatField(allow_null=True)
+    lastLogDate = serializers.DateField(
+        source='last_log_date', allow_null=True,
+    )
+    activeChallengeTitle = serializers.CharField(
+        source='active_challenge_title', allow_null=True, allow_blank=True,
+    )
+
+
+class AdvisorOverviewResponseSerializer(serializers.Serializer):
+    """The whole ``200`` body of ``GET /api/advisory/overview/``."""
+
+    metrics = OverviewMetricsSerializer()
+    students = OverviewStudentRowSerializer(many=True)

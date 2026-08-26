@@ -71,6 +71,11 @@ _UNSCOPED = {'Subject'}
 #     set-replace for ``StudyChallenge``/``StudyChallengeDay`` after the view
 #     has resolved the engagement through scope.advisor_engagement or
 #     scope.student_active_engagement.
+#   • overview.py (advisor cockpit) — read-only batched metrics for
+#     ``GET /api/advisory/overview/``: it aggregates ``DailyLog`` max dates and
+#     ACTIVE ``StudyChallenge`` titles across the roster in one query each,
+#     while every per-engagement adherence number rides scope.advisor_plans +
+#     study_plans.feed_overall_adherence. It writes nothing.
 # The list is pinned by a test below so that a further door cannot appear without
 # someone editing this comment.
 _EXEMPT_FILES = {
@@ -87,6 +92,7 @@ _EXEMPT_FILES = {
     'exam_records.py',
     'monthly.py',
     'challenges.py',
+    'overview.py',
 }
 
 
@@ -279,6 +285,7 @@ def test_the_exempt_list_does_not_grow_by_accident():
         'exam_records.py',
         'monthly.py',
         'challenges.py',
+        'overview.py',
     }
 
 
