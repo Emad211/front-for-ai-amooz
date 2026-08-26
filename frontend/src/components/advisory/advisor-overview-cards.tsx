@@ -107,23 +107,23 @@ function StatCard({
 }: StatCardProps) {
   const body = (
     <Card className="h-full border-border/50 transition-colors group-hover:border-primary/50 group-hover:bg-muted/40">
-      <CardContent className="flex items-center gap-3 p-4">
-        <span className={`shrink-0 rounded-lg p-2 ${iconClassName ?? 'bg-primary/10'}`}>
-          <Icon className="h-4 w-4 text-primary" />
-        </span>
-        <div className="min-w-0">
-          <p className="truncate text-xs text-muted-foreground">{label}</p>
+      <CardContent className="p-4">
+        <div className="flex items-start justify-between gap-2">
           <p
-            className={`mt-0.5 text-xl font-bold tabular-nums leading-none ${valueClassName ?? ''}`}
+            className={`text-3xl font-bold tabular-nums leading-none ${valueClassName ?? ''}`}
           >
             {value}
           </p>
-          {hint && (
-            <p className="mt-1 truncate text-[11px] font-medium text-muted-foreground">
-              {hint}
-            </p>
-          )}
+          <span className={`shrink-0 rounded-lg p-2 ${iconClassName ?? 'bg-primary/10'}`}>
+            <Icon className="h-4 w-4 text-primary" />
+          </span>
         </div>
+        <p className="mt-2 truncate text-xs font-medium text-muted-foreground">{label}</p>
+        {hint && (
+          <p className="mt-0.5 truncate text-[11px] font-medium text-muted-foreground">
+            {hint}
+          </p>
+        )}
       </CardContent>
     </Card>
   );
