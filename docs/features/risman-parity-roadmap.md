@@ -70,6 +70,7 @@
 | `students/` | GET | مشاور | **گسترش موجود**: `?q=` (نام/تلفن، icontains) + `?folder=<id>`؛ پاسخ += `folders:[{id,name}]` و هر دانش‌آموز += `folderId` |
 | `folders/` | GET, POST | مشاور | لیست پوشه‌های خودش / ساخت («نام الزامی، ≤۶۴ نویسه») |
 | `folders/<int:folder_id>/` | PATCH, DELETE | مشاور | تغییر نام / حذف (engagements با folder=NULL)؛ غریبه ۴۰۴ |
+| `students/<int:pk>/folder/` | PATCH | مشاور | `{folderId: id|null}` — انتقال دانش‌آموز بین پوشه‌ها (null = خروج از پوشه)؛ پیاده‌سازی‌شده در گام ۱ |
 | `students/<int:pk>/reports/planner/` | GET | مشاور | `?from=&to=` (ISO، اجباری، to≥from) → JSON گزارش پلنر؛ `&format=xlsx` → فایل |
 | `students/<int:pk>/reports/student/` | GET | مشاور | همان قرارداد — گزارش دانش‌آموز (مطالعه/تست/سهم درس/نمرات بازه) |
 | `org/overview/` | GET | مدیر موسسه | آمار زندهٔ سازمان (دانش‌آموز فعال، برنامهٔ این هفته، لاگ امروز، میانگین تعهد) |
