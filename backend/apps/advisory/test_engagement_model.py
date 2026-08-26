@@ -246,7 +246,8 @@ def test_a_settled_engagement_leaves_both_lists(settled):
     _engagement(advisor, _student(), status=settled, ended_at=timezone.now())
 
     response = _auth(advisor).get(STUDENTS_URL)
-    assert response.data == {'students': [], 'pendingInvites': []}
+    # Risman step 1 added the advisor's ``folders`` array to the same body.
+    assert response.data == {'students': [], 'pendingInvites': [], 'folders': []}
 
 
 @pytest.mark.api
@@ -388,6 +389,8 @@ def test_the_roster_exposes_no_student_id():
     assert set(row) == {
         'id', 'studentName', 'phoneMasked', 'mode', 'organizationName',
         'startedOn', 'status',
+        # Risman step 1: which of the advisor's folders the row sits in.
+        'folderId',
     }
     assert row['id'] == engagement.pk != student.pk
     assert 'studentId' not in row

@@ -338,6 +338,19 @@ class AdvisoryEngagement(models.Model):
         blank=True,
         verbose_name=_('زمان پذیرش شرایط'),
     )
+    # Risman step 1: the advisor's private grouping of their roster. SET_NULL
+    # per ق۷ — deleting a folder must not delete the engagements inside it;
+    # they simply fall back to «بدون پوشه». The FK hangs off the engagement
+    # (the tenancy carrier), never off a ``User``, so a folder move is just
+    # another engagement-scoped write resolved through ``services/scope.py``.
+    folder = models.ForeignKey(
+        'AdvisoryStudentFolder',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='engagements',
+        verbose_name=_('پوشه'),
+    )
 
     class Meta:
         ordering = ['-invited_at']
@@ -2016,6 +2029,60 @@ class StudyChallengeDay(models.Model):
 
     def __str__(self) -> str:
         return f'day {self.day_number} ← #{self.challenge_id}'
+
+
+# ── Risman phase R (step 1): advisor-owned student folders ───────────────────
+#
+# One module from docs/features/risman-parity-roadmap.md §۵ گام ۱. A folder is
+# the advisor's private label for grouping their own roster; it never crosses
+# advisors (uniqueness is per ``(advisor, name)`` below) and never reaches the
+# student side. Like every advisory table it is tenancy-bearing: reads resolve
+# through ``services/scope.py`` and writes through ``services/folders.py``
+# (pinned in ``test_import_boundaries``' exempt list).
+
+MAX_FOLDER_NAME_CHARS = 64
+
+
+class AdvisoryStudentFolder(models.Model):
+    """A named folder an advisor groups their roster into (risman step 1).
+
+    Ownership is absolute and single-level: ``advisor`` is the whole of the
+    authorization question, answered by ``services.folders.get_folder`` — a
+    foreign or unknown id is a 404, never a 403, so one advisor cannot even
+    confirm another's folder names exist. Deleting a folder does NOT delete
+    the engagements inside it (ق۷): the write door nulls ``engagement.folder``
+    in the same transaction before the row goes.
+    """
+
+    advisor = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='advisory_folders',
+        verbose_name=_('مشاور'),
+    )
+    name = models.CharField(
+        max_length=MAX_FOLDER_NAME_CHARS,
+        verbose_name=_('نام پوشه'),
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['name', 'id']
+        constraints = [
+            # Two folders with one name inside one advisor's panel are a data-
+            # entry mistake, not two folders. Across advisors the same name is
+            # fine — folders are private labels, not a shared taxonomy.
+            models.UniqueConstraint(
+                fields=['advisor', 'name'],
+                name='uniq_advisory_student_folder',
+                violation_error_message=_('پوشه‌ای با این نام دارید.'),
+            ),
+        ]
+        verbose_name = _('پوشهٔ دانش‌آموزان')
+        verbose_name_plural = _('پوشه‌های دانش‌آموزان')
+
+    def __str__(self) -> str:
+        return f'{self.name} ← #{self.advisor_id}'
 
 
 

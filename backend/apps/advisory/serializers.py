@@ -166,6 +166,13 @@ class AdvisorStudentSerializer(serializers.Serializer):
     )
     startedOn = serializers.DateField(source='started_on', read_only=True, allow_null=True)
     status = serializers.CharField(read_only=True)
+    # Risman step 1: which of the advisor's folders this row sits in, or null
+    # («بدون پوشه»). The id only — the name resolves client-side from the
+    # roster response's ``folders`` array, so renaming a folder needs no
+    # per-row rewrite.
+    folderId = serializers.IntegerField(
+        source='folder_id', read_only=True, allow_null=True,
+    )
 
     def get_studentName(self, obj) -> str:  # noqa: N802 — camelCase wire key
         return _display_name(obj.student)
@@ -1174,3 +1181,38 @@ class AdvisorOverviewResponseSerializer(serializers.Serializer):
 
     metrics = OverviewMetricsSerializer()
     students = OverviewStudentRowSerializer(many=True)
+
+
+# ── risman step 1: student folders ───────────────────────────────────────────
+#
+# Plain ``Serializer`` again — ``AdvisoryStudentFolder`` is tenancy-bearing and
+# may not be imported into this module (``test_import_boundaries``), which is
+# exactly the B5 allowlist rule every engagement serializer above follows.
+
+class AdvisorFolderSerializer(serializers.Serializer):
+    """One advisor-owned folder on the wire: id + name, nothing else."""
+
+    id = serializers.IntegerField(read_only=True)
+    name = serializers.CharField(read_only=True)
+
+
+class FolderWriteSerializer(serializers.Serializer):
+    """The POST/PATCH folder body: a name, shape-only.
+
+    Blank/over-long/duplicate rules live in ``services.folders`` so the wire
+    answers with the pinned Persian messages instead of DRF's English field
+    errors — hence no ``max_length``/``allow_blank`` tightening here.
+    """
+
+    name = serializers.CharField(required=False, allow_blank=True, trim_whitespace=False)
+
+
+class EngagementFolderWriteSerializer(serializers.Serializer):
+    """PATCH body for moving one student between folders.
+
+    ``folderId: null`` removes the student from every folder («بدون پوشه»);
+    an unknown or foreign id is rejected by the view through
+    ``services.folders.get_folder`` with its own Persian message.
+    """
+
+    folderId = serializers.IntegerField(allow_null=True)

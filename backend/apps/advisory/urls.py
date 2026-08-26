@@ -47,6 +47,11 @@ from .views_monthly import (
     StudentMonthlyOutlookView,
 )
 from .views_overview import AdvisorOverviewView
+from .views_folders import (
+    AdvisorFolderDetailView,
+    AdvisorFolderListView,
+    AssignEngagementFolderView,
+)
 
 
 class ISODateConverter:
@@ -168,6 +173,19 @@ urlpatterns = [
     ),
     path('invites/', AdvisoryInviteCreateView.as_view(), name='advisory_invite_create'),
 
+    # Risman step 1: advisor-owned student folders + the per-student move door.
+    path('folders/', AdvisorFolderListView.as_view(), name='advisory_folder_list'),
+    path(
+        'folders/<int:folder_id>/',
+        AdvisorFolderDetailView.as_view(),
+        name='advisory_folder_detail',
+    ),
+    path(
+        'students/<int:pk>/folder/',
+        AssignEngagementFolderView.as_view(),
+        name='advisory_student_folder_assign',
+    ),
+
     # student side
     path('me/engagement/', StudentEngagementView.as_view(), name='advisory_my_engagement'),
     path('me/subjects/', StudentSubjectsView.as_view(), name='advisory_my_subjects'),
@@ -211,3 +229,9 @@ urlpatterns = [
         name='advisory_invite_reject',
     ),
 ]
+
+# Risman step 2 (reports): the module owns its urlpatterns (built self-contained
+# for parallel delivery); wired here with a late import on purpose.
+from .views_reports import urlpatterns as reports_urlpatterns  # noqa: E402
+
+urlpatterns += reports_urlpatterns

@@ -29,6 +29,7 @@ from apps.core.throttling import SafeScopedRateThrottle
 
 from .models import Subject
 from .serializers import (
+    AdvisorFolderSerializer,
     AdvisorPendingInviteSerializer,
     AdvisorStudentSerializer,
     AdvisoryInviteCreateSerializer,
@@ -45,6 +46,7 @@ from .serializers import (
     _display_name,
 )
 from .services import daily_logs as log_service
+from .services import folders as folder_service
 from .services import invites as invite_service
 from .services import student_subjects as subject_service
 from .services import study_plans as plan_service
@@ -125,17 +127,53 @@ class AdvisorStudentListView(APIView):
         description=(
             'دو فهرست: همکاری‌های فعال (`students`) و دعوت‌نامه‌های ارسال‌شده‌ی '
             'بی‌پاسخ (`pendingInvites`). دعوت‌نامه‌ها هیچ اطلاعاتی از هویت '
-            'دعوت‌شده ندارند — فقط شماره‌ی ماسک‌شده‌ای که خود مشاور وارد کرده است.'
+            'دعوت‌شده ندارند — فقط شماره‌ی ماسک‌شده‌ای که خود مشاور وارد کرده است. '
+            'ریسمان گام ۱: `?q=` (icontains روی نام/نام خانوادگی/نام کاربری/تلفن) '
+            'و `?folder=<id>` رستر را محدود می‌کنند؛ پاسخ `folders` (پوشه‌های خود '
+            'مشاور) و `folderId` هر دانش‌آموز را هم دارد. پوشهٔ غریبه/ناموجود ۴۰۴.'
         ),
-        responses={200: OpenApiResponse(description='students[] و pendingInvites[]')},
+        parameters=[
+            OpenApiParameter(
+                name='q', description='جستجو در نام، نام خانوادگی، نام کاربری و تلفن.',
+                required=False, type=str,
+            ),
+            OpenApiParameter(
+                name='folder', description='شناسهٔ پوشهٔ خود مشاور.',
+                required=False, type=int,
+            ),
+        ],
+        responses={200: OpenApiResponse(description='students[] و pendingInvites[] و folders[]')},
     )
     def get(self, request):
+        # Risman step 1: ?folder=<id> must resolve inside the advisor's OWN
+        # folders before any filtering — a foreign or unknown id is a 404,
+        # never a 403, so one advisor cannot probe another's folder ids.
+        raw_folder = request.query_params.get('folder') or ''
+        folder = None
+        if raw_folder:
+            try:
+                folder = folder_service.get_folder(request.user, int(raw_folder))
+            except ValueError:
+                folder = None
+            if folder is None:
+                return Response(
+                    {'detail': 'پوشه پیدا نشد.'},
+                    status=status.HTTP_404_NOT_FOUND,
+                )
+
+        roster = folder_service.filter_roster(
+            advisor_students(request.user),
+            q=request.query_params.get('q'),
+            folder=folder,
+        )
+
         return Response({
-            'students': AdvisorStudentSerializer(
-                advisor_students(request.user), many=True,
-            ).data,
+            'students': AdvisorStudentSerializer(roster, many=True).data,
             'pendingInvites': AdvisorPendingInviteSerializer(
                 advisor_pending_invites(request.user), many=True,
+            ).data,
+            'folders': AdvisorFolderSerializer(
+                folder_service.list_folders(request.user), many=True,
             ).data,
         })
 

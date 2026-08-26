@@ -54,6 +54,16 @@ export type AdvisorStudent = {
   /** ISO date (`YYYY-MM-DD`) the collaboration began, or `null` if not started. */
   startedOn: string | null;
   status: EngagementStatus;
+  /** Risman step 1: which of the advisor's folders this row sits in; `null`
+   * = unfiled («بدون پوشه»). The name resolves from the response's `folders`. */
+  folderId: number | null;
+};
+
+/** One advisor-owned student folder (risman step 1). Private to its advisor —
+ * uniqueness and visibility are both per-advisor server-side. */
+export type AdvisorFolder = {
+  id: number;
+  name: string;
 };
 
 /** The advisor's outbox: an invite with the invitee deliberately stripped out —
@@ -66,10 +76,12 @@ export type AdvisorPendingInvite = {
   isExpired: boolean;
 };
 
-/** `GET /advisory/students/` — roster and outbox arrive together. */
+/** `GET /advisory/students/` — roster, outbox and the folder list arrive
+ * together (one screen, one call). */
 export type AdvisorStudentsResponse = {
   students: AdvisorStudent[];
   pendingInvites: AdvisorPendingInvite[];
+  folders: AdvisorFolder[];
 };
 
 /* ── Advisor home cockpit (`GET /advisory/overview/`) ─────────────────── */
@@ -1069,8 +1081,20 @@ function normalizeMyChallenges(payload: unknown): MyChallengesResponse {
   };
 }
 
-function normalizeAdvisorOverview(payload: unknown): AdvisorOverviewResponse {
-  // Defensive by default (t.find lesson): any shape drift degrades to empty
+function normalizeFolderList(payload: unknown): AdvisorFolder[] {
+  if (!Array.isArray(payload)) return [];
+  const folders: AdvisorFolder[] = [];
+  for (const raw of payload) {
+    if (!raw || typeof raw !== 'object') continue;
+    const f = raw as Record<string, unknown>;
+    const id = nullableNumber(f.id);
+    if (id === null || typeof f.name !== 'string' || !f.name) continue;
+    folders.push({ id, name: f.name });
+  }
+  return folders;
+}
+
+function normalizeAdvisorOverview(payload: unknown): AdvisorOverviewResponse {  // Defensive by default (t.find lesson): any shape drift degrades to empty
   // metrics instead of crashing the dashboard render.
   const obj =
     payload && typeof payload === 'object'
@@ -1201,12 +1225,28 @@ export const AdvisoryService = {
   },
 
   /**
-   * The advisor's roster (accepted students) and outbox (unanswered invites),
-   * in one call — they are one screen, and splitting them buys only a second
-   * loading state. Neither list is paginated; both are bounded server-side.
+   * The advisor's roster (accepted students), outbox (unanswered invites) and
+   * folder list, in one call — they are one screen, and splitting them buys
+   * only a second loading state. Neither list is paginated; both are bounded
+   * server-side.
+   *
+   * Risman step 1: `params.q` narrows the roster by name/username/phone
+   * (server-side icontains) and `params.folderId` to one of the advisor's own
+   * folders — a foreign id answers 404, surfaced as its Persian detail.
    */
-  getStudents: async (): Promise<AdvisorStudentsResponse> => {
-    return requestJson<AdvisorStudentsResponse>('/advisory/students/');
+  getStudents: async (params?: {
+    q?: string;
+    folderId?: number;
+  }): Promise<AdvisorStudentsResponse> => {
+    const search = new URLSearchParams();
+    if (params?.q && params.q.trim()) search.set('q', params.q.trim());
+    if (params?.folderId != null) search.set('folder', String(params.folderId));
+    const query = search.toString();
+    return requestJson<AdvisorStudentsResponse>(
+      // Trailing slash MUST survive the query string: without it Django
+      // APPEND_SLASH-redirects and fetch downgrades the method to GET.
+      `/advisory/students/${query ? `?${query}` : ''}`,
+    );
   },
 
   /**
@@ -1873,5 +1913,71 @@ export const AdvisoryService = {
     );
     const normalized = normalizeChallengeDays(saved);
     return normalized.length > 0 ? normalized : days;
+  },
+
+  /* ── Risman step 1: student folders ─────────────────────────────────── */
+
+  /**
+   * The advisor's own folders, name order. A foreign advisor's folders never
+   * appear here; an empty list is the ordinary first-run state.
+   */
+  getFolders: async (): Promise<AdvisorFolder[]> => {
+    const payload: unknown = await requestJson<unknown>('/advisory/folders/');
+    return normalizeFolderList(payload);
+  },
+
+  /**
+   * Create one folder. Server rules: name required, ≤64 chars, unique among
+   * THIS advisor's folders — violations answer 400 with their pinned Persian
+   * detail («نام پوشه الزامی است.» / «…۶۴ نویسه است.» / «پوشه‌ای با این نام
+   * دارید.»), surfaced verbatim by `requestJson`.
+   */
+  createFolder: async (name: string): Promise<AdvisorFolder> => {
+    const saved: unknown = await requestJson<unknown>('/advisory/folders/', {
+      method: 'POST',
+      body: JSON.stringify({ name }),
+    });
+    const list = normalizeFolderList([saved]);
+    if (!list[0]) throw new Error('پاسخ سرور برای پوشۀ ساخته‌شده نامعتبر بود.');
+    return list[0];
+  },
+
+  /**
+   * Rename one of the advisor's own folders. Same validation as create; a
+   * missing/foreign folder answers 404 (never 403).
+   */
+  renameFolder: async (folderId: number, name: string): Promise<AdvisorFolder> => {
+    const saved: unknown = await requestJson<unknown>(
+      `/advisory/folders/${folderId}/`,
+      { method: 'PATCH', body: JSON.stringify({ name }) },
+    );
+    const list = normalizeFolderList([saved]);
+    if (!list[0]) throw new Error('پاسخ سرور برای پوشۀ ویرایش‌شده نامعتبر بود.');
+    return list[0];
+  },
+
+  /**
+   * Delete one of the advisor's own folders. The students inside it are NOT
+   * deleted — they fall back to unfiled («بدون پوشه») server-side. Terminal.
+   */
+  deleteFolder: async (folderId: number): Promise<void> => {
+    await requestJson<unknown>(`/advisory/folders/${folderId}/`, {
+      method: 'DELETE',
+    });
+  },
+
+  /**
+   * Move one student (by ENGAGEMENT id) into a folder, or detach with `null`
+   * («بدون پوشه»). A foreign engagement answers 404; a foreign folder id in
+   * the body answers 400 with its Persian detail.
+   */
+  setStudentFolder: async (
+    engagementId: number,
+    folderId: number | null,
+  ): Promise<void> => {
+    await requestJson<unknown>(`/advisory/students/${engagementId}/folder/`, {
+      method: 'PATCH',
+      body: JSON.stringify({ folderId }),
+    });
   },
 };
