@@ -35,7 +35,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
-import { JalaliDatePicker } from '@/components/advisory/study-plan/jalali-date-picker';
+import { JalaliDatePicker } from '@/components/advisory/jalali-date-picker';
 
 /** Jalali months, 1-based (۱ = فروردین … ۱۲ = اسفند). */
 export const JALALI_MONTH_LABELS = [
@@ -365,6 +365,7 @@ export function MonthlyOutlookForm({
                   className="h-9 min-w-0 flex-1 text-sm"
                 />
                 <Select
+                  dir="rtl"
                   value={slot.executor}
                   onValueChange={(value) =>
                     updateStrategy(index, {
@@ -498,6 +499,7 @@ export function MonthlyOutlookCard({ engagementId }: { engagementId: number }) {
         {/* ── Jalali month selector ─────────────────────────────────────── */}
         <div className="flex flex-wrap items-center gap-2">
           <Select
+            dir="rtl"
             value={String(jMonth)}
             onValueChange={(value) => setJMonth(Number(value))}
           >
@@ -513,6 +515,7 @@ export function MonthlyOutlookCard({ engagementId }: { engagementId: number }) {
             </SelectContent>
           </Select>
           <Select
+            dir="rtl"
             value={String(jYear)}
             onValueChange={(value) => setJYear(Number(value))}
           >

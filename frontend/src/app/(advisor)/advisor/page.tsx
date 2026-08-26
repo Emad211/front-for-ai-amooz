@@ -72,13 +72,14 @@ export default function AdvisorHomePage() {
           pendingInvites: Array.isArray(data.pendingInvites)
             ? data.pendingInvites
             : [],
+          folders: Array.isArray(data.folders) ? data.folders : [],
         });
       })
       .catch((err: unknown) => {
         if (!active) return;
         // Roster shape stays non-null so the section renders; the error card
         // below explains what happened and offers the retry.
-        setRoster({ students: [], pendingInvites: [] });
+        setRoster({ students: [], pendingInvites: [], folders: [] });
         setRosterError(err instanceof Error ? err.message : 'خطای نامشخص');
       });
 

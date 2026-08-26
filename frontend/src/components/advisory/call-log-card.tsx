@@ -18,7 +18,7 @@ import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
-import { JalaliDatePicker } from '@/components/advisory/study-plan/jalali-date-picker';
+import { JalaliDatePicker } from '@/components/advisory/jalali-date-picker';
 
 /** Parse an ISO `YYYY-MM-DD` into a LOCAL Date (no UTC day-shift). */
 function parseIsoDate(iso: string): Date | null {

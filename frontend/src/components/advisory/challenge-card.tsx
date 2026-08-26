@@ -40,7 +40,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { cn } from '@/lib/utils';
-import { JalaliDatePicker } from '@/components/advisory/study-plan/jalali-date-picker';
+import { JalaliDatePicker } from '@/components/advisory/jalali-date-picker';
 
 /** Wire statuses with their Persian labels — rendered from here everywhere. */
 export const CHALLENGE_STATUS_LABELS: Record<ChallengeStatus, string> = {

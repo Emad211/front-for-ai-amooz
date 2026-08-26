@@ -46,7 +46,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
-import { JalaliDatePicker } from '@/components/advisory/study-plan/jalali-date-picker';
+import { JalaliDatePicker } from '@/components/advisory/jalali-date-picker';
 
 /** Wire kinds with their Persian labels — rendered from here everywhere. */
 export const EXAM_KIND_LABELS: Record<ExamScoreKind, string> = {
@@ -270,6 +270,7 @@ function ScoreFields({
       </FieldCell>
       <FieldCell htmlFor={`${idPrefix}-kind`} label="نوع آزمون">
         <Select
+          dir="rtl"
           value={state.examKind}
           onValueChange={(value) =>
             onChange({ examKind: value as ExamScoreKind })
@@ -329,6 +330,7 @@ function ScoreFields({
         label="ارزیابی مشاور (اختیاری)"
       >
         <Select
+          dir="rtl"
           value={state.advisorRating ?? 'none'}
           onValueChange={(value) =>
             onChange({

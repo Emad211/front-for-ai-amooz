@@ -46,7 +46,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
-import { JalaliDatePicker } from '@/components/advisory/study-plan/jalali-date-picker';
+import { JalaliDatePicker } from '@/components/advisory/jalali-date-picker';
 
 /** Grade bands with their Persian labels — rendered from here everywhere. */
 export const GRADE_BAND_LABELS: Record<ExamGradeBand, string> = {
@@ -641,6 +641,7 @@ function AnalysisEditor({
               پایه (اختیاری)
             </label>
             <Select
+              dir="rtl"
               value={state.gradeBand}
               onValueChange={(value) =>
                 onChange({ gradeBand: value as ExamGradeBand | 'none' })

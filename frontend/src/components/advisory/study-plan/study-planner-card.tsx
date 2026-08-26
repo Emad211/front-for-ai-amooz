@@ -22,6 +22,7 @@ import {
 import { toEnglishDigits, toPersianDigits } from '@/lib/persian-digits';
 import { adherenceColorClass, formatAdherence } from '@/lib/adherence';
 import { formatPersianDate } from '@/lib/date-utils';
+import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -34,7 +35,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { JalaliDatePicker } from './jalali-date-picker';
+import { JalaliDatePicker } from '@/components/advisory/jalali-date-picker';
 
 /** Preset horizons plus «دلخواه»; the wire only ever receives a plain count. */
 type DurationMode = '7' | '14' | '30' | 'custom';
@@ -68,6 +69,162 @@ const DAY_NOTE_FIELDS = [
   { key: 'konkurClass', label: 'کلاس کنکور' },
   { key: 'preReading', label: 'پیش‌خوانی' },
 ] as const;
+
+/** Persian weekdays, Saturday-first, with the one-char initial used by the
+ * day pills and the full name used by titles/headers. */
+const WEEKDAYS = [
+  { initial: 'ش', name: 'شنبه' },
+  { initial: 'ی', name: 'یکشنبه' },
+  { initial: 'د', name: 'دوشنبه' },
+  { initial: 'س', name: 'سه‌شنبه' },
+  { initial: 'چ', name: 'چهارشنبه' },
+  { initial: 'پ', name: 'پنجشنبه' },
+  { initial: 'ج', name: 'جمعه' },
+] as const;
+
+/** Weekday of plan day `offset` (0-based): derived from the start date when
+ * one is set; otherwise the fixed Saturday-first sequence as a neutral
+ * fallback (display-only — never feeds state or the wire). */
+function weekdayForOffset(startDate: string, offset: number) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(startDate);
+  if (!match) return WEEKDAYS[offset % WEEKDAYS.length];
+  const date = new Date(
+    Number(match[1]),
+    Number(match[2]) - 1,
+    Number(match[3]),
+  );
+  date.setDate(date.getDate() + offset);
+  // JS getDay(): 0 = Sunday … 6 = Saturday → Saturday-first index.
+  return WEEKDAYS[(date.getDay() + 1) % WEEKDAYS.length];
+}
+
+/** «شنبه ۱ شهریور» — display-only Jalali label for a plan-day subheader.
+ * '' when `iso` isn't a valid ISO date. */
+function formatJalaliDayLabel(iso: string): string {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
+  if (!match) return '';
+  const date = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+  if (Number.isNaN(date.getTime())) return '';
+  return new Intl.DateTimeFormat('fa-IR', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+    calendar: 'persian',
+    numberingSystem: 'arabext',
+  }).format(date);
+}
+
+type DayPillsProps = {
+  /** Currently selected plan day (0-based `dayOffset`). */
+  value: number;
+  onChange: (offset: number) => void;
+  /** Plan start (ISO) — anchors each pill's true weekday. */
+  startDate: string;
+  /** Plan horizon in days; null (invalid input) renders nothing. */
+  durationDays: number | null;
+};
+
+/** Segmented weekday picker replacing the old «روز N» dropdown: one pill per
+ * plan day labeled with its weekday initial (the default 7-day horizon yields
+ * exactly the ش·ی·د·س·چ·پ·ج row); the full day name rides on `title` for a11y.
+ * Pure view layer — selection stays the row's existing `dayOffset`. */
+function DayPills({ value, onChange, startDate, durationDays }: DayPillsProps) {
+  if (durationDays === null) return null;
+  return (
+    <div
+      role="radiogroup"
+      aria-label="روز برنامه"
+      className="flex flex-wrap items-center gap-1"
+    >
+      {Array.from({ length: durationDays }, (_, offset) => {
+        const weekday = weekdayForOffset(startDate, offset);
+        const selected = value === offset;
+        return (
+          <button
+            key={offset}
+            type="button"
+            role="radio"
+            aria-checked={selected}
+            title={`${weekday.name} — روز ${toPersianDigits(offset + 1)}`}
+            onClick={() => onChange(offset)}
+            className={cn(
+              'inline-flex h-8 w-9 items-center justify-center rounded-lg border text-xs transition-colors',
+              selected
+                ? 'border-primary bg-primary/10 font-medium text-primary'
+                : 'border-transparent text-muted-foreground hover:bg-muted/40',
+            )}
+          >
+            {weekday.initial}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+/** Read-only rendering of a PUBLISHED plan's items grouped by day: a Jalali
+ * subheader per day, then compact rows (subject — topic — minutes — mastery
+ * dot, plus a test-minutes chip when set). Display only — drafts render
+ * exactly as before and no wire shape is touched. */
+function PublishedPlanItems({ items }: { items: StudyPlanOut['items'] }) {
+  const groups = new Map<number, StudyPlanOut['items']>();
+  for (const item of [...items].sort((a, b) => a.dayOffset - b.dayOffset)) {
+    const bucket = groups.get(item.dayOffset);
+    if (bucket) bucket.push(item);
+    else groups.set(item.dayOffset, [item]);
+  }
+  return (
+    <div className="space-y-3 rounded-lg bg-muted/20 p-3">
+      {[...groups.entries()].map(([offset, dayItems]) => {
+        const dayLabel =
+          formatJalaliDayLabel(dayItems[0]?.date ?? '') ||
+          `روز ${toPersianDigits(offset + 1)}`;
+        return (
+          <section key={offset}>
+            <p className="pb-0.5 text-[11px] font-medium text-muted-foreground">
+              {dayLabel}
+            </p>
+            <ul className="divide-y divide-border/40">
+              {dayItems.map((item, index) => (
+                <li
+                  key={`${offset}-${index}`}
+                  className="flex flex-wrap items-center gap-x-2 gap-y-0.5 py-1.5 text-xs first:pt-1 last:pb-0"
+                >
+                  <span className="font-medium">{item.name}</span>
+                  {item.topic && (
+                    <span className="min-w-0 truncate text-muted-foreground">
+                      — {item.topic}
+                    </span>
+                  )}
+                  <span className="tabular-nums text-muted-foreground">
+                    — {toPersianDigits(item.plannedMinutes)} دقیقه
+                  </span>
+                  {item.masteryColor && MASTERY_DOT_CLASS[item.masteryColor] && (
+                    <span
+                      aria-hidden
+                      className={cn(
+                        'h-2 w-2 shrink-0 rounded-full',
+                        MASTERY_DOT_CLASS[item.masteryColor],
+                      )}
+                    />
+                  )}
+                  {item.testMinutes != null && (
+                    <Badge
+                      variant="secondary"
+                      className="px-1.5 text-[11px] font-normal tabular-nums"
+                    >
+                      تست {toPersianDigits(item.testMinutes)} دقیقه
+                    </Badge>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </section>
+        );
+      })}
+    </div>
+  );
+}
 
 /** One editable row. `minutes`/`testMinutes` stay raw strings so half-typed
  * Persian-digit input never fights the cursor; both are parsed on save. */
@@ -132,10 +289,10 @@ function parseDuration(raw: string): number | null {
  * Client-side checks mirror §14.3's server order so common mistakes fail fast
  * with the same Persian wording the server would answer with.
  *
- * Density contract: each row renders as one compact bar (day / subject /
- * minutes / topic); enrichment fields collapse behind a per-row toggle and
- * day-notes behind an accordion — both are view-only state with zero wire
- * impact, so the default add flow stays a single row tall.
+ * Density contract: each row renders as one compact bar (weekday pills /
+ * subject / minutes / topic); enrichment fields collapse behind a per-row
+ * toggle and day-notes behind per-day accordions — all view-only state with
+ * zero wire impact, so the default add flow stays compact.
  */
 export function StudyPlannerCard({
   engagementId,
@@ -151,10 +308,11 @@ export function StudyPlannerCard({
   const [durationMode, setDurationMode] = useState<DurationMode>('7');
   const [customDuration, setCustomDuration] = useState('');
   const [rows, setRows] = useState<PlannerRow[]>([]);
-  // Restart step 4: per-day notes keyed '0'..'6', collapsed by default so the
-  // 7×4 grid never pushes the rows editor off-screen until asked for.
+  // Per-day note accordion: which days expose their 4-field editor. All
+  // collapsed by default so the section reads as seven scannable rows instead
+  // of a wall of unlabeled inputs.
   const [dayNotes, setDayNotes] = useState<Record<string, StudyPlanDayNote>>({});
-  const [showDayNotes, setShowDayNotes] = useState(false);
+  const [openNoteDays, setOpenNoteDays] = useState<ReadonlySet<number>>(new Set());
   // View-only density state (no wire impact): which rows expose their
   // enrichment editor, mirroring the day-notes accordion pattern.
   const [expandedRows, setExpandedRows] = useState<ReadonlySet<number>>(new Set());
@@ -461,6 +619,18 @@ export function StudyPlannerCard({
     });
   };
 
+  const toggleNoteDay = (offset: number) => {
+    setOpenNoteDays((prev) => {
+      const next = new Set(prev);
+      if (next.has(offset)) {
+        next.delete(offset);
+      } else {
+        next.add(offset);
+      }
+      return next;
+    });
+  };
+
   const removeRow = (uid: number) => {
     setRows((prev) => prev.filter((row) => row.uid !== uid));
   };
@@ -614,26 +784,22 @@ export function StudyPlannerCard({
                             {/* Quick-add bar: the four constant fields on one
                             line; everything else hides behind the toggle. */}
                             <div className="flex flex-wrap items-center gap-2">
-                              <Select
-                                value={String(row.dayOffset)}
-                                onValueChange={(value) => updateRow(row.uid, { dayOffset: Number(value) })}
-                              >
-                                <SelectTrigger aria-label="روز برنامه" className="h-9 w-[5.5rem] rounded-lg text-xs">
-                                  <SelectValue />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  {(durationDays === null
-                                    ? []
-                                    : Array.from({ length: durationDays }, (_, i) => i)
-                                  ).map((offset) => (
-                                    <SelectItem key={offset} value={String(offset)}>
-                                      روز {toPersianDigits(offset + 1)}
-                                    </SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
+                              <DayPills
+                                value={row.dayOffset}
+                                onChange={(offset) =>
+                                  updateRow(row.uid, { dayOffset: offset })
+                                }
+                                startDate={startDate}
+                                durationDays={durationDays}
+                              />
 
+                              {/* dir="rtl" on the Root: Radix portals the
+                              content to <body>, where its own dir context
+                              (default ltr without a DirectionProvider) would
+                              override the document's rtl and left-align the
+                              value. */}
                               <Select
+                                dir="rtl"
                                 value={row.subjectId === null ? '' : String(row.subjectId)}
                                 onValueChange={(value) => updateRow(row.uid, { subjectId: Number(value) })}
                               >
@@ -725,6 +891,7 @@ export function StudyPlannerCard({
                                   className="h-9 rounded-lg text-center text-xs tabular-nums"
                                 />
                                 <Select
+                                  dir="rtl"
                                   value={row.masteryColor}
                                   onValueChange={(value) =>
                                     updateRow(row.uid, {
@@ -772,58 +939,80 @@ export function StudyPlannerCard({
           )}
         </div>
 
-        {/* ── day notes: L6 accordion, collapsed by default ───────────────── */}
+        {/* ── day notes: one collapsible row per day ──────────────────────── */}
         <div className="rounded-xl border border-border/40">
-          <button
-            type="button"
-            onClick={() => setShowDayNotes((v) => !v)}
-            aria-expanded={showDayNotes}
-            className="flex w-full items-center justify-between gap-2 px-4 py-3 text-right"
-          >
-            <span className="flex items-center gap-2 text-sm font-medium">
-              یادداشت روزها
-              <Badge variant="secondary" className="px-1.5 text-[11px] font-normal">
-                {toPersianDigits(durationDays === null ? 7 : Math.min(durationDays, 7))} روز
-              </Badge>
-            </span>
-            <ChevronDown
-              className={`h-4 w-4 shrink-0 text-muted-foreground transition-transform ${showDayNotes ? 'rotate-180' : ''}`}
-            />
-          </button>
-          {showDayNotes && (
-            <div className="space-y-3 border-t border-border/40 p-4">
-              {(durationDays === null
-                ? []
-                : Array.from({ length: Math.min(durationDays, 7) }, (_, i) => i)
-              ).map((offset) => {
-                const dayKey = String(offset);
-                return (
-                  <div key={dayKey} className="space-y-1.5">
-                    <p className="text-[11px] font-medium text-muted-foreground">
-                      روز {toPersianDigits(offset + 1)}
-                    </p>
-                    <div className="grid grid-cols-2 gap-2">
+          <div className="flex items-center justify-between gap-2 px-4 pt-3">
+            <span className="text-sm font-medium">یادداشت روزها</span>
+            <Badge variant="secondary" className="px-1.5 text-[11px] font-normal">
+              {toPersianDigits(durationDays === null ? 7 : Math.min(durationDays, 7))} روز
+            </Badge>
+          </div>
+          <p className="px-4 pb-3 text-xs leading-relaxed text-muted-foreground">
+            یادداشت هر روز: مدرسه، امتحان، کلاس کنکور و پیش‌خوانی
+          </p>
+          <div className="divide-y divide-border/40 border-t border-border/40 px-4">
+            {(durationDays === null
+              ? []
+              : Array.from({ length: Math.min(durationDays, 7) }, (_, i) => i)
+            ).map((offset) => {
+              const dayKey = String(offset);
+              const open = openNoteDays.has(offset);
+              const filledCount = DAY_NOTE_FIELDS.filter(
+                ({ key }) => (dayNotes[dayKey]?.[key] ?? '').trim() !== '',
+              ).length;
+              const weekday = weekdayForOffset(startDate, offset);
+              return (
+                <div key={dayKey}>
+                  <button
+                    type="button"
+                    onClick={() => toggleNoteDay(offset)}
+                    aria-expanded={open}
+                    className="flex w-full items-center justify-between gap-2 py-2.5 text-right"
+                  >
+                    <span className="flex items-center gap-2 text-xs font-medium">
+                      روز {toPersianDigits(offset + 1)} — {weekday.name}
+                      <Badge
+                        variant="secondary"
+                        className="px-1.5 text-[11px] font-normal tabular-nums"
+                      >
+                        {toPersianDigits(filledCount)} از{' '}
+                        {toPersianDigits(DAY_NOTE_FIELDS.length)}
+                      </Badge>
+                    </span>
+                    <ChevronDown
+                      className={`h-4 w-4 shrink-0 text-muted-foreground transition-transform ${open ? 'rotate-180' : ''}`}
+                    />
+                  </button>
+                  {open && (
+                    <div className="grid grid-cols-1 gap-2 pb-3 sm:grid-cols-2">
                       {DAY_NOTE_FIELDS.map(({ key, label }) => (
-                        <Input
-                          key={key}
-                          value={dayNotes[dayKey]?.[key] ?? ''}
-                          onChange={(e) => setDayNote(dayKey, key, e.target.value)}
-                          placeholder={label}
-                          maxLength={120}
-                          aria-label={`${label} — روز ${toPersianDigits(offset + 1)}`}
-                          className="h-9 rounded-lg text-xs"
-                        />
+                        <div key={key} className="space-y-1">
+                          <label
+                            htmlFor={`day-note-${offset}-${key}`}
+                            className="text-[11px] font-medium text-muted-foreground"
+                          >
+                            {label}
+                          </label>
+                          <Input
+                            id={`day-note-${offset}-${key}`}
+                            value={dayNotes[dayKey]?.[key] ?? ''}
+                            onChange={(e) => setDayNote(dayKey, key, e.target.value)}
+                            maxLength={120}
+                            aria-label={`${label} — روز ${toPersianDigits(offset + 1)}`}
+                            className="h-9 rounded-lg text-xs"
+                          />
+                        </div>
                       ))}
                     </div>
-                  </div>
-                );
-              })}
-              {durationDays !== null && durationDays > 7 && (
-                <p className="text-xs leading-relaxed text-muted-foreground">
-                  یادداشت روزها برای هفتۀ اول برنامه ثبت می‌شود.
-                </p>
-              )}
-            </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+          {durationDays !== null && durationDays > 7 && (
+            <p className="border-t border-border/40 px-4 py-3 text-xs leading-relaxed text-muted-foreground">
+              یادداشت روزها برای هفتۀ اول برنامه ثبت می‌شود.
+            </p>
           )}
         </div>
 
@@ -869,53 +1058,57 @@ export function StudyPlannerCard({
               {[...plans]
                 .sort((a, b) => a.startDate.localeCompare(b.startDate))
                 .map((plan) => (
-                  <li
-                    key={plan.id}
-                    className="flex flex-wrap items-center justify-between gap-2 py-2.5"
-                  >
-                    <div className="min-w-0">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <Badge
-                          variant={plan.status === 'PUBLISHED' ? 'default' : 'outline'}
-                          className="text-[11px] font-normal"
-                        >
-                          {plan.status === 'PUBLISHED' ? 'منتشرشده' : 'پیش‌نویس'}
-                        </Badge>
-                        {/* Step 8: per-plan adherence; quiet-null for drafts and
-                        plans with no elapsed items yet (percent is null). */}
-                        {plan.percent != null && (
+                  <li key={plan.id} className="space-y-2 py-2.5">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
                           <Badge
-                            variant="outline"
-                            className={`text-[11px] font-normal tabular-nums ${adherenceColorClass(plan.percent)}`}
+                            variant={plan.status === 'PUBLISHED' ? 'default' : 'outline'}
+                            className="text-[11px] font-normal"
                           >
-                            پایبندی {formatAdherence(plan.percent)}
+                            {plan.status === 'PUBLISHED' ? 'منتشرشده' : 'پیش‌نویس'}
                           </Badge>
-                        )}
-                        <span className="text-xs tabular-nums text-muted-foreground">
-                          {toPersianDigits(plan.durationDays)} روز ·{' '}
-                          {toPersianDigits(plan.items.length)} ردیف
-                        </span>
+                          {/* Step 8: per-plan adherence; quiet-null for drafts and
+                          plans with no elapsed items yet (percent is null). */}
+                          {plan.percent != null && (
+                            <Badge
+                              variant="outline"
+                              className={`text-[11px] font-normal tabular-nums ${adherenceColorClass(plan.percent)}`}
+                            >
+                              پایبندی {formatAdherence(plan.percent)}
+                            </Badge>
+                          )}
+                          <span className="text-xs tabular-nums text-muted-foreground">
+                            {toPersianDigits(plan.durationDays)} روز ·{' '}
+                            {toPersianDigits(plan.items.length)} ردیف
+                          </span>
+                        </div>
+                        <p className="mt-0.5 text-xs text-muted-foreground">
+                          از {formatPersianDate(plan.startDate)} تا{' '}
+                          {formatPersianDate(plan.endDate)}
+                        </p>
                       </div>
-                      <p className="mt-0.5 text-xs text-muted-foreground">
-                        از {formatPersianDate(plan.startDate)} تا{' '}
-                        {formatPersianDate(plan.endDate)}
-                      </p>
+                      {plan.status === 'PUBLISHED' && (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          disabled={busyPlanId === plan.id}
+                          onClick={() => handleUnpublish(plan.id)}
+                        >
+                          {busyPlanId === plan.id ? (
+                            <Loader2 className="ml-2 h-4 w-4 animate-spin" />
+                          ) : (
+                            <Undo2 className="ml-2 h-4 w-4" />
+                          )}
+                          لغو انتشار
+                        </Button>
+                      )}
                     </div>
-                    {plan.status === 'PUBLISHED' && (
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        disabled={busyPlanId === plan.id}
-                        onClick={() => handleUnpublish(plan.id)}
-                      >
-                        {busyPlanId === plan.id ? (
-                          <Loader2 className="ml-2 h-4 w-4 animate-spin" />
-                        ) : (
-                          <Undo2 className="ml-2 h-4 w-4" />
-                        )}
-                        لغو انتشار
-                      </Button>
+                    {/* Published plans are readable here, not just cancellable:
+                    their items render read-only, grouped by day. */}
+                    {plan.status === 'PUBLISHED' && plan.items.length > 0 && (
+                      <PublishedPlanItems items={plan.items} />
                     )}
                   </li>
                 ))}
