@@ -1146,7 +1146,7 @@ function extractErrorMessage(payload: unknown, fallback: string): string {
   return fallback;
 }
 
-async function requestJson<T>(path: string, options: RequestInit = {}): Promise<T> {
+export async function requestJson<T>(path: string, options: RequestInit = {}): Promise<T> {
   if (!RAW_API_URL) {
     throw new Error('NEXT_PUBLIC_API_URL تنظیم نشده است.');
   }
