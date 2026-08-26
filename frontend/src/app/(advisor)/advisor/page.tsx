@@ -4,7 +4,6 @@ import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import {
   AlertCircle,
-  BookOpen,
   CalendarDays,
   RefreshCw,
   UserPlus,
@@ -149,49 +148,27 @@ export default function AdvisorHomePage() {
   const hasStudents = (roster?.students.length ?? 0) > 0;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       {/* ── header ─────────────────────────────────────────────────────── */}
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-bold sm:text-2xl">
-            {name ? `${name} عزیز، خوش آمدید` : 'خوش آمدید'}
-          </h1>
-          <p className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground sm:text-sm">
-            <CalendarDays className="h-3.5 w-3.5 shrink-0" />
-            {todayLabel}
-          </p>
-          <p className="mt-1 text-xs leading-relaxed text-muted-foreground sm:text-sm">
-            نگاهی به وضعیت امروز دانش‌آموزانتان: تعهد هفتگی، آخرین گزارش‌ها و
-            چالش‌های در جریان.
-          </p>
-        </div>
-        <div className="flex shrink-0 items-center gap-2">
-          <Button asChild variant="outline" size="sm">
-            <Link href="/advisor/students">
-              <Users className="ml-2 h-4 w-4" />
-              دانش‌آموزان
-            </Link>
-          </Button>
-          <Button asChild variant="outline" size="sm">
-            <Link href="/advisor/subjects">
-              <BookOpen className="ml-2 h-4 w-4" />
-              درس‌ها
-            </Link>
-          </Button>
-        </div>
+      <div>
+        <h1 className="text-xl font-bold sm:text-2xl">
+          {name ? `${name} عزیز، خوش آمدید` : 'خوش آمدید'}
+        </h1>
+        <p className="mt-1.5 flex items-center gap-1.5 text-xs text-muted-foreground sm:text-sm">
+          <CalendarDays className="h-3.5 w-3.5 shrink-0" />
+          {todayLabel}
+        </p>
+        <p className="mt-1 text-xs leading-relaxed text-muted-foreground sm:text-sm">
+          نگاهی به وضعیت امروز دانش‌آموزانتان: تعهد هفتگی، آخرین گزارش‌ها و
+          چالش‌های در جریان.
+        </p>
       </div>
 
       {/* ── stat strip ─────────────────────────────────────────────────── */}
       {loading ? (
-        <div
-          className="grid grid-cols-2 gap-3 lg:grid-cols-4"
-          aria-busy="true"
-          aria-live="polite"
-        >
+        <div aria-busy="true" aria-live="polite">
           <span className="sr-only">در حال بارگذاری نمای کلی…</span>
-          {[0, 1, 2, 3].map((i) => (
-            <Skeleton key={i} className="h-[72px] rounded-2xl" />
-          ))}
+          <Skeleton className="h-20 rounded-2xl" />
         </div>
       ) : (
         <AdvisorStatStrip
@@ -235,19 +212,17 @@ export default function AdvisorHomePage() {
         </h2>
 
         {loading && (
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {[0, 1, 2].map((i) => (
-              <Skeleton key={i} className="h-44 rounded-2xl" />
+              <Skeleton key={i} className="h-40 rounded-2xl" />
             ))}
           </div>
         )}
 
         {!loading && !hasStudents && (
-          <Card className="border-border/50 bg-gradient-to-b from-primary/5 to-transparent">
-            <CardContent className="py-10 text-center">
-              <span className="mx-auto inline-flex rounded-xl bg-primary/10 p-3">
-                <UserPlus className="h-6 w-6 text-primary" />
-              </span>
+          <Card className="border-border/50">
+            <CardContent className="py-12 text-center">
+              <UserPlus className="mx-auto h-7 w-7 text-muted-foreground" />
               <p className="mt-3 text-sm font-bold">اولین دانش‌آموزت را دعوت کن</p>
               <p className="mx-auto mt-1.5 max-w-md text-xs leading-relaxed text-muted-foreground">
                 با ارسال یک دعوت‌نامه شروع کنید؛ پس از پذیرش دانش‌آموز، گزارش
@@ -264,7 +239,7 @@ export default function AdvisorHomePage() {
         )}
 
         {!loading && hasStudents && (
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {merged.map((entry) => (
               <AdvisorStudentCardView key={entry.student.id} entry={entry} />
             ))}

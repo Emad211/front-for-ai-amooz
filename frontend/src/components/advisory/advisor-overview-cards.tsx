@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import {
-  ArrowLeft,
+  ChevronLeft,
   Clock,
   Flame,
   Target,
@@ -13,9 +13,8 @@ import {
 } from 'lucide-react';
 
 import type { AdvisorStudent } from '@/services/advisory-service';
-import { adherenceColorClass } from '@/lib/adherence';
 import { formatPersianPercent, toPersianDigits } from '@/lib/persian-digits';
-import { Card, CardContent } from '@/components/ui/card';
+import { Card } from '@/components/ui/card';
 
 /** A roster student joined with its (optional) overview enrichment row. */
 export type MergedAdvisorStudent = {
@@ -25,46 +24,38 @@ export type MergedAdvisorStudent = {
   activeChallengeTitle: string | null;
 };
 
-/* ── status badge ──────────────────────────────────────────────────────── */
+/* ── status dot ────────────────────────────────────────────────────────── */
 
-const STATUS_BADGES: Record<string, { label: string; className: string }> = {
-  ACTIVE: {
-    label: 'فعال',
-    className:
-      'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-500/20',
-  },
-  PENDING: {
-    label: 'در انتظار',
-    className:
-      'bg-amber-500/10 text-amber-700 dark:text-amber-400 border border-amber-500/20',
-  },
-  ENDED: {
-    label: 'پایان‌یافته',
-    className: 'bg-muted text-muted-foreground border border-border',
-  },
-  REJECTED: {
-    label: 'رد شده',
-    className: 'bg-muted text-muted-foreground border border-border',
-  },
+const STATUS_DOTS: Record<string, { label: string; dotClass: string }> = {
+  ACTIVE: { label: 'فعال', dotClass: 'bg-emerald-500' },
+  PENDING: { label: 'در انتظار', dotClass: 'bg-amber-500' },
+  ENDED: { label: 'پایان‌یافته', dotClass: 'bg-muted-foreground/40' },
+  REJECTED: { label: 'رد شده', dotClass: 'bg-muted-foreground/40' },
 };
 
-function StatusBadge({ status }: { status: AdvisorStudent['status'] }) {
-  const badge = STATUS_BADGES[status] ?? STATUS_BADGES.ENDED;
+function StatusDot({ status }: { status: AdvisorStudent['status'] }) {
+  const meta = STATUS_DOTS[status] ?? STATUS_DOTS.ENDED;
   return (
-    <span
-      className={`inline-flex shrink-0 items-center rounded-full px-2 py-0.5 text-[11px] font-medium ${badge.className}`}
-    >
-      {badge.label}
+    <span className="inline-flex shrink-0 items-center gap-1.5">
+      <span aria-hidden className={`h-2 w-2 rounded-full ${meta.dotClass}`} />
+      <span className="text-xs text-muted-foreground">{meta.label}</span>
     </span>
   );
 }
 
-/* ── adherence bar ─────────────────────────────────────────────────────── */
+/* ── adherence colors ──────────────────────────────────────────────────── */
 
 function adherenceBarClass(percent: number): string {
   if (percent >= 80) return 'bg-emerald-500';
   if (percent >= 50) return 'bg-amber-500';
   return 'bg-red-500';
+}
+
+/** Plain text-color twin of `adherenceBarClass` — no pill, no background. */
+function adherenceTextClass(percent: number): string {
+  if (percent >= 80) return 'text-emerald-500';
+  if (percent >= 50) return 'text-amber-500';
+  return 'text-red-500';
 }
 
 /**
@@ -85,54 +76,26 @@ export function relativeLastLogLabel(lastLogDate: string | null): string {
 
 /* ── stat strip ────────────────────────────────────────────────────────── */
 
-type StatCardProps = {
+type StatCellProps = {
   icon: LucideIcon;
   label: string;
   value: React.ReactNode;
-  /** Optional trailing note under the value («نیاز به پیگیری» etc.). */
-  hint?: string;
   valueClassName?: string;
-  iconClassName?: string;
-  href?: string;
 };
 
-function StatCard({
-  icon: Icon,
-  label,
-  value,
-  hint,
-  valueClassName,
-  iconClassName,
-  href,
-}: StatCardProps) {
-  const body = (
-    <Card className="h-full border-border/50 transition-colors group-hover:border-primary/50 group-hover:bg-muted/40">
-      <CardContent className="p-4">
-        <div className="flex items-start justify-between gap-2">
-          <p
-            className={`text-3xl font-bold tabular-nums leading-none ${valueClassName ?? ''}`}
-          >
-            {value}
-          </p>
-          <span className={`shrink-0 rounded-lg p-2 ${iconClassName ?? 'bg-primary/10'}`}>
-            <Icon className="h-4 w-4 text-primary" />
-          </span>
-        </div>
-        <p className="mt-2 truncate text-xs font-medium text-muted-foreground">{label}</p>
-        {hint && (
-          <p className="mt-0.5 truncate text-[11px] font-medium text-muted-foreground">
-            {hint}
-          </p>
-        )}
-      </CardContent>
-    </Card>
-  );
-
-  if (!href) return body;
+function StatCell({ icon: Icon, label, value, valueClassName }: StatCellProps) {
   return (
-    <Link href={href} className="group block h-full focus-visible:outline-none">
-      {body}
-    </Link>
+    <div className="flex min-w-0 items-center gap-2.5 px-3 py-0.5 first:ps-0 last:pe-0 sm:px-4">
+      <Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
+      <div className="min-w-0">
+        <p
+          className={`text-2xl font-bold leading-none tabular-nums ${valueClassName ?? ''}`}
+        >
+          {value}
+        </p>
+        <p className="mt-1 truncate text-xs text-muted-foreground">{label}</p>
+      </div>
+    </div>
   );
 }
 
@@ -143,7 +106,11 @@ export type AdvisorStatStripProps = {
   activeChallengeCount: number;
 };
 
-/** The four headline counters of the advisor cockpit. */
+/**
+ * The four headline counters of the advisor cockpit as ONE soft card row:
+ * adherence renders as plain threshold-colored text; a pending count >0
+ * tints its value amber.
+ */
 export function AdvisorStatStrip({
   activeStudents,
   pendingInvites,
@@ -152,47 +119,39 @@ export function AdvisorStatStrip({
 }: AdvisorStatStripProps) {
   const hasPending = pendingInvites > 0;
   return (
-    <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-      <StatCard
-        icon={Users}
-        label="دانش‌آموزان فعال"
-        value={toPersianDigits(activeStudents)}
-      />
-      <StatCard
-        icon={UserPlus}
-        label="در انتظار تأیید"
-        value={toPersianDigits(pendingInvites)}
-        hint={hasPending ? 'نیاز به پیگیری' : undefined}
-        href="/advisor/students"
-        iconClassName={
-          hasPending ? 'bg-amber-500/10 ring-1 ring-amber-500/30' : undefined
-        }
-        valueClassName={
-          hasPending ? 'text-amber-600 dark:text-amber-400' : undefined
-        }
-      />
-      <StatCard
-        icon={TrendingUp}
-        label="میانگین تعهد ۷روزه"
-        value={
-          averageAdherence7d === null ? (
-            '—'
-          ) : (
-            <span
-              className={`rounded-md px-1.5 py-0.5 ${adherenceColorClass(averageAdherence7d)}`}
-            >
-              {formatPersianPercent(averageAdherence7d)}
-            </span>
-          )
-        }
-        hint={averageAdherence7d === null ? 'گزارشی ثبت نشده' : undefined}
-      />
-      <StatCard
-        icon={Flame}
-        label="چالش فعال"
-        value={toPersianDigits(activeChallengeCount)}
-      />
-    </div>
+    <Card className="rounded-2xl border-border/50">
+      <div className="grid grid-cols-4 divide-x divide-border/40 p-5">
+        <StatCell
+          icon={Users}
+          label="دانش‌آموزان فعال"
+          value={toPersianDigits(activeStudents)}
+        />
+        <StatCell
+          icon={UserPlus}
+          label="در انتظار تأیید"
+          value={toPersianDigits(pendingInvites)}
+          valueClassName={hasPending ? 'text-amber-500' : undefined}
+        />
+        <StatCell
+          icon={TrendingUp}
+          label="میانگین تعهد ۷روزه"
+          value={
+            averageAdherence7d === null ? (
+              '—'
+            ) : (
+              <span className={adherenceTextClass(averageAdherence7d)}>
+                {formatPersianPercent(averageAdherence7d)}
+              </span>
+            )
+          }
+        />
+        <StatCell
+          icon={Flame}
+          label="چالش فعال"
+          value={toPersianDigits(activeChallengeCount)}
+        />
+      </div>
+    </Card>
   );
 }
 
@@ -211,11 +170,19 @@ export function AdvisorStudentCardView({
       href={`/advisor/students/${student.id}`}
       className="group block h-full rounded-2xl focus-visible:outline-none"
     >
-      <Card className="flex h-full flex-col border-border/50 transition-colors hover:border-primary/50 hover:bg-muted/40">
-        <CardContent className="flex h-full flex-col gap-3 p-4">
-          <div className="flex items-start justify-between gap-2">
-            <p className="min-w-0 truncate text-sm font-bold">{student.studentName}</p>
-            <StatusBadge status={student.status} />
+      <Card className="flex h-full flex-col rounded-2xl border-border/50 transition-colors hover:border-primary/40 hover:bg-muted/30 focus-visible:border-primary focus-visible:ring-1 focus-visible:ring-ring">
+        <div className="flex h-full flex-col gap-3 p-5">
+          <div className="flex items-center justify-between gap-2">
+            <p className="min-w-0 truncate text-base font-semibold">
+              {student.studentName}
+            </p>
+            <span className="flex shrink-0 items-center gap-2">
+              <StatusDot status={student.status} />
+              <ChevronLeft
+                aria-hidden
+                className="h-4 w-4 text-muted-foreground opacity-40 transition-all group-hover:-translate-x-0.5 group-hover:opacity-100"
+              />
+            </span>
           </div>
 
           {adherence7d === null ? (
@@ -223,50 +190,43 @@ export function AdvisorStudentCardView({
               برنامه‌ای این هفته نیست
             </p>
           ) : (
-            <div className="space-y-1.5">
-              <div className="flex items-center justify-between gap-2 text-xs">
-                <span className="text-muted-foreground">تعهد ۷روزه</span>
-                <span
-                  className={`rounded-full px-2 py-0.5 font-medium tabular-nums ${adherenceColorClass(adherence7d)}`}
-                >
-                  {formatPersianPercent(adherence7d)}
-                </span>
-              </div>
+            <div className="flex items-center gap-2.5">
               <div
                 role="progressbar"
                 aria-valuenow={adherence7d}
                 aria-valuemin={0}
                 aria-valuemax={100}
                 aria-label={`تعهد هفتگی ${student.studentName}`}
-                className="h-1.5 w-full overflow-hidden rounded-full bg-muted"
+                className="h-1 flex-1 overflow-hidden rounded-full bg-muted"
               >
                 <div
                   className={`h-full rounded-full transition-all ${adherenceBarClass(adherence7d)}`}
                   style={{ width: `${Math.min(100, Math.max(0, adherence7d))}%` }}
                 />
               </div>
+              <span
+                className={`shrink-0 text-xs font-medium tabular-nums ${adherenceTextClass(adherence7d)}`}
+              >
+                {formatPersianPercent(adherence7d)}
+              </span>
             </div>
           )}
 
-          <div className="mt-auto space-y-1.5 border-t border-border/40 pt-2.5">
+          <div className="mt-auto space-y-1">
             <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
               <Clock className="h-3.5 w-3.5 shrink-0" />
               آخرین گزارش: {relativeLastLogLabel(lastLogDate)}
             </p>
             {activeChallengeTitle && (
-              <p className="flex min-w-0 items-center gap-1.5 text-xs">
-                <Target className="h-3.5 w-3.5 shrink-0 text-primary" />
+              <p className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
+                <Target className="h-3.5 w-3.5 shrink-0" />
                 <span className="truncate" title={activeChallengeTitle}>
                   {activeChallengeTitle}
                 </span>
               </p>
             )}
-            <p className="flex items-center gap-1 pt-0.5 text-xs font-medium text-primary">
-              مشاهده گزارش و برنامه
-              <ArrowLeft className="h-3 w-3 transition-transform group-hover:-translate-x-0.5" />
-            </p>
           </div>
-        </CardContent>
+        </div>
       </Card>
     </Link>
   );
