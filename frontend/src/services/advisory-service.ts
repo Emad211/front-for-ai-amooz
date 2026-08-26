@@ -72,6 +72,35 @@ export type AdvisorStudentsResponse = {
   pendingInvites: AdvisorPendingInvite[];
 };
 
+/* ── Advisor home cockpit (`GET /advisory/overview/`) ─────────────────── */
+
+/** Headline counters for the advisor dashboard. `averageAdherence7d` is the
+ * mean of per-student 7-day adherence (rounded int) or `null` when no student
+ * has any recorded plan activity — quiet-null, never a fake 0%. */
+export type AdvisorOverviewMetrics = {
+  activeStudents: number;
+  pendingInvites: number;
+  averageAdherence7d: number | null;
+};
+
+/** One enrichment row of the overview, keyed by ENGAGEMENT id — join it to
+ * `AdvisorStudent.id` on the client. Every field is nullable: a student with
+ * no published plan this week simply has `adherence7d: null`. */
+export type AdvisorOverviewStudentRow = {
+  engagementId: number;
+  adherence7d: number | null;
+  /** ISO date (`YYYY-MM-DD`) of the student's most recent study log. */
+  lastLogDate: string | null;
+  /** Title of one currently-ACTIVE challenge, or `null`. */
+  activeChallengeTitle: string | null;
+};
+
+/** `GET /advisory/overview/` — metrics plus per-student enrichment rows. */
+export type AdvisorOverviewResponse = {
+  metrics: AdvisorOverviewMetrics;
+  students: AdvisorOverviewStudentRow[];
+};
+
 /** A pending invite as the STUDENT sees it — the accept-banner payload. */
 export type StudentInvite = {
   id: number;
@@ -1040,6 +1069,42 @@ function normalizeMyChallenges(payload: unknown): MyChallengesResponse {
   };
 }
 
+function normalizeAdvisorOverview(payload: unknown): AdvisorOverviewResponse {
+  // Defensive by default (t.find lesson): any shape drift degrades to empty
+  // metrics instead of crashing the dashboard render.
+  const obj =
+    payload && typeof payload === 'object'
+      ? (payload as Record<string, unknown>)
+      : {};
+  const rawMetrics =
+    obj.metrics && typeof obj.metrics === 'object'
+      ? (obj.metrics as Record<string, unknown>)
+      : {};
+  const students: AdvisorOverviewStudentRow[] = [];
+  if (Array.isArray(obj.students)) {
+    for (const raw of obj.students) {
+      if (!raw || typeof raw !== 'object') continue;
+      const s = raw as Record<string, unknown>;
+      const engagementId = nullableNumber(s.engagementId);
+      if (engagementId === null) continue;
+      students.push({
+        engagementId,
+        adherence7d: nullableNumber(s.adherence7d),
+        lastLogDate: nullableString(s.lastLogDate),
+        activeChallengeTitle: nullableString(s.activeChallengeTitle),
+      });
+    }
+  }
+  return {
+    metrics: {
+      activeStudents: nullableNumber(rawMetrics.activeStudents) ?? 0,
+      pendingInvites: nullableNumber(rawMetrics.pendingInvites) ?? 0,
+      averageAdherence7d: nullableNumber(rawMetrics.averageAdherence7d),
+    },
+    students,
+  };
+}
+
 function getAccessToken(): string {
   if (typeof window === 'undefined') {
     throw new Error('This action must run in the browser.');
@@ -1142,6 +1207,17 @@ export const AdvisoryService = {
    */
   getStudents: async (): Promise<AdvisorStudentsResponse> => {
     return requestJson<AdvisorStudentsResponse>('/advisory/students/');
+  },
+
+  /**
+   * Headline metrics + per-student enrichment for the advisor home cockpit,
+   * keyed by ENGAGEMENT id (join to `AdvisorStudent.id` client-side). The
+   * payload is normalized defensively so a partially-shaped answer degrades
+   * to empty metrics instead of breaking the dashboard render.
+   */
+  getAdvisorOverview: async (): Promise<AdvisorOverviewResponse> => {
+    const payload: unknown = await requestJson<unknown>('/advisory/overview/');
+    return normalizeAdvisorOverview(payload);
   },
 
   /**
