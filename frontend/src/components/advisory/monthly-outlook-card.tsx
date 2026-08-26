@@ -6,6 +6,7 @@ import { newDate } from 'date-fns-jalali';
 import {
   AlertCircle,
   CalendarDays,
+  ChevronDown,
   Loader2,
   Plus,
   RefreshCw,
@@ -20,6 +21,7 @@ import {
 import { getTodayJalali } from '@/lib/calendar';
 import { formatPersianDate } from '@/lib/date-utils';
 import { toPersianDigits } from '@/lib/persian-digits';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -32,6 +34,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { cn } from '@/lib/utils';
 import { JalaliDatePicker } from '@/components/advisory/study-plan/jalali-date-picker';
 
 /** Jalali months, 1-based (۱ = فروردین … ۱۲ = اسفند). */
@@ -156,6 +159,8 @@ export function MonthlyOutlookForm({
   const [strategies, setStrategies] = useState<StrategySlotState[]>(() =>
     seedStrategySlots(initial),
   );
+  // View-only accordion state: the calendar starts COLLAPSED; no wire impact.
+  const [calendarOpen, setCalendarOpen] = useState(false);
 
   // uids continue past the seeded rows so addEntry never collides with them.
   const uidCounter = useRef(initial.entries.length);
@@ -237,91 +242,118 @@ export function MonthlyOutlookForm({
 
   return (
     <div className="space-y-4">
-      {/* ── monthly calendar entries ─────────────────────────────────────── */}
-      <section className="space-y-2 rounded-xl border border-border/60 p-3">
-        <div className="flex items-center justify-between gap-2">
-          <h4 className="text-sm font-medium">تقویم ماه</h4>
-          <Button type="button" variant="outline" size="sm" onClick={addEntry}>
-            <Plus className="ml-2 h-4 w-4" />
-            افزودن روز
-          </Button>
-        </div>
-        {entries.length === 0 && (
-          <p className="rounded-lg border border-dashed px-3 py-4 text-center text-xs leading-relaxed text-muted-foreground">
-            مناسبت‌ها، تقویم تحصیلی و کارهای مهم روزهای این ماه را اینجا
-            ردیف‌به‌ردیف اضافه کنید.
-          </p>
-        )}
-        <ul className="space-y-2">
-          {entries.map((row, index) => (
-            <li
-              key={row.uid}
-              className="space-y-2 rounded-lg border border-border/50 p-2"
-            >
-              <div className="grid grid-cols-[1fr_1fr_2rem] items-start gap-2 sm:grid-cols-[10rem_1fr_1fr_2rem]">
-                <JalaliDatePicker
-                  value={row.date}
-                  onChange={(iso) => updateEntry(row.uid, { date: iso })}
-                  placeholder="تاریخ"
-                  id={`outlook-entry-date-${row.uid}`}
-                />
-                <Input
-                  value={row.event}
-                  onChange={(e) => updateEntry(row.uid, { event: e.target.value })}
-                  placeholder="مناسبت"
-                  maxLength={120}
-                  aria-label={`مناسبت ردیف ${toPersianDigits(index + 1)}`}
-                  className="h-9 text-xs"
-                />
-                <Input
-                  value={row.academicNote}
-                  onChange={(e) =>
-                    updateEntry(row.uid, { academicNote: e.target.value })
-                  }
-                  placeholder="تقویم تحصیلی"
-                  maxLength={200}
-                  aria-label={`تقویم تحصیلی ردیف ${toPersianDigits(index + 1)}`}
-                  className="h-9 text-xs"
-                />
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  aria-label={`حذف ردیف ${toPersianDigits(index + 1)}`}
-                  className="h-9 w-9 text-muted-foreground hover:text-destructive"
-                  onClick={() => removeEntry(row.uid)}
+      {/* ── monthly calendar entries (collapsed accordion, L6) ───────────── */}
+      <section>
+        <button
+          type="button"
+          onClick={() => setCalendarOpen((open) => !open)}
+          aria-expanded={calendarOpen}
+          className="flex w-full items-center justify-between gap-2 text-sm font-medium"
+        >
+          <span>تقویم ماه</span>
+          <span className="flex items-center gap-2">
+            <Badge variant="secondary" className="text-[11px] tabular-nums">
+              {toPersianDigits(entries.length)} ردیف
+            </Badge>
+            <ChevronDown
+              className={cn(
+                'h-4 w-4 text-muted-foreground transition-transform',
+                calendarOpen && 'rotate-180',
+              )}
+            />
+          </span>
+        </button>
+
+        {calendarOpen && (
+          <div className="mt-3 space-y-2">
+            {entries.length === 0 && (
+              <p className="py-3 text-center text-xs leading-relaxed text-muted-foreground">
+                مناسبت‌ها، تقویم تحصیلی و کارهای مهم روزهای این ماه را اینجا
+                ردیف‌به‌ردیف اضافه کنید.
+              </p>
+            )}
+            <ul className="space-y-2">
+              {entries.map((row, index) => (
+                <li
+                  key={row.uid}
+                  className="grid grid-cols-2 items-center gap-2 sm:grid-cols-[9rem_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_2rem]"
                 >
-                  <Trash2 className="h-4 w-4" />
-                </Button>
-              </div>
-              <Textarea
-                value={row.tasks}
-                onChange={(e) => updateEntry(row.uid, { tasks: e.target.value })}
-                rows={2}
-                maxLength={2000}
-                placeholder="کارها…"
-                aria-label={`کارهای ردیف ${toPersianDigits(index + 1)}`}
-                className="min-h-[56px] text-xs leading-relaxed"
-              />
-            </li>
-          ))}
-        </ul>
+                  <div className="[&_button]:h-9 [&_button]:rounded-lg [&_button]:px-2 [&_button]:text-xs">
+                    <JalaliDatePicker
+                      value={row.date}
+                      onChange={(iso) => updateEntry(row.uid, { date: iso })}
+                      placeholder="تاریخ"
+                      id={`outlook-entry-date-${row.uid}`}
+                    />
+                  </div>
+                  <Input
+                    value={row.event}
+                    onChange={(e) => updateEntry(row.uid, { event: e.target.value })}
+                    placeholder="مناسبت"
+                    maxLength={120}
+                    aria-label={`مناسبت ردیف ${toPersianDigits(index + 1)}`}
+                    className="h-9 text-xs"
+                  />
+                  <Input
+                    value={row.academicNote}
+                    onChange={(e) =>
+                      updateEntry(row.uid, { academicNote: e.target.value })
+                    }
+                    placeholder="تقویم تحصیلی"
+                    maxLength={200}
+                    aria-label={`تقویم تحصیلی ردیف ${toPersianDigits(index + 1)}`}
+                    className="h-9 text-xs"
+                  />
+                  <Input
+                    value={row.tasks}
+                    onChange={(e) => updateEntry(row.uid, { tasks: e.target.value })}
+                    placeholder="کارها…"
+                    maxLength={2000}
+                    aria-label={`کارهای ردیف ${toPersianDigits(index + 1)}`}
+                    className="h-9 text-xs"
+                  />
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    aria-label={`حذف ردیف ${toPersianDigits(index + 1)}`}
+                    className="h-9 w-9 text-muted-foreground hover:text-destructive"
+                    onClick={() => removeEntry(row.uid)}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </li>
+              ))}
+            </ul>
+            <button
+              type="button"
+              onClick={addEntry}
+              className="flex h-9 w-full items-center justify-center gap-1.5 rounded-lg border border-dashed text-xs text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground"
+            >
+              <Plus className="h-3.5 w-3.5" />
+              افزودن روز
+            </button>
+          </div>
+        )}
       </section>
 
-      {/* ── strategy slots ───────────────────────────────────────────────── */}
-      <section className="space-y-2 rounded-xl border border-border/60 p-3">
+      {/* ── strategy slots ──────────────────────────────────────────────── */}
+      <section className="border-t border-border/40 pt-4">
         <h4 className="text-sm font-medium">استراتژی‌های ماه</h4>
-        <p className="text-xs leading-relaxed text-muted-foreground">
+        <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
           چهار استراتژی این ماه را با مجریِ مشخص بنویسید؛ ذخیره، همۀ اسلات‌ها را
           یکجا جایگزین می‌کند.
         </p>
-        <ul className="space-y-2">
+        <ul className="mt-2 divide-y divide-border/40">
           {strategies.map((slot, index) => (
-            <li
-              key={index}
-              className="space-y-2 rounded-lg border border-border/50 p-2"
-            >
-              <div className="grid grid-cols-[1fr_7rem] items-start gap-2">
+            <li key={index} className="space-y-2 py-2">
+              <div className="flex items-center gap-2">
+                <Badge
+                  variant="secondary"
+                  className="h-7 w-7 shrink-0 justify-center rounded-full p-0 text-[11px] tabular-nums"
+                >
+                  {toPersianDigits(index + 1)}
+                </Badge>
                 <Input
                   value={slot.title}
                   onChange={(e) =>
@@ -330,7 +362,7 @@ export function MonthlyOutlookForm({
                   placeholder={`عنوان استراتژی ${toPersianDigits(index + 1)}`}
                   maxLength={120}
                   aria-label={`عنوان استراتژی ${toPersianDigits(index + 1)}`}
-                  className="h-9 text-xs"
+                  className="h-9 min-w-0 flex-1 text-sm"
                 />
                 <Select
                   value={slot.executor}
@@ -342,7 +374,7 @@ export function MonthlyOutlookForm({
                 >
                   <SelectTrigger
                     aria-label={`مجری استراتژی ${toPersianDigits(index + 1)}`}
-                    className="h-9 text-xs"
+                    className="h-9 w-28 shrink-0 text-xs"
                   >
                     <SelectValue />
                   </SelectTrigger>
@@ -357,14 +389,14 @@ export function MonthlyOutlookForm({
                   </SelectContent>
                 </Select>
               </div>
+              {/* One-line by default; grows on focus — never a full textarea. */}
               <Textarea
                 value={slot.body}
                 onChange={(e) => updateStrategy(index, { body: e.target.value })}
-                rows={2}
                 maxLength={5000}
                 placeholder="متن استراتژی…"
                 aria-label={`متن استراتژی ${toPersianDigits(index + 1)}`}
-                className="min-h-[56px] text-xs leading-relaxed"
+                className="h-9 min-h-9 resize-none py-2 text-xs leading-relaxed focus:h-24"
               />
             </li>
           ))}
@@ -372,8 +404,13 @@ export function MonthlyOutlookForm({
       </section>
 
       {/* ── actions ──────────────────────────────────────────────────────── */}
-      <div className="flex items-center justify-end gap-2 border-t border-border/60 pt-3">
-        <Button type="button" onClick={handleSubmit} disabled={saving}>
+      <div className="flex items-center gap-2 border-t border-border/40 pt-4">
+        <Button
+          type="button"
+          onClick={handleSubmit}
+          disabled={saving}
+          className="h-9 px-4 text-sm"
+        >
           {saving && <Loader2 className="ml-2 h-4 w-4 animate-spin" />}
           {saving ? 'در حال ذخیره…' : 'ذخیره'}
         </Button>
@@ -446,27 +483,25 @@ export function MonthlyOutlookCard({ engagementId }: { engagementId: number }) {
 
   return (
     <Card dir="rtl" className="rounded-2xl border-border/50">
-      <CardHeader className="pb-3">
-        <CardTitle className="flex items-center gap-2 text-base font-semibold">
-          <span className="rounded-lg bg-primary/10 p-1.5">
-            <CalendarDays className="h-4 w-4 text-primary" />
-          </span>
+      <CardHeader className="p-5 pb-3">
+        <CardTitle className="flex items-center gap-2 text-sm font-semibold">
+          <CalendarDays className="h-4 w-4 shrink-0 text-primary" />
           ماه در یک نگاه
         </CardTitle>
-        <p className="text-xs leading-relaxed text-muted-foreground">
+        <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
           تقویم ماه (مناسبت، تقویم تحصیلی، کارها) و چهار استراتژی ماه را ثبت
           کنید؛ دانش‌آموز همین نما را می‌بیند.
         </p>
       </CardHeader>
 
-      <CardContent className="space-y-4">
+      <CardContent className="space-y-4 p-5 pt-0">
         {/* ── Jalali month selector ─────────────────────────────────────── */}
         <div className="flex flex-wrap items-center gap-2">
           <Select
             value={String(jMonth)}
             onValueChange={(value) => setJMonth(Number(value))}
           >
-            <SelectTrigger aria-label="ماه جلالی" className="h-9 w-36">
+            <SelectTrigger aria-label="ماه جلالی" className="h-9 w-32 text-sm">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -481,7 +516,7 @@ export function MonthlyOutlookCard({ engagementId }: { engagementId: number }) {
             value={String(jYear)}
             onValueChange={(value) => setJYear(Number(value))}
           >
-            <SelectTrigger aria-label="سال جلالی" className="h-9 w-28">
+            <SelectTrigger aria-label="سال جلالی" className="h-9 w-32 text-sm">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>

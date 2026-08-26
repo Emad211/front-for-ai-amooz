@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import {
   AlertCircle,
+  ChevronDown,
   ClipboardList,
   Loader2,
   Plus,
@@ -33,7 +34,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { ChevronDown, ChevronUp } from 'lucide-react';
 import { JalaliDatePicker } from './jalali-date-picker';
 
 /** Preset horizons plus «دلخواه»; the wire only ever receives a plain count. */
@@ -41,10 +41,25 @@ type DurationMode = '7' | '14' | '30' | 'custom';
 
 /** Mastery colors as the wire codes with their chip labels; '' = unset. */
 const MASTERY_COLORS: { value: 'RED' | 'YELLOW' | 'GREEN'; label: string }[] = [
-  { value: 'RED', label: '🔴 قرمز' },
-  { value: 'YELLOW', label: '🟡 زرد' },
-  { value: 'GREEN', label: '🟢 سبز' },
+  { value: 'RED', label: 'قرمز' },
+  { value: 'YELLOW', label: 'زرد' },
+  { value: 'GREEN', label: 'سبز' },
 ];
+
+/** Mastery-color wire code → dot class (mirrors study-feed-card). */
+const MASTERY_DOT_CLASS: Record<string, string> = {
+  RED: 'bg-red-500',
+  YELLOW: 'bg-yellow-400',
+  GREEN: 'bg-emerald-500',
+};
+
+/** Segmented-chip styles (shared design language L5): selected = primary
+ * tint, idle = muted ghost. Applied over `variant="outline"` so the base
+ * border/shape primitives stay in charge. */
+const SEGMENT_SELECTED =
+  'h-8 rounded-lg border-primary bg-primary/10 px-3 text-xs font-medium text-primary shadow-none hover:bg-primary/15 hover:text-primary';
+const SEGMENT_IDLE =
+  'h-8 rounded-lg px-3 text-xs text-muted-foreground hover:bg-muted/40 hover:text-muted-foreground';
 
 /** The four note fields of one day, in render order. */
 const DAY_NOTE_FIELDS = [
@@ -71,6 +86,20 @@ type PlannerRow = {
 /** Persian-digit-tolerant digit sanitizer (same pattern as study-log). */
 function sanitizeDigits(raw: string): string {
   return toEnglishDigits(raw).replace(/\D/g, '');
+}
+
+/** ISO `YYYY-MM-DD` + whole days → ISO date, for day-group subheaders only
+ * (display-only; never feeds state or the wire). '' when `iso` isn't ISO. */
+function shiftIsoDate(iso: string, days: number): string {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
+  if (!match) return '';
+  const date = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+  date.setDate(date.getDate() + days);
+  return [
+    String(date.getFullYear()),
+    String(date.getMonth() + 1).padStart(2, '0'),
+    String(date.getDate()).padStart(2, '0'),
+  ].join('-');
 }
 
 type ActiveSubject = {
@@ -102,6 +131,11 @@ function parseDuration(raw: string): number | null {
  * would otherwise surprise the advisor with either a 404 or a stale plan.
  * Client-side checks mirror §14.3's server order so common mistakes fail fast
  * with the same Persian wording the server would answer with.
+ *
+ * Density contract: each row renders as one compact bar (day / subject /
+ * minutes / topic); enrichment fields collapse behind a per-row toggle and
+ * day-notes behind an accordion — both are view-only state with zero wire
+ * impact, so the default add flow stays a single row tall.
  */
 export function StudyPlannerCard({
   engagementId,
@@ -121,6 +155,9 @@ export function StudyPlannerCard({
   // 7×4 grid never pushes the rows editor off-screen until asked for.
   const [dayNotes, setDayNotes] = useState<Record<string, StudyPlanDayNote>>({});
   const [showDayNotes, setShowDayNotes] = useState(false);
+  // View-only density state (no wire impact): which rows expose their
+  // enrichment editor, mirroring the day-notes accordion pattern.
+  const [expandedRows, setExpandedRows] = useState<ReadonlySet<number>>(new Set());
 
   const [saving, setSaving] = useState(false);
   const [publishing, setPublishing] = useState(false);
@@ -412,32 +449,63 @@ export function StudyPlannerCard({
     setRows((prev) => prev.map((row) => (row.uid === uid ? { ...row, ...patch } : row)));
   };
 
+  const toggleRowExpanded = (uid: number) => {
+    setExpandedRows((prev) => {
+      const next = new Set(prev);
+      if (next.has(uid)) {
+        next.delete(uid);
+      } else {
+        next.add(uid);
+      }
+      return next;
+    });
+  };
+
   const removeRow = (uid: number) => {
     setRows((prev) => prev.filter((row) => row.uid !== uid));
   };
 
   const busy = saving || publishing;
 
+  // Display-only grouping: rows bucketed by day ascending, insertion order
+  // preserved inside each day. Renders every row even while the horizon is
+  // momentarily invalid — the strand-dropping effect owns that cleanup.
+  const rowGroups = (() => {
+    const buckets = new Map<number, PlannerRow[]>();
+    for (const row of rows) {
+      const bucket = buckets.get(row.dayOffset);
+      if (bucket) {
+        bucket.push(row);
+      } else {
+        buckets.set(row.dayOffset, [row]);
+      }
+    }
+    return [...buckets.entries()]
+      .sort((a, b) => a[0] - b[0])
+      .map(([offset, groupRows]) => ({ offset, rows: groupRows }));
+  })();
+
   return (
     <Card dir="rtl" className="rounded-2xl border-border/50">
-      <CardHeader className="pb-3">
-        <CardTitle className="flex items-center gap-2 text-base font-semibold">
-          <span className="rounded-lg bg-primary/10 p-1.5">
-            <ClipboardList className="h-4 w-4 text-primary" />
-          </span>
+      <CardHeader className="p-5 pb-4">
+        <CardTitle className="flex items-center gap-2 text-sm font-semibold">
+          <ClipboardList className="h-4 w-4 text-primary" />
           برنامه‌ریزی مطالعه
+          <span className="ms-auto text-xs font-normal tabular-nums text-muted-foreground">
+            مجموع برنامه‌ریزی‌شده: {toPersianDigits(plannedTotal)} دقیقه
+          </span>
         </CardTitle>
-        <p className="text-xs leading-relaxed text-muted-foreground">
+        <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
           بازه‌ای دلخواه تعیین کنید و برای هر روز، درس و دقیقه‌ی مطالعه بگذارید.
           انتشار، آخرین تغییرات را ذخیره و برنامه را برای دانش‌آموز نمایان می‌کند.
         </p>
       </CardHeader>
 
-      <CardContent className="space-y-4">
-        {/* ── horizon: start date + duration ─────────────────────────────── */}
-        <div className="grid gap-3 sm:grid-cols-2">
-          <div className="space-y-1.5">
-            <label htmlFor="study-plan-start" className="text-xs font-medium text-muted-foreground">
+      <CardContent className="space-y-4 p-5 pt-0 sm:p-5 sm:pt-0">
+        {/* ── horizon: start date + duration in one compact meta row ─────── */}
+        <div className="flex flex-wrap items-end gap-x-4 gap-y-3">
+          <div className="space-y-1">
+            <label htmlFor="study-plan-start" className="text-[11px] font-medium text-muted-foreground">
               تاریخ شروع
             </label>
             <JalaliDatePicker
@@ -447,29 +515,27 @@ export function StudyPlannerCard({
               minDate={startedOn}
             />
           </div>
-          <div className="space-y-1.5">
-            <span className="text-xs font-medium text-muted-foreground">طول برنامه</span>
+          <div className="space-y-1">
+            <span className="text-[11px] font-medium text-muted-foreground">طول برنامه</span>
             <div className="flex flex-wrap items-center gap-1.5">
               {(['7', '14', '30'] as const).map((value) => (
                 <Button
                   key={value}
                   type="button"
                   variant={durationMode === value ? 'default' : 'outline'}
-                  size="sm"
                   onClick={() => setDurationMode(value)}
                   aria-pressed={durationMode === value}
-                  className="h-9 rounded-full px-3"
+                  className={durationMode === value ? SEGMENT_SELECTED : SEGMENT_IDLE}
                 >
-                  {toPersianDigits(value)} روز
+                  {toPersianDigits(value)} روزه
                 </Button>
               ))}
               <Button
                 type="button"
                 variant={durationMode === 'custom' ? 'default' : 'outline'}
-                size="sm"
                 onClick={() => setDurationMode('custom')}
                 aria-pressed={durationMode === 'custom'}
-                className="h-9 rounded-full px-3"
+                className={durationMode === 'custom' ? SEGMENT_SELECTED : SEGMENT_IDLE}
               >
                 دلخواه
               </Button>
@@ -480,21 +546,16 @@ export function StudyPlannerCard({
                   placeholder="۱ تا ۹۰"
                   inputMode="numeric"
                   aria-label="طول دلخواه برنامه بر حسب روز"
-                  className="h-9 w-24"
+                  className="h-9 w-24 rounded-lg"
                 />
               )}
             </div>
           </div>
         </div>
 
-        {/* ── rows editor ────────────────────────────────────────────────── */}
-        <div className="space-y-2 rounded-xl border border-border/60 p-3">
-          <div className="flex items-center justify-between gap-2">
-            <span className="text-sm font-medium">ردیف‌های برنامه</span>
-            <span className="text-xs tabular-nums text-muted-foreground">
-              مجموع برنامه‌ریزی‌شده: {toPersianDigits(plannedTotal)} دقیقه
-            </span>
-          </div>
+        {/* ── rows editor: one compact bar per row, grouped by day ───────── */}
+        <div className="space-y-3 rounded-xl border border-border/40 p-4">
+          <span className="text-sm font-medium">ردیف‌های برنامه</span>
 
           {subjectsError && (
             <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-destructive/40 bg-destructive/5 px-3 py-2">
@@ -512,7 +573,7 @@ export function StudyPlannerCard({
           {!subjects && !subjectsError && (
             <div className="space-y-1.5" aria-busy="true">
               {[0, 1].map((i) => (
-                <Skeleton key={i} className="h-10 w-full rounded-lg" />
+                <Skeleton key={i} className="h-9 w-full rounded-lg" />
               ))}
             </div>
           )}
@@ -526,161 +587,211 @@ export function StudyPlannerCard({
 
           {subjects && subjects.length > 0 && (
             <>
-              <ul className="space-y-2">
-                {rows.map((row) => (
-                  <li
-                    key={row.uid}
-                    className="space-y-2 rounded-lg border border-border/50 p-2"
-                  >
-                    <div className="grid grid-cols-[5.5rem_1fr_6rem_2rem] items-center gap-2">
-                      <Select
-                        value={String(row.dayOffset)}
-                        onValueChange={(value) => updateRow(row.uid, { dayOffset: Number(value) })}
-                      >
-                        <SelectTrigger aria-label="روز برنامه" className="h-9">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {(durationDays === null
-                            ? []
-                            : Array.from({ length: durationDays }, (_, i) => i)
-                          ).map((offset) => (
-                            <SelectItem key={offset} value={String(offset)}>
-                              روز {toPersianDigits(offset + 1)}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-
-                      <Select
-                        value={row.subjectId === null ? '' : String(row.subjectId)}
-                        onValueChange={(value) => updateRow(row.uid, { subjectId: Number(value) })}
-                      >
-                        <SelectTrigger aria-label="درس" className="h-9">
-                          <SelectValue placeholder="درس…" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {subjects.map((subject) => (
-                            <SelectItem key={subject.id} value={String(subject.id)}>
-                              {subject.name}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-
-                      <Input
-                        value={row.minutes}
-                        onChange={(e) => updateRow(row.uid, { minutes: e.target.value })}
-                        placeholder="دقیقه"
-                        inputMode="numeric"
-                        aria-label="دقیقه‌ی مطالعه"
-                        className="h-9 text-center tabular-nums"
-                      />
-
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        aria-label="حذف ردیف"
-                        className="h-9 w-9 text-muted-foreground hover:text-destructive"
-                        onClick={() => removeRow(row.uid)}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </div>
-
-                    {/* Restart step 4: the enrichment line — what to study,
-                    in which unit, how much test-solving, mastery color. */}
-                    <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-                      <Input
-                        value={row.topic}
-                        onChange={(e) => updateRow(row.uid, { topic: e.target.value })}
-                        placeholder="موضوع"
-                        maxLength={200}
-                        aria-label="موضوع"
-                        className="h-9 text-xs"
-                      />
-                      <Input
-                        value={row.unitLabel}
-                        onChange={(e) => updateRow(row.uid, { unitLabel: e.target.value })}
-                        placeholder="واحد"
-                        maxLength={60}
-                        aria-label="واحد"
-                        className="h-9 text-xs"
-                      />
-                      <Input
-                        value={row.testMinutes}
-                        onChange={(e) =>
-                          updateRow(row.uid, { testMinutes: sanitizeDigits(e.target.value) })
-                        }
-                        placeholder="زمان تست (دقیقه)"
-                        inputMode="numeric"
-                        aria-label="زمان تست بر حسب دقیقه"
-                        className="h-9 text-center text-xs tabular-nums"
-                      />
-                      <Select
-                        value={row.masteryColor}
-                        onValueChange={(value) =>
-                          updateRow(row.uid, {
-                            masteryColor: value as PlannerRow['masteryColor'],
-                          })
-                        }
-                      >
-                        <SelectTrigger aria-label="رنگ تسلط" className="h-9 text-xs">
-                          <SelectValue placeholder="رنگ تسلط…" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {MASTERY_COLORS.map((color) => (
-                            <SelectItem key={color.value} value={color.value}>
-                              {color.label}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-
               {rows.length === 0 && (
-                <p className="py-2 text-center text-xs text-muted-foreground">
+                <p className="py-1 text-center text-xs text-muted-foreground">
                   ردیفی اضافه نشده است.
                 </p>
               )}
 
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={addRow}
-                disabled={durationDays === null}
-              >
-                <Plus className="ml-2 h-4 w-4" />
-                افزودن ردیف
-              </Button>
-              {durationDays === null && (
-                <p className="text-xs text-destructive">طول برنامه باید بین ۱ و ۹۰ روز باشد.</p>
-              )}
+              {rowGroups.map((group) => {
+                const groupDate = shiftIsoDate(startDate, group.offset);
+                return (
+                  <section key={group.offset} className="space-y-0.5">
+                    {/* Day subheader: «روز N — تاریخ» when a start date exists. */}
+                    <p className="text-xs font-medium text-muted-foreground">
+                      روز {toPersianDigits(group.offset + 1)}
+                      {groupDate && <> — {formatPersianDate(groupDate)}</>}
+                    </p>
+                    <ul className="divide-y divide-border/40">
+                      {group.rows.map((row) => {
+                        const expanded = expandedRows.has(row.uid);
+                        const hasEnrichment =
+                          row.unitLabel.trim() !== '' ||
+                          row.testMinutes.trim() !== '' ||
+                          row.masteryColor !== '';
+                        return (
+                          <li key={row.uid} className="py-2 first:pt-1 last:pb-0">
+                            {/* Quick-add bar: the four constant fields on one
+                            line; everything else hides behind the toggle. */}
+                            <div className="flex flex-wrap items-center gap-2">
+                              <Select
+                                value={String(row.dayOffset)}
+                                onValueChange={(value) => updateRow(row.uid, { dayOffset: Number(value) })}
+                              >
+                                <SelectTrigger aria-label="روز برنامه" className="h-9 w-[5.5rem] rounded-lg text-xs">
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {(durationDays === null
+                                    ? []
+                                    : Array.from({ length: durationDays }, (_, i) => i)
+                                  ).map((offset) => (
+                                    <SelectItem key={offset} value={String(offset)}>
+                                      روز {toPersianDigits(offset + 1)}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+
+                              <Select
+                                value={row.subjectId === null ? '' : String(row.subjectId)}
+                                onValueChange={(value) => updateRow(row.uid, { subjectId: Number(value) })}
+                              >
+                                <SelectTrigger
+                                  aria-label="درس"
+                                  className="h-9 w-full rounded-lg text-xs sm:w-auto sm:min-w-[9rem] sm:flex-1"
+                                >
+                                  <SelectValue placeholder="درس…" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {subjects.map((subject) => (
+                                    <SelectItem key={subject.id} value={String(subject.id)}>
+                                      {subject.name}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+
+                              <Input
+                                value={row.minutes}
+                                onChange={(e) => updateRow(row.uid, { minutes: e.target.value })}
+                                placeholder="دقیقه"
+                                inputMode="numeric"
+                                aria-label="دقیقه‌ی مطالعه"
+                                className="h-9 w-20 rounded-lg text-center text-xs tabular-nums"
+                              />
+
+                              <Input
+                                value={row.topic}
+                                onChange={(e) => updateRow(row.uid, { topic: e.target.value })}
+                                placeholder="موضوع"
+                                maxLength={200}
+                                aria-label="موضوع"
+                                className="h-9 w-full rounded-lg text-xs sm:w-auto sm:min-w-[10rem] sm:flex-1"
+                              />
+
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                aria-label={expanded ? 'بستن جزئیات' : 'جزئیات بیشتر'}
+                                aria-expanded={expanded}
+                                className="relative h-9 w-9 shrink-0 text-muted-foreground hover:text-foreground"
+                                onClick={() => toggleRowExpanded(row.uid)}
+                              >
+                                <ChevronDown
+                                  className={`h-4 w-4 transition-transform ${expanded ? 'rotate-180' : ''}`}
+                                />
+                                {hasEnrichment && !expanded && (
+                                  <span
+                                    aria-hidden
+                                    className="absolute end-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-primary"
+                                  />
+                                )}
+                              </Button>
+
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                aria-label="حذف ردیف"
+                                className="h-9 w-9 shrink-0 text-muted-foreground hover:text-destructive"
+                                onClick={() => removeRow(row.uid)}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </div>
+
+                            {/* Per-row enrichment editor: unit / test-minutes /
+                            mastery color — collapsed until asked for. */}
+                            {expanded && (
+                              <div className="mt-2 grid grid-cols-1 gap-2 rounded-lg bg-muted/30 p-2 sm:grid-cols-3">
+                                <Input
+                                  value={row.unitLabel}
+                                  onChange={(e) => updateRow(row.uid, { unitLabel: e.target.value })}
+                                  placeholder="واحد"
+                                  maxLength={60}
+                                  aria-label="واحد"
+                                  className="h-9 rounded-lg text-xs"
+                                />
+                                <Input
+                                  value={row.testMinutes}
+                                  onChange={(e) =>
+                                    updateRow(row.uid, { testMinutes: sanitizeDigits(e.target.value) })
+                                  }
+                                  placeholder="زمان تست (دقیقه)"
+                                  inputMode="numeric"
+                                  aria-label="زمان تست بر حسب دقیقه"
+                                  className="h-9 rounded-lg text-center text-xs tabular-nums"
+                                />
+                                <Select
+                                  value={row.masteryColor}
+                                  onValueChange={(value) =>
+                                    updateRow(row.uid, {
+                                      masteryColor: value as PlannerRow['masteryColor'],
+                                    })
+                                  }
+                                >
+                                  <SelectTrigger aria-label="رنگ تسلط" className="h-9 rounded-lg text-xs">
+                                    <SelectValue placeholder="رنگ تسلط…" />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {MASTERY_COLORS.map((color) => (
+                                      <SelectItem key={color.value} value={color.value}>
+                                        {color.label}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                              </div>
+                            )}
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </section>
+                );
+              })}
+
+              <div className="flex flex-wrap items-center gap-2 pt-1">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={addRow}
+                  disabled={durationDays === null}
+                >
+                  <Plus className="ml-2 h-4 w-4" />
+                  افزودن ردیف
+                </Button>
+                {durationDays === null && (
+                  <p className="text-xs text-destructive">طول برنامه باید بین ۱ و ۹۰ روز باشد.</p>
+                )}
+              </div>
             </>
           )}
         </div>
 
-        {/* ── day notes: 7 days × 4 fields, collapsed by default ─────────── */}
-        <div className="rounded-xl border border-border/60">
+        {/* ── day notes: L6 accordion, collapsed by default ───────────────── */}
+        <div className="rounded-xl border border-border/40">
           <button
             type="button"
             onClick={() => setShowDayNotes((v) => !v)}
             aria-expanded={showDayNotes}
-            className="flex w-full items-center justify-between gap-2 px-3 py-2.5 text-right"
+            className="flex w-full items-center justify-between gap-2 px-4 py-3 text-right"
           >
-            <span className="text-sm font-medium">یادداشت روزها</span>
-            <span className="flex items-center gap-1 text-xs text-muted-foreground">
-              {showDayNotes ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-              {showDayNotes ? 'بستن' : 'نمایش'}
+            <span className="flex items-center gap-2 text-sm font-medium">
+              یادداشت روزها
+              <Badge variant="secondary" className="px-1.5 text-[11px] font-normal">
+                {toPersianDigits(durationDays === null ? 7 : Math.min(durationDays, 7))} روز
+              </Badge>
             </span>
+            <ChevronDown
+              className={`h-4 w-4 shrink-0 text-muted-foreground transition-transform ${showDayNotes ? 'rotate-180' : ''}`}
+            />
           </button>
           {showDayNotes && (
-            <div className="space-y-2 border-t border-border/60 p-3">
+            <div className="space-y-3 border-t border-border/40 p-4">
               {(durationDays === null
                 ? []
                 : Array.from({ length: Math.min(durationDays, 7) }, (_, i) => i)
@@ -688,10 +799,10 @@ export function StudyPlannerCard({
                 const dayKey = String(offset);
                 return (
                   <div key={dayKey} className="space-y-1.5">
-                    <p className="text-xs font-medium text-muted-foreground">
+                    <p className="text-[11px] font-medium text-muted-foreground">
                       روز {toPersianDigits(offset + 1)}
                     </p>
-                    <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4">
+                    <div className="grid grid-cols-2 gap-2">
                       {DAY_NOTE_FIELDS.map(({ key, label }) => (
                         <Input
                           key={key}
@@ -700,7 +811,7 @@ export function StudyPlannerCard({
                           placeholder={label}
                           maxLength={120}
                           aria-label={`${label} — روز ${toPersianDigits(offset + 1)}`}
-                          className="h-8 text-xs"
+                          className="h-9 rounded-lg text-xs"
                         />
                       ))}
                     </div>
@@ -716,20 +827,20 @@ export function StudyPlannerCard({
           )}
         </div>
 
-        {/* ── actions ────────────────────────────────────────────────────── */}
-        <div className="flex flex-wrap items-center justify-end gap-2">
-          <Button type="button" variant="outline" onClick={handleSave} disabled={busy}>
-            {saving && <Loader2 className="ml-2 h-4 w-4 animate-spin" />}
-            ذخیره پیش‌نویس
-          </Button>
-          <Button type="button" onClick={handlePublish} disabled={busy}>
+        {/* ── actions: primary publish leads, start-aligned ───────────────── */}
+        <div className="flex flex-wrap items-center gap-2">
+          <Button type="button" onClick={handlePublish} disabled={busy} className="h-9 px-4 text-sm">
             {publishing && <Loader2 className="ml-2 h-4 w-4 animate-spin" />}
             انتشار
           </Button>
+          <Button type="button" variant="outline" size="sm" onClick={handleSave} disabled={busy}>
+            {saving && <Loader2 className="ml-2 h-4 w-4 animate-spin" />}
+            ذخیره پیش‌نویس
+          </Button>
         </div>
 
-        {/* ── saved plans ────────────────────────────────────────────────── */}
-        <div className="space-y-2 border-t border-border/60 pt-3">
+        {/* ── saved plans: tight divided list ─────────────────────────────── */}
+        <div className="space-y-2 border-t border-border/40 pt-4">
           <span className="text-sm font-medium">برنامه‌های ثبت‌شده</span>
 
           {plansError && (
@@ -745,28 +856,28 @@ export function StudyPlannerCard({
             </div>
           )}
 
-          {!plans && !plansError && <Skeleton className="h-12 w-full rounded-xl" />}
+          {!plans && !plansError && <Skeleton className="h-10 w-full rounded-lg" />}
 
           {plans && plans.length === 0 && (
-            <p className="rounded-lg border border-dashed px-3 py-4 text-center text-xs text-muted-foreground">
+            <p className="py-4 text-center text-xs text-muted-foreground">
               هنوز برنامه‌ای ثبت نشده است.
             </p>
           )}
 
           {plans && plans.length > 0 && (
-            <ul className="space-y-2">
+            <ul className="divide-y divide-border/40">
               {[...plans]
                 .sort((a, b) => a.startDate.localeCompare(b.startDate))
                 .map((plan) => (
                   <li
                     key={plan.id}
-                    className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border/60 px-3 py-2.5"
+                    className="flex flex-wrap items-center justify-between gap-2 py-2.5"
                   >
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
                         <Badge
                           variant={plan.status === 'PUBLISHED' ? 'default' : 'outline'}
-                          className="font-normal"
+                          className="text-[11px] font-normal"
                         >
                           {plan.status === 'PUBLISHED' ? 'منتشرشده' : 'پیش‌نویس'}
                         </Badge>
@@ -775,19 +886,19 @@ export function StudyPlannerCard({
                         {plan.percent != null && (
                           <Badge
                             variant="outline"
-                            className={`font-normal tabular-nums ${adherenceColorClass(plan.percent)}`}
+                            className={`text-[11px] font-normal tabular-nums ${adherenceColorClass(plan.percent)}`}
                           >
                             پایبندی {formatAdherence(plan.percent)}
                           </Badge>
                         )}
-                        <span className="text-xs text-muted-foreground">
-                          از {formatPersianDate(plan.startDate)} تا{' '}
-                          {formatPersianDate(plan.endDate)}
+                        <span className="text-xs tabular-nums text-muted-foreground">
+                          {toPersianDigits(plan.durationDays)} روز ·{' '}
+                          {toPersianDigits(plan.items.length)} ردیف
                         </span>
                       </div>
-                      <p className="mt-1 text-xs tabular-nums text-muted-foreground">
-                        {toPersianDigits(plan.durationDays)} روز ·{' '}
-                        {toPersianDigits(plan.items.length)} ردیف
+                      <p className="mt-0.5 text-xs text-muted-foreground">
+                        از {formatPersianDate(plan.startDate)} تا{' '}
+                        {formatPersianDate(plan.endDate)}
                       </p>
                     </div>
                     {plan.status === 'PUBLISHED' && (

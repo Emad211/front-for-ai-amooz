@@ -4,6 +4,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import {
   AlertCircle,
+  ChevronLeft,
+  ChevronRight,
   ClipboardCheck,
   Loader2,
   RefreshCw,
@@ -16,12 +18,12 @@ import {
 } from '@/services/advisory-service';
 import { toPersianDigits } from '@/lib/persian-digits';
 import { formatPersianDate } from '@/lib/date-utils';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
-import { JalaliDatePicker } from '@/components/advisory/study-plan/jalali-date-picker';
 
 /** Parse an ISO `YYYY-MM-DD` into a LOCAL Date (no UTC day-shift). */
 function parseIsoDate(iso: string): Date | null {
@@ -54,6 +56,15 @@ function saturdayAnchor(iso: string): string {
   );
 }
 
+/** Shift a Saturday-anchored ISO week by whole weeks (stepper navigation). */
+function shiftWeek(iso: string, weeks: number): string {
+  const date = parseIsoDate(iso);
+  if (!date) return iso;
+  return toIsoDate(
+    new Date(date.getFullYear(), date.getMonth(), date.getDate() + weeks * 7),
+  );
+}
+
 function formatAverage(value: number | null | undefined): string {
   if (value === null || value === undefined || Number.isNaN(value)) return '—';
   return toPersianDigits(value.toFixed(1)).replace('.', '٫');
@@ -74,8 +85,9 @@ const SCORE_VALUES = [1, 2, 3, 4, 5] as const;
  *
  * Criteria rows render FROM the server's meta list (`criteria`) — labels are
  * never hardcoded client-side, so a backend relabel lands here for free.
- * Selecting a past week (picker or the saved list below) loads that week's
- * stored values back into the editor; saving upserts and refreshes the list.
+ * A compact stepper (هفتهٔ قبل / هفتهٔ بعد) walks weeks one Saturday at a
+ * time; selecting a saved week below loads that week's stored values back
+ * into the editor. Saving upserts and refreshes the list.
  */
 export function WeeklyAssessmentCard({ engagementId }: { engagementId: number }) {
   const [criteria, setCriteria] = useState<WeeklyAssessmentCriterion[] | null>(null);
@@ -171,52 +183,52 @@ export function WeeklyAssessmentCard({ engagementId }: { engagementId: number })
 
   return (
     <Card dir="rtl" className="rounded-2xl border-border/50">
-      <CardHeader className="pb-3">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <CardTitle className="flex items-center gap-2 text-base font-semibold">
-            <span className="rounded-lg bg-primary/10 p-1.5">
-              <ClipboardCheck className="h-4 w-4 text-primary" />
-            </span>
+      <CardHeader className="p-5 pb-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <CardTitle className="flex items-center gap-2 text-sm font-semibold">
+            <ClipboardCheck className="h-4 w-4 shrink-0 text-primary" />
             ارزیابی هفتگی
           </CardTitle>
           {/* The week's headline metric, live as the advisor scores. */}
-          <div className="flex items-baseline gap-2" aria-live="polite">
+          <div className="ms-auto flex items-baseline gap-1.5" aria-live="polite">
             <span className="text-xs text-muted-foreground">میانگین هفته</span>
-            <span className="text-3xl font-bold tabular-nums text-primary">
+            <span className="text-2xl font-bold tabular-nums text-primary">
               {formatAverage(average)}
             </span>
           </div>
         </div>
-        <p className="text-xs leading-relaxed text-muted-foreground">
+        <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
           برای هر هفته، به همه‌ی معیارها نمره‌ی ۱ تا ۵ بدهید و جمع‌بندی مشاور را
-          بنویسید. انتخاب هر روز، همان هفته را باز می‌کند.
+          بنویسید.
         </p>
       </CardHeader>
 
-      <CardContent className="space-y-4">
-        {/* ── week selector ─────────────────────────────────────────────── */}
-        <div className="grid gap-3 sm:grid-cols-[16rem_1fr] sm:items-end">
-          <div className="space-y-1.5">
-            <label
-              htmlFor="assessment-week"
-              className="text-xs font-medium text-muted-foreground"
-            >
-              هفتۀ ارزیابی
-            </label>
-            <JalaliDatePicker
-              id="assessment-week"
-              value={selectedWeekStart}
-              onChange={(iso) => setSelectedWeekStart(saturdayAnchor(iso))}
-              placeholder="هفته را انتخاب کنید"
-            />
-          </div>
-          <p className="text-xs leading-relaxed text-muted-foreground sm:pb-2">
-            هفتۀ انتخاب‌شده:{' '}
+      <CardContent className="space-y-4 p-5 pt-0">
+        {/* ── week stepper ──────────────────────────────────────────────── */}
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setSelectedWeekStart(shiftWeek(selectedWeekStart, -1))}
+            className="inline-flex h-8 items-center gap-1 rounded-lg border px-3 text-xs text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground"
+          >
+            <ChevronRight className="h-3.5 w-3.5" />
+            هفتهٔ قبل
+          </button>
+          <div className="rounded-lg border border-border/40 bg-muted/30 px-3 py-1.5 text-xs tabular-nums text-muted-foreground">
+            هفتۀ{' '}
             <span className="font-medium text-foreground">
               {formatPersianDate(parseIsoDate(selectedWeekStart) ?? selectedWeekStart)}
             </span>{' '}
             (شنبه)
-          </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setSelectedWeekStart(shiftWeek(selectedWeekStart, 1))}
+            className="inline-flex h-8 items-center gap-1 rounded-lg border px-3 text-xs text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground"
+          >
+            هفتهٔ بعد
+            <ChevronLeft className="h-3.5 w-3.5" />
+          </button>
         </div>
 
         {error && (
@@ -235,20 +247,20 @@ export function WeeklyAssessmentCard({ engagementId }: { engagementId: number })
         {loading && (
           <div className="space-y-2" aria-busy="true">
             {[0, 1, 2, 3].map((i) => (
-              <Skeleton key={i} className="h-10 w-full rounded-lg" />
+              <Skeleton key={i} className="h-9 w-full rounded-lg" />
             ))}
           </div>
         )}
 
         {/* ── criteria rows — rendered FROM server meta, never hardcoded ── */}
         {criteria && !error && (
-          <ul className="space-y-1.5">
+          <ul className="divide-y divide-border/40">
             {criteria.map((criterion) => (
-              <li
-                key={criterion.code}
-                className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5 rounded-lg border border-border/50 px-3 py-2"
-              >
-                <span className="min-w-0 flex-1 text-sm leading-relaxed">
+              <li key={criterion.code} className="flex items-center justify-between gap-3 py-1.5">
+                <span
+                  className="min-w-0 flex-1 truncate text-sm leading-relaxed"
+                  title={criterion.label}
+                >
                   {criterion.label}
                 </span>
                 <div
@@ -259,28 +271,28 @@ export function WeeklyAssessmentCard({ engagementId }: { engagementId: number })
                   {SCORE_VALUES.map((value) => {
                     const selected = scores[criterion.code] === value;
                     return (
-                      <Button
+                      <button
                         key={value}
                         type="button"
-                        variant={selected ? 'default' : 'outline'}
-                        size="icon"
                         aria-pressed={selected}
                         aria-label={`نمرۀ ${toPersianDigits(value)}`}
                         onClick={() => setScore(criterion.code, value)}
                         className={cn(
-                          'h-8 w-8 rounded-full p-0 text-sm tabular-nums',
-                          !selected && 'text-muted-foreground',
+                          'h-8 w-9 rounded-md border text-sm tabular-nums transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background',
+                          selected
+                            ? 'border-primary bg-primary text-primary-foreground'
+                            : 'border-border text-muted-foreground hover:border-primary/40 hover:bg-muted/40',
                         )}
                       >
                         {toPersianDigits(value)}
-                      </Button>
+                      </button>
                     );
                   })}
                 </div>
               </li>
             ))}
             {criteria.length === 0 && (
-              <li className="rounded-lg border border-dashed px-3 py-6 text-center text-xs text-muted-foreground">
+              <li className="py-6 text-center text-xs text-muted-foreground">
                 فهرست معیارها از سرور دریافت نشد.
               </li>
             )}
@@ -293,7 +305,7 @@ export function WeeklyAssessmentCard({ engagementId }: { engagementId: number })
             <div className="space-y-1.5">
               <label
                 htmlFor="assessment-summary"
-                className="text-xs font-medium text-muted-foreground"
+                className="block text-[11px] font-medium text-muted-foreground"
               >
                 جمع‌بندی مشاور
               </label>
@@ -304,28 +316,33 @@ export function WeeklyAssessmentCard({ engagementId }: { engagementId: number })
                 rows={3}
                 maxLength={2000}
                 placeholder="جمع‌بندی این هفته را بنویسید…"
-                className="min-h-[72px] text-sm leading-relaxed"
+                className="min-h-[60px] text-sm leading-relaxed"
               />
             </div>
-            <div className="flex items-center justify-end gap-2 border-t border-border/60 pt-3">
-              {!complete && (
-                <span className="me-auto text-xs text-muted-foreground">
-                  هنوز به همه‌ی معیارها نمره داده نشده است.
-                </span>
-              )}
-              <Button type="button" onClick={handleSave} disabled={saving}>
+            <div className="flex flex-wrap items-center gap-2 border-t border-border/40 pt-4">
+              <Button
+                type="button"
+                onClick={handleSave}
+                disabled={saving}
+                className="h-9 px-4 text-sm"
+              >
                 {saving && <Loader2 className="ml-2 h-4 w-4 animate-spin" />}
                 {saving ? 'در حال ذخیره…' : 'ذخیره'}
               </Button>
+              {!complete && (
+                <span className="text-xs text-muted-foreground">
+                  هنوز به همه‌ی معیارها نمره داده نشده است.
+                </span>
+              )}
             </div>
           </>
         )}
 
         {/* ── saved weeks ───────────────────────────────────────────────── */}
         {criteria && !error && assessments.length > 0 && (
-          <div className="space-y-2 border-t border-border/60 pt-3">
+          <div className="border-t border-border/40 pt-4">
             <span className="text-sm font-medium">هفته‌های ثبت‌شده</span>
-            <ul className="space-y-1.5">
+            <ul className="mt-2 divide-y divide-border/40">
               {[...assessments]
                 .sort((a, b) => b.weekStart.localeCompare(a.weekStart))
                 .map((item) => {
@@ -337,25 +354,23 @@ export function WeeklyAssessmentCard({ engagementId }: { engagementId: number })
                         onClick={() => setSelectedWeekStart(item.weekStart)}
                         aria-pressed={isSelected}
                         className={cn(
-                          'flex w-full flex-wrap items-center justify-between gap-2 rounded-xl border px-3 py-2.5 text-right transition-colors',
-                          isSelected
-                            ? 'border-primary/50 bg-primary/5'
-                            : 'border-border/60 hover:bg-muted/60',
+                          '-mx-2 flex w-full items-center justify-between gap-2 rounded-lg px-2 py-2 text-right transition-colors',
+                          isSelected ? 'bg-primary/10' : 'hover:bg-muted/30',
                         )}
                       >
-                        <span className="text-xs tabular-nums text-muted-foreground">
+                        <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
                           هفتۀ{' '}
                           {formatPersianDate(parseIsoDate(item.weekStart) ?? item.weekStart)}
                         </span>
                         <span className="flex min-w-0 items-center gap-2">
                           {item.advisorSummary.trim() && (
-                            <span className="hidden max-w-48 truncate text-xs text-muted-foreground sm:inline">
+                            <span className="hidden min-w-0 max-w-48 truncate text-xs text-muted-foreground sm:inline">
                               {item.advisorSummary.trim()}
                             </span>
                           )}
-                          <span className="shrink-0 rounded-full bg-primary/10 px-2 py-0.5 text-xs font-semibold tabular-nums text-primary">
+                          <Badge variant="outline" className="shrink-0 text-[11px] tabular-nums">
                             میانگین {formatAverage(item.average)}
-                          </span>
+                          </Badge>
                         </span>
                       </button>
                     </li>

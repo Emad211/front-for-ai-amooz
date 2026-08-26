@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import {
   AlertCircle,
+  ChevronDown,
   FileSearch,
   Loader2,
   Pencil,
@@ -44,6 +45,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { cn } from '@/lib/utils';
+import { Badge } from '@/components/ui/badge';
 import { JalaliDatePicker } from '@/components/advisory/study-plan/jalali-date-picker';
 
 /** Grade bands with their Persian labels — rendered from here everywhere. */
@@ -350,11 +352,11 @@ export function AnalysisMetricsGrid({ item }: { item: ExamAnalysis }) {
   if (metrics.length === 0) return null;
 
   return (
-    <dl className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+    <dl className="grid grid-cols-2 gap-x-3 gap-y-2 sm:grid-cols-4">
       {metrics.map((metric) => (
         <div
           key={metric.label}
-          className="rounded-lg border border-border/50 bg-muted/30 px-2.5 py-2"
+          className="rounded-lg border border-border/40 px-2.5 py-1.5"
         >
           <dt className="text-[11px] text-muted-foreground">{metric.label}</dt>
           <dd
@@ -377,11 +379,11 @@ export function AnalysisRowsList({ rows }: { rows: ExamAnalysisRow[] }) {
   if (rows.length === 0) return null;
 
   return (
-    <ul className="space-y-1.5">
+    <ul className="divide-y divide-border/40">
       {rows.map((row, index) => (
         <li
           key={`${row.subjectName}-${index}`}
-          className="rounded-lg border border-border/50 px-3 py-2 text-xs leading-relaxed"
+          className="py-1.5 text-xs leading-relaxed"
         >
           <p className="font-medium">{row.subjectName}</p>
           <p className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 tabular-nums text-muted-foreground">
@@ -421,15 +423,15 @@ export function AnalysisNotesList({
   if (notes.length === 0) return null;
 
   return (
-    <ul className="space-y-1.5">
+    <ul className="divide-y divide-border/40">
       {[...notes]
         .sort((a, b) => a.questionNumber - b.questionNumber)
         .map((note) => (
           <li
             key={note.questionNumber}
-            className="flex items-start gap-2 rounded-lg border border-border/50 px-3 py-2 text-xs leading-relaxed"
+            className="flex items-start gap-2 py-1.5 text-xs leading-relaxed"
           >
-            <span className="shrink-0 rounded-full bg-primary/10 px-2 py-0.5 font-semibold tabular-nums text-primary">
+            <span className="shrink-0 rounded-md bg-primary/10 px-1.5 py-0.5 font-semibold tabular-nums text-primary">
               سؤال {toPersianDigits(note.questionNumber)}
             </span>
             <span className="min-w-0">
@@ -462,8 +464,8 @@ function NumericField({
   signed?: boolean;
 }) {
   return (
-    <div className="space-y-1.5">
-      <label htmlFor={id} className="text-xs font-medium text-muted-foreground">
+    <div className="space-y-1">
+      <label htmlFor={id} className="text-[11px] font-medium text-muted-foreground">
         {label}
       </label>
       <Input
@@ -479,7 +481,7 @@ function NumericField({
         inputMode="numeric"
         placeholder={placeholder}
         aria-label={label}
-        className="h-9 text-center tabular-nums"
+        className="h-9 rounded-lg text-center text-sm tabular-nums"
       />
     </div>
   );
@@ -499,8 +501,8 @@ function DecimalField({
   placeholder?: string;
 }) {
   return (
-    <div className="space-y-1.5">
-      <label htmlFor={id} className="text-xs font-medium text-muted-foreground">
+    <div className="space-y-1">
+      <label htmlFor={id} className="text-[11px] font-medium text-muted-foreground">
         {label}
       </label>
       <Input
@@ -510,7 +512,7 @@ function DecimalField({
         inputMode="decimal"
         placeholder={placeholder}
         aria-label={label}
-        className="h-9 text-center tabular-nums"
+        className="h-9 rounded-lg text-center text-sm tabular-nums"
       />
     </div>
   );
@@ -536,6 +538,11 @@ function AnalysisEditor({
   onSubmit: () => void;
   onCancel: () => void;
 }) {
+  // View-only density state: repeated blocks fold once they grow past a
+  // handful of rows; adding a row/note always re-opens its block.
+  const [rowsOpen, setRowsOpen] = useState(false);
+  const [notesOpen, setNotesOpen] = useState(false);
+
   const updateRow = (
     uid: number,
     patch: Partial<Omit<AnalysisRowState, 'uid'>>,
@@ -602,9 +609,9 @@ function AnalysisEditor({
   return (
     <div className="space-y-4">
       {/* ── report card section ───────────────────────────────────────── */}
-      <section className="space-y-3 rounded-xl border border-border/60 p-3">
+      <section className="space-y-3">
         <h4 className="text-sm font-medium">کارنامه</h4>
-        <div className="grid gap-3 sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-x-3 gap-y-3 sm:grid-cols-2 lg:grid-cols-3">
           <NumericField
             id="analysis-exam-number"
             label="شمارهٔ کارنامه (اختیاری)"
@@ -612,10 +619,10 @@ function AnalysisEditor({
             onChange={(next) => onChange({ examNumberRaw: next })}
             placeholder="مثلاً ۱۲"
           />
-          <div className="space-y-1.5">
+          <div className="space-y-1">
             <label
               htmlFor="analysis-exam-date"
-              className="text-xs font-medium text-muted-foreground"
+              className="text-[11px] font-medium text-muted-foreground"
             >
               تاریخ آزمون (اختیاری)
             </label>
@@ -626,10 +633,10 @@ function AnalysisEditor({
               placeholder="تاریخ را انتخاب کنید"
             />
           </div>
-          <div className="space-y-1.5">
+          <div className="space-y-1">
             <label
               htmlFor="analysis-grade-band"
-              className="text-xs font-medium text-muted-foreground"
+              className="text-[11px] font-medium text-muted-foreground"
             >
               پایه (اختیاری)
             </label>
@@ -639,7 +646,7 @@ function AnalysisEditor({
                 onChange({ gradeBand: value as ExamGradeBand | 'none' })
               }
             >
-              <SelectTrigger id="analysis-grade-band" className="h-9">
+              <SelectTrigger id="analysis-grade-band" className="h-9 rounded-lg text-sm">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -702,10 +709,10 @@ function AnalysisEditor({
             placeholder="۰ تا ۱۰۰"
           />
         </div>
-        <div className="space-y-1.5">
+        <div className="space-y-1">
           <label
             htmlFor="analysis-report"
-            className="text-xs font-medium text-muted-foreground"
+            className="text-[11px] font-medium text-muted-foreground"
           >
             گزارش مشاور
           </label>
@@ -722,193 +729,315 @@ function AnalysisEditor({
       </section>
 
       {/* ── per-subject rows section ──────────────────────────────────── */}
-      <section className="space-y-2 rounded-xl border border-border/60 p-3">
+      <section className="space-y-2 border-t border-border/40 pt-4">
         <div className="flex items-center justify-between gap-2">
-          <h4 className="text-sm font-medium">جدول درس‌ها</h4>
-          <Button type="button" variant="outline" size="sm" onClick={addRow}>
-            <Plus className="ml-2 h-4 w-4" />
+          <button
+            type="button"
+            onClick={() => setRowsOpen((open) => !open)}
+            aria-expanded={rowsOpen || state.rows.length <= 3}
+            className="flex items-center gap-2 text-sm font-medium"
+          >
+            جدول درس‌ها
+            <Badge
+              variant="secondary"
+              className="text-[11px] font-normal tabular-nums"
+            >
+              {toPersianDigits(state.rows.length)}
+            </Badge>
+            {state.rows.length > 3 && (
+              <ChevronDown
+                className={cn(
+                  'h-4 w-4 text-muted-foreground transition-transform',
+                  rowsOpen && 'rotate-180',
+                )}
+              />
+            )}
+          </button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-8 rounded-lg px-3 text-xs"
+            onClick={() => {
+              addRow();
+              setRowsOpen(true);
+            }}
+          >
+            <Plus className="ml-1.5 h-3.5 w-3.5" />
             افزودن ردیف
           </Button>
         </div>
-        {state.rows.length === 0 && (
-          <p className="rounded-lg border border-dashed px-3 py-4 text-center text-xs leading-relaxed text-muted-foreground">
-            تحلیل درس‌به‌درس (غلط/نزده/شک‌دار) را اینجا ردیف‌به‌ردیف اضافه کنید.
+        {state.rows.length > 3 && !rowsOpen ? (
+          <p className="text-xs leading-relaxed text-muted-foreground">
+            {toPersianDigits(state.rows.length)} ردیف ثبت شده؛ برای مشاهده و
+            ویرایش باز کنید.
           </p>
+        ) : (
+          <>
+            {state.rows.length === 0 && (
+              <p className="rounded-lg border border-dashed px-3 py-4 text-center text-xs leading-relaxed text-muted-foreground">
+                تحلیل درس‌به‌درس (غلط/نزده/شک‌دار) را اینجا ردیف‌به‌ردیف اضافه کنید.
+              </p>
+            )}
+            {state.rows.length > 0 && (
+              <div className="space-y-1">
+                {/* Column headers for the tight table-like rows (lg+ only). */}
+                <div className="-mx-2 hidden items-end gap-2 px-2 text-[11px] leading-tight text-muted-foreground lg:flex">
+                  <span className="min-w-0 flex-[3_1_8rem]">درس</span>
+                  <span className="w-16 shrink-0 text-center">غلط</span>
+                  <span className="w-16 shrink-0 text-center">نزده</span>
+                  <span className="w-16 shrink-0 text-center">شک‌دار کل</span>
+                  <span className="w-16 shrink-0 text-center">شک‌دار غلط</span>
+                  <span className="w-16 shrink-0 text-center">شک‌دار نزده</span>
+                  <span className="w-16 shrink-0 text-center">شک‌دار درست</span>
+                  <span className="min-w-0 flex-[2_1_7rem]">علت</span>
+                  <span className="w-8 shrink-0" aria-hidden="true" />
+                </div>
+                <ul className="divide-y divide-border/40">
+                  {state.rows.map((row, index) => (
+                    <li
+                      key={row.uid}
+                      className="flex flex-wrap items-center gap-2 py-1.5"
+                    >
+                      <Input
+                        value={row.subjectName}
+                        onChange={(e) =>
+                          updateRow(row.uid, { subjectName: e.target.value })
+                        }
+                        placeholder={`نام درس ${toPersianDigits(index + 1)}`}
+                        maxLength={120}
+                        aria-label={`نام درس ردیف ${toPersianDigits(index + 1)}`}
+                        className="h-9 min-w-[8rem] flex-[3_1_8rem] rounded-lg text-sm"
+                      />
+                      <Input
+                        value={toPersianDigits(row.wrongCountRaw)}
+                        onChange={(e) =>
+                          updateRow(row.uid, {
+                            wrongCountRaw: sanitizeIntInput(e.target.value),
+                          })
+                        }
+                        inputMode="numeric"
+                        placeholder="۰"
+                        aria-label="غلط"
+                        className="h-9 w-16 shrink-0 rounded-lg text-center text-xs tabular-nums"
+                      />
+                      <Input
+                        value={toPersianDigits(row.skippedCountRaw)}
+                        onChange={(e) =>
+                          updateRow(row.uid, {
+                            skippedCountRaw: sanitizeIntInput(e.target.value),
+                          })
+                        }
+                        inputMode="numeric"
+                        placeholder="۰"
+                        aria-label="نزده"
+                        className="h-9 w-16 shrink-0 rounded-lg text-center text-xs tabular-nums"
+                      />
+                      <Input
+                        value={toPersianDigits(row.doubtfulTotalRaw)}
+                        onChange={(e) =>
+                          updateRow(row.uid, {
+                            doubtfulTotalRaw: sanitizeIntInput(e.target.value),
+                          })
+                        }
+                        inputMode="numeric"
+                        placeholder="۰"
+                        aria-label="شک‌دار کل"
+                        className="h-9 w-16 shrink-0 rounded-lg text-center text-xs tabular-nums"
+                      />
+                      <Input
+                        value={toPersianDigits(row.doubtfulWrongRaw)}
+                        onChange={(e) =>
+                          updateRow(row.uid, {
+                            doubtfulWrongRaw: sanitizeIntInput(e.target.value),
+                          })
+                        }
+                        inputMode="numeric"
+                        placeholder="۰"
+                        aria-label="شک‌دار غلط"
+                        className="h-9 w-16 shrink-0 rounded-lg text-center text-xs tabular-nums"
+                      />
+                      <Input
+                        value={toPersianDigits(row.doubtfulSkippedRaw)}
+                        onChange={(e) =>
+                          updateRow(row.uid, {
+                            doubtfulSkippedRaw: sanitizeIntInput(e.target.value),
+                          })
+                        }
+                        inputMode="numeric"
+                        placeholder="۰"
+                        aria-label="شک‌دار نزده"
+                        className="h-9 w-16 shrink-0 rounded-lg text-center text-xs tabular-nums"
+                      />
+                      <Input
+                        value={toPersianDigits(row.doubtfulCorrectRaw)}
+                        onChange={(e) =>
+                          updateRow(row.uid, {
+                            doubtfulCorrectRaw: sanitizeIntInput(e.target.value),
+                          })
+                        }
+                        inputMode="numeric"
+                        placeholder="۰"
+                        aria-label="شک‌دار درست"
+                        className="h-9 w-16 shrink-0 rounded-lg text-center text-xs tabular-nums"
+                      />
+                      <Input
+                        value={row.causeNote}
+                        onChange={(e) =>
+                          updateRow(row.uid, { causeNote: e.target.value })
+                        }
+                        placeholder="علت (اختیاری)"
+                        maxLength={300}
+                        aria-label={`علت ردیف ${toPersianDigits(index + 1)}`}
+                        className="h-9 min-w-[7rem] flex-[2_1_7rem] rounded-lg text-sm"
+                      />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        aria-label={`حذف ردیف ${toPersianDigits(index + 1)}`}
+                        className="h-8 w-8 shrink-0 text-muted-foreground hover:text-destructive"
+                        onClick={() => removeRow(row.uid)}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </>
         )}
-        <ul className="space-y-2">
-          {state.rows.map((row, index) => (
-            <li
-              key={row.uid}
-              className="space-y-2 rounded-lg border border-border/50 p-2"
-            >
-              <div className="grid grid-cols-[1fr_2rem] items-start gap-2 sm:grid-cols-[1fr_1fr_2rem]">
-                <Input
-                  value={row.subjectName}
-                  onChange={(e) =>
-                    updateRow(row.uid, { subjectName: e.target.value })
-                  }
-                  placeholder={`نام درس ${toPersianDigits(index + 1)}`}
-                  maxLength={120}
-                  aria-label={`نام درس ردیف ${toPersianDigits(index + 1)}`}
-                  className="h-9 text-xs"
-                />
-                <Input
-                  value={row.causeNote}
-                  onChange={(e) =>
-                    updateRow(row.uid, { causeNote: e.target.value })
-                  }
-                  placeholder="علت (اختیاری)"
-                  maxLength={300}
-                  aria-label={`علت ردیف ${toPersianDigits(index + 1)}`}
-                  className="h-9 text-xs"
-                />
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  aria-label={`حذف ردیف ${toPersianDigits(index + 1)}`}
-                  className="h-9 w-9 text-muted-foreground hover:text-destructive"
-                  onClick={() => removeRow(row.uid)}
-                >
-                  <Trash2 className="h-4 w-4" />
-                </Button>
-              </div>
-              <div className="grid grid-cols-3 gap-2 sm:grid-cols-6">
-                <NumericField
-                  id={`row-${row.uid}-wrong`}
-                  label="غلط"
-                  value={row.wrongCountRaw}
-                  onChange={(next) => updateRow(row.uid, { wrongCountRaw: next })}
-                  placeholder="۰"
-                />
-                <NumericField
-                  id={`row-${row.uid}-skipped`}
-                  label="نزده"
-                  value={row.skippedCountRaw}
-                  onChange={(next) =>
-                    updateRow(row.uid, { skippedCountRaw: next })
-                  }
-                  placeholder="۰"
-                />
-                <NumericField
-                  id={`row-${row.uid}-doubtful-total`}
-                  label="شک‌دار کل"
-                  value={row.doubtfulTotalRaw}
-                  onChange={(next) =>
-                    updateRow(row.uid, { doubtfulTotalRaw: next })
-                  }
-                  placeholder="۰"
-                />
-                <NumericField
-                  id={`row-${row.uid}-doubtful-wrong`}
-                  label="شک‌دار غلط"
-                  value={row.doubtfulWrongRaw}
-                  onChange={(next) =>
-                    updateRow(row.uid, { doubtfulWrongRaw: next })
-                  }
-                  placeholder="۰"
-                />
-                <NumericField
-                  id={`row-${row.uid}-doubtful-skipped`}
-                  label="شک‌دار نزده"
-                  value={row.doubtfulSkippedRaw}
-                  onChange={(next) =>
-                    updateRow(row.uid, { doubtfulSkippedRaw: next })
-                  }
-                  placeholder="۰"
-                />
-                <NumericField
-                  id={`row-${row.uid}-doubtful-correct`}
-                  label="شک‌دار درست"
-                  value={row.doubtfulCorrectRaw}
-                  onChange={(next) =>
-                    updateRow(row.uid, { doubtfulCorrectRaw: next })
-                  }
-                  placeholder="۰"
-                />
-              </div>
-            </li>
-          ))}
-        </ul>
       </section>
 
       {/* ── per-question notes section ────────────────────────────────── */}
-      <section className="space-y-2 rounded-xl border border-border/60 p-3">
+      <section className="space-y-2 border-t border-border/40 pt-4">
         <div className="flex items-center justify-between gap-2">
-          <h4 className="text-sm font-medium">یادداشت سؤال‌به‌سؤال</h4>
-          <Button type="button" variant="outline" size="sm" onClick={addNote}>
-            <Plus className="ml-2 h-4 w-4" />
+          <button
+            type="button"
+            onClick={() => setNotesOpen((open) => !open)}
+            aria-expanded={notesOpen || state.notes.length <= 3}
+            className="flex items-center gap-2 text-sm font-medium"
+          >
+            یادداشت سؤال‌به‌سؤال
+            <Badge
+              variant="secondary"
+              className="text-[11px] font-normal tabular-nums"
+            >
+              {toPersianDigits(state.notes.length)}
+            </Badge>
+            {state.notes.length > 3 && (
+              <ChevronDown
+                className={cn(
+                  'h-4 w-4 text-muted-foreground transition-transform',
+                  notesOpen && 'rotate-180',
+                )}
+              />
+            )}
+          </button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-8 rounded-lg px-3 text-xs"
+            onClick={() => {
+              addNote();
+              setNotesOpen(true);
+            }}
+          >
+            <Plus className="ml-1.5 h-3.5 w-3.5" />
             افزودن یادداشت
           </Button>
         </div>
-        {state.notes.length === 0 && (
-          <p className="rounded-lg border border-dashed px-3 py-4 text-center text-xs leading-relaxed text-muted-foreground">
-            نکات مهم سؤال‌های کلیدی آزمون را اینجا ثبت کنید؛ شمارۀ هر سؤال باید
-            یکتا باشد.
+        {state.notes.length > 3 && !notesOpen ? (
+          <p className="text-xs leading-relaxed text-muted-foreground">
+            {toPersianDigits(state.notes.length)} یادداشت ثبت شده؛ برای مشاهده
+            و ویرایش باز کنید.
           </p>
+        ) : (
+          <>
+            {state.notes.length === 0 && (
+              <p className="rounded-lg border border-dashed px-3 py-4 text-center text-xs leading-relaxed text-muted-foreground">
+                نکات مهم سؤال‌های کلیدی آزمون را اینجا ثبت کنید؛ شمارۀ هر سؤال باید
+                یکتا باشد.
+              </p>
+            )}
+            {state.notes.length > 0 && (
+              <ul className="divide-y divide-border/40">
+                {state.notes.map((note, index) => (
+                  <li
+                    key={note.uid}
+                    className="flex flex-wrap items-center gap-2 py-1.5"
+                  >
+                    <Input
+                      value={toPersianDigits(note.questionNumberRaw)}
+                      onChange={(e) =>
+                        updateNote(note.uid, {
+                          questionNumberRaw: sanitizeIntInput(e.target.value),
+                        })
+                      }
+                      inputMode="numeric"
+                      placeholder="۱–۳۰۰"
+                      aria-label={`شمارهٔ سؤال یادداشت ${toPersianDigits(index + 1)}`}
+                      className="h-9 w-14 shrink-0 rounded-lg text-center text-xs tabular-nums"
+                    />
+                    <Input
+                      value={note.subjectName}
+                      onChange={(e) =>
+                        updateNote(note.uid, { subjectName: e.target.value })
+                      }
+                      placeholder="نام درس"
+                      maxLength={120}
+                      aria-label={`نام درس یادداشت ${toPersianDigits(index + 1)}`}
+                      className="h-9 w-32 shrink-0 rounded-lg text-sm"
+                    />
+                    <Input
+                      value={note.note}
+                      onChange={(e) =>
+                        updateNote(note.uid, { note: e.target.value })
+                      }
+                      placeholder="نکتۀ این سؤال…"
+                      maxLength={2000}
+                      aria-label={`متن یادداشت ${toPersianDigits(index + 1)}`}
+                      className="h-9 min-w-[10rem] flex-1 rounded-lg text-sm"
+                    />
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      aria-label={`حذف یادداشت ${toPersianDigits(index + 1)}`}
+                      className="h-8 w-8 shrink-0 text-muted-foreground hover:text-destructive"
+                      onClick={() => removeNote(note.uid)}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </>
         )}
-        <ul className="space-y-2">
-          {state.notes.map((note, index) => (
-            <li
-              key={note.uid}
-              className="space-y-2 rounded-lg border border-border/50 p-2"
-            >
-              <div className="grid grid-cols-[5rem_1fr_2rem] items-start gap-2">
-                <Input
-                  value={toPersianDigits(note.questionNumberRaw)}
-                  onChange={(e) =>
-                    updateNote(note.uid, {
-                      questionNumberRaw: sanitizeIntInput(e.target.value),
-                    })
-                  }
-                  inputMode="numeric"
-                  placeholder="۱–۳۰۰"
-                  aria-label={`شمارهٔ سؤال یادداشت ${toPersianDigits(index + 1)}`}
-                  className="h-9 text-center text-xs tabular-nums"
-                />
-                <Input
-                  value={note.subjectName}
-                  onChange={(e) =>
-                    updateNote(note.uid, { subjectName: e.target.value })
-                  }
-                  placeholder="نام درس"
-                  maxLength={120}
-                  aria-label={`نام درس یادداشت ${toPersianDigits(index + 1)}`}
-                  className="h-9 text-xs"
-                />
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  aria-label={`حذف یادداشت ${toPersianDigits(index + 1)}`}
-                  className="h-9 w-9 text-muted-foreground hover:text-destructive"
-                  onClick={() => removeNote(note.uid)}
-                >
-                  <Trash2 className="h-4 w-4" />
-                </Button>
-              </div>
-              <Textarea
-                value={note.note}
-                onChange={(e) => updateNote(note.uid, { note: e.target.value })}
-                rows={2}
-                maxLength={2000}
-                placeholder="نکتۀ این سؤال…"
-                aria-label={`متن یادداشت ${toPersianDigits(index + 1)}`}
-                className="min-h-[56px] text-xs leading-relaxed"
-              />
-            </li>
-          ))}
-        </ul>
       </section>
 
       {/* ── actions ───────────────────────────────────────────────────── */}
-      <div className="flex items-center justify-end gap-2 border-t border-border/60 pt-3">
-        <Button type="button" variant="ghost" onClick={onCancel} disabled={saving}>
-          انصراف
-        </Button>
-        <Button type="button" onClick={onSubmit} disabled={saving}>
+      <div className="flex items-center justify-start gap-2 border-t border-border/40 pt-3">
+        <Button
+          type="button"
+          onClick={onSubmit}
+          disabled={saving}
+          className="h-9 px-4 text-sm"
+        >
           {saving && <Loader2 className="ml-2 h-4 w-4 animate-spin" />}
           {saving ? 'در حال ذخیره…' : submitLabel}
+        </Button>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          onClick={onCancel}
+          disabled={saving}
+        >
+          انصراف
         </Button>
       </div>
     </div>
@@ -1048,12 +1177,10 @@ export function ExamAnalysisCard({ engagementId }: { engagementId: number }) {
 
   return (
     <Card dir="rtl" className="rounded-2xl border-border/50">
-      <CardHeader className="pb-3">
+      <CardHeader className="p-5 pb-3">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <CardTitle className="flex items-center gap-2 text-base font-semibold">
-            <span className="rounded-lg bg-primary/10 p-1.5">
-              <FileSearch className="h-4 w-4 text-primary" />
-            </span>
+          <CardTitle className="flex items-center gap-2 text-sm font-semibold">
+            <FileSearch className="h-4 w-4 text-primary" />
             تحلیل کارنامه
           </CardTitle>
           <Button
@@ -1061,24 +1188,25 @@ export function ExamAnalysisCard({ engagementId }: { engagementId: number }) {
             size="sm"
             variant={editorTarget !== null ? 'outline' : 'default'}
             onClick={() => (editorTarget !== null ? closeEditor() : openCreate())}
+            className="h-8 rounded-lg px-3 text-xs"
           >
             {editorTarget !== null ? (
               'بستن فرم'
             ) : (
               <>
-                <Plus className="ml-2 h-4 w-4" />
+                <Plus className="ml-1.5 h-3.5 w-3.5" />
                 افزودن تحلیل
               </>
             )}
           </Button>
         </div>
-        <p className="text-xs leading-relaxed text-muted-foreground">
+        <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
           متریک‌های کارنامه، تحلیل درس‌به‌درس و نکات سؤال‌به‌سؤال هر آزمون را
           یکجا ثبت کنید.
         </p>
       </CardHeader>
 
-      <CardContent className="space-y-4">
+      <CardContent className="space-y-4 p-5 pt-0">
         {error && (
           <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-destructive/40 bg-destructive/5 px-3 py-2">
             <p className="flex items-center gap-2 text-xs text-destructive">
@@ -1106,7 +1234,7 @@ export function ExamAnalysisCard({ engagementId }: { engagementId: number }) {
 
         {/* ── editor ───────────────────────────────────────────────────── */}
         {!error && formState !== null && editorTarget !== null && (
-          <div className="rounded-xl border border-primary/40 bg-primary/[0.03] p-3">
+          <div className="rounded-xl border border-primary/40 bg-primary/[0.03] p-4">
             <p className="mb-3 text-sm font-medium">
               {editorTarget === 'create'
                 ? 'افزودن تحلیل جدید'
@@ -1134,87 +1262,89 @@ export function ExamAnalysisCard({ engagementId }: { engagementId: number }) {
           </p>
         )}
 
-        {!error &&
-          sorted.map((item) => {
-            if (editorTarget === item.id) return null;
-            return (
-              <article
-                key={item.id}
-                className="space-y-3 rounded-xl border border-border/60 p-3"
-              >
-                <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-2">
-                  <div className="min-w-0 space-y-1">
-                    <p className="text-sm font-medium leading-relaxed">
-                      {item.examNumber !== null
-                        ? `کارنامهٔ شمارۀ ${toPersianDigits(item.examNumber)}`
-                        : 'کارنامهٔ آزمون'}
-                    </p>
-                    <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
-                      <span className="tabular-nums">
+        {!error && sorted.length > 0 && (
+          <div className="divide-y divide-border/40">
+            {sorted.map((item) => {
+              if (editorTarget === item.id) return null;
+              return (
+                <article key={item.id} className="group space-y-3 py-3 first:pt-0 last:pb-0">
+                  <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-1">
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                        <span className="text-sm font-semibold leading-relaxed">
+                          {item.examNumber !== null
+                            ? `کارنامهٔ شمارۀ ${toPersianDigits(item.examNumber)}`
+                            : 'کارنامهٔ آزمون'}
+                        </span>
+                        {item.gradeBand && (
+                          <Badge
+                            variant="outline"
+                            className="text-[11px] font-normal text-muted-foreground"
+                          >
+                            {GRADE_BAND_LABELS[item.gradeBand]}
+                          </Badge>
+                        )}
+                      </div>
+                      <p className="mt-0.5 text-xs tabular-nums text-muted-foreground">
                         {formatJalaliDate(item.examDate)}
-                      </span>
-                      {item.gradeBand && (
-                        <>
-                          <span aria-hidden="true">·</span>
-                          <span>{GRADE_BAND_LABELS[item.gradeBand]}</span>
-                        </>
-                      )}
+                      </p>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-1 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        aria-label="ویرایش تحلیل"
+                        className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                        disabled={editorTarget !== null}
+                        onClick={() => openEdit(item)}
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        aria-label="حذف تحلیل"
+                        className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                        disabled={editorTarget !== null}
+                        onClick={() => setPendingDelete(item)}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                  </div>
+
+                  <AnalysisMetricsGrid item={item} />
+
+                  {item.advisorReport.trim() && (
+                    <p className="whitespace-pre-line text-sm leading-relaxed">
+                      {item.advisorReport}
                     </p>
-                  </div>
-                  <div className="flex shrink-0 items-center gap-1.5">
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      aria-label="ویرایش تحلیل"
-                      className="h-8 w-8 text-muted-foreground hover:text-foreground"
-                      disabled={editorTarget !== null}
-                      onClick={() => openEdit(item)}
-                    >
-                      <Pencil className="h-3.5 w-3.5" />
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      aria-label="حذف تحلیل"
-                      className="h-8 w-8 text-muted-foreground hover:text-destructive"
-                      disabled={editorTarget !== null}
-                      onClick={() => setPendingDelete(item)}
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </Button>
-                  </div>
-                </div>
+                  )}
 
-                <AnalysisMetricsGrid item={item} />
+                  {item.rows.length > 0 && (
+                    <div className="space-y-1">
+                      <h5 className="text-[11px] font-medium text-muted-foreground">
+                        جدول درس‌ها
+                      </h5>
+                      <AnalysisRowsList rows={item.rows} />
+                    </div>
+                  )}
 
-                {item.advisorReport.trim() && (
-                  <p className="whitespace-pre-line text-sm leading-relaxed">
-                    {item.advisorReport}
-                  </p>
-                )}
-
-                {item.rows.length > 0 && (
-                  <div className="space-y-1.5">
-                    <h5 className="text-xs font-medium text-muted-foreground">
-                      جدول درس‌ها
-                    </h5>
-                    <AnalysisRowsList rows={item.rows} />
-                  </div>
-                )}
-
-                {item.notes.length > 0 && (
-                  <div className="space-y-1.5">
-                    <h5 className="text-xs font-medium text-muted-foreground">
-                      نکات سؤال‌به‌سؤال ({toPersianDigits(item.notes.length)})
-                    </h5>
-                    <AnalysisNotesList notes={item.notes} />
-                  </div>
-                )}
-              </article>
-            );
-          })}
+                  {item.notes.length > 0 && (
+                    <div className="space-y-1">
+                      <h5 className="text-[11px] font-medium text-muted-foreground">
+                        نکات سؤال‌به‌سؤال ({toPersianDigits(item.notes.length)})
+                      </h5>
+                      <AnalysisNotesList notes={item.notes} />
+                    </div>
+                  )}
+                </article>
+              );
+            })}
+          </div>
+        )}
       </CardContent>
 
       {/* ── delete confirmation ────────────────────────────────────────── */}

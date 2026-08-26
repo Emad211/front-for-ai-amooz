@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { toast } from 'sonner';
 import {
   AlertCircle,
@@ -45,6 +45,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { cn } from '@/lib/utils';
+import { Badge } from '@/components/ui/badge';
 import { JalaliDatePicker } from '@/components/advisory/study-plan/jalali-date-picker';
 
 /** Wire kinds with their Persian labels — rendered from here everywhere. */
@@ -73,6 +74,24 @@ export const RATING_BADGE_CLASSES: Record<ExamScoreRating, string> = {
   FAIR: 'border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300',
   WEAK: 'border-destructive/40 bg-destructive/10 text-destructive',
 };
+
+/** Dot colors per verdict — the quiet dot+word treatment of list rows. */
+const RATING_DOT_CLASSES: Record<ExamScoreRating, string> = {
+  EXCELLENT: 'bg-emerald-500',
+  GOOD: 'bg-sky-500',
+  FAIR: 'bg-amber-500',
+  WEAK: 'bg-red-500',
+};
+
+/**
+ * Percent text tone for list rows — mirrors the locked thresholds of
+ * `lib/adherence.ts`: ≥80 emerald / ≥50 amber / else red.
+ */
+function percentToneClass(percent: number): string {
+  if (percent >= 80) return 'text-emerald-700 dark:text-emerald-400';
+  if (percent >= 50) return 'text-amber-700 dark:text-amber-400';
+  return 'text-red-700 dark:text-red-400';
+}
 
 /** Server-enforced roster cap (`MAX_EXAM_SCORES`); mirrored for the counter. */
 const MAX_EXAM_SCORES = 40;
@@ -198,9 +217,35 @@ function buildPatch(
   return patch;
 }
 
+/** Compact labeled cell of the shared field grid. */
+function FieldCell({
+  htmlFor,
+  label,
+  children,
+  className,
+}: {
+  htmlFor: string;
+  label: string;
+  children: ReactNode;
+  className?: string;
+}) {
+  return (
+    <div className={cn('space-y-1', className)}>
+      <label
+        htmlFor={htmlFor}
+        className="block text-[11px] font-medium text-muted-foreground"
+      >
+        {label}
+      </label>
+      {children}
+    </div>
+  );
+}
+
 /**
  * The shared field grid of both the add-form and the inline editor. Numeric
  * inputs render Persian digits while typing and store ASCII internally.
+ * Compact L2 layout: identity row, metrics row, then the full-width note.
  */
 function ScoreFields({
   state,
@@ -212,140 +257,107 @@ function ScoreFields({
   idPrefix: string;
 }) {
   return (
-    <div className="space-y-3">
-      <div className="grid gap-3 sm:grid-cols-2">
-        <div className="space-y-1.5">
-          <label
-            htmlFor={`${idPrefix}-title`}
-            className="text-xs font-medium text-muted-foreground"
-          >
-            عنوان آزمون
-          </label>
-          <Input
-            id={`${idPrefix}-title`}
-            value={state.title}
-            onChange={(e) => onChange({ title: e.target.value })}
-            maxLength={120}
-            placeholder="مثلاً آزمون جامع ریاضی قلم‌چی"
-            className="h-9"
-          />
-        </div>
-        <div className="space-y-1.5">
-          <label
-            htmlFor={`${idPrefix}-kind`}
-            className="text-xs font-medium text-muted-foreground"
-          >
-            نوع آزمون
-          </label>
-          <Select
-            value={state.examKind}
-            onValueChange={(value) =>
-              onChange({ examKind: value as ExamScoreKind })
-            }
-          >
-            <SelectTrigger id={`${idPrefix}-kind`} className="h-9">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {(Object.keys(EXAM_KIND_LABELS) as ExamScoreKind[]).map((kind) => (
-                <SelectItem key={kind} value={kind}>
-                  {EXAM_KIND_LABELS[kind]}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="space-y-1.5">
-          <label
-            htmlFor={`${idPrefix}-date`}
-            className="text-xs font-medium text-muted-foreground"
-          >
-            تاریخ آزمون
-          </label>
-          <JalaliDatePicker
-            id={`${idPrefix}-date`}
-            value={state.examDate}
-            onChange={(iso) => onChange({ examDate: iso })}
-            placeholder="تاریخ آزمون را انتخاب کنید"
-          />
-        </div>
-        <div className="grid grid-cols-2 gap-3">
-          <div className="space-y-1.5">
-            <label
-              htmlFor={`${idPrefix}-percent`}
-              className="text-xs font-medium text-muted-foreground"
-            >
-              درصد
-            </label>
-            <Input
-              id={`${idPrefix}-percent`}
-              value={toPersianDigits(state.scorePercentRaw)}
-              onChange={(e) =>
-                onChange({ scorePercentRaw: sanitizeDecimalInput(e.target.value) })
-              }
-              inputMode="decimal"
-              placeholder="۰ تا ۱۰۰"
-              aria-label="درصد آزمون"
-              className="h-9 text-center tabular-nums"
-            />
-          </div>
-          <div className="space-y-1.5">
-            <label
-              htmlFor={`${idPrefix}-tara`}
-              className="text-xs font-medium text-muted-foreground"
-            >
-              تراز (اختیاری)
-            </label>
-            <Input
-              id={`${idPrefix}-tara`}
-              value={toPersianDigits(state.taraRaw)}
-              onChange={(e) =>
-                onChange({ taraRaw: sanitizeIntInput(e.target.value) })
-              }
-              inputMode="numeric"
-              placeholder="مثلاً ۶۵۰۰"
-              aria-label="تراز آزمون"
-              className="h-9 text-center tabular-nums"
-            />
-          </div>
-        </div>
-        <div className="space-y-1.5 sm:col-span-2">
-          <label
-            htmlFor={`${idPrefix}-rating`}
-            className="text-xs font-medium text-muted-foreground"
-          >
-            ارزیابی مشاور (اختیاری)
-          </label>
-          <Select
-            value={state.advisorRating ?? 'none'}
-            onValueChange={(value) =>
-              onChange({
-                advisorRating:
-                  value === 'none' ? null : (value as ExamScoreRating),
-              })
-            }
-          >
-            <SelectTrigger id={`${idPrefix}-rating`} className="h-9">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="none">بدون ارزیابی</SelectItem>
-              {(Object.keys(RATING_LABELS) as ExamScoreRating[]).map((rating) => (
-                <SelectItem key={rating} value={rating}>
-                  {RATING_LABELS[rating]}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-      </div>
-      <div className="space-y-1.5">
-        <label
-          htmlFor={`${idPrefix}-note`}
-          className="text-xs font-medium text-muted-foreground"
+    <div className="grid grid-cols-1 gap-x-3 gap-y-3 sm:grid-cols-2 lg:grid-cols-3">
+      <FieldCell htmlFor={`${idPrefix}-title`} label="عنوان آزمون">
+        <Input
+          id={`${idPrefix}-title`}
+          value={state.title}
+          onChange={(e) => onChange({ title: e.target.value })}
+          maxLength={120}
+          placeholder="مثلاً آزمون جامع ریاضی قلم‌چی"
+          className="h-9 rounded-lg text-sm"
+        />
+      </FieldCell>
+      <FieldCell htmlFor={`${idPrefix}-kind`} label="نوع آزمون">
+        <Select
+          value={state.examKind}
+          onValueChange={(value) =>
+            onChange({ examKind: value as ExamScoreKind })
+          }
         >
-          یادداشت مشاور
-        </label>
+          <SelectTrigger
+            id={`${idPrefix}-kind`}
+            className="h-9 rounded-lg text-sm"
+          >
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {(Object.keys(EXAM_KIND_LABELS) as ExamScoreKind[]).map((kind) => (
+              <SelectItem key={kind} value={kind}>
+                {EXAM_KIND_LABELS[kind]}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </FieldCell>
+      <FieldCell htmlFor={`${idPrefix}-date`} label="تاریخ آزمون">
+        <JalaliDatePicker
+          id={`${idPrefix}-date`}
+          value={state.examDate}
+          onChange={(iso) => onChange({ examDate: iso })}
+          placeholder="تاریخ آزمون را انتخاب کنید"
+        />
+      </FieldCell>
+      <FieldCell htmlFor={`${idPrefix}-percent`} label="درصد">
+        <Input
+          id={`${idPrefix}-percent`}
+          value={toPersianDigits(state.scorePercentRaw)}
+          onChange={(e) =>
+            onChange({ scorePercentRaw: sanitizeDecimalInput(e.target.value) })
+          }
+          inputMode="decimal"
+          placeholder="۰ تا ۱۰۰"
+          aria-label="درصد آزمون"
+          className="h-9 rounded-lg text-center text-sm tabular-nums"
+        />
+      </FieldCell>
+      <FieldCell htmlFor={`${idPrefix}-tara`} label="تراز (اختیاری)">
+        <Input
+          id={`${idPrefix}-tara`}
+          value={toPersianDigits(state.taraRaw)}
+          onChange={(e) =>
+            onChange({ taraRaw: sanitizeIntInput(e.target.value) })
+          }
+          inputMode="numeric"
+          placeholder="مثلاً ۶۵۰۰"
+          aria-label="تراز آزمون"
+          className="h-9 rounded-lg text-center text-sm tabular-nums"
+        />
+      </FieldCell>
+      <FieldCell
+        htmlFor={`${idPrefix}-rating`}
+        label="ارزیابی مشاور (اختیاری)"
+      >
+        <Select
+          value={state.advisorRating ?? 'none'}
+          onValueChange={(value) =>
+            onChange({
+              advisorRating:
+                value === 'none' ? null : (value as ExamScoreRating),
+            })
+          }
+        >
+          <SelectTrigger
+            id={`${idPrefix}-rating`}
+            className="h-9 rounded-lg text-sm"
+          >
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="none">بدون ارزیابی</SelectItem>
+            {(Object.keys(RATING_LABELS) as ExamScoreRating[]).map((rating) => (
+              <SelectItem key={rating} value={rating}>
+                {RATING_LABELS[rating]}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </FieldCell>
+      <FieldCell
+        htmlFor={`${idPrefix}-note`}
+        label="یادداشت مشاور"
+        className="col-span-full"
+      >
         <Textarea
           id={`${idPrefix}-note`}
           value={state.advisorNote}
@@ -353,9 +365,9 @@ function ScoreFields({
           rows={2}
           maxLength={2000}
           placeholder="نظر کوتاه درباره‌ی این آزمون…"
-          className="min-h-[56px] text-sm leading-relaxed"
+          className="min-h-[60px] text-sm leading-relaxed"
         />
-      </div>
+      </FieldCell>
     </div>
   );
 }
@@ -496,45 +508,46 @@ export function ExamScoresCard({ engagementId }: { engagementId: number }) {
 
   return (
     <Card dir="rtl" className="rounded-2xl border-border/50">
-      <CardHeader className="pb-3">
+      <CardHeader className="p-5 pb-3">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <CardTitle className="flex items-center gap-2 text-base font-semibold">
-            <span className="rounded-lg bg-primary/10 p-1.5">
-              <GraduationCap className="h-4 w-4 text-primary" />
-            </span>
+          <CardTitle className="flex items-center gap-2 text-sm font-semibold">
+            <GraduationCap className="h-4 w-4 text-primary" />
             نمرات آزمون
           </CardTitle>
-          <Button
-            type="button"
-            size="sm"
-            variant={addOpen ? 'outline' : 'default'}
-            disabled={atCap && !addOpen}
-            onClick={() => {
-              setAddOpen((open) => !open);
-              setEditingId(null);
-            }}
-          >
-            {addOpen ? (
-              'بستن فرم'
-            ) : (
-              <>
-                <Plus className="ml-2 h-4 w-4" />
-                افزودن نمره
-              </>
-            )}
-          </Button>
+          <div className="flex items-center gap-2">
+            <span className="text-[11px] tabular-nums text-muted-foreground">
+              {toPersianDigits(sorted.length)} از{' '}
+              {toPersianDigits(MAX_EXAM_SCORES)} ردیف
+            </span>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={atCap && !addOpen}
+              onClick={() => {
+                setAddOpen((open) => !open);
+                setEditingId(null);
+              }}
+              className="h-8 rounded-lg px-3 text-xs"
+            >
+              {addOpen ? (
+                'بستن فرم'
+              ) : (
+                <>
+                  <Plus className="ml-1.5 h-3.5 w-3.5" />
+                  افزودن نمره
+                </>
+              )}
+            </Button>
+          </div>
         </div>
-        <p className="text-xs leading-relaxed text-muted-foreground">
+        <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
           نمرات، تراز و ارزیابی هر آزمون را اینجا ثبت کنید؛ دانش‌آموز همین
           فهرست را به‌ترتیب تاریخ می‌بیند.
         </p>
       </CardHeader>
 
-      <CardContent className="space-y-4">
-        <p className="text-xs tabular-nums text-muted-foreground">
-          {toPersianDigits(sorted.length)} از {toPersianDigits(MAX_EXAM_SCORES)}{' '}
-          ردیف
-        </p>
+      <CardContent className="space-y-4 p-5 pt-0">
         {atCap && (
           <p className="rounded-lg border border-dashed px-3 py-2 text-center text-xs text-muted-foreground">
             سقف {toPersianDigits(MAX_EXAM_SCORES)} ردیف پر شده است؛ برای افزودن
@@ -562,14 +575,14 @@ export function ExamScoresCard({ engagementId }: { engagementId: number }) {
         {loading && (
           <div className="space-y-2" aria-busy="true">
             {[0, 1, 2].map((i) => (
-              <Skeleton key={i} className="h-14 w-full rounded-xl" />
+              <Skeleton key={i} className="h-12 w-full rounded-lg" />
             ))}
           </div>
         )}
 
         {/* ── add form ─────────────────────────────────────────────────── */}
         {!error && addOpen && (
-          <div className="space-y-3 rounded-xl border border-border/60 p-3">
+          <div className="space-y-4 rounded-xl border border-border/40 p-4">
             <ScoreFields
               idPrefix="exam-score-add"
               state={addState}
@@ -577,10 +590,20 @@ export function ExamScoresCard({ engagementId }: { engagementId: number }) {
                 setAddState((prev) => ({ ...prev, ...patch }))
               }
             />
-            <div className="flex items-center justify-end gap-2 border-t border-border/60 pt-3">
+            <div className="flex items-center justify-start gap-2 border-t border-border/40 pt-3">
+              <Button
+                type="button"
+                onClick={handleAdd}
+                disabled={savingAdd}
+                className="h-9 px-4 text-sm"
+              >
+                {savingAdd && <Loader2 className="ml-2 h-4 w-4 animate-spin" />}
+                {savingAdd ? 'در حال ذخیره…' : 'ذخیره'}
+              </Button>
               <Button
                 type="button"
                 variant="ghost"
+                size="sm"
                 onClick={() => {
                   setAddOpen(false);
                   setAddState(seedFormState(null));
@@ -589,30 +612,28 @@ export function ExamScoresCard({ engagementId }: { engagementId: number }) {
               >
                 انصراف
               </Button>
-              <Button type="button" onClick={handleAdd} disabled={savingAdd}>
-                {savingAdd && <Loader2 className="ml-2 h-4 w-4 animate-spin" />}
-                {savingAdd ? 'در حال ذخیره…' : 'ذخیره'}
-              </Button>
             </div>
           </div>
         )}
 
         {/* ── score rows ───────────────────────────────────────────────── */}
         {!error && !loading && sorted.length === 0 && (
-          <p className="rounded-lg border border-dashed px-3 py-6 text-center text-xs leading-relaxed text-muted-foreground">
+          <p className="rounded-lg border border-dashed px-3 py-8 text-center text-xs leading-relaxed text-muted-foreground">
             هنوز نمره‌ای ثبت نشده است. اولین آزمون دانش‌آموز را اضافه کنید.
           </p>
         )}
 
         {!error && sorted.length > 0 && (
-          <ul className="space-y-2">
+          /* While a row is edited its bordered editor replaces the divided
+             rhythm so the two borders never double up. */
+          <ul className={editingId !== null ? 'space-y-2' : 'divide-y divide-border/40'}>
             {sorted.map((score) => {
               const isEditing = editingId === score.id;
               if (isEditing) {
                 return (
                   <li
                     key={score.id}
-                    className="space-y-3 rounded-xl border border-primary/40 bg-primary/[0.03] p-3"
+                    className="-mx-2 space-y-4 rounded-xl border border-primary/40 bg-primary/[0.03] p-4"
                   >
                     <ScoreFields
                       idPrefix={`exam-score-edit-${score.id}`}
@@ -621,24 +642,26 @@ export function ExamScoresCard({ engagementId }: { engagementId: number }) {
                         setEditState((prev) => ({ ...prev, ...patch }))
                       }
                     />
-                    <div className="flex items-center justify-end gap-2 border-t border-border/60 pt-3">
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        onClick={() => setEditingId(null)}
-                        disabled={savingEdit}
-                      >
-                        انصراف
-                      </Button>
+                    <div className="flex items-center justify-start gap-2 border-t border-border/40 pt-3">
                       <Button
                         type="button"
                         onClick={() => handleEditSave(score)}
                         disabled={savingEdit}
+                        className="h-9 px-4 text-sm"
                       >
                         {savingEdit && (
                           <Loader2 className="ml-2 h-4 w-4 animate-spin" />
                         )}
                         {savingEdit ? 'در حال ذخیره…' : 'ذخیره'}
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setEditingId(null)}
+                        disabled={savingEdit}
+                      >
+                        انصراف
                       </Button>
                     </div>
                   </li>
@@ -647,73 +670,87 @@ export function ExamScoresCard({ engagementId }: { engagementId: number }) {
               return (
                 <li
                   key={score.id}
-                  className="rounded-xl border border-border/60 p-3"
+                  className="group -mx-2 rounded-lg px-2 py-2 transition-colors hover:bg-muted/30"
                 >
-                  <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-2">
-                    <div className="min-w-0 flex-1 space-y-1">
-                      <p className="text-sm font-medium leading-relaxed">
-                        {score.title || 'بدون عنوان'}
-                      </p>
-                      <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
-                        <span>{EXAM_KIND_LABELS[score.examKind]}</span>
-                        <span aria-hidden="true">·</span>
+                  <div className="flex items-start justify-between gap-x-3 gap-y-1">
+                    <div className="min-w-0 space-y-0.5">
+                      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                        <span className="text-sm font-semibold leading-relaxed">
+                          {score.title || 'بدون عنوان'}
+                        </span>
+                        <Badge
+                          variant="outline"
+                          className="text-[11px] font-normal text-muted-foreground"
+                        >
+                          {EXAM_KIND_LABELS[score.examKind]}
+                        </Badge>
+                        {score.subjectName && (
+                          <span className="text-[11px] text-muted-foreground">
+                            {score.subjectName}
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex flex-wrap items-center gap-x-2.5 gap-y-0.5 text-xs text-muted-foreground">
                         <span className="tabular-nums">
                           {formatJalaliDate(score.examDate)}
                         </span>
-                        {score.subjectName && (
-                          <>
-                            <span aria-hidden="true">·</span>
-                            <span>{score.subjectName}</span>
-                          </>
+                        {score.tara !== null && (
+                          <span className="tabular-nums">
+                            تراز {toPersianDigits(score.tara)}
+                          </span>
                         )}
-                      </p>
+                        {score.advisorRating && (
+                          <span className="flex items-center gap-1.5">
+                            <span
+                              aria-hidden="true"
+                              className={cn(
+                                'h-1.5 w-1.5 rounded-full',
+                                RATING_DOT_CLASSES[score.advisorRating],
+                              )}
+                            />
+                            {RATING_LABELS[score.advisorRating]}
+                          </span>
+                        )}
+                      </div>
                       {score.advisorNote.trim() && (
-                        <p className="text-xs leading-relaxed text-muted-foreground">
+                        <p className="whitespace-pre-line text-xs leading-relaxed text-muted-foreground">
                           {score.advisorNote}
                         </p>
                       )}
                     </div>
-                    <div className="flex shrink-0 flex-wrap items-center gap-1.5">
-                      <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-semibold tabular-nums text-primary">
+                    <div className="flex shrink-0 items-center gap-2 pt-0.5">
+                      <span
+                        className={cn(
+                          'text-sm font-bold tabular-nums',
+                          percentToneClass(score.scorePercent),
+                        )}
+                      >
                         {toPersianDigits(score.scorePercent)}٪
                       </span>
-                      {score.tara !== null && (
-                        <span className="rounded-full bg-muted px-2 py-0.5 text-xs tabular-nums text-muted-foreground">
-                          تراز {toPersianDigits(score.tara)}
-                        </span>
-                      )}
-                      {score.advisorRating && (
-                        <span
-                          className={cn(
-                            'rounded-full border px-2 py-0.5 text-xs font-semibold',
-                            RATING_BADGE_CLASSES[score.advisorRating],
-                          )}
+                      <div className="flex items-center opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          aria-label={`ویرایش ${score.title}`}
+                          className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                          disabled={editingId !== null}
+                          onClick={() => startEdit(score)}
                         >
-                          {RATING_LABELS[score.advisorRating]}
-                        </span>
-                      )}
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        aria-label={`ویرایش ${score.title}`}
-                        className="h-8 w-8 text-muted-foreground hover:text-foreground"
-                        disabled={editingId !== null}
-                        onClick={() => startEdit(score)}
-                      >
-                        <Pencil className="h-3.5 w-3.5" />
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        aria-label={`حذف ${score.title}`}
-                        className="h-8 w-8 text-muted-foreground hover:text-destructive"
-                        disabled={editingId !== null}
-                        onClick={() => setPendingDelete(score)}
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </Button>
+                          <Pencil className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          aria-label={`حذف ${score.title}`}
+                          className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                          disabled={editingId !== null}
+                          onClick={() => setPendingDelete(score)}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
                     </div>
                   </div>
                 </li>

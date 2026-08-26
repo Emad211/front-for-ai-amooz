@@ -5,6 +5,7 @@ import { toast } from 'sonner';
 import {
   AlertCircle,
   CheckCircle2,
+  ChevronDown,
   Loader2,
   Plus,
   RefreshCw,
@@ -22,6 +23,7 @@ import {
 } from '@/services/advisory-service';
 import { formatPersianDate } from '@/lib/date-utils';
 import { toPersianDigits } from '@/lib/persian-digits';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -53,6 +55,13 @@ export const CHALLENGE_STATUS_BADGE_CLASSES: Record<ChallengeStatus, string> = {
     'border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300',
   DONE: 'border-border bg-muted text-muted-foreground',
   CANCELLED: 'border-destructive/40 bg-destructive/10 text-destructive',
+};
+
+/** Solid dot color for the compact status dot+word indicator (green/gray/red). */
+const CHALLENGE_STATUS_DOT_CLASSES: Record<ChallengeStatus, string> = {
+  ACTIVE: 'bg-emerald-500',
+  DONE: 'bg-muted-foreground/40',
+  CANCELLED: 'bg-destructive',
 };
 
 /** Server-enforced cap (`MAX_ACTIVE_CHALLENGES`); mirrored for the hint copy. */
@@ -98,6 +107,13 @@ function seedDays(challenge: Challenge): ChallengeDay[] {
   });
 }
 
+/** Days carrying any goal/summary content — drives the «N/7 ثبت‌شده» counters. */
+function countFilledDays(challenge: Challenge): number {
+  return (challenge.days ?? []).filter(
+    (day) => day.goal.trim() || day.summary.trim(),
+  ).length;
+}
+
 /**
  * Create form of one challenge. `endDate` is deliberately absent — deriving
  * `startDate + 6` is the server's job; the client never sends it.
@@ -139,13 +155,13 @@ function ChallengeCreateForm({
   };
 
   return (
-    <div className="space-y-3 rounded-xl border border-primary/40 bg-primary/[0.03] p-3">
+    <div className="space-y-4 rounded-xl border border-border/40 p-4">
       <p className="text-sm font-medium">چالش جدید</p>
-      <div className="grid gap-3 sm:grid-cols-2">
-        <div className="space-y-1.5">
+      <div className="grid grid-cols-1 gap-x-3 gap-y-3 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="space-y-1.5 lg:col-span-2">
           <label
             htmlFor="challenge-title"
-            className="text-xs font-medium text-muted-foreground"
+            className="text-[11px] font-medium text-muted-foreground"
           >
             عنوان چالش
           </label>
@@ -155,13 +171,13 @@ function ChallengeCreateForm({
             onChange={(e) => setTitle(e.target.value)}
             maxLength={120}
             placeholder="مثلاً هفت روز بدون فضای مجازی"
-            className="h-9"
+            className="h-9 w-full rounded-lg text-sm"
           />
         </div>
         <div className="space-y-1.5">
           <label
             htmlFor="challenge-start"
-            className="text-xs font-medium text-muted-foreground"
+            className="text-[11px] font-medium text-muted-foreground"
           >
             تاریخ شروع
           </label>
@@ -172,10 +188,10 @@ function ChallengeCreateForm({
             placeholder="روز آغاز را انتخاب کنید"
           />
         </div>
-        <div className="space-y-1.5 sm:col-span-2">
+        <div className="space-y-1.5 sm:col-span-2 lg:col-span-3">
           <label
             htmlFor="challenge-goal"
-            className="text-xs font-medium text-muted-foreground"
+            className="text-[11px] font-medium text-muted-foreground"
           >
             هدف و تعریف
           </label>
@@ -186,13 +202,13 @@ function ChallengeCreateForm({
             rows={3}
             maxLength={2000}
             placeholder="این چالش دقیقاً چیست و چه هدفی دارد؟"
-            className="min-h-[72px] text-sm leading-relaxed"
+            className="min-h-[60px] text-sm leading-relaxed"
           />
         </div>
         <div className="space-y-1.5">
           <label
             htmlFor="challenge-routine"
-            className="text-xs font-medium text-muted-foreground"
+            className="text-[11px] font-medium text-muted-foreground"
           >
             روتین روزانه
           </label>
@@ -202,13 +218,13 @@ function ChallengeCreateForm({
             onChange={(e) => setDailyRoutine(e.target.value)}
             maxLength={200}
             placeholder="مثلاً هر شب ۲۰ صفحه کتاب"
-            className="h-9"
+            className="h-9 w-full rounded-lg text-sm"
           />
         </div>
         <div className="space-y-1.5">
           <label
             htmlFor="challenge-execution"
-            className="text-xs font-medium text-muted-foreground"
+            className="text-[11px] font-medium text-muted-foreground"
           >
             نوع اجرا
           </label>
@@ -218,13 +234,13 @@ function ChallengeCreateForm({
             onChange={(e) => setExecutionNote(e.target.value)}
             maxLength={200}
             placeholder="مثلاً فردی و مستمر"
-            className="h-9"
+            className="h-9 w-full rounded-lg text-sm"
           />
         </div>
         <div className="space-y-1.5 sm:col-span-2">
           <label
             htmlFor="challenge-observer"
-            className="text-xs font-medium text-muted-foreground"
+            className="text-[11px] font-medium text-muted-foreground"
           >
             مجری و ناظر
           </label>
@@ -234,13 +250,13 @@ function ChallengeCreateForm({
             onChange={(e) => setObserver(e.target.value)}
             maxLength={120}
             placeholder="مثلاً دانش‌آموز — ناظر: مشاور"
-            className="h-9"
+            className="h-9 w-full rounded-lg text-sm"
           />
         </div>
-        <div className="space-y-1.5 sm:col-span-2">
+        <div className="space-y-1.5 sm:col-span-2 lg:col-span-3">
           <label
             htmlFor="challenge-problem"
-            className="text-xs font-medium text-muted-foreground"
+            className="text-[11px] font-medium text-muted-foreground"
           >
             مشکل و نتیجهٔ مدنظر
           </label>
@@ -251,12 +267,18 @@ function ChallengeCreateForm({
             rows={2}
             maxLength={2000}
             placeholder="کدام مشکل حل شود و در پایان به کجا برسد؟"
-            className="min-h-[56px] text-sm leading-relaxed"
+            className="min-h-[60px] text-sm leading-relaxed"
           />
         </div>
       </div>
-      <div className="flex items-center justify-end gap-2 border-t border-border/60 pt-3">
-        <Button type="button" onClick={handleSubmit} disabled={creating}>
+      <div className="flex justify-start border-t border-border/40 pt-3">
+        <Button
+          type="button"
+          size="sm"
+          className="h-9 px-4"
+          onClick={handleSubmit}
+          disabled={creating}
+        >
           {creating && <Loader2 className="ml-2 h-4 w-4 animate-spin" />}
           {creating ? 'در حال ذخیره…' : 'ساخت چالش'}
         </Button>
@@ -267,8 +289,10 @@ function ChallengeCreateForm({
 
 /**
  * The 7-day editor of one ACTIVE challenge (advisor side — every field
- * writable). Each row shows the derived absolute date so the advisor sees the
- * real calendar span without doing math.
+ * writable), collapsed by default behind an accordion. Each day is ONE compact
+ * inline row (goal + summary inputs); days whose absolute date is in the
+ * future render dimmed with disabled inputs — a day can only be filled once
+ * it has arrived. The whole set is saved as one PUT.
  */
 function ChallengeDaysEditor({
   engagementId,
@@ -279,6 +303,10 @@ function ChallengeDaysEditor({
 }) {
   const [rows, setRows] = useState<ChallengeDay[]>(() => seedDays(challenge));
   const [saving, setSaving] = useState(false);
+
+  /** Today as ISO, so ISO strings compare lexicographically against day dates. */
+  const todayIso = toIsoDate(new Date());
+  const filledCount = countFilledDays(challenge);
 
   const updateRow = (
     dayNumber: number,
@@ -313,54 +341,131 @@ function ChallengeDaysEditor({
   };
 
   return (
-    <details className="rounded-lg border border-border/50 bg-background/40">
-      <summary className="cursor-pointer select-none px-3 py-2 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground">
-        ویرایش روزهای چالش ({toPersianDigits(DAYS_PER_CHALLENGE)} روز)
+    <details className="group rounded-xl border border-border/40">
+      <summary className="flex cursor-pointer select-none items-center justify-between gap-2 px-3 py-2.5 text-sm font-medium transition-colors hover:text-foreground">
+        <span className="flex items-center gap-2">
+          روزها
+          <Badge variant="secondary" className="text-[11px] font-normal">
+            {toPersianDigits(filledCount)}/{toPersianDigits(DAYS_PER_CHALLENGE)}{' '}
+            ثبت‌شده
+          </Badge>
+        </span>
+        <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-180" />
       </summary>
-      <div className="space-y-2 border-t border-border/50 p-3">
-        {rows.map((row) => {
-          const dayIso = challengeDayIso(challenge.startDate, row.dayNumber);
-          return (
-            <div
-              key={row.dayNumber}
-              className="space-y-1.5 rounded-lg border border-border/50 p-2"
-            >
-              <p className="flex flex-wrap items-center gap-x-2 text-xs font-medium">
-                <span>روز {toPersianDigits(row.dayNumber)}</span>
-                {dayIso && (
-                  <span className="tabular-nums text-muted-foreground">
-                    ({formatJalaliDate(dayIso)})
-                  </span>
+      <div className="border-t border-border/40 px-3 py-1">
+        <div className="divide-y divide-border/40">
+          {rows.map((row) => {
+            const dayIso = challengeDayIso(challenge.startDate, row.dayNumber);
+            const isFuture = Boolean(dayIso && dayIso > todayIso);
+            return (
+              <div
+                key={row.dayNumber}
+                className={cn(
+                  'flex flex-wrap items-center gap-2 py-1.5',
+                  isFuture && 'opacity-50',
                 )}
-              </p>
-              <Input
-                value={row.goal}
-                onChange={(e) => updateRow(row.dayNumber, { goal: e.target.value })}
-                placeholder={`هدف‌گذاری روز ${toPersianDigits(row.dayNumber)}`}
-                maxLength={200}
-                aria-label={`هدف روز ${toPersianDigits(row.dayNumber)}`}
-                className="h-9 text-xs"
-              />
-              <Textarea
-                value={row.summary}
-                onChange={(e) =>
-                  updateRow(row.dayNumber, { summary: e.target.value })
-                }
-                rows={2}
-                maxLength={5000}
-                placeholder="خلاصۀ کارها، مشکلات و نتیجه…"
-                aria-label={`خلاصۀ روز ${toPersianDigits(row.dayNumber)}`}
-                className="min-h-[56px] text-xs leading-relaxed"
-              />
-            </div>
-          );
-        })}
-        <div className="flex items-center justify-end">
-          <Button type="button" size="sm" onClick={handleSave} disabled={saving}>
+              >
+                <Badge
+                  variant="secondary"
+                  className="w-10 shrink-0 justify-center px-0 text-center text-[11px]"
+                >
+                  روز {toPersianDigits(row.dayNumber)}
+                </Badge>
+                <Input
+                  value={row.goal}
+                  onChange={(e) =>
+                    updateRow(row.dayNumber, { goal: e.target.value })
+                  }
+                  placeholder={`هدف‌گذاری روز ${toPersianDigits(row.dayNumber)}`}
+                  maxLength={200}
+                  aria-label={`هدف روز ${toPersianDigits(row.dayNumber)}`}
+                  disabled={isFuture}
+                  className="h-8 basis-44 flex-1 rounded-lg text-xs"
+                />
+                <Input
+                  value={row.summary}
+                  onChange={(e) =>
+                    updateRow(row.dayNumber, { summary: e.target.value })
+                  }
+                  placeholder="خلاصۀ کارها، مشکلات و نتیجه…"
+                  maxLength={5000}
+                  aria-label={`خلاصۀ روز ${toPersianDigits(row.dayNumber)}`}
+                  disabled={isFuture}
+                  className="h-8 basis-44 flex-1 rounded-lg text-xs"
+                />
+              </div>
+            );
+          })}
+        </div>
+        <div className="flex justify-start border-t border-border/40 py-2">
+          <Button
+            type="button"
+            size="sm"
+            className="h-9 px-4"
+            onClick={handleSave}
+            disabled={saving}
+          >
             {saving && <Loader2 className="ml-2 h-4 w-4 animate-spin" />}
             {saving ? 'در حال ذخیره…' : 'ذخیرۀ روزها'}
           </Button>
         </div>
+      </div>
+    </details>
+  );
+}
+
+/**
+ * Read-only days recap of a terminal (DONE/CANCELLED) challenge: a muted
+ * collapsed accordion whose header IS the summary line («۵ از ۷ روز ثبت
+ * شده»); expanding lists only the days that actually carry content.
+ */
+function ChallengeDaysRecap({ challenge }: { challenge: Challenge }) {
+  const filledCount = countFilledDays(challenge);
+  const filledDays = (challenge.days ?? []).filter(
+    (day) => day.goal.trim() || day.summary.trim(),
+  );
+
+  return (
+    <details className="group rounded-xl border border-border/40">
+      <summary className="flex cursor-pointer select-none items-center justify-between gap-2 px-3 py-2 text-xs text-muted-foreground transition-colors hover:text-foreground">
+        <span>
+          {toPersianDigits(filledCount)} از{' '}
+          {toPersianDigits(DAYS_PER_CHALLENGE)} روز ثبت شده
+        </span>
+        <ChevronDown className="h-3.5 w-3.5 shrink-0 transition-transform group-open:rotate-180" />
+      </summary>
+      <div className="border-t border-border/40 px-3 py-1">
+        {filledDays.length === 0 ? (
+          <p className="py-2 text-center text-xs text-muted-foreground">
+            هنوز روزی ثبت نشده است.
+          </p>
+        ) : (
+          <div className="divide-y divide-border/40">
+            {filledDays.map((day) => (
+              <div
+                key={day.dayNumber}
+                className="flex items-start gap-2 py-1.5 text-xs"
+              >
+                <Badge
+                  variant="secondary"
+                  className="w-10 shrink-0 justify-center px-0 text-center text-[11px]"
+                >
+                  روز {toPersianDigits(day.dayNumber)}
+                </Badge>
+                <div className="min-w-0 flex-1 space-y-0.5">
+                  {day.goal.trim() && (
+                    <p className="leading-relaxed">{day.goal}</p>
+                  )}
+                  {day.summary.trim() && (
+                    <p className="leading-relaxed text-muted-foreground">
+                      {day.summary}
+                    </p>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </details>
   );
@@ -396,10 +501,13 @@ const ACTION_COPY: Record<
 };
 
 /**
- * The advisor's challenges card («چالش ۷ روزه», restart step 9): create form,
- * list with status badges, per-challenge days editor for ACTIVE ones, and
- * پایان/لغو/حذف actions behind confirms. The three-ACTIVE cap error arrives
- * as the server's Persian detail and surfaces verbatim via toast.
+ * The advisor's challenges card («چالش ۷ روزه», restart step 9): create form
+ * (collapsed behind the «چالش جدید» toggle; auto-expanded while the list is
+ * empty), compact challenge blocks with a one-row header (title + status dot +
+ * date range + actions), per-challenge days accordion for ACTIVE ones, a
+ * read-only recap for terminal ones, and پایان/لغو/حذف actions behind
+ * confirms. The three-ACTIVE cap error arrives as the server's Persian detail
+ * and surfaces verbatim via toast.
  */
 export function ChallengeCard({ engagementId }: { engagementId: number }) {
   const [challenges, setChallenges] = useState<Challenge[] | null>(null);
@@ -479,37 +587,39 @@ export function ChallengeCard({ engagementId }: { engagementId: number }) {
 
   return (
     <Card dir="rtl" className="rounded-2xl border-border/50">
-      <CardHeader className="pb-3">
+      <CardHeader className="p-5 pb-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <CardTitle className="flex items-center gap-2 text-base font-semibold">
-            <span className="rounded-lg bg-primary/10 p-1.5">
-              <Target className="h-4 w-4 text-primary" />
-            </span>
+          <CardTitle className="flex items-center gap-2 text-sm font-semibold">
+            <Target className="h-4 w-4 text-primary" />
             چالش هفت‌روزه
           </CardTitle>
-          <Button
-            type="button"
-            size="sm"
-            variant={createFormOpen ? 'outline' : 'default'}
-            onClick={() => setCreateFormOpen((open) => !open)}
-          >
-            {createFormOpen ? (
-              'بستن فرم'
-            ) : (
-              <>
-                <Plus className="ml-2 h-4 w-4" />
-                چالش جدید
-              </>
-            )}
-          </Button>
+          {/* Hidden once the list is confirmed empty — the form then stands
+          open on its own and a collapse toggle would be a dead control. */}
+          {(challenges === null || (challenges ?? []).length > 0) && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setCreateFormOpen((open) => !open)}
+            >
+              {createFormOpen ? (
+                'بستن فرم'
+              ) : (
+                <>
+                  <Plus className="ml-2 h-4 w-4" />
+                  چالش جدید
+                </>
+              )}
+            </Button>
+          )}
         </div>
-        <p className="text-xs leading-relaxed text-muted-foreground">
+        <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
           چالشی هفت‌روزه بسازید تا دانش‌آموز روزبه‌روز آن را پر کند؛ حداکثر{' '}
           {toPersianDigits(MAX_ACTIVE_CHALLENGES)} چالش فعال همزمان می‌توانید داشته باشید.
         </p>
       </CardHeader>
 
-      <CardContent className="space-y-4">
+      <CardContent className="space-y-4 p-5 pt-0">
         {error && (
           <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-destructive/40 bg-destructive/5 px-3 py-2">
             <p className="flex items-center gap-2 text-xs text-destructive">
@@ -535,45 +645,97 @@ export function ChallengeCard({ engagementId }: { engagementId: number }) {
           </div>
         )}
 
-        {!error && createFormOpen && !loading && (
-          <ChallengeCreateForm creating={creating} onCreate={handleCreate} />
+        {!error && !loading && (challenges ?? []).length === 0 && (
+          <p className="text-center text-xs leading-relaxed text-muted-foreground">
+            هنوز چالی ساخته نشده است. یک هدف هفت‌روزهٔ مشخص برای دانش‌آموز
+            تعریف کنید.
+          </p>
         )}
 
+        {/* Auto-expanded while there is nothing else on the card. */}
         {!error &&
           !loading &&
-          (challenges ?? []).length === 0 &&
-          !createFormOpen && (
-            <p className="rounded-lg border border-dashed px-3 py-6 text-center text-xs leading-relaxed text-muted-foreground">
-              هنوز چالی ساخته نشده است. یک هدف هفت‌روزهٔ مشخص برای دانش‌آموز
-              تعریف کنید.
-            </p>
+          (createFormOpen || (challenges ?? []).length === 0) && (
+            <ChallengeCreateForm creating={creating} onCreate={handleCreate} />
           )}
 
         {!error &&
           (challenges ?? []).map((challenge) => (
             <article
               key={challenge.id}
-              className="space-y-3 rounded-xl border border-border/60 p-3"
+              className="space-y-3 rounded-xl border border-border/40 p-4"
             >
-              <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-2">
-                <div className="min-w-0 space-y-1">
-                  <p className="text-sm font-medium leading-relaxed">
-                    {challenge.title || 'بدون عنوان'}
-                  </p>
-                  <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs tabular-nums text-muted-foreground">
-                    <span>{formatJalaliDate(challenge.startDate)}</span>
-                    <span aria-hidden="true">تا</span>
-                    <span>{formatJalaliDate(challenge.endDate)}</span>
-                  </p>
-                </div>
-                <span
-                  className={cn(
-                    'shrink-0 rounded-full border px-2 py-0.5 text-xs font-semibold',
-                    CHALLENGE_STATUS_BADGE_CLASSES[challenge.status],
-                  )}
-                >
-                  {CHALLENGE_STATUS_LABELS[challenge.status]}
+              {/* One-row header: title · status · date range · actions. */}
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+                <h3 className="min-w-0 flex-1 basis-52 truncate text-sm font-semibold">
+                  {challenge.title || 'بدون عنوان'}
+                </h3>
+                <span className="flex shrink-0 items-center gap-1.5 text-xs">
+                  <span
+                    aria-hidden="true"
+                    className={cn(
+                      'h-1.5 w-1.5 rounded-full',
+                      CHALLENGE_STATUS_DOT_CLASSES[challenge.status],
+                    )}
+                  />
+                  <span
+                    className={cn(
+                      challenge.status === 'DONE' && 'text-muted-foreground',
+                    )}
+                  >
+                    {CHALLENGE_STATUS_LABELS[challenge.status]}
+                  </span>
                 </span>
+                <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
+                  {formatJalaliDate(challenge.startDate)}
+                  <span aria-hidden="true"> تا </span>
+                  {formatJalaliDate(challenge.endDate)}
+                </span>
+                <div className="ms-auto flex shrink-0 items-center gap-1.5">
+                  {challenge.status === 'ACTIVE' && (
+                    <>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-8 px-2.5 text-xs"
+                        disabled={pendingAction !== null}
+                        onClick={() =>
+                          setPendingAction({ challenge, kind: 'DONE' })
+                        }
+                      >
+                        <CheckCircle2 className="ml-1.5 h-3.5 w-3.5" />
+                        پایان
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-8 px-2.5 text-xs text-destructive hover:text-destructive"
+                        disabled={pendingAction !== null}
+                        onClick={() =>
+                          setPendingAction({ challenge, kind: 'CANCELLED' })
+                        }
+                      >
+                        <XCircle className="ml-1.5 h-3.5 w-3.5" />
+                        لغو
+                      </Button>
+                    </>
+                  )}
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    aria-label="حذف چالش"
+                    className="h-8 w-8 text-destructive hover:text-destructive"
+                    disabled={pendingAction !== null}
+                    onClick={() =>
+                      setPendingAction({ challenge, kind: 'DELETE' })
+                    }
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
               </div>
 
               {challenge.goalText.trim() && (
@@ -610,53 +772,14 @@ export function ChallengeCard({ engagementId }: { engagementId: number }) {
                 </p>
               )}
 
-              {challenge.status === 'ACTIVE' && (
+              {challenge.status === 'ACTIVE' ? (
                 <ChallengeDaysEditor
                   engagementId={engagementId}
                   challenge={challenge}
                 />
+              ) : (
+                <ChallengeDaysRecap challenge={challenge} />
               )}
-
-              <div className="flex flex-wrap items-center justify-end gap-1.5 border-t border-border/60 pt-2">
-                {challenge.status === 'ACTIVE' && (
-                  <>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      disabled={pendingAction !== null}
-                      onClick={() => setPendingAction({ challenge, kind: 'DONE' })}
-                    >
-                      <CheckCircle2 className="ml-2 h-4 w-4" />
-                      پایان چالش
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      className="text-destructive hover:text-destructive"
-                      disabled={pendingAction !== null}
-                      onClick={() =>
-                        setPendingAction({ challenge, kind: 'CANCELLED' })
-                      }
-                    >
-                      <XCircle className="ml-2 h-4 w-4" />
-                      لغو چالش
-                    </Button>
-                  </>
-                )}
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  aria-label="حذف چالش"
-                  className="h-8 w-8 text-muted-foreground hover:text-destructive"
-                  disabled={pendingAction !== null}
-                  onClick={() => setPendingAction({ challenge, kind: 'DELETE' })}
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                </Button>
-              </div>
             </article>
           ))}
       </CardContent>

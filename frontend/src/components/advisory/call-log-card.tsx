@@ -9,12 +9,15 @@ import {
   type CallLogItem,
 } from '@/services/advisory-service';
 import { formatPersianDate } from '@/lib/date-utils';
+import { toPersianDigits } from '@/lib/persian-digits';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
+import { cn } from '@/lib/utils';
 import { JalaliDatePicker } from '@/components/advisory/study-plan/jalali-date-picker';
 
 /** Parse an ISO `YYYY-MM-DD` into a LOCAL Date (no UTC day-shift). */
@@ -68,6 +71,9 @@ export function CallLogCard({ engagementId }: { engagementId: number }) {
   const [error, setError] = useState('');
   const [savingWeeks, setSavingWeeks] = useState<Set<string>>(new Set());
   const [reloadKey, setReloadKey] = useState(0);
+  // View-only: the week whose (possibly empty) note editor is force-open.
+  // Empty notes stay hidden until focused; no wire impact.
+  const [openNoteWeek, setOpenNoteWeek] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -129,20 +135,26 @@ export function CallLogCard({ engagementId }: { engagementId: number }) {
 
   return (
     <Card dir="rtl" className="rounded-2xl border-border/50">
-      <CardHeader className="pb-3">
-        <CardTitle className="flex items-center gap-2 text-base font-semibold">
-          <span className="rounded-lg bg-primary/10 p-1.5">
-            <PhoneCall className="h-4 w-4 text-primary" />
-          </span>
-          طرح تماس هفتگی
-        </CardTitle>
-        <p className="text-xs leading-relaxed text-muted-foreground">
-          وضعیت تماس هفتگی با دانش‌آموز را همین‌جا ثبت کنید؛ هر تغییر بلافاصله
-          ذخیره می‌شود.
+      <CardHeader className="p-5 pb-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <CardTitle className="flex items-center gap-2 text-sm font-semibold">
+            <PhoneCall className="h-4 w-4 shrink-0 text-primary" />
+            طرح تماس هفتگی
+          </CardTitle>
+          {rows && (
+            <Badge variant="secondary" className="ms-auto text-[11px] tabular-nums">
+              {toPersianDigits(rows.filter((row) => row.done).length)} از{' '}
+              {toPersianDigits(rows.length)} انجام شد
+            </Badge>
+          )}
+        </div>
+        <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+          تیک هر ردیف یعنی تماس آن هفته انجام شده؛ هر تغییر بلافاصله ذخیره
+          می‌شود.
         </p>
       </CardHeader>
 
-      <CardContent className="space-y-3">
+      <CardContent className="p-5 pt-0">
         {error && (
           <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-destructive/40 bg-destructive/5 px-3 py-2">
             <p className="flex items-center gap-2 text-xs text-destructive">
@@ -159,29 +171,27 @@ export function CallLogCard({ engagementId }: { engagementId: number }) {
         {loading && (
           <div className="space-y-2" aria-busy="true">
             {[0, 1].map((i) => (
-              <Skeleton key={i} className="h-24 w-full rounded-xl" />
+              <Skeleton key={i} className="h-16 w-full rounded-lg" />
             ))}
           </div>
         )}
 
         {rows && !error && rows.length === 0 && (
-          <p className="rounded-lg border border-dashed px-3 py-6 text-center text-xs leading-relaxed text-muted-foreground">
+          <p className="py-6 text-center text-xs leading-relaxed text-muted-foreground">
             هنوز هفته‌ای برای ثبت تماس وجود ندارد.
           </p>
         )}
 
-        {rows &&
-          !error &&
-          rows.map((row) => {
-            const draft = drafts[row.weekStart] ?? draftOf(row);
-            const busy = savingWeeks.has(row.weekStart);
-            return (
-              <div
-                key={row.weekStart}
-                className="space-y-2 rounded-xl border border-border/60 p-3"
-              >
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <label className="flex cursor-pointer items-center gap-2 text-sm font-medium">
+        {rows && !error && (
+          <div className="divide-y divide-border/40">
+            {rows.map((row) => {
+              const draft = drafts[row.weekStart] ?? draftOf(row);
+              const busy = savingWeeks.has(row.weekStart);
+              const noteVisible =
+                draft.note.trim() !== '' || openNoteWeek === row.weekStart;
+              return (
+                <div key={row.weekStart} className="py-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     <Checkbox
                       checked={draft.done}
                       disabled={busy}
@@ -189,27 +199,24 @@ export function CallLogCard({ engagementId }: { engagementId: number }) {
                         void persistRow(row.weekStart, { done: checked === true })
                       }
                       aria-label={`تماس هفتۀ ${weekRangeLabel(row.weekStart)} انجام شد`}
+                      className="h-4 w-4"
                     />
-                    انجام شد
-                  </label>
-                  <span className="flex items-center gap-2 text-xs tabular-nums text-muted-foreground">
-                    {busy && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-                    {weekRangeLabel(row.weekStart)}
-                  </span>
-                </div>
-
-                <div className="grid gap-2 sm:grid-cols-[12rem_1fr]">
-                  <div className="space-y-1">
-                    <span className="text-xs text-muted-foreground">تاریخ تماس</span>
-                    <JalaliDatePicker
-                      value={draft.callDate}
-                      onChange={(iso) => void persistRow(row.weekStart, { callDate: iso })}
-                      placeholder="اختیاری"
-                      disabled={busy}
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <span className="text-xs text-muted-foreground">موضوع</span>
+                    <span
+                      className={cn(
+                        'min-w-0 shrink text-sm leading-relaxed',
+                        draft.done ? 'text-muted-foreground' : 'font-medium',
+                      )}
+                    >
+                      {weekRangeLabel(row.weekStart)}
+                    </span>
+                    <div className="w-28 shrink-0 [&_button]:h-9 [&_button]:rounded-lg [&_button]:px-2 [&_button]:text-xs">
+                      <JalaliDatePicker
+                        value={draft.callDate}
+                        onChange={(iso) => void persistRow(row.weekStart, { callDate: iso })}
+                        placeholder="اختیاری"
+                        disabled={busy}
+                      />
+                    </div>
                     <Input
                       value={draft.topic}
                       onChange={(e) =>
@@ -224,31 +231,48 @@ export function CallLogCard({ engagementId }: { engagementId: number }) {
                       maxLength={200}
                       placeholder="مثلاً ارائۀ برنامۀ هفتگی و هدف‌گذاری"
                       aria-label={`موضوع تماس هفتۀ ${weekRangeLabel(row.weekStart)}`}
-                      className="h-9 text-xs"
+                      className="h-9 min-w-0 flex-1 text-sm"
                       disabled={busy}
                     />
+                    {busy && (
+                      <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-muted-foreground" />
+                    )}
                   </div>
-                </div>
 
-                <Textarea
-                  value={draft.note}
-                  onChange={(e) =>
-                    setDrafts((prev) => ({
-                      ...prev,
-                      [row.weekStart]: { ...draft, note: e.target.value },
-                    }))
-                  }
-                  onBlur={(e) => void persistRow(row.weekStart, { note: e.target.value })}
-                  rows={2}
-                  maxLength={2000}
-                  placeholder="یادداشت کوتاه تماس…"
-                  aria-label={`یادداشت تماس هفتۀ ${weekRangeLabel(row.weekStart)}`}
-                  className="min-h-[56px] text-xs leading-relaxed"
-                  disabled={busy}
-                />
-              </div>
-            );
-          })}
+                  {noteVisible ? (
+                    <Textarea
+                      value={draft.note}
+                      onChange={(e) =>
+                        setDrafts((prev) => ({
+                          ...prev,
+                          [row.weekStart]: { ...draft, note: e.target.value },
+                        }))
+                      }
+                      onBlur={(e) => {
+                        void persistRow(row.weekStart, { note: e.target.value });
+                        setOpenNoteWeek(null);
+                      }}
+                      rows={2}
+                      maxLength={2000}
+                      placeholder="یادداشت کوتاه تماس…"
+                      aria-label={`یادداشت تماس هفتۀ ${weekRangeLabel(row.weekStart)}`}
+                      className="mt-2 min-h-[60px] text-xs leading-relaxed"
+                      disabled={busy}
+                    />
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setOpenNoteWeek(row.weekStart)}
+                      className="mt-1 text-[11px] text-muted-foreground transition-colors hover:text-foreground"
+                    >
+                      + یادداشت…
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
       </CardContent>
     </Card>
   );

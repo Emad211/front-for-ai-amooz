@@ -217,9 +217,9 @@ export function IntakeProfileForm({
   return (
     <div className="space-y-4">
       {/* ── basic profile fields ─────────────────────────────────────────── */}
-      <div className="grid gap-3 sm:grid-cols-2">
-        <div className="space-y-1.5">
-          <label htmlFor="intake-school" className="text-xs font-medium text-muted-foreground">
+      <div className="grid grid-cols-1 gap-x-3 gap-y-3 sm:grid-cols-2">
+        <div className="space-y-1">
+          <label htmlFor="intake-school" className="text-[11px] font-medium text-muted-foreground">
             مدرسه
           </label>
           <Input
@@ -228,11 +228,11 @@ export function IntakeProfileForm({
             onChange={(e) => setSchool(e.target.value)}
             maxLength={120}
             placeholder="مثلاً دبیرستان انرژی اتمی"
-            className="h-9"
+            className="h-9 rounded-lg text-sm"
           />
         </div>
-        <div className="space-y-1.5">
-          <label htmlFor="intake-city" className="text-xs font-medium text-muted-foreground">
+        <div className="space-y-1">
+          <label htmlFor="intake-city" className="text-[11px] font-medium text-muted-foreground">
             شهر
           </label>
           <Input
@@ -241,11 +241,11 @@ export function IntakeProfileForm({
             onChange={(e) => setCity(e.target.value)}
             maxLength={60}
             placeholder="مثلاً تهران"
-            className="h-9"
+            className="h-9 rounded-lg text-sm"
           />
         </div>
-        <div className="space-y-1.5">
-          <label htmlFor="intake-gpa" className="text-xs font-medium text-muted-foreground">
+        <div className="space-y-1">
+          <label htmlFor="intake-gpa" className="text-[11px] font-medium text-muted-foreground">
             معدل سال گذشته
           </label>
           <Input
@@ -255,27 +255,11 @@ export function IntakeProfileForm({
             inputMode="decimal"
             placeholder="۰ تا ۲۰"
             aria-label="معدل سال گذشته"
-            className="h-9 text-center tabular-nums"
+            className="h-9 rounded-lg text-center text-sm tabular-nums"
           />
         </div>
-        <div className="space-y-1.5">
-          <label
-            htmlFor="intake-institute"
-            className="text-xs font-medium text-muted-foreground"
-          >
-            مؤسسۀ آزمون
-          </label>
-          <Input
-            id="intake-institute"
-            value={mockExamInstitute}
-            onChange={(e) => setMockExamInstitute(e.target.value)}
-            maxLength={120}
-            placeholder="مثلاً قلم‌چی"
-            className="h-9"
-          />
-        </div>
-        <div className="space-y-1.5">
-          <label htmlFor="intake-major" className="text-xs font-medium text-muted-foreground">
+        <div className="space-y-1">
+          <label htmlFor="intake-major" className="text-[11px] font-medium text-muted-foreground">
             رشتهٔ هدف
           </label>
           <Input
@@ -284,13 +268,13 @@ export function IntakeProfileForm({
             onChange={(e) => setTargetMajor(e.target.value)}
             maxLength={120}
             placeholder="مثلاً مهندسی کامپیوتر"
-            className="h-9"
+            className="h-9 rounded-lg text-sm"
           />
         </div>
-        <div className="space-y-1.5">
+        <div className="space-y-1">
           <label
             htmlFor="intake-university"
-            className="text-xs font-medium text-muted-foreground"
+            className="text-[11px] font-medium text-muted-foreground"
           >
             دانشگاه هدف
           </label>
@@ -300,13 +284,29 @@ export function IntakeProfileForm({
             onChange={(e) => setTargetUniversity(e.target.value)}
             maxLength={120}
             placeholder="مثلاً صنعتی شریف"
-            className="h-9"
+            className="h-9 rounded-lg text-sm"
           />
         </div>
-        <div className="space-y-1.5 sm:col-span-2">
+        <div className="space-y-1">
+          <label
+            htmlFor="intake-institute"
+            className="text-[11px] font-medium text-muted-foreground"
+          >
+            مؤسسۀ آزمون
+          </label>
+          <Input
+            id="intake-institute"
+            value={mockExamInstitute}
+            onChange={(e) => setMockExamInstitute(e.target.value)}
+            maxLength={120}
+            placeholder="مثلاً قلم‌چی"
+            className="h-9 rounded-lg text-sm"
+          />
+        </div>
+        <div className="space-y-1">
           <label
             htmlFor="intake-free-minutes"
-            className="text-xs font-medium text-muted-foreground"
+            className="text-[11px] font-medium text-muted-foreground"
           >
             میانگین مطالعۀ روزِ آزاد (دقیقه)
           </label>
@@ -319,7 +319,7 @@ export function IntakeProfileForm({
             inputMode="numeric"
             placeholder="۰ تا ۱۴۴۰"
             aria-label="میانگین مطالعۀ روز آزاد بر حسب دقیقه"
-            className="h-9 max-w-40 text-center tabular-nums"
+            className="h-9 rounded-lg text-center text-sm tabular-nums"
           />
         </div>
       </div>
