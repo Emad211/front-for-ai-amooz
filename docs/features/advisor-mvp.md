@@ -743,6 +743,41 @@ payload، قبل از پاسخ». ادمین: `AdvisoryAccessLogAdmin` کامل�
 - چک زنده §۵ (فید مشاور دیروز را می‌بیند؛ انتشار → دانش‌آموز می‌بیند): همتای خودکار در تست‌ها
   سبز؛ اجرای دستی به عهدهٔ اونر در دیپلوی.
 
+## ۱۶. فاز ری‌استارت — گسترش کامل بر اساس دفترچۀ کاغذی (لندشده 2026-08-26)
+
+وضعیت: **کامل، تست‌شده، پوش‌شده به main.** صفر تماس LLM/Celery. تنها منبع حقیقت این فاز:
+[`docs/features/advisor-restart-plan.md`](./advisor-restart-plan.md) — ۱۳ گام، ۱۲ اصل قفل
+(صفر LLM ق۱، هفته شنبه‌محور ق۴ با فرمول واحد در `services/calendar.py`، بدون jdatetime سمت
+سرور ق۵، 404-نه-403 ق۶، ویوهای جدید در ماژول‌های جدید ق۱۱).
+
+### ۱۶.۱ آنچه لند شد (خلاصۀ موج‌ها)
+- **موج ۱:** غنی‌سازی DailyLog (`day_goal/motivation_note/tests_taken/test_percent`، مایگریشن
+  0008) + تب‌بندی `/advisor/students/[id]` به ۷ تب query-param محور با Suspense.
+- **موج ۲:** منبع مطالعۀ هر درس (`StudentSubject.source`، 0009) + غنی‌سازی ردیف برنامه
+  (`StudyPlanItem.topic/unit_label/test_minutes/mastery_color` + `StudyPlan.day_notes`، 0010) +
+  فلگ جبران‌نشده در فید مشاور.
+- **موج ۳:** فرم شناخت (`AdvisoryIntakeProfile/Class`، 0011)، ارزیابی هفتگی ۱۵ معیاری
+  (`WeeklyAssessment`، 0012 — کانونیک در `services/assessments.py`)، طرح تماس هفتگی
+  (`WeeklyCallLog`، 0013 — چرخش موضوع پیش‌فرض بر شمارۀ هفته).
+- **موج ۴:** نمرات آزمون (`StudyExamScore`، 0014 — سقف ۴۰) + تحلیل کارنامه
+  (`StudyExamAnalysis/Row/Note`، 0015 — set-replace کامل rows/notes).
+- **موج ۵:** ماه در یک نگاه (`MonthlyOutlook/Entry/Strategy`، 0016 — کلید Gregorian month_start)
+  + چالش ۷ روزه (`StudyChallenge/Day`، 0017 — end_date سرورمحور start+6، سقف ۳ فعال، گذار وضعیت
+  یک‌طرفه).
+- **موج ۶:** همین سند + یادداشت ریلیز.
+
+ماژول‌های سرویس جدید (همه در درِ معافِ گارد مرزها): `calendar, intake, assessments, calls,
+exam_records, monthly, challenges`. ویوهای جدید: `views_intake.py`, `views_monthly.py`,
+`views_exams.py` (طبق ق۱۱ — `views.py` رشد نکرد).
+
+### ۱۶.۲ وریفای انجام‌شده
+- هر موج قبل از پوش: کل سوئیت advisory سبز + `npx tsc --noEmit` پاک (پیشروی تست‌ها: 326 → 553).
+- اسموک زندهٔ پروداکشن-مانند روی لوکال پس از هر موج (راندتریپ کامل هر ماژول + پیام‌های خطای فارسی
+  پین‌شده + آینه‌های quiet دانش‌آموزی).
+- دو رگرسیون hydration حل شد حین تست لوکال: `<a>` تودرتو در هدر لندینگ و `<button>` تودرتو در
+  پیکر دروس.
+
+
 
 
 
