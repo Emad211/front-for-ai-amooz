@@ -85,7 +85,7 @@ type StatCellProps = {
 
 function StatCell({ icon: Icon, label, value, valueClassName }: StatCellProps) {
   return (
-    <div className="flex min-w-0 items-center gap-2.5 px-3 py-0.5 first:ps-0 last:pe-0 sm:px-4">
+    <div className="flex min-w-0 items-center gap-2.5 border-s border-border/40 px-3 py-0.5 first:border-s-0 first:ps-0 last:pe-0 sm:px-4">
       <Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
       <div className="min-w-0">
         <p
@@ -120,7 +120,7 @@ export function AdvisorStatStrip({
   const hasPending = pendingInvites > 0;
   return (
     <Card className="rounded-2xl border-border/50">
-      <div className="grid grid-cols-4 divide-x divide-border/40 p-5">
+        <div className="grid grid-cols-4 p-5">
         <StatCell
           icon={Users}
           label="دانش‌آموزان فعال"
