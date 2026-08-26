@@ -76,6 +76,13 @@ _UNSCOPED = {'Subject'}
 #     ACTIVE ``StudyChallenge`` titles across the roster in one query each,
 #     while every per-engagement adherence number rides scope.advisor_plans +
 #     study_plans.feed_overall_adherence. It writes nothing.
+#   • folders.py (risman step 1) — CRUD for advisor-owned student folders and
+#     the engagement.folder assignment, after scope resolution.
+#   • reports.py (risman step 2) — read-only aggregation engine behind the
+#     planner/student/advisor reports (planned-vs-actual, subject share,
+#     series). It writes nothing.
+#   • excel_export.py (risman step 2) — openpyxl workbook writer consuming the
+#     aggregated report dicts; touches no tenancy state itself.
 # The list is pinned by a test below so that a further door cannot appear without
 # someone editing this comment.
 _EXEMPT_FILES = {
@@ -93,6 +100,9 @@ _EXEMPT_FILES = {
     'monthly.py',
     'challenges.py',
     'overview.py',
+    'folders.py',
+    'reports.py',
+    'excel_export.py',
 }
 
 
@@ -286,6 +296,9 @@ def test_the_exempt_list_does_not_grow_by_accident():
         'monthly.py',
         'challenges.py',
         'overview.py',
+        'folders.py',
+        'reports.py',
+        'excel_export.py',
     }
 
 
