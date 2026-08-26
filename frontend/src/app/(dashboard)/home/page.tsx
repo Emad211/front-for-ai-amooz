@@ -16,6 +16,8 @@ import { StudyPlanCard } from '@/components/dashboard/home/study-plan-card';
 import { MyIntakeCard } from '@/components/dashboard/advisory/my-intake-card';
 import { MyExamScoresCard } from '@/components/dashboard/advisory/my-exam-scores-card';
 import { MyExamAnalysesCard } from '@/components/dashboard/advisory/my-exam-analyses-card';
+import { MyChallengeCard } from '@/components/dashboard/advisory/my-challenge-card';
+import { MyMonthlyOutlookCard } from '@/components/dashboard/advisory/my-monthly-outlook-card';
 
 export default function StudentDashboard() {
   const { stats, activities, events, profile, isLoading, error, reload } = useDashboardData();
@@ -73,6 +75,10 @@ export default function StudentDashboard() {
         <MyExamScoresCard />
 
         <MyExamAnalysesCard />
+
+        <MyChallengeCard />
+
+        <MyMonthlyOutlookCard />
 
         <StudyPlanCard />
 

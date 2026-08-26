@@ -538,6 +538,110 @@ export type MyExamAnalysesResponse = {
   analyses: ExamAnalysis[];
 };
 
+/* ── Restart wave 5: monthly outlook (step 8) + 7-day challenges (step 9) ── */
+
+/** Who executes a monthly strategy slot. */
+export type MonthlyOutlookExecutor = 'ADVISOR' | 'STUDENT';
+
+/** One dated row of the monthly calendar («مناسبت / تقویم تحصیلی / کارها»). */
+export type MonthlyOutlookEntry = {
+  /** ISO `YYYY-MM-DD` Gregorian. May legally fall outside the month — the
+   * server does not clamp it (borderline academic-calendar days are allowed). */
+  date: string;
+  event: string;
+  academicNote: string;
+  tasks: string;
+};
+
+/** One numbered strategy slot of the month; the UI renders positions 1..4. */
+export type MonthlyStrategy = {
+  position: number;
+  title: string;
+  executor: MonthlyOutlookExecutor;
+  body: string;
+};
+
+/** Whole monthly-outlook payload — the GET answer AND the WHOLE PUT body
+ * alike. `monthStart` is the GREGORIAN first day of the chosen Jalali month
+ * (the client converts via date-fns-jalali; a Jalali string never crosses the
+ * wire). Every PUT is a set-replace: omitted entries/strategies are deleted. */
+export type MonthlyOutlook = {
+  monthStart: string;
+  entries: MonthlyOutlookEntry[];
+  strategies: MonthlyStrategy[];
+};
+
+/** `GET /advisory/me/monthly-outlooks/<monthStart>/` — quiet student mirror. */
+export type MyMonthlyOutlookResponse = {
+  active: boolean;
+  outlook: MonthlyOutlook | null;
+};
+
+/** Lifecycle of a 7-day challenge. ACTIVE→DONE/CANCELLED is one-way; flipping
+ * a terminal status back answers 409 with its Persian detail. */
+export type ChallengeStatus = 'ACTIVE' | 'DONE' | 'CANCELLED';
+
+/** One day of a challenge. `dayNumber` is 1..7; the absolute date is derived
+ * client-side as `startDate + dayNumber - 1` and never sent on the wire. */
+export type ChallengeDay = {
+  dayNumber: number;
+  goal: string;
+  summary: string;
+};
+
+/** One saved challenge (restart step 9). `endDate` is ALWAYS server-derived
+ * (`startDate + 6`) — the client never sends it, on create or anywhere else. */
+export type Challenge = {
+  id: number;
+  title: string;
+  goalText: string;
+  dailyRoutine: string;
+  executionNote: string;
+  observer: string;
+  problemTarget: string;
+  startDate: string;
+  endDate: string;
+  status: ChallengeStatus;
+  days: ChallengeDay[];
+};
+
+/** POST body for a new challenge. `endDate` deliberately absent — deriving it
+ * is the server's job. A fourth concurrently-ACTIVE challenge answers 400
+ * «حداکثر ۳ چالش فعال…» whose Persian detail surfaces verbatim. */
+export type CreateChallengeBody = {
+  title: string;
+  goalText?: string;
+  dailyRoutine?: string;
+  executionNote?: string;
+  observer?: string;
+  problemTarget?: string;
+  startDate: string;
+};
+
+/** PATCH body for one challenge — metadata keys and/or `status`; every key
+ * absent from the patch stays exactly as stored server-side. */
+export type UpdateChallengeBody = Partial<CreateChallengeBody> & {
+  status?: ChallengeStatus;
+};
+
+/** Advisor PUT body for `…/days/` — a WHOLE set-replace of the 7 days. */
+export type SaveChallengeDaysBody = ChallengeDay[];
+
+/** Student PUT body for `me/challenges/<id>/days/`. Same shape as the advisor's,
+ * but the server accepts ONLY goal/summary — any other field ⇒ 400
+ * «فقط هدف و خلاصهٔ روز را می‌توانید ثبت کنید.» */
+export type StudentChallengeDayBody = {
+  dayNumber: number;
+  goal: string;
+  summary: string;
+};
+
+/** `GET /advisory/me/challenges/` — quiet student mirror. */
+export type MyChallengesResponse = {
+  active: boolean;
+  challenges: Challenge[];
+};
+
 /** Coerce an unknown wire payload into a safe `IntakePayload` (the t.find
  * regression lesson: never trust list/object shapes). */
 function normalizeIntakePayload(payload: unknown): IntakePayload {
@@ -804,6 +908,135 @@ function normalizeMyExamAnalyses(payload: unknown): MyExamAnalysesResponse {
   return {
     active: obj.active === true,
     analyses: normalizeExamAnalysisList(obj.analyses),
+  };
+}
+
+/* ── Restart wave 5 normalizers ──────────────────────────────────────── */
+
+const MONTHLY_EXECUTORS: readonly MonthlyOutlookExecutor[] = [
+  'ADVISOR',
+  'STUDENT',
+];
+
+const CHALLENGE_STATUSES: readonly ChallengeStatus[] = [
+  'ACTIVE',
+  'DONE',
+  'CANCELLED',
+];
+
+function normalizeMonthlyOutlook(payload: unknown): MonthlyOutlook {
+  const obj =
+    payload && typeof payload === 'object'
+      ? (payload as Record<string, unknown>)
+      : {};
+  const entries: MonthlyOutlookEntry[] = [];
+  if (Array.isArray(obj.entries)) {
+    for (const raw of obj.entries) {
+      if (!raw || typeof raw !== 'object') continue;
+      const e = raw as Record<string, unknown>;
+      entries.push({
+        date: typeof e.date === 'string' ? e.date : '',
+        event: typeof e.event === 'string' ? e.event : '',
+        academicNote: typeof e.academicNote === 'string' ? e.academicNote : '',
+        tasks: typeof e.tasks === 'string' ? e.tasks : '',
+      });
+    }
+  }
+  const strategies: MonthlyStrategy[] = [];
+  if (Array.isArray(obj.strategies)) {
+    for (const raw of obj.strategies) {
+      if (!raw || typeof raw !== 'object') continue;
+      const s = raw as Record<string, unknown>;
+      const position = nullableNumber(s.position);
+      if (position === null) continue;
+      strategies.push({
+        position,
+        title: typeof s.title === 'string' ? s.title : '',
+        executor: coerceEnum(s.executor, MONTHLY_EXECUTORS, 'STUDENT'),
+        body: typeof s.body === 'string' ? s.body : '',
+      });
+    }
+  }
+  return {
+    monthStart: typeof obj.monthStart === 'string' ? obj.monthStart : '',
+    entries,
+    strategies,
+  };
+}
+
+function normalizeMyMonthlyOutlook(payload: unknown): MyMonthlyOutlookResponse {
+  const obj =
+    payload && typeof payload === 'object'
+      ? (payload as Record<string, unknown>)
+      : {};
+  return {
+    active: obj.active === true,
+    outlook: obj.outlook == null ? null : normalizeMonthlyOutlook(obj.outlook),
+  };
+}
+
+function normalizeChallengeDays(payload: unknown): ChallengeDay[] {
+  const source = Array.isArray(payload)
+    ? payload
+    : payload && typeof payload === 'object'
+      ? (payload as Record<string, unknown>).days
+      : null;
+  const days: ChallengeDay[] = [];
+  if (!Array.isArray(source)) return days;
+  for (const raw of source) {
+    if (!raw || typeof raw !== 'object') continue;
+    const d = raw as Record<string, unknown>;
+    const dayNumber = nullableNumber(d.dayNumber);
+    if (dayNumber === null) continue;
+    days.push({
+      dayNumber,
+      goal: typeof d.goal === 'string' ? d.goal : '',
+      summary: typeof d.summary === 'string' ? d.summary : '',
+    });
+  }
+  return days;
+}
+
+function normalizeChallenge(payload: unknown): Challenge | null {
+  if (!payload || typeof payload !== 'object') return null;
+  const obj = payload as Record<string, unknown>;
+  const id = nullableNumber(obj.id);
+  if (id === null) return null;
+  return {
+    id,
+    title: typeof obj.title === 'string' ? obj.title : '',
+    goalText: typeof obj.goalText === 'string' ? obj.goalText : '',
+    dailyRoutine: typeof obj.dailyRoutine === 'string' ? obj.dailyRoutine : '',
+    executionNote:
+      typeof obj.executionNote === 'string' ? obj.executionNote : '',
+    observer: typeof obj.observer === 'string' ? obj.observer : '',
+    problemTarget:
+      typeof obj.problemTarget === 'string' ? obj.problemTarget : '',
+    startDate: typeof obj.startDate === 'string' ? obj.startDate : '',
+    endDate: typeof obj.endDate === 'string' ? obj.endDate : '',
+    status: coerceEnum(obj.status, CHALLENGE_STATUSES, 'ACTIVE'),
+    days: normalizeChallengeDays(obj.days),
+  };
+}
+
+function normalizeChallengeList(payload: unknown): Challenge[] {
+  if (!Array.isArray(payload)) return [];
+  const list: Challenge[] = [];
+  for (const raw of payload) {
+    const item = normalizeChallenge(raw);
+    if (item) list.push(item);
+  }
+  return list;
+}
+
+function normalizeMyChallenges(payload: unknown): MyChallengesResponse {
+  const obj =
+    payload && typeof payload === 'object'
+      ? (payload as Record<string, unknown>)
+      : {};
+  return {
+    active: obj.active === true,
+    challenges: normalizeChallengeList(obj.challenges),
   };
 }
 
@@ -1405,5 +1638,164 @@ export const AdvisoryService = {
       '/advisory/me/exam-analyses/',
     );
     return normalizeMyExamAnalyses(payload);
+  },
+
+  /* ── Restart wave 5 ──────────────────────────────────────────────────── */
+
+  /**
+   * One month's outlook («ماه در یک نگاه», restart step 8). `monthStartIso` is
+   * the GREGORIAN first day of the chosen Jalali month (client-side
+   * date-fns-jalali conversion — a Jalali string must never reach the wire).
+   * The first read of a never-saved month answers the empty default payload,
+   * never 404.
+   */
+  getMonthlyOutlook: async (
+    engagementId: number,
+    monthStartIso: string,
+  ): Promise<MonthlyOutlook> => {
+    const payload: unknown = await requestJson<unknown>(
+      `/advisory/students/${engagementId}/monthly-outlooks/${encodeURIComponent(monthStartIso)}/`,
+    );
+    return normalizeMonthlyOutlook(payload);
+  },
+
+  /**
+   * WHOLE set-replace of one month: entries and strategies ride along in full
+   * — whatever the payload omits is deleted server-side. Duplicate entry dates
+   * or duplicate strategy positions answer 400 with their Persian detail,
+   * surfaced verbatim by `requestJson`. Returns the stored payload.
+   */
+  putMonthlyOutlook: async (
+    engagementId: number,
+    monthStartIso: string,
+    payload: MonthlyOutlook,
+  ): Promise<MonthlyOutlook> => {
+    const saved: unknown = await requestJson<unknown>(
+      `/advisory/students/${engagementId}/monthly-outlooks/${encodeURIComponent(monthStartIso)}/`,
+      { method: 'PUT', body: JSON.stringify(payload) },
+    );
+    return normalizeMonthlyOutlook(saved);
+  },
+
+  /**
+   * The student-side mirror of one month's outlook. Quiet like every student
+   * advisory read: no active advisor ⇒ `{ active: false, outlook: null }`.
+   */
+  getMyMonthlyOutlook: async (
+    monthStartIso: string,
+  ): Promise<MyMonthlyOutlookResponse> => {
+    const payload: unknown = await requestJson<unknown>(
+      `/advisory/me/monthly-outlooks/${encodeURIComponent(monthStartIso)}/`,
+    );
+    return normalizeMyMonthlyOutlook(payload);
+  },
+
+  /**
+   * One student's challenges (restart step 9). Crossing the three-ACTIVE cap
+   * on create answers 400 «حداکثر ۳ چالش فعال…» whose Persian detail surfaces
+   * verbatim via `requestJson` — show it as-is, it is user-facing copy.
+   */
+  getChallenges: async (engagementId: number): Promise<Challenge[]> => {
+    const payload: unknown = await requestJson<unknown>(
+      `/advisory/students/${engagementId}/challenges/`,
+    );
+    return normalizeChallengeList(payload);
+  },
+
+  /**
+   * Create one challenge. `endDate` is NEVER sent — the server derives it as
+   * `startDate + 6` and returns the stored row including its days.
+   */
+  createChallenge: async (
+    engagementId: number,
+    body: CreateChallengeBody,
+  ): Promise<Challenge> => {
+    const saved: unknown = await requestJson<unknown>(
+      `/advisory/students/${engagementId}/challenges/`,
+      { method: 'POST', body: JSON.stringify(body) },
+    );
+    const item = normalizeChallenge(saved);
+    if (!item) throw new Error('پاسخ سرور برای چالش ساخته‌شده نامعتبر بود.');
+    return item;
+  },
+
+  /**
+   * Partially update ONE challenge: metadata keys and/or `status`. Flipping a
+   * terminal status back to ACTIVE answers 409 with its Persian detail.
+   */
+  patchChallenge: async (
+    engagementId: number,
+    challengeId: number,
+    patch: UpdateChallengeBody,
+  ): Promise<Challenge> => {
+    const saved: unknown = await requestJson<unknown>(
+      `/advisory/students/${engagementId}/challenges/${challengeId}/`,
+      { method: 'PATCH', body: JSON.stringify(patch) },
+    );
+    const item = normalizeChallenge(saved);
+    if (!item) throw new Error('پاسخ سرور برای چالش ویرایش‌شده نامعتبر بود.');
+    return item;
+  },
+
+  /**
+   * Delete one challenge together with its days. Terminal — there is no undo.
+   */
+  deleteChallenge: async (
+    engagementId: number,
+    challengeId: number,
+  ): Promise<void> => {
+    await requestJson<unknown>(
+      `/advisory/students/${engagementId}/challenges/${challengeId}/`,
+      { method: 'DELETE' },
+    );
+  },
+
+  /**
+   * WHOLE set-replace of one challenge's 7 days (advisor side — every field
+   * writable). `dayNumber` outside 1..7 answers 400 with its Persian detail.
+   * Returns the stored days; when the response shape is not recognizable the
+   * sent rows are echoed back so callers can keep rendering.
+   */
+  putAdvisorDays: async (
+    engagementId: number,
+    challengeId: number,
+    days: SaveChallengeDaysBody,
+  ): Promise<ChallengeDay[]> => {
+    const saved: unknown = await requestJson<unknown>(
+      `/advisory/students/${engagementId}/challenges/${challengeId}/days/`,
+      { method: 'PUT', body: JSON.stringify({ days }) },
+    );
+    const normalized = normalizeChallengeDays(saved);
+    return normalized.length > 0 ? normalized : days;
+  },
+
+  /**
+   * The student-side mirror of the challenges. Quiet: no active advisor ⇒
+   * `{ active: false, challenges: [] }`, never an error.
+   */
+  getMyChallenges: async (): Promise<MyChallengesResponse> => {
+    const payload: unknown = await requestJson<unknown>(
+      '/advisory/me/challenges/',
+    );
+    return normalizeMyChallenges(payload);
+  },
+
+  /**
+   * The student-side day writer: ONLY goal/summary are accepted (any other
+   * field ⇒ 400 «فقط هدف و خلاصهٔ روز را می‌توانید ثبت کنید.»); writing a day
+   * whose date has not arrived yet answers 400. Persian details surface
+   * verbatim via `requestJson`. Returns the stored days (sent rows echoed on
+   * an unrecognizable response shape, same posture as `putAdvisorDays`).
+   */
+  putMyChallengeDays: async (
+    challengeId: number,
+    days: StudentChallengeDayBody[],
+  ): Promise<ChallengeDay[]> => {
+    const saved: unknown = await requestJson<unknown>(
+      `/advisory/me/challenges/${challengeId}/days/`,
+      { method: 'PUT', body: JSON.stringify({ days }) },
+    );
+    const normalized = normalizeChallengeDays(saved);
+    return normalized.length > 0 ? normalized : days;
   },
 };

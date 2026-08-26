@@ -49,16 +49,8 @@ export const STUDENT_DETAIL_TABS: readonly StudentDetailTab[] = [
     label: 'ارزیابی',
     soonHint: 'ارزیابی هفتگی و ثبت تماس‌ها به‌زودی اینجا فعال می‌شود.',
   },
-  {
-    key: 'month',
-    label: 'ماه',
-    soonHint: 'نمای ماهانۀ برنامه و پیشرفت به‌زودی اینجا فعال می‌شود.',
-  },
-  {
-    key: 'challenges',
-    label: 'چالش‌ها',
-    soonHint: 'چالش یادگیری دانش‌آموز به‌زودی اینجا فعال می‌شود.',
-  },
+  { key: 'month', label: 'ماه' },
+  { key: 'challenges', label: 'چالش‌ها' },
 ];
 
 /** Parse a raw `?tab=` value; missing or unknown falls back to `feed`. */

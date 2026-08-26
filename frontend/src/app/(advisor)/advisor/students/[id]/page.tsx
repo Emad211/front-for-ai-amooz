@@ -19,6 +19,8 @@ import { WeeklyAssessmentCard } from '@/components/advisory/weekly-assessment-ca
 import { CallLogCard } from '@/components/advisory/call-log-card';
 import { ExamScoresCard } from '@/components/advisory/exam-scores-card';
 import { ExamAnalysisCard } from '@/components/advisory/exam-analysis-card';
+import { MonthlyOutlookCard } from '@/components/advisory/monthly-outlook-card';
+import { ChallengeCard } from '@/components/advisory/challenge-card';
 import {
   resolveStudentDetailTab,
   StudentDetailTabKey,
@@ -169,11 +171,17 @@ function AdvisorStudentDetailContent() {
               <CallLogCard engagementId={engagementId} />
             </div>
           )}
+          {activeTab === 'month' && <MonthlyOutlookCard engagementId={engagementId} />}
+          {activeTab === 'challenges' && (
+            <ChallengeCard engagementId={engagementId} />
+          )}
           {activeTab !== 'feed' &&
             activeTab !== 'plan' &&
             activeTab !== 'exams' &&
             activeTab !== 'intake' &&
-            activeTab !== 'assess' && (
+            activeTab !== 'assess' &&
+            activeTab !== 'month' &&
+            activeTab !== 'challenges' && (
               <StudentDetailTabPlaceholder tabKey={activeTab} />
             )}
         </div>
