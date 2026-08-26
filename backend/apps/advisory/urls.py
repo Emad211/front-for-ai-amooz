@@ -6,7 +6,8 @@ that ``IsStudentRole`` belongs on one group and ``IsAdvisorUser`` on the other,
 without opening views.py.
 """
 
-from django.urls import path
+from django.urls import path, register_converter
+from django.utils.dateparse import parse_date
 
 from .views import (
     AdvisorEngagementSubjectsView,
@@ -34,7 +35,39 @@ from .views_exams import (
     StudentExamScoresView,
 )
 from .views_intake import AdvisorIntakeView, StudentIntakeView
-from .views_monthly import AdvisorCallLogsView, AdvisorWeeklyAssessmentsView
+from .views_monthly import (
+    AdvisorCallLogsView,
+    AdvisorChallengeDaysView,
+    AdvisorChallengeDetailView,
+    AdvisorChallengesView,
+    AdvisorMonthlyOutlookView,
+    AdvisorWeeklyAssessmentsView,
+    StudentChallengeDaysView,
+    StudentChallengesView,
+    StudentMonthlyOutlookView,
+)
+
+
+class ISODateConverter:
+    """``<date:…>`` path segment: strict ``YYYY-MM-DD``, parsed once at routing.
+
+    The restart plan's route table names a ``<date:month_start>`` converter
+    that Django does not ship, so it is defined here next to the only routes
+    that use it. An invalid calendar date (e.g. ``2026-02-30``) fails
+    ``to_python`` and therefore 404s at routing time — the view never sees a
+    non-date under a date-typed name.
+    """
+
+    regex = r'\d{4}-\d{2}-\d{2}'
+
+    def to_python(self, value):
+        return parse_date(value)
+
+    def to_url(self, value):
+        return value.isoformat() if hasattr(value, 'isoformat') else str(value)
+
+
+register_converter(ISODateConverter, 'date')
 
 urlpatterns = [
     path('subjects/', SubjectListView.as_view(), name='advisory_subject_list'),
@@ -109,6 +142,28 @@ urlpatterns = [
         AdvisorExamAnalysisDetailView.as_view(),
         name='advisory_student_exam_analysis_detail',
     ),
+    # Restart wave 5, step 8: the monthly outlook (advisor read/write + mirror).
+    path(
+        'students/<int:pk>/monthly-outlooks/<date:month_start>/',
+        AdvisorMonthlyOutlookView.as_view(),
+        name='advisory_student_monthly_outlook',
+    ),
+    # Restart wave 5, step 9: challenges (advisor CRUD + days, student mirror).
+    path(
+        'students/<int:pk>/challenges/',
+        AdvisorChallengesView.as_view(),
+        name='advisory_student_challenges',
+    ),
+    path(
+        'students/<int:pk>/challenges/<int:challenge_id>/',
+        AdvisorChallengeDetailView.as_view(),
+        name='advisory_student_challenge_detail',
+    ),
+    path(
+        'students/<int:pk>/challenges/<int:challenge_id>/days/',
+        AdvisorChallengeDaysView.as_view(),
+        name='advisory_student_challenge_days',
+    ),
     path('invites/', AdvisoryInviteCreateView.as_view(), name='advisory_invite_create'),
 
     # student side
@@ -124,6 +179,19 @@ urlpatterns = [
         'me/exam-analyses/',
         StudentExamAnalysesView.as_view(),
         name='advisory_my_exam_analyses',
+    ),
+    # Restart wave 5, step 8: the student's read-only month-plan mirror.
+    path(
+        'me/monthly-outlooks/<date:month_start>/',
+        StudentMonthlyOutlookView.as_view(),
+        name='advisory_my_monthly_outlook',
+    ),
+    # Restart wave 5, step 9: the student's challenge mirror + daily fill-in.
+    path('me/challenges/', StudentChallengesView.as_view(), name='advisory_my_challenges'),
+    path(
+        'me/challenges/<int:challenge_id>/days/',
+        StudentChallengeDaysView.as_view(),
+        name='advisory_my_challenge_days',
     ),
     # One route, no ``<date>`` segment: the day is a query parameter because the
     # resource is "my log" and the date selects a slice of it. A path segment would

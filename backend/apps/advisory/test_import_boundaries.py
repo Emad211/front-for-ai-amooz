@@ -63,6 +63,14 @@ _UNSCOPED = {'Subject'}
 #     ``StudyExamScore`` and set-replace for ``StudyExamAnalysis`` (+ rows/
 #     notes) after the view has resolved the engagement through
 #     scope.advisor_engagement.
+#   • monthly.py (restart step 8) — get-or-init + set-replace for
+#     ``MonthlyOutlook`` (+ entries/strategies) after the view has resolved
+#     the engagement through scope.advisor_engagement or
+#     scope.student_active_engagement.
+#   • challenges.py (restart step 9) — create/update/delete and the days
+#     set-replace for ``StudyChallenge``/``StudyChallengeDay`` after the view
+#     has resolved the engagement through scope.advisor_engagement or
+#     scope.student_active_engagement.
 # The list is pinned by a test below so that a further door cannot appear without
 # someone editing this comment.
 _EXEMPT_FILES = {
@@ -77,6 +85,8 @@ _EXEMPT_FILES = {
     'assessments.py',
     'calls.py',
     'exam_records.py',
+    'monthly.py',
+    'challenges.py',
 }
 
 
@@ -267,6 +277,8 @@ def test_the_exempt_list_does_not_grow_by_accident():
         'assessments.py',
         'calls.py',
         'exam_records.py',
+        'monthly.py',
+        'challenges.py',
     }
 
 

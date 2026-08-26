@@ -964,3 +964,174 @@ class ExamAnalysisWriteSerializer(serializers.Serializer):
     )
     rows = ExamAnalysisRowWriteSerializer(many=True)
     notes = ExamAnalysisNoteWriteSerializer(many=True)
+
+
+# ── Restart wave 5: monthly outlook + strategies (step 8) ────────────────────
+#
+# Same split as the rest of the file: read serializers project stored rows,
+# write serializers are shape-only — every domain bound and its pinned Persian
+# message is services/monthly.py's contract, so a serializer-level rule can
+# never answer first where the wire pins a specific message.
+
+
+class MonthlyOutlookEntryItemSerializer(serializers.Serializer):
+    """One day's line of a stored outlook, read off a ``MonthlyOutlookEntry``."""
+
+    date = serializers.DateField(read_only=True)
+    event = serializers.CharField(read_only=True)
+    academicNote = serializers.CharField(source='academic_note', read_only=True)
+    tasks = serializers.CharField(read_only=True)
+
+
+class MonthlyStrategyItemSerializer(serializers.Serializer):
+    """One strategy slot of a stored outlook, read off a ``MonthlyStrategy``."""
+
+    position = serializers.IntegerField(read_only=True)
+    title = serializers.CharField(read_only=True)
+    executor = serializers.CharField(read_only=True)
+    body = serializers.CharField(read_only=True)
+
+
+class MonthlyOutlookPayloadSerializer(serializers.Serializer):
+    """The whole month as one object — GET response and PUT response alike.
+
+    Both verbs answer with this off the **stored** outlook, so a successful
+    save can never paint a state a refresh would contradict. ``monthStart``
+    echoes the opaque Gregorian key (ق۵), not an interpreted calendar month.
+    """
+
+    monthStart = serializers.DateField(source='month_start', read_only=True)
+    entries = MonthlyOutlookEntryItemSerializer(many=True, source='entries.all')
+    strategies = MonthlyStrategyItemSerializer(many=True, source='strategies.all')
+
+
+class MonthlyOutlookEntryWriteSerializer(serializers.Serializer):
+    """One ``{date, event, academicNote, tasks}`` row of the PUT body.
+
+    Shape only: no month-membership rule exists anywhere (boundary calendars
+    are legal, ق۵); length ceilings and the per-day duplicate rule are the
+    service's pinned messages.
+    """
+
+    date = serializers.DateField()
+    event = serializers.CharField(required=False, allow_blank=True, max_length=120)
+    academicNote = serializers.CharField(
+        source='academic_note', required=False, allow_blank=True, max_length=200,
+    )
+    tasks = serializers.CharField(required=False, allow_blank=True)
+
+
+class MonthlyStrategyWriteSerializer(serializers.Serializer):
+    """One ``{position, title, executor, body}`` slot of the PUT body.
+
+    Shape only — the 1..10 band, the executor codes and the duplicate-position
+    rule each have their own pinned Persian message owned by
+    ``services.monthly``; loose typing here lets those answers win.
+    """
+
+    position = serializers.IntegerField()
+    title = serializers.CharField(required=False, allow_blank=True, max_length=120)
+    executor = serializers.CharField()
+    body = serializers.CharField(required=False, allow_blank=True)
+
+
+class MonthlyOutlookWriteSerializer(serializers.Serializer):
+    """The advisor's PUT body: the whole month, set-replace semantics.
+
+    Both lists are required so clearing them is always an explicit ``[]`` —
+    same rule as the intake form's ``classes``.
+    """
+
+    entries = MonthlyOutlookEntryWriteSerializer(many=True)
+    strategies = MonthlyStrategyWriteSerializer(many=True)
+
+
+# ── Restart wave 5: the 7-day challenge (step 9) ─────────────────────────────
+#
+# Same split as the rest of the file: read serializers project stored rows,
+# write serializers are shape-only — every domain bound and its pinned Persian
+# message is services/challenges.py's contract. The days body rides through as
+# raw JSON on purpose: in student mode the door must see keys a nested
+# serializer would silently drop, because "any field beyond goal/summary" is
+# itself the pinned error.
+
+
+class ChallengeDayItemSerializer(serializers.Serializer):
+    """One day of a stored challenge, read off a ``StudyChallengeDay``."""
+
+    dayNumber = serializers.IntegerField(source='day_number', read_only=True)
+    goal = serializers.CharField(read_only=True)
+    summary = serializers.CharField(read_only=True)
+
+
+class ChallengeItemSerializer(serializers.Serializer):
+    """One challenge in the wire shape shared by list, detail and mirror.
+
+    ``endDate`` is the server-computed ``startDate + 6 days`` — it is echoed
+    off the stored row so a client can never paint an end the server disagrees
+    with.
+    """
+
+    id = serializers.IntegerField(read_only=True)
+    title = serializers.CharField(read_only=True)
+    goalText = serializers.CharField(source='goal_text', read_only=True)
+    dailyRoutine = serializers.CharField(source='daily_routine', read_only=True)
+    executionNote = serializers.CharField(source='execution_note', read_only=True)
+    observer = serializers.CharField(read_only=True)
+    problemTarget = serializers.CharField(source='problem_target', read_only=True)
+    startDate = serializers.DateField(source='start_date', read_only=True)
+    endDate = serializers.DateField(source='end_date', read_only=True)
+    status = serializers.CharField(read_only=True)
+    days = ChallengeDayItemSerializer(many=True, source='days.all')
+
+
+class ChallengeCreateSerializer(serializers.Serializer):
+    """The POST body: one new challenge's frame.
+
+    Shape only. ``endDate`` is declared for wire compatibility and then
+    deliberately ignored — the server derives it from ``startDate``, so a
+    client-sent value can never bend the seven-day horizon.
+    """
+
+    title = serializers.CharField(required=False, allow_blank=True, max_length=120)
+    goalText = serializers.CharField(
+        source='goal_text', required=False, allow_blank=True,
+    )
+    dailyRoutine = serializers.CharField(
+        source='daily_routine', required=False, allow_blank=True, max_length=200,
+    )
+    executionNote = serializers.CharField(
+        source='execution_note', required=False, allow_blank=True, max_length=200,
+    )
+    observer = serializers.CharField(required=False, allow_blank=True, max_length=120)
+    problemTarget = serializers.CharField(
+        source='problem_target', required=False, allow_blank=True,
+    )
+    startDate = serializers.DateField(source='start_date')
+    endDate = serializers.DateField(
+        source='end_date', required=False, allow_null=True,
+    )
+
+
+class ChallengePatchSerializer(ChallengeCreateSerializer):
+    """The PATCH body: every key optional; only provided keys change.
+
+    A present ``startDate`` re-derives ``endDate`` server-side; a present
+    ``status`` must follow the one-way ACTIVE → DONE/CANCELLED machine (the
+    409 for anything else is the service's pinned message).
+    """
+
+    title = serializers.CharField(required=False, allow_blank=True, max_length=120)
+    startDate = serializers.DateField(source='start_date', required=False)
+    status = serializers.CharField(required=False)
+
+
+class ChallengeDaysWriteSerializer(serializers.Serializer):
+    """The days PUT body envelope: ``days`` is a list of raw row objects.
+
+    Deliberately untyped children: the service validates each row itself so
+    the student-mode rule («any field beyond goal/summary ⇒ pinned 400») can
+    fire before DRF would silently discard the offending key.
+    """
+
+    days = serializers.ListField(child=serializers.JSONField())

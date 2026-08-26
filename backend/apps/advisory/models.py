@@ -1666,4 +1666,356 @@ class StudyExamAnalysisNote(models.Model):
         return f'q{self.question_number} ← #{self.analysis_id}'
 
 
+# ── Restart wave 5 (step 8): the monthly outlook + month strategies ──────────
+#
+# One module from the restart plan (docs/features/advisor-restart-plan.md
+# §۵ گام ۸), hanging off the engagement — the tenancy carrier — like every
+# advisory table before it. Reads resolve through ``services/scope.py``; every
+# write goes through the single door ``services/monthly.py`` (pinned in
+# ``test_import_boundaries``' exempt list).
+
+# Which side of the pair executes a month strategy. The raw codes are the wire
+# contract; the Persian labels are rendered client-side.
+STRATEGY_EXECUTOR_CHOICES = [
+    ('ADVISOR', _('مشاور')),
+    ('STUDENT', _('دانش‌آموز')),
+]
+
+# The paper page (PDF ص۴) carries 4 strategy slots; the plan grants headroom to
+# 10. The bound lives on ``position``'s validators below and is restated as a
+# constant here so the service, serializer docs and tests read one number.
+MAX_MONTHLY_STRATEGIES = 10
+
+
+class MonthlyOutlook(models.Model):
+    """One calendar month of «ماه در یک نگاه» (restart step 8, PDF ص۳-۴).
+
+    The row is keyed ``(engagement, month_start)`` — but ق۵ pins what
+    ``month_start`` is NOT: no Jalali math ever happens server-side. It is a
+    plain Gregorian date the frontend computes (first Gregorian day of the
+    Jalali month it wants to show) and hands over as an opaque ISO key. The
+    server never interprets it beyond equality.
+
+    Like the intake form, the row is created lazily by
+    ``services.monthly.get_or_init_outlook`` — a never-saved month reads back
+    as the all-empty payload, not a 404. Entries and strategies live in child
+    tables and are replaced wholesale on every save.
+    """
+
+    engagement = models.ForeignKey(
+        AdvisoryEngagement,
+        on_delete=models.CASCADE,
+        related_name='monthly_outlooks',
+        verbose_name=_('همکاری'),
+    )
+    # An opaque Gregorian key (ق۵), not a semantic "month": boundary calendars
+    # may legitimately reference days outside it, so nothing validates
+    # membership — only uniqueness below.
+    month_start = models.DateField(
+        verbose_name=_('شروع ماه'),
+        help_text=_('اولین روزِ میلادیِ ماه جلالی موردنظر؛ کلیدِ یکتا به‌ازای همکاری.'),
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-month_start']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['engagement', 'month_start'],
+                name='uniq_advisory_monthly_outlook',
+                violation_error_message=_('برای این ماه از قبل برنامه‌ای ثبت شده است.'),
+            ),
+        ]
+        verbose_name = _('برنامهٔ ماه')
+        verbose_name_plural = _('برنامه‌های ماه')
+
+    def __str__(self) -> str:
+        return f'{self.month_start} ← #{self.engagement_id}'
+
+
+class MonthlyOutlookEntry(models.Model):
+    """One day's line of the monthly outlook: مناسبت + تقویم تحصیلی + کارها.
+
+    Rows are rebuilt wholesale on every save (set-replace, like every advisory
+    PUT). ``date`` is deliberately **not** constrained to fall inside the parent
+    outlook's month: boundary calendars legitimately carry days from the edges
+    of neighbouring Jalali months, and ق۵ forbids the server from having an
+    opinion about where a Jalali month ends. Uniqueness per day is the only rule.
+    """
+
+    outlook = models.ForeignKey(
+        MonthlyOutlook,
+        on_delete=models.CASCADE,
+        related_name='entries',
+        verbose_name=_('برنامهٔ ماه'),
+    )
+    date = models.DateField(
+        verbose_name=_('تاریخ'),
+        help_text=_('میلادی؛ لزوماً داخل همان ماه نیست (تقویم مرزی مجاز است).'),
+    )
+    event = models.CharField(
+        max_length=120,
+        blank=True,
+        default='',
+        verbose_name=_('مناسبت'),
+    )
+    academic_note = models.CharField(
+        max_length=200,
+        blank=True,
+        default='',
+        verbose_name=_('تقویم تحصیلی'),
+    )
+    tasks = models.TextField(
+        blank=True,
+        default='',
+        verbose_name=_('کارها'),
+    )
+
+    class Meta:
+        ordering = ['date']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['outlook', 'date'],
+                name='uniq_advisory_monthly_entry',
+                violation_error_message=_('برای هر روز فقط یک ردیف بفرستید.'),
+            ),
+        ]
+        verbose_name = _('ردیف روزِ ماه')
+        verbose_name_plural = _('ردیف‌های روزِ ماه')
+
+    def __str__(self) -> str:
+        return f'{self.date} ← #{self.outlook_id}'
+
+
+class MonthlyStrategy(models.Model):
+    """One slot of «استراتژی‌های ماه»: who executes what, and how (PDF ص۴).
+
+    ``position`` orders the slots on the page and is unique per outlook — two
+    rows claiming slot 3 are a data-entry mistake the wire rejects with a
+    Persian message ahead of the constraint below. The 1..10 band is held by
+    the column validators; the duplicate rule comparing sibling rows lives in
+    the write door.
+    """
+
+    outlook = models.ForeignKey(
+        MonthlyOutlook,
+        on_delete=models.CASCADE,
+        related_name='strategies',
+        verbose_name=_('برنامهٔ ماه'),
+    )
+    position = models.PositiveSmallIntegerField(
+        validators=[
+            MinValueValidator(1),
+            MaxValueValidator(MAX_MONTHLY_STRATEGIES),
+        ],
+        verbose_name=_('پوزیشن'),
+        help_text=_('بین ۱ تا ۱۰؛ ترتیب نمایش اسلات‌ها در صفحه.'),
+    )
+    title = models.CharField(
+        max_length=120,
+        verbose_name=_('عنوان'),
+    )
+    executor = models.CharField(
+        max_length=10,
+        choices=STRATEGY_EXECUTOR_CHOICES,
+        verbose_name=_('مجری'),
+    )
+    body = models.TextField(
+        blank=True,
+        default='',
+        verbose_name=_('شرح'),
+    )
+
+    class Meta:
+        ordering = ['position']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['outlook', 'position'],
+                name='uniq_advisory_monthly_strategy',
+                violation_error_message=_('برای هر پوزیشن فقط یک استراتژی مجاز است.'),
+            ),
+        ]
+        verbose_name = _('استراتژی ماه')
+        verbose_name_plural = _('استراتژی‌های ماه')
+
+    def __str__(self) -> str:
+        return f'#{self.position} {self.title} ← #{self.outlook_id}'
+
+
+# ── Restart wave 5 (step 9): the 7-day study challenge ───────────────────────
+#
+# One module from the restart plan (docs/features/advisor-restart-plan.md
+# §۵ گام ۹), hanging off the engagement — the tenancy carrier — like every
+# advisory table before it. Reads resolve through ``services/scope.py``; every
+# write goes through the single door ``services/challenges.py`` (pinned in
+# ``test_import_boundaries``' exempt list).
+
+# The challenge lifecycle. Terminal states are terminal: only ACTIVE may move
+# to DONE/CANCELLED, and nothing moves back — that guard is a service rule
+# (``services.challenges``) because it compares a row's old and new status,
+# which no column-level constraint can see.
+CHALLENGE_STATUS_CHOICES = [
+    ('ACTIVE', _('فعال')),
+    ('DONE', _('پایان‌یافته')),
+    ('CANCELLED', _('لغوشده')),
+]
+
+# The paper form (PDF ص۳۷) is one week wide: day 1..7. The horizon is fixed by
+# design — ``end_date`` is always ``start_date + 6 days``, computed by the
+# write door and never accepted from the client.
+MAX_CHALLENGE_DAYS = 7
+
+# A service ceiling (not a constraint — a DB check cannot count sibling rows):
+# at most this many challenges per engagement may sit in ACTIVE at once.
+MAX_ACTIVE_CHALLENGES = 3
+
+
+class StudyChallenge(models.Model):
+    """One 7-day challenge the advisor sets and the student fills in daily.
+
+    The advisor owns the frame (title, goal, routine, observer, problem
+    target, start date); the student owns the per-day rows under ``days``.
+    ``end_date`` is deliberately NOT writable from the wire: it is derived as
+    ``start_date + 6 days`` on every save so the seven-day shape cannot drift.
+    Status flows one way::
+
+        ACTIVE ──▶ DONE        (finished)
+               └─▶ CANCELLED   (abandoned)
+
+    There is no path back to ACTIVE — a finished challenge is history, and
+    re-running it means creating a new one.
+    """
+
+    engagement = models.ForeignKey(
+        AdvisoryEngagement,
+        on_delete=models.CASCADE,
+        related_name='challenges',
+        verbose_name=_('همکاری'),
+    )
+    title = models.CharField(
+        max_length=120,
+        verbose_name=_('عنوان چالش'),
+    )
+    goal_text = models.TextField(
+        blank=True,
+        default='',
+        verbose_name=_('تعریف و هدف'),
+    )
+    daily_routine = models.CharField(
+        max_length=200,
+        blank=True,
+        default='',
+        verbose_name=_('روتین روزانه'),
+    )
+    execution_note = models.CharField(
+        max_length=200,
+        blank=True,
+        default='',
+        verbose_name=_('نوع اجرا'),
+    )
+    observer = models.CharField(
+        max_length=120,
+        blank=True,
+        default='',
+        verbose_name=_('مجری و ناظر'),
+    )
+    problem_target = models.TextField(
+        blank=True,
+        default='',
+        verbose_name=_('مشکل و نتیجهٔ مدنظر'),
+    )
+    start_date = models.DateField(
+        verbose_name=_('تاریخ شروع'),
+        help_text=_('میلادی؛ پایان همیشه ششمین روز بعد است.'),
+    )
+    # Server-computed (see the write door): never accepted from the client.
+    end_date = models.DateField(
+        editable=False,
+        verbose_name=_('تاریخ پایان'),
+        help_text=_('ششمین روز پس از شروع؛ توسط سرور محاسبه می‌شود.'),
+    )
+    status = models.CharField(
+        max_length=10,
+        choices=CHALLENGE_STATUS_CHOICES,
+        default='ACTIVE',
+        db_index=True,
+        verbose_name=_('وضعیت'),
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-start_date', '-id']
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(end_date__gt=models.F('start_date')),
+                name='ck_advisory_challenge_dates',
+                violation_error_message=_('تاریخ پایان باید بعد از تاریخ شروع باشد.'),
+            ),
+        ]
+        indexes = [
+            models.Index(
+                fields=['engagement', 'status'],
+                name='idx_adv_challenge_eng_status',
+            ),
+        ]
+        verbose_name = _('چالش هفت‌روزه')
+        verbose_name_plural = _('چالش‌های هفت‌روزه')
+
+    def __str__(self) -> str:
+        return f'{self.title} [{self.status}] ← #{self.engagement_id}'
+
+
+class StudyChallengeDay(models.Model):
+    """One day of a challenge: the student's goal for it and what happened.
+
+    Rows are rebuilt wholesale on every save of the days route (set-replace).
+    Both sides write here but under different rules enforced by the door: the
+    advisor may rewrite everything, while the student may only ever set
+    ``goal`` and ``summary`` — never the day numbering itself.
+    """
+
+    challenge = models.ForeignKey(
+        StudyChallenge,
+        on_delete=models.CASCADE,
+        related_name='days',
+        verbose_name=_('چالش'),
+    )
+    day_number = models.PositiveSmallIntegerField(
+        validators=[
+            MinValueValidator(1),
+            MaxValueValidator(MAX_CHALLENGE_DAYS),
+        ],
+        verbose_name=_('شمارهٔ روز'),
+        help_text=_('بین ۱ تا ۷.'),
+    )
+    goal = models.CharField(
+        max_length=200,
+        blank=True,
+        default='',
+        verbose_name=_('هدف‌گذاری روز'),
+    )
+    summary = models.TextField(
+        blank=True,
+        default='',
+        verbose_name=_('خلاصۀ کارها/مشکلات/نتیجه'),
+    )
+
+    class Meta:
+        ordering = ['day_number']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['challenge', 'day_number'],
+                name='uniq_advisory_challenge_day',
+                violation_error_message=_('برای هر روز فقط یک ردیف بفرستید.'),
+            ),
+        ]
+        verbose_name = _('روزِ چالش')
+        verbose_name_plural = _('روزهای چالش')
+
+    def __str__(self) -> str:
+        return f'day {self.day_number} ← #{self.challenge_id}'
+
+
 
