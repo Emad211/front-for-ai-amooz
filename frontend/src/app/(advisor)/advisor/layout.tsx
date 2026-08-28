@@ -13,6 +13,7 @@ import {
 } from '@/services/auth-service';
 import { landingFor } from '@/lib/auth-routing';
 import { OnboardingGate } from '@/components/auth/onboarding-gate';
+import { ImpersonationBanner } from '@/components/advisory/impersonation-banner';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
@@ -60,6 +61,7 @@ export default function AdvisorLayout({ children }: { children: React.ReactNode 
     // switcher is a component swap rather than a layout rewrite.
     <WorkspaceProvider>
       <OnboardingGate />
+      <ImpersonationBanner />
       <div className="flex min-h-screen w-full flex-col bg-background" dir="rtl">
         <header className="border-b border-border/50 bg-card/50 backdrop-blur">
           <div className="mx-auto flex w-full max-w-6xl items-center justify-between gap-3 px-3 py-3 sm:px-4 md:px-6">

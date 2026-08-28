@@ -9,6 +9,7 @@ import { DashboardService } from '@/services/dashboard-service';
 import { landingFor } from '@/lib/auth-routing';
 import { OnboardingGate } from '@/components/auth/onboarding-gate';
 import { AdvisorInviteBanner } from '@/components/advisory/advisor-invite-banner';
+import { ImpersonationBanner } from '@/components/advisory/impersonation-banner';
 import { Children, useEffect } from 'react';
 
 export default function DashboardLayout({
@@ -69,6 +70,7 @@ export default function DashboardLayout({
       !isFocusedMode && "pb-20 md:pb-0"
     )}>
       <OnboardingGate />
+      <ImpersonationBanner />
       {!isFocusedMode && <DashboardHeader />}
       {!isFocusedMode && <AdvisorInviteBanner />}
       {Children.toArray(children)}

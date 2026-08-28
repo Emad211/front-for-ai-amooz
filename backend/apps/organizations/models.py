@@ -426,3 +426,70 @@ class StudyGroupMembership(models.Model):
 
     def __str__(self) -> str:
         return f'{self.student} ∈ {self.study_group.name}'
+
+
+# ---------------------------------------------------------------------------
+# ImpersonationLog (risman step 4)
+# ---------------------------------------------------------------------------
+
+class ImpersonationLog(models.Model):
+    """One manager's direct-login session into a member's account (audit).
+
+    Step 4's answer to «مدیر وارد پنل من شد و چه؟»: every impersonation is
+    *startable only through* an endpoint that writes one row here and
+    *stoppable only through* the endpoint that closes it (``ended_at``), while
+    the session itself lives inside a 30-minute JWT whose ``imp`` claim cannot
+    be minted again by the borrowed token. Nothing reads this table through the
+    API; it exists so that "who acted as this member, when" has an answer that
+    does not depend on anyone's memory — the same append-only philosophy as
+    advisory's ``AdvisoryAccessLog``, kept next to the tenancy tables it audits.
+
+    ``manager`` is ``SET_NULL`` so a deleted account cannot take the evidence of
+    its sessions with it; ``target_user`` and ``organization`` are ``PROTECT``
+    because the log is about those rows and must outlive any tidy-up attempt.
+    """
+
+    manager = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='impersonations_started',
+        verbose_name=_('مدیر'),
+        help_text=_('کاربری که ورود مستقیم را آغاز کرد.'),
+    )
+    target_user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name='impersonated_sessions',
+        verbose_name=_('کاربر هدف'),
+    )
+    organization = models.ForeignKey(
+        Organization,
+        on_delete=models.PROTECT,
+        related_name='impersonation_logs',
+        verbose_name=_('سازمان'),
+    )
+    started_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    ended_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ['-started_at']
+        indexes = [
+            models.Index(
+                fields=['manager', '-started_at'],
+                name='idx_implog_mgr_time',
+            ),
+            models.Index(
+                fields=['target_user', '-started_at'],
+                name='idx_implog_target_time',
+            ),
+        ]
+        verbose_name = _('ورود مستقیم')
+        verbose_name_plural = _('ورودهای مستقیم')
+
+    def __str__(self) -> str:
+        return (
+            f'{self.manager_id} → {self.target_user_id} '
+            f'@{self.organization_id} ({self.started_at:%Y-%m-%d %H:%M})'
+        )

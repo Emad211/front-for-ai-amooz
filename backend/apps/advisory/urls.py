@@ -47,6 +47,11 @@ from .views_monthly import (
     StudentMonthlyOutlookView,
 )
 from .views_overview import AdvisorOverviewView
+from .views_org import (
+    OrgAdvisoryOverviewView,
+    OrgAdvisoryReportView,
+    OrgReassignEngagementView,
+)
 from .views_folders import (
     AdvisorFolderDetailView,
     AdvisorFolderListView,
@@ -186,6 +191,21 @@ urlpatterns = [
         name='advisory_student_folder_assign',
     ),
 
+    # Risman step 3: the thin org-manager panel (org-scoped, manager-only).
+    # Gated by IsOrgManager; tenancy resolves from the manager's own membership,
+    # so everything below MUST answer a stranger's manager with 404-not-403.
+    path('org/overview/', OrgAdvisoryOverviewView.as_view(), name='advisory_org_overview'),
+    path(
+        'org/advisors/',
+        OrgAdvisoryReportView.as_view(),
+        name='advisory_org_advisor_report',
+    ),
+    path(
+        'org/engagements/<int:pk>/reassign/',
+        OrgReassignEngagementView.as_view(),
+        name='advisory_org_reassign',
+    ),
+
     # student side
     path('me/engagement/', StudentEngagementView.as_view(), name='advisory_my_engagement'),
     path('me/subjects/', StudentSubjectsView.as_view(), name='advisory_my_subjects'),
@@ -235,3 +255,8 @@ urlpatterns = [
 from .views_reports import urlpatterns as reports_urlpatterns  # noqa: E402
 
 urlpatterns += reports_urlpatterns
+
+# Risman step 3 (org panel): same late-import wiring as the reports module.
+from .views_org import urlpatterns as org_urlpatterns  # noqa: E402
+
+urlpatterns += org_urlpatterns

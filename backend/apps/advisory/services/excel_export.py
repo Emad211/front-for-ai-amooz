@@ -136,6 +136,74 @@ def planner_workbook(report: dict) -> io.BytesIO:
     return buffer
 
 
+_ORG_ADVISOR_HEADERS = [
+    'مشاور', 'دانش‌آموزان', 'برنامه‌ریزی‌شده', 'انجام‌شده', 'پوشش٪',
+    'برنامه‌های منتشرشده', 'ارزیابی‌های هفتگی', 'تحلیل‌های آزمون',
+]
+_ORG_STUDENT_HEADERS = [
+    'مشاور', 'دانش‌آموز', 'برنامه‌ریزی‌شده', 'انجام‌شده', 'پوشش٪', 'آزمون',
+]
+
+# Column widths (Excel units) — the summary block owns columns 1..8, the
+# student block the first six of them.
+_ORG_COLUMN_WIDTHS = {1: 20, 2: 18, 3: 16, 4: 14, 5: 10, 6: 18, 7: 16, 8: 14}
+
+
+def org_advisor_workbook(report: dict) -> io.BytesIO:
+    """Render the org-manager per-advisor report (risman step 3) as one sheet.
+
+    Mirrors the planner layout: the per-advisor summary block first, then a
+    blank separator and the flattened per-student block (one row per student
+    with their advisor's name beside it). Numbers stay numeric; a quiet-null
+    coverage («ثبت نشده») renders as an empty cell, never a fake 0%.
+    """
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = 'مشاوران'
+    sheet.sheet_view.rightToLeft = True
+
+    for column, width in _ORG_COLUMN_WIDTHS.items():
+        sheet.column_dimensions[chr(64 + column)].width = width
+
+    # ── per-advisor summary block ────────────────────────────────────────────
+    sheet.append(_ORG_ADVISOR_HEADERS)
+    _style_header_row(sheet, 1, len(_ORG_ADVISOR_HEADERS))
+    for advisor in report.get('advisors', []):
+        sheet.append([
+            advisor['advisorName'],
+            advisor['studentCount'],
+            advisor['planned'],
+            advisor['actual'],
+            _coverage_cell(advisor.get('coveragePercent')),
+            advisor['plansPublished'],
+            advisor['assessmentsWritten'],
+            advisor['analysesCreated'],
+        ])
+
+    # Blank separator row between the two blocks.
+    sheet.append([])
+
+    # ── per-student block ────────────────────────────────────────────────────
+    student_header_row = sheet.max_row + 1
+    sheet.append(_ORG_STUDENT_HEADERS)
+    _style_header_row(sheet, student_header_row, len(_ORG_STUDENT_HEADERS))
+    for advisor in report.get('advisors', []):
+        for student in advisor.get('students', []):
+            sheet.append([
+                advisor['advisorName'],
+                student['studentName'],
+                student['planned'],
+                student['actual'],
+                _coverage_cell(student.get('coveragePercent')),
+                student['testsTaken'],
+            ])
+
+    buffer = io.BytesIO()
+    workbook.save(buffer)
+    buffer.seek(0)
+    return buffer
+
+
 _BUILDERS = {
     'planner': planner_workbook,
 }

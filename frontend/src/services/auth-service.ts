@@ -463,11 +463,35 @@ async function performAccessTokenRefresh(): Promise<string> {
   return payload.access;
 }
 
+function isImpersonatingInBrowser(): boolean {
+  // Direct localStorage/sessionStorage read — deliberately NOT importing
+  // impersonation-service (module cycle: that module must stay dependency-free).
+  function hasParanoiaKey(): boolean {
+    try {
+      return window.sessionStorage.getItem('ai_amooz_imp_session') !== null;
+    } catch {
+      return false;
+    }
+  }
+  return isClient() && hasParanoiaKey();
+}
+
 export function refreshAccessToken(): Promise<string> {
-  if (!refreshAccessPromise) {
-    refreshAccessPromise = performAccessTokenRefresh().finally(() => {
+  // Never refresh out of a borrowed session: the HttpOnly cookie still holds
+  // the MANAGER's refresh token, so a refresh here would mint a fresh MANAGER
+  // access token and silently unmask the impersonation. During impersonation
+  // every endpoint 401s the short-lived imp token and surfaces it verbatim
+  // (the banner's countdown is the real session clock), so callers just skip.
+  if (refreshAccessPromise) return refreshAccessPromise;
+  refreshAccessPromise = Promise.resolve()
+    .then(() => {
+      if (isImpersonatingInBrowser()) {
+        throw new Error('جلسه در حالت ورود مستقیم است.');
+      }
+      return performAccessTokenRefresh();
+    })
+    .finally(() => {
       refreshAccessPromise = null;
     });
-  }
   return refreshAccessPromise;
 }

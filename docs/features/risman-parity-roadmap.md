@@ -1,6 +1,6 @@
 # رودمپ «همترازی ریسمان» — فاز R (گزارش‌ها، پنل موسسه، برنامه‌ساز هوشمند، جستجو)
 
-وضعیت: **پیش‌نویس برای اجرا** · تاریخ: 2026-08-26 · منبع: لیست فیچرهای رقیب (risman.app) + تحلیل شکاف جلسهٔ همان روز · پیش‌نیازها: `docs/features/advisor-mvp.md` + `docs/features/advisor-restart-plan.md` (اجرا‌شدهٔ کامل)
+وضعیت: **در اجرا — گام‌های ۱ تا ۴ انجام شد ✅ (موج‌های R1+R2) · گام‌های ۵–۶ باقی** · تاریخ: 2026-08-26 · منبع: لیست فیچرهای رقیب (risman.app) + تحلیل شکاف جلسهٔ همان روز · پیش‌نیازها: `docs/features/advisor-mvp.md` + `docs/features/advisor-restart-plan.md` (اجرا‌شدهٔ کامل)
 
 این سند تنها منبع حقیقت فاز R است. هدف: **هیچ‌یک از برتری‌های اعلام‌شدۀ رقیب باقی نماند**، بدون کپی کورکورانه — هر آیتم با زیرساخت موجود ما ترکیب می‌شود.
 
@@ -10,11 +10,11 @@
 
 پنج تحویل P0:
 
-1. **گام ۱ — جستجو و پوشه/برچسب دانش‌آموزان** (رستر مشاور)
-2. **گام ۲ — موتور گزارش + خروجی اکسل** (گزارش پلنر + دانش‌آموز؛ موتور مشترک)
-3. **گام ۳ — پنل موسسه (نسخهٔ نازک)** (ساختار مشاوران، تخصیص، داشبورد زنده، گزارش هر مشاور)
-4. **گام ۴ — Impersonation** (ورود مستقیم مدیر به حساب مشاور/دانش‌آموز با AuditLog)
-5. **گام ۵+۶ — برنامه‌ساز هوشمند** (متن ← و بعد صوت ← پیش‌نویس WeeklyPlan با LLM، فقط Draft)
+1. ✅ **گام ۱ — جستجو و پوشه/برچسب دانش‌آموزان** (رستر مشاور) — موج R1
+2. ✅ **گام ۲ — موتور گزارش + خروجی اکسل** (گزارش پلنر + دانش‌آموز؛ موتور مشترک) — موج R1
+3. ✅ **گام ۳ — پنل موسسه (نسخهٔ نازک)** (ساختار مشاوران، تخصیص، داشبورد زنده، گزارش هر مشاور) — موج R2
+4. ✅ **گام ۴ — Impersonation** (ورود مستقیم مدیر به حساب مشاور/دانش‌آموز با AuditLog) — موج R2
+5. ⬜ **گام ۵+۶ — برنامه‌ساز هوشمند** (متن ← و بعد صوت ← پیش‌نویس WeeklyPlan با LLM، فقط Draft) — موج R3 (باقی‌ماندهٔ P0)
 
 سپس P1 (چت، نمودارهای دانش‌آموز، لیگ سحرگاهی، بودجه‌بندی آزمون) و P2 (white-label، آزمون‌ساز مشاور، والدین) — در §۶ فقط خط‌دومی؛ اجرا پس از P0.
 
@@ -85,7 +85,7 @@
 camelCase · تاریخ ISO · خطاها `{"detail": "<فارسی>"}` · PUT/POST set-replace یا صریح · لیست‌ها نزولی تاریخ. اکسل: `Content-Disposition: attachment; filename=report-<kind>-<from>_<to>.xlsx`.
 
 ### ۴.۳ مایگریشن‌ها
-`advisory.0018_student_folders` (گام ۱) · `organizations.0004_impersonation_log` (گام ۴) · بقیه گام‌ها بدون مایگریشن (تجمعی/LLM).
+`advisory.0018_student_folders` (گام ۱) · `organizations.0012_impersonationlog` (گام ۴ — اپ organizations تا 0011 رشد کرده بود) · بقیه گام‌ها بدون مایگریشن (تجمعی/LLM).
 
 ### ۴.۴ ماژول‌های جدید (allowlist مرزها به‌روز شود)
 بک: `services/folders.py`, `services/reports.py`, `services/excel_export.py`, `services/org_overview.py`, `services/ai_planner.py`, `views_folders.py`, `views_reports.py`, `views_org.py`, `views_ai_planner.py` · فرانت: `services/advisory-reports.ts`, `services/advisory-org.ts`, `services/advisory-ai-planner.ts`, `components/advisory/reports/*`, `app/(manager)/manager/page.tsx`.
@@ -141,7 +141,7 @@ camelCase · تاریخ ISO · خطاها `{"detail": "<فارسی>"}` · PUT/PO
 - **تست:** ایزولاسیون سازمان (مدیر A هیچ از B نمی‌بیند)، ریاضی تجمیع، reassign موفق/نامعتبر (مشاور خارج سازمان ⇒ 400 «مشاور انتخابی به این سازمان تعلق ندارد.»)، ماتریس دسترسی.
 
 **فرانت:**
-- `services/advisory-org.ts` + صفحۀ جدید `app/(manager)/manager/page.tsx` (route group جدید `(manager)` با گارد نقش): داشبورد آمار زنده + جدول مشاوران (شاگردها/میانگین تعهد/برنامه‌های بازه + دکمۀ «گزارش اکسل» + ورود مستقیم [گام ۴]) + دیالوگ تخصیص/جابجایی دانش‌آموز.
+- `services/advisory-org.ts` + صفحۀ جدید `app/(org)/org/advisory/page.tsx` (روتِ `(org)` موجود + گارد نقش در layout + لینک «پنل مشاوره» در `ORG_NAV_MENU`): داشبورد آمار زنده + جدول مشاوران (شاگردها/میانگین تعهد/برنامه‌های بازه + دکمۀ «گزارش اکسل» + ورود مستقیم [گام ۴]) + دیالوگ تخصیص/جابجایی دانش‌آموز.
 - **تست:** `tsc`؛ اسموک.
 
 **پذیرش:** مدیر موسسه در یک نگاه وضعیت مشاوران و شاگردهایشان را می‌بیند و دانش‌آموز را جابجا می‌کند.
@@ -151,7 +151,7 @@ camelCase · تاریخ ISO · خطاها `{"detail": "<فارسی>"}` · PUT/PO
 ### گام ۴ — Impersonation · حجم: M (امنیت‌محور)
 
 **بک‌اند:**
-- `organizations.0004_impersonation_log`: مدل `ImpersonationLog` (manager FK SET_NULL، target_user FK CASCADE؟ نه — PROTECT، org FK، started_at، ended_at null، ip GenericIPAddress null).
+- `organizations.0012_impersonationlog`: مدل `ImpersonationLog` (manager FK SET_NULL، target_user FK PROTECT، org FK، started_at، ended_at null، ip GenericIPAddress null).
 - `POST /api/organizations/<int:org_id>/impersonate/<int:user_id>/` (فقط MANAGER همان سازمان؛ هدف باید عضو همان سازمان باشد — مشاور یا دانش‌آموز): جفت JWT کوتاه‌عمر (access 30min) با claim `imp={by: managerId, org: orgId}` + ردیف Log. `POST .../stop/` ⇒ پایان (ended_at).
 - گارد: توکنِ impersonated **نمی‌تواند** دوباره impersonate کند یا اندپوینت‌های org را صدا بزند (چک claim در `IsOrgManager`).
 - **تست (کلاس امنیتی اختصاصی):** غیرمدیر ۴۰۳ · مدیر سازمان دیگر ۴۰۴ · هدف خارج سازمان ۴۰۰ · TTL کوتاه (assert claim) · ردیف Log نوشته شد · توکن imp مسدود از org-روت‌ها · stop ثبت می‌شود.
