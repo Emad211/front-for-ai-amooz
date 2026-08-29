@@ -84,3 +84,35 @@ def teacher_student_recipients(*, teacher) -> list[dict]:
             {'id': phone, 'name': name, 'phone': phone, 'email': email, 'hasAccount': has_account}
         )
     return out
+
+
+def notify_user(
+    *,
+    recipient,
+    title: str,
+    message: str,
+    notification_type: str = 'info',
+    link: str = '',
+    source: str = '',
+):
+    """Push a single-user notification into ``recipient``'s feed.
+
+    The one sanctioned way for another app to reach the student notification feed:
+    callers depend on this function, not on ``DirectNotification`` directly, so the
+    feed's storage stays private to this app. The row surfaces in the student feed
+    (``StudentNotificationListView``) as ``direct-<id>`` and is read-tracked like
+    every other source.
+
+    ``link`` must be an in-app relative path and ``message`` must never carry a
+    credential — the feed is awareness, not authorization. Returns the created row.
+    """
+    from .models import DirectNotification
+
+    return DirectNotification.objects.create(
+        recipient=recipient,
+        title=title,
+        message=message,
+        notification_type=notification_type,
+        link=link,
+        source=source,
+    )

@@ -1776,6 +1776,21 @@ class AdminUserOrgManagerView(APIView):
         except (Organization.DoesNotExist, TypeError, ValueError):
             return Response({'detail': 'سازمان آموزشی یافت نشد.'}, status=status.HTTP_404_NOT_FOUND)
 
+        # An ADVISOR must never be silently converted into a MANAGER: they would
+        # keep their advisory engagements while losing the /advisor panel (the
+        # role drives the landing route), so the account would look broken to its
+        # own students. Refuse loudly and make the admin change the role first.
+        if user.role == User.Role.ADVISOR:
+            return Response(
+                {
+                    'detail': (
+                        'این کاربر مشاور است. برای مدیر کردن او ابتدا نقش '
+                        'حسابش را از «مشاور» تغییر دهید.'
+                    )
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
         with transaction.atomic():
             # An org manager IS the MANAGER role. Promote a student/teacher to
             # MANAGER; never DEMOTE a platform ADMIN (they already outrank this).

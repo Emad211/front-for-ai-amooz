@@ -3317,6 +3317,27 @@ class StudentNotificationListView(APIView):
                     }
                 )
 
+        # Single-user notifications any app dropped into this student's feed via
+        # apps.notification.services.notify_user (e.g. an advisory invite). Read
+        # through apps.notification only — this view never learns which app wrote
+        # the row, which keeps the classes→advisory boundary intact. Each item
+        # carries its own in-app link (falling back to /notifications).
+        from apps.notification.models import DirectNotification
+
+        for item in DirectNotification.objects.filter(recipient=user).order_by('-created_at'):
+            item_id = f'direct-{item.id}'
+            out.append(
+                {
+                    'id': item_id,
+                    'title': item.title,
+                    'message': item.message,
+                    'type': item.notification_type,
+                    'isRead': item_id in read_ids,
+                    'createdAt': item.created_at.isoformat(),
+                    'link': item.link or '/notifications',
+                }
+            )
+
         for session in sessions:
             for announcement in session.announcements.all():
                 # Map priority to notification type
@@ -4032,11 +4053,14 @@ class ExamPrepSessionPublishView(APIView):
 
             if session.is_published:
                 return Response(ExamPrepSessionDetailSerializer(session).data)
-            if session.status != ClassCreationSession.Status.EXAM_STRUCTURED:
+            if session.status not in {
+                ClassCreationSession.Status.EXAM_TRANSCRIBED,
+                ClassCreationSession.Status.EXAM_STRUCTURED,
+            }:
                 return Response(
                     {
                         'detail': (
-                            'فقط جلسه‌های با وضعیت exam_structured قابل انتشار هستند. '
+                            'فقط جلسه‌هایی که استخراجشان کامل شده قابل انتشار هستند. '
                             f'وضعیت فعلی: {session.status}'
                         )
                     },
@@ -4050,15 +4074,12 @@ class ExamPrepSessionPublishView(APIView):
             )
             from .services.exam_prep_mistral_production import PRODUCTION_ENGINE
             from .services.exam_prep_mistral_readiness import (
-                production_review_artifact_is_valid,
+                production_run_is_authentic,
             )
 
             if (
                 workflow.get('engine') == PRODUCTION_ENGINE
-                and not production_review_artifact_is_valid(
-                    workflow,
-                    require_publishable=True,
-                )
+                and not production_run_is_authentic(workflow)
             ):
                 return Response(
                     {
@@ -4071,6 +4092,13 @@ class ExamPrepSessionPublishView(APIView):
                     status=status.HTTP_409_CONFLICT,
                 )
 
+            # The gates below are scoped to the separate v2/v3 *inventory* pipeline,
+            # which persists an ``ExamPrepExtractionArtifact``. The default Mistral
+            # production engine creates no artifact (its state lives in
+            # ``workflow_state``), so for a Mistral session ``artifact is None`` and
+            # publishing is governed solely by Gate A + the engine-scoped anti-forgery
+            # check above — i.e. the owner's `همیشه مجاز` policy. The v3 review-binding
+            # anti-forgery contract is intentionally left intact for its own pipeline.
             artifact = ExamPrepExtractionArtifact.objects.select_for_update().filter(
                 session=session
             ).first()

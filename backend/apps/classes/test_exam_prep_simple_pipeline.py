@@ -252,15 +252,72 @@ def test_step1_same_request_and_file_is_idempotent(source_storage, monkeypatch):
     assert len(calls) == 1
 
 
-def test_step1_rejects_non_pdf_before_session_creation(source_storage):
+def test_step1_media_delegates_to_legacy_pipeline(source_storage, monkeypatch):
+    """Audio/video/image uploads route to the legacy transcription pipeline
+    (source_type=MEDIA + full-pipeline dispatch), never the PDF-only Mistral path."""
+    from apps.classes import views as classes_views
+
+    teacher = _teacher()
+    dispatched = []
+    monkeypatch.setattr(
+        classes_views,
+        '_dispatch_pipeline_task',
+        lambda session, task: dispatched.append((session, task)),
+    )
+    mistral_calls = []
+    monkeypatch.setattr(
+        tasks_exam_prep.process_exam_prep_pdf_session,
+        'apply_async',
+        lambda **kwargs: mistral_calls.append(kwargs),
+    )
+
+    response = _auth(teacher).post(
+        STEP1_URL,
+        {
+            'title': 'آزمون ویدیویی',
+            'file': SimpleUploadedFile(
+                'voice.mp3',
+                b'not a pdf',
+                content_type='audio/mpeg',
+            ),
+            'run_full_pipeline': 'true',
+        },
+        format='multipart',
+    )
+
+    assert response.status_code == 202
+    session = ClassCreationSession.objects.get(id=response.data['id'])
+    assert session.pipeline_type == ClassCreationSession.PipelineType.EXAM_PREP
+    assert session.source_type == ClassCreationSession.SourceType.MEDIA
+    # Legacy path creates the extraction artifact; Mistral path never does.
+    assert ExamPrepExtractionArtifact.objects.filter(session=session).count() == 1
+    assert mistral_calls == []
+    assert len(dispatched) == 1
+    dispatched_session, dispatched_task = dispatched[0]
+    assert dispatched_session.id == session.id
+    assert dispatched_task is classes_views.process_exam_prep_full_pipeline
+
+
+def test_step1_rejects_fake_pdf_without_delegating_to_media(source_storage, monkeypatch):
+    """A .pdf name with non-PDF bytes must 400 (reaches _valid_pdf_upload),
+    not silently fall through to the legacy media path."""
+    from apps.classes import views as classes_views
+
+    dispatched = []
+    monkeypatch.setattr(
+        classes_views,
+        '_dispatch_pipeline_task',
+        lambda session, task: dispatched.append((session, task)),
+    )
+
     response = _auth(_teacher()).post(
         STEP1_URL,
         {
             'title': 'آزمون',
             'file': SimpleUploadedFile(
-                'voice.mp3',
-                b'not a pdf',
-                content_type='audio/mpeg',
+                'exam.pdf',
+                b'this is not really a pdf',
+                content_type='application/pdf',
             ),
         },
         format='multipart',
@@ -268,6 +325,7 @@ def test_step1_rejects_non_pdf_before_session_creation(source_storage):
 
     assert response.status_code == 400
     assert ClassCreationSession.objects.count() == 0
+    assert dispatched == []
 
 
 def test_step1_broker_failure_marks_session_terminal(source_storage, monkeypatch):

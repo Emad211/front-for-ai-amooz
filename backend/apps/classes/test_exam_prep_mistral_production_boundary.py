@@ -125,6 +125,7 @@ def test_final_entrypoint_keeps_existing_exam_prep_result_contract():
         "model",
         "scope_hint",
         "on_page_complete",
+        "on_region_complete",
         "should_cancel",
         "asset_namespace",
     ]

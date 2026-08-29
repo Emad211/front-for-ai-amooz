@@ -25,6 +25,10 @@ _USERNAME_PREFIX = {
     'TEACHER': 'teacher',
     'MANAGER': 'manager',
     'ADMIN': 'admin',
+    # ADVISOR accounts are created by a platform admin, never by this service
+    # (advisory acquisition is lookup-only and must never mint a user). The
+    # prefix exists only so a future admin-side helper can't fall back to 'user'.
+    'ADVISOR': 'advisor',
 }
 
 

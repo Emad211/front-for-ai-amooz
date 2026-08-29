@@ -67,7 +67,10 @@ class CompleteOnboardingView(APIView):
         # Onboarding is one-time. A user who already completed it changes their
         # username/password through the proper flows (password-change needs the
         # old password); this endpoint must not become an old-password-free reset.
-        if request.user.is_profile_completed:
+        # The check is EFFECTIVE completion, not the stored flag: a pre-curriculum
+        # student (flag=True, no grade) is still incomplete and must be allowed
+        # through to pick their curriculum keys.
+        if request.user.is_effectively_completed:
             return Response(
                 {'detail': 'حساب شما قبلاً تکمیل شده است.'},
                 status=status.HTTP_400_BAD_REQUEST,

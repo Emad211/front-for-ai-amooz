@@ -1,0 +1,906 @@
+{
+  "_comment": "National curriculum seed for the advisor subject picker (advisor-mvp Step 9). Each entry in `subjects` is {\"name\": \"<Persian subject name>\", \"grade\": \"<grade code 01..12>\", \"major\": \"<math|science|humanities|theology> — or null for a *general* subject shared across every major of that grade\"}. `grade` is REQUIRED; `major` is OPTIONAL. Every seeded row is national (organization = NULL). Converted from tmp/national-curriculum-source.tsv per the locked owner rules: فنی و حرفه‌ای و کاردانش rows dropped (catalog v1), identical name+grade across >=2 majors merged to major=null. Run `python manage.py seed_advisory_subjects` after editing.",
+  "version": 1,
+  "subjects": [
+    {
+      "name": "تربیت بدنی",
+      "grade": "01",
+      "major": null
+    },
+    {
+      "name": "ریاضی",
+      "grade": "01",
+      "major": null
+    },
+    {
+      "name": "سلامت و بهداشت",
+      "grade": "01",
+      "major": null
+    },
+    {
+      "name": "فارسی (بخوانیم و بنویسیم)",
+      "grade": "01",
+      "major": null
+    },
+    {
+      "name": "قرآن",
+      "grade": "01",
+      "major": null
+    },
+    {
+      "name": "هدیه‌های آسمان (پیام‌های آسمان)",
+      "grade": "01",
+      "major": null
+    },
+    {
+      "name": "هنر",
+      "grade": "01",
+      "major": null
+    },
+    {
+      "name": "تربیت بدنی",
+      "grade": "02",
+      "major": null
+    },
+    {
+      "name": "ریاضی",
+      "grade": "02",
+      "major": null
+    },
+    {
+      "name": "سلامت و بهداشت",
+      "grade": "02",
+      "major": null
+    },
+    {
+      "name": "فارسی",
+      "grade": "02",
+      "major": null
+    },
+    {
+      "name": "قرآن",
+      "grade": "02",
+      "major": null
+    },
+    {
+      "name": "هدیه‌های آسمان",
+      "grade": "02",
+      "major": null
+    },
+    {
+      "name": "هنر",
+      "grade": "02",
+      "major": null
+    },
+    {
+      "name": "کار و فناوری",
+      "grade": "02",
+      "major": null
+    },
+    {
+      "name": "تربیت بدنی",
+      "grade": "03",
+      "major": null
+    },
+    {
+      "name": "ریاضی",
+      "grade": "03",
+      "major": null
+    },
+    {
+      "name": "علوم تجربی",
+      "grade": "03",
+      "major": null
+    },
+    {
+      "name": "فارسی",
+      "grade": "03",
+      "major": null
+    },
+    {
+      "name": "قرآن",
+      "grade": "03",
+      "major": null
+    },
+    {
+      "name": "مطالعات اجتماعی",
+      "grade": "03",
+      "major": null
+    },
+    {
+      "name": "هدیه‌های آسمان",
+      "grade": "03",
+      "major": null
+    },
+    {
+      "name": "هنر",
+      "grade": "03",
+      "major": null
+    },
+    {
+      "name": "کار و فناوری",
+      "grade": "03",
+      "major": null
+    },
+    {
+      "name": "تربیت بدنی",
+      "grade": "04",
+      "major": null
+    },
+    {
+      "name": "تفکر و پژوهش",
+      "grade": "04",
+      "major": null
+    },
+    {
+      "name": "ریاضی",
+      "grade": "04",
+      "major": null
+    },
+    {
+      "name": "علوم تجربی",
+      "grade": "04",
+      "major": null
+    },
+    {
+      "name": "فارسی",
+      "grade": "04",
+      "major": null
+    },
+    {
+      "name": "قرآن",
+      "grade": "04",
+      "major": null
+    },
+    {
+      "name": "مطالعات اجتماعی",
+      "grade": "04",
+      "major": null
+    },
+    {
+      "name": "هدیه‌های آسمان",
+      "grade": "04",
+      "major": null
+    },
+    {
+      "name": "هنر",
+      "grade": "04",
+      "major": null
+    },
+    {
+      "name": "کار و فناوری",
+      "grade": "04",
+      "major": null
+    },
+    {
+      "name": "تربیت بدنی",
+      "grade": "05",
+      "major": null
+    },
+    {
+      "name": "تفکر و پژوهش",
+      "grade": "05",
+      "major": null
+    },
+    {
+      "name": "ریاضی",
+      "grade": "05",
+      "major": null
+    },
+    {
+      "name": "علوم تجربی",
+      "grade": "05",
+      "major": null
+    },
+    {
+      "name": "فارسی",
+      "grade": "05",
+      "major": null
+    },
+    {
+      "name": "قرآن",
+      "grade": "05",
+      "major": null
+    },
+    {
+      "name": "مطالعات اجتماعی",
+      "grade": "05",
+      "major": null
+    },
+    {
+      "name": "هدیه‌های آسمان",
+      "grade": "05",
+      "major": null
+    },
+    {
+      "name": "هنر",
+      "grade": "05",
+      "major": null
+    },
+    {
+      "name": "کار و فناوری",
+      "grade": "05",
+      "major": null
+    },
+    {
+      "name": "تربیت بدنی",
+      "grade": "06",
+      "major": null
+    },
+    {
+      "name": "تفکر و پژوهش",
+      "grade": "06",
+      "major": null
+    },
+    {
+      "name": "ریاضی",
+      "grade": "06",
+      "major": null
+    },
+    {
+      "name": "زبان انگلیسی",
+      "grade": "06",
+      "major": null
+    },
+    {
+      "name": "علوم تجربی",
+      "grade": "06",
+      "major": null
+    },
+    {
+      "name": "فارسی",
+      "grade": "06",
+      "major": null
+    },
+    {
+      "name": "قرآن",
+      "grade": "06",
+      "major": null
+    },
+    {
+      "name": "مطالعات اجتماعی",
+      "grade": "06",
+      "major": null
+    },
+    {
+      "name": "هدیه‌های آسمان",
+      "grade": "06",
+      "major": null
+    },
+    {
+      "name": "هنر",
+      "grade": "06",
+      "major": null
+    },
+    {
+      "name": "کار و فناوری",
+      "grade": "06",
+      "major": null
+    },
+    {
+      "name": "تربیت بدنی و سلامت",
+      "grade": "07",
+      "major": null
+    },
+    {
+      "name": "تفکر و سبک زندگی",
+      "grade": "07",
+      "major": null
+    },
+    {
+      "name": "ریاضیات",
+      "grade": "07",
+      "major": null
+    },
+    {
+      "name": "زبان خارجی (انگلیسی)",
+      "grade": "07",
+      "major": null
+    },
+    {
+      "name": "زبان عربی",
+      "grade": "07",
+      "major": null
+    },
+    {
+      "name": "علوم تجربی",
+      "grade": "07",
+      "major": null
+    },
+    {
+      "name": "فارسی (قرائت، دستور زبان، املا و انشا)",
+      "grade": "07",
+      "major": null
+    },
+    {
+      "name": "فرهنگ و هنر",
+      "grade": "07",
+      "major": null
+    },
+    {
+      "name": "قرآن",
+      "grade": "07",
+      "major": null
+    },
+    {
+      "name": "مطالعات اجتماعی",
+      "grade": "07",
+      "major": null
+    },
+    {
+      "name": "پیام‌های آسمان (معارف اسلامی)",
+      "grade": "07",
+      "major": null
+    },
+    {
+      "name": "کار و فناوری",
+      "grade": "07",
+      "major": null
+    },
+    {
+      "name": "تربیت بدنی و سلامت",
+      "grade": "08",
+      "major": null
+    },
+    {
+      "name": "تفکر و سبک زندگی",
+      "grade": "08",
+      "major": null
+    },
+    {
+      "name": "ریاضیات",
+      "grade": "08",
+      "major": null
+    },
+    {
+      "name": "زبان خارجی (انگلیسی)",
+      "grade": "08",
+      "major": null
+    },
+    {
+      "name": "زبان عربی",
+      "grade": "08",
+      "major": null
+    },
+    {
+      "name": "علوم تجربی",
+      "grade": "08",
+      "major": null
+    },
+    {
+      "name": "فارسی (قرائت، دستور زبان، املا و انشا)",
+      "grade": "08",
+      "major": null
+    },
+    {
+      "name": "فرهنگ و هنر",
+      "grade": "08",
+      "major": null
+    },
+    {
+      "name": "قرآن",
+      "grade": "08",
+      "major": null
+    },
+    {
+      "name": "مطالعات اجتماعی",
+      "grade": "08",
+      "major": null
+    },
+    {
+      "name": "پیام‌های آسمان (معارف اسلامی)",
+      "grade": "08",
+      "major": null
+    },
+    {
+      "name": "کار و فناوری",
+      "grade": "08",
+      "major": null
+    },
+    {
+      "name": "آمادگی دفاعی (از ایران‌مان دفاع می‌کنیم)",
+      "grade": "09",
+      "major": null
+    },
+    {
+      "name": "تربیت بدنی",
+      "grade": "09",
+      "major": null
+    },
+    {
+      "name": "ریاضی",
+      "grade": "09",
+      "major": null
+    },
+    {
+      "name": "زبان خارجی (انگلیسی ۳)",
+      "grade": "09",
+      "major": null
+    },
+    {
+      "name": "زبان عربی",
+      "grade": "09",
+      "major": null
+    },
+    {
+      "name": "علوم تجربی",
+      "grade": "09",
+      "major": null
+    },
+    {
+      "name": "فارسی",
+      "grade": "09",
+      "major": null
+    },
+    {
+      "name": "فرهنگ و هنر",
+      "grade": "09",
+      "major": null
+    },
+    {
+      "name": "قرآن",
+      "grade": "09",
+      "major": null
+    },
+    {
+      "name": "مطالعات اجتماعی",
+      "grade": "09",
+      "major": null
+    },
+    {
+      "name": "پیام‌های آسمان",
+      "grade": "09",
+      "major": null
+    },
+    {
+      "name": "کار و فناوری",
+      "grade": "09",
+      "major": null
+    },
+    {
+      "name": "آزمایشگاه علوم تجربی ۱",
+      "grade": "10",
+      "major": null
+    },
+    {
+      "name": "آمادگی دفاعی",
+      "grade": "10",
+      "major": null
+    },
+    {
+      "name": "احکام ۱ (پسران / دختران)",
+      "grade": "10",
+      "major": "theology"
+    },
+    {
+      "name": "اخلاق اسلامی ۱",
+      "grade": "10",
+      "major": "theology"
+    },
+    {
+      "name": "اصول و عقاید ۱",
+      "grade": "10",
+      "major": "theology"
+    },
+    {
+      "name": "اقتصاد",
+      "grade": "10",
+      "major": "theology"
+    },
+    {
+      "name": "تاریخ اسلام ۱",
+      "grade": "10",
+      "major": "theology"
+    },
+    {
+      "name": "تاریخ ۱",
+      "grade": "10",
+      "major": "humanities"
+    },
+    {
+      "name": "تربیت بدنی ۱",
+      "grade": "10",
+      "major": null
+    },
+    {
+      "name": "تعلیمات دینی (دینی، اخلاق و قرآن) ۱",
+      "grade": "10",
+      "major": null
+    },
+    {
+      "name": "جامعه‌شناسی ۱",
+      "grade": "10",
+      "major": null
+    },
+    {
+      "name": "جغرافیای عمومی و استان‌شناسی",
+      "grade": "10",
+      "major": null
+    },
+    {
+      "name": "جغرافیای عمومی و استان‌شناسی (جغرافیای ایران)",
+      "grade": "10",
+      "major": "theology"
+    },
+    {
+      "name": "درس انتخابی (هنر یا تفکر و سواد رسانه‌ای یا کارگاه کارآفرینی و تولید)",
+      "grade": "10",
+      "major": null
+    },
+    {
+      "name": "ریاضی و آمار ۱",
+      "grade": "10",
+      "major": null
+    },
+    {
+      "name": "ریاضی ۱",
+      "grade": "10",
+      "major": null
+    },
+    {
+      "name": "زبان خارجی ۱ (انگلیسی)",
+      "grade": "10",
+      "major": null
+    },
+    {
+      "name": "زمین‌شناسی",
+      "grade": "10",
+      "major": null
+    },
+    {
+      "name": "زیست‌شناسی ۱",
+      "grade": "10",
+      "major": "science"
+    },
+    {
+      "name": "سلامت و بهداشت",
+      "grade": "10",
+      "major": null
+    },
+    {
+      "name": "شیمی ۱",
+      "grade": "10",
+      "major": null
+    },
+    {
+      "name": "عربی (زبان تخصصی رشته) ۱",
+      "grade": "10",
+      "major": "humanities"
+    },
+    {
+      "name": "عربی، زبان قرآن ۱",
+      "grade": "10",
+      "major": null
+    },
+    {
+      "name": "علوم و فنون ادبی ۱",
+      "grade": "10",
+      "major": null
+    },
+    {
+      "name": "علوم و معارف قرآنی ۱",
+      "grade": "10",
+      "major": "theology"
+    },
+    {
+      "name": "فارسی ۱",
+      "grade": "10",
+      "major": null
+    },
+    {
+      "name": "فیزیک ۱",
+      "grade": "10",
+      "major": null
+    },
+    {
+      "name": "منطق",
+      "grade": "10",
+      "major": null
+    },
+    {
+      "name": "نگارش ۱",
+      "grade": "10",
+      "major": null
+    },
+    {
+      "name": "هندسه ۱",
+      "grade": "10",
+      "major": "math"
+    },
+    {
+      "name": "آزمایشگاه علوم تجربی ۲",
+      "grade": "11",
+      "major": null
+    },
+    {
+      "name": "آمادگی دفاعی",
+      "grade": "11",
+      "major": "science"
+    },
+    {
+      "name": "آمار و احتمال",
+      "grade": "11",
+      "major": "math"
+    },
+    {
+      "name": "اقتصاد",
+      "grade": "11",
+      "major": "humanities"
+    },
+    {
+      "name": "انسان و محیط زیست",
+      "grade": "11",
+      "major": null
+    },
+    {
+      "name": "تاریخ معاصر",
+      "grade": "11",
+      "major": null
+    },
+    {
+      "name": "تاریخ ۲",
+      "grade": "11",
+      "major": "humanities"
+    },
+    {
+      "name": "تاریخ ۲ (تخصصی رشته)",
+      "grade": "11",
+      "major": "theology"
+    },
+    {
+      "name": "تربیت بدنی ۲",
+      "grade": "11",
+      "major": null
+    },
+    {
+      "name": "تعلیمات دینی (دینی، اخلاق و قرآن) ۲",
+      "grade": "11",
+      "major": null
+    },
+    {
+      "name": "جامعه‌شناسی ۲",
+      "grade": "11",
+      "major": "humanities"
+    },
+    {
+      "name": "جغرافیا ۲",
+      "grade": "11",
+      "major": "theology"
+    },
+    {
+      "name": "جغرافیا ۲ (ایران)",
+      "grade": "11",
+      "major": "humanities"
+    },
+    {
+      "name": "حسابان ۱",
+      "grade": "11",
+      "major": "math"
+    },
+    {
+      "name": "درس انتخابی",
+      "grade": "11",
+      "major": null
+    },
+    {
+      "name": "درس انتخابی (هنر یا تفکر و سواد رسانه‌ای یا کارگاه کارآفرینی و تولید)",
+      "grade": "11",
+      "major": null
+    },
+    {
+      "name": "ریاضی و آمار ۲",
+      "grade": "11",
+      "major": null
+    },
+    {
+      "name": "ریاضی ۲",
+      "grade": "11",
+      "major": "science"
+    },
+    {
+      "name": "زبان خارجی ۲ (انگلیسی)",
+      "grade": "11",
+      "major": null
+    },
+    {
+      "name": "زیست‌شناسی ۲",
+      "grade": "11",
+      "major": "science"
+    },
+    {
+      "name": "شیمی ۲",
+      "grade": "11",
+      "major": null
+    },
+    {
+      "name": "عربی (زبان تخصصی رشته) ۲",
+      "grade": "11",
+      "major": null
+    },
+    {
+      "name": "عربی، زبان قرآن ۲",
+      "grade": "11",
+      "major": null
+    },
+    {
+      "name": "علوم و فنون ادبی ۲",
+      "grade": "11",
+      "major": null
+    },
+    {
+      "name": "علوم و معارف قرآنی ۲",
+      "grade": "11",
+      "major": "theology"
+    },
+    {
+      "name": "فارسی ۲",
+      "grade": "11",
+      "major": null
+    },
+    {
+      "name": "فلسفه ۱",
+      "grade": "11",
+      "major": "theology"
+    },
+    {
+      "name": "فیزیک ۲",
+      "grade": "11",
+      "major": null
+    },
+    {
+      "name": "مطالعات فرهنگی",
+      "grade": "11",
+      "major": "theology"
+    },
+    {
+      "name": "نگارش ۲",
+      "grade": "11",
+      "major": null
+    },
+    {
+      "name": "هندسه ۲",
+      "grade": "11",
+      "major": "math"
+    },
+    {
+      "name": "تاریخ ۳",
+      "grade": "12",
+      "major": "humanities"
+    },
+    {
+      "name": "تاریخ ۳ (تخصصی رشته)",
+      "grade": "12",
+      "major": "theology"
+    },
+    {
+      "name": "تربیت بدنی ۳",
+      "grade": "12",
+      "major": null
+    },
+    {
+      "name": "تعلیمات دینی (دینی، اخلاق و قرآن) ۳",
+      "grade": "12",
+      "major": null
+    },
+    {
+      "name": "جامعه‌شناسی ۳",
+      "grade": "12",
+      "major": "humanities"
+    },
+    {
+      "name": "جریان‌شناسی اندیشه‌های معاصر",
+      "grade": "12",
+      "major": "theology"
+    },
+    {
+      "name": "جغرافیا ۳",
+      "grade": "12",
+      "major": null
+    },
+    {
+      "name": "حسابان ۲",
+      "grade": "12",
+      "major": "math"
+    },
+    {
+      "name": "روان‌شناسی",
+      "grade": "12",
+      "major": null
+    },
+    {
+      "name": "ریاضی و آمار ۳",
+      "grade": "12",
+      "major": null
+    },
+    {
+      "name": "ریاضی ۳",
+      "grade": "12",
+      "major": "science"
+    },
+    {
+      "name": "ریاضیات گسسته",
+      "grade": "12",
+      "major": "math"
+    },
+    {
+      "name": "زبان خارجی ۳ (انگلیسی)",
+      "grade": "12",
+      "major": null
+    },
+    {
+      "name": "زیست‌شناسی ۳",
+      "grade": "12",
+      "major": "science"
+    },
+    {
+      "name": "سلامت و بهداشت",
+      "grade": "12",
+      "major": "theology"
+    },
+    {
+      "name": "شیمی ۳",
+      "grade": "12",
+      "major": null
+    },
+    {
+      "name": "عربی (زبان تخصصی رشته) ۳",
+      "grade": "12",
+      "major": null
+    },
+    {
+      "name": "عربی، زبان قرآن ۳",
+      "grade": "12",
+      "major": null
+    },
+    {
+      "name": "علوم اجتماعی",
+      "grade": "12",
+      "major": null
+    },
+    {
+      "name": "علوم و فنون ادبی ۳",
+      "grade": "12",
+      "major": null
+    },
+    {
+      "name": "علوم و معارف قرآنی ۳",
+      "grade": "12",
+      "major": "theology"
+    },
+    {
+      "name": "فارسی ۳",
+      "grade": "12",
+      "major": null
+    },
+    {
+      "name": "فلسفه",
+      "grade": "12",
+      "major": "humanities"
+    },
+    {
+      "name": "فلسفه ۲",
+      "grade": "12",
+      "major": "theology"
+    },
+    {
+      "name": "فیزیک ۳",
+      "grade": "12",
+      "major": null
+    },
+    {
+      "name": "مدیریت خانواده و سبک زندگی",
+      "grade": "12",
+      "major": null
+    },
+    {
+      "name": "نگارش ۳",
+      "grade": "12",
+      "major": null
+    },
+    {
+      "name": "هندسه ۳",
+      "grade": "12",
+      "major": "math"
+    }
+  ]
+}

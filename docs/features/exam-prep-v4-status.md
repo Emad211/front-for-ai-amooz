@@ -1,5 +1,14 @@
 # Exam Prep V4 — Implementation Status Ledger
 
+> **۲۰۲۶-۰۸-۱۹ — این مسیر در پروداکشن غیرقابل‌دسترس است و تست‌هایش حذف شد.**
+> `apps/classes/urls_v4.py` در هیچ‌کجا `include` نشده، پس هر مسیر
+> `/api/classes/exam-prep-v4/…` ۴۰۴ می‌دهد و UI فرانتِ V4 مرده است. به دستور
+> مالک، ۳۶ فایل `test_exam_prep_v4_*.py` (۲۱۹ تست) حذف شدند؛ سورس، مدل‌ها،
+> مایگریشن‌های `0040`–`0047` و سیگنال‌ها **دست‌نخورده** ماندند.
+> ممیزی کامل + ترتیب کم‌ریسکِ بازنشستگی نهایی:
+> [`docs/EXAM_PREP_V4_DECOMMISSION_AUDIT.md`](../EXAM_PREP_V4_DECOMMISSION_AUDIT.md).
+> هر چیزی که در ادامه‌ی این دفتر آمده، وضعیت را **پیش از** آن تاریخ توصیف می‌کند.
+
 > Update this file before every V4 implementation slice. Canonical architecture: `exam-prep-v4-source-aware-split-pipeline.md`. Fast execution overlay: `exam-prep-v4-production-critical-path.md`.
 
 - **Branch:** `feat/exam-prep-v4-source-aware`

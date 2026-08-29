@@ -2,16 +2,32 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { NotebookPen } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { DASHBOARD_NAV_LINKS } from '@/constants/navigation';
+import type { NavItem } from '@/types';
+import { useActiveAdvisor } from '@/hooks/use-active-advisor';
+
+// Render-site injection only: DASHBOARD_NAV_LINKS itself must stay untouched
+// so the entry stays hidden for every student without an active advisor.
+const STUDY_LOG_NAV_ITEM: NavItem = {
+  label: 'گزارش روزانه',
+  href: '/study-log',
+  icon: NotebookPen,
+};
 
 export function MobileNav() {
   const pathname = usePathname();
+  // null (loading) → base links only; the entry must never flash.
+  const { hasActiveAdvisor } = useActiveAdvisor();
+  const links = hasActiveAdvisor
+    ? [...DASHBOARD_NAV_LINKS, STUDY_LOG_NAV_ITEM]
+    : DASHBOARD_NAV_LINKS;
 
   return (
     <div className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-background/80 backdrop-blur-lg border-t border-border px-3 py-2">
       <nav className="flex items-center justify-around w-full">
-        {DASHBOARD_NAV_LINKS.map((link) => {
+        {links.map((link) => {
           // Match subroutes too (e.g. /exercises/12) — same behavior as the desktop nav.
           const isActive = pathname === link.href || pathname.startsWith(`${link.href}/`);
           const Icon = link.icon;

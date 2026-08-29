@@ -14,6 +14,7 @@ from apps.classes.services.exam_prep_mistral_solution_headings import (
 )
 from apps.classes.services.exam_prep_mistral_targeted_recovery import (
     collect_crop_headings,
+    recovered_solution_layout_regions,
     resolve_target_questions,
 )
 
@@ -31,9 +32,20 @@ def _load_bundle(path: Path) -> tuple[Mapping[str, Any], Mapping[str, Any]]:
                     f"code={failure.get('providerErrorCode') or 'unknown'}; "
                     f"retryable={failure.get('retryable')}"
                 )
+            metadata_name = (
+                "request.safe.json"
+                if "request.safe.json" in names
+                else "manifest.json"
+                if "manifest.json" in names
+                else ""
+            )
+            if not metadata_name:
+                raise CommandError(
+                    "Bundle is missing request.safe.json or manifest.json metadata."
+                )
             return (
                 json.loads(archive.read("response.raw.json").decode("utf-8")),
-                json.loads(archive.read("request.safe.json").decode("utf-8")),
+                json.loads(archive.read(metadata_name).decode("utf-8")),
             )
     except CommandError:
         raise
@@ -114,6 +126,39 @@ def _parse_target_override(value: str | None) -> list[int] | None:
     return output
 
 
+def _recovered_spatial_targets(
+    headings: Sequence[Mapping[str, Any]],
+    recovered: Sequence[Mapping[str, Any]],
+) -> dict[int, tuple[str, int, str]]:
+    output: dict[int, tuple[str, int, str]] = {}
+    for item in recovered:
+        try:
+            question = int(item.get("questionNumber") or 0)
+            option = int(item.get("optionLabel") or 0)
+        except (TypeError, ValueError):
+            continue
+        evidence = [
+            heading
+            for heading in headings
+            if int(heading.get("rawQuestionNumber") or 0) == question
+            and heading.get("optionLabelValid") is True
+            and int(heading.get("optionLabel") or 0) == option
+        ]
+        pages = {
+            int(heading.get("physicalPageNumber") or 0)
+            for heading in evidence
+            if int(heading.get("physicalPageNumber") or 0) > 0
+        }
+        columns = {
+            str(heading.get("column") or "").strip().lower()
+            for heading in evidence
+            if str(heading.get("column") or "").strip().lower() in {"left", "right"}
+        }
+        if question > 0 and option in {1, 2, 3, 4} and len(pages) == 1 and len(columns) == 1:
+            output[question] = (str(option), next(iter(pages)), next(iter(columns)))
+    return output
+
+
 class Command(BaseCommand):
     help = (
         "Audit a successful targeted solution-gap OCR bundle against the full-document "
@@ -147,7 +192,19 @@ class Command(BaseCommand):
             first_question=first_question,
             last_question=last_question,
         )
-        accepted: list[AlignedSolutionHeading] = aligned["accepted"]
+        accepted_all: list[AlignedSolutionHeading] = list(aligned["accepted"])
+        accepted = [
+            item
+            for item in accepted_all
+            if first_question <= item.question_number <= last_question
+        ]
+        out_of_range_accepted = sorted(
+            {
+                item.question_number
+                for item in accepted_all
+                if not first_question <= item.question_number <= last_question
+            }
+        )
         base_options = {
             item.question_number: item.option_label
             for item in accepted
@@ -175,6 +232,30 @@ class Command(BaseCommand):
             int(item["questionNumber"]): int(item["optionLabel"])
             for item in resolution["recovered"]
         }
+        spatial_targets = _recovered_spatial_targets(headings, resolution["recovered"])
+        precise_regions = recovered_solution_layout_regions(
+            targeted_root,
+            crop_specs=crop_specs,
+            recovered_targets=spatial_targets,
+        )
+        precise_region_audit = [
+            {
+                "questionNumber": int(region.get("questionNumber") or 0),
+                "physicalPageNumber": int(region.get("originalPageNumber") or 0),
+                "bbox": list(region.get("bbox") or []),
+                "visualCandidateCount": int(
+                    region.get("targetedRecoveryVisualCandidateCount") or 0
+                ),
+                "visualTypes": sorted(
+                    {
+                        str(visual.get("type") or "")
+                        for visual in (region.get("visuals") or [])
+                        if isinstance(visual, Mapping) and str(visual.get("type") or "")
+                    }
+                ),
+            }
+            for region in precise_regions
+        ]
 
         non_target_grouped: dict[int, list[Mapping[str, Any]]] = {}
         target_set = set(target_questions)
@@ -235,12 +316,13 @@ class Command(BaseCommand):
         )
 
         report = {
-            "schemaVersion": 1,
+            "schemaVersion": 2,
             "contentFree": True,
             "safeMergePolicy": "target_questions_only",
             "base": {
                 "acceptedHeadingCount": len(accepted),
                 "uniqueAcceptedQuestionCount": base_unique,
+                "outOfRangeAcceptedQuestionNumbers": out_of_range_accepted,
                 "missingQuestionNumbers": base_missing,
                 "invalidOptionQuestionNumbers": base_invalid,
             },
@@ -253,6 +335,16 @@ class Command(BaseCommand):
                 "targetConflicts": resolution["conflicts"],
                 "nonTargetValidDisagreements": disagreements,
                 "nonTargetInvalidHeadings": non_target_invalid,
+                "preciseRegionCount": len(precise_region_audit),
+                "preciseRegions": precise_region_audit,
+                "visualCandidateTargetCount": sum(
+                    int(item["visualCandidateCount"]) > 0
+                    for item in precise_region_audit
+                ),
+                "visualCandidateCount": sum(
+                    int(item["visualCandidateCount"])
+                    for item in precise_region_audit
+                ),
             },
             "projected": {
                 "recoveredMissingQuestionNumbers": recovered_missing,
@@ -276,6 +368,8 @@ class Command(BaseCommand):
                 "Mistral targeted recovery audit completed: "
                 f"detected={len(headings)}, targets={len(target_questions)}, "
                 f"recovered={len(resolution['recovered'])}, "
+                f"preciseRegions={len(precise_region_audit)}, "
+                f"visualCandidates={sum(int(item['visualCandidateCount']) for item in precise_region_audit)}, "
                 f"projectedSolutions={projected_unique}/{expected_total}, "
                 f"ready={ready}, output={output}"
             )

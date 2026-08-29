@@ -10,7 +10,10 @@ from .exam_prep_mistral_visual_review import (
     visual_metadata_issue_codes,
     visual_options_complete,
 )
-from .exam_prep_page_output import is_critical_page_issue
+from .exam_prep_page_output import (
+    is_critical_page_issue,
+    review_blocking_question_keys,
+)
 from .exam_prep_question_verifier import canonical_question_issues
 from .exam_prep_utils import clean_exam_markdown
 
@@ -268,16 +271,14 @@ def audit_page_first_projection(
                     add_issue("missing_question_number", scope=scope, number=number)
 
     critical_count = sum(issue["severity"] == "critical" for issue in issues)
-    critical_keys = {
-        (str(issue.get("scopeKey") or "default"), int(issue.get("questionNumber") or 0))
-        for issue in issues
-        if issue["severity"] == "critical" and int(issue.get("questionNumber") or 0) > 0
-    }
+    # Publishing/review is gated only by genuinely-broken questions (no stem /
+    # no options); the broad advisory critical set still feeds criticalIssueCount.
+    blocking_keys = review_blocking_question_keys(issues)
     return {
-        "status": "passed" if questions and critical_count == 0 else "needs_review",
+        "status": "passed" if questions and not blocking_keys else "needs_review",
         "questionCount": len(questions),
-        "usableQuestionCount": max(0, len(questions) - len(critical_keys)),
-        "questionsNeedingReview": len(critical_keys),
+        "usableQuestionCount": max(0, len(questions) - len(blocking_keys)),
+        "questionsNeedingReview": len(blocking_keys),
         "matchedAnswerCount": answer_key_count,
         "matchedSolutionCount": solution_count,
         "answerKeyOnlyCount": max(0, answer_key_count - solution_count),

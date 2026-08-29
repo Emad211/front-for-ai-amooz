@@ -33,6 +33,12 @@ _PAGE_META_RE = re.compile(
     r"^\s*[\[(].{0,100}(?:صفحه(?:‌|\s)?های?|صفحات)\s*[:：]?\s*[0-9۰-۹٠-٩]",
     re.IGNORECASE,
 )
+_SOLUTION_HEADING_PREFIX_RE = re.compile(
+    r"^\s*[#*_`«»\"'()]*\s*[0-9۰-۹٠-٩]{1,3}\s*[»\"'()]*\s*"
+    r"(?:[-–—ـ]\s*)?گزین(?:ه|ۀ|هٔ)\s*[«»\"'()]*\s*"
+    r"[0-9۰-۹٠-٩]{1,2}\s*[»\"'()]*\s*",
+    re.IGNORECASE,
+)
 _MATH_TOKEN_RE = re.compile(r"\\?[A-Za-z][A-Za-z0-9_]*|[Α-Ωα-ω]+|[=+\-*/^<>≤≥]")
 _KEYED_NUMERIC_RE = re.compile(
     r"(?P<key>\\?[A-Za-zΑ-Ωα-ω][A-Za-z0-9_Α-Ωα-ω]*)\s*=\s*"
@@ -84,6 +90,9 @@ def sanitize_source_markdown(value: Any) -> tuple[str, tuple[str, ...]]:
 
     text = str(value or "")
     flags: list[str] = []
+    text, heading_count = _SOLUTION_HEADING_PREFIX_RE.subn("", text, count=1)
+    if heading_count:
+        flags.append("removed_solution_heading")
     if _MARKDOWN_IMAGE_RE.search(text):
         text = _MARKDOWN_IMAGE_RE.sub("", text)
         flags.append("removed_markdown_image")

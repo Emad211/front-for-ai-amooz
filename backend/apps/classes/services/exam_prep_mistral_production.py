@@ -14,6 +14,7 @@ from dataclasses import replace
 from decimal import Decimal, InvalidOperation
 import io
 import os
+import re
 from typing import Any, Mapping, Sequence
 
 from . import exam_prep_mistral_stage2_core as core
@@ -42,6 +43,10 @@ from .exam_prep_mistral_risk_engine import score_region_risks
 from .exam_prep_mistral_solution_headings import audit_solution_headings
 from .exam_prep_mistral_stage5 import finalize_stage5_regions
 from .exam_prep_mistral_stage5_runtime import successful_call_cost_usd
+from .exam_prep_mistral_targeted_recovery import (
+    overlay_recovered_solution_regions,
+    recovered_solution_layout_regions,
+)
 from .exam_prep_mistral_visuals import build_visual_asset_registry
 from .exam_prep_mistral_visual_reconcile import (
     VISUAL_CRITICAL_ISSUE_CODES,
@@ -50,8 +55,9 @@ from .exam_prep_mistral_visual_reconcile import (
 from .exam_prep_page_output import (
     build_strict_exam_audit,
     render_strict_exam_transcript,
+    review_blocking_question_keys,
 )
-from .exam_prep_page_records import assemble_page_extractions
+from .exam_prep_page_records import PageAssemblyResult, assemble_page_extractions
 from .exam_prep_page_source import attach_source_regions
 from .exam_prep_pipeline import (
     ExamPrepPipelineCancelled,
@@ -105,6 +111,220 @@ def parse_question_region_text(value: Any) -> tuple[str, list[dict[str, str]], s
 
 
 core.parse_question_region_text = parse_question_region_text
+
+_STALE_PARSE_FAILURE_CODE = "mistral_question_option_parse_failed"
+
+# Relaxed inline-option recovery -------------------------------------------------
+# The frozen Stage-2 detectors (``_OPTION_MARKER_RE`` needs trailing punctuation,
+# ``_PAREN_OPTION_RE`` needs a closing bracket, ``_marker_sequence`` needs all
+# four markers in strict order) split only clean ``۱)…۴)`` runs. Live 58-page
+# booklets also produce three degenerate shapes the frozen path rejects:
+#   A. half-open parens ``(۱ … (۲ … (۳ … (۴``  (opening bracket, no close, no punct)
+#   B. an OCR-dropped internal marker ``(۱) … (۲) … (۴)``  (only 3 of 4 survive)
+#   C. a flattened table ``(۱) v ۲ v ۳ v ۴ v``  (bare standalone digit markers)
+# This facade-local relaxed pass recovers those without touching the frozen core:
+# a marker is a digit 1..4 whose left edge is start/space/opening-bracket and
+# whose right edge is a closing punct, whitespace, or end — never glued to math
+# (``$``, ``_``, ``=``, ``/``) or another digit (so ``۱۰``/``۳/۴`` never anchor).
+# A run must start at marker 1 and hold >= 3 strictly-increasing markers, the
+# first of which is "strong" (carries a bracket or closing punct); that is what
+# keeps dense math from false-firing. Internal gaps become empty labelled options
+# (the teacher fixes the residual value via the edit form) so the review gate
+# clears while nothing is ever blanked or dropped.
+_MARKER_VALUE = {
+    "1": 1, "۱": 1, "١": 1,
+    "2": 2, "۲": 2, "٢": 2,
+    "3": 3, "۳": 3, "٣": 3,
+    "4": 4, "۴": 4, "٤": 4,
+}
+_MARKER_DIGIT_RE = re.compile(r"[1-4۱-۴١-٤]")
+_OPEN_BRACKETS = "(["
+_CLOSE_MARKER_PUNCT = ")].:：-–—"
+_MIN_RELAXED_RUN = 3
+
+
+def _relaxed_markers(body: str) -> list[tuple[int, int, int, bool]]:
+    """Return ``(number, outer_start, content_end, strong)`` marker candidates.
+
+    ``outer_start`` includes a leading ``(``/``[`` when present; ``content_end``
+    is the index just past the marker (past a closing punct when present); a
+    marker is ``strong`` when it carries a bracket or closing punctuation.
+    """
+
+    markers: list[tuple[int, int, int, bool]] = []
+    length = len(body)
+    for match in _MARKER_DIGIT_RE.finditer(body):
+        position = match.start()
+        number = _MARKER_VALUE[match.group(0)]
+        # Left edge: allow one opening bracket, then require start/whitespace so a
+        # marker glued to prose or math (``f(2)``, ``$x_1``) is rejected.
+        outer_start = position
+        has_open = False
+        left = body[position - 1] if position > 0 else ""
+        if left in _OPEN_BRACKETS:
+            has_open = True
+            outer_start = position - 1
+            left = body[outer_start - 1] if outer_start > 0 else ""
+        if left and not left.isspace():
+            continue
+        # Right edge: optionally consume one closing punct (spaces allowed before
+        # it); otherwise the digit must be followed by whitespace or end so a
+        # multi-digit value (``۱۰``) or a fraction (``۳/۴``) never anchors a run.
+        has_close = False
+        content_end = position + 1
+        probe = position + 1
+        while probe < length and body[probe] == " ":
+            probe += 1
+        if probe < length and body[probe] in _CLOSE_MARKER_PUNCT:
+            has_close = True
+            content_end = probe + 1
+        else:
+            after = body[position + 1] if position + 1 < length else ""
+            if after and not after.isspace():
+                continue
+        markers.append((number, outer_start, content_end, has_open or has_close))
+    return markers
+
+
+def _relaxed_option_run(
+    markers: list[tuple[int, int, int, bool]],
+) -> list[tuple[int, int, int, bool]] | None:
+    """Pick the first ascending run that starts at a strong marker 1 (>= 3 long).
+
+    Gaps are tolerated (Mode B drops one internal marker) but the run must start
+    at 1 and increase strictly, and its first marker must be strong so dense math
+    can never seed a run.
+    """
+
+    for start_index, first in enumerate(markers):
+        if first[0] != 1 or not first[3]:
+            continue
+        run = [first]
+        for candidate in markers[start_index + 1 :]:
+            if run[-1][0] < candidate[0] <= 4:
+                run.append(candidate)
+        if len(run) >= _MIN_RELAXED_RUN:
+            return run
+    return None
+
+
+def _split_relaxed_inline_options(
+    body: str,
+) -> tuple[str, list[dict[str, str]]] | None:
+    """Fallback split for OCR-mangled marker runs the frozen path can't parse."""
+
+    run = _relaxed_option_run(_relaxed_markers(body))
+    if run is None:
+        return None
+    recovered_stem = clean_exam_markdown(body[: run[0][1]])
+    if not recovered_stem:
+        return None
+    texts: dict[int, str] = {}
+    for index, marker in enumerate(run):
+        number, _outer_start, content_end, _strong = marker
+        text_end = run[index + 1][1] if index + 1 < len(run) else len(body)
+        texts[number] = core._clean_option_text(body[content_end:text_end])
+    highest = run[-1][0]
+    options = [
+        {"label": str(number), "text_markdown": texts.get(number, "")}
+        for number in range(1, highest + 1)
+    ]
+    return recovered_stem, options
+
+
+def _split_inline_stem_options(
+    stem: Any,
+) -> tuple[str, list[dict[str, str]]] | None:
+    """Pull an OCR-inlined option run out of a question stem.
+
+    ``mistral-ocr-4-0`` sometimes emits the four numbered options *inside* the
+    question stem and leaves ``options[]`` empty (frequently with an empty
+    trailing option), which used to force an otherwise-answerable question into
+    the review lane with ``missing_options``. The frozen 1..4 marker run is tried
+    first (proven on clean runs); a facade-local relaxed pass then recovers the
+    three degenerate OCR shapes the frozen detectors reject (see the block above).
+    On success this returns ``(clean_stem, options)``, keeping the label of every
+    option — including empty/image-only options so they still render and only
+    advisory ``missing_option_text`` applies. Returns ``None`` when there is no
+    marker run or no real question text precedes it, so a genuinely option-less
+    stem stays review-blocking (owner policy).
+    """
+
+    body = clean_exam_markdown(stem or "")
+    if not body:
+        return None
+    body = core._QUESTION_HEADING_RE.sub("", body, count=1)
+    sequence = core._marker_sequence(body, core._OPTION_MARKER_RE)
+    if sequence is None:
+        sequence = core._marker_sequence(body, core._PAREN_OPTION_RE)
+    if sequence is not None:
+        recovered_stem = clean_exam_markdown(body[: sequence[0][1]])
+        if recovered_stem:
+            options: list[dict[str, str]] = []
+            for index, marker in enumerate(sequence):
+                end = sequence[index + 1][1] if index + 1 < len(sequence) else len(body)
+                options.append(
+                    {
+                        "label": str(marker[0]),
+                        "text_markdown": core._clean_option_text(body[marker[2] : end]),
+                    }
+                )
+            options.sort(key=lambda item: int(item["label"]))
+            return recovered_stem, options
+    return _split_relaxed_inline_options(body)
+
+
+def _recover_inline_stem_options(
+    result: PageAssemblyResult,
+) -> PageAssemblyResult:
+    """Recover inline options for assembled questions that lost their options[].
+
+    Deterministic, provider-free, and idempotent: only questions with fewer than
+    two options and a recoverable stem are touched. On success the stale
+    region-level ``mistral_question_option_parse_failed`` code is dropped (the
+    parse now succeeded); ``rebuild_assembly_quality`` recomputes the rest.
+    """
+
+    projection = dict(result.projection)
+    exam = dict(projection.get("exam_prep") or {})
+    source_questions = exam.get("questions")
+    if not isinstance(source_questions, list):
+        return result
+    changed = False
+    questions: list[Any] = []
+    for question in source_questions:
+        if not isinstance(question, Mapping):
+            questions.append(question)
+            continue
+        options = [
+            item
+            for item in (question.get("options") or [])
+            if isinstance(item, Mapping)
+        ]
+        if len(options) >= 2:
+            questions.append(dict(question))
+            continue
+        recovered = _split_inline_stem_options(question.get("question_text_markdown"))
+        if recovered is None:
+            questions.append(dict(question))
+            continue
+        stem, recovered_options = recovered
+        updated = dict(question)
+        updated["question_text_markdown"] = stem
+        updated["options"] = recovered_options
+        updated["issues"] = [
+            code
+            for code in (question.get("issues") or [])
+            if clean_exam_markdown(code).strip() != _STALE_PARSE_FAILURE_CODE
+        ]
+        questions.append(updated)
+        changed = True
+    if not changed:
+        return result
+    exam["questions"] = questions
+    projection["exam_prep"] = exam
+    return result.model_copy(update={"projection": projection})
+
 
 _question_anchor_counts = core._question_anchor_counts
 _question_numbers = core._question_numbers
@@ -216,20 +436,23 @@ def _promote_own_critical(
             issue["severity"] = "critical"
     output["issues"] = issues
     critical = [item for item in issues if item.get("severity") == "critical"]
-    critical_questions = {
-        int(item.get("questionNumber") or 0)
-        for item in critical
-        if int(item.get("questionNumber") or 0) > 0
-    }
+    # `_OWN_CRITICAL_CODES` (Stage-5 blockers, visual-critical codes, …) stay
+    # promoted to critical severity for the advisory `criticalIssueCount`, but
+    # publishing is gated only by genuinely-broken questions (no stem / no
+    # options) plus any unrecoverable physical page — owner policy `همیشه مجاز`.
+    blocking_questions = review_blocking_question_keys(issues)
+    blocked_by_failed_page = bool(output.get("failedPageNumbers"))
     output["criticalIssueCount"] = len(critical)
-    output["questionsNeedingReview"] = len(critical_questions)
+    output["questionsNeedingReview"] = len(blocking_questions)
     output["usableQuestionCount"] = max(
         0,
-        int(output.get("questionCount") or 0) - len(critical_questions),
+        int(output.get("questionCount") or 0) - len(blocking_questions),
     )
     output["status"] = (
         "passed"
-        if output.get("questionCount") and not critical
+        if output.get("questionCount")
+        and not blocking_questions
+        and not blocked_by_failed_page
         else "needs_review"
     )
     return output
@@ -277,6 +500,7 @@ def run_exam_prep_mistral_pipeline(
     model: str | None = None,
     scope_hint: str = "default",
     on_page_complete: ProgressCallback | None = None,
+    on_region_complete: ProgressCallback | None = None,
     should_cancel: CancelCheck | None = None,
     asset_namespace: str | None = None,
 ) -> ExamPrepPipelineResult:
@@ -387,6 +611,30 @@ def run_exam_prep_mistral_pipeline(
     unresolved_targets = sorted(
         (set(missing) | set(invalid)) - set(recovered_targets)
     )
+    recovered_layout_regions: list[dict[str, Any]] = []
+    if targeted_result is not None and recovered_targets:
+        targets = sorted(set(missing) | set(invalid))
+        specs = _target_crop_specs(accepted, targets)
+        crop_specs = [
+            {"physicalPageNumber": page_number, "column": side}
+            for page_number, side in specs
+        ]
+        targeted_root = {
+            "pages": [dict(page) for page in (targeted_result.pages or ())]
+        }
+        recovered_layout_regions = recovered_solution_layout_regions(
+            targeted_root,
+            crop_specs=crop_specs,
+            recovered_targets=recovered_targets,
+        )
+        if recovered_layout_regions:
+            evidence = replace(
+                evidence,
+                layout=overlay_recovered_solution_regions(
+                    evidence.layout,
+                    recovered_layout_regions,
+                ),
+            )
 
     page_extractions = build_page_extractions_disjoint(
         result=ocr_result,
@@ -397,6 +645,11 @@ def run_exam_prep_mistral_pipeline(
     )
     assembled = assemble_page_extractions(page_extractions, title=title)
     assembled = attach_source_regions(assembled, pages=page_extractions)
+    # Recover options that OCR left inline in the stem before quality is rebuilt,
+    # so a question whose options were merely mis-placed is not sent to the
+    # review lane as `missing_options` (owner policy: only a genuinely no-stem /
+    # no-options question is review-blocking).
+    assembled = _recover_inline_stem_options(assembled)
     assembled = rebuild_assembly_quality(assembled)
 
     try:
@@ -433,6 +686,7 @@ def run_exam_prep_mistral_pipeline(
             decisions=decisions,
             max_cost_usd=remaining_stage5_budget,
             should_cancel=should_cancel,
+            on_region_complete=on_region_complete,
         )
     except RuntimeError as exc:
         if "Cancellation requested during Stage-5" in str(exc):
@@ -518,6 +772,7 @@ def run_exam_prep_mistral_pipeline(
             "targetedSolutionHeadingCalls": targeted_calls,
             "targetedSolutionHeadingRetries": targeted_retries,
             "targetedSolutionHeadingRecovered": len(recovered_targets),
+            "targetedSolutionPreciseRegionCount": len(recovered_layout_regions),
             "targetedSolutionHeadingUnresolved": remaining_unresolved_targets,
             "targetedSolutionHeadingSkippedBudget": targeted_skipped_budget,
             "targetedSolutionHeadingBudgetPlan": {

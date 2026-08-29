@@ -38,6 +38,10 @@ gunicorn
 # utils
 tenacity
 
+# Excel export for the advisory reports (risman step 2) — pure-python, the only
+# new backend dependency of the whole risman phase (roadmap ق۹).
+openpyxl==3.1.5
+
 # testing
 pytest
 pytest-django

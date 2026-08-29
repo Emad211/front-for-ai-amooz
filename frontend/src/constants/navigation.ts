@@ -2,6 +2,7 @@ import {
   BarChart3,
   Building2,
   Coins,
+  GraduationCap,
   Home,
   BookOpen,
   Target,
@@ -135,6 +136,7 @@ export const ORG_NAV_MENU: NavSection[] = [
   {
     title: 'نظارت',
     items: [
+      { label: 'مشاوره و همکاری‌ها', href: '/org/advisory', icon: GraduationCap },
       { label: 'کلاس‌ها', href: '/org/classes', icon: FolderOpen },
       { label: 'هزینه‌ها', href: '/org/costs', icon: Coins },
     ],

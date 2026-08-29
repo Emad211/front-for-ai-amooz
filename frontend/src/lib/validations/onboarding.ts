@@ -1,6 +1,12 @@
 import * as z from "zod";
 import { isValidIranPhone, normalizeIranPhone } from '@/lib/iran-phone';
 import { strongPasswordSchema } from './password';
+import {
+  GRADE_OPTIONS,
+  MAJOR_OPTIONS,
+  MAJOR_REQUIRED_MESSAGE,
+  isMajorRequiredGrade,
+} from '@/constants/grade-major';
 
 /**
  * Forced post-login onboarding (3 steps). Every code-logged-in user sets the
@@ -32,9 +38,13 @@ export const onboardingSchema = z
     firstName: z.string().trim().min(1, { message: "نام الزامی است" }),
     lastName: z.string().trim().max(150).optional().or(z.literal("")),
     phone,
-    // Step 3 — light role profile (all optional)
-    grade: z.string().optional().or(z.literal("")),
-    major: z.string().optional().or(z.literal("")),
+    // Step 3 — light role profile (all optional unless the grade demands a major)
+    grade: z.enum(GRADE_OPTIONS.map((g) => g.value) as [string, ...string[]])
+      .optional()
+      .or(z.literal("")),
+    major: z.enum(MAJOR_OPTIONS.map((m) => m.value) as [string, ...string[]])
+      .optional()
+      .or(z.literal("")),
     expertise: z.string().trim().max(255).optional().or(z.literal("")),
   })
   .superRefine((data, ctx) => {
@@ -43,6 +53,23 @@ export const onboardingSchema = z
         code: z.ZodIssueCode.custom,
         message: "رمز عبور و تکرار آن یکسان نیست",
         path: ["confirmPassword"],
+      });
+    }
+    // National-curriculum rule: grades '10'..'12' REQUIRE a major; for every
+    // other grade the major must stay empty (hidden/cleared in the UI and
+    // omitted from the payload).
+    if (isMajorRequiredGrade(data.grade) && !data.major) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: MAJOR_REQUIRED_MESSAGE,
+        path: ["major"],
+      });
+    }
+    if (!isMajorRequiredGrade(data.grade) && data.major) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "برای این پایه انتخاب رشته امکان‌پذیر نیست",
+        path: ["major"],
       });
     }
   });

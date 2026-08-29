@@ -2,7 +2,7 @@
 
 from django.urls import path
 
-from . import views
+from . import views, views_impersonation
 
 app_name = 'organizations'
 
@@ -81,4 +81,18 @@ urlpatterns = [
 
     # ── Workspace switcher ───────────────────────────────────────
     path('my-workspaces/', views.MyWorkspacesView.as_view(), name='my-workspaces'),
+
+    # ── Risman step 4: direct login (ورود مستقیم) ────────────────
+    # start mints the 30-minute imp pair; stop closes the open log row. stop
+    # authenticates MANUALLY (refresh-as-bearer), hence no JWT auth class here.
+    path(
+        '<int:org_pk>/impersonate/<int:user_id>/',
+        views_impersonation.ImpersonationStartView.as_view(),
+        name='org-impersonate',
+    ),
+    path(
+        '<int:org_pk>/impersonate/stop/',
+        views_impersonation.ImpersonationStopView.as_view(),
+        name='org-impersonate-stop',
+    ),
 ]

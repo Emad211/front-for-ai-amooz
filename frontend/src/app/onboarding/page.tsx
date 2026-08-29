@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useRef, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import { useForm, Controller, type FieldErrors } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -12,6 +12,11 @@ import {
   ONBOARDING_STEP_FIELDS,
   type OnboardingFormValues,
 } from '@/lib/validations/onboarding';
+import {
+  GRADE_OPTIONS,
+  MAJOR_OPTIONS,
+  isMajorRequiredGrade,
+} from '@/constants/grade-major';
 import {
   completeOnboarding,
   getStoredUser,
@@ -39,17 +44,6 @@ const STEP_META = [
   { title: 'تکمیل پروفایل', desc: 'چند مورد کوتاه تا کارت راه بیفتد.', icon: GraduationCap },
 ];
 
-const GRADES = [
-  { value: '10', label: 'دهم' },
-  { value: '11', label: 'یازدهم' },
-  { value: '12', label: 'دوازدهم' },
-];
-const MAJORS = [
-  { value: 'math', label: 'ریاضی فیزیک' },
-  { value: 'science', label: 'علوم تجربی' },
-  { value: 'humanities', label: 'علوم انسانی' },
-];
-
 // Map backend snake_case field names → form field names for setError.
 const FIELD_MAP: Record<string, keyof OnboardingFormValues> = {
   first_name: 'firstName',
@@ -70,7 +64,7 @@ export default function OnboardingPage() {
   const isTeacher = role === 'teacher';
 
   const {
-    register, handleSubmit, trigger, control, setError,
+    register, handleSubmit, trigger, control, setError, watch, setValue,
     formState: { errors },
   } = useForm<OnboardingFormValues>({
     resolver: zodResolver(onboardingSchema),
@@ -83,6 +77,15 @@ export default function OnboardingPage() {
       grade: '', major: '', expertise: '',
     },
   });
+
+  // Major applies only to grades '10'..'12'; hidden (and cleared) otherwise.
+  const watchedGrade = watch('grade');
+  const majorRequired = isMajorRequiredGrade(watchedGrade);
+  useEffect(() => {
+    if (!majorRequired) {
+      setValue('major', '', { shouldValidate: false });
+    }
+  }, [majorRequired, setValue]);
 
   const goNext = async () => {
     if (advancingRef.current || submittingRef.current) return;
@@ -116,7 +119,11 @@ export default function OnboardingPage() {
       first_name: values.firstName,
       last_name: values.lastName || '',
     };
-    if (isStudent) { payload.grade = values.grade || ''; payload.major = values.major || ''; }
+    if (isStudent) {
+      payload.grade = values.grade || '';
+      // Major is sent only for grades '10'..'12'; omitted otherwise (≤09).
+      if (isMajorRequiredGrade(values.grade)) payload.major = values.major || '';
+    }
     if (isTeacher) { payload.expertise = values.expertise || ''; }
 
     try {
@@ -232,11 +239,13 @@ export default function OnboardingPage() {
               {isStudent && (
                 <>
                   <Field label="پایه تحصیلی (اختیاری)" error={errors.grade?.message}>
-                    <SelectField control={control} name="grade" placeholder="انتخاب پایه" options={GRADES} />
+                    <SelectField control={control} name="grade" placeholder="انتخاب پایه" options={GRADE_OPTIONS} />
                   </Field>
-                  <Field label="رشته (اختیاری)" error={errors.major?.message}>
-                    <SelectField control={control} name="major" placeholder="انتخاب رشته" options={MAJORS} />
-                  </Field>
+                  {majorRequired && (
+                    <Field label="رشته" error={errors.major?.message}>
+                      <SelectField control={control} name="major" placeholder="انتخاب رشته" options={MAJOR_OPTIONS} />
+                    </Field>
+                  )}
                 </>
               )}
               {isTeacher && (

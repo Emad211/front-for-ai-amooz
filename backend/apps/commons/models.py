@@ -27,6 +27,8 @@ class LLMUsageLog(models.Model):
         # Chatbot
         CHAT_COURSE = 'chat_course', 'Course Chat'
         CHAT_EXAM_PREP = 'chat_exam_prep', 'Exam Prep Chat'
+        # Advisory (risman step 5 — the single ق۱′ LLM exception in advisory)
+        AI_PLAN_DRAFT = 'ai_plan_draft', 'AI Plan Draft'
         CHAT_INTENT = 'chat_intent', 'Chat Intent Classifier'
         CHAT_WIDGET = 'chat_widget', 'Chat Widget'
         CHAT_VISION = 'chat_vision', 'Chat Vision'

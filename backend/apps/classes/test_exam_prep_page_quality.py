@@ -293,13 +293,16 @@ def test_strict_audit_counts_extracted_and_usable_questions_separately():
     audit = build_strict_page_first_audit(result)
     transcript = render_strict_page_first_transcript(result)
 
+    # Both questions have a stem and >=2 options, so both are usable. The
+    # placeholder digit options on `bad` raise only an advisory issue — under the
+    # locked policy that never forces review, so the exam stays publishable.
     assert audit['questionCount'] == 2
-    assert audit['usableQuestionCount'] == 1
-    assert audit['questionsNeedingReview'] == 1
-    assert audit['status'] == 'needs_review'
+    assert audit['usableQuestionCount'] == 2
+    assert audit['questionsNeedingReview'] == 0
+    assert audit['status'] == 'passed'
     assert 'سؤال‌های استخراج‌شده: **2**' in transcript
-    assert 'سؤال‌های آمادهٔ استفاده: **1**' in transcript
-    assert 'قابل انتشار نیست' in transcript
+    assert 'سؤال‌های آمادهٔ استفاده: **2**' in transcript
+    assert 'قابل انتشار نیست' not in transcript
 
 
 def test_better_candidate_prefers_fewer_semantic_failures():

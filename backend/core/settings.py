@@ -63,6 +63,7 @@ INSTALLED_APPS = [
     'apps.material',
     'apps.organizations',
     'apps.waitlist',
+    'apps.advisory.apps.AdvisoryConfig',
 ]
 
 AUTH_USER_MODEL = 'accounts.User'
@@ -289,6 +290,10 @@ REST_FRAMEWORK = {
         # Forced post-login onboarding (set username/password/email/profile).
         # Authenticated + per-user, but capped to blunt scripted abuse.
         'onboarding': os.getenv('THROTTLE_RATE_ONBOARDING', '20/hour'),
+        # An authenticated endpoint that sends an SMS to a phone number the caller
+        # chooses. Without its own scope it would inherit 'user' (300/minute),
+        # i.e. 18000 messages an hour from one advisor account.
+        'advisory_invite': os.getenv('THROTTLE_RATE_ADVISORY_INVITE', '10/hour'),
         # OCR uploads can enqueue paid multimodal work; polling and review edits
         # stay on the normal user rate while source uploads get a tighter cap.
         'answer_ocr_upload': os.getenv('THROTTLE_RATE_ANSWER_OCR_UPLOAD', '12/hour'),
@@ -552,6 +557,11 @@ CELERY_TASK_ROUTES = {
     'apps.classes.tasks.cleanup_stale_sessions': {'queue': 'default'},
     'apps.classes.tasks.cleanup_inactive_answer_ocr_assets': {'queue': 'default'},
     'apps.classes.tasks.recover_queued_answer_ocr_sources': {'queue': 'default'},
+    # Advisory invite delivery. On 'default' with the other SMS tasks: it is a
+    # sub-second DB lookup plus one SMS, and it must NOT queue behind an hour-long
+    # media pipeline — a student waiting for an invite notification would time out
+    # long before 'pipeline' drained.
+    'apps.advisory.tasks.deliver_advisory_invite_task': {'queue': 'default'},
 }
 CELERY_TASK_REJECT_ON_WORKER_LOST = True  # requeue tasks if worker is killed (OOM)
 

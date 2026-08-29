@@ -1,0 +1,59 @@
+# Local override: neutralize the proxy Docker Desktop injects into containers.
+#
+# On this machine Docker Desktop injects the host's stale proxy
+# (http://172.21.176.1:10808 — a VPN/xray client that is OFF) into every
+# container, which hangs all outbound calls (LLM, exchange-rate). Clearing the
+# proxy env makes containers go DIRECT (verified: direct egress works). Harmless
+# on machines that have no proxy. Auto-merged by `docker compose`.
+services:
+  backend:
+    # Same neutralization for BUILD time: apt-get inside `docker compose build`
+    # inherits the daemon's stale proxy and fails (exit 100). Empty predefined
+    # proxy build-args override it so the build goes DIRECT too.
+    build:
+      args:
+        HTTP_PROXY: ""
+        HTTPS_PROXY: ""
+        http_proxy: ""
+        https_proxy: ""
+        NO_PROXY: "*"
+        no_proxy: "*"
+    environment:
+      HTTP_PROXY: ""
+      HTTPS_PROXY: ""
+      http_proxy: ""
+      https_proxy: ""
+      NO_PROXY: "*"
+      no_proxy: "*"
+  celery-worker:
+    build:
+      args:
+        HTTP_PROXY: ""
+        HTTPS_PROXY: ""
+        http_proxy: ""
+        https_proxy: ""
+        NO_PROXY: "*"
+        no_proxy: "*"
+    environment:
+      HTTP_PROXY: ""
+      HTTPS_PROXY: ""
+      http_proxy: ""
+      https_proxy: ""
+      NO_PROXY: "*"
+      no_proxy: "*"
+  front:
+    build:
+      args:
+        HTTP_PROXY: ""
+        HTTPS_PROXY: ""
+        http_proxy: ""
+        https_proxy: ""
+        NO_PROXY: "*"
+        no_proxy: "*"
+    environment:
+      HTTP_PROXY: ""
+      HTTPS_PROXY: ""
+      http_proxy: ""
+      https_proxy: ""
+      NO_PROXY: "*"
+      no_proxy: "*"

@@ -55,6 +55,49 @@ def is_critical_page_issue(code: object) -> bool:
     )
 
 
+# The advisory ``CRITICAL_ISSUE_CODES`` set above still drives ``criticalIssueCount``
+# and per-issue display, but it must NOT gate publishing. Owner policy (`همیشه مجاز`):
+# a question is "واقعاً خراب" — forced into the teacher-review lane — *only* when it
+# has no stem text or no options (or the exam is empty). Everything else (Stage-5
+# rate-limit blocks, image-based options, visual-evidence hints, answer-label
+# authority, LaTeX doubts, …) is a non-blocking advisory warning.
+REVIEW_BLOCKING_ISSUE_CODES = frozenset(
+    {
+        "no_questions",
+        "missing_question_text",
+        "missing_options",
+    }
+)
+
+
+def is_review_blocking_issue(code: object) -> bool:
+    normalized = clean_exam_markdown(code).strip()
+    return normalized in REVIEW_BLOCKING_ISSUE_CODES
+
+
+def review_blocking_question_keys(issues: object) -> set[tuple[str, int]]:
+    """(scopeKey, questionNumber) for every question carrying a blocking issue."""
+
+    keys: set[tuple[str, int]] = set()
+    for issue in issues or []:
+        if not isinstance(issue, dict):
+            continue
+        if not is_review_blocking_issue(issue.get("code")):
+            continue
+        number = int(issue.get("questionNumber") or 0)
+        if number > 0:
+            keys.add((str(issue.get("scopeKey") or DEFAULT_SCOPE_KEY), number))
+    return keys
+
+
+def count_review_blocking_issues(issues: object) -> int:
+    return sum(
+        1
+        for issue in (issues or [])
+        if isinstance(issue, dict) and is_review_blocking_issue(issue.get("code"))
+    )
+
+
 def _question_counts(result: PageAssemblyResult) -> tuple[int, int]:
     answer_keys = 0
     worked_solutions = 0
@@ -118,17 +161,21 @@ def build_strict_page_first_audit(
             }
         )
 
-    critical_question_keys = {
-        (str(issue.get("scopeKey") or DEFAULT_SCOPE_KEY), int(issue.get("questionNumber") or 0))
-        for issue in issues
-        if issue.get("severity") == "critical" and int(issue.get("questionNumber") or 0) > 0
-    }
     critical_count = sum(issue.get("severity") == "critical" for issue in issues)
-    questions_needing_review = len(critical_question_keys)
+    # Publishing is gated only by genuinely-broken questions (no stem / no options)
+    # and unrecoverable physical pages — never by the broad advisory critical set.
+    blocking_keys = review_blocking_question_keys(issues)
+    blocked_by_failed_page = bool(failed_pages)
+    questions_needing_review = len(blocking_keys)
     usable_questions = max(0, result.question_count - questions_needing_review)
     answer_key_count, solution_count = _question_counts(result)
+    passed = (
+        result.question_count > 0
+        and not blocking_keys
+        and not blocked_by_failed_page
+    )
     return {
-        "status": "passed" if result.question_count > 0 and critical_count == 0 else "needs_review",
+        "status": "passed" if passed else "needs_review",
         "questionCount": result.question_count,
         "usableQuestionCount": usable_questions,
         "questionsNeedingReview": questions_needing_review,

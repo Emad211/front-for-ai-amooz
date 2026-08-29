@@ -1,12 +1,16 @@
 from __future__ import annotations
 
 from collections import Counter
+from decimal import Decimal, InvalidOperation
 from hashlib import sha256
 import json
+import os
 from pathlib import Path
 import re
 from threading import Lock
+from types import SimpleNamespace
 from typing import Any, Mapping
+from zipfile import BadZipFile, ZipFile
 
 from django.core.management.base import BaseCommand, CommandError
 from pypdf import PdfReader
@@ -18,11 +22,13 @@ from apps.classes.management.commands.replay_exam_prep_mistral_visual_stage3 imp
 )
 from apps.classes.services import exam_prep_mistral_production as production
 from apps.classes.services import exam_prep_mistral_stage5 as stage5
+from apps.classes.services.exam_prep_mistral_targeted_recovery import collect_crop_headings
 from apps.classes.services.exam_prep_question_verifier import rebuild_assembly_quality
 
 
 RegionTarget = tuple[int, str]
 _TARGET_KINDS = frozenset({"question", "solution"})
+_USAGE_LOG_ENV = "EXAM_PREP_STAGE4_USAGE_DB_LOGGING"
 
 
 def _parse_targets(value: Any) -> frozenset[RegionTarget]:
@@ -77,7 +83,7 @@ def _load_cached_input(*, pdf_path: Path, bundle_path: Path):
         raise CommandError("OCR bundle manifest has no valid page count.") from exc
     if bundle_page_count != page_count:
         raise CommandError(
-            f"PDF/bundle page count mismatch ({page_count} != {bundle_page_count})."
+            f"OCR bundle page count mismatch ({page_count} != {bundle_page_count})."
         )
 
     result = _diagnostic_result(
@@ -86,6 +92,144 @@ def _load_cached_input(*, pdf_path: Path, bundle_path: Path):
         page_count=page_count,
     )
     return pdf_data, result, manifest
+
+
+def _solution_target_numbers(
+    targets: frozenset[RegionTarget] | None,
+) -> list[int]:
+    if targets is None:
+        return []
+    return sorted({number for number, kind in targets if kind == "solution"})
+
+
+def _decimal(value: Any) -> Decimal:
+    try:
+        return max(Decimal("0"), Decimal(str(value or "0")))
+    except (InvalidOperation, TypeError, ValueError):
+        return Decimal("0")
+
+
+def _load_cached_targeted_recovery(
+    *,
+    bundle_path: Path,
+    targets: frozenset[RegionTarget] | None,
+):
+    """Load all safe recoveries from a previously paid targeted OCR bundle.
+
+    Stage-5 ``--targets`` select only which final verifier regions are exercised.
+    Production solution recovery still runs document-wide before that filter is
+    applied. Cache every unambiguous heading present in the bundle, then let the
+    production recovery seam request only its real missing/invalid numbers. This
+    preserves target-only merge semantics while allowing a narrow Stage-5 replay
+    to reuse a bundle that was originally captured for a wider recovery set.
+    """
+
+    target_questions = _solution_target_numbers(targets)
+    if not target_questions:
+        raise CommandError("--targeted-bundle requires at least one solution:N target.")
+    if not bundle_path.is_file() or bundle_path.suffix.lower() != ".zip":
+        raise CommandError("--targeted-bundle must point to an existing ZIP file.")
+
+    try:
+        with ZipFile(bundle_path) as archive:
+            names = set(archive.namelist())
+            required = {"response.raw.json", "request.safe.json", "manifest.json"}
+            if not required.issubset(names):
+                raise CommandError(
+                    "Targeted bundle must contain response.raw.json, request.safe.json, and manifest.json."
+                )
+            root = json.loads(archive.read("response.raw.json").decode("utf-8"))
+            request = json.loads(archive.read("request.safe.json").decode("utf-8"))
+            manifest = json.loads(archive.read("manifest.json").decode("utf-8"))
+    except CommandError:
+        raise
+    except (OSError, BadZipFile, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise CommandError("Targeted recovery bundle is invalid or incomplete.") from exc
+
+    if not isinstance(root, Mapping) or not isinstance(request, Mapping) or not isinstance(manifest, Mapping):
+        raise CommandError("Targeted recovery bundle JSON roots must be objects.")
+    source = request.get("source")
+    source = source if isinstance(source, Mapping) else {}
+    crop_specs = source.get("cropSpecs")
+    if not isinstance(crop_specs, list) or not all(isinstance(item, Mapping) for item in crop_specs):
+        raise CommandError("Targeted recovery bundle has no valid source.cropSpecs.")
+
+    headings = collect_crop_headings(root, crop_specs)
+    grouped: dict[int, list[Mapping[str, Any]]] = {}
+    for heading in headings:
+        try:
+            question = int(heading.get("rawQuestionNumber") or 0)
+        except (TypeError, ValueError):
+            continue
+        if question > 0:
+            grouped.setdefault(question, []).append(heading)
+
+    recovered: dict[int, tuple[str, int, str]] = {}
+    for question, candidates in sorted(grouped.items()):
+        valid_options = sorted(
+            {
+                int(item.get("optionLabel"))
+                for item in candidates
+                if item.get("optionLabelValid") is True
+                and isinstance(item.get("optionLabel"), int)
+                and 1 <= int(item.get("optionLabel")) <= 4
+            }
+        )
+        if len(valid_options) != 1:
+            continue
+        option = valid_options[0]
+        evidence = [
+            item
+            for item in candidates
+            if item.get("optionLabelValid") is True
+            and int(item.get("optionLabel") or 0) == option
+        ]
+        pages = {
+            int(item.get("physicalPageNumber") or 0)
+            for item in evidence
+            if int(item.get("physicalPageNumber") or 0) > 0
+        }
+        columns = {
+            str(item.get("column") or "").strip().lower()
+            for item in evidence
+            if str(item.get("column") or "").strip().lower() in {"left", "right"}
+        }
+        if len(pages) == 1 and len(columns) == 1:
+            recovered[question] = (
+                str(option),
+                next(iter(pages)),
+                next(iter(columns)),
+            )
+
+    missing_selected = sorted(set(target_questions) - set(recovered))
+    if missing_selected:
+        raise CommandError(
+            "Targeted recovery bundle does not resolve every requested Stage-5 solution target "
+            f"(unresolved={missing_selected})."
+        )
+
+    normalized_specs = tuple(
+        (
+            int(item.get("physicalPageNumber") or 0),
+            str(item.get("column") or "").strip().lower(),
+        )
+        for item in crop_specs
+    )
+    if any(page < 1 or side not in {"left", "right"} for page, side in normalized_specs):
+        raise CommandError("Targeted recovery bundle contains invalid crop mapping metadata.")
+
+    estimated = manifest.get("estimatedCost")
+    estimated = estimated if isinstance(estimated, Mapping) else {}
+    cached_result = SimpleNamespace(
+        pages=tuple(
+            dict(page) for page in (root.get("pages") or []) if isinstance(page, Mapping)
+        ),
+        crop_specs=normalized_specs,
+        estimated_cost_unit=_decimal(estimated.get("unit")),
+        provider_call_count=max(0, int(manifest.get("providerRequestCount") or 0)),
+        retry_count=max(0, int(manifest.get("retryCount") or 0)),
+    )
+    return recovered, cached_result
 
 
 def _question_number(question: Mapping[str, Any]) -> int:
@@ -123,6 +267,33 @@ def _subset_questions(result, *, numbers: frozenset[int]):
     return rebuild_assembly_quality(subset)
 
 
+def _subset_layout(layout: Mapping[str, Any], *, numbers: frozenset[int]) -> dict[str, Any]:
+    """Limit diagnostic Stage-3 work to exact requested question numbers."""
+
+    output = dict(layout)
+    pages: list[dict[str, Any]] = []
+    for raw_page in layout.get("pages") or []:
+        if not isinstance(raw_page, Mapping):
+            continue
+        regions: list[dict[str, Any]] = []
+        for raw_region in raw_page.get("regions") or []:
+            if not isinstance(raw_region, Mapping):
+                continue
+            try:
+                number = int(raw_region.get("questionNumber") or 0)
+            except (TypeError, ValueError):
+                number = 0
+            if number in numbers:
+                regions.append(dict(raw_region))
+        if not regions:
+            continue
+        page = dict(raw_page)
+        page["regions"] = regions
+        pages.append(page)
+    output["pages"] = pages
+    return output
+
+
 def _run_cached_pipeline(
     *,
     pdf_data: bytes,
@@ -131,31 +302,59 @@ def _run_cached_pipeline(
     targets: frozenset[RegionTarget] | None,
     visual_store: _DiagnosticStore,
     evidence_sink: list[dict[str, Any]] | None = None,
+    cached_targeted_recovery: tuple[dict[int, tuple[str, int, str]], Any | None] | None = None,
 ):
     """Run the production facade with narrowly scoped, fully restored replay seams."""
 
     original_fetch = production.fetch_ocr4_document
     original_targeted_recovery = production._targeted_recovery
+    original_target_crop_specs = production._target_crop_specs
     original_reconcile = production.reconcile_mistral_source_visuals
     original_score = production.score_region_risks
     original_finalize = production.finalize_stage5_regions
     original_transcribe = stage5._transcribe
+    original_usage_logging = os.environ.get(_USAGE_LOG_ENV)
     evidence_lock = Lock()
     target_numbers = (
         frozenset(number for number, _kind in targets)
         if targets is not None
         else None
     )
+    cached_recovered, cached_targeted_result = cached_targeted_recovery or ({}, None)
 
     def cached_fetch(*args, **kwargs):
         return cached_result
 
-    def no_targeted_ocr(*args, **kwargs):
-        return {}, None
+    def cached_target_crop_specs(accepted, target_questions):
+        specs = getattr(cached_targeted_result, "crop_specs", ()) if cached_targeted_result is not None else ()
+        return list(specs) if specs else original_target_crop_specs(accepted, target_questions)
+
+    def cached_targeted_ocr(*args, **kwargs):
+        requested = sorted(
+            set(int(value) for value in (kwargs.get("missing") or []))
+            | set(int(value) for value in (kwargs.get("invalid") or []))
+        )
+        if not requested:
+            return {}, None
+        if cached_targeted_result is None:
+            return {}, None
+        missing_from_bundle = sorted(set(requested) - set(cached_recovered))
+        if missing_from_bundle:
+            raise RuntimeError(
+                "Cached targeted recovery does not cover production-requested solution targets: "
+                f"{missing_from_bundle}"
+            )
+        return (
+            {number: cached_recovered[number] for number in requested},
+            cached_targeted_result,
+        )
 
     def local_reconcile(result, *args, **kwargs):
         if target_numbers is not None:
             result = _subset_questions(result, numbers=target_numbers)
+            layout = kwargs.get("layout")
+            if isinstance(layout, Mapping):
+                kwargs["layout"] = _subset_layout(layout, numbers=target_numbers)
         kwargs.pop("storage_namespace", None)
         kwargs.pop("should_cancel", None)
         kwargs["store"] = visual_store
@@ -211,11 +410,15 @@ def _run_cached_pipeline(
         return value
 
     production.fetch_ocr4_document = cached_fetch
-    production._targeted_recovery = no_targeted_ocr
+    production._targeted_recovery = cached_targeted_ocr
+    production._target_crop_specs = cached_target_crop_specs
     production.reconcile_mistral_source_visuals = local_reconcile
     production.score_region_risks = exact_target_score
     production.finalize_stage5_regions = exact_target_finalize
     stage5._transcribe = capture_transcribe
+    # Replay already persists token counts and provider evidence locally. Do not
+    # make diagnostic live calls depend on the application's PostgreSQL logger.
+    os.environ[_USAGE_LOG_ENV] = "0"
     try:
         return production.run_exam_prep_mistral_pipeline(
             data=pdf_data,
@@ -224,10 +427,15 @@ def _run_cached_pipeline(
     finally:
         production.fetch_ocr4_document = original_fetch
         production._targeted_recovery = original_targeted_recovery
+        production._target_crop_specs = original_target_crop_specs
         production.reconcile_mistral_source_visuals = original_reconcile
         production.score_region_risks = original_score
         production.finalize_stage5_regions = original_finalize
         stage5._transcribe = original_transcribe
+        if original_usage_logging is None:
+            os.environ.pop(_USAGE_LOG_ENV, None)
+        else:
+            os.environ[_USAGE_LOG_ENV] = original_usage_logging
 
 
 def _safe_int(value: Any) -> int:
@@ -243,6 +451,7 @@ def _build_manifest(
     cached_result,
     bundle_name: str,
     targets: frozenset[RegionTarget] | None,
+    targeted_bundle_name: str | None = None,
 ) -> dict[str, Any]:
     audit = result.extraction_audit if isinstance(result.extraction_audit, Mapping) else {}
     risk = audit.get("riskEngine") if isinstance(audit.get("riskEngine"), Mapping) else {}
@@ -260,13 +469,14 @@ def _build_manifest(
         else []
     )
     return {
-        "schemaVersion": 2,
+        "schemaVersion": 3,
         "privateDiagnosticBundle": True,
         "privateTransmissionExplicitlyAllowed": True,
         "productionPipelineChanged": False,
         "productionEntrypoint": production.PRODUCTION_ENTRYPOINT,
         "cachedOcrOnly": True,
         "inputBundle": bundle_name,
+        "cachedTargetedRecoveryBundle": targeted_bundle_name,
         "sourcePdfSha256": cached_result.source_sha256,
         "pageCount": cached_result.page_count,
         "targetStats": {
@@ -277,6 +487,7 @@ def _build_manifest(
         },
         "callStats": {
             "ocrProviderCallsThisReplay": 0,
+            "targetedOcrProviderCallsThisReplay": 0,
             "primaryCalls": primary_calls,
             "mainCalls": main_calls,
             "stage5Calls": primary_calls + main_calls,
@@ -292,8 +503,12 @@ def _build_manifest(
             "statusCounts": dict(sorted(statuses.items())),
         },
         "costStats": {
-            "replayEstimatedCostUsd": str(
+            "replayChargedCostUsd": str(audit.get("stage5ChargedCostUsd") or "0"),
+            "replaySuccessfulUsageCostUsd": str(
                 audit.get("stage5SuccessfulCallEstimatedCostUsd") or "0"
+            ),
+            "replayCostEstimateComplete": bool(
+                audit.get("stage5CostEstimateComplete")
             ),
             "projectedProductionTotalEstimatedCostUsd": str(
                 audit.get("totalEstimatedCostUsd") or "0"
@@ -321,6 +536,7 @@ class Command(BaseCommand):
     def add_arguments(self, parser):
         parser.add_argument("--pdf", required=True)
         parser.add_argument("--bundle", required=True)
+        parser.add_argument("--targeted-bundle")
         parser.add_argument("--output-dir", required=True)
         parser.add_argument("--title", default="Stage 5 production replay")
         selection = parser.add_mutually_exclusive_group(required=True)
@@ -339,6 +555,13 @@ class Command(BaseCommand):
         )
         pdf_path = Path(options["pdf"]).expanduser().resolve()
         bundle_path = Path(options["bundle"]).expanduser().resolve()
+        targeted_bundle_path = (
+            Path(options["targeted_bundle"]).expanduser().resolve()
+            if options.get("targeted_bundle")
+            else None
+        )
+        if targeted_bundle_path is not None and targets is None:
+            raise CommandError("--targeted-bundle is supported only with --targets.")
         output_dir = Path(options["output_dir"]).expanduser().resolve()
         if output_dir.exists():
             if not output_dir.is_dir() or any(output_dir.iterdir()):
@@ -347,6 +570,14 @@ class Command(BaseCommand):
         pdf_data, cached_result, _bundle_manifest = _load_cached_input(
             pdf_path=pdf_path,
             bundle_path=bundle_path,
+        )
+        cached_targeted_recovery = (
+            _load_cached_targeted_recovery(
+                bundle_path=targeted_bundle_path,
+                targets=targets,
+            )
+            if targeted_bundle_path is not None
+            else None
         )
         output_dir.mkdir(parents=True, exist_ok=True)
         visual_store = _DiagnosticStore(output_dir / "stage3-visuals")
@@ -358,6 +589,7 @@ class Command(BaseCommand):
             targets=targets,
             visual_store=visual_store,
             evidence_sink=provider_evidence,
+            cached_targeted_recovery=cached_targeted_recovery,
         )
 
         manifest = _build_manifest(
@@ -365,6 +597,9 @@ class Command(BaseCommand):
             cached_result=cached_result,
             bundle_name=bundle_path.name,
             targets=targets,
+            targeted_bundle_name=(
+                targeted_bundle_path.name if targeted_bundle_path is not None else None
+            ),
         )
         (output_dir / "projection.private.json").write_text(
             json.dumps(result.projection, ensure_ascii=False, indent=2),
@@ -403,7 +638,8 @@ class Command(BaseCommand):
                 f"regions={manifest['targetStats']['processedRegionCount']}, "
                 f"calls={call_stats['stage5Calls']}, "
                 f"blocked={block_stats['blockedRegions']}, "
-                f"costUsd={cost_stats['replayEstimatedCostUsd']}"
+                f"chargedCostUsd={cost_stats['replayChargedCostUsd']}, "
+                f"costEstimateComplete={cost_stats['replayCostEstimateComplete']}"
             )
         )
 
@@ -413,6 +649,7 @@ __all__ = [
     "_DiagnosticStore",
     "_build_manifest",
     "_load_cached_input",
+    "_load_cached_targeted_recovery",
     "_parse_targets",
     "_run_cached_pipeline",
 ]

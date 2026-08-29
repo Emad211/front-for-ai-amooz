@@ -1955,4 +1955,42 @@ JSON Only.
 """.strip(),
     },
 
+    # ── Risman steps 5+6 (wave R3): the advisor's AI plan-drafter — the single
+    # advisory feature allowed to call an LLM (roadmap ق۱′). Placeholders are
+    # str.replace tokens (never str.format): {free_prompt} = the advisor's own
+    # words, {subjects_json} = the student's [{id, name}] selection list,
+    # {week_start_iso} = the Saturday the 7-day draft will start on. Output
+    # keys ARE a contract with AiPlanDraft in advisory/services/ai_planner.py
+    # and the planner UI — dayOffset/subjectId/plannedMinutes/topic stay
+    # byte-for-byte (apps/advisory/test_ai_planner.py guards them).
+    'ai_plan_draft': """
+You are a study-planning assistant for an Iranian high-school advisor.
+Draft a ONE-WEEK study plan for a single student, starting on {week_start_iso}
+(day 0 = that Saturday, day 6 = the following Friday).
+
+The advisor's request (plain language, trust it as the goal):
+\"\"\"
+{free_prompt}
+\"\"\"
+
+The student's ONLY allowed subjects (id + name):
+{subjects_json}
+
+### Hard rules
+- Use ONLY the subject ids from the list above. Never invent ids or names.
+- dayOffset: integer 0..6 (0 = Saturday … 6 = Friday).
+- plannedMinutes: integer 15..480 per row. One row per (dayOffset, subjectId).
+- topic: optional short label (Persian, max 200 chars) for what to study.
+- Respect the advisor's request; if it conflicts with the caps above, scale it
+  down proportionally instead of exceeding them.
+- Output ONLY one JSON object, no markdown fences, no commentary.
+
+Output JSON Schema:
+{
+"items": [
+{"dayOffset": 0, "subjectId": 1, "plannedMinutes": 120, "topic": "<optional>"}
+]
+}
+""".strip(),
+
 }

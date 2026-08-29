@@ -103,11 +103,15 @@ def test_review_only_visual_remains_critical_even_if_question_issue_list_was_rem
         if issue["code"] == "visual_crop_clipped"
     ]
     assert matching
+    # Owner policy: the clipped-crop blocker is re-derived from immutable metadata and
+    # surfaced as a *critical advisory*, but it does not force the review lane (forced
+    # review = only no-stem / no-options). Visual publish-safety is enforced separately
+    # at the publish gate (anti-forgery artifact check), not via the audit status.
     assert matching[0]["severity"] == "critical"
-    assert audit["status"] == "needs_review"
+    assert audit["status"] == "passed"
 
 
-def test_whole_page_fallback_is_never_publish_safe_even_if_metadata_is_tampered():
+def test_whole_page_fallback_surfaces_critical_advisory_without_forcing_review():
     question = _question(
         [
             _asset(
@@ -120,8 +124,17 @@ def test_whole_page_fallback_is_never_publish_safe_even_if_metadata_is_tampered(
     )
     codes = visual_metadata_issue_codes(question)
     assert "visual_precise_crop_unresolved" in codes
+    # Tampered whole-page fallback is still detected from metadata and flagged as a
+    # critical advisory, but under owner policy it is not a review blocker (the question
+    # has a stem and four options). Publish-time anti-forgery lives in the publish gate.
     audit = audit_page_first_projection(_projection(question))
-    assert audit["status"] == "needs_review"
+    matching = [
+        issue
+        for issue in audit["issues"]
+        if issue["code"] == "visual_precise_crop_unresolved"
+    ]
+    assert matching and matching[0]["severity"] == "critical"
+    assert audit["status"] == "passed"
 
 
 def test_missing_stage3_sanity_metadata_fails_closed():
@@ -133,8 +146,17 @@ def test_deleting_required_visual_is_detected_from_source_contract():
     original = [_asset()]
     question = _question([], issues=[], contract=_contract(original))
     assert "visual_precise_crop_unresolved" in visual_metadata_issue_codes(question)
+    # The deletion is detected from the immutable source contract and surfaced as a
+    # critical advisory; it is not a forced-review blocker under owner policy (the
+    # question still carries a stem and four options).
     audit = audit_page_first_projection(_projection(question))
-    assert audit["status"] == "needs_review"
+    matching = [
+        issue
+        for issue in audit["issues"]
+        if issue["code"] == "visual_precise_crop_unresolved"
+    ]
+    assert matching and matching[0]["severity"] == "critical"
+    assert audit["status"] == "passed"
 
 
 def test_stage3_asset_without_source_contract_fails_closed():

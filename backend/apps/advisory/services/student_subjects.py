@@ -1,0 +1,156 @@
+"""The write door for a student's subject selection (S4).
+
+``StudentSubject`` is tenancy-bearing, so — exactly like ``invites.py`` for the
+engagement itself — every mutation of it goes through this one module, never
+through a view. The split from ``scope.py`` mirrors the invite split: ``scope``
+reads across tenancy, this constructs it.
+
+There is one public function, ``set_engagement_subjects``. It is a **set-replace**,
+not an append: the caller sends the complete list of subjects a student should
+have, and the store is made to match it. "Made to match" means toggling
+``is_active`` — never deleting a row — so a subject removed today and re-added
+next week is the same row with its history intact, and a plan (step 8) that
+pointed at it never dangles.
+
+Authorization lives one layer up: the view resolves the engagement through
+``scope.advisor_engagement`` (404 if foreign) before calling in here, and the
+subject ids are validated against ``scope.curriculum_subjects`` — the national
+curriculum the *student's* own (grade, major) derives — below. This module
+assumes the engagement is already the advisor's; it does not re-derive ownership.
+"""
+
+from __future__ import annotations
+
+from django.db import transaction
+from django.db.models import QuerySet
+from django.utils import timezone
+
+from ..models import SUBJECT_SOURCE_CHOICES, StudentSubject
+from . import scope
+
+# A defensive ceiling on one write. The picker offers a curated catalog, not free
+# text, so a real request is a handful of subjects; anything past this is a script.
+# ``EngagementSubjectsWriteSerializer`` imports this constant and enforces it, so
+# the value lives next to the store it protects and there is exactly one of it.
+MAX_SUBJECTS_PER_STUDENT = 60
+
+_VALID_SOURCE_CODES = {code for code, _label in SUBJECT_SOURCE_CHOICES}
+
+
+class SubjectSelectionError(Exception):
+    """Base class so a view can catch the whole family in one clause."""
+
+
+class SubjectNotAssignable(SubjectSelectionError):
+    """400 — the body named a subject outside this student's derived curriculum.
+
+    "Not in the curriculum" folds together the cases the caller must not be able to
+    tell apart: the id does not exist, it is deactivated, it belongs to another
+    grade or major than the student's own, or it is an organization-private subject
+    of an org the student does not belong to. All are "not derivable for this
+    student", and distinguishing them would leak both other majors' catalogs and
+    other organizations' private ones.
+    """
+
+    def __init__(self, subject_ids):
+        self.subject_ids = list(subject_ids)
+        super().__init__(
+            'این درس در برنامه‌ی درسیِ این دانش‌آموز نیست.'
+        )
+
+
+class InvalidSource(SubjectSelectionError):
+    """400 — a ``sources`` entry violates the step-3 contract.
+
+    Two shapes fold into one family so the view needs a single catch clause:
+    a *code* outside the five allowed ones answers with the generic message,
+    while a key naming a subject id absent from the same request's ``subjectIds``
+    answers with its own — the advisor can fix the second by re-reading their
+    payload, which the generic wording would not point at.
+    """
+
+    def __init__(self, message: str = 'منبع انتخابی معتبر نیست.'):
+        super().__init__(message)
+
+
+def set_engagement_subjects(
+    engagement, subject_ids, *, advisor, sources=None,
+) -> QuerySet[StudentSubject]:
+    """Make the engagement's active subject set equal ``subject_ids`` exactly.
+
+    ``subject_ids`` is de-duplicated first; assignability is checked **before** any
+    write, so a request naming one foreign subject changes nothing at all (it
+    raises ``SubjectNotAssignable`` and the transaction never opens). Then, in one
+    transaction:
+
+    * every wanted subject is activated — ``get_or_create`` reuses the existing row
+      for a previously-removed subject and flips it back on, so re-adding is not a
+      new row;
+    * every currently-active row **not** in the wanted set is deactivated.
+
+    An empty ``subject_ids`` is legal and means "clear the selection": nothing is
+    activated and all active rows are switched off. Returns the resulting active
+    set (through ``scope.student_subjects`` — the same shape the read path uses).
+
+    ``advisor`` is retained on the signature (the view still passes ``request.user``)
+    for call-site stability and to document who is acting, but assignability is now
+    a fact about the *student's* curriculum, not the advisor's org catalog — so the
+    validation set comes from ``scope.curriculum_subjects(engagement.student)``.
+
+    ``sources`` (restart step 3) optionally maps ``{subject_id: source_code}`` for
+    ids in this same request. It is validated before any write alongside
+    assignability, so one bad entry changes nothing at all. An absent map — or an
+    absent key for an id that IS in ``subject_ids`` — leaves that row's stored
+    source untouched (legacy-payload safety), and deactivated rows never have
+    theirs rewritten.
+    """
+    wanted = list(dict.fromkeys(int(s) for s in subject_ids))
+
+    if wanted:
+        assignable = set(
+            scope.curriculum_subjects(engagement.student)
+            .filter(pk__in=wanted)
+            .values_list('pk', flat=True)
+        )
+        foreign = [sid for sid in wanted if sid not in assignable]
+        if foreign:
+            raise SubjectNotAssignable(foreign)
+
+    if sources is not None:
+        for sid, code in sources.items():
+            if int(sid) not in wanted:
+                raise InvalidSource('منبع برای درسی خارج از فهرست ارسال شده است.')
+            if code not in _VALID_SOURCE_CODES:
+                raise InvalidSource()
+
+    with transaction.atomic():
+        for sid in wanted:
+            row_source = None if sources is None else sources.get(sid)
+            defaults = {'is_active': True}
+            if row_source is not None:
+                defaults['source'] = row_source
+            row, created = StudentSubject.objects.get_or_create(
+                engagement=engagement,
+                subject_id=sid,
+                defaults=defaults,
+            )
+            dirty = []
+            if not created and not row.is_active:
+                row.is_active = True
+                dirty.append('is_active')
+            # Only a key present in THIS request rewrites the column; absence
+            # means «untouched» so a legacy PUT cannot wipe what it never knew.
+            if row_source is not None and row.source != row_source:
+                row.source = row_source
+                dirty.append('source')
+            if dirty:
+                dirty.append('updated_at')
+                row.save(update_fields=dirty)
+
+        (
+            StudentSubject.objects.filter(engagement=engagement, is_active=True)
+            .exclude(subject_id__in=wanted)
+            .update(is_active=False, updated_at=timezone.now())
+        )
+
+    return scope.student_subjects(engagement)

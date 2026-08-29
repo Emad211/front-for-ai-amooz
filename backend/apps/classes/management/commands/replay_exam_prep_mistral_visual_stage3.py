@@ -3,6 +3,7 @@ from __future__ import annotations
 from decimal import Decimal
 import hashlib
 import json
+import os
 from pathlib import Path
 import shutil
 import zipfile
@@ -25,22 +26,49 @@ from apps.classes.services.exam_prep_page_source import attach_source_regions
 from apps.classes.services.exam_prep_question_verifier import rebuild_assembly_quality
 
 
+def _long_path_root(root: Path) -> Path:
+    """Return a root that survives the legacy Windows 260-character path cap.
+
+    Compacting the object name (below) bounds our own contribution to ~78
+    characters, but the caller's ``--out`` directory is outside our control and
+    can already be deep enough that any child overflows. On Windows the ``\\\\?\\``
+    prefix opts the path out of MAX_PATH; elsewhere there is nothing to do. The
+    prefix stays internal — ``self.root`` is only ever joined against or used as
+    the base of ``relative_to``, never printed.
+    """
+    if os.name != 'nt':
+        return root
+    # \\?\ paths are passed to the OS verbatim, so they must already be
+    # normalised: abspath collapses '..' without resolving symlinks.
+    absolute = os.path.abspath(root)
+    if absolute.startswith('\\\\?\\'):
+        return Path(absolute)
+    return Path('\\\\?\\' + absolute)
+
+
 class _DiagnosticStore:
-    """Mirror private storage names into a portable local diagnostic directory."""
+    """Persist logical private-storage keys in a portable local diagnostic tree."""
 
     def __init__(self, root: Path) -> None:
-        self.root = root
+        self.root = _long_path_root(root)
         self.files: dict[str, str] = {}
 
     def save(self, name: str, payload: bytes) -> str:
         # Storage keys are POSIX identities even when the replay runs on Windows.
+        # Do not mirror their full hierarchy locally: the replay output directory
+        # itself can already be long enough to exceed legacy Windows path limits.
         parts = [part for part in str(name).replace("\\", "/").split("/") if part]
         if not parts or any(part in {".", ".."} for part in parts):
             raise ValueError("Unsafe diagnostic visual storage name.")
         safe = Path(*parts)
         if safe.is_absolute():
             raise ValueError("Unsafe diagnostic visual storage name.")
-        target = self.root / safe
+        logical_name = "/".join(parts)
+        suffix = Path(parts[-1]).suffix.lower()
+        if not suffix or len(suffix) > 10:
+            suffix = ".bin"
+        digest = hashlib.sha256(logical_name.encode("utf-8")).hexdigest()
+        target = self.root / "objects" / digest[:2] / f"{digest}{suffix}"
         target.parent.mkdir(parents=True, exist_ok=True)
         if not target.exists():
             target.write_bytes(payload)

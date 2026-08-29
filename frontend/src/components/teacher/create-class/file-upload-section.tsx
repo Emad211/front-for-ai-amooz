@@ -26,13 +26,7 @@ export function FileUploadSection({
   onFilesSelected,
   children,
 }: FileUploadSectionProps) {
-  const isExamPreparation = title.includes('حل تست') || title.includes('آزمون');
-  const visibleTitle = isExamPreparation ? 'بارگذاری فایل آزمون' : title;
-  const visibleDescription = isExamPreparation
-    ? 'فایل PDF سؤال‌ها، پاسخ‌نامه یا راه‌حل را بارگذاری کنید.'
-    : description;
-  const effectiveAccept = isExamPreparation ? 'application/pdf,.pdf' : accept;
-  const effectiveMultiple = isExamPreparation ? false : (multiple ?? true);
+  const effectiveMultiple = multiple ?? true;
 
   return (
     <Card className="border-border/40 rounded-2xl overflow-hidden bg-card/70 backdrop-blur">
@@ -46,8 +40,8 @@ export function FileUploadSection({
               <Upload className="h-5 w-5 text-primary" />
             </div>
             <div>
-              <CardTitle className="text-lg">{visibleTitle}</CardTitle>
-              {visibleDescription && <p className="text-xs text-muted-foreground mt-0.5">{visibleDescription}</p>}
+              <CardTitle className="text-lg">{title}</CardTitle>
+              {description && <p className="text-xs text-muted-foreground mt-0.5">{description}</p>}
             </div>
           </div>
           <ChevronDown className={cn(
@@ -70,14 +64,14 @@ export function FileUploadSection({
                 فایل را بکشید و رها کنید یا <span className="text-primary font-medium">کلیک کنید</span>
               </p>
               <p className="text-[10px] sm:text-xs text-muted-foreground">
-                {isExamPreparation ? 'PDF' : 'صوت / ویدیو / تصویر / PDF'}
+                صوت / ویدیو / تصویر / PDF
               </p>
             </div>
             <input
               id="dropzone-lesson"
               type="file"
               className="hidden"
-              accept={effectiveAccept}
+              accept={accept}
               multiple={effectiveMultiple}
               onChange={(e) => onFilesSelected?.(e.target.files)}
             />

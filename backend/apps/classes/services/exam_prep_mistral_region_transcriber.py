@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import os
-from typing import Any, Literal
+from typing import Any, Literal, Mapping
 
 from apps.chatbot.services.llm_client import (
     _get_gapgpt_client,
@@ -29,6 +29,65 @@ from apps.commons.token_tracker import LLMTimer, track_llm_error, track_llm_usag
 
 DEFAULT_PRIMARY_MODEL = "gemini-3-flash-preview"
 DEFAULT_SECONDARY_MODEL = "gpt-5.4-mini"
+_PROVIDER_KEY_ALIASES = {
+    "transcriptionMarkdown": "transcription_markdown",
+    "sourceVisualRequired": "source_visual_required",
+    "visualType": "visual_type",
+    "transcriptionUncertain": "transcription_uncertain",
+    "uncertainFragments": "uncertain_fragments",
+}
+_ALLOWED_VISUAL_TYPES = {
+    "none",
+    "diagram",
+    "graph",
+    "chemical_structure",
+    "table",
+    "spatial_layout",
+    "other",
+}
+
+
+class RegionTranscriptionEmptyContent(ValueError):
+    """Provider returned HTTP-successful response without usable content."""
+
+
+class RegionTranscriptionNonconformingContent(ValueError):
+    """Provider content was present but did not satisfy the JSON contract."""
+
+
+class RegionTranscriptionJsonParseFailure(RegionTranscriptionNonconformingContent):
+    """Provider returned content from which no JSON object could be recovered."""
+
+
+class RegionTranscriptionSchemaFailure(RegionTranscriptionNonconformingContent):
+    """Provider returned JSON whose values did not satisfy the safe contract."""
+
+
+def _normalize_provider_contract(value: Any) -> dict[str, Any]:
+    """Normalize representation-only provider drift without changing source content."""
+
+    if not isinstance(value, Mapping):
+        raise RegionTranscriptionSchemaFailure(
+            "Stage-4 provider JSON root must be an object."
+        )
+    payload = dict(value)
+    for alias, canonical in _PROVIDER_KEY_ALIASES.items():
+        if canonical not in payload and alias in payload:
+            payload[canonical] = payload[alias]
+
+    visual_type = payload.get("visual_type")
+    if isinstance(visual_type, str):
+        normalized_visual = visual_type.strip().lower().replace("-", "_").replace(" ", "_")
+        if normalized_visual in _ALLOWED_VISUAL_TYPES:
+            payload["visual_type"] = normalized_visual
+
+    fragments = payload.get("uncertain_fragments")
+    if fragments is None:
+        payload["uncertain_fragments"] = []
+    elif isinstance(fragments, str):
+        fragment = fragments.strip()
+        payload["uncertain_fragments"] = [fragment] if fragment else []
+    return payload
 
 
 def primary_model() -> str:
@@ -57,6 +116,25 @@ def _max_tokens() -> int:
     except (TypeError, ValueError):
         value = 6000
     return max(1000, min(12000, value))
+
+
+def _max_retries() -> int:
+    """Bounded SDK retries for the single source-only region request.
+
+    Stage-5 fans out one small request per numbered question + solution region
+    at ``EXAM_PREP_STAGE5_MAX_CONCURRENCY`` (default 4). On a large booklet that
+    burst trips AvalAI's rate limiter; with ``max_retries=0`` every 429 became an
+    immediate ``blocked_main_failed`` and stamped the region critical. The OpenAI
+    client already does exponential backoff + jitter on 429/5xx, so a small retry
+    budget absorbs the burst without a lower concurrency cap. There is still no
+    repair pass — each attempt is the same source-only request.
+    """
+
+    try:
+        value = int(os.getenv("EXAM_PREP_STAGE4_MAX_RETRIES", "3"))
+    except (TypeError, ValueError):
+        value = 3
+    return max(0, min(6, value))
 
 
 def _usage_db_logging_enabled() -> bool:
@@ -93,6 +171,8 @@ def _system_prompt() -> str:
         "even when another numbered region occupies a substantial part of the image. If the requested "
         "printed number is not visibly present while different numbered targets are present, do NOT "
         "substitute one of them: set transcription_uncertain=true and do not invent the missing target. "
+        "The printed target heading/number is evidence, not decoration. If that heading is visible in "
+        "the image, preserve it verbatim as the FIRST line of transcription_markdown; never omit it. "
         "Transcribe only what is visibly present; do not solve, explain, normalize from subject "
         "knowledge, or guess unreadable glyphs. Preserve Persian text, digits, decimal marks, "
         "signs, units, option labels, Latin letters, and equations. Use Markdown/LaTeX for linear "
@@ -112,6 +192,8 @@ def _user_contract(*, kind: str, question_number: int, page_number: int) -> str:
         '"visual_type":"none|diagram|graph|chemical_structure|table|spatial_layout|other",'
         '"transcription_uncertain":false,'
         '"uncertain_fragments":[]}. '
+        "If the requested printed heading is visible, transcription_markdown MUST begin with that "
+        "visible heading before any author name, prose, equation, or explanation. "
         "Do not add confidence scores. Do not infer missing content. "
         "Do not wrap the JSON in Markdown fences or prose. "
         f"TARGET kind={kind} question_number={question_number} physical_page={page_number}."
@@ -171,9 +253,8 @@ def transcribe_source_region(
 ) -> RegionTranscriptionResult:
     """Make exactly one source-only provider call and validate its JSON.
 
-    A provider response that is HTTP-successful but not valid JSON is a normal
-    bounded verification failure. It is deliberately not repaired with another
-    paid call; the caller marks the region unresolved and continues.
+    HTTP-successful provider content is parsed once. Representation-only schema
+    drift is normalized locally; the caller owns any bounded paid retry policy.
     """
 
     if not image:
@@ -222,6 +303,7 @@ def transcribe_source_region(
         create_kwargs["extra_body"] = _minimal_extra_body()
 
     timer = LLMTimer().start()
+    max_retries = _max_retries()
     context = {
         "stage": "exam_prep_stage4_region_transcription",
         "kind": kind,
@@ -229,23 +311,34 @@ def transcribe_source_region(
         "page_number": page_number,
         "image_count": 1,
         "candidate_mistral_shown": False,
-        "provider_attempts": 1,
+        "provider_attempts": max_retries + 1,
         "thinking_minimal": bool(thinking_minimal),
     }
     try:
-        # Force SDK retries off for this call even when a broader environment
-        # enables them elsewhere in the application.
-        client = _get_gapgpt_client().with_options(max_retries=0)
+        client = _get_gapgpt_client().with_options(max_retries=max_retries)
         response = client.chat.completions.create(**create_kwargs)
         choice = response.choices[0]
         content = str(choice.message.content or "").strip()
         if not content:
-            raise ValueError("Stage-4 provider returned empty content.")
+            raise RegionTranscriptionEmptyContent(
+                "Stage-4 provider returned empty content."
+            )
         try:
             parsed_obj = extract_json_object(content)
-            parsed = DirectTranscription.model_validate(parsed_obj)
         except Exception as exc:
-            raise ValueError("Stage-4 provider returned non-conforming JSON content.") from exc
+            raise RegionTranscriptionJsonParseFailure(
+                "Stage-4 provider returned content without recoverable JSON."
+            ) from exc
+        try:
+            parsed = DirectTranscription.model_validate(
+                _normalize_provider_contract(parsed_obj)
+            )
+        except RegionTranscriptionSchemaFailure:
+            raise
+        except Exception as exc:
+            raise RegionTranscriptionSchemaFailure(
+                "Stage-4 provider JSON did not satisfy the transcription schema."
+            ) from exc
         normalized = normalize_direct_transcription(parsed)
         if _usage_db_logging_enabled():
             track_llm_usage(
@@ -287,7 +380,11 @@ def transcribe_source_region(
 __all__ = [
     "DEFAULT_PRIMARY_MODEL",
     "DEFAULT_SECONDARY_MODEL",
+    "RegionTranscriptionEmptyContent",
+    "RegionTranscriptionJsonParseFailure",
+    "RegionTranscriptionNonconformingContent",
     "RegionTranscriptionResult",
+    "RegionTranscriptionSchemaFailure",
     "primary_model",
     "secondary_model",
     "transcribe_source_region",

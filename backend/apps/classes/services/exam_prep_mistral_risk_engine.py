@@ -88,10 +88,19 @@ def _number(value: Any) -> int:
 
 
 def _bbox(value: Any) -> tuple[float, float, float, float] | None:
-    if not isinstance(value, (list, tuple)) or len(value) != 4:
+    if isinstance(value, Mapping):
+        values = (
+            value.get("x0", value.get("left")),
+            value.get("y0", value.get("top")),
+            value.get("x1", value.get("right")),
+            value.get("y1", value.get("bottom")),
+        )
+    elif isinstance(value, (list, tuple)) and len(value) == 4:
+        values = value
+    else:
         return None
     try:
-        x0, y0, x1, y1 = (float(item) for item in value)
+        x0, y0, x1, y1 = (float(item) for item in values)
     except (TypeError, ValueError):
         return None
     if not (0 <= x0 < x1 <= 1 and 0 <= y0 < y1 <= 1):
