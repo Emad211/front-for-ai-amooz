@@ -260,3 +260,9 @@ urlpatterns += reports_urlpatterns
 from .views_org import urlpatterns as org_urlpatterns  # noqa: E402
 
 urlpatterns += org_urlpatterns
+
+# Risman steps 5+6 (AI planner): same late-import wiring; the module owns its
+# single ai-draft route (multipart-capable, so it sits in its own module).
+from .views_ai_planner import urlpatterns as ai_planner_urlpatterns  # noqa: E402
+
+urlpatterns += ai_planner_urlpatterns

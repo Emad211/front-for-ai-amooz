@@ -365,6 +365,16 @@ export type MyPlansResponse = {
   plans: StudyPlanOut[];
 };
 
+/** `POST /advisory/students/<engagementId>/plans/ai-draft/` (risman steps 5+6):
+ * the AI plan-drafter. 201 returns `detail` plus the freshly created plan —
+ * ALWAYS a DRAFT anchored to this week's Saturday, produced through the same
+ * `save_draft` door as manual authoring. Cap/semantic violations answer 400
+ * with their Persian detail; provider outages are the pinned 502. */
+export type AiPlanDraftResponse = {
+  detail: string;
+  plan: StudyPlanOut;
+};
+
 /* ── Restart wave 3: intake (step 2), weekly assessments (step 7), call logs (step 10) ── */
 
 /** One class row of the intake form. `weekday` is 0=شنبه..6=جمعه; `startTime`/
@@ -1212,6 +1222,43 @@ export async function requestJson<T>(path: string, options: RequestInit = {}): P
   return payload as T;
 }
 
+/** Multipart variant of `requestJson` with identical error/401 semantics —
+ * the only difference is that the body's Content-Type must stay unset so the
+ * browser generates the FormData boundary (forcing JSON here would silently
+ * break the server's file parsing). */
+async function requestMultipart<T>(path: string, form: FormData): Promise<T> {
+  if (!RAW_API_URL) {
+    throw new Error('NEXT_PUBLIC_API_URL تنظیم نشده است.');
+  }
+
+  const headers = new Headers({ Authorization: `Bearer ${getAccessToken()}` });
+  const url = `${API_URL}${path}`;
+  const doFetch = async (reqHeaders: Headers) => {
+    try {
+      return await fetch(url, { method: 'POST', body: form, headers: reqHeaders });
+    } catch {
+      throw new Error('ارتباط با سرور برقرار نشد.');
+    }
+  };
+
+  let response = await doFetch(headers);
+  let payload = await parseJson(response);
+  if (response.status === 401) {
+    try {
+      const newAccess = await refreshAccessToken();
+      headers.set('Authorization', `Bearer ${newAccess}`);
+      response = await doFetch(headers);
+      payload = await parseJson(response);
+    } catch {
+      // refreshAccessToken() already clears storage and redirects to /login.
+    }
+  }
+  if (!response.ok) {
+    throw new Error(extractErrorMessage(payload, 'درخواست ناموفق بود.'));
+  }
+  return payload as T;
+}
+
 export const AdvisoryService = {
   /**
    * Subjects this advisor may assign: the platform-wide catalog plus the
@@ -1465,6 +1512,44 @@ export const AdvisoryService = {
     return requestJson<StudyPlanOut>(
       `/advisory/students/${engagementId}/study-plan/${planId}/unpublish/`,
       { method: 'POST' },
+    );
+  },
+
+  /**
+   * Risman step 5 — the advisor's free-text request (≤2000 chars) becomes a
+   * 7-day DRAFT anchored to this week's Saturday. The model is a draftsman,
+   * not an authority: subject scope, per-row 15..480 minutes and the weekly
+   * 3600 cap are re-checked server-side, so violations surface as Persian 400s.
+   */
+  draftAiPlan: async (
+    engagementId: number,
+    prompt: string,
+  ): Promise<AiPlanDraftResponse> => {
+    return requestJson<AiPlanDraftResponse>(
+      `/advisory/students/${engagementId}/plans/ai-draft/`,
+      { method: 'POST', body: JSON.stringify({ prompt }) },
+    );
+  },
+
+  /**
+   * Risman step 6 — the same door with a voice note (multipart `voice=true` +
+   * `audio`). Server caps: 5 MB per clip; a silent/empty transcript answers
+   * 400 «صدای ارسالی قابل تشخیص نبود…», a transcription outage the pinned 502.
+   */
+  draftAiPlanFromVoice: async (
+    engagementId: number,
+    audio: Blob,
+    mimeType: string,
+  ): Promise<AiPlanDraftResponse> => {
+    const form = new FormData();
+    form.append('voice', 'true');
+    form.append(
+      'audio',
+      new File([audio], 'note.webm', { type: mimeType || 'audio/webm' }),
+    );
+    return requestMultipart<AiPlanDraftResponse>(
+      `/advisory/students/${engagementId}/plans/ai-draft/`,
+      form,
     );
   },
 

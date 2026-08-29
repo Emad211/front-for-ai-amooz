@@ -83,6 +83,10 @@ _UNSCOPED = {'Subject'}
 #     series). It writes nothing.
 #   • excel_export.py (risman step 2) — openpyxl workbook writer consuming the
 #     aggregated report dicts; touches no tenancy state itself.
+#   • org_overview.py (risman step 3) — org-manager dashboard aggregates and
+#     the engagement reassignment mover; every org-scoped query is keyed on the
+#     manager's ACTIVE advisory memberships and reassignment revalidates both
+#     engagements against that same org before writing.
 # The list is pinned by a test below so that a further door cannot appear without
 # someone editing this comment.
 _EXEMPT_FILES = {
@@ -103,6 +107,7 @@ _EXEMPT_FILES = {
     'folders.py',
     'reports.py',
     'excel_export.py',
+    'org_overview.py',
 }
 
 
@@ -299,6 +304,7 @@ def test_the_exempt_list_does_not_grow_by_accident():
         'folders.py',
         'reports.py',
         'excel_export.py',
+        'org_overview.py',
     }
 
 

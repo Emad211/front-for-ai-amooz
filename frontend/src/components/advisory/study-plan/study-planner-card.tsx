@@ -7,14 +7,18 @@ import {
   ChevronDown,
   ClipboardList,
   Loader2,
+  Mic,
   Plus,
   RefreshCw,
+  Sparkles,
+  Square,
   Trash2,
   Undo2,
 } from 'lucide-react';
 
 import {
   AdvisoryService,
+  type AiPlanDraftResponse,
   type SaveStudyPlanDraftBody,
   type StudyPlanDayNote,
   type StudyPlanOut,
@@ -36,6 +40,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { JalaliDatePicker } from '@/components/advisory/jalali-date-picker';
+import { Textarea } from '@/components/ui/textarea';
 
 /** Preset horizons plus «دلخواه»; the wire only ever receives a plain count. */
 type DurationMode = '7' | '14' | '30' | 'custom';
@@ -317,6 +322,19 @@ export function StudyPlannerCard({
   // enrichment editor, mirroring the day-notes accordion pattern.
   const [expandedRows, setExpandedRows] = useState<ReadonlySet<number>>(new Set());
 
+  // ── Risman steps 5+6: the AI draftsman ──────────────────────────────────────
+  // Collapsed by default (density contract L5); opening it is the only way to
+  // reach the generator, and a successful run REPLACES the editor rows with
+  // the fresh draft (the server already replaced the stored DRAFT slot).
+  const [aiOpen, setAiOpen] = useState(false);
+  const [aiPrompt, setAiPrompt] = useState('');
+  const [aiBusy, setAiBusy] = useState(false);
+  const [recording, setRecording] = useState(false);
+  // MediaRecorder lives in a ref (imperative lifecycle) while only the
+  // recording flag drives the UI; chunks accumulate across dataavailable.
+  const recorderRef = useRef<MediaRecorder | null>(null);
+  const recordChunks = useRef<Blob[]>([]);
+
   const [saving, setSaving] = useState(false);
   const [publishing, setPublishing] = useState(false);
   const [busyPlanId, setBusyPlanId] = useState<number | null>(null);
@@ -576,6 +594,117 @@ export function StudyPlannerCard({
     }
   };
 
+  // ── Risman steps 5+6 handlers ────────────────────────────────────────────────
+
+  /** Swap the editor over to the freshly created AI draft. The response carries
+   * the whole PlanOut, so the editor is filled directly (no refetch race) and
+   * the one-shot prefill guard is satisfied — the advisor then reviews/edits
+   * and publishes through the ordinary doors. */
+  const applyAiDraft = (resp: AiPlanDraftResponse) => {
+    toast.success(resp.detail || 'پیش‌نویس هوشمند ساخته شد.');
+    setAiPrompt('');
+    setAiOpen(false);
+    setStartDate(resp.plan.startDate);
+    // The endpoint hard-caps the horizon at this week's 7 days.
+    setDurationMode('7');
+    setCustomDuration('');
+    setRows(
+      resp.plan.items.map((item) => ({
+        uid: nextUid(),
+        dayOffset: item.dayOffset,
+        subjectId: item.subjectId,
+        minutes: String(item.plannedMinutes),
+        topic: item.topic ?? '',
+        unitLabel: item.unitLabel ?? '',
+        testMinutes:
+          item.testMinutes === null || item.testMinutes === undefined
+            ? ''
+            : String(item.testMinutes),
+        masteryColor: item.masteryColor ?? '',
+      })),
+    );
+    draftPrefilled.current = true;
+    refetchPlans();
+  };
+
+  const handleAiDraft = async () => {
+    const prompt = aiPrompt.trim();
+    if (!prompt) {
+      toast.error('متن درخواست را بنویسید یا پیام صوتی بگذارید.');
+      return;
+    }
+    if (prompt.length > 2000) {
+      toast.error('متن درخواست حداکثر ۲۰۰۰ نویسه است.');
+      return;
+    }
+    setAiBusy(true);
+    try {
+      applyAiDraft(await AdvisoryService.draftAiPlan(engagementId, prompt));
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'تولید پیش‌نویس هوشمند ناموفق بود.');
+    } finally {
+      setAiBusy(false);
+    }
+  };
+
+  const handleAiVoice = async (blob: Blob, mimeType: string) => {
+    if (blob.size > 5 * 1024 * 1024) {
+      toast.error('حجم پیام صوتی حداکثر ۵ مگابایت است.');
+      return;
+    }
+    setAiBusy(true);
+    try {
+      applyAiDraft(
+        await AdvisoryService.draftAiPlanFromVoice(engagementId, blob, mimeType),
+      );
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'تولید پیش‌نویس هوشمند ناموفق بود.');
+    } finally {
+      setAiBusy(false);
+    }
+  };
+
+  const startRecording = async () => {
+    if (
+      typeof navigator === 'undefined' ||
+      !navigator.mediaDevices?.getUserMedia ||
+      typeof MediaRecorder === 'undefined'
+    ) {
+      toast.error('مرورگر شما از ضبط صدا پشتیبانی نمی‌کند.');
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const recorder = new MediaRecorder(stream);
+      recordChunks.current = [];
+      recorder.ondataavailable = (event) => {
+        if (event.data.size > 0) recordChunks.current.push(event.data);
+      };
+      recorder.onstop = () => {
+        stream.getTracks().forEach((track) => track.stop());
+        recorderRef.current = null;
+        setRecording(false);
+        const mimeType = recorder.mimeType || 'audio/webm';
+        const blob = new Blob(recordChunks.current, { type: mimeType });
+        recordChunks.current = [];
+        if (!blob.size) {
+          toast.error('صدایی ضبط نشد؛ دوباره تلاش کنید.');
+          return;
+        }
+        void handleAiVoice(blob, mimeType);
+      };
+      recorder.start();
+      recorderRef.current = recorder;
+      setRecording(true);
+    } catch {
+      toast.error('دسترسی به میکروفون داده نشد.');
+    }
+  };
+
+  const stopRecording = () => {
+    recorderRef.current?.stop();
+  };
+
   const addRow = () => {
     setRows((prev) => [
       ...prev,
@@ -635,7 +764,7 @@ export function StudyPlannerCard({
     setRows((prev) => prev.filter((row) => row.uid !== uid));
   };
 
-  const busy = saving || publishing;
+  const busy = saving || publishing || aiBusy;
 
   // Display-only grouping: rows bucketed by day ascending, insertion order
   // preserved inside each day. Renders every row even while the horizon is
@@ -672,6 +801,79 @@ export function StudyPlannerCard({
       </CardHeader>
 
       <CardContent className="space-y-4 p-5 pt-0 sm:p-5 sm:pt-0">
+        {/* ── Risman steps 5+6: the AI draftsman, collapsed by default ──────── */}
+        <div className="rounded-xl border border-dashed border-border/60 p-3">
+          <button
+            type="button"
+            onClick={() => setAiOpen((v) => !v)}
+            aria-expanded={aiOpen}
+            className="flex w-full items-center gap-2 text-start text-xs font-medium text-foreground"
+          >
+            <Sparkles className="h-4 w-4 text-primary" />
+            ساخت پیش‌نویس با هوش مصنوعی
+            {aiOpen && (
+              <span className="hidden text-[11px] font-normal text-muted-foreground sm:inline">
+                پیش‌نویس فعلی جایگزین می‌شود
+              </span>
+            )}
+            <ChevronDown
+              className={cn(
+                'ms-auto h-4 w-4 text-muted-foreground transition-transform',
+                aiOpen && 'rotate-180',
+              )}
+            />
+          </button>
+          {aiOpen && (
+            <div className="mt-3 space-y-2">
+              <Textarea
+                value={aiPrompt}
+                onChange={(event) => setAiPrompt(event.target.value)}
+                dir="rtl"
+                rows={3}
+                maxLength={2000}
+                disabled={busy}
+                placeholder='مثلاً: «زهرا این هفته روزی ۲ ساعت ریاضی و ۱ ساعت ادبیات بخواند.»'
+              />
+              <div className="flex flex-wrap items-center gap-2">
+                <Button type="button" size="sm" onClick={handleAiDraft} disabled={busy}>
+                  {aiBusy ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Sparkles className="h-4 w-4" />
+                  )}
+                  تولید پیش‌نویس
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={recording ? stopRecording : startRecording}
+                  disabled={busy}
+                  aria-pressed={recording}
+                >
+                  {recording ? (
+                    <>
+                      <Square className="h-4 w-4 animate-pulse text-red-500" />
+                      پایان ضبط
+                    </>
+                  ) : (
+                    <>
+                      <Mic className="h-4 w-4" />
+                      پیام صوتی
+                    </>
+                  )}
+                </Button>
+                {recording && (
+                  <span className="text-[11px] font-medium text-red-500">در حال ضبط…</span>
+                )}
+                <span className="ms-auto text-[11px] tabular-nums text-muted-foreground">
+                  {toPersianDigits(aiPrompt.length)}/۲۰۰۰
+                </span>
+              </div>
+            </div>
+          )}
+        </div>
+
         {/* ── horizon: start date + duration in one compact meta row ─────── */}
         <div className="flex flex-wrap items-end gap-x-4 gap-y-3">
           <div className="space-y-1">
