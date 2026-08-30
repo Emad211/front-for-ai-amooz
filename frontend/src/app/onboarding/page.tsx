@@ -2,21 +2,17 @@
 
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
-import { useForm, Controller, type FieldErrors } from 'react-hook-form';
+import { useForm, type FieldErrors } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Loader2, ArrowLeft, ArrowRight, Check, UserRound, KeyRound, GraduationCap } from 'lucide-react';
 import { toast } from 'sonner';
 
 import {
-  onboardingSchema,
+  createOnboardingSchema,
   ONBOARDING_STEP_FIELDS,
   type OnboardingFormValues,
 } from '@/lib/validations/onboarding';
-import {
-  GRADE_OPTIONS,
-  MAJOR_OPTIONS,
-  isMajorRequiredGrade,
-} from '@/constants/grade-major';
+import { isMajorRequiredGrade } from '@/constants/grade-major';
 import {
   completeOnboarding,
   getStoredUser,
@@ -27,16 +23,11 @@ import {
 import { landingFor } from '@/lib/auth-routing';
 
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { Progress } from '@/components/ui/progress';
-import { PasswordInput } from '@/components/auth/password-input';
+import { OnboardingStepFields } from '@/components/auth/onboarding-step-fields';
 import {
   Card, CardContent, CardDescription, CardHeader, CardTitle,
 } from '@/components/ui/card';
-import {
-  Select, SelectTrigger, SelectValue, SelectContent, SelectItem,
-} from '@/components/ui/select';
 
 const STEP_META = [
   { title: 'ساخت حساب', desc: 'نام کاربری و رمزی بساز که از این پس با آن وارد می‌شوی.', icon: KeyRound },
@@ -55,6 +46,7 @@ export default function OnboardingPage() {
   const [step, setStep] = useState(0);
   const [advancing, setAdvancing] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [focusField, setFocusField] = useState<keyof OnboardingFormValues | null>(null);
   const advancingRef = useRef(false);
   const submittingRef = useRef(false);
 
@@ -64,10 +56,10 @@ export default function OnboardingPage() {
   const isTeacher = role === 'teacher';
 
   const {
-    register, handleSubmit, trigger, control, setError, watch, setValue,
+    register, handleSubmit, trigger, control, setError, setFocus, watch, setValue,
     formState: { errors },
   } = useForm<OnboardingFormValues>({
-    resolver: zodResolver(onboardingSchema),
+    resolver: zodResolver(createOnboardingSchema(isStudent)),
     mode: 'onTouched',
     defaultValues: {
       username: '', password: '', confirmPassword: '',
@@ -77,6 +69,12 @@ export default function OnboardingPage() {
       grade: '', major: '', expertise: '',
     },
   });
+
+  useEffect(() => {
+    if (!focusField) return;
+    setFocus(focusField);
+    setFocusField(null);
+  }, [focusField, setFocus, step]);
 
   // Major applies only to grades '10'..'12'; hidden (and cleared) otherwise.
   const watchedGrade = watch('grade');
@@ -93,7 +91,7 @@ export default function OnboardingPage() {
     setAdvancing(true);
     const currentStep = step;
     try {
-      const ok = await trigger(ONBOARDING_STEP_FIELDS[currentStep]);
+      const ok = await trigger(ONBOARDING_STEP_FIELDS[currentStep], { shouldFocus: true });
       if (ok) {
         setStep((visibleStep) => (
           visibleStep === currentStep
@@ -133,16 +131,17 @@ export default function OnboardingPage() {
       router.replace(landingFor(updated.role));
     } catch (e) {
       const n = normalizeApiError(e);
-      let jumped = false;
+      let firstInvalidField: keyof OnboardingFormValues | null = null;
       Object.entries(n.fieldErrors).forEach(([key, msgs]) => {
         const field = FIELD_MAP[key] || (key as keyof OnboardingFormValues);
         setError(field, { message: msgs[0] });
-        // Jump back to the step holding the first errored field.
-        if (!jumped) {
+        if (!firstInvalidField) {
+          firstInvalidField = field;
           const idx = ONBOARDING_STEP_FIELDS.findIndex((f) => f.includes(field));
-          if (idx >= 0) { setStep(idx); jumped = true; }
+          if (idx >= 0) setStep(idx);
         }
       });
+      if (firstInvalidField) setFocusField(firstInvalidField);
       toast.error(n.message || 'تکمیل اطلاعات ناموفق بود.');
       submittingRef.current = false;
       setSubmitting(false);
@@ -153,7 +152,10 @@ export default function OnboardingPage() {
     const invalidStep = ONBOARDING_STEP_FIELDS.findIndex((fields) => (
       fields.some((field) => Boolean(fieldErrors[field]))
     ));
-    if (invalidStep >= 0) setStep(invalidStep);
+    if (invalidStep < 0) return;
+    const invalidField = ONBOARDING_STEP_FIELDS[invalidStep].find((field) => Boolean(fieldErrors[field]));
+    setStep(invalidStep);
+    if (invalidField) setFocusField(invalidField);
   };
 
   const handleWizardSubmit = (event: FormEvent<HTMLFormElement>) => {
@@ -184,82 +186,26 @@ export default function OnboardingPage() {
             <CardDescription className="text-xs">{Meta.desc}</CardDescription>
           </div>
         </div>
-        <Progress value={((step + 1) / STEP_META.length) * 100} className="h-1.5" />
+        <Progress
+          value={((step + 1) / STEP_META.length) * 100}
+          className="h-1.5"
+          aria-label="پیشرفت تکمیل حساب"
+        />
         <p className="text-[11px] text-muted-foreground">مرحله {step + 1} از {STEP_META.length}</p>
       </CardHeader>
 
       <CardContent>
         <form onSubmit={handleWizardSubmit} className="space-y-4" noValidate>
-          {/* Step 1 — credentials */}
-          {step === 0 && (
-            <div className="space-y-4">
-              <Field label="نام کاربری" error={errors.username?.message}>
-                <Input dir="ltr" placeholder="username" autoComplete="username" {...register('username')} />
-              </Field>
-              <Field label="رمز عبور" error={errors.password?.message}>
-                <PasswordInput placeholder="••••••••" autoComplete="new-password" {...register('password')} />
-              </Field>
-              <Field label="تکرار رمز عبور" error={errors.confirmPassword?.message}>
-                <PasswordInput placeholder="••••••••" autoComplete="new-password" {...register('confirmPassword')} />
-              </Field>
-              <Field label="ایمیل" error={errors.email?.message}>
-                <Input dir="ltr" type="email" placeholder="you@example.com" {...register('email')} />
-              </Field>
-            </div>
-          )}
-
-          {/* Step 2 — identity / contact */}
-          {step === 1 && (
-            <div className="space-y-4">
-              <Field label="نام" error={errors.firstName?.message}>
-                <Input placeholder="نام" {...register('firstName')} />
-              </Field>
-              <Field label="نام خانوادگی (اختیاری)" error={errors.lastName?.message}>
-                <Input placeholder="نام خانوادگی" {...register('lastName')} />
-              </Field>
-              <Field label="شماره موبایل" error={errors.phone?.message}>
-                <Input
-                  dir="ltr" inputMode="numeric" placeholder="09xxxxxxxxx"
-                  readOnly={isStudent}
-                  className={isStudent ? 'bg-muted/50 cursor-not-allowed' : undefined}
-                  {...register('phone')}
-                />
-                {isStudent && (
-                  <p className="text-[11px] text-muted-foreground mt-1">
-                    این شماره همان شماره‌ای است که با آن وارد شدی و قابل تغییر نیست.
-                  </p>
-                )}
-              </Field>
-            </div>
-          )}
-
-          {/* Step 3 — light role profile */}
-          {step === 2 && (
-            <div className="space-y-4">
-              {isStudent && (
-                <>
-                  <Field label="پایه تحصیلی (اختیاری)" error={errors.grade?.message}>
-                    <SelectField control={control} name="grade" placeholder="انتخاب پایه" options={GRADE_OPTIONS} />
-                  </Field>
-                  {majorRequired && (
-                    <Field label="رشته" error={errors.major?.message}>
-                      <SelectField control={control} name="major" placeholder="انتخاب رشته" options={MAJOR_OPTIONS} />
-                    </Field>
-                  )}
-                </>
-              )}
-              {isTeacher && (
-                <Field label="تخصص / حوزهٔ تدریس (اختیاری)" error={errors.expertise?.message}>
-                  <Input placeholder="مثلاً ریاضیات، فیزیک…" {...register('expertise')} />
-                </Field>
-              )}
-              {!isStudent && !isTeacher && (
-                <p className="text-sm text-muted-foreground py-4 text-center">
-                  اطلاعات لازم کامل است. روی «پایان» بزن تا وارد پنل شوی.
-                </p>
-              )}
-            </div>
-          )}
+          <OnboardingStepFields
+            step={step}
+            isStudent={isStudent}
+            isTeacher={isTeacher}
+            currentPhone={me?.phone}
+            register={register}
+            control={control}
+            errors={errors}
+            grade={watchedGrade}
+          />
 
           {/* Nav */}
           <div className="flex items-center justify-between gap-3 pt-2">
@@ -270,13 +216,13 @@ export default function OnboardingPage() {
             ) : <span />}
 
             {step < STEP_META.length - 1 ? (
-              <Button type="button" onClick={goNext} disabled={advancing}>
+              <Button key="next" type="button" onClick={(event) => { event.preventDefault(); void goNext(); }} disabled={advancing}>
                 {advancing
                   ? <><Loader2 className="ms-1 h-4 w-4 animate-spin" /> در حال بررسی…</>
                   : <>بعدی <ArrowLeft className="me-1 h-4 w-4" /></>}
               </Button>
             ) : (
-              <Button type="submit" disabled={submitting}>
+              <Button key="submit" type="submit" disabled={submitting}>
                 {submitting
                   ? <><Loader2 className="ms-1 h-4 w-4 animate-spin" /> در حال ثبت…</>
                   : <><Check className="ms-1 h-4 w-4" /> پایان و ورود</>}
@@ -286,39 +232,5 @@ export default function OnboardingPage() {
         </form>
       </CardContent>
     </Card>
-  );
-}
-
-function Field({ label, error, children }: { label: string; error?: string; children: React.ReactNode }) {
-  return (
-    <div className="space-y-1.5">
-      <Label className="text-sm font-bold">{label}</Label>
-      {children}
-      {error && <p className="text-xs text-destructive">{error}</p>}
-    </div>
-  );
-}
-
-function SelectField({
-  control, name, placeholder, options,
-}: {
-  control: ReturnType<typeof useForm<OnboardingFormValues>>['control'];
-  name: 'grade' | 'major';
-  placeholder: string;
-  options: { value: string; label: string }[];
-}) {
-  return (
-    <Controller
-      control={control}
-      name={name}
-      render={({ field }) => (
-        <Select value={field.value || ''} onValueChange={field.onChange} dir="rtl">
-          <SelectTrigger><SelectValue placeholder={placeholder} /></SelectTrigger>
-          <SelectContent>
-            {options.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
-          </SelectContent>
-        </Select>
-      )}
-    />
   );
 }

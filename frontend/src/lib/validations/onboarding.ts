@@ -23,8 +23,7 @@ const phone = z
   .transform(normalizeIranPhone)
   .refine(isValidIranPhone, { message: "شماره موبایل معتبر نیست" });
 
-export const onboardingSchema = z
-  .object({
+const onboardingFieldsSchema = z.object({
     // Step 1 — credentials
     username: z
       .string()
@@ -46,8 +45,10 @@ export const onboardingSchema = z
       .optional()
       .or(z.literal("")),
     expertise: z.string().trim().max(255).optional().or(z.literal("")),
-  })
-  .superRefine((data, ctx) => {
+  });
+
+export function createOnboardingSchema(isStudent: boolean) {
+  return onboardingFieldsSchema.superRefine((data, ctx) => {
     if (data.confirmPassword && data.password !== data.confirmPassword) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
@@ -58,14 +59,21 @@ export const onboardingSchema = z
     // National-curriculum rule: grades '10'..'12' REQUIRE a major; for every
     // other grade the major must stay empty (hidden/cleared in the UI and
     // omitted from the payload).
-    if (isMajorRequiredGrade(data.grade) && !data.major) {
+    if (isStudent && !data.grade) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "پایه تحصیلی الزامی است.",
+        path: ["grade"],
+      });
+    }
+    if (isStudent && isMajorRequiredGrade(data.grade) && !data.major) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         message: MAJOR_REQUIRED_MESSAGE,
         path: ["major"],
       });
     }
-    if (!isMajorRequiredGrade(data.grade) && data.major) {
+    if (isStudent && !isMajorRequiredGrade(data.grade) && data.major) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         message: "برای این پایه انتخاب رشته امکان‌پذیر نیست",
@@ -73,8 +81,9 @@ export const onboardingSchema = z
       });
     }
   });
+}
 
-export type OnboardingFormValues = z.infer<typeof onboardingSchema>;
+export type OnboardingFormValues = z.infer<typeof onboardingFieldsSchema>;
 
 /** Fields validated at each wizard step (for per-step `trigger`). */
 export const ONBOARDING_STEP_FIELDS: (keyof OnboardingFormValues)[][] = [
