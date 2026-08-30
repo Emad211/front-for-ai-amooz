@@ -46,7 +46,7 @@ export function DashboardHeader() {
             {DASHBOARD_NAV_LINKS.map((link) => (
                 <NavLink key={link.href} href={link.href}>{link.label}</NavLink>
             ))}
-            {hasActiveAdvisor && <NavLink href="/study-log">گزارش روزانه</NavLink>}
+            {hasActiveAdvisor && <NavLink href="/advisory">مشاور</NavLink>}
         </nav>
         
         {/* Actions */}

@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { NotebookPen } from 'lucide-react';
+import { HeartHandshake } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { DASHBOARD_NAV_LINKS } from '@/constants/navigation';
 import type { NavItem } from '@/types';
@@ -10,10 +10,10 @@ import { useActiveAdvisor } from '@/hooks/use-active-advisor';
 
 // Render-site injection only: DASHBOARD_NAV_LINKS itself must stay untouched
 // so the entry stays hidden for every student without an active advisor.
-const STUDY_LOG_NAV_ITEM: NavItem = {
-  label: 'گزارش روزانه',
-  href: '/study-log',
-  icon: NotebookPen,
+const ADVISOR_NAV_ITEM: NavItem = {
+  label: 'مشاور',
+  href: '/advisory',
+  icon: HeartHandshake,
 };
 
 export function MobileNav() {
@@ -21,7 +21,7 @@ export function MobileNav() {
   // null (loading) → base links only; the entry must never flash.
   const { hasActiveAdvisor } = useActiveAdvisor();
   const links = hasActiveAdvisor
-    ? [...DASHBOARD_NAV_LINKS, STUDY_LOG_NAV_ITEM]
+    ? [...DASHBOARD_NAV_LINKS, ADVISOR_NAV_ITEM]
     : DASHBOARD_NAV_LINKS;
 
   return (

@@ -41,7 +41,7 @@ export function UpcomingEvents({ events }: UpcomingEventsProps) {
           </div>
         )}
         <Button variant="outline" className="w-full h-10 md:h-12 border-primary/30 text-primary text-xs md:text-sm font-bold hover:bg-primary/10 hover:border-primary rounded-xl md:rounded-2xl mt-2 transition-all" asChild>
-          <Link href="/calendar">مشاهده تقویم کامل</Link>
+          <Link href="/advisory?tab=calendar">مشاهده تقویم کامل</Link>
         </Button>
       </CardContent>
     </Card>

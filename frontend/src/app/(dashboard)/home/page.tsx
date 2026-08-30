@@ -11,13 +11,6 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { StatsSkeleton } from '@/components/dashboard/stats-skeleton';
 import { PageTransition } from '@/components/ui/page-transition';
 import { ErrorState } from '@/components/shared/error-state';
-import { MySubjectsCard } from './my-subjects-card';
-import { StudyPlanCard } from '@/components/dashboard/home/study-plan-card';
-import { MyIntakeCard } from '@/components/dashboard/advisory/my-intake-card';
-import { MyExamScoresCard } from '@/components/dashboard/advisory/my-exam-scores-card';
-import { MyExamAnalysesCard } from '@/components/dashboard/advisory/my-exam-analyses-card';
-import { MyChallengeCard } from '@/components/dashboard/advisory/my-challenge-card';
-import { MyMonthlyOutlookCard } from '@/components/dashboard/advisory/my-monthly-outlook-card';
 
 export default function StudentDashboard() {
   const { stats, activities, events, profile, isLoading, error, reload } = useDashboardData();
@@ -63,24 +56,10 @@ export default function StudentDashboard() {
     <PageTransition>
       <main className="p-4 md:p-8 max-w-7xl mx-auto space-y-8 md:space-y-10">
         <WelcomeSection profile={profile} />
-        
+
         <DashboardHero />
-        
+
         <StatsGrid stats={stats} />
-
-        <MySubjectsCard />
-
-        <MyIntakeCard />
-
-        <MyExamScoresCard />
-
-        <MyExamAnalysesCard />
-
-        <MyChallengeCard />
-
-        <MyMonthlyOutlookCard />
-
-        <StudyPlanCard />
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 md:gap-8">
           <RecentActivity activities={activities} />
