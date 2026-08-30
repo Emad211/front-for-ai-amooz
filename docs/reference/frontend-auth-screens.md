@@ -1,6 +1,6 @@
 # Reference — Frontend auth screens ((auth) + start/join/onboarding)
 
-- **Status:** Verified · **Created:** 2026-07-02 · **Last-verified:** 2026-07-14
+- **Status:** Verified · **Created:** 2026-07-02 · **Last-verified:** 2026-08-30
 - **Owner (doc):** technical-writer · **Spec source:** `docs/reference/ROADMAP.md` step F5
 - **Layer:** frontend-route-group ((auth) + top-level entry routes)
 
@@ -37,6 +37,9 @@ F4 guard/routing flow and F3 services.
    (`validations/onboarding.ts`, F2) gates advancing; on submit → `completeOnboarding` → server sets
    credentials + `is_profile_completed=True` (B2) → redirect to role home. Backend field errors surface
    via `FIELD_MAP` → `setError`.
+   Student grade is required. Grades 10–12 also require one of the five advisor-curriculum majors;
+   lower grades hide and clear the major field. A student without an existing phone may set it once;
+   an existing student phone remains read-only.
 2. **Code entry:** `join-code` (and `/join`) take a phone/code → `inviteLogin`/redeem (F3/B2/B3a) → new
    or returning user → `/onboarding` if not completed, else role home.
 3. **Signup requests:** teacher/org signup forms → waitlist intake (B3b), no account until approved.
@@ -59,6 +62,10 @@ F4 guard/routing flow and F3 services.
   via `/join` (B3a) — two different "completion" flows, don't merge.
 - The onboarding `FIELD_MAP` must stay in sync with the backend serializer field names (B1
   `OnboardingSerializer`) or backend validation errors won't attach to the right field.
+- The step-2 «بعدی» control must remain a non-submitting DOM node while step 3 mounts; otherwise the
+  browser can submit the newly rendered final-step button during the original click's default action.
+- An expired access/refresh pair clears local auth and routes to `/login`; only a network failure with
+  a still-present access token may render onboarding from cached profile data.
 
 ## Cross-links
 [frontend-auth-guards.md](frontend-auth-guards.md) (F4, the gate + routing) ·
@@ -70,7 +77,9 @@ F4 guard/routing flow and F3 services.
 
 ## Verified-by
 - `Glob (auth)/**/page.tsx` → the 8 auth screens tabulated above.
-- Read (2026-07-02): `onboarding/page.tsx:1-85` (react-hook-form+zod, `step` state, `FIELD_MAP`,
-  `ONBOARDING_STEP_FIELDS`, per-step `trigger`), `start/page.tsx:10` (role picker).
+- Read (2026-08-30): `onboarding/page.tsx`, `onboarding/layout.tsx`,
+  `validations/onboarding.ts`, `constants/grade-major.ts`, and advisor `SUBJECT_MAJOR_CHOICES`.
+- Runtime (2026-08-30): Playwright exercised no-session, expired-session, phoneless-student,
+  grade 07, and grade 10 + required-major paths at 375/768/1440px.
 - Top-level `start/`,`join/`,`onboarding/` confirmed in the F1 route inventory.
 - NOT read whole: the screen bodies (grep gives the structure). NOT run this pass: tsc/lint (AUDIT gate).
