@@ -38,7 +38,7 @@ export function NotificationPopover() {
   return (
     <Popover>
       <PopoverTrigger asChild>
-        <Button variant="ghost" size="icon" className="relative h-10 w-10">
+        <Button variant="ghost" size="icon" className="relative h-10 w-10" aria-label="اعلان‌ها">
           <Bell className="h-5 w-5" />
           {unreadCount > 0 && (
             <span className="absolute top-2.5 right-2.5 w-2 h-2 bg-primary rounded-full border-2 border-background animate-pulse"></span>

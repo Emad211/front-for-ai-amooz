@@ -27,7 +27,7 @@ export function CalendarDayCell({ dayData, onDayClick, onEventClick }: CalendarD
         <span
           className={cn(
             'w-7 h-7 sm:w-8 sm:h-8 flex items-center justify-center rounded-full text-sm font-medium',
-            !isCurrentMonth && 'text-muted-foreground/40',
+            !isCurrentMonth && 'text-muted-foreground',
             isCurrentMonth && isWeekend && 'text-red-500',
             isToday && 'bg-primary text-primary-foreground font-bold'
           )}

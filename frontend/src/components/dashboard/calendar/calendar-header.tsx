@@ -27,7 +27,7 @@ export function CalendarHeader({
           <Calendar className="w-6 h-6 text-primary" />
         </div>
         <div>
-          <h1 className="text-2xl sm:text-3xl font-bold">تقویم آموزشی</h1>
+          <h2 className="text-2xl sm:text-3xl font-bold">تقویم آموزشی</h2>
           <p className="text-sm text-muted-foreground mt-0.5">برنامه‌ریزی و مدیریت رویدادها</p>
         </div>
       </div>
@@ -48,6 +48,7 @@ export function CalendarHeader({
             variant="ghost"
             size="icon"
             onClick={onNextMonth}
+            aria-label="ماه بعد"
             className="h-8 w-8 rounded-lg hover:bg-background"
           >
             <ChevronRight className="w-4 h-4" />
@@ -63,6 +64,7 @@ export function CalendarHeader({
             variant="ghost"
             size="icon"
             onClick={onPrevMonth}
+            aria-label="ماه قبل"
             className="h-8 w-8 rounded-lg hover:bg-background"
           >
             <ChevronLeft className="w-4 h-4" />
