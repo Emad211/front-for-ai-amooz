@@ -375,6 +375,19 @@ class OnboardingSerializer(serializers.Serializer):
             return current or norm
         return norm
 
+    def validate(self, attrs):
+        # Students MUST leave onboarding with a grade: the frontend gate computes
+        # EFFECTIVE completion (stored flag + grade). Completing without one used
+        # to store flag=True while the gate still saw False, bouncing the student
+        # back into this wizard — which restarts from step 1 — forever. The
+        # major-for-grades-10-12 rule is enforced downstream by
+        # MeUpdateSerializer.validate.
+        user = self.instance
+        if user is not None and getattr(user, 'role', None) == User.Role.STUDENT:
+            if not (attrs.get('grade') or '').strip():
+                raise serializers.ValidationError({'grade': ['پایه تحصیلی الزامی است.']})
+        return attrs
+
     def save(self, **kwargs):
         user = self.instance
         vd = self.validated_data
@@ -401,4 +414,8 @@ class OnboardingSerializer(serializers.Serializer):
             raise serializers.ValidationError(
                 {'username': ['این نام کاربری قبلاً استفاده شده است.']}
             )
+        # MeSerializer reads role-profile fields through reverse relations. The
+        # user save signal may have cached the pre-update profile on this
+        # long-lived instance, so refresh before returning the response payload.
+        user.refresh_from_db()
         return user

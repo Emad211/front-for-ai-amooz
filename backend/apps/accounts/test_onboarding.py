@@ -39,6 +39,8 @@ class TestOnboarding:
 
         assert resp.status_code == 200, resp.content
         assert resp.data['is_profile_completed'] is True
+        assert resp.data['grade'] == 'دوازدهم'
+        assert resp.data['major'] == 'ریاضی فیزیک'
         user.refresh_from_db()
         assert user.username == 'sara77'
         assert user.has_usable_password() and user.check_password(PWD)
@@ -103,6 +105,55 @@ class TestOnboarding:
             'phone': '09120000022', 'first_name': 'x',
         }, format='json')
         assert resp.status_code == 400, resp.content
+
+    def test_student_grade_required_no_loop(self):
+        # Regression for the onboarding bounce loop: completing WITHOUT a grade
+        # used to flip the stored flag to True while the gate computes EFFECTIVE
+        # completion (flag + grade) as False — the student was bounced back into
+        # the wizard, which restarts from step 1, forever. The server must
+        # refuse and leave the flag False so the flow terminates.
+        user = self._student()
+        c = APIClient(); c.force_authenticate(user=user)
+        resp = c.post(URL, {
+            'username': 'sara77', 'password': PWD, 'email': 'x@y.com',
+            'phone': PHONE, 'first_name': 'سارا',
+        }, format='json')  # no grade
+        assert resp.status_code == 400, resp.content
+        assert 'grade' in resp.data.get('errors', resp.data)
+        user.refresh_from_db()
+        assert user.is_profile_completed is False
+        assert user.is_effectively_completed is False
+
+    def test_student_highschool_major_required(self):
+        # Grade 10-12 without a major → 400 on 'major' (the MeUpdateSerializer
+        # cross-field rule) and the flag must stay False.
+        user = self._student()
+        c = APIClient(); c.force_authenticate(user=user)
+        resp = c.post(URL, {
+            'username': 'sara77', 'password': PWD, 'email': 'x@y.com',
+            'phone': PHONE, 'first_name': 'سارا', 'grade': 'دهم',
+        }, format='json')
+        assert resp.status_code == 400, resp.content
+        assert 'major' in resp.data.get('errors', resp.data)
+        user.refresh_from_db()
+        assert user.is_profile_completed is False
+
+    def test_student_without_phone_can_set_it(self):
+        # Regression for the step-2 dead end: a username-created student shell
+        # has NO phone, and the (previously read-only) empty field could never
+        # pass validation. The backend must accept a first-time phone set.
+        user = baker.make('accounts.User', role=User.Role.STUDENT, phone=None, username='phoneless')
+        user.set_unusable_password(); user.save()
+        c = APIClient(); c.force_authenticate(user=user)
+        resp = c.post(URL, {
+            'username': 'phoneless', 'password': PWD, 'email': 'x@y.com',
+            'phone': '09123456789', 'first_name': 'x',
+            'grade': 'دهم', 'major': 'ریاضی فیزیک',
+        }, format='json')
+        assert resp.status_code == 200, resp.content
+        user.refresh_from_db()
+        assert user.phone == '09123456789'
+        assert user.is_effectively_completed is True
 
     def test_teacher_sets_phone_and_expertise(self):
         # A passwordless teacher shell (e.g. created by org-code redeem in Phase 2).
