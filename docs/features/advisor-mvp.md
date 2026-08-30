@@ -777,6 +777,59 @@ exam_records, monthly, challenges`. ویوهای جدید: `views_intake.py`, `v
 - دو رگرسیون hydration حل شد حین تست لوکال: `<a>` تودرتو در هدر لندینگ و `<button>` تودرتو در
   پیکر دروس.
 
+## ۱۷. تجمیع صفحهٔ «مشاور» دانش‌آموز (لندشده 2026-08-31)
+
+> سطح دانش‌آموز از یک صفحهٔ تنها (`/study-log` «گزارش روزانه») + هفت کارت پراکنده روی home به
+> **یک صفحهٔ واحد تب‌دار `/advisory` «مشاور»** رسید، و تقویم دانش‌آموز از رویدادهای خالیِ
+> کلاس‌محور به **تقویم ادغامی** ارتقا یافت.
+
+### ۱۷.۱ صفحه و تب‌ها
+- روت نو `frontend/src/app/(dashboard)/advisory/page.tsx` — تب‌های deep-linkable با `?tab=`
+  (پیش‌فرض `log`): **گزارش روزانه | تقویم | برنامه‌ها | آزمون‌ها | مشخصات**. هدر: h1 «مشاور» +
+  بج «مشاور: {نام}» / «بدون مشاور فعال» از `getMyEngagement`.
+- فرم گزارش روزانه به کامپوننت منتقل شد: `components/dashboard/advisory/study-log-form.tsx`
+  (رفتار set-replace و re-render از پاسخ سرور، دست‌نخورده). `components/dashboard/study-log/study-log-header.tsx`
+  دیگر h1 ندارد (تب‌بار همان برچسب را می‌دهد).
+- جابه‌جایی کارت‌ها از home به تب‌ها: `MyIntakeCard` + `MySubjectsCard` (کارت دوم به
+  `components/dashboard/advisory/my-subjects-card.tsx` منتقل شد) → تب مشخصات؛
+  `StudyPlanCard` + `MyChallengeCard` + `MyMonthlyOutlookCard` → تب برنامه‌ها؛
+  `MyExamScoresCard` + `MyExamAnalysesCard` → تب آزمون‌ها. صفحهٔ home فقط hero/stats/فعالیت‌ها
+  /رویدادهای پیش رو را نگه داشت.
+- Empty-stateها: تب آزمون‌ها و کارت برنامه مطالعه با prop `showEmptyState` به‌جای رندرِ هیچ،
+  کارت dashed «هنوز … ثبت نشده» می‌دهند؛ تب‌های plans/exams/profile بدون مشاور فعال یک کارت
+  «فعلاً مشاور فعالی نداری…» (تقویم مستثنی — برای همه کار می‌کند).
+
+### ۱۷.۲ تقویم ادغامی
+- `services/advisor-calendar-service.ts` — `getAdvisorCalendarEvents(jYear, jMonth)` چهار منبع را
+  merge می‌کند: `student/calendar` (ددلاین تمرین + جلسهٔ آمادگی آزمون، لایهٔ پایه)، `me/plans`
+  (ردیف‌های PUBLISHED → نوع `study_plan` با اولویت از mastery color)،
+  `me/monthly-outlooks/<monthStart>` (entryها → `advisor_note`) و `me/challenges`
+  (روزهای چالش، تاریخ = startDate + dayNumber − 1 → `challenge`). تاریخ‌های Gregorian با
+  `gregorianIsoToJalaliKey` (نو، در `lib/calendar.ts`) به کلید جلالی گرید تبدیل می‌شوند.
+  منابع advisory quiet-اند: بدون مشاور = خالی، و خطای هر لایه فقط همان لایه را می‌اندازد.
+- `EventType` + `EVENT_TYPE_CONFIG` (types/index.ts، constants/calendar.ts) سه نوع نو گرفتند
+  (`study_plan`/`advisor_note`/`challenge` با `dot` config-driven در badge)؛ فایل mock مردهٔ
+  `constants/mock/calendar-data.ts` حذف شد.
+- `use-calendar` ماه‌آگاه شد (`getCalendarEvents(year, month)`) تا چشم‌انداز ماهانه با ناوبری
+  ماه تازه بخواند.
+
+### ۱۷.۳ ناوبری و روت‌های قدیمی
+- ورودی nav «گزارش روزانه» → «مشاور» با href `/advisory` و آیکون `HeartHandshake` (غیرتکراری با
+  تمرین‌ها) در `dashboard-header.tsx` و `mobile-nav.tsx` — گیتِ `hasActiveAdvisor` دست‌نخورده.
+- `/study-log` → redirect دائمی به `/advisory?tab=log`؛ `/calendar` → redirect به
+  `/advisory?tab=calendar` (تقویم فقط یک پیاده‌سازی دارد). لینک «مشاهده تقویم کامل» در home
+  مستقیم به `/advisory?tab=calendar` می‌رود.
+
+### ۱۷.۴ وریفای انجام‌شده
+- `tsc --noEmit` پاک؛ `next build` سبز (روت‌های `/advisory` 20.3kB، `/calendar` و `/study-log`
+  redirectهای 151B).
+- اسموک زندهٔ مرورگر با دیتای seed واقعی (engagement فعال + برنامهٔ PUBLISHED + چشم‌انداز ماه +
+  چالش): هر ۵ تب، رندر رویدادهای هر ۵ لایه روی گرید جلالی (میلادی→جلالی: 2026-08-31 = ۹ شهریور
+  ۱۴۰۵)، modal رویداد، redirectهای دو روت قدیمی، نمای موبایل 375px.
+- Lighthouse روی `/advisory?tab=calendar`: **Accessibility/Best Practices/SEO/Agentic = 100** در
+  دسکتاپ و موبایل (اصلاحات a11y: aria-label دکمه‌های ماه و اعلان‌ها، h1→h2 هدر تقویم، کنتراست
+  indigo/muted روزهای غیرماه).
+
 
 
 
