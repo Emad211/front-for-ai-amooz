@@ -50,8 +50,14 @@ export default function OnboardingLayout({ children }: { children: React.ReactNo
         else setReady(true);
       })
       .catch(() => {
-        // Backend unreachable — still let them try to onboard from cached state.
-        if (!cancelled) setReady(true);
+        if (cancelled) return;
+        if (!getStoredTokens()?.access) {
+          router.replace('/login');
+          return;
+        }
+        // Backend unreachable with a still-valid local session: preserve the
+        // cached onboarding path so a temporary outage does not block the UI.
+        setReady(true);
       });
 
     return () => {
@@ -62,8 +68,8 @@ export default function OnboardingLayout({ children }: { children: React.ReactNo
   if (!ready) return null;
 
   return (
-    <div className="min-h-screen bg-background text-foreground flex items-center justify-center p-4">
+    <main className="min-h-[100dvh] bg-background text-foreground flex items-center justify-center p-4">
       {children}
-    </div>
+    </main>
   );
 }
