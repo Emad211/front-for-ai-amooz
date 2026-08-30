@@ -30,14 +30,11 @@ export function StudyLogHeader({
 
   return (
     <div className="flex flex-wrap items-center justify-between gap-3">
-      <div className="space-y-1.5">
-        <h1 className="text-xl font-bold md:text-2xl">گزارش روزانه</h1>
-        {advisorName ? (
-          <Badge variant="secondary" className="font-medium">
-            مشاور: {advisorName}
-          </Badge>
-        ) : null}
-      </div>
+      {advisorName ? (
+        <Badge variant="secondary" className="font-medium">
+          مشاور: {advisorName}
+        </Badge>
+      ) : null}
 
       <div className="flex items-center gap-2">
         <Button

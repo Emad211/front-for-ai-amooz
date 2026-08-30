@@ -30,7 +30,7 @@ function parseIsoDate(iso: string): Date | null {
  * score — most students have no advisor (or no scores yet) and must not pay
  * layout cost for an empty shell.
  */
-export function MyExamScoresCard() {
+export function MyExamScoresCard({ showEmptyState = false }: { showEmptyState?: boolean }) {
   const [scores, setScores] = useState<ExamScore[] | null>(null);
 
   useEffect(() => {
@@ -49,7 +49,20 @@ export function MyExamScoresCard() {
     };
   }, []);
 
-  if (!scores || scores.length === 0) return null;
+  if (!scores || scores.length === 0) {
+    if (showEmptyState && scores) {
+      return (
+        <Card dir="rtl" className="rounded-2xl border-dashed">
+          <CardContent className="py-10 text-center">
+            <p className="text-sm text-muted-foreground">
+              هنوز نمره یا ارزیابی‌ای از سوی مشاور برایت ثبت نشده است.
+            </p>
+          </CardContent>
+        </Card>
+      );
+    }
+    return null;
+  }
 
   const sorted = [...scores].sort(
     (a, b) => b.examDate.localeCompare(a.examDate) || b.id - a.id,

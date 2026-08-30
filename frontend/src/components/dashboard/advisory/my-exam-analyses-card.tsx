@@ -34,7 +34,7 @@ function parseIsoDate(iso: string): Date | null {
  * Quiet home-card rule: renders NOTHING without an active advisor or when no
  * analysis exists yet.
  */
-export function MyExamAnalysesCard() {
+export function MyExamAnalysesCard({ showEmptyState = false }: { showEmptyState?: boolean }) {
   const [analyses, setAnalyses] = useState<ExamAnalysis[] | null>(null);
 
   useEffect(() => {
@@ -53,7 +53,20 @@ export function MyExamAnalysesCard() {
     };
   }, []);
 
-  if (!analyses || analyses.length === 0) return null;
+  if (!analyses || analyses.length === 0) {
+    if (showEmptyState && analyses) {
+      return (
+        <Card dir="rtl" className="rounded-2xl border-dashed">
+          <CardContent className="py-10 text-center">
+            <p className="text-sm text-muted-foreground">
+              هنوز تحلیل یا گزارشی از سوی مشاور برایت نوشته نشده است.
+            </p>
+          </CardContent>
+        </Card>
+      );
+    }
+    return null;
+  }
 
   const sorted = [...analyses].sort((a, b) => {
     const dateDiff = (b.examDate ?? '').localeCompare(a.examDate ?? '');

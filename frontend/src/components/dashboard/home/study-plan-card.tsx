@@ -56,7 +56,7 @@ function pickCurrentOrNext(plans: StudyPlanOut[]): StudyPlanOut | null {
  * show, because most students have no advisor and must not pay layout cost for
  * it. A failed fetch is swallowed for the same reason.
  */
-export function StudyPlanCard() {
+export function StudyPlanCard({ showEmptyState = false }: { showEmptyState?: boolean }) {
   const [plans, setPlans] = useState<StudyPlanOut[] | null>(null);
 
   useEffect(() => {
@@ -88,7 +88,20 @@ export function StudyPlanCard() {
     return [...byDay.entries()].sort((a, b) => a[0] - b[0]);
   }, [plan]);
 
-  if (!plan) return null;
+  if (!plan) {
+    if (showEmptyState && plans !== null) {
+      return (
+        <Card dir="rtl" className="rounded-2xl border-dashed">
+          <CardContent className="py-10 text-center">
+            <p className="text-sm text-muted-foreground">
+              هنوز برنامهٔ مطالعاتی‌ای از سوی مشاور برایت منتشر نشده است.
+            </p>
+          </CardContent>
+        </Card>
+      );
+    }
+    return null;
+  }
 
   const isCurrent = plan.startDate <= todayIso() && todayIso() <= plan.endDate;
 
