@@ -2,7 +2,6 @@
 export * from './students-data';
 export * from './notifications-data';
 export * from './tickets-data';
-export * from './calendar-data';
 export * from './messages-data';
 export * from './dashboard-data';
 export * from './user-data';

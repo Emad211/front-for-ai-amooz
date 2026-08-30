@@ -6,7 +6,7 @@ import { generateMonthDays, getUpcomingEvents, getTodayJalali } from '@/lib/cale
 import { DashboardService } from '@/services/dashboard-service';
 
 type CalendarService = {
-  getCalendarEvents: () => Promise<CalendarEvent[]>;
+  getCalendarEvents: (year: number, month: number) => Promise<CalendarEvent[]>;
 };
 
 export function useCalendar(service: CalendarService = DashboardService) {
@@ -14,7 +14,7 @@ export function useCalendar(service: CalendarService = DashboardService) {
   const today = getTodayJalali();
   const [currentMonth, setCurrentMonth] = useState(today.month);
   const [currentYear, setCurrentYear] = useState(today.year);
-  
+
   // State for selected day and events
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -23,7 +23,7 @@ export function useCalendar(service: CalendarService = DashboardService) {
   const [showMobileEvents, setShowMobileEvents] = useState(false);
 
   const upcomingEvents = useMemo(() => getUpcomingEvents(events, 10), [events]);
-  
+
   // State for event modal
   const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -33,7 +33,7 @@ export function useCalendar(service: CalendarService = DashboardService) {
     const fetchEvents = async () => {
       try {
         setIsLoading(true);
-        const data = await service.getCalendarEvents();
+        const data = await service.getCalendarEvents(currentYear, currentMonth);
         if (!cancelled) setEvents(data);
       } catch (error) {
         console.error('Error fetching calendar events:', error);
@@ -46,7 +46,7 @@ export function useCalendar(service: CalendarService = DashboardService) {
     return () => {
       cancelled = true;
     };
-  }, [service]);
+  }, [service, currentYear, currentMonth]);
 
   // Generate calendar days
   const calendarDays = useMemo(() => 

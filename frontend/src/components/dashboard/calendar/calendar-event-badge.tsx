@@ -18,14 +18,7 @@ export function CalendarEventBadge({ event, compact = false, onClick }: Calendar
     return (
       <div
         onClick={onClick}
-        className={cn(
-          'w-1.5 h-1.5 rounded-full cursor-pointer',
-          event.type === 'exam' && 'bg-red-500',
-          event.type === 'assignment' && 'bg-orange-500',
-          event.type === 'class' && 'bg-blue-500',
-          event.type === 'holiday' && 'bg-green-500',
-          event.type === 'reminder' && 'bg-purple-500'
-        )}
+        className={cn('w-1.5 h-1.5 rounded-full cursor-pointer', config.dot)}
         title={event.title}
       />
     );

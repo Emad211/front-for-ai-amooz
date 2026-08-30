@@ -1,4 +1,4 @@
-import { newDate, getDaysInMonth, getDay, getYear, getMonth, getDate } from 'date-fns-jalali';
+import { newDate, getDaysInMonth, getDay, getYear, getMonth, getDate, format } from 'date-fns-jalali';
 
 import type { CalendarDay, CalendarEvent } from '@/types';
 
@@ -36,6 +36,35 @@ export function getTodayJalali(): { year: number; month: number; day: number } {
 export function getTodayJalaliString(): string {
   const t = getTodayJalali();
   return `${t.year}-${pad2(t.month)}-${pad2(t.day)}`;
+}
+
+/**
+ * Convert a Gregorian ISO `YYYY-MM-DD` string into the Jalali `YYYY-MM-DD`
+ * calendar key used by `generateMonthDays`/`getEventsForDate` (zero-padded,
+ * `date-fns-jalali` math — no timezone shifts since we parse as local date).
+ * Returns null for malformed input.
+ */
+export function gregorianIsoToJalaliKey(iso: string): string | null {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
+  if (!match) return null;
+  const date = new Date(
+    Number(match[1]),
+    Number(match[2]) - 1,
+    Number(match[3]),
+  );
+  if (Number.isNaN(date.getTime())) return null;
+  return format(date, 'yyyy-MM-dd');
+}
+
+/**
+ * The GREGORIAN ISO date (`YYYY-MM-DD`) of day 1 of the given Jalali
+ * year/month (month is 1-based) — the `monthStart` key the monthly-outlook
+ * endpoints expect. A Jalali string never crosses the wire.
+ */
+export function jalaliMonthStartIso(year: number, month: number): string {
+  const firstOfMonth = newDate(year, month - 1, 1);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${firstOfMonth.getFullYear()}-${pad(firstOfMonth.getMonth() + 1)}-${pad(firstOfMonth.getDate())}`;
 }
 
 export function getEventsForDate(date: string, events: CalendarEvent[] = []): CalendarEvent[] {

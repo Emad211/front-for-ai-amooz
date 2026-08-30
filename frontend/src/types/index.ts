@@ -268,7 +268,7 @@ export interface AdminDistributionData {
   value: number;
 }
 
-export type EventType = 'exam' | 'assignment' | 'class' | 'holiday' | 'reminder';
+export type EventType = 'exam' | 'assignment' | 'class' | 'holiday' | 'reminder' | 'study_plan' | 'advisor_note' | 'challenge';
 export type EventPriority = 'high' | 'medium' | 'low';
 
 export interface CalendarEvent {
