@@ -830,6 +830,27 @@ exam_records, monthly, challenges`. ویوهای جدید: `views_intake.py`, `v
   دسکتاپ و موبایل (اصلاحات a11y: aria-label دکمه‌های ماه و اعلان‌ها، h1→h2 هدر تقویم، کنتراست
   indigo/muted روزهای غیرماه).
 
+## ۱۸. موج رشد — دفتر اشتباهات، پوشش مبحث، هدف، تحلیل (لندشده 2026-08-31)
+
+> چهار گپ اصلی که در مقایسه با مشاوران ایرانی بسته شد.
+
+### ۱۸.۱ مدل‌های نو (مایگریشن 0019)
+- **`AdvisoryGoal`** (OneToOne engagement) — هدف تحصیلی.
+- **`MistakeEntry`** (FK engagement) — دفتر اشتباهات با ۶ دسته خطا.
+- **`TopicProgress`** (FK engagement) — پوشش مبحث با spacing خودکار.
+- **غنی‌سازی**: `StudyPlan.phase/strategy` + `StudyPlanItem.start_time` + `DailyLogItem.activity_type`.
+
+### ۱۸.۲ روت‌های نو (`views_growth.py`)
+`GET|PUT me/goal/` · `GET|POST me/mistakes/` + `PATCH|DELETE me/mistakes/<id>/` ·
+`GET|POST me/topics/` + `PATCH|DELETE me/topics/<id>/` · `GET me/analytics/`
+
+### ۱۸.۳ فرانت
+تب «تحلیل» (analytics-tab) + دفتر اشتباهات (mistake-log-card) + پوشش مباحث (topic-progress-card) +
+هدف تحصیلی (goal-card) + تایمر مطالعه (study-timer) + انتخاب نوع مطالعه.
+
+### ۱۸.۴ وریفای
+۷۱۶ passed · tsc پاک · build سبز · اسموک مرورگر با دیتای seed کامل.
+
 
 
 
