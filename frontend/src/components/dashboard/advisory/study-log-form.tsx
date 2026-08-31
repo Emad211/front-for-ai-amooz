@@ -30,6 +30,14 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
 import { AdvisoryService } from '@/services/advisory-service';
 import type { StudyLogPayload, StudyPlanOut } from '@/services/advisory-service';
+import { StudyTimer } from '@/components/dashboard/advisory/study-timer';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { toEnglishDigits, toPersianDigits } from '@/lib/persian-digits';
 import { adherenceColorClass, formatAdherence } from '@/lib/adherence';
 
@@ -111,6 +119,9 @@ export function StudyLogForm() {
   const [motivationNote, setMotivationNote] = useState('');
   const [testsTakenRaw, setTestsTakenRaw] = useState('');
   const [testPercentRaw, setTestPercentRaw] = useState('');
+  // Research wave (2026-08-31): the day's dominant activity — rides every item
+  // of the save payload ('' = plain minutes, the pre-field meaning).
+  const [activityType, setActivityType] = useState('');
   const [saving, setSaving] = useState(false);
   // Step 8: adherence of the plan running today; null ⇒ chip is not rendered
   // (quiet-null for students without plans or with nothing elapsed yet).
@@ -134,6 +145,9 @@ export function StudyLogForm() {
     setTestsTakenRaw(data.log && data.log.testsTaken > 0 ? String(data.log.testsTaken) : '');
     setTestPercentRaw(
       data.log && data.log.testPercent !== null ? String(data.log.testPercent) : ''
+    );
+    setActivityType(
+      data.log?.items?.find((item) => item.activityType)?.activityType ?? '',
     );
   }, []);
 
@@ -224,11 +238,12 @@ export function StudyLogForm() {
     setSaving(true);
     try {
       // WHOLE-day payload: only entries with minutes > 0 are sent; an empty
-      // array is a valid "cleared day".
+      // array is a valid "cleared day". The day's activity rides every row.
       const items = Object.entries(minutesBySubject)
         .map(([subjectId, raw]) => ({
           subjectId: Number(subjectId),
           minutes: parseMinutes(raw),
+          activityType: activityType || undefined,
         }))
         .filter((item) => item.minutes > 0);
 
@@ -307,6 +322,20 @@ export function StudyLogForm() {
         onNextDay={() => handleShiftDay(1)}
       />
 
+      <StudyTimer
+        subjects={payload.subjects.map((s) => ({ subjectId: s.subjectId, name: s.name }))}
+        onAddMinutes={(subjectId, minutes) => {
+          setMinutesBySubject((prev) => {
+            const next = Math.min(
+              parseMinutes(prev[subjectId] ?? '') + minutes,
+              MAX_MINUTES_PER_SUBJECT,
+            );
+            return { ...prev, [subjectId]: String(next) };
+          });
+          toast.success(`${toPersianDigits(minutes)} دقیقه به ${payload.subjects.find((s) => s.subjectId === subjectId)?.name ?? ''} اضافه شد.`);
+        }}
+      />
+
       {/* Step 8: adherence of the plan running today; renders nothing when
       there is no current plan or nothing has elapsed yet (quiet-null). */}
       {planPercent !== null && (
@@ -353,9 +382,24 @@ export function StudyLogForm() {
         <CardHeader className="pb-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <CardTitle className="text-base">دقایق مطالعه به تفکیک درس</CardTitle>
-            <span className={`text-sm font-semibold ${totalTone}`}>
-              مجموع امروز: {toPersianDigits(totalMinutes)} دقیقه
-            </span>
+            <div className="flex items-center gap-2">
+              <Select value={activityType || 'plain'} onValueChange={setActivityType}>
+                <SelectTrigger className="h-8 w-36 text-xs" aria-label="نوع مطالعه">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="plain">ثبت ساده</SelectItem>
+                  <SelectItem value="LESSON">درسنامه</SelectItem>
+                  <SelectItem value="EDU_TEST">تست آموزشی</SelectItem>
+                  <SelectItem value="TIMED_TEST">تست زمان‌دار</SelectItem>
+                  <SelectItem value="REVIEW">مرور</SelectItem>
+                  <SelectItem value="SUMMARY">خلاصه‌نویسی</SelectItem>
+                </SelectContent>
+              </Select>
+              <span className={`text-sm font-semibold ${totalTone}`}>
+                مجموع امروز: {toPersianDigits(totalMinutes)} دقیقه
+              </span>
+            </div>
           </div>
         </CardHeader>
         <CardContent>

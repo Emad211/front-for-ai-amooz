@@ -25,24 +25,36 @@ import { MyChallengeCard } from '@/components/dashboard/advisory/my-challenge-ca
 import { MyMonthlyOutlookCard } from '@/components/dashboard/advisory/my-monthly-outlook-card';
 import { StudyPlanCard } from '@/components/dashboard/home/study-plan-card';
 import { AdvisoryCalendarTab } from '@/components/dashboard/advisory/advisory-calendar-tab';
+import { AnalyticsTab } from '@/components/dashboard/advisory/analytics-tab';
+import { GoalCard } from '@/components/dashboard/advisory/goal-card';
+import { MistakeLogCard } from '@/components/dashboard/advisory/mistake-log-card';
+import { TopicProgressCard } from '@/components/dashboard/advisory/topic-progress-card';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
 import { AdvisoryService, type StudentEngagement } from '@/services/advisory-service';
 
-type AdvisorTab = 'log' | 'calendar' | 'plans' | 'exams' | 'profile';
+type AdvisorTab = 'log' | 'calendar' | 'plans' | 'insights' | 'exams' | 'profile';
 
 const TABS: { id: AdvisorTab; label: string }[] = [
   { id: 'log', label: 'گزارش روزانه' },
   { id: 'calendar', label: 'تقویم' },
   { id: 'plans', label: 'برنامه‌ها' },
+  { id: 'insights', label: 'تحلیل' },
   { id: 'exams', label: 'آزمون‌ها' },
   { id: 'profile', label: 'مشخصات' },
 ];
 
 function isAdvisorTab(value: string | null): value is AdvisorTab {
-  return value === 'log' || value === 'calendar' || value === 'plans' || value === 'exams' || value === 'profile';
+  return (
+    value === 'log' ||
+    value === 'calendar' ||
+    value === 'plans' ||
+    value === 'insights' ||
+    value === 'exams' ||
+    value === 'profile'
+  );
 }
 
 function AdvisorInactiveNotice() {
@@ -144,22 +156,35 @@ function AdvisorPageContent() {
             (engagement === null ? (
               <AdvisorInactiveNotice />
             ) : (
-              <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-                <div className="space-y-6">
-                  <StudyPlanCard showEmptyState />
-                  <MyChallengeCard />
+              <div className="space-y-6">
+                <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+                  <div className="space-y-6">
+                    <StudyPlanCard showEmptyState />
+                    <MyChallengeCard />
+                  </div>
+                  <MyMonthlyOutlookCard />
                 </div>
-                <MyMonthlyOutlookCard />
+                <TopicProgressCard />
               </div>
+            ))}
+
+          {activeTab === 'insights' &&
+            (engagement === null ? (
+              <AdvisorInactiveNotice />
+            ) : (
+              <AnalyticsTab />
             ))}
 
           {activeTab === 'exams' &&
             (engagement === null ? (
               <AdvisorInactiveNotice />
             ) : (
-              <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-                <MyExamScoresCard showEmptyState />
-                <MyExamAnalysesCard showEmptyState />
+              <div className="space-y-6">
+                <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+                  <MyExamScoresCard showEmptyState />
+                  <MyExamAnalysesCard showEmptyState />
+                </div>
+                <MistakeLogCard />
               </div>
             ))}
 
@@ -170,6 +195,9 @@ function AdvisorPageContent() {
               <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
                 <MyIntakeCard />
                 <MySubjectsCard />
+                <div className="lg:col-span-2">
+                  <GoalCard />
+                </div>
               </div>
             ))}
         </div>

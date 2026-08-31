@@ -189,6 +189,8 @@ export type StudyLogItem = {
   name: string;
   minutes: number;
   isSelected: boolean;
+  /** Research wave (2026-08-31): the activity taxonomy; '' = plain minutes. */
+  activityType?: string;
 };
 
 /** The whole-day study log as the server stores it. `mood` is 1..5 or null
@@ -236,7 +238,7 @@ export type SaveStudyLogBody = {
   motivationNote?: string;
   testsTaken?: number;
   testPercent?: number | null;
-  items: { subjectId: number; minutes: number }[];
+  items: { subjectId: number; minutes: number; activityType?: string }[];
 };
 
 /* ── Study feed + study plans (advisor-mvp §14 — variable-horizon redesign) ── */
@@ -691,6 +693,147 @@ export type StudentChallengeDayBody = {
 export type MyChallengesResponse = {
   active: boolean;
   challenges: Challenge[];
+};
+
+/* ── Research wave (2026-08-31): goal, mistake log, topic coverage, analytics ── */
+
+/** `GET /advisory/me/goal/` — the student's stated destination. */
+export type GoalPayload = {
+  targetTitle: string;
+  targetRank: string;
+  currentRank: string;
+  note: string;
+  updatedAt: string;
+};
+
+export type MyGoalResponse = {
+  active: boolean;
+  goal: GoalPayload | null;
+};
+
+export type SaveGoalBody = {
+  targetTitle: string;
+  targetRank?: string;
+  currentRank?: string;
+  note?: string;
+};
+
+export type MistakeStatus = 'WRONG' | 'DOUBT_RIGHT' | 'UNANSWERED';
+
+export type MistakeErrorType =
+  | 'CONCEPT'
+  | 'FORGET'
+  | 'METHOD'
+  | 'EXECUTION'
+  | 'READING'
+  | 'TIME';
+
+export type MistakePriority = 'HIGH' | 'MEDIUM' | 'LOW';
+
+/** One row of the mistake notebook (دفتر اشتباهات). */
+export type MistakeEntryOut = {
+  id: number;
+  subjectId: number;
+  subjectName: string;
+  topic: string;
+  status: MistakeStatus;
+  errorType: MistakeErrorType;
+  cause: string;
+  fixNote: string;
+  nextAction: string;
+  priority: MistakePriority;
+  sourceRef: string;
+  reviewDate: string | null;
+  isResolved: boolean;
+  createdAt: string;
+};
+
+export type MyMistakesResponse = {
+  active: boolean;
+  mistakes: MistakeEntryOut[];
+};
+
+export type SaveMistakeBody = {
+  subjectId: number;
+  topic: string;
+  status: MistakeStatus;
+  errorType: MistakeErrorType;
+  cause?: string;
+  fixNote?: string;
+  nextAction?: string;
+  priority?: MistakePriority;
+  sourceRef?: string;
+  reviewDate?: string | null;
+};
+
+export type PatchMistakeBody = Partial<Omit<SaveMistakeBody, 'reviewDate'>> & {
+  reviewDate?: string | null;
+  isResolved?: boolean;
+};
+
+export type TopicStatus = 'NEW' | 'STUDIED' | 'NEEDS_REVIEW' | 'MASTERED';
+
+/** One coverage row — the lightweight پوشش مبحث ladder. */
+export type TopicProgressOut = {
+  id: number;
+  subjectId: number;
+  subjectName: string;
+  topic: string;
+  status: TopicStatus;
+  nextReviewAt: string | null;
+  updatedAt: string;
+};
+
+export type MyTopicsResponse = {
+  active: boolean;
+  topics: TopicProgressOut[];
+};
+
+export type SaveTopicBody = {
+  subjectId: number;
+  topic: string;
+  status?: TopicStatus;
+  nextReviewAt?: string | null;
+};
+
+export type PatchTopicBody = Partial<SaveTopicBody>;
+
+/** `GET /advisory/me/analytics/` — the read-only growth bundle. */
+export type AnalyticsPayload = {
+  active: boolean;
+  today: string;
+  streak: number;
+  loggedToday: boolean;
+  subjectBalance: { name: string; minutes: number }[];
+  examTrend: {
+    id: number;
+    exam_date: string;
+    score_percent: number | null;
+    tara: number | null;
+    title: string;
+  }[];
+  planExecution: {
+    planId: number;
+    startDate: string;
+    endDate: string;
+    percent: number | null;
+  } | null;
+  backlog: {
+    date: string;
+    subject: string;
+    topic: string;
+    planned: number;
+    actual: number;
+  }[];
+  backlogTotal: number;
+  reviewDue: {
+    id: number;
+    topic: string;
+    next_review_at: string;
+    student_subject__subject__name: string;
+  }[];
+  openMistakes: number;
+  mistakesByType: Record<MistakeErrorType, number>;
 };
 
 /** Coerce an unknown wire payload into a safe `IntakePayload` (the t.find
@@ -1980,6 +2123,68 @@ export const AdvisoryService = {
     );
     return normalizeMyChallenges(payload);
   },
+
+  getMyGoal: async (): Promise<MyGoalResponse> =>
+    requestJson<MyGoalResponse>('/advisory/me/goal/'),
+
+  saveMyGoal: async (body: SaveGoalBody): Promise<GoalPayload> =>
+    requestJson<GoalPayload>('/advisory/me/goal/', {
+      method: 'PUT',
+      body: JSON.stringify(body),
+    }),
+
+  getMyMistakes: async (): Promise<MyMistakesResponse> =>
+    requestJson<MyMistakesResponse>('/advisory/me/mistakes/'),
+
+  createMyMistake: async (body: SaveMistakeBody): Promise<MistakeEntryOut> =>
+    requestJson<MistakeEntryOut>('/advisory/me/mistakes/', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+
+  patchMyMistake: async (
+    id: number,
+    body: PatchMistakeBody,
+  ): Promise<MistakeEntryOut> =>
+    requestJson<MistakeEntryOut>(
+      `/advisory/me/mistakes/${encodeURIComponent(id)}/`,
+      { method: 'PATCH', body: JSON.stringify(body) },
+    ),
+
+  deleteMyMistake: async (id: number): Promise<void> => {
+    await requestJson<void>(
+      `/advisory/me/mistakes/${encodeURIComponent(id)}/`,
+      { method: 'DELETE' },
+    );
+  },
+
+  getMyTopics: async (): Promise<MyTopicsResponse> =>
+    requestJson<MyTopicsResponse>('/advisory/me/topics/'),
+
+  createMyTopic: async (body: SaveTopicBody): Promise<TopicProgressOut> =>
+    requestJson<TopicProgressOut>('/advisory/me/topics/', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+
+  patchMyTopic: async (
+    id: number,
+    body: PatchTopicBody,
+  ): Promise<TopicProgressOut> =>
+    requestJson<TopicProgressOut>(
+      `/advisory/me/topics/${encodeURIComponent(id)}/`,
+      { method: 'PATCH', body: JSON.stringify(body) },
+    ),
+
+  deleteMyTopic: async (id: number): Promise<void> => {
+    await requestJson<void>(
+      `/advisory/me/topics/${encodeURIComponent(id)}/`,
+      { method: 'DELETE' },
+    );
+  },
+
+  getMyAnalytics: async (): Promise<AnalyticsPayload> =>
+    requestJson<AnalyticsPayload>('/advisory/me/analytics/'),
 
   /**
    * The student-side day writer: ONLY goal/summary are accepted (any other
