@@ -30,10 +30,13 @@ from rest_framework import serializers
 from apps.commons.phone_utils import is_valid_iran_mobile, normalize_phone
 
 from .models import (
+    LOG_ACTIVITY_CHOICES,
     MAX_LOG_MINUTES_PER_ITEM,
     MAX_LOG_NOTE_CHARS,
     MOOD_MAX,
     MOOD_MIN,
+    PLAN_PHASE_CHOICES,
+    PLAN_STRATEGY_CHOICES,
     Subject,
 )
 from .services.assessments import assessment_average
@@ -304,6 +307,9 @@ class DailyLogItemSerializer(serializers.Serializer):
     name = serializers.CharField(source='student_subject.subject.name', read_only=True)
     minutes = serializers.IntegerField(source='actual_minutes', read_only=True)
     isSelected = serializers.BooleanField(source='student_subject.is_active', read_only=True)
+    activityType = serializers.CharField(
+        source='activity_type', read_only=True, allow_blank=True,
+    )
 
 
 class DailyLogSerializer(serializers.Serializer):
@@ -352,6 +358,12 @@ class DailyLogItemWriteSerializer(serializers.Serializer):
 
     subjectId = serializers.IntegerField(source='subject_id', min_value=1)
     minutes = serializers.IntegerField(min_value=0, max_value=MAX_LOG_MINUTES_PER_ITEM)
+    activityType = serializers.ChoiceField(
+        source='activity_type',
+        choices=[code for code, _label in LOG_ACTIVITY_CHOICES] + [''],
+        required=False,
+        allow_blank=True,
+    )
 
 
 class DailyLogWriteSerializer(serializers.Serializer):
@@ -459,6 +471,9 @@ class StudyPlanItemOutSerializer(serializers.Serializer):
     masteryColor = serializers.CharField(
         source='mastery_color', read_only=True, allow_null=True,
     )
+    startTime = serializers.TimeField(
+        source='start_time', read_only=True, allow_null=True, format='%H:%M',
+    )
 
     def get_date(self, obj):  # noqa: N802 — camelCase wire key
         return obj.plan.start_date + datetime.timedelta(days=obj.day_offset)
@@ -484,6 +499,8 @@ class StudyPlanOutSerializer(serializers.Serializer):
     # Restart step 4: the per-day note blocks, additive. Always a dict (the
     # column defaults to {}), keyed '0'..'6' as strings.
     dayNotes = serializers.JSONField(source='day_notes', read_only=True)
+    phase = serializers.CharField(read_only=True, allow_blank=True)
+    strategy = serializers.CharField(read_only=True, allow_blank=True)
 
     def get_endDate(self, obj):  # noqa: N802 — camelCase wire key
         return obj.end_date
@@ -525,6 +542,9 @@ class StudyPlanDraftItemWriteSerializer(serializers.Serializer):
     masteryColor = serializers.CharField(
         source='mastery_color', required=False, allow_null=True, allow_blank=True,
     )
+    startTime = serializers.TimeField(
+        source='start_time', required=False, allow_null=True, format='%H:%M',
+    )
 
 
 class StudyPlanDraftWriteSerializer(serializers.Serializer):
@@ -546,6 +566,16 @@ class StudyPlanDraftWriteSerializer(serializers.Serializer):
     durationDays = serializers.IntegerField(source='duration_days')
     items = StudyPlanDraftItemWriteSerializer(many=True)
     dayNotes = serializers.JSONField(source='day_notes', required=False)
+    # Research wave (2026-08-31): optional roadmap labels. Blank/unset stores
+    # the empty string — the draft is wholesale, matching the fields above.
+    phase = serializers.ChoiceField(
+        choices=[code for code, _label in PLAN_PHASE_CHOICES] + [''],
+        required=False, allow_blank=True,
+    )
+    strategy = serializers.ChoiceField(
+        choices=[code for code, _label in PLAN_STRATEGY_CHOICES] + [''],
+        required=False, allow_blank=True,
+    )
 
 
 class FeedDayItemSerializer(serializers.Serializer):
@@ -1216,3 +1246,143 @@ class EngagementFolderWriteSerializer(serializers.Serializer):
     """
 
     folderId = serializers.IntegerField(allow_null=True)
+
+
+# ── Research wave (2026-08-31): goal, mistake log, topic progress ─────────────
+#
+# Same allowlist rule as everything above: plain ``Serializer`` off instance
+# attributes, choices sourced from the same constants the columns declare
+# with, bounds owned by the services (which pin the Persian messages).
+
+class GoalItemSerializer(serializers.Serializer):
+    """The engagement's single goal on the wire."""
+
+    targetTitle = serializers.CharField(source='target_title', read_only=True)
+    targetRank = serializers.CharField(source='target_rank', read_only=True)
+    currentRank = serializers.CharField(source='current_rank', read_only=True)
+    note = serializers.CharField(read_only=True)
+    updatedAt = serializers.DateTimeField(source='updated_at', read_only=True)
+
+
+class GoalWriteSerializer(serializers.Serializer):
+    """The PUT body for ``me/goal/`` — wholesale replace of the goal row.
+
+    Only ``targetTitle`` is required; the empty title rule and the length
+    ceiling live in ``services.goals`` so the 400 stays Persian.
+    """
+
+    targetTitle = serializers.CharField(
+        source='target_title', trim_whitespace=False,
+    )
+    targetRank = serializers.CharField(
+        source='target_rank', required=False, allow_blank=True,
+    )
+    currentRank = serializers.CharField(
+        source='current_rank', required=False, allow_blank=True,
+    )
+    note = serializers.CharField(required=False, allow_blank=True)
+
+
+class MistakeItemSerializer(serializers.Serializer):
+    """One mistake-notebook row. ``subjectId`` is the catalog id, as everywhere."""
+
+    id = serializers.IntegerField(read_only=True)
+    subjectId = serializers.IntegerField(
+        source='student_subject.subject_id', read_only=True,
+    )
+    subjectName = serializers.CharField(
+        source='student_subject.subject.name', read_only=True,
+    )
+    topic = serializers.CharField(read_only=True)
+    status = serializers.CharField(read_only=True)
+    errorType = serializers.CharField(source='error_type', read_only=True)
+    cause = serializers.CharField(read_only=True)
+    fixNote = serializers.CharField(source='fix_note', read_only=True)
+    nextAction = serializers.CharField(source='next_action', read_only=True)
+    priority = serializers.CharField(read_only=True)
+    sourceRef = serializers.CharField(source='source_ref', read_only=True)
+    reviewDate = serializers.DateField(
+        source='review_date', read_only=True, allow_null=True,
+    )
+    isResolved = serializers.BooleanField(source='is_resolved', read_only=True)
+    createdAt = serializers.DateTimeField(source='created_at', read_only=True)
+
+
+class MistakeWriteSerializer(serializers.Serializer):
+    """POST body for ``me/mistakes/`` — shape only; the service owns messages."""
+
+    subjectId = serializers.IntegerField(source='subject_id', min_value=1)
+    topic = serializers.CharField()
+    status = serializers.ChoiceField(
+        choices=['WRONG', 'DOUBT_RIGHT', 'UNANSWERED'],
+    )
+    errorType = serializers.ChoiceField(
+        source='error_type',
+        choices=['CONCEPT', 'FORGET', 'METHOD', 'EXECUTION', 'READING', 'TIME'],
+    )
+    cause = serializers.CharField(required=False, allow_blank=True)
+    fixNote = serializers.CharField(source='fix_note', required=False, allow_blank=True)
+    nextAction = serializers.CharField(
+        source='next_action', required=False, allow_blank=True,
+    )
+    priority = serializers.ChoiceField(
+        choices=['HIGH', 'MEDIUM', 'LOW'], required=False,
+    )
+    sourceRef = serializers.CharField(source='source_ref', required=False, allow_blank=True)
+    reviewDate = serializers.DateField(
+        source='review_date', required=False, allow_null=True,
+    )
+
+
+class MistakePatchSerializer(MistakeWriteSerializer):
+    """PATCH body for ``me/mistakes/<id>/`` — every key optional, plus resolve."""
+
+    subjectId = serializers.IntegerField(source='subject_id', required=False)
+    topic = serializers.CharField(required=False, allow_blank=True)
+    status = serializers.ChoiceField(
+        choices=['WRONG', 'DOUBT_RIGHT', 'UNANSWERED'], required=False,
+    )
+    errorType = serializers.ChoiceField(
+        source='error_type',
+        choices=['CONCEPT', 'FORGET', 'METHOD', 'EXECUTION', 'READING', 'TIME'],
+        required=False,
+    )
+    isResolved = serializers.BooleanField(source='is_resolved', required=False)
+
+
+class TopicItemSerializer(serializers.Serializer):
+    """One coverage row. ``nextReviewAt`` is the spaced-review queue date."""
+
+    id = serializers.IntegerField(read_only=True)
+    subjectId = serializers.IntegerField(
+        source='student_subject.subject_id', read_only=True,
+    )
+    subjectName = serializers.CharField(
+        source='student_subject.subject.name', read_only=True,
+    )
+    topic = serializers.CharField(read_only=True)
+    status = serializers.CharField(read_only=True)
+    nextReviewAt = serializers.DateField(
+        source='next_review_at', read_only=True, allow_null=True,
+    )
+    updatedAt = serializers.DateTimeField(source='updated_at', read_only=True)
+
+
+class TopicWriteSerializer(serializers.Serializer):
+    """POST body for ``me/topics/`` — shape only; the service owns messages."""
+
+    subjectId = serializers.IntegerField(source='subject_id', min_value=1)
+    topic = serializers.CharField()
+    status = serializers.ChoiceField(
+        choices=['NEW', 'STUDIED', 'NEEDS_REVIEW', 'MASTERED'], required=False,
+    )
+    nextReviewAt = serializers.DateField(
+        source='next_review_at', required=False, allow_null=True,
+    )
+
+
+class TopicPatchSerializer(TopicWriteSerializer):
+    """PATCH body for ``me/topics/<id>/`` — every key optional."""
+
+    subjectId = serializers.IntegerField(source='subject_id', required=False)
+    topic = serializers.CharField(required=False, allow_blank=True)

@@ -632,6 +632,7 @@ class TestPlannerAPI:
             'unitLabel': '',
             'testMinutes': None,
             'masteryColor': None,
+            'startTime': None,
         }]
 
         listed = _auth(advisor).get(_plans_url(engagement))

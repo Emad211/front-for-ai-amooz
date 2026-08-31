@@ -651,6 +651,15 @@ class DailyLog(models.Model):
         return f'{self.log_date} ← #{self.engagement_id}'
 
 
+LOG_ACTIVITY_CHOICES = [
+    ('LESSON', _('درسنامه')),
+    ('EDU_TEST', _('تست آموزشی')),
+    ('TIMED_TEST', _('تست زمان‌دار')),
+    ('REVIEW', _('مرور')),
+    ('SUMMARY', _('خلاصه‌نویسی')),
+]
+
+
 class DailyLogItem(models.Model):
     """Minutes studied on one subject, on one day.
 
@@ -690,6 +699,16 @@ class DailyLogItem(models.Model):
     actual_minutes = models.PositiveIntegerField(
         verbose_name=_('دقیقه‌ی مطالعه'),
         help_text=_('دقیقه‌ی واقعیِ مطالعه‌ی این درس در آن روز.'),
+    )
+    # Research wave (2026-08-31): what those minutes actually were — the
+    # activity taxonomy Iranian planning forms separate (درسنامه/تست آموزشی/
+    # تست زمان‌دار/مرور/خلاصه‌نویسی). Blank = plain minutes, the pre-field row.
+    activity_type = models.CharField(
+        max_length=12,
+        blank=True,
+        default='',
+        choices=LOG_ACTIVITY_CHOICES,
+        verbose_name=_('نوع مطالعه'),
     )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -748,6 +767,22 @@ MASTERY_COLOR_CHOICES = [
     ('RED', _('قرمز')),
     ('YELLOW', _('زرد')),
     ('GREEN', _('سبز')),
+]
+
+# Research wave (2026-08-31): the roadmap vocabulary of Iranian consultants —
+# plan phases (konkurmoshaver/irantahsil roadmaps) and the volume/time strategy
+# axis, plus the study-activity taxonomy every planning form separates.
+PLAN_PHASE_CHOICES = [
+    ('BASE', _('پایه‌سازی')),
+    ('TEST', _('تست‌زنی')),
+    ('REVIEW', _('جمع‌بندی')),
+    ('FINAL', _('هفته‌های آخر')),
+]
+
+PLAN_STRATEGY_CHOICES = [
+    ('VOLUME', _('حجمی')),
+    ('TIME', _('زمانی')),
+    ('HYBRID', _('حجمی-زمانی')),
 ]
 
 # The allowed sub-keys of one day's note block and their ceiling. The shape is
@@ -823,6 +858,24 @@ class StudyPlan(models.Model):
         blank=True,
         verbose_name=_('یادداشت روزها'),
         help_text=_('شکل مجاز: {"<0..6>": {"school": str≤120, "exams": …, "konkurClass": …, "preReading": …}}'),
+    )
+    # Research wave (2026-08-31): the plan's phase and volume/time strategy —
+    # the two axes every Iranian consultant's roadmap names (پایه‌سازی → تست‌زنی
+    # → جمع‌بندی → هفته‌های آخر; حجمی/زمانی/حجمی-زمانی). Optional: plans
+    # written before the field (or without it) stay legal and render bare.
+    phase = models.CharField(
+        max_length=10,
+        blank=True,
+        default='',
+        choices=PLAN_PHASE_CHOICES,
+        verbose_name=_('فاز برنامه'),
+    )
+    strategy = models.CharField(
+        max_length=10,
+        blank=True,
+        default='',
+        choices=PLAN_STRATEGY_CHOICES,
+        verbose_name=_('استراتژی برنامه'),
     )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -945,6 +998,14 @@ class StudyPlanItem(models.Model):
         blank=True,
         choices=MASTERY_COLOR_CHOICES,
         verbose_name=_('رنگ تسلط'),
+    )
+    # Research wave (2026-08-31): optional HH:MM so the advisor can place the
+    # row inside the student's day (the «پارت‌بندی» every planning form uses).
+    # Null = «هر ساعتِ آن روز» — the pre-field meaning, unchanged.
+    start_time = models.TimeField(
+        null=True,
+        blank=True,
+        verbose_name=_('ساعت شروع'),
     )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -2083,6 +2144,251 @@ class AdvisoryStudentFolder(models.Model):
 
     def __str__(self) -> str:
         return f'{self.name} ← #{self.advisor_id}'
+
+
+# ── Research wave (2026-08-31): goal, mistake log, topic progress ─────────────
+#
+# The three gaps every Iranian consultant covers but the restart plan did not:
+# a stated destination (goal), the mistake notebook (دفتر اشتباهات) and per-
+# topic coverage (پوشش مبحث). All three are student-owned and tenancy-bearing
+# like the rest of the app; the advisor reads them through the same engagement
+# join and will surface in the advisor cockpit in a later wave.
+
+MAX_GOAL_TEXT_CHARS = 120
+
+
+class AdvisoryGoal(models.Model):
+    """The student's stated destination — one row per engagement.
+
+    Every Iranian planning interview starts here (رشته/دانشگاه/رتبهٔ هدف and the
+    gap to it); this is the first time the answer has a column to live in. Free
+    text on purpose: rank targets like «زیر ۱۰۰۰ کشوری» are not numbers a formula
+    should parse. ``updated_by`` records who last wrote it (student aspiration or
+    advisor refinement) — no permission branches on it in this wave.
+    """
+
+    engagement = models.OneToOneField(
+        AdvisoryEngagement,
+        on_delete=models.CASCADE,
+        related_name='goal',
+        verbose_name=_('همکاری'),
+    )
+    target_title = models.CharField(
+        max_length=MAX_GOAL_TEXT_CHARS,
+        verbose_name=_('هدف'),
+        help_text=_('مثل: پزشکی، دانشگاه شهید بهشتی'),
+    )
+    target_rank = models.CharField(
+        max_length=60,
+        blank=True,
+        default='',
+        verbose_name=_('رتبه/تراز هدف'),
+    )
+    current_rank = models.CharField(
+        max_length=60,
+        blank=True,
+        default='',
+        verbose_name=_('رتبه/تراز فعلی'),
+    )
+    note = models.TextField(
+        blank=True,
+        default='',
+        verbose_name=_('یادداشت مسیر'),
+    )
+    updated_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name='advisory_goals_written',
+        verbose_name=_('آخرین ویرایش‌گر'),
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = _('هدف تحصیلی')
+        verbose_name_plural = _('اهداف تحصیلی')
+
+    def __str__(self) -> str:
+        return f'{self.target_title} ← #{self.engagement_id}'
+
+
+MAX_MISTAKE_TEXT_CHARS = 300
+
+
+class MistakeEntry(models.Model):
+    """One row of the student's mistake notebook (دفتر اشتباهات).
+
+    Shape follows the canonical Iranian form (hamtahsil's six-category table):
+    status captures غلط/درستِ شک‌دار/نزده (a doubt-right answer is data too),
+    ``error_type`` is the six-way root-cause taxonomy, and the fix trio
+    (cause/fix_note/next_action) is what turns a mistake into a plan. Rows are
+    student-owned; ``is_resolved`` is the student closing the loop after an
+    active-recall review, not a delete.
+    """
+
+    class Status(models.TextChoices):
+        WRONG = 'WRONG', _('غلط')
+        DOUBT_RIGHT = 'DOUBT_RIGHT', _('درست اما شک‌دار')
+        UNANSWERED = 'UNANSWERED', _('نزده')
+
+    class ErrorType(models.TextChoices):
+        CONCEPT = 'CONCEPT', _('مفهومی')
+        FORGET = 'FORGET', _('فراموشی')
+        METHOD = 'METHOD', _('تشخیص روش')
+        EXECUTION = 'EXECUTION', _('محاسباتی/اجرایی')
+        READING = 'READING', _('خواندن سؤال')
+        TIME = 'TIME', _('مدیریت زمان')
+
+    class Priority(models.TextChoices):
+        HIGH = 'HIGH', _('بالا')
+        MEDIUM = 'MEDIUM', _('متوسط')
+        LOW = 'LOW', _('کم')
+
+    engagement = models.ForeignKey(
+        AdvisoryEngagement,
+        on_delete=models.CASCADE,
+        related_name='mistakes',
+        verbose_name=_('همکاری'),
+    )
+    student_subject = models.ForeignKey(
+        StudentSubject,
+        on_delete=models.PROTECT,
+        related_name='mistake_entries',
+        verbose_name=_('درسِ دانش‌آموز'),
+    )
+    topic = models.CharField(
+        max_length=200,
+        verbose_name=_('مبحث'),
+    )
+    status = models.CharField(
+        max_length=12,
+        choices=Status.choices,
+        default=Status.WRONG,
+        verbose_name=_('وضعیت پاسخ'),
+    )
+    error_type = models.CharField(
+        max_length=12,
+        choices=ErrorType.choices,
+        verbose_name=_('نوع خطا'),
+    )
+    cause = models.CharField(
+        max_length=MAX_MISTAKE_TEXT_CHARS,
+        blank=True,
+        default='',
+        verbose_name=_('علت اصلی'),
+    )
+    fix_note = models.CharField(
+        max_length=MAX_MISTAKE_TEXT_CHARS,
+        blank=True,
+        default='',
+        verbose_name=_('نکتهٔ اصلاحی'),
+    )
+    next_action = models.CharField(
+        max_length=MAX_MISTAKE_TEXT_CHARS,
+        blank=True,
+        default='',
+        verbose_name=_('اقدام بعدی'),
+    )
+    priority = models.CharField(
+        max_length=8,
+        choices=Priority.choices,
+        default=Priority.MEDIUM,
+        verbose_name=_('اولویت'),
+    )
+    source_ref = models.CharField(
+        max_length=120,
+        blank=True,
+        default='',
+        verbose_name=_('منبع/شماره سؤال'),
+    )
+    review_date = models.DateField(
+        null=True,
+        blank=True,
+        verbose_name=_('تاریخ مرور'),
+    )
+    is_resolved = models.BooleanField(
+        default=False,
+        verbose_name=_('رفع شده'),
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['is_resolved', '-created_at']
+        indexes = [
+            models.Index(
+                fields=['engagement', 'is_resolved', '-created_at'],
+                name='idx_adv_mistakes_eng_open',
+            ),
+        ]
+        verbose_name = _('خطای دفتر اشتباهات')
+        verbose_name_plural = _('ردیف‌های دفتر اشتباهات')
+
+    def __str__(self) -> str:
+        return f'{self.get_error_type_display()} · {self.topic} ← #{self.engagement_id}'
+
+
+class TopicProgress(models.Model):
+    """One topic of one subject and where the student stands on it.
+
+    The lightweight پوشش مبحث: the topic list is grown by the student/advisor
+    as rows (no national syllabus import), each carrying a status on the
+    NEW → STUDIED → NEEDS_REVIEW → MASTERED ladder. ``next_review_at`` is the
+    spaced-review hook — set it when a topic goes to NEEDS_REVIEW and the
+    analytics endpoint surfaces everything due.
+    """
+
+    class Status(models.TextChoices):
+        NEW = 'NEW', _('شروع‌نشده')
+        STUDIED = 'STUDIED', _('خوانده‌شده')
+        NEEDS_REVIEW = 'NEEDS_REVIEW', _('نیاز به مرور')
+        MASTERED = 'MASTERED', _('تسلط‌یافته')
+
+    engagement = models.ForeignKey(
+        AdvisoryEngagement,
+        on_delete=models.CASCADE,
+        related_name='topic_progress',
+        verbose_name=_('همکاری'),
+    )
+    student_subject = models.ForeignKey(
+        StudentSubject,
+        on_delete=models.PROTECT,
+        related_name='topic_progress',
+        verbose_name=_('درسِ دانش‌آموز'),
+    )
+    topic = models.CharField(
+        max_length=200,
+        verbose_name=_('مبحث'),
+    )
+    status = models.CharField(
+        max_length=14,
+        choices=Status.choices,
+        default=Status.NEW,
+        verbose_name=_('وضعیت'),
+    )
+    next_review_at = models.DateField(
+        null=True,
+        blank=True,
+        verbose_name=_('مرور بعدی'),
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['student_subject__subject__name', 'topic']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['engagement', 'student_subject', 'topic'],
+                name='uniq_advisory_topic_progress',
+                violation_error_message=_('این مبحث از قبل در فهرست هست.'),
+            ),
+        ]
+        verbose_name = _('پیشرفت مبحث')
+        verbose_name_plural = _('پیشرفت مباحث')
+
+    def __str__(self) -> str:
+        return f'{self.topic} ({self.get_status_display()}) ← #{self.engagement_id}'
 
 
 

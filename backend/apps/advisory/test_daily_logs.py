@@ -515,6 +515,7 @@ def test_put_happy_path_persists_and_get_shows_it():
         'name': 'ریاضی',
         'minutes': 45,
         'isSelected': True,
+        'activityType': '',
     }]
 
 

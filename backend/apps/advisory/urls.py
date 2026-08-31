@@ -57,6 +57,14 @@ from .views_folders import (
     AdvisorFolderListView,
     AssignEngagementFolderView,
 )
+from .views_growth import (
+    StudentAnalyticsView,
+    StudentGoalView,
+    StudentMistakeDetailView,
+    StudentMistakesView,
+    StudentTopicDetailView,
+    StudentTopicsView,
+)
 
 
 class ISODateConverter:
@@ -247,6 +255,26 @@ urlpatterns = [
         'me/invites/<int:pk>/reject/',
         StudentInviteRejectView.as_view(),
         name='advisory_invite_reject',
+    ),
+    # Research wave (2026-08-31): goal, mistake notebook, topic coverage and
+    # the analytics bundle — all quiet reads / 409 writes like the mirrors above.
+    path('me/goal/', StudentGoalView.as_view(), name='advisory_my_goal'),
+    path('me/mistakes/', StudentMistakesView.as_view(), name='advisory_my_mistakes'),
+    path(
+        'me/mistakes/<int:mistake_id>/',
+        StudentMistakeDetailView.as_view(),
+        name='advisory_my_mistake_detail',
+    ),
+    path('me/topics/', StudentTopicsView.as_view(), name='advisory_my_topics'),
+    path(
+        'me/topics/<int:topic_id>/',
+        StudentTopicDetailView.as_view(),
+        name='advisory_my_topic_detail',
+    ),
+    path(
+        'me/analytics/',
+        StudentAnalyticsView.as_view(),
+        name='advisory_my_analytics',
     ),
 ]
 

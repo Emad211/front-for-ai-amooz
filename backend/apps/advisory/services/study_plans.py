@@ -241,6 +241,7 @@ def _validate_body(
             'unit_label': str(item.get('unit_label') or ''),
             'test_minutes': test_minutes,
             'mastery_color': item.get('mastery_color') or None,
+            'start_time': item.get('start_time') or None,
         })
 
     for row in wanted:
@@ -302,6 +303,7 @@ def _selected_row_id(engagement, subject_id) -> int | None:
 
 def save_draft(
     engagement, *, start_date, duration_days, items, day_notes=UNSET,
+    phase='', strategy='',
 ) -> StudyPlan:
     """Make the engagement's single DRAFT slot equal exactly what was sent.
 
@@ -331,7 +333,13 @@ def save_draft(
         )
         plan.start_date = start_date
         plan.duration_days = duration_days
-        update_fields = ['start_date', 'duration_days', 'updated_at']
+        # Research wave (2026-08-31): roadmap labels, wholesale like the rest
+        # of the draft body — absent keys store the blank default.
+        plan.phase = phase or ''
+        plan.strategy = strategy or ''
+        update_fields = [
+            'start_date', 'duration_days', 'phase', 'strategy', 'updated_at',
+        ]
         if day_notes is not UNSET:
             plan.day_notes = day_notes
             update_fields.append('day_notes')
@@ -348,6 +356,7 @@ def save_draft(
                 unit_label=row['unit_label'],
                 test_minutes=row['test_minutes'],
                 mastery_color=row['mastery_color'],
+                start_time=row.get('start_time'),
             )
             for row in wanted
         ])

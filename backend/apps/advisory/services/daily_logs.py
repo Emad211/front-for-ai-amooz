@@ -162,11 +162,16 @@ def save_day(
         raise LogDateOutOfWindow(log_date, earliest, latest)
 
     wanted: dict[int, int] = {}
+    activities: dict[int, str] = {}
     for item in items:
         minutes = int(item['minutes'])
         if minutes <= 0:
             continue
-        wanted[int(item['subject_id'])] = minutes
+        subject_id = int(item['subject_id'])
+        wanted[subject_id] = minutes
+        # Research wave (2026-08-31): optional activity taxonomy; absent or
+        # blank stores '' (plain minutes) — the pre-field row, unchanged.
+        activities[subject_id] = str(item.get('activity_type') or '')
 
     total = sum(wanted.values())
     if total > MAX_LOG_MINUTES_PER_DAY:
@@ -219,7 +224,10 @@ def save_day(
             DailyLogItem.objects.update_or_create(
                 log=log,
                 student_subject_id=row_id,
-                defaults={'actual_minutes': minutes},
+                defaults={
+                    'actual_minutes': minutes,
+                    'activity_type': activities[subject_id],
+                },
             )
         DailyLogItem.objects.filter(log=log).exclude(
             student_subject_id__in=keep_row_ids,

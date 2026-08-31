@@ -899,6 +899,10 @@ class AdvisorStudyPlanDraftView(APIView):
                 # Absent key ⇒ UNSET ⇒ stored day notes untouched (legacy
                 # planner payloads must not wipe what they never sent).
                 day_notes=data.get('day_notes', plan_service.UNSET),
+                # Research wave (2026-08-31): roadmap labels, wholesale like
+                # the rest of the draft body.
+                phase=data.get('phase', ''),
+                strategy=data.get('strategy', ''),
             )
         except plan_service.StudyPlanError as exc:
             # The base class on purpose: every rule the door adds later must fail

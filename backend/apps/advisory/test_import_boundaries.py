@@ -87,6 +87,12 @@ _UNSCOPED = {'Subject'}
 #     the engagement reassignment mover; every org-scoped query is keyed on the
 #     manager's ACTIVE advisory memberships and reassignment revalidates both
 #     engagements against that same org before writing.
+#   • goals.py / mistakes.py / topics.py (research wave 2026-08-31) — the write
+#     doors for the student's goal, mistake notebook and topic coverage; every
+#     mutation resolves the engagement through the view's scope helper first,
+#     exactly like the doors above.
+#   • analytics.py (research wave 2026-08-31) — read-only aggregation bundle
+#     (streak, balance, exam trend, backlog, review queue). It writes nothing.
 # The list is pinned by a test below so that a further door cannot appear without
 # someone editing this comment.
 _EXEMPT_FILES = {
@@ -108,6 +114,10 @@ _EXEMPT_FILES = {
     'reports.py',
     'excel_export.py',
     'org_overview.py',
+    'goals.py',
+    'mistakes.py',
+    'topics.py',
+    'analytics.py',
 }
 
 
@@ -305,6 +315,10 @@ def test_the_exempt_list_does_not_grow_by_accident():
         'reports.py',
         'excel_export.py',
         'org_overview.py',
+        'goals.py',
+        'mistakes.py',
+        'topics.py',
+        'analytics.py',
     }
 
 
