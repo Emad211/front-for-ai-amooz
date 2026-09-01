@@ -1791,6 +1791,20 @@ class AdminUserOrgManagerView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
+        # Same refusal for PARENT (wave 5): a parent account is a read-only
+        # digest reader tied to ParentLink rows; converting it to MANAGER would
+        # strand those links on an account that can no longer log in as a parent.
+        if user.role == User.Role.PARENT:
+            return Response(
+                {
+                    'detail': (
+                        'این کاربر والد است. برای مدیر کردن او ابتدا نقش '
+                        'حسابش را از «والد» تغییر دهید.'
+                    )
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
         with transaction.atomic():
             # An org manager IS the MANAGER role. Promote a student/teacher to
             # MANAGER; never DEMOTE a platform ADMIN (they already outrank this).

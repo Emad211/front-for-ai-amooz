@@ -17,11 +17,12 @@ def create_user_profile(sender, instance, created, **kwargs):
             TeacherProfile.objects.create(user=instance)
         elif instance.role == User.Role.ADMIN:
             AdminProfile.objects.get_or_create(user=instance)
-        # MANAGER and ADVISOR intentionally have NO profile model — an org
-        # manager manages an organization and an advisor plans study weeks;
-        # neither is a learner/teacher/admin identity. Do not add a branch here
+        # MANAGER, ADVISOR and PARENT intentionally have NO profile model — an
+        # org manager manages an organization, an advisor plans study weeks and
+        # a parent reads their child's weekly digest; none of them is a
+        # learner/teacher/admin identity. Do not add a branch here
         # (MeUpdateSerializer.update has the same intentional gap, so the
-        # advisor UI must not render bio/location/expertise fields).
+        # advisor/parent UI must not render bio/location/expertise fields).
 
 @receiver(post_save, sender=User)
 def save_user_profile(sender, instance, **kwargs):

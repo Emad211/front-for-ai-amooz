@@ -83,6 +83,33 @@ def _has_impersonation_claim(request) -> bool:
     return isinstance(payload, dict) and bool(payload.get('imp'))
 
 
+class IsParentUser(BasePermission):
+    """Allow only the PARENT (والد) platform role that is NOT impersonated.
+
+    Strictly ``role == 'PARENT'`` and strictly read-only in practice: the
+    advisory routes that carry this class (``/api/advisory/parent/…``) answer
+    a digest and a link list, and every write in the parent flow happens
+    behind the public OTP door instead. The role grants nothing elsewhere —
+    every other endpoint keeps its own permission pair and therefore keeps
+    denying parents, which is the point (ق۴: new reader, new explicit door).
+
+    Rejects tokens bearing the ``imp`` impersonation claim exactly like
+    ``IsOrgManager``: an impersonated session must never ride a second
+    identity surface, and a parent digest is another person's data.
+    """
+
+    message = 'فقط والدین اجازه دسترسی دارند.'
+
+    def has_permission(self, request, view) -> bool:
+        user = getattr(request, 'user', None)
+        if not user or not user.is_authenticated:
+            return False
+        if _has_impersonation_claim(request):
+            self.message = 'این جلسه در حالت ورود مستقیم است و این کار مجاز نیست.'
+            return False
+        return user.role == User.Role.PARENT
+
+
 class IsOrgManager(BasePermission):
     """Allow only a platform-MANAGER account that is NOT an impersonated token.
 

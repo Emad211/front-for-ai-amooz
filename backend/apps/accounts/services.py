@@ -29,6 +29,11 @@ _USERNAME_PREFIX = {
     # (advisory acquisition is lookup-only and must never mint a user). The
     # prefix exists only so a future admin-side helper can't fall back to 'user'.
     'ADVISOR': 'advisor',
+    # PARENT accounts are minted ONLY by the advisory parent OTP login
+    # (verify → get_or_create_user_by_phone(phone, 'PARENT')), which itself
+    # only runs after an OTP was sent to a phone an advisor linked. No other
+    # path may create them.
+    'PARENT': 'parent',
 }
 
 

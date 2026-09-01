@@ -16,6 +16,13 @@ class User(AbstractUser):
         # apps.core.permissions.IsAdvisorUser. Has NO profile model on purpose
         # (like MANAGER) — see apps/accounts/signals.py.
         ADVISOR = 'ADVISOR', _('Advisor')
+        # Parent (والد): reads one student's weekly advisory digest, nothing
+        # else. Grants NOTHING by default — the only routes this role opens are
+        # the advisory parent endpoints gated on
+        # apps.core.permissions.IsParentUser, and even those require an ACTIVE
+        # ParentLink claimed via OTP. Has NO profile model on purpose (like
+        # MANAGER/ADVISOR) — see apps/accounts/signals.py.
+        PARENT = 'PARENT', _('Parent')
 
     role = models.CharField(
         max_length=10,
