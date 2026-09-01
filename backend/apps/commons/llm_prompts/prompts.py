@@ -1959,8 +1959,10 @@ JSON Only.
     # advisory feature allowed to call an LLM (roadmap ق۱′). Placeholders are
     # str.replace tokens (never str.format): {free_prompt} = the advisor's own
     # words, {subjects_json} = the student's [{id, name}] selection list,
-    # {week_start_iso} = the Saturday the 7-day draft will start on. Output
-    # keys ARE a contract with AiPlanDraft in advisory/services/ai_planner.py
+    # {week_start_iso} = the Saturday the 7-day draft will start on, and
+    # {evidence_json} = the capped evidence block from the student's real data
+    # (goal, open mistakes, due reviews, backlog, recent exams — wave 6a).
+    # Output keys ARE a contract with AiPlanDraft in advisory/services/ai_planner.py
     # and the planner UI — dayOffset/subjectId/plannedMinutes/topic stay
     # byte-for-byte (apps/advisory/test_ai_planner.py guards them).
     'ai_plan_draft': """
@@ -1975,6 +1977,11 @@ The advisor's request (plain language, trust it as the goal):
 
 The student's ONLY allowed subjects (id + name):
 {subjects_json}
+
+شواهد واقعی این دانش‌آموز (خلاصهٔ JSON بر پایهٔ داده‌های سامانه):
+{evidence_json}
+راهنمای شواهد: «goalTitle» هدف اعلامی دانش‌آموز است؛ «openMistakes» خطاهای بازِ دفتر اشتباهات با اولویت است؛ «dueReviews» مباحثی است که موعد مرورشان رسیده؛ «backlog» مطالعه‌های جبران‌نشدهٔ روزهای گذشته است و «recentExams» نتیجهٔ آزمون‌های اخیر است.
+این شواهد را در برنامه لحاظ کن: مرور مباحث سررسیدشده و پیگیری خطاهای باز را در اولویت بگذار، مگر آنکه درخواست مشاور صریحاً چیز دیگری بگوید. اگر همهٔ فهرست‌ها خالی‌اند، فقط بر اساس درخواست مشاور برنامه بریز.
 
 ### Hard rules
 - Use ONLY the subject ids from the list above. Never invent ids or names.

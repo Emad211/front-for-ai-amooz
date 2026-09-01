@@ -8,6 +8,8 @@ wave. Every rule below fails as a Persian 400 the student can act on.
 
 from __future__ import annotations
 
+from django.utils import timezone
+
 from ..models import MistakeEntry, MAX_MISTAKE_TEXT_CHARS
 from . import scope
 
@@ -121,7 +123,14 @@ def update_mistake(engagement, mistake_id: int, *, patch: dict) -> MistakeEntry:
     if 'review_date' in patch:
         updates['review_date'] = patch['review_date']
     if 'is_resolved' in patch:
-        updates['is_resolved'] = bool(patch['is_resolved'])
+        resolved = bool(patch['is_resolved'])
+        updates['is_resolved'] = resolved
+        # Stamped on the first resolve only — re-sending is_resolved=True never
+        # rewrites history — and wiped when the student re-opens the mistake.
+        if resolved and not mistake.is_resolved:
+            updates['resolved_at'] = timezone.now()
+        elif not resolved:
+            updates['resolved_at'] = None
 
     if updates:
         for field, value in updates.items():

@@ -17,7 +17,7 @@ import datetime
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
-from django.core.validators import MaxValueValidator, MinValueValidator
+from django.core.validators import MaxValueValidator, MinValueValidator, RegexValidator
 from django.db import models
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
@@ -2311,6 +2311,16 @@ class MistakeEntry(models.Model):
         default=False,
         verbose_name=_('رفع شده'),
     )
+    # Wave 6b (2026-08-31): when the student closed the loop. Null while open,
+    # set on the FIRST is_resolved=True transition (services/mistakes), cleared
+    # again on un-resolve. Migration 0021 backfills pre-existing resolved rows
+    # from ``updated_at`` — the best available proxy for when they were closed.
+    resolved_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name=_('زمان رفع'),
+        help_text=_('لحظهٔ اولین رفع؛ با بازگشتن به حالت رفع‌نشده پاک می‌شود.'),
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -2333,10 +2343,11 @@ class TopicProgress(models.Model):
     """One topic of one subject and where the student stands on it.
 
     The lightweight پوشش مبحث: the topic list is grown by the student/advisor
-    as rows (no national syllabus import), each carrying a status on the
-    NEW → STUDIED → NEEDS_REVIEW → MASTERED ladder. ``next_review_at`` is the
-    spaced-review hook — set it when a topic goes to NEEDS_REVIEW and the
-    analytics endpoint surfaces everything due.
+    as rows — free text, or (wave 7) linked to a leaf of the official syllabus
+    tree via ``syllabus_topic`` — each carrying a status on the NEW → STUDIED →
+    NEEDS_REVIEW → MASTERED ladder. ``next_review_at`` is the spaced-review
+    hook — set it when a topic goes to NEEDS_REVIEW and the analytics endpoint
+    surfaces everything due.
     """
 
     class Status(models.TextChoices):
@@ -2360,6 +2371,21 @@ class TopicProgress(models.Model):
     topic = models.CharField(
         max_length=200,
         verbose_name=_('مبحث'),
+    )
+    # Wave 7 (2026-08-31): optional link to a leaf of the official syllabus
+    # tree (درخت بودجه‌بندی). The free-text ``topic`` above stays the source of
+    # truth for display; when the link is set, the write door mirrors the tree
+    # node's title into it, so a row can never disagree with the tree it came
+    # from. ``SET_NULL``: re-seeding or dropping a tree node must not erase the
+    # student's progress — the row falls back to its mirrored title.
+    syllabus_topic = models.ForeignKey(
+        'SyllabusTopic',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='progress_rows',
+        verbose_name=_('مبحث درخت بودجه‌بندی'),
+        help_text=_('پیوند اختیاری به درخت بودجه‌بندی؛ خالی یعنی متن آزاد.'),
     )
     status = models.CharField(
         max_length=14,
@@ -2389,6 +2415,239 @@ class TopicProgress(models.Model):
 
     def __str__(self) -> str:
         return f'{self.topic} ({self.get_status_display()}) ← #{self.engagement_id}'
+
+
+# ── Wave 7 (2026-08-31): the official syllabus tree (درخت بودجه‌بندی) ──────────
+#
+# The konkur budgeting tree is CATALOG data, like ``Subject`` itself: it hangs
+# off the shared subject catalog, never off an engagement, is seeded
+# platform-wide by ``seed_syllabus`` and carries no student data — which is why
+# both models below sit in ``test_import_boundaries``' unscoped set beside
+# ``Subject``. Students and advisors browse the tree read-only; per-student
+# state lives in ``TopicProgress.syllabus_topic`` above, never here.
+
+
+class SyllabusChapter(models.Model):
+    """One chapter of a subject's official konkur syllabus (e.g. «حسابان»).
+
+    Rows are created only by the seed command, keyed naturally by
+    ``(subject, title)``: a re-run never duplicates a chapter and never
+    clobbers an admin's reorder, exactly the contract ``seed_advisory_subjects``
+    gives the subject catalog. ``PROTECT`` on ``subject`` matches every other
+    reference to ``Subject`` — the tree of a subject anyone has planned against
+    must not vanish from under that history.
+    """
+
+    subject = models.ForeignKey(
+        Subject,
+        on_delete=models.PROTECT,
+        related_name='syllabus_chapters',
+        verbose_name=_('درس'),
+    )
+    title = models.CharField(max_length=200, verbose_name=_('عنوان فصل'))
+    order = models.PositiveSmallIntegerField(
+        default=0,
+        verbose_name=_('ترتیب'),
+        help_text=_('جایگاه فصل در نمایش درخت.'),
+    )
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name=_('زمان ایجاد'))
+
+    class Meta:
+        ordering = ['subject__name', 'order', 'title']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['subject', 'title'],
+                name='uniq_syllabus_chapter_per_subject',
+                violation_error_message=_('این فصل برای این درس از قبل ثبت شده است.'),
+            ),
+        ]
+        verbose_name = _('فصل درخت بودجه‌بندی')
+        verbose_name_plural = _('فصل‌های درخت بودجه‌بندی')
+
+    def __str__(self) -> str:
+        return f'{self.title} ← {self.subject}'
+
+
+class SyllabusTopic(models.Model):
+    """One topic of one chapter — the leaf of the syllabus tree.
+
+    ``konkur_weight`` is the approximate konkur question count for the topic,
+    which is what turns the tree into a *budgeting* tree: the advisor allocates
+    study time proportional to weight, not to chapter count. Nullable because
+    «وزن‌گذاری نشده» must stay distinct from an honest «۰».
+
+    ``CASCADE`` from the chapter — a topic of a chapter nobody seeded has no
+    life of its own — while ``TopicProgress`` points here through ``SET_NULL``
+    and keeps its mirrored title when the tree is re-seeded.
+    """
+
+    chapter = models.ForeignKey(
+        SyllabusChapter,
+        on_delete=models.CASCADE,
+        related_name='syllabus_topics',
+        verbose_name=_('فصل'),
+    )
+    title = models.CharField(max_length=200, verbose_name=_('عنوان مبحث'))
+    order = models.PositiveSmallIntegerField(
+        default=0,
+        verbose_name=_('ترتیب'),
+        help_text=_('جایگاه مبحث در فصل.'),
+    )
+    konkur_weight = models.PositiveSmallIntegerField(
+        null=True,
+        blank=True,
+        help_text=_('تعداد تقریبی سؤالات کنکور از این مبحث.'),
+        verbose_name=_('وزن کنکوری'),
+    )
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name=_('زمان ایجاد'))
+
+    class Meta:
+        ordering = ['chapter__order', 'order', 'title']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['chapter', 'title'],
+                name='uniq_syllabus_topic_per_chapter',
+                violation_error_message=_('این مبحث در این فصل از قبل ثبت شده است.'),
+            ),
+        ]
+        verbose_name = _('مبحث درخت بودجه‌بندی')
+        verbose_name_plural = _('مباحث درخت بودجه‌بندی')
+
+    def __str__(self) -> str:
+        return f'{self.title} ← {self.chapter}'
+
+
+# ── Wave 5 (2026-08-31): the parent link ──────────────────────────────────────
+#
+# The parent is the first advisory reader who is neither the student nor the
+# advisor, and the link row is how that read is *granted* — the counterpart of
+# the student-side invite accept. An advisor names a phone; the row sits
+# PENDING until whoever holds that phone proves ownership via OTP, at which
+# point it flips ACTIVE and (only then) can read that one engagement's weekly
+# digest. Tenancy-bearing like every advisory table: reads go through
+# services/parent_links.py, pinned in test_import_boundaries.
+
+PARENT_RELATION_CHOICES = [
+    ('father', _('پدر')),
+    ('mother', _('مادر')),
+    ('guardian', _('سرپرست')),
+]
+
+# The AdvisoryAccessLog action the parent digest view records (D4: a read by
+# someone outside the student/advisor pair is logged from the moment it exists).
+PARENT_DIGEST_VIEW_ACTION = 'parent_digest_view'
+
+# Two standing parents per student — father and mother is the overwhelming
+# case; a guardian replaces either. A revoked link frees its slot.
+MAX_PARENTS_PER_STUDENT = 2
+
+PARENT_PHONE_REGEX = r'^09\d{9}$'
+_validate_parent_phone = RegexValidator(
+    PARENT_PHONE_REGEX,
+    message=_('شمارهٔ والد باید ۰۹ + ۹ رقم باشد.'),
+)
+
+
+class ParentLink(models.Model):
+    """One parent phone invited to read one engagement's weekly digest.
+
+    Lifecycle::
+
+        PENDING ──OTP verify──▶ ACTIVE ──revoke──▶ REVOKED   (kept for audit)
+
+    ``parent`` is NULL until the phone's owner logs in with the OTP: the link
+    is addressed to a *number*, not an account, exactly like an advisor invite
+    — an advisor typing a wrong digit must never mint a user (B4). PROTECT on
+    the resolved parent: a digest reader's account must not be deletable while
+    links still point at it; revoke the link first.
+
+    ``phone`` is stored canonical (``09`` + 9 digits, validated by the check
+    below) because it is the join key of the OTP claim — every PENDING row
+    addressed to the verified phone activates atomically on login.
+    """
+
+    class Status(models.TextChoices):
+        PENDING = 'PENDING', _('در انتظار تأیید')
+        ACTIVE = 'ACTIVE', _('فعال')
+        REVOKED = 'REVOKED', _('لغوشده')
+
+    engagement = models.ForeignKey(
+        AdvisoryEngagement,
+        on_delete=models.CASCADE,
+        related_name='parent_links',
+        verbose_name=_('همکاری'),
+    )
+    parent = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name='parent_links',
+        verbose_name=_('والد'),
+        help_text=_('تا ورود با کد یکبارمصرف خالی می‌ماند.'),
+    )
+    phone = models.CharField(
+        max_length=11,
+        db_index=True,
+        validators=[_validate_parent_phone],
+        verbose_name=_('شمارهٔ والد'),
+        help_text=_('۰۹ + ۹ رقم؛ کلید اتصال هنگام ورود والد.'),
+    )
+    relation = models.CharField(
+        max_length=8,
+        choices=PARENT_RELATION_CHOICES,
+        verbose_name=_('نسبت'),
+    )
+    status = models.CharField(
+        max_length=8,
+        choices=Status.choices,
+        default=Status.PENDING,
+        db_index=True,
+        verbose_name=_('وضعیت'),
+    )
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name='+',
+        verbose_name=_('ایجادکننده'),
+    )
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name=_('زمان ایجاد'))
+    activated_at = models.DateField(
+        null=True,
+        blank=True,
+        verbose_name=_('تاریخ فعال‌سازی'),
+        help_text=_('روزی که والد با کد یکبارمصرف وارد شد.'),
+    )
+
+    class Meta:
+        ordering = ['created_at', 'id']
+        constraints = [
+            # One open/standing link per (engagement, phone): re-inviting the
+            # same number while a PENDING/ACTIVE row exists is a duplicate,
+            # while a REVOKED row must not block a fresh invite.
+            models.UniqueConstraint(
+                fields=['engagement', 'phone'],
+                condition=models.Q(status__in=['PENDING', 'ACTIVE']),
+                name='uniq_active_parent_link',
+                violation_error_message=_('برای این شماره پیوند والد از قبل وجود دارد.'),
+            ),
+            models.CheckConstraint(
+                condition=models.Q(phone__regex=PARENT_PHONE_REGEX),
+                name='ck_parent_link_phone_shape',
+                violation_error_message=_('شمارهٔ والد باید ۰۹ + ۹ رقم باشد.'),
+            ),
+        ]
+        indexes = [
+            # The OTP claim lookup: every PENDING row for one phone.
+            models.Index(fields=['phone', 'status'], name='idx_parent_link_phone_status'),
+            models.Index(fields=['engagement', 'status'], name='idx_parent_link_eng_status'),
+        ]
+        verbose_name = _('پیوند والد')
+        verbose_name_plural = _('پیوندهای والدین')
+
+    def __str__(self) -> str:
+        return f'{self.relation} {self.phone} [{self.status}] ← #{self.engagement_id}'
 
 
 

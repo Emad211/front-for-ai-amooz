@@ -58,12 +58,23 @@ from .views_folders import (
     AssignEngagementFolderView,
 )
 from .views_growth import (
+    AdvisorGrowthView,
     StudentAnalyticsView,
     StudentGoalView,
     StudentMistakeDetailView,
     StudentMistakesView,
     StudentTopicDetailView,
     StudentTopicsView,
+)
+from .views_syllabus import SubjectSyllabusView
+from .views_parents import (
+    AdvisorParentLinkDetailView,
+    AdvisorParentLinksView,
+    ParentLinkDigestView,
+    ParentLoginRequestView,
+    ParentLoginVerifyView,
+    ParentMyLinksView,
+    StudentMyParentsView,
 )
 
 
@@ -90,6 +101,15 @@ register_converter(ISODateConverter, 'date')
 
 urlpatterns = [
     path('subjects/', SubjectListView.as_view(), name='advisory_subject_list'),
+    # Wave 7 (2026-08-31): the official konkur syllabus tree — catalog browse,
+    # open to every authenticated role (advisor plans against it, student
+    # picks from it). Sits under subjects/ because it is reference data of the
+    # subject catalog, not an engagement-scoped read.
+    path(
+        'subjects/<int:subject_id>/syllabus/',
+        SubjectSyllabusView.as_view(),
+        name='advisory_subject_syllabus',
+    ),
 
     # advisor side
     path('overview/', AdvisorOverviewView.as_view(), name='advisory_overview'),
@@ -103,6 +123,11 @@ urlpatterns = [
         'students/<int:pk>/study-feed/',
         AdvisorStudyFeedView.as_view(),
         name='advisory_student_study_feed',
+    ),
+    path(
+        'students/<int:pk>/growth/',
+        AdvisorGrowthView.as_view(),
+        name='advisory_student_growth',
     ),
     path(
         'students/<int:pk>/study-plan/draft/',
@@ -186,6 +211,20 @@ urlpatterns = [
     ),
     path('invites/', AdvisoryInviteCreateView.as_view(), name='advisory_invite_create'),
 
+    # Wave 5 (2026-08-31): the parent link — invite/list on one URL pair,
+    # revoke on the detail URL. Same engagement-pk address as every advisor
+    # route above; a foreign or ended engagement 404s in the view.
+    path(
+        'students/<int:pk>/parents/',
+        AdvisorParentLinksView.as_view(),
+        name='advisory_student_parents',
+    ),
+    path(
+        'students/<int:pk>/parents/<int:link_id>/',
+        AdvisorParentLinkDetailView.as_view(),
+        name='advisory_student_parent_detail',
+    ),
+
     # Risman step 1: advisor-owned student folders + the per-student move door.
     path('folders/', AdvisorFolderListView.as_view(), name='advisory_folder_list'),
     path(
@@ -212,6 +251,31 @@ urlpatterns = [
         'org/engagements/<int:pk>/reassign/',
         OrgReassignEngagementView.as_view(),
         name='advisory_org_reassign',
+    ),
+
+    # Wave 5 (2026-08-31): the parent's own namespace. The login pair is
+    # PUBLIC (AllowAny + scoped throttle) — it must work before any parent
+    # account exists, because minting that account is exactly what verify
+    # does. Everything under parent/me/ is IsParentUser and read-only.
+    path(
+        'parent/login/request/',
+        ParentLoginRequestView.as_view(),
+        name='advisory_parent_login_request',
+    ),
+    path(
+        'parent/login/verify/',
+        ParentLoginVerifyView.as_view(),
+        name='advisory_parent_login_verify',
+    ),
+    path(
+        'parent/me/links/',
+        ParentMyLinksView.as_view(),
+        name='advisory_parent_my_links',
+    ),
+    path(
+        'parent/me/links/<int:link_id>/digest/',
+        ParentLinkDigestView.as_view(),
+        name='advisory_parent_link_digest',
     ),
 
     # student side
@@ -275,6 +339,12 @@ urlpatterns = [
         'me/analytics/',
         StudentAnalyticsView.as_view(),
         name='advisory_my_analytics',
+    ),
+    # Wave 5 (2026-08-31): transparency — who else can read my reports.
+    path(
+        'me/parents/',
+        StudentMyParentsView.as_view(),
+        name='advisory_my_parents',
     ),
 ]
 

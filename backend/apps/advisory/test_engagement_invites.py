@@ -341,6 +341,19 @@ def test_advisory_source_never_references_an_account_creation_helper():
 
     banned = {'get_or_create_user_by_phone', 'get_or_create_student_by_phone'}
 
+    # Wave 5 (2026-08-31): the ONE sanctioned mint site. The parent OTP login
+    # (services/parent_links.complete_parent_login) calls
+    # get_or_create_user_by_phone — but only AFTER verify_parent_otp proved the
+    # caller holds the phone an advisor linked, which is the same authority
+    # apps/authentication's invite-code login rests on (B4 forbids the ADVISOR
+    # minting users by typing numbers; it does not forbid the phone's owner
+    # claiming their own account). Every other file, and the student variant
+    # everywhere, stays banned — a second mint site must widen this map
+    # deliberately, in this test, with its own justification.
+    per_file_allowed = {
+        'services/parent_links.py': {'get_or_create_user_by_phone'},
+    }
+
     def identifiers(node) -> set[str]:
         if isinstance(node, (ast.Import, ast.ImportFrom)):
             names = set()
@@ -360,9 +373,10 @@ def test_advisory_source_never_references_an_account_creation_helper():
     for path in sorted(advisory_dir.rglob('*.py')):
         if '__pycache__' in path.parts or path.name.startswith('test_'):
             continue
+        allowed = per_file_allowed.get(path.relative_to(advisory_dir).as_posix(), set())
         tree = ast.parse(path.read_text(encoding='utf-8'), filename=str(path))
         for node in ast.walk(tree):
-            if identifiers(node) & banned:
+            if (identifiers(node) & banned) - allowed:
                 offenders.append(f'{path.relative_to(advisory_dir)}:{node.lineno}')
 
     assert offenders == [], f'advisory must never create a user by phone: {offenders}'

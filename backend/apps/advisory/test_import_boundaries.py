@@ -27,9 +27,11 @@ CLASSES_DIR = APPS_DIR / 'classes'
 
 # Models with no tenancy of their own. ``Subject`` is a shared catalog: it is not
 # owned by a student, so listing it needs no engagement join and importing it
-# directly leaks nothing. Every model added from step 3 on carries tenancy and
-# must therefore stay out of this set.
-_UNSCOPED = {'Subject'}
+# directly leaks nothing. Wave 7's ``SyllabusChapter``/``SyllabusTopic`` are the
+# same kind of row — the national konkur syllabus tree hangs off the subject
+# catalog and names no student — so they join ``Subject`` here. Every model
+# added from step 3 on that carries an engagement FK must stay out of this set.
+_UNSCOPED = {'Subject', 'SyllabusChapter', 'SyllabusTopic'}
 
 # scope.py is the door itself; admin and migrations are Django-owned surfaces that
 # must import models by definition; tests exist to poke at models directly.
@@ -93,6 +95,18 @@ _UNSCOPED = {'Subject'}
 #     exactly like the doors above.
 #   • analytics.py (research wave 2026-08-31) — read-only aggregation bundle
 #     (streak, balance, exam trend, backlog, review queue). It writes nothing.
+#   • parent_links.py (wave 5, 2026-08-31) — the write door for the parent
+#     link lifecycle (invite/list/revoke), the phone-keyed OTP claim that
+#     activates PENDING links, and the Thursday beat fan-out. It constructs
+#     tenancy (the link row) rather than reading across it, exactly like
+#     invites.py; it also appends the parent_digest_view AdvisoryAccessLog row.
+#   • parent_digest.py (wave 5, 2026-08-31) — the pure weekly-digest build.
+#     Read-only over DailyLog/DailyLogItem/StudyPlan(Item)/StudyExamScore/
+#     StudyChallenge plus analytics reuse; it writes nothing.
+#   • syllabus.py (wave 7, 2026-08-31) — the read door shaping the official
+#     syllabus tree browse payload. It touches only the catalog tables
+#     (Subject/SyllabusChapter/SyllabusTopic, all unscoped) and writes
+#     nothing; pinned here like every other feature door.
 # The list is pinned by a test below so that a further door cannot appear without
 # someone editing this comment.
 _EXEMPT_FILES = {
@@ -118,6 +132,9 @@ _EXEMPT_FILES = {
     'mistakes.py',
     'topics.py',
     'analytics.py',
+    'parent_links.py',
+    'parent_digest.py',
+    'syllabus.py',
 }
 
 
@@ -319,6 +336,9 @@ def test_the_exempt_list_does_not_grow_by_accident():
         'mistakes.py',
         'topics.py',
         'analytics.py',
+        'parent_links.py',
+        'parent_digest.py',
+        'syllabus.py',
     }
 
 

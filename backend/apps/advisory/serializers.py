@@ -35,11 +35,13 @@ from .models import (
     MAX_LOG_NOTE_CHARS,
     MOOD_MAX,
     MOOD_MIN,
-    PLAN_PHASE_CHOICES,
-    PLAN_STRATEGY_CHOICES,
-    Subject,
+   PLAN_PHASE_CHOICES,
+   PLAN_STRATEGY_CHOICES,
+   PARENT_RELATION_CHOICES,
+   Subject,
 )
 from .services.assessments import assessment_average
+from .services.parent_links import MSG_BAD_PHONE as MSG_BAD_PARENT_PHONE
 from .services.student_subjects import MAX_SUBJECTS_PER_STUDENT
 from .services.study_plans import plan_adherence_percent
 from .services.text import mask_phone
@@ -1351,7 +1353,12 @@ class MistakePatchSerializer(MistakeWriteSerializer):
 
 
 class TopicItemSerializer(serializers.Serializer):
-    """One coverage row. ``nextReviewAt`` is the spaced-review queue date."""
+    """One coverage row. ``nextReviewAt`` is the spaced-review queue date.
+
+    A row linked to the official syllabus tree also carries the node's id and
+    title (``syllabusTopicId``/``syllabusTopicTitle``); free-text rows answer
+    ``null`` for both.
+    """
 
     id = serializers.IntegerField(read_only=True)
     subjectId = serializers.IntegerField(
@@ -1361,6 +1368,12 @@ class TopicItemSerializer(serializers.Serializer):
         source='student_subject.subject.name', read_only=True,
     )
     topic = serializers.CharField(read_only=True)
+    syllabusTopicId = serializers.IntegerField(
+        source='syllabus_topic_id', read_only=True, allow_null=True,
+    )
+    syllabusTopicTitle = serializers.CharField(
+        source='syllabus_topic.title', read_only=True, allow_null=True,
+    )
     status = serializers.CharField(read_only=True)
     nextReviewAt = serializers.DateField(
         source='next_review_at', read_only=True, allow_null=True,
@@ -1369,10 +1382,20 @@ class TopicItemSerializer(serializers.Serializer):
 
 
 class TopicWriteSerializer(serializers.Serializer):
-    """POST body for ``me/topics/`` — shape only; the service owns messages."""
+    """POST body for ``me/topics/`` — shape only; the service owns messages.
+
+    ``topic`` is not required at this layer: a row may instead be linked to a
+    syllabus tree leaf via ``syllabusTopicId``, in which case the service
+    mirrors the node's title and ignores any free text sent alongside. Sending
+    neither is still a 400 — the Persian message lives in the service, where
+    every other topic rule already lives.
+    """
 
     subjectId = serializers.IntegerField(source='subject_id', min_value=1)
-    topic = serializers.CharField()
+    topic = serializers.CharField(required=False, allow_blank=True)
+    syllabusTopicId = serializers.IntegerField(
+        source='syllabus_topic_id', required=False, allow_null=True, min_value=1,
+    )
     status = serializers.ChoiceField(
         choices=['NEW', 'STUDIED', 'NEEDS_REVIEW', 'MASTERED'], required=False,
     )
@@ -1382,7 +1405,53 @@ class TopicWriteSerializer(serializers.Serializer):
 
 
 class TopicPatchSerializer(TopicWriteSerializer):
-    """PATCH body for ``me/topics/<id>/`` — every key optional."""
+    """PATCH body for ``me/topics/<id>/`` — every key optional.
+
+    ``syllabusTopicId`` non-null links the row to that tree node and mirrors
+    its title; explicitly ``null`` unlinks, keeping the last written title.
+    """
 
     subjectId = serializers.IntegerField(source='subject_id', required=False)
     topic = serializers.CharField(required=False, allow_blank=True)
+
+
+# ── Wave 5 (2026-08-31): parent link + parent OTP login bodies ────────────────
+
+class ParentInviteCreateSerializer(serializers.Serializer):
+    """The advisor's parent-invite body. Shape-only validation, like the
+    student invite: rejecting «۱۲۳» says something about the caller's typing,
+    rejecting an unclaimed number would say something about the user table."""
+
+    phone = serializers.CharField(max_length=20, write_only=True)
+    relation = serializers.ChoiceField(choices=PARENT_RELATION_CHOICES)
+
+    def validate_phone(self, value: str) -> str:
+        normalized = normalize_phone(value)
+        if not is_valid_iran_mobile(normalized):
+            raise serializers.ValidationError(MSG_BAD_PARENT_PHONE)
+        return normalized
+
+
+class ParentLoginRequestSerializer(serializers.Serializer):
+    """The public OTP-request body — a phone number, nothing else."""
+
+    phone = serializers.CharField(max_length=20, write_only=True)
+
+    def validate_phone(self, value: str) -> str:
+        normalized = normalize_phone(value)
+        if not is_valid_iran_mobile(normalized):
+            raise serializers.ValidationError(MSG_BAD_PARENT_PHONE)
+        return normalized
+
+
+class ParentLoginVerifySerializer(serializers.Serializer):
+    """The public OTP-verify body: the phone plus the 6-digit code."""
+
+    phone = serializers.CharField(max_length=20, write_only=True)
+    otp = serializers.CharField(max_length=6, write_only=True)
+
+    def validate_phone(self, value: str) -> str:
+        normalized = normalize_phone(value)
+        if not is_valid_iran_mobile(normalized):
+            raise serializers.ValidationError(MSG_BAD_PARENT_PHONE)
+        return normalized

@@ -33,6 +33,8 @@ from apps.advisory.models import (
 from apps.advisory.services import analytics as analytics_service
 from apps.advisory.services import goals as goal_service
 from apps.advisory.services import topics as topic_service
+from apps.advisory.services.growth import EVIDENCE_KEYS, build_evidence_digest
+from apps.advisory.services.recommendations import build_recommendations
 
 User = get_user_model()
 Status = AdvisoryEngagement.Status
@@ -48,6 +50,7 @@ MY_MISTAKE_URL = '/api/advisory/me/mistakes/{id}/'
 MY_TOPICS_URL = '/api/advisory/me/topics/'
 MY_TOPIC_URL = '/api/advisory/me/topics/{id}/'
 MY_ANALYTICS_URL = '/api/advisory/me/analytics/'
+ADVISOR_GROWTH_URL = '/api/advisory/students/{pk}/growth/'
 MY_STUDY_LOG_URL = '/api/advisory/me/study-log/'
 PLAN_DRAFT_URL = '/api/advisory/students/{pk}/study-plan/draft/'
 
@@ -362,6 +365,148 @@ def test_analytics_endpoint_quiet_and_access_matrix():
     assert APIClient().get(MY_ANALYTICS_URL).status_code == 401
     teacher = baker.make(User, username='t3', role=User.Role.TEACHER)
     assert _auth(teacher).get(MY_ANALYTICS_URL).status_code == 403
+
+
+def test_advisor_growth_projection_contract_and_read_only():
+    advisor, student = _advisor(), _student()
+    engagement = _engagement(advisor, student)
+    math = _subject('ریاضی')
+    selection = _selection(engagement, math)
+    MistakeEntry.objects.create(
+        engagement=engagement, student_subject=selection, topic='حد',
+        error_type=MistakeEntry.ErrorType.CONCEPT,
+        priority=MistakeEntry.Priority.HIGH, next_action='مرور فرمول',
+    )
+    TopicProgress.objects.create(
+        engagement=engagement, student_subject=selection, topic='تابع',
+        status=TopicProgress.Status.NEEDS_REVIEW,
+        next_review_at=timezone.localdate() - datetime.timedelta(days=1),
+    )
+    counts_before = (
+        DailyLog.objects.count(), MistakeEntry.objects.count(),
+        TopicProgress.objects.count(), StudyPlan.objects.count(),
+        StudyPlanItem.objects.count(),
+    )
+
+    response = _auth(advisor).get(ADVISOR_GROWTH_URL.format(pk=engagement.pk))
+
+    assert response.status_code == 200
+    assert set(response.data) == {'active', 'asOf', 'evidence', 'recommendations'}
+    assert response.data['active'] is True
+    assert response.data['asOf'] == timezone.localdate().isoformat()
+    assert set(response.data['evidence']) == set(EVIDENCE_KEYS)
+    recommendations = response.data['recommendations']
+    assert 0 < len(recommendations) <= 3
+    for item in recommendations:
+        assert set(item) == {
+            'code', 'title', 'description', 'priority',
+            'evidenceKeys', 'actionArea',
+        }
+        assert item['priority'] in {'HIGH', 'MEDIUM', 'LOW'}
+        assert item['actionArea'] in {'plan', 'exams', 'feed', None}
+        assert item['evidenceKeys']
+        assert set(item['evidenceKeys']) <= set(EVIDENCE_KEYS)
+    assert counts_before == (
+        DailyLog.objects.count(), MistakeEntry.objects.count(),
+        TopicProgress.objects.count(), StudyPlan.objects.count(),
+        StudyPlanItem.objects.count(),
+    )
+
+
+def test_advisor_growth_access_matrix_and_method_contract():
+    advisor, student = _advisor(), _student()
+    engagement = _engagement(advisor, student)
+    ended = _engagement(
+        advisor, _student(username='ended-student', phone='09120000002'),
+        status=Status.ENDED,
+    )
+    url = ADVISOR_GROWTH_URL.format(pk=engagement.pk)
+
+    assert APIClient().get(url).status_code == 401
+    assert _auth(student).get(url).status_code == 403
+    assert _auth(_advisor(username='stranger')).get(url).status_code == 404
+    assert _auth(advisor).get(ADVISOR_GROWTH_URL.format(pk=ended.pk)).status_code == 404
+    assert _auth(advisor).post(url, {}, format='json').status_code == 405
+
+
+def test_recommendations_are_deterministic_bounded_and_evidence_backed():
+    kwargs = dict(
+        mistakes=[{
+            'id': 7, 'priority': 'HIGH', 'isResolved': False,
+            'topic': 'حد', 'nextAction': 'مرور فرمول',
+        }],
+        topics=[{
+            'id': 3, 'status': 'NEEDS_REVIEW', 'nextReviewAt': '2026-08-30',
+            'topic': 'تابع',
+        }],
+        analytics={
+            'loggedToday': False,
+            'backlogTotal': 2,
+            'backlog': [
+                {'date': '2026-08-29', 'subject': 'ریاضی', 'planned': 60, 'actual': 20},
+                {'date': '2026-08-28', 'subject': 'زیست', 'planned': 45, 'actual': 40},
+            ],
+            'planExecution': None,
+        },
+        as_of=TODAY,
+    )
+
+    recommendations = build_recommendations(**kwargs)
+
+    assert [item['code'] for item in recommendations] == [
+        'review-overdue-topics', 'follow-open-mistakes', 'compensate-backlog',
+    ]
+    assert recommendations == build_recommendations(**kwargs)
+    assert recommendations[1]['description'].endswith('مرور فرمول')
+    assert recommendations[0]['priority'] == 'HIGH'
+    assert all('confidence' not in item for item in recommendations)
+
+
+def test_evidence_digest_flattens_analytics_into_scalars():
+    digest = build_evidence_digest({
+        'streak': 4,
+        'loggedToday': True,
+        'planExecution': {'percent': 55},
+        'examTrend': [
+            {'score_percent': 60}, {'score_percent': 72},
+        ],
+        'openMistakes': 2,
+        'reviewDue': [{}, {}],
+        'backlogTotal': 7,
+        'testDensity': 12.5,
+        'mistakeResolutionDays': 3,
+        'planCalibration': 0.91,
+        'reportRate7d': 86,
+        'advisorDosageDays': 5,
+    })
+    assert digest == {
+        'streak': 4,
+        'loggedToday': True,
+        'planExecutionPercent': 55,
+        'latestExamPercent': 72,
+        'examTrend': 'روند صعودی',
+        'openMistakes': 2,
+        'reviewDue': 2,
+        'backlogTotal': 7,
+        'testDensity': 12.5,
+        'mistakeResolutionDays': 3,
+        'planCalibration': 0.91,
+        'reportRate7d': 86,
+        'advisorDosageDays': 5,
+    }
+
+    quiet = build_evidence_digest({
+        'streak': 0, 'loggedToday': False, 'planExecution': None,
+        'examTrend': [], 'openMistakes': 0, 'reviewDue': [], 'backlogTotal': 0,
+    })
+    assert quiet['planExecutionPercent'] is None
+    assert quiet['latestExamPercent'] is None
+    assert quiet['examTrend'] == 'بدون داده'
+    assert quiet['testDensity'] is None
+    assert quiet['mistakeResolutionDays'] is None
+    assert quiet['planCalibration'] is None
+    assert quiet['reportRate7d'] is None
+    assert quiet['advisorDosageDays'] is None
 
 
 # ── plan/log enrichment round-trips ─────────────────────────────────────────

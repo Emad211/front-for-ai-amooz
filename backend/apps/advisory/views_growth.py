@@ -19,7 +19,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from apps.core.permissions import IsStudentRole
+from apps.core.permissions import IsAdvisorUser, IsStudentRole
 
 from .serializers import (
     GoalItemSerializer,
@@ -35,7 +35,9 @@ from .services import analytics as analytics_service
 from .services import goals as goal_service
 from .services import mistakes as mistake_service
 from .services import topics as topic_service
+from .services import growth as growth_service
 from .services.scope import student_active_engagement
+from .services.scope import advisor_engagement
 
 
 class StudentGoalView(APIView):
@@ -374,3 +376,25 @@ class StudentAnalyticsView(APIView):
             return Response({'active': False})
         payload = analytics_service.compute_analytics(engagement)
         return Response({'active': True, **payload})
+
+
+class AdvisorGrowthView(APIView):
+    """Read-only composite growth projection for one owned student."""
+
+    permission_classes = [IsAuthenticated, IsAdvisorUser]
+
+    @extend_schema(
+        tags=['advisory'],
+        summary='تصمیم‌یار رشد دانش‌آموز (فقط خواندنی)',
+        description=(
+            'خلاصهٔ شواهد مسطح (استریک، اجرای برنامه، روند آزمون، خطاهای باز، '
+            'مرورهای سررسیدشده، عقب‌افتادگی) به‌همراه حداکثر سه پیشنهاد قطعی '
+            'بر پایهٔ همان داده‌ها. همکاری غیرفعال یا متعلق به مشاور دیگر ۴۰۴.'
+        ),
+        responses={200: OpenApiResponse(description='{active, asOf, evidence, recommendations}')},
+    )
+    def get(self, request, pk: int):
+        engagement = advisor_engagement(request.user, pk)
+        if engagement is None or engagement.status != 'ACTIVE':
+            return Response(status=status.HTTP_404_NOT_FOUND)
+        return Response(growth_service.get_growth_projection(engagement))

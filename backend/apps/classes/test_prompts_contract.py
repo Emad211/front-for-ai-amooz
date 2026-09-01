@@ -82,6 +82,8 @@ LIVE_KEYS = {
     "flash_cards": ["standard_qa"],
     "match_games": ["term_definition"],
     "meril": ["problem_centered"],
+    # Risman step 5 (wave R3): advisory's single allowed LLM prompt (ق۱′).
+    "ai_plan_draft": None,
 }
 
 # --- Keys that were audited as DEAD and removed -------------------------------
@@ -115,6 +117,9 @@ def _text(key, sub=None) -> str:
 # Required placeholder tokens per (key, sub). Rendered by the caller; must stay.
 PLACEHOLDERS = {
     ("chat_intent", None): ["{user_message}"],
+    ("ai_plan_draft", None): [
+        "{evidence_json}", "{free_prompt}", "{subjects_json}", "{week_start_iso}",
+    ],
     ("chat_system_prompt", None): [
         "{student_name}", "{unit_content}", "{history_str}", "{user_message}",
     ],
@@ -254,6 +259,10 @@ OUTPUT_KEYS = {
     ("flash_cards", "standard_qa"): ["flashcards", "front", "back", "card_type"],
     ("match_games", "term_definition"): ["pairs", "term", "definition"],
     ("meril", "problem_centered"): ["scenarios", "challenge_question", "solution_hint"],
+    # Risman step 5: the JSON keys AiPlanDraft's Pydantic model parses.
+    ("ai_plan_draft", None): [
+        '"items"', '"dayOffset"', '"subjectId"', '"plannedMinutes"', '"topic"',
+    ],
 }
 
 

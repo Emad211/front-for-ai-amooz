@@ -3,6 +3,7 @@ import os
 from urllib.parse import urlparse
 from dotenv import load_dotenv
 from datetime import timedelta
+from celery.schedules import crontab
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -294,6 +295,13 @@ REST_FRAMEWORK = {
         # chooses. Without its own scope it would inherit 'user' (300/minute),
         # i.e. 18000 messages an hour from one advisor account.
         'advisory_invite': os.getenv('THROTTLE_RATE_ADVISORY_INVITE', '10/hour'),
+        # Wave 5: same reasoning, parent invites — one advisor linking parents
+        # is a handful of SMS a week, never more than ten an hour.
+        'advisory_parent_invite': os.getenv('THROTTLE_RATE_ADVISORY_PARENT_INVITE', '10/hour'),
+        # Wave 5: the public parent OTP pair (per IP). Tighter than the invite
+        # scope because it is unauthenticated — 5/hour blunts both SMS bombing
+        # and OTP-guessing pace (the OTP service adds its own cooldown/caps).
+        'parent_login': os.getenv('THROTTLE_RATE_PARENT_LOGIN', '5/hour'),
         # OCR uploads can enqueue paid multimodal work; polling and review edits
         # stay on the normal user rate while source uploads get a tighter cap.
         'answer_ocr_upload': os.getenv('THROTTLE_RATE_ANSWER_OCR_UPLOAD', '12/hour'),
@@ -562,6 +570,11 @@ CELERY_TASK_ROUTES = {
     # media pipeline — a student waiting for an invite notification would time out
     # long before 'pipeline' drained.
     'apps.advisory.tasks.deliver_advisory_invite_task': {'queue': 'default'},
+    # Wave 5: parent SMS + the weekly digest beat — same reasoning as above:
+    # short DB work plus one SMS, never behind the media pipeline.
+    'apps.advisory.tasks.send_parent_invite_sms_task': {'queue': 'default'},
+    'apps.advisory.tasks.send_parent_login_otp_sms_task': {'queue': 'default'},
+    'apps.advisory.tasks.send_parent_weekly_digest': {'queue': 'default'},
 }
 CELERY_TASK_REJECT_ON_WORKER_LOST = True  # requeue tasks if worker is killed (OOM)
 
@@ -578,6 +591,14 @@ CELERY_BEAT_SCHEDULE = {
     'recover-queued-answer-ocr-sources': {
         'task': 'apps.classes.tasks.recover_queued_answer_ocr_sources',
         'schedule': 5 * 60,
+    },
+    # Wave 5: the parent weekly digest. Thursday 17:30 Tehran — after the
+    # school day, before the evening, the slot Iranian consultants report the
+    # highest parent open rate. crontab runs in the broker's local time; the
+    # deployment pins TZ to Asia/Tehran.
+    'advisory-parent-weekly-digest': {
+        'task': 'apps.advisory.tasks.send_parent_weekly_digest',
+        'schedule': crontab(day_of_week=4, hour=17, minute=30),
     },
 }
 

@@ -6,6 +6,9 @@ returns a structured one-week draft that lands in the existing DRAFT slot.
 
 Contract (roadmap §گام ۵):
 
+* the prompt carries a small read-only evidence block — the student's real
+  goal, open mistakes, due reviews, uncompensated backlog and recent exam
+  trend (wave 6a) — so the model drafts from data instead of planning blind;
 * the model may only pick from the student's ACTIVE subject selection — a
   foreign ``subjectId`` is a 400, never a silent rewrite;
 * hard caps: dayOffset 0..6, plannedMinutes 15..480 per row, topic ≤200 chars,
@@ -27,7 +30,7 @@ import json
 from django.utils import timezone
 from pydantic import BaseModel
 
-from apps.advisory.services import calendar, scope, study_plans
+from apps.advisory.services import analytics, calendar, goals, mistakes, scope, study_plans
 from apps.commons.structured_llm import generate_structured
 from apps.commons.llm_prompts import PROMPTS
 
@@ -36,6 +39,15 @@ MAX_TOTAL_MINUTES = 3600
 MIN_ITEM_MINUTES = 15
 MAX_ITEM_MINUTES = 480
 MAX_VOICE_BYTES = 5 * 1024 * 1024  # 5 MB — voice notes, not lectures
+# The evidence block's serialization budget: over this, rows are dropped from
+# the lowest-priority lists first so the prompt stays small.
+MAX_EVIDENCE_JSON_CHARS = 1200
+
+# HIGH-first rank for open mistakes. The values are the pinned MistakeEntry
+# priority vocabulary (recommendations.py maps them the same way); the model
+# itself cannot be imported here — the import boundary routes reads through
+# the service doors.
+_MISTAKE_PRIORITY_RANK = {'HIGH': 0, 'MEDIUM': 1, 'LOW': 2}
 
 _PLAN_FEATURE = 'ai_plan_draft'
 
@@ -88,18 +100,114 @@ def _subject_catalog(engagement) -> list[dict]:
     return [{'id': row.subject_id, 'name': row.subject.name} for row in rows]
 
 
-def _render_prompt(free_prompt: str, subjects: list[dict], week_start) -> str:
+def _student_evidence(engagement) -> dict:
+    """The student's real planning signals (wave 6a), capped and read-only.
+
+    Everything the drafter never saw: the stated goal, the open mistakes,
+    the due spaced reviews, the uncompensated backlog and the recent exam
+    trend. Reads ride the existing service doors (goals/mistakes plus one
+    ``compute_analytics`` pass for backlog, due reviews and exam trend —
+    the import boundary forbids model imports here), lists are capped
+    5/5/3/3 so the prompt stays small, and an empty engagement yields empty
+    structures, never None.
+    """
+    analytics_payload = analytics.compute_analytics(engagement)
+
+    goal = goals.get_goal(engagement)
+    open_rows = sorted(
+        mistakes.list_mistakes(engagement).filter(is_resolved=False),
+        key=lambda row: (_MISTAKE_PRIORITY_RANK.get(row.priority, 3), -row.pk),
+    )[:5]
+    # Most overdue first, so the cap drops the freshest review, not the one
+    # the student has been ignoring the longest.
+    due_rows = sorted(
+        analytics_payload['reviewDue'],
+        key=lambda row: (row['next_review_at'], row['id']),
+    )[:5]
+
+    return {
+        'goal_title': goal.target_title if goal else None,
+        'open_mistakes': [
+            {
+                'topic': row.topic,
+                'error_type': row.error_type,
+                'priority': row.priority,
+            }
+            for row in open_rows
+        ],
+        'due_reviews': [
+            {
+                'subject': row['student_subject__subject__name'],
+                'topic': row['topic'],
+            }
+            for row in due_rows
+        ],
+        'backlog': [
+            {
+                'subject': row['subject'],
+                'topic': row['topic'],
+                'planned': row['planned'],
+                'actual': row['actual'],
+            }
+            for row in analytics_payload['backlog'][:3]
+        ],
+        'recent_exams': [
+            {
+                'date': row['exam_date'].isoformat(),
+                'percent': float(row['score_percent']),
+                'tara': row['tara'],
+            }
+            # examTrend is oldest-first; the last three, newest-first.
+            for row in reversed(analytics_payload['examTrend'][-3:])
+        ],
+    }
+
+
+def _evidence_json(evidence: dict) -> str:
+    """Serialize the evidence block as compact camelCase JSON, budget-capped.
+
+    Trimming order when the serialization overflows: backlog rows first,
+    then recent exams, then due reviews, then open mistakes — the goal and
+    the mistake/review signals are what the plan leans on, so they go last.
+    The shape never changes: every key stays present, lists just shrink.
+    """
+    payload = {
+        'goalTitle': evidence['goal_title'],
+        'openMistakes': [
+            {
+                'topic': row['topic'],
+                'errorType': row['error_type'],
+                'priority': row['priority'],
+            }
+            for row in evidence['open_mistakes']
+        ],
+        'dueReviews': [dict(row) for row in evidence['due_reviews']],
+        'backlog': [dict(row) for row in evidence['backlog']],
+        'recentExams': [dict(row) for row in evidence['recent_exams']],
+    }
+    text = json.dumps(payload, ensure_ascii=False)
+    for key in ('backlog', 'recentExams', 'dueReviews', 'openMistakes'):
+        while len(text) > MAX_EVIDENCE_JSON_CHARS and payload[key]:
+            payload[key] = payload[key][:-1]
+            text = json.dumps(payload, ensure_ascii=False)
+    return text
+
+
+def _render_prompt(
+    free_prompt: str, subjects: list[dict], week_start, evidence_json: str,
+) -> str:
     """Fill the ``ai_plan_draft`` template.
 
     Sequential ``replace`` (not ``str.format``) on purpose: the template's
     output-schema example contains literal JSON braces that ``format`` would
-    choke on. The three placeholders are guarded by test_ai_planner.py.
+    choke on. The four placeholders are guarded by test_ai_planner.py.
     """
     return (
         PROMPTS[_PLAN_FEATURE]
         .replace('{week_start_iso}', week_start.isoformat())
         .replace('{free_prompt}', free_prompt)
         .replace('{subjects_json}', json.dumps(subjects, ensure_ascii=False))
+        .replace('{evidence_json}', evidence_json)
     )
 
 
@@ -164,7 +272,8 @@ def _generate(engagement, free_prompt: str, user):
         raise AIPlannerError('ابتدا درس‌های دانش‌آموز را انتخاب کنید.')
 
     week_start = calendar.week_start_of(timezone.localdate())
-    prompt = _render_prompt(free_prompt, subjects, week_start)
+    evidence = _student_evidence(engagement)
+    prompt = _render_prompt(free_prompt, subjects, week_start, _evidence_json(evidence))
 
     try:
         payload = generate_structured(
