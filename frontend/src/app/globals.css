@@ -24,6 +24,10 @@
     --input: 0 0% 92%;
     --ring: 160 60% 40%;
     --radius: 0.75rem;
+    /* Data-series tokens (tailwind.config.ts `chart`): chart-2 is the
+    planner-report «انجام‌شده» series, previously the raw hex #10b981. */
+    --chart-1: 160 60% 40%;
+    --chart-2: 160 84% 39%;
     --text-light: #111827;
     --text-muted: #6b7280;
 
@@ -55,6 +59,8 @@
     --border: 215 28% 20%;
     --input: 215 28% 17%;
     --ring: 160 60% 50%;
+    --chart-1: 160 60% 50%;
+    --chart-2: 160 84% 45%;
     --text-light: #f9fafb;
     --text-muted: #9ca3af;
 

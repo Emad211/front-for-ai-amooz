@@ -15,22 +15,29 @@ const ARABIC_DIGITS = '٠١٢٣٤٥٦٧٨٩';
 
 /**
  * Convert every ASCII digit in `value` to its Persian counterpart.
- * Non-digit characters (separators, signs, units, letters) pass through.
+ * The ASCII decimal point `.` becomes the Persian decimal separator `٫`
+ * (U+066B) so floats render correctly (e.g. 19.5 -> "۱۹٫۵").
+ * Other non-digit characters (separators, signs, units, letters) pass through.
  */
 export function toPersianDigits(value: number | string | null | undefined): string {
   if (value === null || value === undefined) return '';
-  return String(value).replace(/\d/g, (d) => PERSIAN_DIGITS[Number(d)]);
+  return String(value)
+    .replace(/\d/g, (d) => PERSIAN_DIGITS[Number(d)])
+    .replace(/\./g, '٫');
 }
 
 /**
  * Convert Persian (and Arabic-Indic) digits back to ASCII `0-9`.
+ * The Persian decimal separator `٫` (U+066B) becomes `.` so user-typed
+ * decimal values round-trip through `toPersianDigits` unchanged.
  * Useful when parsing user input from a Persian-rendered field.
  */
 export function toEnglishDigits(value: string | null | undefined): string {
   if (value === null || value === undefined) return '';
   return String(value)
     .replace(/[۰-۹]/g, (d) => String(PERSIAN_DIGITS.indexOf(d)))
-    .replace(/[٠-٩]/g, (d) => String(ARABIC_DIGITS.indexOf(d)));
+    .replace(/[٠-٩]/g, (d) => String(ARABIC_DIGITS.indexOf(d)))
+    .replace(/٫/g, '.');
 }
 
 /**
