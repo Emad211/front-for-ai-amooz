@@ -77,8 +77,8 @@ if ($Superuser) {
 }
 
 # --- Start the application services -------------------------------------------
-Write-Host "==> Starting backend + celery worker..." -ForegroundColor Cyan
-Compose up -d backend celery-worker celery-interactive-worker
+Write-Host "==> Starting backend + celery worker + beat..." -ForegroundColor Cyan
+Compose up -d backend celery-worker celery-interactive-worker celery-beat
 
 Write-Host ""
 Write-Host "==> Stack status:" -ForegroundColor Green
