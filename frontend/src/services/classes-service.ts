@@ -851,7 +851,7 @@ export async function structureClassCreationStep2(params: {
 
 
 // ==========================================================================
-// EXAM PREP PDF INTAKE + BACKGROUND MISTRAL PIPELINE
+// EXAM PREP PIPELINE (2 Steps)
 // ==========================================================================
 
 export type ExamPrepStatus =
@@ -925,17 +925,6 @@ export interface ExamPrepSessionDetail {
   teacherReviewRequired?: boolean;
   teacherReviewedAt?: string | null;
   projectionFingerprint?: string | null;
-  // Per-session LLM token/cost rollup for the pipeline report (backend req #4).
-  // Aggregated from LLMUsageLog rows keyed by this session id; all-zero when the
-  // run logged nothing. Costs are floats (Decimal columns), counts are ints.
-  usageSummary?: {
-    totalTokens: number;
-    inputTokens: number;
-    outputTokens: number;
-    costUsd: number;
-    costToman: number;
-    calls: number;
-  } | null;
 }
 
 export interface ExamPrepSourceUnitIssue {
@@ -976,12 +965,18 @@ export interface ExamPrepVisualRef {
   id: string | number;
   role: 'question' | 'option' | 'solution';
   optionLabel?: string | null;
-  altText: string;
-  selectedVariant: 'source' | 'generated';
+  altText?: string;
+  selectedVariant?: 'source' | 'generated';
+  /** Source-first projections provide a protected crop URL directly. */
+  url?: string | null;
 }
 
-export interface ExamPrepVisualAsset extends Omit<ExamPrepVisualRef, 'id'> {
+export interface ExamPrepVisualAsset extends ExamPrepVisualRef {
+  // Persisted legacy visual assets always use the integer asset endpoint.
+  // Source-first projection refs use the wider string|number base type above,
+  // but must never be sent to this PATCH route.
   id: number;
+  selectedVariant: 'source' | 'generated';
   questionKey: string;
   status: string;
   teacherApprovedGenerated: boolean;
@@ -1022,7 +1017,7 @@ export interface ExamPrepQuestion {
 }
 
 /**
- * Upload one PDF and start the production Mistral OCR pipeline.
+ * Exam Prep Step 1: Upload and transcribe audio/video.
  */
 export async function transcribeExamPrepStep1(
   params: {
@@ -1219,8 +1214,9 @@ export async function getExamPrepVisualBlob(
     throw new Error('NEXT_PUBLIC_API_URL تنظیم نشده است.');
   }
   const apiOrigin = API_URL.replace(/\/api$/, '');
-  // Protected visual URLs must stay on the configured API origin.
-  // Never attach the user's bearer token to an arbitrary external URL.
+  // Projection URLs are expected to be same-origin API paths.  Reject an
+  // arbitrary absolute URL instead of attaching the user's bearer token to a
+  // third-party host if untrusted legacy JSON contains one.
   let parsed: URL;
   try {
     parsed = new URL(relativeUrl, `${apiOrigin}/`);

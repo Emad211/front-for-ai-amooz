@@ -8,12 +8,16 @@ import {
   ExternalLink,
   FileCheck2,
   Loader2,
+  PencilLine,
   Rocket,
+  ShieldCheck,
 } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Label } from '@/components/ui/label';
 import { normalizeApiError } from '@/services/auth-service';
 import {
   buildExamPrepV4Projection,
@@ -26,11 +30,13 @@ export function ExamPrepV4PublicationPanel({ projectId }: { projectId: number })
   const [projection, setProjection] = useState<ExamPrepV4ProjectionResult | null>(null);
   const [isBuilding, setIsBuilding] = useState(false);
   const [isPublishing, setIsPublishing] = useState(false);
+  const [sourceReviewConfirmed, setSourceReviewConfirmed] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const build = useCallback(async () => {
     setIsBuilding(true);
     setError(null);
+    setSourceReviewConfirmed(false);
     try {
       setProjection(await buildExamPrepV4Projection(projectId));
     } catch (requestError) {
@@ -41,6 +47,10 @@ export function ExamPrepV4PublicationPanel({ projectId }: { projectId: number })
   }, [projectId]);
 
   const publish = useCallback(async () => {
+    if (!projection || !sourceReviewConfirmed) {
+      setError('ابتدا نسخه را بسازید، بازبینی منبع‌محور را انجام دهید و تأیید نهایی را علامت بزنید.');
+      return;
+    }
     setIsPublishing(true);
     setError(null);
     try {
@@ -50,7 +60,7 @@ export function ExamPrepV4PublicationPanel({ projectId }: { projectId: number })
     } finally {
       setIsPublishing(false);
     }
-  }, [projectId]);
+  }, [projectId, projection, sourceReviewConfirmed]);
 
   return (
     <Card className="rounded-2xl border-border/60" dir="rtl">
@@ -63,13 +73,13 @@ export function ExamPrepV4PublicationPanel({ projectId }: { projectId: number })
             <div>
               <CardTitle className="text-lg font-black">نسخهٔ دانش‌آموز و انتشار</CardTitle>
               <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                سؤال‌ها برای نمایش به دانش‌آموز آماده می‌شوند و پاسخ و راه‌حل پیش از ثبت پاسخ او نمایش داده نمی‌شود.
+                اول نسخه را بسازید؛ سپس متن، پاسخ صحیح و راه‌حل را کنار crop اصلی PDF کنترل کنید و بعد منتشر کنید.
               </p>
             </div>
           </div>
           {projection ? (
             <Badge variant={projection.published ? 'default' : 'outline'}>
-              {projection.published ? 'منتشر شده' : 'نسخه آماده'}
+              {projection.published ? 'منتشر شده' : 'نسخه آماده بازبینی'}
             </Badge>
           ) : null}
         </div>
@@ -96,6 +106,35 @@ export function ExamPrepV4PublicationPanel({ projectId }: { projectId: number })
           </div>
         ) : null}
 
+        {projection && !projection.published ? (
+          <Alert className="border-blue-500/30 bg-blue-500/5">
+            <ShieldCheck className="h-4 w-4" aria-hidden="true" />
+            <AlertTitle>بازبینی نهایی با منبع اصلی</AlertTitle>
+            <AlertDescription className="space-y-3">
+              <p>
+                وارد ویرایشگر شوید. crop اصلی سؤال و پاسخ کنار متن استخراج‌شده نمایش داده می‌شود؛
+                فرمول، عدد، واژه علمی و مخصوصاً گزینه صحیح را کنترل و در صورت نیاز اصلاح کنید.
+              </p>
+              <Button asChild variant="outline" className="h-10 rounded-xl">
+                <Link href={`/teacher/my-exams/${projection.sessionId}/edit`}>
+                  <PencilLine className="ms-2 h-4 w-4" aria-hidden="true" />
+                  بازبینی و اصلاح نهایی
+                </Link>
+              </Button>
+              <div className="flex items-start gap-2 rounded-lg border bg-background p-3">
+                <Checkbox
+                  id={`source-review-${projectId}`}
+                  checked={sourceReviewConfirmed}
+                  onCheckedChange={(value) => setSourceReviewConfirmed(value === true)}
+                />
+                <Label htmlFor={`source-review-${projectId}`} className="cursor-pointer text-sm leading-6">
+                  cropهای منبع را کنترل کردم و پاسخ صحیح/فرمول‌های لازم را با PDF تطبیق دادم.
+                </Label>
+              </div>
+            </AlertDescription>
+          </Alert>
+        ) : null}
+
         {projection?.published ? (
           <Alert className="border-emerald-500/30 bg-emerald-500/10">
             <CheckCircle2 className="h-4 w-4" aria-hidden="true" />
@@ -112,20 +151,31 @@ export function ExamPrepV4PublicationPanel({ projectId }: { projectId: number })
             variant="outline"
             className="h-11 rounded-xl"
             onClick={() => void build()}
-            disabled={isBuilding || isPublishing}
+            disabled={isBuilding || isPublishing || projection?.published}
           >
             {isBuilding ? (
               <Loader2 className="ms-2 h-4 w-4 animate-spin" aria-hidden="true" />
             ) : (
               <FileCheck2 className="ms-2 h-4 w-4" aria-hidden="true" />
             )}
-            ساخت نسخهٔ دانش‌آموز
+            {projection ? 'بازسازی نسخه پس از اصلاح' : 'ساخت نسخهٔ دانش‌آموز'}
           </Button>
           <Button
             type="button"
             className="h-11 rounded-xl"
             onClick={() => void publish()}
-            disabled={isPublishing || isBuilding || projection?.published}
+            disabled={
+              isPublishing
+              || isBuilding
+              || !projection
+              || !sourceReviewConfirmed
+              || projection.published
+            }
+            title={!projection
+              ? 'ابتدا نسخه دانش‌آموز را بسازید.'
+              : !sourceReviewConfirmed
+                ? 'ابتدا بازبینی نهایی با منبع را تأیید کنید.'
+                : 'انتشار آزمون'}
           >
             {isPublishing ? (
               <Loader2 className="ms-2 h-4 w-4 animate-spin" aria-hidden="true" />

@@ -14,6 +14,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Textarea } from '@/components/ui/textarea';
+import { MarkdownWithMath } from '@/components/content/markdown-with-math';
 import { normalizeApiError } from '@/services/auth-service';
 import {
   finalizeExamPrepV4Review,
@@ -248,10 +249,22 @@ export function ExamPrepV4ReviewPanel({ projectId }: { projectId: number }) {
                 <div className="rounded-xl bg-muted/30 p-3 text-sm leading-7">
                   <p className="text-xs font-bold text-muted-foreground">پاسخ استخراج‌شده</p>
                   <p><strong>گزینه:</strong> {item.answer.correctOption ?? '—'}</p>
-                  <p><strong>پاسخ نهایی:</strong> {item.answer.finalAnswer ?? '—'}</p>
-                  <p className="whitespace-pre-wrap">
-                    <strong>راه‌حل:</strong> {item.answer.solutionText ?? '—'}
-                  </p>
+                  <div>
+                    <strong>پاسخ نهایی:</strong>
+                    <MarkdownWithMath
+                      markdown={item.answer.finalAnswer ?? '—'}
+                      renderKey={`review-final-${item.matchDecisionId}`}
+                      className="mt-1"
+                    />
+                  </div>
+                  <div>
+                    <strong>راه‌حل:</strong>
+                    <MarkdownWithMath
+                      markdown={item.answer.solutionText ?? '—'}
+                      renderKey={`review-solution-${item.matchDecisionId}`}
+                      className="mt-1"
+                    />
+                  </div>
                 </div>
                 <div className="rounded-xl border border-border/60 p-3 text-sm leading-7">
                   <p className="text-xs font-bold text-muted-foreground">سؤال مقصد انتخاب‌شده</p>
@@ -260,9 +273,11 @@ export function ExamPrepV4ReviewPanel({ projectId }: { projectId: number }) {
                       <p className="font-bold">
                         سؤال {selectedQuestion.printedNumber ?? 'بدون شماره'}
                       </p>
-                      <p className="line-clamp-6 whitespace-pre-wrap">
-                        {selectedQuestion.questionText}
-                      </p>
+                      <MarkdownWithMath
+                        markdown={selectedQuestion.questionText || '—'}
+                        renderKey={`review-question-${item.matchDecisionId}-${selectedQuestion.id}`}
+                        className="line-clamp-6"
+                      />
                     </>
                   ) : (
                     <p className="text-muted-foreground">سؤالی انتخاب نشده است.</p>

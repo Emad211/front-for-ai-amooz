@@ -6,8 +6,8 @@ class ClassesConfig(AppConfig):
     name = 'apps.classes'
 
     def ready(self):
-        # Source-aware exam preparation remains registered only for existing
-        # drafts during the staged cleanup. New intake uses tasks_exam_prep.
+        # Keep legacy V4 model registration so historical rows/migrations remain
+        # readable, but V4 routes and worker tasks are no longer production paths.
         from . import models_v4  # noqa: F401
         from . import models_v4_blocks  # noqa: F401
         from . import models_v4_records  # noqa: F401
@@ -15,4 +15,34 @@ class ClassesConfig(AppConfig):
         from . import models_v4_projection  # noqa: F401
         from . import models_v4_bridge  # noqa: F401
         from . import signals  # noqa: F401
-        from . import tasks_exam_prep  # noqa: F401
+        from . import tasks_exam_prep
+
+        # New Exam Prep creation stays on the simple ClassCreationSession task,
+        # but its extraction engine is the researched full-document Mistral
+        # OCR4 pipeline (not V4 source-map/page-confirmation).
+        from .services import exam_prep_mistral_document_pipeline as mistral_engine
+
+        original_question_record = mistral_engine._question_record
+
+        def source_aware_question_record(region):
+            record = original_question_record(region)
+            if record is None:
+                return None
+            issues = list(record.get('issues') or [])
+            needs_source_crop = (
+                mistral_engine._question_visual_required(region)
+                or 'unexpected_option_count' in issues
+                or len(record.get('options') or []) != 4
+            )
+            if needs_source_crop:
+                # The document engine satisfies this with the authoritative PDF
+                # source crop and removes the temporary blocker afterward.
+                if 'visual_evidence_required' not in issues:
+                    issues.append('visual_evidence_required')
+                record['issues'] = issues
+            return record
+
+        mistral_engine._question_record = source_aware_question_record
+        tasks_exam_prep.run_exam_prep_pdf_pipeline = (
+            mistral_engine.run_exam_prep_mistral_document_pipeline
+        )

@@ -9,6 +9,7 @@ import { Badge } from '@/components/ui/badge';
 import { MarkdownWithMath } from '@/components/content/markdown-with-math';
 import { ProtectedExamVisual } from '@/components/exam-prep/protected-exam-visual';
 import { toPersianOptionLabel } from '@/lib/persian-option-label';
+import { resolveExamVisualUrl, visualMatchesOption, visualsForRole } from '@/lib/exam-visuals';
 import type { Exam } from '@/types';
 
 type ExamPrepResult = {
@@ -23,9 +24,15 @@ type ExamPrepResult = {
     is_correct: boolean;
     attempts: number;
     score_for_question: number;
-    correct_option_label?: string;
+    solution_markdown?: string;
     teacher_solution_markdown?: string;
-    solution_visuals?: { id: string | number; role: 'solution'; altText: string; url: string }[];
+    solution_visuals?: {
+      id: string | number;
+      role?: 'solution' | 'question' | 'option';
+      optionLabel?: string | null;
+      altText?: string;
+      url: string;
+    }[];
   }[];
 };
 
@@ -195,6 +202,17 @@ export default function ExamResultPage() {
             const optionIndex = question?.options?.findIndex(o => String(o.label).trim() === selected) ?? -1;
             const selectedOption = optionIndex >= 0 ? (question?.options?.[optionIndex] ?? null) : null;
             const displayLabel = selected ? toPersianOptionLabel(selected, optionIndex >= 0 ? optionIndex : undefined) : '';
+            const questionVisuals = visualsForRole(question?.visuals, 'question');
+            const optionVisuals = visualsForRole(question?.visuals, 'option');
+            const resultSolutionVisuals = (it.solution_visuals ?? []).length > 0
+              ? it.solution_visuals ?? []
+              : visualsForRole(question?.solutionVisuals ?? question?.visuals, 'solution');
+            const solutionText = result.finalized
+              ? it.solution_markdown
+                || it.teacher_solution_markdown
+                || question?.solutionText
+                || ''
+              : '';
 
             const status = result.finalized
               ? it.is_correct
@@ -211,6 +229,27 @@ export default function ExamResultPage() {
                   <div className="space-y-1">
                     <div className="text-sm font-semibold">سوال {number}</div>
                     {qText ? <MarkdownWithMath markdown={qText} className="text-sm text-muted-foreground" renderKey={`res-q-${it.question_id}`} /> : null}
+                    {questionVisuals.length > 0 && (
+                      <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                        {questionVisuals.map((visual) => {
+                          const url = resolveExamVisualUrl(visual, examId);
+                          return url ? (
+                            <figure key={String(visual.id)} className="overflow-hidden rounded-lg border border-border bg-card">
+                              <ProtectedExamVisual
+                                url={url}
+                                alt={visual.altText || `شکل سؤال ${number}`}
+                                className="h-auto max-h-[60vh] min-h-32 w-full object-contain"
+                              />
+                              {visual.altText ? (
+                                <figcaption className="border-t px-2 py-1 text-xs text-muted-foreground">
+                                  {visual.altText}
+                                </figcaption>
+                              ) : null}
+                            </figure>
+                          ) : null;
+                        })}
+                      </div>
+                    )}
                   </div>
                   <div className="flex items-center gap-2">
                     {attempts > 0 && (
@@ -229,7 +268,7 @@ export default function ExamResultPage() {
 
                 <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
                   <div className="flex items-center justify-between gap-2 bg-card border border-border rounded-lg px-3 py-2">
-                    <span className="text-muted-foreground">پاسخ تو</span>
+                    <span className="text-muted-foreground">پاسخ شما</span>
                     {selected ? (
                       <span className="font-semibold text-right" dir="rtl">
                         {displayLabel ? `${displayLabel}) ` : ''}
@@ -248,37 +287,68 @@ export default function ExamResultPage() {
                       <span className="font-semibold">ثبت نشده</span>
                     )}
                   </div>
-                  {result.finalized && (
-                    <div className="flex items-center justify-between gap-2 bg-card border border-border rounded-lg px-3 py-2">
-                      <span className="text-muted-foreground">پاسخ صحیح</span>
-                      <span className="font-semibold">
-                        {it.correct_option_label
-                          ? toPersianOptionLabel(it.correct_option_label)
-                          : '—'}
-                      </span>
-                    </div>
-                  )}
                 </div>
-                {result.finalized && (it.teacher_solution_markdown || it.solution_visuals?.length) ? (
-                  <div className="mt-3 space-y-3 rounded-lg border border-border bg-card p-3">
-                    <div className="text-sm font-semibold">راه‌حل تشریحی</div>
-                    {it.teacher_solution_markdown ? (
-                      <MarkdownWithMath
-                        markdown={it.teacher_solution_markdown}
-                        renderKey={`res-solution-${it.question_id}`}
-                        className="text-sm leading-7"
-                      />
-                    ) : null}
-                    {it.solution_visuals?.map((visual) => (
-                      <ProtectedExamVisual
-                        key={visual.id}
-                        url={visual.url}
-                        alt={visual.altText || 'تصویر راه‌حل'}
-                        className="mx-auto max-h-[28rem] max-w-full rounded-md object-contain"
-                      />
-                    ))}
+
+                {selected && optionVisuals.some((visual) => visualMatchesOption(visual, selected)) && (
+                  <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                    {optionVisuals
+                      .filter((visual) => visualMatchesOption(visual, selected))
+                      .map((visual) => {
+                        const url = resolveExamVisualUrl(visual, examId);
+                        return url ? (
+                          <figure key={String(visual.id)} className="overflow-hidden rounded-lg border border-border bg-card">
+                            <ProtectedExamVisual
+                              url={url}
+                              alt={visual.altText || `تصویر گزینه ${displayLabel || selected}`}
+                              className="h-auto max-h-64 min-h-24 w-full object-contain"
+                            />
+                            {visual.altText ? (
+                              <figcaption className="border-t px-2 py-1 text-xs text-muted-foreground">
+                                {visual.altText}
+                              </figcaption>
+                            ) : null}
+                          </figure>
+                        ) : null;
+                      })}
                   </div>
-                ) : null}
+                )}
+
+                {result.finalized && (solutionText || resultSolutionVisuals.length > 0) && (
+                  <details className="mt-4 rounded-lg border border-primary/20 bg-primary/5 p-3">
+                    <summary className="cursor-pointer text-sm font-semibold text-primary">
+                      پاسخ تشریحی و تصاویر راه‌حل
+                    </summary>
+                    {solutionText ? (
+                      <div className="mt-3">
+                        <MarkdownWithMath
+                          markdown={solutionText}
+                          renderKey={`res-solution-${it.question_id}`}
+                        />
+                      </div>
+                    ) : null}
+                    {resultSolutionVisuals.length > 0 && (
+                      <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                        {resultSolutionVisuals.map((visual) => {
+                          const url = resolveExamVisualUrl(visual, examId);
+                          return url ? (
+                            <figure key={String(visual.id)} className="overflow-hidden rounded-lg border border-border bg-card">
+                              <ProtectedExamVisual
+                                url={url}
+                                alt={visual.altText || `تصویر راه‌حل سؤال ${number}`}
+                              className="h-auto max-h-[60vh] min-h-32 w-full object-contain"
+                              />
+                              {visual.altText ? (
+                                <figcaption className="border-t px-2 py-1 text-xs text-muted-foreground">
+                                  {visual.altText}
+                                </figcaption>
+                              ) : null}
+                            </figure>
+                          ) : null;
+                        })}
+                      </div>
+                    )}
+                  </details>
+                )}
               </div>
             );
           })}

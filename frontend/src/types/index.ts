@@ -45,11 +45,24 @@ export interface Question {
   }[];
   correctOptionId?: string;
   userAnswerId?: string;
+  /**
+   * Protected source visuals attached to the item.  `solution` is only
+   * returned by a finalized/review endpoint; the active-exam response keeps
+   * it out to avoid leaking the answer.
+   */
   visuals?: {
     id: string | number;
-    role: 'question' | 'option';
+    role: 'question' | 'option' | 'solution';
     optionLabel?: string | null;
-    altText: string;
+    altText?: string;
+    url: string;
+  }[];
+  solutionText?: string;
+  solutionVisuals?: {
+    id: string | number;
+    role?: 'solution' | 'question' | 'option';
+    optionLabel?: string | null;
+    altText?: string;
     url: string;
   }[];
 }

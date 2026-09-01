@@ -6,6 +6,7 @@ psycopg2-binary
 djangorestframework-simplejwt
 drf-spectacular
 Pillow
+requests>=2.31,<3.0
 
 # LLM clients
 google-genai>=1.0.0,<2.0.0

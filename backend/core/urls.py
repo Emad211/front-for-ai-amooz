@@ -32,7 +32,12 @@ from apps.core.views import HealthCheckView
 from apps.core.throttling import SafeScopedRateThrottle
 from apps.classes.views_exam_prep import ExamPrepPdfStep1View
 from apps.classes.views_exam_prep_inline_visual import InlineOrStoredExamVisualContentView
-from apps.classes.views_exam_prep_review import ExamPrepReviewSessionDetailView
+from apps.classes.views_exam_prep_review import PageFirstExamPrepSessionDetailView
+
+
+# New Exam Prep always uses the simple non-versioned product flow. The actual
+# extraction engine is the OCR4 document engine bound to its Celery task.
+ExamPrepStep1IntakeView = ExamPrepPdfStep1View
 
 
 @extend_schema_view(
@@ -105,22 +110,16 @@ urlpatterns = [
 
     path('api/accounts/', include('apps.accounts.urls')),
     path('api/auth/', include('apps.authentication.urls')),
-    # New exam-prep sessions use the production Mistral OCR pipeline directly.
     path(
         'api/classes/exam-prep-sessions/step-1/',
-        ExamPrepPdfStep1View.as_view(),
+        ExamPrepStep1IntakeView.as_view(),
         name='exam_prep_step1_intake',
     ),
-    # The URL is unchanged. This more-specific route only opens PATCH for a
-    # completed production draft that is explicitly ready for teacher review;
-    # GET and DELETE inherit the existing behavior.
     path(
         'api/classes/exam-prep-sessions/<int:session_id>/',
-        ExamPrepReviewSessionDetailView.as_view(),
-        name='exam_prep_session_detail_review',
+        PageFirstExamPrepSessionDetailView.as_view(),
+        name='exam_prep_session_detail_page_first',
     ),
-    # Preserve the existing visual URL. Numeric IDs still stream legacy DB
-    # assets; inline-* IDs stream verified source crops from canonical JSON.
     path(
         'api/classes/exam-prep-sessions/<int:session_id>/visuals/<str:asset_id>/content/',
         InlineOrStoredExamVisualContentView.as_view(),
@@ -131,7 +130,6 @@ urlpatterns = [
     path('api/admin/', include('apps.commons.urls')),
     path('api/organizations/', include('apps.organizations.urls')),
     path('api/waitlist/', include('apps.waitlist.urls')),
-    path('api/advisory/', include('apps.advisory.urls')),
 ]
 
 from django.conf import settings
@@ -153,11 +151,6 @@ urlpatterns += [
         'media/exam-prep/visuals/<path:path>',
         private_answer_source_media_view,
         name='private_exam_visual_media',
-    ),
-    path(
-        'media/exam-prep-v4/<path:path>',
-        private_answer_source_media_view,
-        name='private_exam_v4_media',
     ),
 ]
 

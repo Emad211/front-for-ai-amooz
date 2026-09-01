@@ -564,9 +564,20 @@ export const DashboardService = {
         options: { label: string; text_markdown: string }[];
         visuals?: {
           id: string | number;
-          role: 'question' | 'option';
+          role: 'question' | 'option' | 'solution';
           optionLabel?: string | null;
-          altText: string;
+          altText?: string;
+          url: string;
+        }[];
+        // These fields are intentionally optional.  The active-exam endpoint
+        // omits solutions; a finalized review endpoint may provide them.
+        teacher_solution_markdown?: string;
+        solution_markdown?: string;
+        solution_visuals?: {
+          id: string | number;
+          role?: 'solution' | 'question' | 'option';
+          optionLabel?: string | null;
+          altText?: string;
           url: string;
         }[];
       }[];
@@ -591,6 +602,8 @@ export const DashboardService = {
         text: opt.text_markdown,
       })),
       visuals: q.visuals || [],
+      solutionText: q.solution_markdown || q.teacher_solution_markdown || undefined,
+      solutionVisuals: q.solution_visuals || q.visuals?.filter((visual) => visual.role === 'solution') || [],
     }));
 
     return {
@@ -665,8 +678,15 @@ export const DashboardService = {
         attempts: number;
         score_for_question: number;
         correct_option_label?: string;
+        solution_markdown?: string;
         teacher_solution_markdown?: string;
-        solution_visuals?: { id: string | number; role: 'solution'; altText: string; url: string }[];
+        solution_visuals?: {
+          id: string | number;
+          role?: 'solution' | 'question' | 'option';
+          optionLabel?: string | null;
+          altText?: string;
+          url: string;
+        }[];
       }[];
     }>(url, {
       method: 'GET',

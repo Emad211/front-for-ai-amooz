@@ -7,7 +7,6 @@ from typing import Any, Mapping, Sequence
 from .exam_prep_mistral_layout_analysis import (
     LayoutBlock,
     is_rtl_double_column,
-    normalize_outer_heading_markup,
     normalize_page_blocks,
 )
 
@@ -17,14 +16,14 @@ _DIGIT_TRANS = str.maketrans(
 )
 _SOLUTION_PAGE_HEADER_RE = re.compile(r"پاسخ", re.IGNORECASE)
 _Q_FIRST_RE = re.compile(
-    r"^\s*[#*_`«»\"'()]*\s*(?P<question>[0-9۰-۹٠-٩]{1,3})\s*[»\"'()]*\s*"
-    r"(?:[-–—ـ]\s*)?گزین(?:ه|ۀ|هٔ)\s*[«»\"'()]*\s*"
+    r"^\s*[#«»\"'()]*\s*(?P<question>[0-9۰-۹٠-٩]{1,3})\s*[»\"'()]*\s*"
+    r"(?:[-–—]\s*)?گزین(?:ه|ۀ|هٔ)\s*[«»\"'()]*\s*"
     r"(?P<option>[0-9۰-۹٠-٩]{1,2})\s*[»\"'()]*",
     re.IGNORECASE,
 )
 _OPTION_FIRST_RE = re.compile(
-    r"^\s*[#*_`«»\"'()]*\s*(?P<option>[0-9۰-۹٠-٩]{1,2})\s*[»\"'()]*\s*"
-    r"گزین(?:ه|ۀ|هٔ)\s*(?:[-–—ـ]\s*)?"
+    r"^\s*[#«»\"'()]*\s*(?P<option>[0-9۰-۹٠-٩]{1,2})\s*[»\"'()]*\s*"
+    r"گزین(?:ه|ۀ|هٔ)\s*(?:[-–—]\s*)?"
     r"(?P<question>[0-9۰-۹٠-٩]{1,3})",
     re.IGNORECASE,
 )
@@ -39,10 +38,16 @@ def _integer(value: Any) -> int | None:
     return int(match.group(0)) if match else None
 
 
+def is_solution_content_page(page: Mapping[str, Any]) -> bool:
+    """Return true only for worked-answer pages, not the answer-booklet cover."""
+
+    return bool(_SOLUTION_PAGE_HEADER_RE.search(str(page.get("header") or "")))
+
+
 def parse_solution_heading(text: str) -> dict[str, Any] | None:
     """Parse both real OCR heading orders observed in the source document."""
 
-    value = normalize_outer_heading_markup(text)
+    value = str(text or "").strip()
     for format_name, pattern in (
         ("question_first", _Q_FIRST_RE),
         ("option_first", _OPTION_FIRST_RE),
@@ -60,36 +65,6 @@ def parse_solution_heading(text: str) -> dict[str, Any] | None:
             "format": format_name,
         }
     return None
-
-
-def is_solution_content_page(page: Mapping[str, Any]) -> bool:
-    """Recognize worked-answer pages without trusting one noisy OCR header.
-
-    The first research PDF usually put the word ``پاسخ`` in the extracted page
-    header.  The 1405 Kanoon cultural booklet and a few ordinary answer pages do
-    not: their headers contain only booklet/page metadata even though the body has
-    authoritative headings such as ``۲۵۱- گزینه ۲``.  Requiring the header caused
-    whole answer pages to disappear from deterministic alignment and forced Stage
-    4 to re-read correct answers with an LLM.
-
-    Two independently parseable numbered option headings are strong structural
-    evidence of a worked-answer page and are much narrower than free-text keyword
-    matching.  Requiring two also prevents an isolated phrase inside a question
-    page from reclassifying that page.
-    """
-
-    if _SOLUTION_PAGE_HEADER_RE.search(str(page.get("header") or "")):
-        return True
-    heading_count = 0
-    for block in page.get("blocks") or []:
-        if not isinstance(block, Mapping):
-            continue
-        if parse_solution_heading(str(block.get("content") or "")) is None:
-            continue
-        heading_count += 1
-        if heading_count >= 2:
-            return True
-    return False
 
 
 def normalize_solution_option_label(raw: int | None) -> tuple[int | None, bool, bool]:

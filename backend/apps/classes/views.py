@@ -99,7 +99,6 @@ from .serializers import (
     StudentExamPrepResultResponseSerializer,
 )
 from .services.transcription import transcribe_media_bytes
-from .services.exam_prep_mistral_artifacts import cleanup_session_private_artifacts
 from .services.pdf_extraction import extract_pdf_to_markdown
 from .services.structure import structure_transcript_markdown
 from .services.prerequisites import extract_prerequisites, generate_prerequisite_teaching
@@ -1171,11 +1170,7 @@ class ClassCreationSessionDetailView(APIView):
         responses={200: ClassCreationSessionDetailSerializer},
     )
     def get(self, request, session_id: int):
-        session = ClassCreationSession.objects.filter(
-            id=session_id,
-            teacher=request.user,
-            pipeline_type=ClassCreationSession.PipelineType.CLASS,
-        ).first()
+        session = ClassCreationSession.objects.filter(id=session_id, teacher=request.user).first()
         if session is None:
             return Response({'detail': 'جلسه پیدا نشد.'}, status=status.HTTP_404_NOT_FOUND)
         return Response(ClassCreationSessionDetailSerializer(session).data)
@@ -1188,11 +1183,7 @@ class ClassCreationSessionDetailView(APIView):
         responses={200: ClassCreationSessionDetailSerializer},
     )
     def patch(self, request, session_id: int):
-        session = ClassCreationSession.objects.filter(
-            id=session_id,
-            teacher=request.user,
-            pipeline_type=ClassCreationSession.PipelineType.CLASS,
-        ).first()
+        session = ClassCreationSession.objects.filter(id=session_id, teacher=request.user).first()
         if session is None:
             return Response({'detail': 'جلسه پیدا نشد.'}, status=status.HTTP_404_NOT_FOUND)
 
@@ -1232,11 +1223,7 @@ class ClassCreationSessionDetailView(APIView):
         responses={204: None},
     )
     def delete(self, request, session_id: int):
-        session = ClassCreationSession.objects.filter(
-            id=session_id,
-            teacher=request.user,
-            pipeline_type=ClassCreationSession.PipelineType.CLASS,
-        ).first()
+        session = ClassCreationSession.objects.filter(id=session_id, teacher=request.user).first()
         if session is None:
             return Response({'detail': 'جلسه پیدا نشد.'}, status=status.HTTP_404_NOT_FOUND)
         session.delete()
@@ -3317,27 +3304,6 @@ class StudentNotificationListView(APIView):
                     }
                 )
 
-        # Single-user notifications any app dropped into this student's feed via
-        # apps.notification.services.notify_user (e.g. an advisory invite). Read
-        # through apps.notification only — this view never learns which app wrote
-        # the row, which keeps the classes→advisory boundary intact. Each item
-        # carries its own in-app link (falling back to /notifications).
-        from apps.notification.models import DirectNotification
-
-        for item in DirectNotification.objects.filter(recipient=user).order_by('-created_at'):
-            item_id = f'direct-{item.id}'
-            out.append(
-                {
-                    'id': item_id,
-                    'title': item.title,
-                    'message': item.message,
-                    'type': item.notification_type,
-                    'isRead': item_id in read_ids,
-                    'createdAt': item.created_at.isoformat(),
-                    'link': item.link or '/notifications',
-                }
-            )
-
         for session in sessions:
             for announcement in session.announcements.all():
                 # Map priority to notification type
@@ -3849,93 +3815,49 @@ class ExamPrepSessionDetailView(APIView):
         if session.is_active_pipeline:
             _cancel_session_pipeline(session)
         artifact = ExamPrepExtractionArtifact.objects.filter(session=session).first()
-        from core.storage_backends import delete_answer_source_file
-        from .services.exam_prep_mistral_production import PRODUCTION_ENGINE
-        from .services.exam_prep_mistral_visuals import (
-            visual_registry_covers_projection,
-            visual_registry_storage_names,
-        )
-
-        workflow = session.workflow_state if isinstance(session.workflow_state, dict) else {}
-        extraction_audit = workflow.get('extractionAudit')
-        try:
-            parsed_projection = json.loads(session.exam_prep_json or '{}')
-        except (json.JSONDecodeError, TypeError):
-            parsed_projection = {}
-        projection = parsed_projection if isinstance(parsed_projection, dict) else {}
-        if (
-            workflow.get('engine') == PRODUCTION_ENGINE
-            and not visual_registry_covers_projection(
-                extraction_audit if isinstance(extraction_audit, dict) else {},
-                projection,
-            )
-        ):
-            return Response(
-                {
-                    'detail': (
-                        'رجیستری فایل‌های تصویری کامل نیست؛ برای جلوگیری از باقی‌ماندن '
-                        'فایل خصوصی، حذف متوقف شد.'
-                    )
-                },
-                status=status.HTTP_503_SERVICE_UNAVAILABLE,
-            )
-        if not cleanup_session_private_artifacts(
-            session.id,
-            include_visuals=True,
-            include_checkpoints=True,
-        ):
-            return Response(
-                {'detail': 'حذف فایل‌های خصوصی در حال پردازش کامل نشد. دوباره تلاش کنید.'},
-                status=status.HTTP_503_SERVICE_UNAVAILABLE,
-            )
-        storage_names = set(
-            visual_registry_storage_names(
-                extraction_audit if isinstance(extraction_audit, dict) else {}
-            )
-        )
         if artifact is not None and artifact.pipeline_version >= 2:
+            from core.storage_backends import delete_answer_source_file
             from .services.exam_prep_visuals import delete_visual_assets
 
-            storage_names.update({
+            storage_names = {
                 str(block.get('storageName'))
                 for block in artifact.source_blocks or []
                 if isinstance(block, dict) and block.get('storageName')
-            })
+            }
             if not delete_visual_assets(artifact.visual_assets.all()):
                 return Response(
                     {'detail': 'حذف فایل‌های تصویری کامل نشد. دوباره تلاش کنید.'},
                     status=status.HTTP_503_SERVICE_UNAVAILABLE,
                 )
-        deletion_results = [
-            delete_answer_source_file(storage_name)
-            for storage_name in sorted(storage_names)
-        ]
-        if not all(deletion_results):
-            return Response(
-                {
-                    'detail': (
-                        'حذف فایل‌های منبع کامل نشد. برای جلوگیری از باقی‌ماندن '
-                        'فایل خصوصی، دوباره تلاش کنید.'
-                    )
-                },
-                status=status.HTTP_503_SERVICE_UNAVAILABLE,
-            )
-        if artifact is not None and artifact.pipeline_version >= 2:
-            artifact.source_blocks = []
-            artifact.save(update_fields=['source_blocks', 'updated_at'])
-        if session.source_file:
-            try:
-                session.source_file.delete(save=False)
-            except Exception:
-                logger.warning(
-                    'Failed to delete exam-prep upload before session deletion session=%s.',
-                    session.id,
-                    exc_info=True,
-                )
+            deletion_results = [
+                delete_answer_source_file(storage_name)
+                for storage_name in storage_names
+            ]
+            if not all(deletion_results):
                 return Response(
-                    {'detail': 'حذف فایل اصلی کامل نشد. دوباره تلاش کنید.'},
+                    {
+                        'detail': (
+                            'حذف فایل‌های منبع کامل نشد. برای جلوگیری از باقی‌ماندن '
+                            'فایل خصوصی، دوباره تلاش کنید.'
+                        )
+                    },
                     status=status.HTTP_503_SERVICE_UNAVAILABLE,
                 )
+            artifact.source_blocks = []
+            artifact.save(update_fields=['source_blocks', 'updated_at'])
+            if session.source_file:
+                try:
+                    session.source_file.delete(save=False)
+                except Exception:
+                    logger.warning(
+                        'Failed to delete exam-prep upload before session deletion session=%s.',
+                        session.id,
+                        exc_info=True,
+                    )
+                    return Response(
+                        {'detail': 'حذف فایل اصلی کامل نشد. دوباره تلاش کنید.'},
+                        status=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    )
         session.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
 
@@ -3963,20 +3885,6 @@ class ExamPrepSessionCancelView(APIView):
             )
 
         _cancel_session_pipeline(session)
-        if not cleanup_session_private_artifacts(
-            session.id,
-            include_visuals=True,
-            include_checkpoints=True,
-        ):
-            return Response(
-                {
-                    'detail': (
-                        'پردازش متوقف شد، اما پاک‌سازی فایل‌های خصوصی کامل نشد. '
-                        'حذف جلسه را دوباره امتحان کنید.'
-                    )
-                },
-                status=status.HTTP_503_SERVICE_UNAVAILABLE,
-            )
         return Response(ExamPrepSessionDetailSerializer(session).data, status=status.HTTP_200_OK)
 
 
@@ -4051,54 +3959,99 @@ class ExamPrepSessionPublishView(APIView):
                     status=status.HTTP_404_NOT_FOUND,
                 )
 
+            # V4 source-aware sessions are also visible from the legacy
+            # teacher page.  Delegate that button to the canonical V4
+            # publication service before legacy status/artifact checks; the
+            # bridge may legitimately be ``exam_transcribed`` rather than
+            # ``exam_structured``.  This keeps project, projection and
+            # session publication flags atomic and makes crop URLs usable.
+            from .models_v4_bridge import ExamV4SessionBridge
+            from .models_v4_projection import ExamV4Projection
+            from .services.exam_prep_v4_create_flow import (
+                CreateFlowProjectionConflict,
+                adopt_create_flow_projection,
+            )
+            from .services.exam_prep_v4_projection import (
+                ProjectionIntegrityError,
+                ProjectionNotReady,
+                StaleProjection,
+                build_legacy_projection,
+                publish_legacy_projection,
+            )
+
+            bridge_project_id = (
+                ExamV4SessionBridge.objects.filter(
+                    session_id=session.id,
+                    project__teacher=request.user,
+                )
+                .values_list('project_id', flat=True)
+                .first()
+            )
+            v4_projection = (
+                ExamV4Projection.objects.select_related('project')
+                .filter(session=session, project__teacher=request.user)
+                .first()
+            )
+            v4_project_id = bridge_project_id or (
+                v4_projection.project_id if v4_projection is not None else None
+            )
+            if v4_project_id is not None:
+                try:
+                    prepared = build_legacy_projection(
+                        teacher=request.user,
+                        project_id=v4_project_id,
+                    )
+                    adopt_create_flow_projection(
+                        project_id=v4_project_id,
+                        projection_payload=prepared,
+                    )
+                    publish_legacy_projection(
+                        teacher=request.user,
+                        project_id=v4_project_id,
+                    )
+                    # Publication may create/rebind a projection in the
+                    # compatibility path; keep the bridge session as the
+                    # response/publication target.
+                    adopt_create_flow_projection(
+                        project_id=v4_project_id,
+                        projection_payload=prepared,
+                    )
+                except ProjectionNotReady as exc:
+                    return Response(
+                        {'detail': str(exc), 'code': 'projection_not_ready'},
+                        status=status.HTTP_409_CONFLICT,
+                    )
+                except StaleProjection as exc:
+                    return Response(
+                        {'detail': str(exc), 'code': 'stale_projection'},
+                        status=status.HTTP_409_CONFLICT,
+                    )
+                except ProjectionIntegrityError as exc:
+                    return Response(
+                        {'detail': str(exc), 'code': 'projection_integrity_error'},
+                        status=status.HTTP_409_CONFLICT,
+                    )
+                except CreateFlowProjectionConflict as exc:
+                    return Response(
+                        {'detail': str(exc), 'code': 'projection_session_conflict'},
+                        status=status.HTTP_409_CONFLICT,
+                    )
+                session.refresh_from_db()
+                return Response(ExamPrepSessionDetailSerializer(session).data)
+
             if session.is_published:
                 return Response(ExamPrepSessionDetailSerializer(session).data)
-            if session.status not in {
-                ClassCreationSession.Status.EXAM_TRANSCRIBED,
-                ClassCreationSession.Status.EXAM_STRUCTURED,
-            }:
+            if session.status != ClassCreationSession.Status.EXAM_STRUCTURED:
                 return Response(
                     {
                         'detail': (
-                            'فقط جلسه‌هایی که استخراجشان کامل شده قابل انتشار هستند. '
+                            'فقط جلسه‌های با وضعیت exam_structured قابل انتشار هستند. '
                             f'وضعیت فعلی: {session.status}'
                         )
                     },
                     status=status.HTTP_400_BAD_REQUEST,
                 )
 
-            workflow = (
-                session.workflow_state
-                if isinstance(session.workflow_state, dict)
-                else {}
-            )
-            from .services.exam_prep_mistral_production import PRODUCTION_ENGINE
-            from .services.exam_prep_mistral_readiness import (
-                production_run_is_authentic,
-            )
-
-            if (
-                workflow.get('engine') == PRODUCTION_ENGINE
-                and not production_run_is_authentic(workflow)
-            ):
-                return Response(
-                    {
-                        'detail': (
-                            'خروجی معتبر و آماده بازبینی مراحل ۱ تا ۵ برای '
-                            'انتشار موجود نیست.'
-                        ),
-                        'code': 'production_audit_required',
-                    },
-                    status=status.HTTP_409_CONFLICT,
-                )
-
-            # The gates below are scoped to the separate v2/v3 *inventory* pipeline,
-            # which persists an ``ExamPrepExtractionArtifact``. The default Mistral
-            # production engine creates no artifact (its state lives in
-            # ``workflow_state``), so for a Mistral session ``artifact is None`` and
-            # publishing is governed solely by Gate A + the engine-scoped anti-forgery
-            # check above — i.e. the owner's `همیشه مجاز` policy. The v3 review-binding
-            # anti-forgery contract is intentionally left intact for its own pipeline.
             artifact = ExamPrepExtractionArtifact.objects.select_for_update().filter(
                 session=session
             ).first()
@@ -4951,17 +4904,47 @@ class StudentExamPrepDetailView(APIView):
 
             if qid:
                 visuals = []
+                workflow_state = session.workflow_state
+                v4_project_id = (
+                    workflow_state.get('v4ProjectId')
+                    if isinstance(workflow_state, dict)
+                    else None
+                )
+                v4_project_id_text = str(v4_project_id or '').strip()
+                v4_url_prefix = (
+                    f'/api/classes/exam-prep-source-crops/{v4_project_id_text}/'
+                    if v4_project_id_text.isdigit() and len(v4_project_id_text) <= 12
+                    else ''
+                )
                 for visual in q.get('visuals') or []:
                     if not isinstance(visual, dict) or visual.get('role') == 'solution':
                         continue
                     visual_id = visual.get('id')
                     if visual_id:
+                        visual_url = str(visual.get('url') or '').strip()
+                        # V4 source-first projections carry an authenticated
+                        # crop URL.  Preserve it; only legacy numeric assets
+                        # need the session visual endpoint fallback.
+                        if visual_url.startswith('/api/classes/exam-prep-source-crops/'):
+                            # Never downgrade an opaque V4 ref to the legacy
+                            # integer endpoint when the bridge binding is
+                            # missing or does not match this session.
+                            if (
+                                not v4_url_prefix
+                                or not visual_url.startswith(f'{v4_url_prefix}question/')
+                            ):
+                                continue
+                        else:
+                            visual_url = (
+                                f'/api/classes/exam-prep-sessions/{session.id}/'
+                                f'visuals/{visual_id}/content/'
+                            )
                         visuals.append({
                             'id': visual_id,
                             'role': visual.get('role'),
                             'optionLabel': visual.get('optionLabel'),
                             'altText': visual.get('altText') or '',
-                            'url': f'/api/classes/exam-prep-sessions/{session.id}/visuals/{visual_id}/content/',
+                            'url': visual_url,
                         })
                 safe_questions.append(
                     {
@@ -5590,32 +5573,31 @@ class StudentExamPrepResultView(APIView):
             questions_list = []
 
         correct_map: dict[str, str] = {}
-        result_details: dict[str, dict] = {}
+        question_by_id: dict[str, dict] = {}
         for q in questions_list:
+            if not isinstance(q, dict):
+                continue
             qid = str(q.get('question_id') or '').strip()
             label = str(q.get('correct_option_label') or '').strip()
             if qid:
                 correct_map[qid] = label
-                result_details[qid] = {
-                    'teacher_solution_markdown': str(
-                        q.get('teacher_solution_markdown') or q.get('final_answer_markdown') or ''
-                    ).strip(),
-                    'solution_visuals': [
-                        {
-                            'id': visual.get('id'),
-                            'role': 'solution',
-                            'altText': visual.get('altText') or 'تصویر راه‌حل',
-                            'url': f'/api/classes/exam-prep-sessions/{session.id}/visuals/{visual.get("id")}/content/',
-                        }
-                        for visual in q.get('visuals') or []
-                        if isinstance(visual, dict)
-                        and visual.get('role') == 'solution'
-                        and visual.get('id')
-                    ],
-                }
+                question_by_id[qid] = q
 
         answers_raw = attempt.answers if isinstance(attempt.answers, dict) else {}
         total_questions = len(correct_map)
+
+        workflow_state = session.workflow_state
+        v4_project_id = (
+            workflow_state.get('v4ProjectId')
+            if isinstance(workflow_state, dict)
+            else None
+        )
+        v4_project_id_text = str(v4_project_id or '').strip()
+        v4_url_prefix = (
+            f'/api/classes/exam-prep-source-crops/{v4_project_id_text}/'
+            if v4_project_id_text.isdigit() and len(v4_project_id_text) <= 12
+            else ''
+        )
 
         items = []
         correct_count = 0
@@ -5640,21 +5622,55 @@ class StudentExamPrepResultView(APIView):
             if attempt.finalized:
                 score_total += q_score
 
-            item = {
-                    'question_id': qid,
-                    'selected_label': selected,
-                    'is_correct': bool(q_is_correct) if attempt.finalized else False,
-                    'attempts': q_attempts,
-                    'score_for_question': q_score if attempt.finalized else 0,
+            item_payload = {
+                'question_id': qid,
+                'selected_label': selected,
+                'is_correct': bool(q_is_correct) if attempt.finalized else False,
+                'attempts': q_attempts,
+                'score_for_question': q_score if attempt.finalized else 0,
             }
             if attempt.finalized:
-                details = result_details.get(qid, {})
-                item.update({
-                    'correct_option_label': correct_label,
-                    'teacher_solution_markdown': details.get('teacher_solution_markdown', ''),
-                    'solution_visuals': details.get('solution_visuals', []),
-                })
-            items.append(item)
+                question = question_by_id.get(qid) or {}
+                safe_solution_visuals = []
+                for visual in question.get('visuals') or []:
+                    if not isinstance(visual, dict) or visual.get('role') != 'solution':
+                        continue
+                    visual_id = visual.get('id')
+                    visual_url = str(visual.get('url') or '').strip()
+                    # Only the V4 endpoint is student-readable after
+                    # finalization.  Do not forward arbitrary JSON fields or
+                    # legacy storage/object URLs.
+                    if (
+                        not visual_id
+                        or not v4_url_prefix
+                        or not visual_url.startswith(f'{v4_url_prefix}solution/')
+                    ):
+                        continue
+                    safe_solution_visuals.append(
+                        {
+                            'id': visual_id,
+                            'role': 'solution',
+                            'optionLabel': visual.get('optionLabel'),
+                            'altText': str(visual.get('altText') or '')[:500],
+                            'selectedVariant': visual.get('selectedVariant') or 'source',
+                            'url': visual_url,
+                        }
+                    )
+                item_payload.update(
+                    {
+                        'solution_markdown': str(
+                            question.get('teacher_solution_markdown')
+                            or question.get('final_answer_markdown')
+                            or question.get('correct_option_text_markdown')
+                            or ''
+                        ).strip(),
+                        'teacher_solution_markdown': str(
+                            question.get('teacher_solution_markdown') or ''
+                        ).strip(),
+                        'solution_visuals': safe_solution_visuals,
+                    }
+                )
+            items.append(item_payload)
 
         score_0_100 = int(round(score_total / total_questions)) if (attempt.finalized and total_questions > 0) else 0
 
