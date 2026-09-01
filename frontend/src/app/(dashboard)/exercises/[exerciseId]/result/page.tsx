@@ -101,7 +101,7 @@ export default function StudentExerciseResultPage({ params }: PageProps) {
         <Card>
           <CardContent className="space-y-4 py-10 text-center text-muted-foreground">
             <AttemptPicker result={result} onSelect={loadResult} />
-            <p>{result.detail ?? 'پاسخ شما ارسال شد. نتیجه پس از نمره‌دهی در همین‌جا نمایش داده می‌شود.'}</p>
+            <p>{result.detail ?? 'پاسخت ارسال شد. نتیجه پس از نمره‌دهی در همین‌جا نمایش داده می‌شود.'}</p>
           </CardContent>
         </Card>
       ) : (
@@ -158,7 +158,7 @@ export default function StudentExerciseResultPage({ params }: PageProps) {
                 <CardContent className="space-y-2 py-4">
                   {q && <MarkdownWithMath markdown={q.questionMarkdown} />}
                   <div className="rounded-md border border-border/70 p-2 text-sm">
-                    <p className="mb-1 text-muted-foreground">پاسخ شما:</p>
+                    <p className="mb-1 text-muted-foreground">پاسخ تو:</p>
                     {answer?.text ? (
                       <MarkdownWithMath markdown={answer.text} />
                     ) : !answer?.images?.length && secureAssets.length === 0 ? (
@@ -170,7 +170,7 @@ export default function StudentExerciseResultPage({ params }: PageProps) {
                           <ProtectedAnswerAsset
                             key={asset.id}
                             asset={asset}
-                            label={`تصویر ${index + 1} پاسخ شما`}
+                            label={`تصویر ${index + 1} پاسخ تو`}
                           />
                         ))}
                       </div>
@@ -181,7 +181,7 @@ export default function StudentExerciseResultPage({ params }: PageProps) {
                             {/* eslint-disable-next-line @next/next/no-img-element */}
                             <img
                               src={answerImageUrl(image)}
-                              alt="تصویر پاسخ شما"
+                              alt="تصویر پاسخ تو"
                               className="h-24 w-24 rounded-md border border-border object-cover"
                             />
                           </a>

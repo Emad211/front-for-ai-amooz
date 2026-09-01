@@ -56,6 +56,7 @@ import {
 } from '@/components/ui/table';
 import { useWorkspace } from '@/hooks/use-workspace';
 import { formatPersianNumber, toPersianDigits } from '@/lib/persian-digits';
+import { formatPersianDate } from '@/lib/date-utils';
 import {
   downloadOrgAdvisorReportXlsx,
   getOrgAdvisorReport,
@@ -338,15 +339,15 @@ function PanelShell(props: PanelShellProps) {
       {/* ── header ─────────────────────────────────────────────────────── */}
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-xl font-black sm:text-2xl">پنل مشاوره و نظارت</h1>
+          <h1 className="text-xl font-black sm:text-2xl">مشاوره و همکاری‌ها</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            آمار زندهٔ سازمان، گزارش مشاوران و کنترل کامل بر همکاری‌ها
+            گزارش مشاوران و مدیریت همکاری‌ها
           </p>
         </div>
         <div className="flex items-center gap-2">
           <Button variant="outline" size="sm" onClick={onRefresh} disabled={loading} className="gap-1.5">
             <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-            بروزرسانی
+            به‌روزرسانی
           </Button>
           <Button size="sm" onClick={onExcel} disabled={downloading || loading} className="gap-1.5">
             {downloading ? (
@@ -372,7 +373,7 @@ function PanelShell(props: PanelShellProps) {
           </Button>
         ))}
         <span className="mr-auto text-xs text-muted-foreground">
-          بازه: از {toPersianDigits(range.from)} تا {toPersianDigits(range.to)}
+          بازه: از {formatPersianDate(range.from)} تا {formatPersianDate(range.to)}
         </span>
       </div>
 
@@ -487,7 +488,7 @@ function StatCards({
       },
       {
         key: 'coverage',
-        label: 'تعهد هفته',
+        label: 'میانگین اجرای هفته',
         value:
           overview.avgCommitmentPercent === null
             ? 'ثبت نشده'
@@ -543,7 +544,7 @@ function AdvisorTable({
           گزارش مشاوران
         </CardTitle>
         <CardDescription>
-          بر اساس تعهد گروهی، برنامه‌ها و ارزیابی‌های هر مشاور در بازهٔ انتخابی
+          بر اساس میانگین اجرای گروه، برنامه‌ها و ارزیابی‌های هر مشاور در بازهٔ انتخابی
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -563,7 +564,7 @@ function AdvisorTable({
                   <TableHead>دانش‌آموزان</TableHead>
                   <TableHead>برنامه (دقیقه)</TableHead>
                   <TableHead>مطالعه (دقیقه)</TableHead>
-                  <TableHead>تعهد</TableHead>
+                  <TableHead>اجرا</TableHead>
                   <TableHead>برنامه‌های منتشرشده</TableHead>
                   <TableHead>ارزیابی</TableHead>
                   <TableHead className="text-left">ورود مستقیم</TableHead>
@@ -605,7 +606,19 @@ function AdvisorRow({
 }: AdvisorRowProps) {
   return (
     <>
-      <TableRow className="cursor-pointer" onClick={onToggle}>
+      <TableRow
+        className="cursor-pointer"
+        onClick={onToggle}
+        tabIndex={0}
+        role="button"
+        aria-expanded={expanded}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            onToggle();
+          }
+        }}
+      >
         <TableCell>
           <ChevronDown
             className={`h-4 w-4 text-muted-foreground transition-transform ${
@@ -642,7 +655,7 @@ function AdvisorRow({
           <TableCell colSpan={9} className="bg-muted/40 p-4">
             <div className="space-y-2">
               {advisor.students.length === 0 ? (
-                <p className="text-sm text-muted-foreground">شاگردی ثبت نشده است.</p>
+                <p className="text-sm text-muted-foreground">دانش‌آموزی ثبت نشده است.</p>
               ) : (
                 advisor.students.map((student) => (
                   <div

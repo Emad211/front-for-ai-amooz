@@ -180,7 +180,7 @@ export default function StudentExercisesHubPage() {
             <h2 className="text-lg font-semibold">همهٔ تمرین‌ها</h2>
             {classes.length === 0 ? (
               <p className="rounded-md border border-dashed border-border py-8 text-center text-muted-foreground">
-                هنوز تمرینی برای کلاس‌های شما منتشر نشده است.
+                هنوز تمرینی برای کلاس‌هایت منتشر نشده است.
               </p>
             ) : (
               classes.map((cls) => (

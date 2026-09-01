@@ -229,7 +229,7 @@ export default function ExamResultPage() {
 
                 <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
                   <div className="flex items-center justify-between gap-2 bg-card border border-border rounded-lg px-3 py-2">
-                    <span className="text-muted-foreground">پاسخ شما</span>
+                    <span className="text-muted-foreground">پاسخ تو</span>
                     {selected ? (
                       <span className="font-semibold text-right" dir="rtl">
                         {displayLabel ? `${displayLabel}) ` : ''}

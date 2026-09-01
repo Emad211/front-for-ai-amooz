@@ -70,7 +70,7 @@ export default function TicketsPage() {
         );
       }
 
-      toast.success('پاسخ شما ارسال شد');
+      toast.success('پاسخت ارسال شد');
     } catch {
       toast.error('خطا در ارسال پاسخ');
     }
