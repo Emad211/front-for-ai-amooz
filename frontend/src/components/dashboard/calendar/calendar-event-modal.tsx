@@ -12,6 +12,7 @@ import {
 import { cn } from '@/lib/utils';
 import { EVENT_TYPE_CONFIG, PERSIAN_MONTHS } from '@/constants/calendar';
 import { MathText } from '@/components/content/math-text';
+import { toPersianDigits } from '@/lib/persian-digits';
 import type { CalendarEvent } from '@/types';
 
 interface CalendarEventModalProps {
@@ -49,6 +50,7 @@ export function CalendarEventModal({ event, isOpen, onClose }: CalendarEventModa
                 variant="ghost"
                 size="icon"
                 onClick={onClose}
+                aria-label="بستن"
                 className="h-8 w-8 rounded-full bg-background/50 hover:bg-background/80"
               >
                 <X className="w-4 h-4" />
@@ -67,7 +69,7 @@ export function CalendarEventModal({ event, isOpen, onClose }: CalendarEventModa
             'absolute -top-8 start-6 w-16 h-16 rounded-2xl flex flex-col items-center justify-center',
             'bg-card border-4 border-background shadow-lg',
           )}>
-            <span className={cn('text-2xl font-bold leading-none', config.color)}>{day}</span>
+            <span className={cn('text-2xl font-bold leading-none', config.color)}>{toPersianDigits(day)}</span>
             <span className="text-xs text-muted-foreground mt-0.5">{month}</span>
           </div>
 
@@ -86,8 +88,8 @@ export function CalendarEventModal({ event, isOpen, onClose }: CalendarEventModa
                   <div>
                     <p className="text-xs text-muted-foreground">زمان</p>
                     <p className="font-medium">
-                      ساعت {event.time}
-                      {event.endTime && ` تا ${event.endTime}`}
+                      ساعت {toPersianDigits(event.time)}
+                      {event.endTime && ` تا ${toPersianDigits(event.endTime)}`}
                     </p>
                   </div>
                 </div>

@@ -13,10 +13,14 @@ import {
 import {
   AlarmClock,
   BarChart3,
+  CalendarCheck2,
   CalendarClock,
+  FlaskConical,
   Flame,
+  Scale,
   Target,
   TrendingUp,
+  Wrench,
 } from 'lucide-react';
 
 import {
@@ -25,6 +29,7 @@ import {
   type MistakeErrorType,
 } from '@/services/advisory-service';
 import { toPersianDigits } from '@/lib/persian-digits';
+import { formatPersianDate } from '@/lib/date-utils';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
@@ -33,31 +38,42 @@ const ERROR_LABELS: Record<MistakeErrorType, string> = {
   CONCEPT: 'مفهومی',
   FORGET: 'فراموشی',
   METHOD: 'تشخیص روش',
-  EXECUTION: 'محاسباتی',
+  EXECUTION: 'محاسباتی/اجرایی',
   READING: 'خواندن سؤال',
   TIME: 'مدیریت زمان',
 };
 
 const ERROR_COLORS: Record<MistakeErrorType, string> = {
-  CONCEPT: '#ef4444',
-  FORGET: '#f59e0b',
-  METHOD: '#3b82f6',
-  EXECUTION: '#a855f7',
-  READING: '#14b8a6',
-  TIME: '#ec4899',
+  CONCEPT: 'bg-red-500',
+  FORGET: 'bg-amber-500',
+  METHOD: 'bg-blue-500',
+  EXECUTION: 'bg-purple-500',
+  READING: 'bg-teal-500',
+  TIME: 'bg-pink-500',
 };
+
+/** The backend may send unrounded fractional metrics — keep the Persian
+ * decimal separator instead of an ASCII dot. */
+function toPersianDecimal(value: number): string {
+  return toPersianDigits(String(value).replace('.', '٫'));
+}
 
 function StatChip({
   icon,
   label,
   value,
+  title,
 }: {
   icon: React.ReactNode;
   label: string;
   value: string;
+  title?: string;
 }) {
   return (
-    <div className="flex items-center gap-2 rounded-xl border border-border/60 bg-card px-3 py-2">
+    <div
+      className="flex items-center gap-2 rounded-xl border border-border/60 bg-card px-3 py-2"
+      title={title}
+    >
       <span className="rounded-lg bg-muted p-1.5">{icon}</span>
       <div className="min-w-0">
         <p className="text-[11px] text-muted-foreground">{label}</p>
@@ -123,15 +139,52 @@ export function AnalyticsTab() {
         />
         <StatChip
           icon={<CalendarClock className="h-4 w-4 text-amber-500" />}
-          label="عقب‌افتادگی جبران‌نشده"
+          label="عقب‌مانده‌های برنامه"
           value={toPersianDigits(data.backlogTotal)}
         />
         <StatChip
           icon={<Target className="h-4 w-4 text-destructive" />}
-          label="خطای باز دفتر اشتباهات"
+          label="اشتباه‌های رفع‌نشده دفتر اشتباهات"
           value={toPersianDigits(data.openMistakes)}
         />
       </div>
+
+      {(data.testDensity != null ||
+        data.reportRate7d != null ||
+        data.mistakeResolutionDays != null ||
+        data.planCalibration != null) && (
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          {data.testDensity != null && (
+            <StatChip
+              icon={<FlaskConical className="h-4 w-4 text-violet-500" />}
+              label="میانگین تست در روزِ ثبت‌شده"
+              value={toPersianDecimal(data.testDensity)}
+            />
+          )}
+          {data.reportRate7d != null && (
+            <StatChip
+              icon={<CalendarCheck2 className="h-4 w-4 text-emerald-500" />}
+              label="ثبت گزارش هفته"
+              value={`${toPersianDecimal(data.reportRate7d)}٪`}
+            />
+          )}
+          {data.mistakeResolutionDays != null && (
+            <StatChip
+              icon={<Wrench className="h-4 w-4 text-sky-500" />}
+              label="میانگین زمان رفع اشتباه"
+              value={`${toPersianDecimal(data.mistakeResolutionDays)} روز`}
+            />
+          )}
+          {data.planCalibration != null && (
+            <StatChip
+              icon={<Scale className="h-4 w-4 text-rose-500" />}
+              label="اجرا نسبت به برنامه"
+              value={`${toPersianDigits(Math.round(data.planCalibration * 100))}٪`}
+              title="۱۰۰٪ یعنی دقیقاً مطابق برنامه"
+            />
+          )}
+        </div>
+      )}
 
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
         <Card className="rounded-2xl">
@@ -144,8 +197,8 @@ export function AnalyticsTab() {
           <CardContent>
             {trend.length < 2 ? (
               <EmptyNote>
-                برای رسم روند، دست‌کم دو نمرهٔ آزمون لازم است — از تب «آزمون‌ها» یا
-                دفتر مشاور ثبت می‌شود.
+                برای رسم روند، دست‌کم دو نمرهٔ آزمون لازم است — مشاورت بعد از هر
+                آزمون اینجا ثبتشان می‌کند.
               </EmptyNote>
             ) : (
               <div className="h-56" dir="ltr">
@@ -236,7 +289,7 @@ export function AnalyticsTab() {
           <CardHeader className="pb-2">
             <CardTitle className="flex items-center gap-2 text-sm font-bold">
               <Target className="h-4 w-4 text-primary" />
-              اجرای برنامهٔ جاری
+              اجرای برنامهٔ فعلی
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -246,8 +299,9 @@ export function AnalyticsTab() {
                   {toPersianDigits(data.planExecution.percent)}٪
                 </p>
                 <p className="text-xs text-muted-foreground">
-                  پایبندی به برنامهٔ {data.planExecution.startDate} تا{' '}
-                  {data.planExecution.endDate} — دقیقهٔ ثبت‌شده ÷ دقیقهٔ برنامه تا امروز.
+                  اجرای برنامهٔ {formatPersianDate(data.planExecution.startDate)} تا{' '}
+                  {formatPersianDate(data.planExecution.endDate)} — چقدر از برنامه تا امروز
+                  انجام شده است.
                 </p>
                 <div
                   className="h-2.5 w-full overflow-hidden rounded-full bg-muted"
@@ -273,7 +327,7 @@ export function AnalyticsTab() {
                 </div>
               </div>
             ) : (
-              <EmptyNote>فعلاً برنامهٔ جاریِ در حال اجرایی نداری.</EmptyNote>
+              <EmptyNote>فعلاً برنامه‌ای در جریان نداری.</EmptyNote>
             )}
           </CardContent>
         </Card>
@@ -282,12 +336,12 @@ export function AnalyticsTab() {
           <CardHeader className="pb-2">
             <CardTitle className="flex items-center gap-2 text-sm font-bold">
               <CalendarClock className="h-4 w-4 text-primary" />
-              عقب‌افتادگی‌ها و مرورهای امروز
+              عقب‌مانده‌ها و مرورهای امروز
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
             {data.backlog.length === 0 && data.reviewDue.length === 0 ? (
-              <EmptyNote>همه‌چیز جبران شده — عقب‌مانده‌ای نیست. 🎉</EmptyNote>
+              <EmptyNote>همه‌چیز جبران شده — عقب‌مانده‌ای نیست.</EmptyNote>
             ) : (
               <>
                 {data.backlog.length > 0 && (
@@ -347,7 +401,7 @@ export function AnalyticsTab() {
         <Card className="rounded-2xl">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-bold">
-              خطاهای باز بر اساس نوع
+              اشتباه‌های رفع‌نشده بر اساس نوع
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -361,8 +415,7 @@ export function AnalyticsTab() {
                     className="flex items-center gap-1.5 rounded-full border border-border/60 bg-background/60 px-3 py-1.5 text-xs"
                   >
                     <span
-                      className="h-2 w-2 rounded-full"
-                      style={{ backgroundColor: ERROR_COLORS[code] }}
+                      className={cn('h-2 w-2 rounded-full', ERROR_COLORS[code])}
                     />
                     {ERROR_LABELS[code]}
                     <span className="font-bold tabular-nums">

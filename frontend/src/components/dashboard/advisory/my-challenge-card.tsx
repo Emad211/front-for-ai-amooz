@@ -132,7 +132,7 @@ export function MyChallengeCard() {
     } catch (err: unknown) {
       // Includes «فقط هدف و خلاصهٔ روز…» / future-day 400s verbatim.
       toast.error(
-        err instanceof Error ? err.message : 'ذخیرۀ روزهای چالش ناموفق بود.',
+        err instanceof Error ? err.message : 'ذخیرهٔ روزهای چالش ناموفق بود.',
       );
     } finally {
       setSaving(false);
@@ -159,7 +159,7 @@ export function MyChallengeCard() {
           </span>
         </div>
         <p className="text-xs leading-relaxed text-muted-foreground">
-          هر روزِ رسیده را پر کنید؛ هدف و خلاصۀ روزهای آینده تا فرا رسیدنشان
+          هر روزِ رسیده را پر کن؛ هدف و خلاصهٔ روزهای آینده تا فرا رسیدنشان
           بسته است.
         </p>
       </CardHeader>
@@ -231,8 +231,8 @@ export function MyChallengeCard() {
                   disabled={!editable || saving}
                   rows={3}
                   maxLength={5000}
-                  placeholder="خلاصۀ کارها، مشکلات و نتیجهٔ امروز…"
-                  aria-label={`خلاصۀ روز ${toPersianDigits(row.dayNumber)}`}
+                  placeholder="خلاصهٔ کارها، مشکلات و نتیجهٔ امروز…"
+                  aria-label={`خلاصهٔ روز ${toPersianDigits(row.dayNumber)}`}
                   aria-disabled={!editable}
                   className="min-h-[72px] text-xs leading-relaxed"
                 />
@@ -244,7 +244,7 @@ export function MyChallengeCard() {
         <div className="flex items-center justify-end border-t border-border/60 pt-3">
           <Button type="button" onClick={handleSave} disabled={saving}>
             {saving && <Loader2 className="ml-2 h-4 w-4 animate-spin" />}
-            {saving ? 'در حال ذخیره…' : 'ذخیرۀ روزها'}
+            {saving ? 'در حال ذخیره…' : 'ذخیرهٔ روزها'}
           </Button>
         </div>
       </CardContent>

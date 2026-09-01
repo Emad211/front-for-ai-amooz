@@ -2,14 +2,12 @@
 
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { formatPersianDate } from '@/lib/date-utils';
 
 type StudyLogHeaderProps = {
   /** ISO `YYYY-MM-DD` currently being edited. */
   date: string;
-  advisorName?: string;
   minDate: string | null;
   maxDate: string | null;
   onPrevDay: () => void;
@@ -18,7 +16,6 @@ type StudyLogHeaderProps = {
 
 export function StudyLogHeader({
   date,
-  advisorName,
   minDate,
   maxDate,
   onPrevDay,
@@ -29,13 +26,7 @@ export function StudyLogHeader({
   const canGoNext = maxDate === null || date < maxDate;
 
   return (
-    <div className="flex flex-wrap items-center justify-between gap-3">
-      {advisorName ? (
-        <Badge variant="secondary" className="font-medium">
-          مشاور: {advisorName}
-        </Badge>
-      ) : null}
-
+    <div className="flex flex-wrap items-center justify-end gap-3">
       <div className="flex items-center gap-2">
         <Button
           type="button"

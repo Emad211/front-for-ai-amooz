@@ -7,6 +7,7 @@ import {
   type MyPlansResponse,
 } from '@/services/advisory-service';
 import { gregorianIsoToJalaliKey, jalaliMonthStartIso } from '@/lib/calendar';
+import { toPersianDigits } from '@/lib/persian-digits';
 
 export type AdvisorCalendarSources = {
   baseEvents: () => Promise<CalendarEvent[]>;
@@ -41,7 +42,7 @@ function planItemEvents(sources: MyPlansResponse): CalendarEvent[] {
         .join(' · ');
       events.push({
         id: `plan-${plan.id}-d${item.dayOffset}-s${item.subjectId}`,
-        title: `${item.name} · ${item.plannedMinutes} دقیقه`,
+        title: `${item.name} · ${toPersianDigits(item.plannedMinutes)} دقیقه`,
         description: details || 'برنامهٔ مطالعهٔ مشاور برای این روز',
         date,
         type: 'study_plan',
@@ -99,7 +100,7 @@ function challengeDayEvents(sources: MyChallengesResponse): CalendarEvent[] {
       if (!date) continue;
       events.push({
         id: `challenge-${challenge.id}-d${day.dayNumber}`,
-        title: `چالش: ${challenge.title || 'بدون عنوان'} · روز ${day.dayNumber}`,
+        title: `چالش: ${challenge.title || 'بدون عنوان'} · روز ${toPersianDigits(day.dayNumber)}`,
         description: day.goal.trim() || 'روزِ چالش هفت‌روزه',
         date,
         type: 'challenge',

@@ -339,7 +339,7 @@ export function ProfileForm({ user, isLoading = false, error = null, onSave }: P
             </div>
             <DialogTitle className="text-center">تغییرات با موفقیت ذخیره شد</DialogTitle>
             <DialogDescription className="text-center">
-              اطلاعات پروفایل شما با موفقیت بروزرسانی شد.
+              اطلاعات پروفایلت با موفقیت بروزرسانی شد.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter className="sm:justify-center">

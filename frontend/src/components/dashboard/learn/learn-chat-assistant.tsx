@@ -110,7 +110,7 @@ function WidgetCard({ widgetType, data }: { widgetType: string; data: any }) {
     }
     return (
       <div className="mt-2 rounded-xl border border-border bg-card p-3 space-y-2">
-        <div className="text-xs font-medium text-muted-foreground">🖼️ ایده‌ی تصویر</div>
+        <div className="text-xs font-medium text-muted-foreground">🖼️ ایدهٔ تصویر</div>
         {images.slice(0, 3).map((im: any, idx: number) => (
           <div key={idx} className="rounded-lg bg-background/40 border border-border/50 p-2">
             <div className="text-[11px] text-muted-foreground mb-1">{String(im?.caption ?? '')}</div>
@@ -209,7 +209,7 @@ function getChatErrorInfo(error: unknown, fallbackTitle: string): ChatErrorInfo 
     return {
       kind: 'auth',
       title: 'برای ادامه باید دوباره وارد شوی.',
-      detail: 'نشست شما منقضی شده است.',
+      detail: 'نشستت منقضی شده است.',
     };
   }
   if (msg.includes('429') || msg.includes('rate')) {
@@ -409,7 +409,7 @@ export const ChatAssistant = ({ onToggle, isOpen, className, isMobile = false, c
         id: `${Date.now()}-ai-intro`,
         sender: 'ai',
         time: formatTime(now),
-        message: 'سلام! من دستیار یادگیری شما هستم. هر سوالی داری بپرس تا کمک کنم.',
+        message: 'سلام! من دستیار یادگیری‌ت هستم. هر سوالی داری بپرس تا کمکت کنم.',
         widget: null,
       },
     ]);
@@ -595,7 +595,7 @@ export const ChatAssistant = ({ onToggle, isOpen, className, isMobile = false, c
           </div>
           <div>
             <h3 className="text-sm font-bold text-foreground">دستیار هوشمند</h3>
-            <p className="text-[10px] text-muted-foreground font-medium">پاسخگوی سوالات شما</p>
+            <p className="text-[10px] text-muted-foreground font-medium">پاسخگوی سوالاتت</p>
           </div>
         </div>
         {isMobile ? (

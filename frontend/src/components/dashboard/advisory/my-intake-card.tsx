@@ -55,10 +55,10 @@ export function MyIntakeCard() {
     setSaving(true);
     try {
       await AdvisoryService.putMyIntake(payload);
-      toast.success('فرم شناخت شما ذخیره شد.');
+      toast.success('فرم شناختت ذخیره شد.');
     } catch (err: unknown) {
       // Includes the no-advisor 409 copy, verbatim from the server.
-      toast.error(err instanceof Error ? err.message : 'ذخیره‌ی فرم شناخت ناموفق بود.');
+      toast.error(err instanceof Error ? err.message : 'ذخیرهٔ فرم شناخت ناموفق بود.');
     } finally {
       setSaving(false);
     }
@@ -76,7 +76,7 @@ export function MyIntakeCard() {
           شناخت من
         </CardTitle>
         <p className="text-xs leading-relaxed text-muted-foreground">
-          این اطلاعات به مشاور شما کمک می‌کند برنامه‌ای متناسب با شرایطتان
+          این اطلاعات به مشاورت کمک می‌کند برنامه‌ای متناسب با شرایطت
           بچیند؛ هر دو می‌توانید آن را ویرایش کنید.
         </p>
       </CardHeader>

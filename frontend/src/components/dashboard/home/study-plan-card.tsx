@@ -10,7 +10,7 @@ import {
 } from '@/services/advisory-service';
 import { toPersianDigits } from '@/lib/persian-digits';
 import { adherenceColorClass, formatAdherence } from '@/lib/adherence';
-import { formatPersianDate } from '@/lib/date-utils';
+import { formatPersianDate, formatPersianMonthDay } from '@/lib/date-utils';
 import { Badge } from '@/components/ui/badge';
 import {
   Card,
@@ -126,7 +126,7 @@ export function StudyPlanCard({ showEmptyState = false }: { showEmptyState?: boo
         {isCurrent && plan.percent != null && (
           <div className="mt-2 space-y-1.5">
             <div className="flex items-center justify-between gap-2">
-              <span className="text-xs text-muted-foreground">پایبندی به برنامه</span>
+              <span className="text-xs text-muted-foreground">اجرای برنامهٔ فعلی</span>
               <span
                 className={`rounded-full px-2 py-0.5 text-xs font-semibold tabular-nums ${adherenceColorClass(plan.percent)}`}
               >
@@ -138,7 +138,7 @@ export function StudyPlanCard({ showEmptyState = false }: { showEmptyState?: boo
               aria-valuenow={plan.percent}
               aria-valuemin={0}
               aria-valuemax={100}
-              aria-label="پایبندی به برنامه"
+              aria-label="اجرای برنامهٔ فعلی"
               className="h-1.5 w-full overflow-hidden rounded-full bg-muted"
             >
               <div
@@ -168,7 +168,7 @@ export function StudyPlanCard({ showEmptyState = false }: { showEmptyState?: boo
                   <p className="text-xs font-medium">
                     روز {toPersianDigits(dayOffset + 1)}
                     <span className="ms-1.5 font-normal text-muted-foreground">
-                      {formatPersianDate(items[0]?.date ?? plan.startDate)}
+                      · {formatPersianMonthDay(items[0]?.date ?? plan.startDate)}
                     </span>
                   </p>
                   <ul className="mt-1 space-y-0.5 border-s border-border/60 ps-3">

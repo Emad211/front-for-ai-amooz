@@ -32,7 +32,7 @@ export function SubjectMinuteRows({
   if (subjects.length === 0 && removedItems.length === 0) {
     return (
       <p className="rounded-md border border-dashed border-border py-8 text-center text-sm text-muted-foreground">
-        هنوز درسی برای شما انتخاب نشده است.
+        هنوز درسی برایت انتخاب نشده است.
       </p>
     );
   }

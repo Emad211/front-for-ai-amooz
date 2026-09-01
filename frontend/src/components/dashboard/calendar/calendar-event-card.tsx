@@ -5,6 +5,7 @@ import { Clock, MapPin, BookOpen } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { EVENT_TYPE_CONFIG, PERSIAN_MONTHS } from '@/constants/calendar';
 import { MathText } from '@/components/content/math-text';
+import { toPersianDigits } from '@/lib/persian-digits';
 import type { CalendarEvent } from '@/types';
 
 interface CalendarEventCardProps {
@@ -46,7 +47,7 @@ export function CalendarEventCard({ event, onClick, compact = false }: CalendarE
       >
         {/* Date Badge */}
         <div className={cn('w-12 h-12 rounded-xl flex flex-col items-center justify-center shrink-0', config.bgColor)}>
-          <span className={cn('text-lg font-bold leading-none', config.color)}>{day}</span>
+          <span className={cn('text-lg font-bold leading-none', config.color)}>{toPersianDigits(day)}</span>
           <span className={cn('text-[10px] mt-0.5', config.color)}>{month}</span>
         </div>
 
@@ -59,7 +60,7 @@ export function CalendarEventCard({ event, onClick, compact = false }: CalendarE
             {event.time && (
               <span className="flex items-center gap-1 text-xs text-muted-foreground">
                 <Clock className="w-3 h-3" />
-                {event.time}
+                {toPersianDigits(event.time)}
               </span>
             )}
             {event.subject && (
@@ -84,7 +85,7 @@ export function CalendarEventCard({ event, onClick, compact = false }: CalendarE
     >
       {/* Date Badge */}
       <div className={cn('w-12 h-12 md:w-16 md:h-16 rounded-2xl flex flex-col items-center justify-center shrink-0', config.bgColor)}>
-        <span className={cn('text-2xl font-bold leading-none', config.color)}>{day}</span>
+        <span className={cn('text-2xl font-bold leading-none', config.color)}>{toPersianDigits(day)}</span>
         <span className={cn('text-xs mt-1', config.color)}>{month}</span>
       </div>
 
@@ -111,8 +112,8 @@ export function CalendarEventCard({ event, onClick, compact = false }: CalendarE
           {event.time && (
             <span className="flex items-center gap-1.5 text-xs text-muted-foreground bg-muted/50 px-2 py-1 rounded-lg">
               <Clock className="w-3.5 h-3.5" />
-              ساعت {event.time}
-              {event.endTime && ` - ${event.endTime}`}
+              ساعت {toPersianDigits(event.time)}
+              {event.endTime && ` تا ${toPersianDigits(event.endTime)}`}
             </span>
           )}
           {event.location && (

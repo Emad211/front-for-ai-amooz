@@ -41,7 +41,7 @@ const ERROR_DOT: Record<MistakeErrorType, string> = {
 
 const STATUS_LABELS: Record<string, string> = {
   WRONG: 'غلط',
-  DOUBT_RIGHT: 'درست اما شک‌دار',
+  DOUBT_RIGHT: 'درست اما حدسی',
   UNANSWERED: 'نزده',
 };
 
@@ -117,7 +117,7 @@ export function MistakeLogCard() {
       setForm((f) => ({ ...f, topic: '', cause: '', fixNote: '', nextAction: '' }));
       setAdding(false);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'ثبت خطا ناموفق بود.');
+      toast.error(err instanceof Error ? err.message : 'ثبت اشتباه ناموفق بود.');
     } finally {
       setBusy(false);
     }
@@ -165,10 +165,10 @@ export function MistakeLogCard() {
             variant="ghost"
             size="sm"
             onClick={() => setAdding((a) => !a)}
-            aria-label="ثبت خطای جدید"
+            aria-label="ثبت اشتباه جدید"
           >
             <Plus className="h-4 w-4" />
-            خطای جدید
+            اشتباه جدید
           </Button>
         </CardTitle>
         <div className="flex flex-wrap gap-1.5">
@@ -245,7 +245,7 @@ export function MistakeLogCard() {
                 value={form.errorType}
                 onValueChange={(v) => setForm((f) => ({ ...f, errorType: v }))}
               >
-                <SelectTrigger className="h-9 text-xs" aria-label="نوع خطا">
+                <SelectTrigger className="h-9 text-xs" aria-label="نوع اشتباه">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -311,7 +311,7 @@ export function MistakeLogCard() {
         {visible.length === 0 ? (
           <p className="text-xs text-muted-foreground">
             {rows.length === 0
-              ? 'بعد از هر آزمون، خطاهای مهم را این‌جا ثبت کن تا پیش از آزمون بعدی مرورشان کنی.'
+              ? 'بعد از هر آزمون، اشتباه‌های مهم را این‌جا ثبت کن تا پیش از آزمون بعدی مرورشان کنی.'
               : 'با این فیلتر چیزی نیست.'}
           </p>
         ) : (
@@ -344,7 +344,7 @@ export function MistakeLogCard() {
                           : 'text-muted-foreground hover:bg-muted',
                       )}
                       aria-label={
-                        row.isResolved ? 'بازگشایی خطا' : 'علامت‌گذاری رفع‌شده'
+                        row.isResolved ? 'بازگشایی اشتباه' : 'علامت‌گذاری رفع‌شده'
                       }
                     >
                       {row.isResolved ? (

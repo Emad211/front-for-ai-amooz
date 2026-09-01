@@ -3,6 +3,7 @@
 import { ChevronRight, ChevronLeft, Calendar } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { PERSIAN_MONTHS } from '@/constants/calendar';
+import { toPersianDigits } from '@/lib/persian-digits';
 
 interface CalendarHeaderProps {
   currentMonth: number;
@@ -51,15 +52,15 @@ export function CalendarHeader({
             aria-label="ماه بعد"
             className="h-8 w-8 rounded-lg hover:bg-background"
           >
-            <ChevronRight className="w-4 h-4" />
+            <ChevronLeft className="w-4 h-4" />
           </Button>
-          
+
           <div className="min-w-[110px] sm:min-w-[140px] text-center">
             <span className="font-bold text-sm sm:text-base">
-              {PERSIAN_MONTHS[currentMonth - 1]} {currentYear}
+              {PERSIAN_MONTHS[currentMonth - 1]} {toPersianDigits(currentYear)}
             </span>
           </div>
-          
+
           <Button
             variant="ghost"
             size="icon"
@@ -67,7 +68,7 @@ export function CalendarHeader({
             aria-label="ماه قبل"
             className="h-8 w-8 rounded-lg hover:bg-background"
           >
-            <ChevronLeft className="w-4 h-4" />
+            <ChevronRight className="w-4 h-4" />
           </Button>
         </div>
       </div>

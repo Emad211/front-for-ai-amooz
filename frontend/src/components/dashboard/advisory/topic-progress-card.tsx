@@ -1,15 +1,18 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { CheckCircle2, ListChecks, Loader2, Plus, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 
 import {
   AdvisoryService,
+  type SaveTopicBody,
+  type SyllabusChapter,
   type TopicProgressOut,
   type TopicStatus,
 } from '@/services/advisory-service';
 import { toPersianDigits } from '@/lib/persian-digits';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -35,10 +38,18 @@ const STATUS_META: Record<TopicStatus, { label: string; chip: string }> = {
     chip: 'bg-amber-500/10 text-amber-600 dark:text-amber-400',
   },
   MASTERED: {
-    label: 'تسلط‌یافته',
+    label: 'یاد گرفتم',
     chip: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400',
   },
 };
+
+/** Per-subject syllabus tree lifecycle. `failed` and `ready` with no pickable
+ * chapter both mean "no tree": the add form keeps the free-text input and the
+ * group header stays row-count-based. */
+type TreeState =
+  | { status: 'loading' }
+  | { status: 'ready'; chapters: SyllabusChapter[] }
+  | { status: 'failed' };
 
 export function TopicProgressCard() {
   const [topics, setTopics] = useState<TopicProgressOut[] | null>(null);
@@ -47,6 +58,10 @@ export function TopicProgressCard() {
   const [busy, setBusy] = useState(false);
   const [subjectId, setSubjectId] = useState<string>('');
   const [topicName, setTopicName] = useState('');
+  const [chapterId, setChapterId] = useState('');
+  const [syllabusTopicId, setSyllabusTopicId] = useState('');
+  const [trees, setTrees] = useState<Record<number, TreeState>>({});
+  const attemptedTrees = useRef<Set<number>>(new Set());
 
   const load = () => {
     AdvisoryService.getMyTopics()
@@ -70,25 +85,91 @@ export function TopicProgressCard() {
       .catch(() => {});
   }, []);
 
+  /** Fetch a subject's syllabus tree at most once per mount. A failure is
+   * silent by design: the card falls back to free text / row counts and never
+   * retries on its own (quiet-null, no toast). */
+  const ensureTree = useCallback((id: number) => {
+    if (!Number.isInteger(id) || attemptedTrees.current.has(id)) return;
+    attemptedTrees.current.add(id);
+    setTrees((prev) => (id in prev ? prev : { ...prev, [id]: { status: 'loading' } }));
+    AdvisoryService.getSubjectSyllabus(id)
+      .then((res) => {
+        setTrees((prev) => ({
+          ...prev,
+          [id]: { status: 'ready', chapters: res.chapters },
+        }));
+      })
+      .catch(() => {
+        setTrees((prev) => ({ ...prev, [id]: { status: 'failed' } }));
+      });
+  }, []);
+
+  const groupedSubjectIds = useMemo(() => {
+    const ids = new Set<number>();
+    for (const row of topics ?? []) ids.add(row.subjectId);
+    return [...ids];
+  }, [topics]);
+
+  // Coverage headers render per group, so every subject holding rows needs
+  // its tree — fetched lazily, once, when the group first appears.
+  useEffect(() => {
+    groupedSubjectIds.forEach((id) => ensureTree(id));
+  }, [groupedSubjectIds, ensureTree]);
+
+  // The add form also covers subjects with no rows yet; fetch on open and on
+  // subject switch while the form is open.
+  useEffect(() => {
+    if (adding && subjectId) ensureTree(Number(subjectId));
+  }, [adding, subjectId, ensureTree]);
+
   const grouped = useMemo(() => {
-    const bySubject = new Map<string, TopicProgressOut[]>();
+    const bySubject = new Map<number, TopicProgressOut[]>();
     for (const row of topics ?? []) {
-      const bucket = bySubject.get(row.subjectName);
+      const bucket = bySubject.get(row.subjectId);
       if (bucket) bucket.push(row);
-      else bySubject.set(row.subjectName, [row]);
+      else bySubject.set(row.subjectId, [row]);
     }
     return [...bySubject.entries()];
   }, [topics]);
 
+  const selectedTree = subjectId ? trees[Number(subjectId)] : undefined;
+  const treeLoading = !selectedTree || selectedTree.status === 'loading';
+  const pickerChapters =
+    selectedTree?.status === 'ready'
+      ? selectedTree.chapters.filter((c) => c.topics.length > 0)
+      : [];
+  const hasTree = pickerChapters.length > 0;
+  const selectedChapter = pickerChapters.find((c) => String(c.id) === chapterId);
+  const selectedTopic = selectedChapter?.topics.find(
+    (t) => String(t.id) === syllabusTopicId,
+  );
+
+  const canSubmit = hasTree ? !!selectedTopic : !treeLoading && !!topicName.trim();
+
   const addTopic = async () => {
-    if (!topicName.trim() || !subjectId) return;
+    if (!subjectId || busy || !canSubmit) return;
+    const subjectIdNum = Number(subjectId);
+    const body: SaveTopicBody | null = hasTree
+      ? selectedTopic
+        ? {
+            subjectId: subjectIdNum,
+            topic: selectedTopic.title,
+            syllabusTopicId: selectedTopic.id,
+          }
+        : null
+      : topicName.trim()
+        ? { subjectId: subjectIdNum, topic: topicName.trim() }
+        : null;
+    if (!body) return;
     setBusy(true);
     try {
-      await AdvisoryService.createMyTopic({
-        subjectId: Number(subjectId),
-        topic: topicName.trim(),
-      });
-      setTopicName('');
+      await AdvisoryService.createMyTopic(body);
+      if (hasTree) {
+        setChapterId('');
+        setSyllabusTopicId('');
+      } else {
+        setTopicName('');
+      }
       setAdding(false);
       load();
     } catch (err) {
@@ -152,7 +233,14 @@ export function TopicProgressCard() {
       <CardContent className="space-y-4">
         {adding && (
           <div className="flex flex-wrap items-center gap-2">
-            <Select value={subjectId} onValueChange={setSubjectId}>
+            <Select
+              value={subjectId}
+              onValueChange={(v) => {
+                setSubjectId(v);
+                setChapterId('');
+                setSyllabusTopicId('');
+              }}
+            >
               <SelectTrigger className="h-9 w-40 text-xs" aria-label="درس مبحث">
                 <SelectValue />
               </SelectTrigger>
@@ -164,21 +252,76 @@ export function TopicProgressCard() {
                 ))}
               </SelectContent>
             </Select>
-            <Input
-              value={topicName}
-              onChange={(e) => setTopicName(e.target.value.slice(0, 200))}
-              placeholder="نام مبحث…"
-              aria-label="نام مبحث"
-              className="h-9 flex-1 bg-background text-xs"
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') void addTopic();
-              }}
-            />
+            {treeLoading ? (
+              <span className="flex h-9 flex-1 items-center gap-2 text-xs text-muted-foreground">
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                در حال دریافت سرفصل‌های درس…
+              </span>
+            ) : hasTree ? (
+              <>
+                <Select
+                  value={chapterId}
+                  onValueChange={(v) => {
+                    setChapterId(v);
+                    setSyllabusTopicId('');
+                  }}
+                >
+                  <SelectTrigger
+                    className="h-9 min-w-40 flex-1 text-xs"
+                    aria-label="فصل مبحث"
+                  >
+                    <SelectValue placeholder="فصل…" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {pickerChapters.map((c) => (
+                      <SelectItem key={c.id} value={String(c.id)}>
+                        {c.title}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Select
+                  value={syllabusTopicId}
+                  onValueChange={setSyllabusTopicId}
+                  disabled={!chapterId}
+                >
+                  <SelectTrigger
+                    className="h-9 min-w-40 flex-1 text-xs"
+                    aria-label="مبحث"
+                  >
+                    <SelectValue placeholder="انتخاب مبحث…" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {(selectedChapter?.topics ?? []).map((t) => (
+                      <SelectItem key={t.id} value={String(t.id)}>
+                        {t.title}
+                        {t.konkurWeight != null && (
+                          <span className="text-[11px] text-muted-foreground">
+                            ({toPersianDigits(`~${t.konkurWeight}`)} سؤال)
+                          </span>
+                        )}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </>
+            ) : (
+              <Input
+                value={topicName}
+                onChange={(e) => setTopicName(e.target.value.slice(0, 200))}
+                placeholder="نام مبحث…"
+                aria-label="نام مبحث"
+                className="h-9 flex-1 bg-background text-xs"
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') void addTopic();
+                }}
+              />
+            )}
             <Button
               type="button"
               size="sm"
               onClick={addTopic}
-              disabled={busy || !topicName.trim()}
+              disabled={busy || !canSubmit}
             >
               {busy ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
@@ -195,18 +338,28 @@ export function TopicProgressCard() {
             هنوز مبحثی اضافه نشده؛ با «مبحث جدید» فهرست مطالعهٔ هر درس را بساز.
           </p>
         ) : (
-          grouped.map(([subjectName, rows]) => {
+          grouped.map(([groupSubjectId, rows]) => {
+            const tree = trees[groupSubjectId];
+            const treeTotal =
+              tree?.status === 'ready'
+                ? tree.chapters.reduce((sum, c) => sum + c.topics.length, 0)
+                : 0;
+            const useTreeCoverage = treeTotal > 0;
+            const subjectName = rows[0].subjectName;
             const done = rows.filter(
               (r) => r.status === 'STUDIED' || r.status === 'MASTERED',
             ).length;
-            const pct = Math.round((done / rows.length) * 100);
+            const pct = useTreeCoverage
+              ? Math.min(100, Math.round((rows.length / treeTotal) * 100))
+              : Math.round((done / rows.length) * 100);
             return (
-              <section key={subjectName} className="space-y-1.5">
+              <section key={groupSubjectId} className="space-y-1.5">
                 <div className="flex items-center justify-between gap-2">
                   <p className="text-xs font-semibold">{subjectName}</p>
                   <p className="text-[11px] tabular-nums text-muted-foreground">
-                    {toPersianDigits(done)} از {toPersianDigits(rows.length)} (
-                    {toPersianDigits(pct)}٪)
+                    {useTreeCoverage
+                      ? `${toPersianDigits(rows.length)} از ${toPersianDigits(treeTotal)} مبحث (${toPersianDigits(pct)}٪)`
+                      : `${toPersianDigits(done)} از ${toPersianDigits(rows.length)} (${toPersianDigits(pct)}٪)`}
                   </p>
                 </div>
                 <div
@@ -255,6 +408,14 @@ export function TopicProgressCard() {
                         >
                           {row.topic}
                         </span>
+                        {row.syllabusTopicId != null && (
+                          <Badge
+                            variant="outline"
+                            className="shrink-0 px-1.5 text-[11px] font-normal"
+                          >
+                            درخت
+                          </Badge>
+                        )}
                       </button>
                       <span
                         className={cn(

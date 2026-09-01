@@ -17,7 +17,7 @@ export function TicketPageHeader({ onNewTicket }: TicketPageHeaderProps) {
           </div>
           <div>
             <h1 className="text-xl sm:text-2xl font-bold text-foreground">تیکت‌های پشتیبانی</h1>
-            <p className="text-xs sm:text-sm text-muted-foreground">مشاهده و مدیریت درخواست‌های شما</p>
+            <p className="text-xs sm:text-sm text-muted-foreground">مشاهده و مدیریت درخواست‌هایت</p>
           </div>
         </div>
 

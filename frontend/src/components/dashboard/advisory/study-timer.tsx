@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Pause, Play, Square, Timer } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -18,6 +18,12 @@ export type TimerSubject = { subjectId: number; name: string };
 
 type StudyTimerProps = {
   subjects: TimerSubject[];
+  /** Controlled clock state, owned by the advisory page so the timer keeps
+   * counting while the «امروز» tab content is unmounted. */
+  seconds: number;
+  running: boolean;
+  onSecondsChange: (seconds: number) => void;
+  onRunningChange: (running: boolean) => void;
   onAddMinutes: (subjectId: number, minutes: number) => void;
 };
 
@@ -29,13 +35,17 @@ function formatClock(totalSeconds: number): string {
 
 /** A pure-front study stopwatch: pick a subject, run, and on stop the whole
  * minutes drop straight into the day's minutes for that subject. */
-export function StudyTimer({ subjects, onAddMinutes }: StudyTimerProps) {
+export function StudyTimer({
+  subjects,
+  seconds,
+  running,
+  onSecondsChange,
+  onRunningChange,
+  onAddMinutes,
+}: StudyTimerProps) {
   const [subjectId, setSubjectId] = useState<number | null>(
     subjects[0]?.subjectId ?? null,
   );
-  const [running, setRunning] = useState(false);
-  const [seconds, setSeconds] = useState(0);
-  const tickRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
     if (
@@ -46,22 +56,13 @@ export function StudyTimer({ subjects, onAddMinutes }: StudyTimerProps) {
     }
   }, [subjects, subjectId]);
 
-  useEffect(() => {
-    if (running) {
-      tickRef.current = setInterval(() => setSeconds((s) => s + 1), 1000);
-    }
-    return () => {
-      if (tickRef.current) clearInterval(tickRef.current);
-    };
-  }, [running]);
-
   const stop = () => {
-    setRunning(false);
+    onRunningChange(false);
     const minutes = Math.floor(seconds / 60);
     if (minutes > 0 && subjectId !== null) {
       onAddMinutes(subjectId, minutes);
     }
-    setSeconds(0);
+    onSecondsChange(0);
   };
 
   return (
@@ -100,7 +101,7 @@ export function StudyTimer({ subjects, onAddMinutes }: StudyTimerProps) {
           <Button
             type="button"
             size="sm"
-            onClick={() => setRunning((r) => !r)}
+            onClick={() => onRunningChange(!running)}
             disabled={subjectId === null}
             aria-label={running ? 'توقف موقت' : 'شروع'}
           >

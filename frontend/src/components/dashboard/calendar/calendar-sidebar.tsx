@@ -2,6 +2,7 @@
 
 import { CalendarDays } from 'lucide-react';
 import { CalendarEventCard } from './calendar-event-card';
+import { toPersianDigits } from '@/lib/persian-digits';
 import type { CalendarEvent } from '@/types';
 
 interface CalendarSidebarProps {
@@ -20,7 +21,7 @@ export function CalendarSidebar({ upcomingEvents, onEventClick }: CalendarSideba
           </div>
           <div>
             <h3 className="font-bold text-lg">رویدادهای پیش رو</h3>
-            <p className="text-xs text-muted-foreground">{upcomingEvents.length} رویداد</p>
+            <p className="text-xs text-muted-foreground">{toPersianDigits(upcomingEvents.length)} رویداد</p>
           </div>
         </div>
 

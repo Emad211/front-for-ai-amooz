@@ -16,6 +16,7 @@ import {
 } from '@/services/exercises-service';
 import { PERSIAN_MONTHS } from '@/constants/calendar';
 import { getStudentExerciseAction } from '@/lib/exercise-actions';
+import { AdvisoryService } from '@/services/advisory-service';
 
 const RAW_API_URL = (process.env.NEXT_PUBLIC_API_URL ?? '').replace(/\/$/, '');
 const API_URL = RAW_API_URL.endsWith('/api') ? RAW_API_URL : `${RAW_API_URL}/api`;
@@ -426,7 +427,10 @@ export const DashboardService = {
     if (!RAW_API_URL) {
       throw new Error('NEXT_PUBLIC_API_URL تنظیم نشده است.');
     }
-    const courses = await DashboardService.getCourses();
+    const [courses, analytics] = await Promise.all([
+      DashboardService.getCourses(),
+      AdvisoryService.getMyAnalytics().catch(() => null),
+    ]);
     const totalCourses = courses.length;
     const activeCourses = totalCourses;
     const completionPercent = totalCourses
@@ -438,8 +442,7 @@ export const DashboardService = {
       totalCourses,
       completionPercent,
       averageScore: 0,
-      studyHours: '0',
-      studyMinutes: '0',
+      streak: analytics?.active ? analytics.streak : null,
     };
   },
 

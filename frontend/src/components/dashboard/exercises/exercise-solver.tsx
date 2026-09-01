@@ -444,7 +444,7 @@ export function ExerciseSolver({
 
   const doSubmit = async () => {
     if (ocrBusy) {
-      toast.error('ابتدا صبر کنید بارگذاری یا ویرایش پاسخ‌نامه کامل شود.');
+      toast.error('ابتدا صبر کن بارگذاری یا ویرایش پاسخ‌نامه کامل شود.');
       return;
     }
     finalizingRef.current = true;
@@ -462,7 +462,7 @@ export function ExerciseSolver({
       submittedRef.current = true;
       dirty.current = false;
       clearDraftBackup(draftBackupKey);
-      toast.success('پاسخ شما ارسال شد. نتیجه پس از نمره‌دهی نمایش داده می‌شود.');
+      toast.success('پاسخت ارسال شد. نتیجه پس از نمره‌دهی نمایش داده می‌شود.');
       router.push(`/exercises/${exerciseId}/result?session=${sessionId}`);
     } catch (err) {
       finalizingRef.current = false;
@@ -546,7 +546,7 @@ export function ExerciseSolver({
       {deadlinePassed && !alreadySubmitted && (
         <p className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
           مهلت ارسال این تمرین به پایان رسیده است. اگر مدرس ارسال با تأخیر را مجاز کرده باشد،
-          پاسخ شما با برچسب «با تأخیر» ثبت می‌شود؛ در غیر این صورت ارسال پذیرفته نخواهد شد.
+          پاسخت با برچسب «با تأخیر» ثبت می‌شود؛ در غیر این صورت ارسال پذیرفته نخواهد شد.
         </p>
       )}
 
@@ -665,14 +665,14 @@ export function ExerciseSolver({
                 <AlertDialogTitle>ارسال نهایی پاسخ‌ها</AlertDialogTitle>
                 <AlertDialogDescription>
                   {pendingOcr
-                    ? 'خواندن یکی از فایل‌ها هنوز کامل نشده است. ارسال شما ثبت می‌شود و نمره‌دهی پس از پایان خوانش ادامه پیدا می‌کند.'
+                    ? 'خواندن یکی از فایل‌ها هنوز کامل نشده است. ارسالت ثبت می‌شود و نمره‌دهی پس از پایان خوانش ادامه پیدا می‌کند.'
                     : failedOcr
                       ? 'خواندن یکی از فایل‌ها کامل نشد. تصویر اصلی برای مدرس محفوظ می‌ماند و پاسخ برای بررسی دستی ارسال می‌شود.'
                       : unappliedWholeOcr
                         ? 'پاسخ‌نامه آماده است اما هنوز اعمال نشده. با ارسال نهایی، همین تطبیق فعلی فریز و برای نمره‌دهی استفاده می‌شود.'
                         : unchangedResubmission
-                          ? 'پاسخ‌های شما نسبت به ارسال قبلی تغییری نکرده‌اند. در صورت ارسال، همان نتیجه قبلی مبنای نمره‌دهی خواهد بود.'
-                          : 'پس از ارسال، امکان ویرایش پاسخ‌ها را نخواهید داشت. مطمئن هستید؟'}
+                          ? 'پاسخ‌هایت نسبت به ارسال قبلی تغییری نکرده‌اند. در صورت ارسال، همان نتیجه قبلی مبنای نمره‌دهی خواهد بود.'
+                          : 'پس از ارسال، امکان ویرایش پاسخ‌ها را نخواهی داشت. مطمئنی؟'}
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>

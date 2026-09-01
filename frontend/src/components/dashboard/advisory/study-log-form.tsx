@@ -10,7 +10,7 @@
  * local guesses (server-side totals and removed-subject history win).
  */
 import { useCallback, useEffect, useState } from 'react';
-import { Loader2 } from 'lucide-react';
+import { CheckCircle2, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { MoodSelector } from '@/components/dashboard/study-log/mood-selector';
@@ -40,6 +40,11 @@ import {
 } from '@/components/ui/select';
 import { toEnglishDigits, toPersianDigits } from '@/lib/persian-digits';
 import { adherenceColorClass, formatAdherence } from '@/lib/adherence';
+import { formatPersianDate, formatPersianDateTime, formatPersianMonthDay } from '@/lib/date-utils';
+import { getTodayJalaliString } from '@/lib/calendar';
+import { differenceInCalendarDays, newDate } from 'date-fns-jalali';
+import type { CalendarEvent } from '@/types';
+import { DashboardService } from '@/services/dashboard-service';
 
 const MAX_MINUTES_PER_SUBJECT = 960;
 const DAY_TOTAL_CAP = 1440;
@@ -51,6 +56,8 @@ const ENRICHMENT_TEXT_MAX_LENGTH = 200;
 const TEST_PERCENT_MAX = 100;
 
 type PagePhase = 'loading' | 'error' | 'inactive' | 'ready';
+
+type NextExamInfo = { title: string; daysLeft: number };
 
 function pad2(value: number): string {
   return String(value).padStart(2, '0');
@@ -102,7 +109,23 @@ function sanitizePercentInput(raw: string): string {
   return String(Math.min(Number.parseInt(digits, 10), TEST_PERCENT_MAX));
 }
 
-export function StudyLogForm() {
+type StudyLogFormProps = {
+  /** Page-owned study-timer clock so the timer survives leaving the tab. */
+  timerSeconds: number;
+  timerRunning: boolean;
+  onTimerSecondsChange: (seconds: number) => void;
+  onTimerRunningChange: (running: boolean) => void;
+  /** Lifts the unsaved-edits flag to the page for the tab-switch guard. */
+  onDirtyChange: (dirty: boolean) => void;
+};
+
+export function StudyLogForm({
+  timerSeconds,
+  timerRunning,
+  onTimerSecondsChange,
+  onTimerRunningChange,
+  onDirtyChange,
+}: StudyLogFormProps) {
   const [phase, setPhase] = useState<PagePhase>('loading');
   const [errorMessage, setErrorMessage] = useState('');
   const [payload, setPayload] = useState<StudyLogPayload | null>(null);
@@ -123,9 +146,14 @@ export function StudyLogForm() {
   // of the save payload ('' = plain minutes, the pre-field meaning).
   const [activityType, setActivityType] = useState('');
   const [saving, setSaving] = useState(false);
+  const [savedAt, setSavedAt] = useState<string | null>(null);
   // Step 8: adherence of the plan running today; null ⇒ chip is not rendered
   // (quiet-null for students without plans or with nothing elapsed yet).
   const [planPercent, setPlanPercent] = useState<number | null>(null);
+  // Nearest upcoming exam for the countdown chip; same quiet-null rule.
+  const [nextExam, setNextExam] = useState<NextExamInfo | null>(null);
+
+  const markDirty = useCallback(() => onDirtyChange(true), [onDirtyChange]);
 
   const applyResponse = useCallback((data: StudyLogPayload) => {
     setPayload(data);
@@ -149,7 +177,9 @@ export function StudyLogForm() {
     setActivityType(
       data.log?.items?.find((item) => item.activityType)?.activityType ?? '',
     );
-  }, []);
+    setSavedAt(data.log?.updatedAt ?? null);
+    onDirtyChange(false);
+  }, [onDirtyChange]);
 
   const load = useCallback(
     async (dateIso?: string) => {
@@ -193,6 +223,41 @@ export function StudyLogForm() {
     };
   }, []);
 
+  // Countdown chip: the nearest `exam` event from today onward. Exam events
+  // only ever come from the base student calendar (advisor layers add
+  // study_plan/advisor_note/challenge types), so one base read suffices.
+  // Quiet-null on failure — same rule as the adherence chip above.
+  useEffect(() => {
+    let active = true;
+    DashboardService.getCalendarEvents()
+      .then((events: CalendarEvent[]) => {
+        if (!active) return;
+        const todayKey = getTodayJalaliString();
+        const upcoming = events
+          .filter((event) => event.type === 'exam' && event.date >= todayKey)
+          .sort((a, b) => a.date.localeCompare(b.date));
+        const next = upcoming[0];
+        if (!next) return;
+        const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(next.date);
+        if (!match) return;
+        const examDate = newDate(
+          Number(match[1]),
+          Number(match[2]) - 1,
+          Number(match[3]),
+        );
+        setNextExam({
+          title: next.title,
+          daysLeft: differenceInCalendarDays(examDate, new Date()),
+        });
+      })
+      .catch(() => {
+        // Quiet by design — see the comment above.
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
   const handleShiftDay = (days: number) => {
     const next = shiftIsoDate(selectedDate, days);
     setSelectedDate(next);
@@ -201,6 +266,7 @@ export function StudyLogForm() {
 
   const handleMinutesChange = (subjectId: number, raw: string) => {
     setMinutesBySubject((prev) => ({ ...prev, [subjectId]: sanitizeMinutesInput(raw) }));
+    markDirty();
   };
 
   const handleQuickAdd = (subjectId: number, delta: number) => {
@@ -209,6 +275,7 @@ export function StudyLogForm() {
       const next = Math.min(current + delta, MAX_MINUTES_PER_SUBJECT);
       return { ...prev, [subjectId]: String(next) };
     });
+    markDirty();
   };
 
   // Client-side validation before submit (restart step 1): the numeric inputs
@@ -243,7 +310,7 @@ export function StudyLogForm() {
         .map(([subjectId, raw]) => ({
           subjectId: Number(subjectId),
           minutes: parseMinutes(raw),
-          activityType: activityType || undefined,
+          ...(activityType ? { activityType } : {}),
         }))
         .filter((item) => item.minutes > 0);
 
@@ -255,7 +322,7 @@ export function StudyLogForm() {
         ...enrichment,
       });
       applyResponse(response);
-      toast.success('گزارش امروز ثبت شد');
+      toast.success(`گزارش ${formatPersianMonthDay(`${selectedDate}T00:00:00`)} ثبت شد`);
     } catch (err: unknown) {
       // Persian `detail` from the server (409 no advisor / 400 over-limits…).
       toast.error(err instanceof Error ? err.message : 'ثبت گزارش ناموفق بود.');
@@ -315,7 +382,6 @@ export function StudyLogForm() {
     <div className="space-y-6">
       <StudyLogHeader
         date={selectedDate}
-        advisorName={payload.advisorName}
         minDate={payload.minDate}
         maxDate={payload.maxDate}
         onPrevDay={() => handleShiftDay(-1)}
@@ -324,6 +390,10 @@ export function StudyLogForm() {
 
       <StudyTimer
         subjects={payload.subjects.map((s) => ({ subjectId: s.subjectId, name: s.name }))}
+        seconds={timerSeconds}
+        running={timerRunning}
+        onSecondsChange={onTimerSecondsChange}
+        onRunningChange={onTimerRunningChange}
         onAddMinutes={(subjectId, minutes) => {
           setMinutesBySubject((prev) => {
             const next = Math.min(
@@ -332,29 +402,46 @@ export function StudyLogForm() {
             );
             return { ...prev, [subjectId]: String(next) };
           });
+          markDirty();
           toast.success(`${toPersianDigits(minutes)} دقیقه به ${payload.subjects.find((s) => s.subjectId === subjectId)?.name ?? ''} اضافه شد.`);
         }}
       />
 
       {/* Step 8: adherence of the plan running today; renders nothing when
       there is no current plan or nothing has elapsed yet (quiet-null). */}
-      {planPercent !== null && (
-        <div className="flex items-center gap-2">
-          <span
-            className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium tabular-nums ${adherenceColorClass(planPercent)}`}
-          >
-            پایبندی برنامه جاری: {formatAdherence(planPercent)}
-          </span>
+      {(planPercent !== null || nextExam !== null) && (
+        <div className="flex flex-wrap items-center gap-2">
+          {planPercent !== null && (
+            <span
+              className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium tabular-nums ${adherenceColorClass(planPercent)}`}
+            >
+              اجرای برنامهٔ فعلی: {formatAdherence(planPercent)}
+            </span>
+          )}
+          {nextExam && (
+            <span className="inline-flex items-center rounded-full border border-red-500/20 bg-red-500/10 px-2.5 py-0.5 text-xs font-medium text-red-600 dark:text-red-400">
+              {nextExam.daysLeft <= 0
+                ? `آزمون بعدی امروز: ${nextExam.title}`
+                : `آزمون بعدی: ${nextExam.title} · ${toPersianDigits(nextExam.daysLeft)} روز مانده`}
+            </span>
+          )}
         </div>
       )}
 
       <Card className="rounded-2xl">
         <CardHeader className="pb-3">
-          <CardTitle className="text-base">حال و هوای امروز</CardTitle>
+          <CardTitle className="text-base">حال‌وهوای امروز</CardTitle>
           <CardDescription>امروز مطالعه را چطور حس کردی؟</CardDescription>
         </CardHeader>
         <CardContent>
-          <MoodSelector value={mood} onChange={setMood} disabled={saving} />
+          <MoodSelector
+            value={mood}
+            onChange={(value) => {
+              setMood(value);
+              markDirty();
+            }}
+            disabled={saving}
+          />
         </CardContent>
       </Card>
 
@@ -369,10 +456,22 @@ export function StudyLogForm() {
             motivationNote={motivationNote}
             testsTaken={testsTakenRaw}
             testPercent={testPercentRaw}
-            onDayGoalChange={(value) => setDayGoal(value.slice(0, ENRICHMENT_TEXT_MAX_LENGTH))}
-            onMotivationNoteChange={(value) => setMotivationNote(value.slice(0, ENRICHMENT_TEXT_MAX_LENGTH))}
-            onTestsTakenChange={(value) => setTestsTakenRaw(sanitizeCountInput(value))}
-            onTestPercentChange={(value) => setTestPercentRaw(sanitizePercentInput(value))}
+            onDayGoalChange={(value) => {
+              setDayGoal(value.slice(0, ENRICHMENT_TEXT_MAX_LENGTH));
+              markDirty();
+            }}
+            onMotivationNoteChange={(value) => {
+              setMotivationNote(value.slice(0, ENRICHMENT_TEXT_MAX_LENGTH));
+              markDirty();
+            }}
+            onTestsTakenChange={(value) => {
+              setTestsTakenRaw(sanitizeCountInput(value));
+              markDirty();
+            }}
+            onTestPercentChange={(value) => {
+              setTestPercentRaw(sanitizePercentInput(value));
+              markDirty();
+            }}
             disabled={saving}
           />
         </CardContent>
@@ -383,12 +482,18 @@ export function StudyLogForm() {
           <div className="flex flex-wrap items-center justify-between gap-2">
             <CardTitle className="text-base">دقایق مطالعه به تفکیک درس</CardTitle>
             <div className="flex items-center gap-2">
-              <Select value={activityType || 'plain'} onValueChange={setActivityType}>
-                <SelectTrigger className="h-8 w-36 text-xs" aria-label="نوع مطالعه">
+              <Select
+                value={activityType || 'plain'}
+                onValueChange={(value) => {
+                  setActivityType(value === 'plain' ? '' : value);
+                  markDirty();
+                }}
+              >
+                <SelectTrigger className="h-11 w-40 text-xs" aria-label="نوع مطالعه">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="plain">ثبت ساده</SelectItem>
+                  <SelectItem value="plain">معمولی</SelectItem>
                   <SelectItem value="LESSON">درسنامه</SelectItem>
                   <SelectItem value="EDU_TEST">تست آموزشی</SelectItem>
                   <SelectItem value="TIMED_TEST">تست زمان‌دار</SelectItem>
@@ -421,7 +526,10 @@ export function StudyLogForm() {
         <CardContent className="space-y-2">
           <Textarea
             value={note}
-            onChange={(e) => setNote(e.target.value.slice(0, NOTE_MAX_LENGTH))}
+            onChange={(e) => {
+              setNote(e.target.value.slice(0, NOTE_MAX_LENGTH));
+              markDirty();
+            }}
             maxLength={NOTE_MAX_LENGTH}
             rows={4}
             disabled={saving}
@@ -432,19 +540,37 @@ export function StudyLogForm() {
             <span className="text-xs text-muted-foreground">
               {toPersianDigits(note.length)} / {toPersianDigits(NOTE_MAX_LENGTH)}
             </span>
-            <Button onClick={() => void handleSave()} disabled={saving}>
-              {saving ? (
-                <>
-                  <Loader2 className="me-1.5 h-4 w-4 animate-spin" />
-                  در حال ثبت…
-                </>
-              ) : (
-                'ثبت گزارش'
-              )}
-            </Button>
           </div>
         </CardContent>
       </Card>
+
+      <div className="sticky bottom-20 z-20 -mx-4 border-y border-border/60 bg-background/95 px-4 py-3 backdrop-blur md:bottom-4 md:mx-0 md:rounded-2xl md:border">
+        <div className="mx-auto flex max-w-6xl flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="min-w-0" aria-live="polite">
+            <p className="text-sm font-semibold">ثبت کل گزارش {formatPersianDate(selectedDate)}</p>
+            <p className="mt-0.5 flex items-center gap-1.5 text-xs leading-5 text-muted-foreground">
+              {savedAt ? (
+                <>
+                  <CheckCircle2 className="h-4 w-4 shrink-0 text-primary" />
+                  آخرین ذخیره: {formatPersianDateTime(savedAt)}
+                </>
+              ) : (
+                'حال‌وهوا، هدف، دقایق و یادداشت این روز با هم ذخیره می‌شوند.'
+              )}
+            </p>
+          </div>
+          <Button className="h-11 w-full sm:w-auto" onClick={() => void handleSave()} disabled={saving}>
+            {saving ? (
+              <>
+                <Loader2 className="me-1.5 h-4 w-4 animate-spin" />
+                در حال ثبت…
+              </>
+            ) : (
+              'ثبت گزارش روز'
+            )}
+          </Button>
+        </div>
+      </div>
     </div>
   );
 }

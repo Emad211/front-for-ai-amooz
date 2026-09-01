@@ -104,7 +104,7 @@ function getChatErrorInfo(error: unknown, fallbackTitle: string): ChatErrorInfo 
     return {
       kind: 'auth',
       title: 'برای ادامه باید دوباره وارد شوی.',
-      detail: 'نشست شما منقضی شده است.',
+      detail: 'نشستت منقضی شده است.',
     };
   }
   if (msg.includes('429') || msg.includes('rate')) {

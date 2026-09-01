@@ -296,7 +296,7 @@ export const QuestionContent = ({
                 <div className="flex items-start gap-3">
                   <CheckCircle2 className="h-5 w-5 text-green-500 flex-shrink-0 mt-0.5" />
                   <div className="space-y-1">
-                    <p className="text-sm font-semibold text-green-600">آفرین! پاسخ شما صحیح است.</p>
+                    <p className="text-sm font-semibold text-green-600">آفرین! پاسخت صحیح است.</p>
                     <p className="text-xs text-muted-foreground">
                       تعداد تلاش: {feedback.attempts} — امتیاز: {feedback.scoreForQuestion}
                     </p>
@@ -307,7 +307,7 @@ export const QuestionContent = ({
                   <div className="flex items-start gap-3">
                     <XCircle className="h-5 w-5 text-amber-500 flex-shrink-0 mt-0.5" />
                     <div className="space-y-1">
-                      <p className="text-sm font-semibold text-amber-600">پاسخ شما صحیح نیست. دوباره تلاش کنید!</p>
+                      <p className="text-sm font-semibold text-amber-600">پاسخت صحیح نیست. دوباره تلاش کن!</p>
                       <p className="text-xs text-muted-foreground">تلاش شماره {feedback.attempts}</p>
                     </div>
                   </div>

@@ -148,7 +148,7 @@ export function FinalExam({
       );
       setSubmitResult(null);
     } catch (e: any) {
-      setError(e?.message || 'ساخت آزمون جدید با خطا مواجه شد. کمی بعد دوباره تلاش کنید.');
+      setError(e?.message || 'ساخت آزمون جدید با خطا مواجه شد. کمی بعد دوباره تلاش کن.');
     } finally {
       setIsRegenerating(false);
     }
@@ -438,7 +438,7 @@ export function FinalExam({
                 {submitResult.passed ? 'آفرین! قبول شدی 🎉' : 'نیاز به مرور بیشتر'}
               </div>
               <div className="text-xs text-muted-foreground mt-0.5">
-                نمره شما <span className="font-bold text-foreground">{submitResult.score_0_100}</span> از ۱۰۰
+                نمره‌ات <span className="font-bold text-foreground">{submitResult.score_0_100}</span> از ۱۰۰
                 {' · '}حد نصاب {submitResult.passing_score}
                 {' · '}پاسخ صحیح:{' '}
                 {submitResult.per_question.filter((p: any) => questionStatus(p) === 'correct').length} از{' '}

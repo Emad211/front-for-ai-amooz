@@ -773,7 +773,38 @@ export type PatchMistakeBody = Partial<Omit<SaveMistakeBody, 'reviewDate'>> & {
 
 export type TopicStatus = 'NEW' | 'STUDIED' | 'NEEDS_REVIEW' | 'MASTERED';
 
-/** One coverage row — the lightweight پوشش مبحث ladder. */
+/** One leaf node of a subject's official syllabus tree. `konkurWeight` is the
+ * approximate konkur question count, or `null` when the syllabus doesn't set
+ * one — the UI renders it as «(~N سؤال)». */
+export type SyllabusTopicNode = {
+  id: number;
+  title: string;
+  order: number;
+  konkurWeight: number | null;
+};
+
+/** One chapter of the official syllabus tree, carrying its ordered topics. */
+export type SyllabusChapter = {
+  id: number;
+  title: string;
+  order: number;
+  topics: SyllabusTopicNode[];
+};
+
+/** `GET /advisory/subjects/<subjectId>/syllabus/` — the official chapter→topic
+ * tree a subject's coverage card can browse. An empty `chapters` list is a
+ * legitimate answer ("this subject has no tree"); the card degrades to the
+ * free-text topic input in that case. */
+export type SyllabusResponse = {
+  subject: { id: number; name: string };
+  chapters: SyllabusChapter[];
+};
+
+/** One coverage row — the lightweight پوشش مبحث ladder. Wave 7: a row may be
+ * linked to an official syllabus node (`syllabusTopicId` non-null); the link
+ * is display-only metadata — status cycling treats linked and free-text rows
+ * identically. Optional keys are absent on payloads saved before the link
+ * shipped — read via `?? null`. */
 export type TopicProgressOut = {
   id: number;
   subjectId: number;
@@ -782,6 +813,8 @@ export type TopicProgressOut = {
   status: TopicStatus;
   nextReviewAt: string | null;
   updatedAt: string;
+  syllabusTopicId?: number | null;
+  syllabusTopicTitle?: string | null;
 };
 
 export type MyTopicsResponse = {
@@ -794,9 +827,15 @@ export type SaveTopicBody = {
   topic: string;
   status?: TopicStatus;
   nextReviewAt?: string | null;
+  /** When present, the server auto-fills `topic` from the tree node title;
+   * the `topic` sent alongside is a display fallback only. */
+  syllabusTopicId?: number;
 };
 
-export type PatchTopicBody = Partial<SaveTopicBody>;
+/** `syllabusTopicId: null` unlinks a row back to free text. */
+export type PatchTopicBody = Partial<SaveTopicBody> & {
+  syllabusTopicId?: number | null;
+};
 
 /** `GET /advisory/me/analytics/` — the read-only growth bundle. */
 export type AnalyticsPayload = {
@@ -834,6 +873,72 @@ export type AnalyticsPayload = {
   }[];
   openMistakes: number;
   mistakesByType: Record<MistakeErrorType, number>;
+  /** Wave 6b hidden metrics — null when their window holds no evidence.
+   * `advisorDosageDays` is advisor-only and never rendered in the student UI. */
+  testDensity?: number | null;
+  mistakeResolutionDays?: number | null;
+  planCalibration?: number | null;
+  reportRate7d?: number | null;
+  advisorDosageDays?: number | null;
+};
+
+/** One deterministic advisor recommendation from the growth read model. The
+ * backend may attach supporting metric keys and an existing advisory area;
+ * neither field authorizes a mutation — this endpoint is read-only. */
+export type AdvisorGrowthRecommendation = {
+  code?: string;
+  title: string;
+  description?: string;
+  reason?: string;
+  priority?: 'HIGH' | 'MEDIUM' | 'LOW';
+  evidenceKeys?: string[];
+  actionArea?: 'plan' | 'exams' | 'feed' | null;
+};
+
+/** A display-safe evidence value. Growth evidence is intentionally flat so the
+ * UI can render new deterministic metrics without inventing client decisions. */
+export type AdvisorGrowthEvidenceValue = string | number | boolean | null;
+
+/** `GET /advisory/students/<engagementId>/growth/` — advisor-only, read-only
+ * decision support. `active:false` is distinct from an empty recommendation
+ * list: the former means the engagement is not currently actionable. */
+export type AdvisorGrowthResponse = {
+  active: boolean;
+  asOf: string;
+  evidence: Record<string, AdvisorGrowthEvidenceValue>;
+  recommendations: AdvisorGrowthRecommendation[];
+};
+
+/* ── Parent links: weekly-report guardians (advisor manage + student mirror) ── */
+
+/** Lifecycle of a parent link. Only PENDING/ACTIVE rows render — REVOKED is
+ * the post-revoke tombstone the advisor card filters out silently. */
+export type ParentLinkStatus = 'PENDING' | 'ACTIVE' | 'REVOKED';
+
+/** One parent link as the advisor sees it. The phone is ALWAYS masked
+ * server-side; the raw number never crosses the wire in either direction. */
+export type ParentLinkOut = {
+  id: number;
+  phoneMasked: string;
+  /** Raw code (`father` | `mother` | `guardian`) — labels are a UI concern. */
+  relation: string;
+  status: ParentLinkStatus;
+  createdAt: string;
+};
+
+/** Body for the advisor's add-parent invite. `202 {"status":"sent"}` means the
+ * SMS was queued — never that a parent user was found. A mal-shaped number or
+ * crossing the two-parent cap answers 400 with its Persian detail. */
+export type AddStudentParentBody = {
+  phone: string;
+  relation: string;
+};
+
+/** `GET /advisory/me/parents/` — the student-side transparency mirror: which
+ * parents currently see the weekly report. Quiet by design; the card renders
+ * nothing while the list is empty. */
+export type MyParentsResponse = {
+  parents: { id: number; relation: string; phoneMasked: string }[];
 };
 
 /** Coerce an unknown wire payload into a safe `IntakePayload` (the t.find
@@ -1282,6 +1387,120 @@ function normalizeAdvisorOverview(payload: unknown): AdvisorOverviewResponse {  
   };
 }
 
+/* ── Parent-link normalizers ─────────────────────────────────────────── */
+
+const PARENT_LINK_STATUSES: readonly ParentLinkStatus[] = [
+  'PENDING',
+  'ACTIVE',
+  'REVOKED',
+];
+
+function normalizeParentLink(payload: unknown): ParentLinkOut | null {
+  if (!payload || typeof payload !== 'object') return null;
+  const obj = payload as Record<string, unknown>;
+  const id = nullableNumber(obj.id);
+  if (id === null) return null;
+  return {
+    id,
+    phoneMasked: typeof obj.phoneMasked === 'string' ? obj.phoneMasked : '',
+    relation: typeof obj.relation === 'string' ? obj.relation : '',
+    status: coerceEnum(obj.status, PARENT_LINK_STATUSES, 'PENDING'),
+    createdAt: typeof obj.createdAt === 'string' ? obj.createdAt : '',
+  };
+}
+
+function normalizeStudentParents(payload: unknown): { links: ParentLinkOut[] } {
+  const obj =
+    payload && typeof payload === 'object'
+      ? (payload as Record<string, unknown>)
+      : {};
+  const links: ParentLinkOut[] = [];
+  if (Array.isArray(obj.links)) {
+    for (const raw of obj.links) {
+      const item = normalizeParentLink(raw);
+      if (item) links.push(item);
+    }
+  }
+  return { links };
+}
+
+function normalizeMyParents(payload: unknown): MyParentsResponse {
+  const obj =
+    payload && typeof payload === 'object'
+      ? (payload as Record<string, unknown>)
+      : {};
+  const parents: MyParentsResponse['parents'] = [];
+  if (Array.isArray(obj.parents)) {
+    for (const raw of obj.parents) {
+      if (!raw || typeof raw !== 'object') continue;
+      const p = raw as Record<string, unknown>;
+      const id = nullableNumber(p.id);
+      if (id === null) continue;
+      parents.push({
+        id,
+        relation: typeof p.relation === 'string' ? p.relation : '',
+        phoneMasked: typeof p.phoneMasked === 'string' ? p.phoneMasked : '',
+      });
+    }
+  }
+  return { parents };
+}
+
+/* ── Syllabus tree normalizers (topic-coverage picker) ───────────────── */
+
+function normalizeSyllabusTopic(payload: unknown): SyllabusTopicNode | null {
+  if (!payload || typeof payload !== 'object') return null;
+  const obj = payload as Record<string, unknown>;
+  const id = nullableNumber(obj.id);
+  if (id === null) return null;
+  return {
+    id,
+    title: typeof obj.title === 'string' ? obj.title : '',
+    order: nullableNumber(obj.order) ?? 0,
+    konkurWeight: nullableNumber(obj.konkurWeight),
+  };
+}
+
+function normalizeSyllabus(payload: unknown): SyllabusResponse {
+  const obj =
+    payload && typeof payload === 'object'
+      ? (payload as Record<string, unknown>)
+      : {};
+  const rawSubject =
+    obj.subject && typeof obj.subject === 'object'
+      ? (obj.subject as Record<string, unknown>)
+      : {};
+  const chapters: SyllabusChapter[] = [];
+  if (Array.isArray(obj.chapters)) {
+    for (const raw of obj.chapters) {
+      if (!raw || typeof raw !== 'object') continue;
+      const c = raw as Record<string, unknown>;
+      const id = nullableNumber(c.id);
+      if (id === null) continue;
+      const topics: SyllabusTopicNode[] = [];
+      if (Array.isArray(c.topics)) {
+        for (const t of c.topics) {
+          const node = normalizeSyllabusTopic(t);
+          if (node) topics.push(node);
+        }
+      }
+      chapters.push({
+        id,
+        title: typeof c.title === 'string' ? c.title : '',
+        order: nullableNumber(c.order) ?? 0,
+        topics,
+      });
+    }
+  }
+  return {
+    subject: {
+      id: nullableNumber(rawSubject.id) ?? 0,
+      name: typeof rawSubject.name === 'string' ? rawSubject.name : '',
+    },
+    chapters,
+  };
+}
+
 function getAccessToken(): string {
   if (typeof window === 'undefined') {
     throw new Error('This action must run in the browser.');
@@ -1591,6 +1810,14 @@ export const AdvisoryService = {
     );
   },
 
+  getStudentGrowth: async (
+    engagementId: number,
+  ): Promise<AdvisorGrowthResponse> => {
+    return requestJson<AdvisorGrowthResponse>(
+      `/advisory/students/${engagementId}/growth/`,
+    );
+  },
+
   /**
    * Every plan of one student across both statuses, ascending by start date —
    * the advisor's authoring view. Includes the single DRAFT slot when present.
@@ -1864,7 +2091,7 @@ export const AdvisoryService = {
       { method: 'POST', body: JSON.stringify(body) },
     );
     const item = normalizeExamScore(saved);
-    if (!item) throw new Error('پاسخ سرور برای نمرۀ ذخیره‌شده نامعتبر بود.');
+    if (!item) throw new Error('پاسخ سرور برای نمرهٔ ذخیره‌شده نامعتبر بود.');
     return item;
   },
 
@@ -1883,7 +2110,7 @@ export const AdvisoryService = {
       { method: 'PATCH', body: JSON.stringify(patch) },
     );
     const item = normalizeExamScore(saved);
-    if (!item) throw new Error('پاسخ سرور برای نمرۀ ویرایش‌شده نامعتبر بود.');
+    if (!item) throw new Error('پاسخ سرور برای نمرهٔ ویرایش‌شده نامعتبر بود.');
     return item;
   },
 
@@ -2158,6 +2385,20 @@ export const AdvisoryService = {
     );
   },
 
+  /**
+   * One subject's official syllabus tree (chapter → topic) for the coverage
+   * card's picker. The payload is normalized defensively: any shape drift
+   * degrades to empty chapters — i.e. the free-text fallback — instead of
+   * crashing the card. A foreign/unknown subject answers 404, which the
+   * caller treats as "no tree" (silent).
+   */
+  getSubjectSyllabus: async (subjectId: number): Promise<SyllabusResponse> => {
+    const payload: unknown = await requestJson<unknown>(
+      `/advisory/subjects/${encodeURIComponent(subjectId)}/syllabus/`,
+    );
+    return normalizeSyllabus(payload);
+  },
+
   getMyTopics: async (): Promise<MyTopicsResponse> =>
     requestJson<MyTopicsResponse>('/advisory/me/topics/'),
 
@@ -2205,6 +2446,66 @@ export const AdvisoryService = {
     return normalized.length > 0 ? normalized : days;
   },
 
+  /* ── Parent links (weekly-report guardians) ─────────────────────────── */
+
+  /**
+   * One student's parent links: masked phone, relation and lifecycle status.
+   * The two-live-parent cap is computed over PENDING+ACTIVE rows, so callers
+   * filter REVOKED out before deciding whether a new invite may be sent.
+   */
+  getStudentParents: async (
+    engagementId: number,
+  ): Promise<{ links: ParentLinkOut[] }> => {
+    const payload: unknown = await requestJson<unknown>(
+      `/advisory/students/${engagementId}/parents/`,
+    );
+    return normalizeStudentParents(payload);
+  },
+
+  /**
+   * Invite a parent by phone — like `createInvite`, the 202 `{"status":"sent"}`
+   * only ever means "the SMS was queued", never "a parent was found". A
+   * mal-shaped number («شمارهٔ همراه معتبر نیست…») and the two-parent cap
+   * («حداکثر دو والد برای هر دانش‌آموز مجاز است.») both answer 400 with their
+   * Persian detail, surfaced verbatim by `requestJson`.
+   */
+  addStudentParent: async (
+    engagementId: number,
+    body: AddStudentParentBody,
+  ): Promise<{ status: string }> => {
+    return requestJson<{ status: string }>(
+      `/advisory/students/${engagementId}/parents/`,
+      { method: 'POST', body: JSON.stringify(body) },
+    );
+  },
+
+  /**
+   * Revoke one parent link — the parent's report access is cut immediately
+   * and the row becomes REVOKED. 204 on success; a foreign/missing link
+   * answers 404 like every other detail route.
+   */
+  revokeStudentParent: async (
+    engagementId: number,
+    linkId: number,
+  ): Promise<void> => {
+    await requestJson<unknown>(
+      `/advisory/students/${engagementId}/parents/${linkId}/`,
+      { method: 'DELETE' },
+    );
+  },
+
+  /**
+   * The student-side transparency mirror: which parents see the weekly
+   * report. Quiet like every student advisory read — the card silent-fails
+   * and renders nothing when there is nothing to show.
+   */
+  getMyParents: async (): Promise<MyParentsResponse> => {
+    const payload: unknown = await requestJson<unknown>(
+      '/advisory/me/parents/',
+    );
+    return normalizeMyParents(payload);
+  },
+
   /* ── Risman step 1: student folders ─────────────────────────────────── */
 
   /**
@@ -2228,7 +2529,7 @@ export const AdvisoryService = {
       body: JSON.stringify({ name }),
     });
     const list = normalizeFolderList([saved]);
-    if (!list[0]) throw new Error('پاسخ سرور برای پوشۀ ساخته‌شده نامعتبر بود.');
+    if (!list[0]) throw new Error('پاسخ سرور برای پوشهٔ ساخته‌شده نامعتبر بود.');
     return list[0];
   },
 
@@ -2242,7 +2543,7 @@ export const AdvisoryService = {
       { method: 'PATCH', body: JSON.stringify({ name }) },
     );
     const list = normalizeFolderList([saved]);
-    if (!list[0]) throw new Error('پاسخ سرور برای پوشۀ ویرایش‌شده نامعتبر بود.');
+    if (!list[0]) throw new Error('پاسخ سرور برای پوشهٔ ویرایش‌شده نامعتبر بود.');
     return list[0];
   },
 

@@ -3,6 +3,7 @@
 import { CalendarDays, ChevronLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { CalendarEventCard } from './calendar-event-card';
+import { toPersianDigits } from '@/lib/persian-digits';
 import type { CalendarEvent } from '@/types';
 
 interface CalendarMobileEventsProps {
@@ -23,7 +24,7 @@ export function CalendarMobileEvents({
   const safeSelectedEvents = selectedEvents ?? [];
   const safeUpcomingEvents = upcomingEvents ?? [];
   const eventsToShow = selectedDay ? safeSelectedEvents : safeUpcomingEvents;
-  const title = selectedDay ? `رویدادهای ${selectedDay}ام` : 'رویدادهای پیش رو';
+  const title = selectedDay ? `رویدادهای ${toPersianDigits(selectedDay)}ام` : 'رویدادهای پیش رو';
 
   return (
     <div className="lg:hidden">
@@ -44,7 +45,7 @@ export function CalendarMobileEvents({
           <h3 className="font-bold text-base sm:text-lg">{title}</h3>
         </div>
         <span className="text-xs text-muted-foreground bg-muted px-2 py-1 rounded-lg">
-          {eventsToShow.length} رویداد
+          {toPersianDigits(eventsToShow.length)} رویداد
         </span>
       </div>
 

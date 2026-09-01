@@ -187,7 +187,7 @@ export function WholeAnswerOcrPanel({
             <div className="border-b border-border pb-2">
               <h3 className="font-semibold">بازبینی پاسخ‌های خوانده‌شده</h3>
               <p className="text-xs leading-5 text-muted-foreground">
-                فقط خوانش دست‌خط را بررسی کنید. متن تایپی شما با این متن جایگزین نمی‌شود.
+                فقط خوانش دست‌خط را بررسی کن. متن تایپی‌ات با این متن جایگزین نمی‌شود.
               </p>
             </div>
             {answers.map((answer, index) => (

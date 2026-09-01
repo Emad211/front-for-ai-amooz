@@ -37,11 +37,11 @@ export function UpcomingEvents({ events }: UpcomingEventsProps) {
           ))
         ) : (
           <div className="rounded-2xl border border-dashed border-border/70 bg-muted/10 px-4 py-6 text-center text-sm text-muted-foreground">
-            تمرین یا رویداد نزدیکی برای امروز به بعد ندارید.
+            تمرین نزدیکی نداری؛ برنامه‌های مشاورت را در تقویم ببین.
           </div>
         )}
         <Button variant="outline" className="w-full h-10 md:h-12 border-primary/30 text-primary text-xs md:text-sm font-bold hover:bg-primary/10 hover:border-primary rounded-xl md:rounded-2xl mt-2 transition-all" asChild>
-          <Link href="/advisory?tab=calendar">مشاهده تقویم کامل</Link>
+          <Link href="/advisory?tab=calendar">تقویم کامل</Link>
         </Button>
       </CardContent>
     </Card>

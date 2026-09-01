@@ -3,6 +3,7 @@
 import { ArrowLeft } from 'lucide-react';
 import { Button } from "@/components/ui/button";
 import Image from 'next/image';
+import Link from 'next/link';
 
 export const DashboardHero = () => {
   return (
@@ -16,18 +17,24 @@ export const DashboardHero = () => {
             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75"></span>
             <span className="relative inline-flex rounded-full h-2 w-2 bg-primary"></span>
           </span>
-          AI دستیار هوشمند شما
+          AI دستیار هوشمند تو
         </div>
         <h2 className="text-3xl md:text-5xl font-black mb-4 text-foreground leading-tight">
-          یادگیری را به <span className="text-primary">سطح جدیدی</span> ببرید
+          یادگیری را به <span className="text-primary">سطح جدیدی</span> ببر
         </h2>
         <p className="text-muted-foreground text-base md:text-lg mb-8 max-w-xl leading-relaxed">
-          با تحلیل هوشمند AI-Amooz، مسیر یادگیری شما کاملاً شخصی‌سازی می‌شود. آماده‌اید درس بعدی را با هم شروع کنیم؟
+          با تحلیل هوشمند AI-Amooz، مسیر یادگیری‌ات کاملاً شخصی‌سازی می‌شود. آماده‌ای درس بعدی را با هم شروع کنیم؟
         </p>
         <div className="flex flex-wrap gap-4 self-start">
-          <Button size="lg" className="bg-primary text-primary-foreground hover:bg-primary/90 shadow-lg shadow-primary/20 h-12 px-8 rounded-xl transition-all hover:scale-105">
-            شروع یادگیری هوشمند
-            <ArrowLeft className="mr-2 h-5 w-5" />
+          <Button
+            asChild
+            size="lg"
+            className="bg-primary text-primary-foreground hover:bg-primary/90 shadow-lg shadow-primary/20 h-12 px-8 rounded-xl transition-all hover:scale-105"
+          >
+            <Link href="/advisory">
+              شروع یادگیری هوشمند
+              <ArrowLeft className="mr-2 h-5 w-5" />
+            </Link>
           </Button>
         </div>
       </div>

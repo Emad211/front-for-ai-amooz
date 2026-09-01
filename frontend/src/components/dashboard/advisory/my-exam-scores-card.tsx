@@ -78,7 +78,7 @@ export function MyExamScoresCard({ showEmptyState = false }: { showEmptyState?: 
           نمرات آزمون‌های من
         </CardTitle>
         <p className="text-xs leading-relaxed text-muted-foreground">
-          نمرات و ارزیابی‌هایی که مشاور شما برای آزمون‌هایتان ثبت کرده است، به
+          نمرات و ارزیابی‌هایی که مشاورت برای آزمون‌هایت ثبت کرده است، به
           ترتیب تاریخ.
         </p>
       </CardHeader>

@@ -40,7 +40,7 @@ function ExecutorBadge({ executor }: { executor: MonthlyOutlookExecutor }) {
 }
 
 /**
- * The student-side read-only mirror of the monthly outlook («برنامۀ ماه»,
+ * The student-side read-only mirror of the monthly outlook («برنامهٔ ماه»,
  * restart step 8), browsable month by month.
  *
  * Quiet home-card rule like MySubjectsCard/MyIntakeCard: renders NOTHING until
@@ -104,7 +104,7 @@ export function MyMonthlyOutlookCard() {
             <span className="rounded-lg bg-primary/10 p-1.5">
               <CalendarDays className="h-4 w-4 text-primary" />
             </span>
-            برنامۀ ماه
+            برنامهٔ ماه
           </CardTitle>
           <div className="flex items-center gap-1">
             <Button
@@ -133,7 +133,7 @@ export function MyMonthlyOutlookCard() {
           </div>
         </div>
         <p className="text-xs leading-relaxed text-muted-foreground">
-          تقویم و استراتژی‌هایی که مشاور شما برای این ماه نوشته است.
+          تقویم و استراتژی‌هایی که مشاورت برای این ماه نوشته است.
         </p>
       </CardHeader>
 

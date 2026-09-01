@@ -147,7 +147,7 @@ export function ChapterQuiz({
       );
       setSubmitResult(null);
     } catch (e: any) {
-      setError(e?.message || 'ساخت آزمون جدید با خطا مواجه شد. کمی بعد دوباره تلاش کنید.');
+      setError(e?.message || 'ساخت آزمون جدید با خطا مواجه شد. کمی بعد دوباره تلاش کن.');
     } finally {
       setIsRegenerating(false);
     }
@@ -362,7 +362,7 @@ export function ChapterQuiz({
                   onChange={(e) => updateAnswer(q.id, e.target.value)}
                   disabled={reviewing}
                   className="mt-3 w-full min-h-24 rounded-lg border border-border bg-background p-3 text-sm text-foreground disabled:opacity-70"
-                  placeholder={q.type === 'fill_blank' ? 'پاسخ خود را برای جای خالی بنویسید...' : 'پاسخ خود را بنویسید...'}
+                  placeholder={q.type === 'fill_blank' ? 'پاسخ خودت را برای جای خالی بنویس...' : 'پاسخ خودت را بنویس...'}
                   dir="rtl"
                 />
               )}
@@ -418,7 +418,7 @@ export function ChapterQuiz({
                 {submitResult.passed ? 'آفرین! قبول شدی 🎉' : 'نیاز به مرور بیشتر'}
               </div>
               <div className="text-xs text-muted-foreground mt-0.5">
-                نمره شما <span className="font-bold text-foreground">{submitResult.score_0_100}</span> از ۱۰۰
+                نمره‌ات <span className="font-bold text-foreground">{submitResult.score_0_100}</span> از ۱۰۰
                 {' · '}حد نصاب {submitResult.passing_score}
                 {' · '}پاسخ صحیح:{' '}
                 {submitResult.per_question.filter((p: any) => questionStatus(p) === 'correct').length} از{' '}

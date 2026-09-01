@@ -27,7 +27,7 @@ function parseIsoDate(iso: string): Date | null {
 }
 
 /**
- * The student-side mirror of the advisor's exam analyses («تحلیل کارنامۀ من»,
+ * The student-side mirror of the advisor's exam analyses («تحلیل کارنامهٔ من»,
  * restart step 6): report-card metrics, the advisor's report, per-subject
  * rows, and per-question notes behind an accordion — all read-only.
  *
@@ -80,10 +80,10 @@ export function MyExamAnalysesCard({ showEmptyState = false }: { showEmptyState?
           <span className="rounded-lg bg-primary/10 p-1.5">
             <FileSearch className="h-4 w-4 text-primary" />
           </span>
-          تحلیل کارنامۀ من
+          تحلیل کارنامهٔ من
         </CardTitle>
         <p className="text-xs leading-relaxed text-muted-foreground">
-          تحلیل‌ها و گزارش‌هایی که مشاور شما بعد از آزمون‌هایتان نوشته است.
+          تحلیل‌ها و گزارش‌هایی که مشاورت بعد از آزمون‌هایت نوشته است.
         </p>
       </CardHeader>
       <CardContent>
@@ -96,7 +96,7 @@ export function MyExamAnalysesCard({ showEmptyState = false }: { showEmptyState?
               <div className="space-y-1">
                 <p className="text-sm font-medium leading-relaxed">
                   {item.examNumber !== null
-                    ? `کارنامهٔ شمارۀ ${toPersianDigits(item.examNumber)}`
+                    ? `کارنامهٔ شمارهٔ ${toPersianDigits(item.examNumber)}`
                     : 'کارنامهٔ آزمون'}
                 </p>
                 <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">

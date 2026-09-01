@@ -1,6 +1,7 @@
 'use client';
 
 import { cn } from '@/lib/utils';
+import { toPersianDigits } from '@/lib/persian-digits';
 import type { CalendarDay, CalendarEvent } from '@/types';
 import { CalendarEventBadge } from './calendar-event-badge';
 
@@ -13,12 +14,25 @@ interface CalendarDayCellProps {
 export function CalendarDayCell({ dayData, onDayClick, onEventClick }: CalendarDayCellProps) {
   const { day, isCurrentMonth, isToday, isWeekend, events } = dayData;
 
+  const handleKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (!isCurrentMonth) return;
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      onDayClick(day, events);
+    }
+  };
+
   return (
     <div
+      role={isCurrentMonth ? 'button' : undefined}
+      tabIndex={isCurrentMonth ? 0 : undefined}
       onClick={() => isCurrentMonth && onDayClick(day, events)}
+      onKeyDown={handleKeyDown}
       className={cn(
         'min-h-[68px] sm:min-h-[90px] md:min-h-[110px] p-1.5 sm:p-2 border-b border-e border-border/50 transition-colors',
-        isCurrentMonth ? 'bg-card hover:bg-muted/30 cursor-pointer' : 'bg-muted/20',
+        isCurrentMonth
+          ? 'bg-card hover:bg-muted/30 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset'
+          : 'bg-muted/20',
         isToday && 'bg-primary/5 ring-2 ring-primary/20 ring-inset',
       )}
     >
@@ -32,13 +46,13 @@ export function CalendarDayCell({ dayData, onDayClick, onEventClick }: CalendarD
             isToday && 'bg-primary text-primary-foreground font-bold'
           )}
         >
-          {day}
+          {toPersianDigits(day)}
         </span>
-        
+
         {/* Event count badge for mobile */}
         {events.length > 0 && (
           <span className="sm:hidden w-5 h-5 flex items-center justify-center rounded-full bg-primary/10 text-primary text-[10px] font-bold">
-            {events.length}
+            {toPersianDigits(events.length)}
           </span>
         )}
       </div>
@@ -54,7 +68,7 @@ export function CalendarDayCell({ dayData, onDayClick, onEventClick }: CalendarD
         ))}
         {events.length > 2 && (
           <span className="text-[10px] text-muted-foreground">
-            +{events.length - 2} مورد دیگر
+            +{toPersianDigits(events.length - 2)} مورد دیگر
           </span>
         )}
       </div>

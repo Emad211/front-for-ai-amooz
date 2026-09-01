@@ -13,7 +13,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 
 /**
- * The student-side mirror of what their advisor selected — «درس‌های مطالعاتی شما».
+ * The student-side mirror of what their advisor selected — «درس‌های من».
  *
  * Lives on the advisor page («مشخصات» tab), so it follows the same *quiet*
  * rule as {@link AdvisorInviteBanner}: it renders nothing at all — no
@@ -50,12 +50,12 @@ export function MySubjectsCard() {
           <span className="rounded-lg bg-primary/10 p-1.5">
             <BookOpenCheck className="h-4 w-4 text-primary" />
           </span>
-          درس‌های مطالعاتی شما
+          درس‌های من
         </CardTitle>
         <p className="text-xs leading-relaxed text-muted-foreground">
           {data.advisorName
-            ? `${toPersianDigits(data.subjects.length)} درس که مشاور شما، «${data.advisorName}»، برایتان انتخاب کرده است.`
-            : `${toPersianDigits(data.subjects.length)} درس که مشاور شما برایتان انتخاب کرده است.`}
+            ? `${toPersianDigits(data.subjects.length)} درس که مشاورت، «${data.advisorName}»، برایت انتخاب کرده است.`
+            : `${toPersianDigits(data.subjects.length)} درس که مشاورت برایت انتخاب کرده است.`}
         </p>
       </CardHeader>
       <CardContent>
