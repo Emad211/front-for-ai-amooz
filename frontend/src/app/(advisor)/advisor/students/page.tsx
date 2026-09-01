@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { toast } from 'sonner';
 import {
@@ -26,9 +26,12 @@ import {
   type AdvisorStudent,
   type AdvisorPendingInvite,
   type AdvisorFolder,
+  type AdvisorOverviewResponse,
 } from '@/services/advisory-service';
 import { toPersianDigits, toEnglishDigits } from '@/lib/persian-digits';
+import { adherenceColorClass, formatAdherence } from '@/lib/adherence';
 import { formatPersianDate } from '@/lib/date-utils';
+import { relativeLastLogLabel } from '@/components/advisory/advisor-overview-cards';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -49,6 +52,49 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { SubjectPickerDialog } from '@/components/advisory/subject-picker-dialog';
+
+type RosterRow = {
+  student: AdvisorStudent;
+  adherence7d: number | null;
+  lastLogDate: string | null;
+};
+
+/** Whole days since an ISO log date; null = absent/unparseable (unknown ≠ 0). */
+function daysSinceLastLog(iso: string | null): number | null {
+  if (!iso) return null;
+  const then = new Date(`${iso}T00:00:00`);
+  if (Number.isNaN(then.getTime())) return null;
+  const now = new Date();
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  return Math.round((startOfToday.getTime() - then.getTime()) / 86_400_000);
+}
+
+/** Roster twin of the cockpit's label, worded «بی‌گزارش» instead of «هرگز». */
+function rosterLastLogLabel(lastLogDate: string | null): string {
+  if (daysSinceLastLog(lastLogDate) === null) return 'بی‌گزارش';
+  return relativeLastLogLabel(lastLogDate);
+}
+
+/** Non-ACTIVE roster statuses get one calm outline badge; ACTIVE (the default
+ * reading) stays bare. Labels mirror the cockpit's STATUS_DOTS wording. */
+const ROSTER_STATUS_BADGE: Partial<
+  Record<AdvisorStudent['status'], { label: string; className: string }>
+> = {
+  PENDING: {
+    label: 'در انتظار پذیرش',
+    className: 'border-amber-500/20 bg-amber-500/10 text-amber-700 dark:text-amber-400',
+  },
+  ENDED: { label: 'پایان‌یافته', className: 'text-muted-foreground' },
+  REJECTED: { label: 'رد شده', className: 'text-muted-foreground' },
+};
+
+/** Triage rule: no report for ≥3 days (or no report at all) OR weekly
+ * execution under 50%; unknown adherence alone never flags a student. */
+function needsFollowUp(adherence7d: number | null, lastLogDate: string | null): boolean {
+  if (adherence7d !== null && adherence7d < 50) return true;
+  const days = daysSinceLastLog(lastLogDate);
+  return days === null || days >= 3;
+}
 
 /**
  * Advisor → دانش‌آموزان من (roster + outbox + invite-by-phone).
@@ -72,6 +118,10 @@ export default function AdvisorStudentsPage() {
   const [folders, setFolders] = useState<AdvisorFolder[]>([]);
   const [error, setError] = useState('');
   const [reloadKey, setReloadKey] = useState(0);
+
+  const [overview, setOverview] = useState<AdvisorOverviewResponse | null>(null);
+  const [lowestExecutionFirst, setLowestExecutionFirst] = useState(true);
+  const [onlyNeedsFollowUp, setOnlyNeedsFollowUp] = useState(false);
 
   const [phone, setPhone] = useState('');
   const [sending, setSending] = useState(false);
@@ -123,13 +173,27 @@ export default function AdvisorStudentsPage() {
     };
   }, [reloadKey, query, activeFolderId]);
 
+  useEffect(() => {
+    let active = true;
+    AdvisoryService.getAdvisorOverview()
+      .then((data) => {
+        if (active) setOverview(data);
+      })
+      .catch(() => {
+        // Silent by design: the roster renders unenriched instead.
+      });
+    return () => {
+      active = false;
+    };
+  }, [reloadKey]);
+
   const submitInvite = async (event: React.FormEvent) => {
     event.preventDefault();
     // Canonicalize digits client-side so the payload is ASCII even when the
     // advisor typed Persian numerals; the backend normalizes again regardless.
     const value = toEnglishDigits(phone).replace(/\s+/g, '');
     if (!value) {
-      toast.error('شماره‌ی موبایل را وارد کنید.');
+      toast.error('شمارهٔ موبایل را وارد کنید.');
       return;
     }
 
@@ -238,7 +302,40 @@ export default function AdvisorStudentsPage() {
   };
 
   const loading = !students && !invites && !error;
-  const filtering = query !== '' || activeFolderId !== null;
+  const filtering =
+    query !== '' || activeFolderId !== null || onlyNeedsFollowUp;
+  const overviewReady = overview !== null;
+
+  const rosterRows = useMemo<RosterRow[]>(() => {
+    if (!students) return [];
+    const byEngagement = new Map<number, AdvisorOverviewResponse['students'][number]>();
+    for (const row of overview?.students ?? []) {
+      if (row && Number.isFinite(row.engagementId)) {
+        byEngagement.set(Number(row.engagementId), row);
+      }
+    }
+    let list: RosterRow[] = students.map((student) => {
+      const row = overviewReady ? byEngagement.get(Number(student.id)) : undefined;
+      return {
+        student,
+        adherence7d: row?.adherence7d ?? null,
+        lastLogDate: row?.lastLogDate ?? null,
+      };
+    });
+    // Without overview data the triage rule would flag everyone — skip it.
+    if (onlyNeedsFollowUp && overviewReady) {
+      list = list.filter((row) => needsFollowUp(row.adherence7d, row.lastLogDate));
+    }
+    if (lowestExecutionFirst) {
+      list = [...list].sort((a, b) => {
+        if (a.adherence7d === null && b.adherence7d === null) return 0;
+        if (a.adherence7d === null) return 1;
+        if (b.adherence7d === null) return -1;
+        return a.adherence7d - b.adherence7d;
+      });
+    }
+    return list;
+  }, [students, overview, overviewReady, onlyNeedsFollowUp, lowestExecutionFirst]);
 
   return (
     <div className="space-y-6">
@@ -248,7 +345,7 @@ export default function AdvisorStudentsPage() {
           دانش‌آموزان من
         </h1>
         <p className="mt-1.5 text-sm text-muted-foreground">
-          دانش‌آموز را با شماره‌ی موبایلش دعوت کنید. همکاری وقتی آغاز می‌شود که
+          دانش‌آموز را با شمارهٔ موبایلش دعوت کنید. همکاری وقتی آغاز می‌شود که
           دانش‌آموز دعوت را بپذیرد.
         </p>
       </div>
@@ -275,7 +372,7 @@ export default function AdvisorStudentsPage() {
                 dir="ltr"
                 className="text-left"
                 disabled={sending}
-                aria-label="شماره‌ی موبایل دانش‌آموز"
+                aria-label="شمارهٔ موبایل دانش‌آموز"
               />
               <Button type="submit" disabled={sending} className="shrink-0">
                 <Send className="ml-2 h-4 w-4" />
@@ -284,7 +381,7 @@ export default function AdvisorStudentsPage() {
             </div>
             <p className="text-xs leading-relaxed text-muted-foreground">
               دانش‌آموز باید از قبل در سامانه ثبت‌نام کرده باشد. برای حفظ حریم
-              خصوصی، نتیجه‌ی دعوت یکسان است و نشان نمی‌دهد شماره در سامانه هست یا نه.
+              خصوصی، نتیجهٔ دعوت یکسان است و نشان نمی‌دهد شماره در سامانه هست یا نه.
             </p>
           </form>
         </CardContent>
@@ -334,6 +431,31 @@ export default function AdvisorStudentsPage() {
             مدیریت پوشه‌ها
           </Button>
         </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            variant={lowestExecutionFirst ? 'default' : 'outline'}
+            size="sm"
+            className="h-11 rounded-full px-4"
+            aria-pressed={lowestExecutionFirst}
+            onClick={() => setLowestExecutionFirst((v) => !v)}
+          >
+            کمترین اجرا اول
+          </Button>
+          <Button
+            variant={onlyNeedsFollowUp ? 'default' : 'outline'}
+            size="sm"
+            className="h-11 rounded-full px-4"
+            aria-pressed={onlyNeedsFollowUp}
+            onClick={() => setOnlyNeedsFollowUp((v) => !v)}
+          >
+            نیازمند پیگیری
+          </Button>
+          {overviewReady && onlyNeedsFollowUp && (
+            <span className="text-xs text-muted-foreground">
+              بی‌گزارش یا اجرای زیر ۵۰٪
+            </span>
+          )}
+        </div>
       </div>
 
       {/* ── loading ─────────────────────────────────────────────────────── */}
@@ -371,15 +493,15 @@ export default function AdvisorStudentsPage() {
         <section className="space-y-2">
           <h2 className="flex items-center gap-2 text-sm font-semibold text-muted-foreground">
             <Users className="h-4 w-4" />
-            همکاری‌های فعال
-            {students.length > 0 && (
+            دانش‌آموزان من
+            {rosterRows.length > 0 && (
               <Badge variant="secondary" className="font-normal">
-                {toPersianDigits(students.length)}
+                {toPersianDigits(rosterRows.length)}
               </Badge>
             )}
           </h2>
 
-          {students.length === 0 ? (
+          {rosterRows.length === 0 ? (
             <Card className="border-dashed">
               <CardContent className="py-8 text-center">
                 <Users className="mx-auto h-7 w-7 text-muted-foreground/60" />
@@ -387,7 +509,7 @@ export default function AdvisorStudentsPage() {
                   <>
                     <p className="mt-2.5 text-sm font-medium">دانش‌آموزی پیدا نشد</p>
                     <p className="mx-auto mt-1 max-w-md text-xs leading-relaxed text-muted-foreground">
-                      عبارت جستجو یا پوشهٔ انتخاب‌شده را تغییر دهید.
+                      عبارت جستجو یا فیلترهای انتخاب‌شده را تغییر دهید.
                     </p>
                   </>
                 ) : (
@@ -403,17 +525,43 @@ export default function AdvisorStudentsPage() {
             </Card>
           ) : (
             <ul className="space-y-2">
-              {students.map((s) => (
+              {rosterRows.map(({ student: s, adherence7d, lastLogDate }) => {
+                const statusBadge = ROSTER_STATUS_BADGE[s.status];
+                return (
                 <li key={s.id}>
                   <Card className="border-border/50">
                     <CardContent className="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
                       <div className="min-w-0">
-                        <p className="truncate text-sm font-medium">{s.studentName}</p>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="min-w-0 truncate text-sm font-medium">{s.studentName}</p>
+                          {statusBadge && (
+                            <Badge
+                              variant="outline"
+                              className={`shrink-0 text-[11px] font-normal ${statusBadge.className}`}
+                            >
+                              {statusBadge.label}
+                            </Badge>
+                          )}
+                        </div>
                         <p dir="ltr" className="text-right text-xs text-muted-foreground">
                           {toPersianDigits(s.phoneMasked)}
                         </p>
+                        {overviewReady && (
+                          <p className="mt-0.5 text-xs text-muted-foreground">
+                            آخرین گزارش: {rosterLastLogLabel(lastLogDate)}
+                          </p>
+                        )}
                       </div>
                       <div className="flex flex-wrap items-center gap-2">
+                        {adherence7d !== null && (
+                          <Badge
+                            variant="outline"
+                            className={`text-[11px] font-normal tabular-nums ${adherenceColorClass(adherence7d)}`}
+                            title="درصد اجرای برنامهٔ ۷ روز گذشته"
+                          >
+                            اجرا {formatAdherence(adherence7d)}
+                          </Badge>
+                        )}
                         {s.mode === 'org' && (
                           <Badge variant="outline" className="gap-1 font-normal">
                             <Building2 className="h-3 w-3" />
@@ -459,7 +607,8 @@ export default function AdvisorStudentsPage() {
                     </CardContent>
                   </Card>
                 </li>
-              ))}
+                );
+              })}
             </ul>
           )}
         </section>

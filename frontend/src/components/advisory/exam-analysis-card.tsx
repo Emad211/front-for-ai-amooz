@@ -191,9 +191,9 @@ function collectAnalysisProblem(state: AnalysisFormState): string | null {
     return 'شمارهٔ کارنامه باید عددی صحیح باشد.';
   }
   for (const [raw, label] of [
-    [state.nationalRankRaw.trim(), 'رتبۀ کشوری'],
-    [state.regionRankRaw.trim(), 'رتبۀ منطقه'],
-    [state.cityRankRaw.trim(), 'رتبۀ شهر'],
+    [state.nationalRankRaw.trim(), 'رتبهٔ کشوری'],
+    [state.regionRankRaw.trim(), 'رتبهٔ منطقه'],
+    [state.cityRankRaw.trim(), 'رتبهٔ شهر'],
   ] as const) {
     if (raw !== '' && (!INT_PATTERN.test(raw) || Number(raw) < 1)) {
       return `${label} باید عددی صحیح مثبت باشد.`;
@@ -233,7 +233,7 @@ function collectAnalysisProblem(state: AnalysisFormState): string | null {
       row.doubtfulCorrectRaw,
     ];
     if (counts.some((raw) => raw.trim() !== '' && !INT_PATTERN.test(raw.trim()))) {
-      return 'تعداد غلط، نزده و شک‌دار باید اعداد صحیح نامنفی باشند.';
+      return 'تعداد غلط، نزده و حدسی باید اعداد صحیح نامنفی باشند.';
     }
     const doubtfulSum =
       (numOrNull(row.doubtfulWrongRaw) ?? 0) +
@@ -241,7 +241,7 @@ function collectAnalysisProblem(state: AnalysisFormState): string | null {
       (numOrNull(row.doubtfulCorrectRaw) ?? 0);
     const doubtfulTotal = numOrNull(row.doubtfulTotalRaw) ?? 0;
     if (doubtfulSum > doubtfulTotal) {
-      return 'جمع شک‌دارهای غلط، نزده و درست نباید از کل شک‌دارها بیشتر باشد.';
+      return 'جمع حدسی‌های غلط، نزده و درست نباید از کل حدسی‌ها بیشتر باشد.';
     }
   }
 
@@ -256,7 +256,7 @@ function collectAnalysisProblem(state: AnalysisFormState): string | null {
       return 'شمارهٔ سؤال باید عددی بین ۱ و ۳۰۰ باشد.';
     }
     if (seenQuestions.has(question)) {
-      return `برای سؤال شمارۀ ${toPersianDigits(Number(question))} بیش از یک یادداشت ثبت شده است؛ شماره‌ها باید یکتا باشند.`;
+      return `برای سؤال شمارهٔ ${toPersianDigits(Number(question))} بیش از یک یادداشت ثبت شده است؛ شماره‌ها باید یکتا باشند.`;
     }
     seenQuestions.add(question);
     if (!note.subjectName.trim()) {
@@ -324,18 +324,18 @@ export function AnalysisMetricsGrid({ item }: { item: ExamAnalysis }) {
   }
   if (item.nationalRank !== null) {
     metrics.push({
-      label: 'رتبۀ کشوری',
+      label: 'رتبهٔ کشوری',
       value: toPersianDigits(item.nationalRank),
     });
   }
   if (item.regionRank !== null) {
     metrics.push({
-      label: 'رتبۀ منطقه',
+      label: 'رتبهٔ منطقه',
       value: toPersianDigits(item.regionRank),
     });
   }
   if (item.cityRank !== null) {
-    metrics.push({ label: 'رتبۀ شهر', value: toPersianDigits(item.cityRank) });
+    metrics.push({ label: 'رتبهٔ شهر', value: toPersianDigits(item.cityRank) });
   }
   if (item.highestPercent !== null) {
     metrics.push({
@@ -397,7 +397,7 @@ export function AnalysisRowsList({ rows }: { rows: ExamAnalysisRow[] }) {
               <>
                 <span aria-hidden="true">·</span>
                 <span>
-                  شک‌دار: کل {toPersianDigits(row.doubtfulTotal)} (غلط{' '}
+                  حدسی: کل {toPersianDigits(row.doubtfulTotal)} (غلط{' '}
                   {toPersianDigits(row.doubtfulWrong)}، نزده{' '}
                   {toPersianDigits(row.doubtfulSkipped)}، درست{' '}
                   {toPersianDigits(row.doubtfulCorrect)})
@@ -671,19 +671,19 @@ function AnalysisEditor({
           />
           <NumericField
             id="analysis-national-rank"
-            label="رتبۀ کشوری (اختیاری)"
+            label="رتبهٔ کشوری (اختیاری)"
             value={state.nationalRankRaw}
             onChange={(next) => onChange({ nationalRankRaw: next })}
           />
           <NumericField
             id="analysis-region-rank"
-            label="رتبۀ منطقه (اختیاری)"
+            label="رتبهٔ منطقه (اختیاری)"
             value={state.regionRankRaw}
             onChange={(next) => onChange({ regionRankRaw: next })}
           />
           <NumericField
             id="analysis-city-rank"
-            label="رتبۀ شهر (اختیاری)"
+            label="رتبهٔ شهر (اختیاری)"
             value={state.cityRankRaw}
             onChange={(next) => onChange({ cityRankRaw: next })}
           />
@@ -777,7 +777,7 @@ function AnalysisEditor({
           <>
             {state.rows.length === 0 && (
               <p className="rounded-lg border border-dashed px-3 py-4 text-center text-xs leading-relaxed text-muted-foreground">
-                تحلیل درس‌به‌درس (غلط/نزده/شک‌دار) را اینجا ردیف‌به‌ردیف اضافه کنید.
+                تحلیل درس‌به‌درس (غلط/نزده/حدسی) را اینجا ردیف‌به‌ردیف اضافه کنید.
               </p>
             )}
             {state.rows.length > 0 && (
@@ -787,10 +787,10 @@ function AnalysisEditor({
                   <span className="min-w-0 flex-[3_1_8rem]">درس</span>
                   <span className="w-16 shrink-0 text-center">غلط</span>
                   <span className="w-16 shrink-0 text-center">نزده</span>
-                  <span className="w-16 shrink-0 text-center">شک‌دار کل</span>
-                  <span className="w-16 shrink-0 text-center">شک‌دار غلط</span>
-                  <span className="w-16 shrink-0 text-center">شک‌دار نزده</span>
-                  <span className="w-16 shrink-0 text-center">شک‌دار درست</span>
+                  <span className="w-16 shrink-0 text-center">حدسی کل</span>
+                  <span className="w-16 shrink-0 text-center">حدسی غلط</span>
+                  <span className="w-16 shrink-0 text-center">حدسی نزده</span>
+                  <span className="w-16 shrink-0 text-center">حدسی درست</span>
                   <span className="min-w-0 flex-[2_1_7rem]">علت</span>
                   <span className="w-8 shrink-0" aria-hidden="true" />
                 </div>
@@ -843,7 +843,7 @@ function AnalysisEditor({
                         }
                         inputMode="numeric"
                         placeholder="۰"
-                        aria-label="شک‌دار کل"
+                        aria-label="حدسی کل"
                         className="h-9 w-16 shrink-0 rounded-lg text-center text-xs tabular-nums"
                       />
                       <Input
@@ -855,7 +855,7 @@ function AnalysisEditor({
                         }
                         inputMode="numeric"
                         placeholder="۰"
-                        aria-label="شک‌دار غلط"
+                        aria-label="حدسی غلط"
                         className="h-9 w-16 shrink-0 rounded-lg text-center text-xs tabular-nums"
                       />
                       <Input
@@ -867,7 +867,7 @@ function AnalysisEditor({
                         }
                         inputMode="numeric"
                         placeholder="۰"
-                        aria-label="شک‌دار نزده"
+                        aria-label="حدسی نزده"
                         className="h-9 w-16 shrink-0 rounded-lg text-center text-xs tabular-nums"
                       />
                       <Input
@@ -879,7 +879,7 @@ function AnalysisEditor({
                         }
                         inputMode="numeric"
                         placeholder="۰"
-                        aria-label="شک‌دار درست"
+                        aria-label="حدسی درست"
                         className="h-9 w-16 shrink-0 rounded-lg text-center text-xs tabular-nums"
                       />
                       <Input
@@ -959,7 +959,7 @@ function AnalysisEditor({
           <>
             {state.notes.length === 0 && (
               <p className="rounded-lg border border-dashed px-3 py-4 text-center text-xs leading-relaxed text-muted-foreground">
-                نکات مهم سؤال‌های کلیدی آزمون را اینجا ثبت کنید؛ شمارۀ هر سؤال باید
+                نکات مهم سؤال‌های کلیدی آزمون را اینجا ثبت کنید؛ شمارهٔ هر سؤال باید
                 یکتا باشد.
               </p>
             )}
@@ -997,7 +997,7 @@ function AnalysisEditor({
                       onChange={(e) =>
                         updateNote(note.uid, { note: e.target.value })
                       }
-                      placeholder="نکتۀ این سؤال…"
+                      placeholder="نکتهٔ این سؤال…"
                       maxLength={2000}
                       aria-label={`متن یادداشت ${toPersianDigits(index + 1)}`}
                       className="h-9 min-w-[10rem] flex-1 rounded-lg text-sm"
@@ -1148,7 +1148,7 @@ export function ExamAnalysisCard({ engagementId }: { engagementId: number }) {
       refetch();
     } catch (err: unknown) {
       toast.error(
-        err instanceof Error ? err.message : 'ذخیرۀ تحلیل کارنامه ناموفق بود.',
+        err instanceof Error ? err.message : 'ذخیرهٔ تحلیل کارنامه ناموفق بود.',
       );
     } finally {
       setSaving(false);
@@ -1202,7 +1202,7 @@ export function ExamAnalysisCard({ engagementId }: { engagementId: number }) {
           </Button>
         </div>
         <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-          متریک‌های کارنامه، تحلیل درس‌به‌درس و نکات سؤال‌به‌سؤال هر آزمون را
+          اعداد کارنامه، تحلیل درس‌به‌درس و نکات سؤال‌به‌سؤال هر آزمون را
           یکجا ثبت کنید.
         </p>
       </CardHeader>
@@ -1248,7 +1248,7 @@ export function ExamAnalysisCard({ engagementId }: { engagementId: number }) {
                 setFormState((prev) => (prev ? { ...prev, ...patch } : prev))
               }
               saving={saving}
-              submitLabel={editorTarget === 'create' ? 'ذخیره' : 'ذخیرۀ تغییرات'}
+              submitLabel={editorTarget === 'create' ? 'ذخیره' : 'ذخیرهٔ تغییرات'}
               onSubmit={handleSubmit}
               onCancel={closeEditor}
             />
@@ -1258,7 +1258,7 @@ export function ExamAnalysisCard({ engagementId }: { engagementId: number }) {
         {/* ── saved analyses ───────────────────────────────────────────── */}
         {!error && !loading && sorted.length === 0 && editorTarget === null && (
           <p className="rounded-lg border border-dashed px-3 py-6 text-center text-xs leading-relaxed text-muted-foreground">
-            هنوز تحلیلی ثبت نشده است. بعد از هر آزمون، کارنامۀ دانش‌آموز را
+            هنوز تحلیلی ثبت نشده است. بعد از هر آزمون، کارنامهٔ دانش‌آموز را
             اینجا تحلیل کنید.
           </p>
         )}
@@ -1274,7 +1274,7 @@ export function ExamAnalysisCard({ engagementId }: { engagementId: number }) {
                       <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                         <span className="text-sm font-semibold leading-relaxed">
                           {item.examNumber !== null
-                            ? `کارنامهٔ شمارۀ ${toPersianDigits(item.examNumber)}`
+                            ? `کارنامهٔ شمارهٔ ${toPersianDigits(item.examNumber)}`
                             : 'کارنامهٔ آزمون'}
                         </span>
                         {item.gradeBand && (
@@ -1359,7 +1359,7 @@ export function ExamAnalysisCard({ engagementId }: { engagementId: number }) {
           <AlertDialogHeader>
             <AlertDialogTitle>حذف تحلیل کارنامه</AlertDialogTitle>
             <AlertDialogDescription>
-              این تحلیل همراه با همۀ ردیف‌های درس‌ها و یادداشت‌هایش برای همیشه
+              این تحلیل همراه با همهٔ ردیف‌های درس‌ها و یادداشت‌هایش برای همیشه
               حذف می‌شود و برگشت‌پذیر نیست.
             </AlertDialogDescription>
           </AlertDialogHeader>

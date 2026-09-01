@@ -160,7 +160,7 @@ export default function AdvisorHomePage() {
           {todayLabel}
         </p>
         <p className="mt-1 text-xs leading-relaxed text-muted-foreground sm:text-sm">
-          نگاهی به وضعیت امروز دانش‌آموزانتان: تعهد هفتگی، آخرین گزارش‌ها و
+          نگاهی به وضعیت امروز دانش‌آموزانتان: اجرای برنامه، آخرین گزارش‌ها و
           چالش‌های در جریان.
         </p>
       </div>
@@ -224,7 +224,7 @@ export default function AdvisorHomePage() {
           <Card className="border-border/50">
             <CardContent className="py-12 text-center">
               <UserPlus className="mx-auto h-7 w-7 text-muted-foreground" />
-              <p className="mt-3 text-sm font-bold">اولین دانش‌آموزت را دعوت کن</p>
+              <p className="mt-3 text-sm font-bold">اولین دانش‌آموزتان را دعوت کنید</p>
               <p className="mx-auto mt-1.5 max-w-md text-xs leading-relaxed text-muted-foreground">
                 با ارسال یک دعوت‌نامه شروع کنید؛ پس از پذیرش دانش‌آموز، گزارش
                 مطالعه و برنامهٔ هفتگی‌اش همین‌جا زنده می‌شود.

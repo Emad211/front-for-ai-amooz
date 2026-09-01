@@ -158,7 +158,7 @@ export interface UserProfile {
   email: string;
   phone: string;
   avatar: string;
-  role: 'student' | 'admin' | 'teacher' | 'manager' | 'advisor';
+  role: 'student' | 'admin' | 'teacher' | 'manager' | 'advisor' | 'parent';
   grade?: string;
   major?: string;
   bio?: string;
@@ -211,8 +211,7 @@ export interface DashboardStats {
   totalCourses: number;
   completionPercent: number;
   averageScore: number;
-  studyHours: string;
-  studyMinutes: string;
+  streak: number | null;
 }
 
 export interface DashboardActivity {

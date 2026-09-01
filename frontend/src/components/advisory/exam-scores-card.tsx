@@ -366,7 +366,7 @@ function ScoreFields({
           onChange={(e) => onChange({ advisorNote: e.target.value })}
           rows={2}
           maxLength={2000}
-          placeholder="نظر کوتاه درباره‌ی این آزمون…"
+          placeholder="نظر کوتاه دربارهٔ این آزمون…"
           className="min-h-[60px] text-sm leading-relaxed"
         />
       </FieldCell>
@@ -553,7 +553,7 @@ export function ExamScoresCard({ engagementId }: { engagementId: number }) {
         {atCap && (
           <p className="rounded-lg border border-dashed px-3 py-2 text-center text-xs text-muted-foreground">
             سقف {toPersianDigits(MAX_EXAM_SCORES)} ردیف پر شده است؛ برای افزودن
-            نمرۀ جدید یکی را حذف کنید.
+            نمرهٔ جدید یکی را حذف کنید.
           </p>
         )}
 

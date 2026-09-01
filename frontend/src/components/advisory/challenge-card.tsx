@@ -46,7 +46,7 @@ import { JalaliDatePicker } from '@/components/advisory/jalali-date-picker';
 export const CHALLENGE_STATUS_LABELS: Record<ChallengeStatus, string> = {
   ACTIVE: 'فعال',
   DONE: 'پایان‌یافته',
-  CANCELLED: 'لغوشده',
+  CANCELLED: 'لغو‌شده',
 };
 
 /** Color-coded badge classes per status (green / gray / red). */
@@ -333,7 +333,7 @@ function ChallengeDaysEditor({
       toast.success('روزهای چالش ذخیره شد.');
     } catch (err: unknown) {
       toast.error(
-        err instanceof Error ? err.message : 'ذخیرۀ روزهای چالش ناموفق بود.',
+        err instanceof Error ? err.message : 'ذخیرهٔ روزهای چالش ناموفق بود.',
       );
     } finally {
       setSaving(false);
@@ -387,9 +387,9 @@ function ChallengeDaysEditor({
                   onChange={(e) =>
                     updateRow(row.dayNumber, { summary: e.target.value })
                   }
-                  placeholder="خلاصۀ کارها، مشکلات و نتیجه…"
+                  placeholder="خلاصهٔ کارها، مشکلات و نتیجه…"
                   maxLength={5000}
-                  aria-label={`خلاصۀ روز ${toPersianDigits(row.dayNumber)}`}
+                  aria-label={`خلاصهٔ روز ${toPersianDigits(row.dayNumber)}`}
                   disabled={isFuture}
                   className="h-8 basis-44 flex-1 rounded-lg text-xs"
                 />
@@ -406,7 +406,7 @@ function ChallengeDaysEditor({
             disabled={saving}
           >
             {saving && <Loader2 className="ml-2 h-4 w-4 animate-spin" />}
-            {saving ? 'در حال ذخیره…' : 'ذخیرۀ روزها'}
+            {saving ? 'در حال ذخیره…' : 'ذخیرهٔ روزها'}
           </Button>
         </div>
       </div>
@@ -489,13 +489,13 @@ const ACTION_COPY: Record<
   CANCELLED: {
     title: 'لغو چالش',
     description:
-      'چالش به وضعیت «لغوشده» می‌رود و دیگر قابل ویرایش نیست؛ این کار برگشت‌پذیر نیست.',
+      'چالش به وضعیت «لغو‌شده» می‌رود و دیگر قابل ویرایش نیست؛ این کار برگشت‌پذیر نیست.',
     confirm: 'لغو چالش',
   },
   DELETE: {
     title: 'حذف چالش',
     description:
-      'این چالش همراه با همۀ روزهایش برای همیشه حذف می‌شود و برگشت‌پذیر نیست.',
+      'این چالش همراه با همهٔ روزهایش برای همیشه حذف می‌شود و برگشت‌پذیر نیست.',
     confirm: 'حذف',
   },
 };
@@ -647,7 +647,7 @@ export function ChallengeCard({ engagementId }: { engagementId: number }) {
 
         {!error && !loading && (challenges ?? []).length === 0 && (
           <p className="text-center text-xs leading-relaxed text-muted-foreground">
-            هنوز چالی ساخته نشده است. یک هدف هفت‌روزهٔ مشخص برای دانش‌آموز
+            هنوز چالشی ساخته نشده است. یک هدف هفت‌روزهٔ مشخص برای دانش‌آموز
             تعریف کنید.
           </p>
         )}

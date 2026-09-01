@@ -24,6 +24,7 @@ test('every known role has an explicit route', () => {
   assert.equal(landingFor('ADMIN'), '/admin');
   assert.equal(landingFor('MANAGER'), '/org');
   assert.equal(landingFor('TEACHER'), '/teacher');
+  assert.equal(landingFor('PARENT'), '/parent');
   assert.equal(landingFor('STUDENT'), '/home');
 });
 
@@ -33,7 +34,6 @@ test('role matching is case-insensitive', () => {
 });
 
 test('unknown, empty and absent roles still fall back to the student home', () => {
-  assert.equal(landingFor('PARENT'), '/home');
   assert.equal(landingFor(''), '/home');
   assert.equal(landingFor(null), '/home');
   assert.equal(landingFor(undefined), '/home');

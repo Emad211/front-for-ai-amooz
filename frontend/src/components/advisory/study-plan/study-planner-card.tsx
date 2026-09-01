@@ -27,6 +27,16 @@ import { toEnglishDigits, toPersianDigits } from '@/lib/persian-digits';
 import { adherenceColorClass, formatAdherence } from '@/lib/adherence';
 import { formatPersianDate } from '@/lib/date-utils';
 import { cn } from '@/lib/utils';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -117,6 +127,15 @@ function formatJalaliDayLabel(iso: string): string {
     calendar: 'persian',
     numberingSystem: 'arabext',
   }).format(date);
+}
+
+/** «۷ ساعت و ۳۰ دقیقه» — display-only duration; exact hours/sub-hour stay short. */
+function formatMinutesDuration(totalMinutes: number): string {
+  if (totalMinutes < 60) return `${toPersianDigits(totalMinutes)} دقیقه`;
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  if (minutes === 0) return `${toPersianDigits(hours)} ساعت`;
+  return `${toPersianDigits(hours)} ساعت و ${toPersianDigits(minutes)} دقیقه`;
 }
 
 type DayPillsProps = {
@@ -330,6 +349,9 @@ export function StudyPlannerCard({
   const [aiPrompt, setAiPrompt] = useState('');
   const [aiBusy, setAiBusy] = useState(false);
   const [recording, setRecording] = useState(false);
+  // Confirmation gate: generating replaces the stored DRAFT slot, so with rows
+  // already on the editor the advisor must confirm the loss before we fire.
+  const [aiReplaceConfirm, setAiReplaceConfirm] = useState(false);
   // MediaRecorder lives in a ref (imperative lifecycle) while only the
   // recording flag drives the UI; chunks accumulate across dataavailable.
   const recorderRef = useRef<MediaRecorder | null>(null);
@@ -454,15 +476,15 @@ export function StudyPlannerCard({
     if (startedOn && startDate < startedOn) {
       return 'تاریخ شروع نمی‌تواند پیش از شروع همکاری باشد.';
     }
-    if (durationDays === null) return 'طول برنامه باید بین ۱ و ۹۰ روز باشد.';
+    if (durationDays === null) return 'مدت برنامه باید بین ۱ و ۹۰ روز باشد.';
     if (rows.length === 0) {
       return forPublish ? 'برنامهٔ خالی قابل انتشار نیست.' : 'حداقل یک ردیف به برنامه اضافه کنید.';
     }
     for (const row of rows) {
-      if (row.subjectId === null) return 'درسِ همه‌ی ردیف‌ها را انتخاب کنید.';
+      if (row.subjectId === null) return 'درسِ همهٔ ردیف‌ها را انتخاب کنید.';
       const minutes = Number(toEnglishDigits(row.minutes));
       if (!Number.isInteger(minutes) || minutes < 1 || minutes > 960) {
-        return 'دقیقه‌ی هر ردیف باید عددی بین ۱ و ۹۶۰ باشد.';
+        return 'دقیقهٔ هر ردیف باید عددی بین ۱ و ۹۶۰ باشد.';
       }
       // Restart step 4: empty test-minutes means «not set»; a filled field must
       // be an integer inside 0..480 — the server's exact message, mirrored.
@@ -477,7 +499,7 @@ export function StudyPlannerCard({
         }
       }
       if (row.dayOffset >= durationDays) {
-        return `روز ${toPersianDigits(row.dayOffset + 1)} خارج از طول برنامه است.`;
+        return `روز ${toPersianDigits(row.dayOffset + 1)} خارج از مدت برنامه است.`;
       }
     }
     const seen = new Set<string>();
@@ -554,7 +576,7 @@ export function StudyPlannerCard({
       toast.success('پیش‌نویس برنامه ذخیره شد.');
       refetchPlans();
     } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : 'ذخیره‌ی پیش‌نویس ناموفق بود.');
+      toast.error(err instanceof Error ? err.message : 'ذخیرهٔ پیش‌نویس ناموفق بود.');
     } finally {
       setSaving(false);
     }
@@ -627,7 +649,10 @@ export function StudyPlannerCard({
     refetchPlans();
   };
 
-  const handleAiDraft = async () => {
+  /** Validate the prompt, then run the AI draft request. Never called
+   * directly from the «تولید پیش‌نویس» button when rows already exist —
+   * the confirm dialog owns that path so the replacement is never silent. */
+  const runAiDraft = async () => {
     const prompt = aiPrompt.trim();
     if (!prompt) {
       toast.error('متن درخواست را بنویسید یا پیام صوتی بگذارید.');
@@ -645,6 +670,23 @@ export function StudyPlannerCard({
     } finally {
       setAiBusy(false);
     }
+  };
+
+  const handleAiDraft = () => {
+    const prompt = aiPrompt.trim();
+    if (!prompt) {
+      toast.error('متن درخواست را بنویسید یا پیام صوتی بگذارید.');
+      return;
+    }
+    if (prompt.length > 2000) {
+      toast.error('متن درخواست حداکثر ۲۰۰۰ نویسه است.');
+      return;
+    }
+    if (rows.length > 0) {
+      setAiReplaceConfirm(true);
+      return;
+    }
+    void runAiDraft();
   };
 
   const handleAiVoice = async (blob: Blob, mimeType: string) => {
@@ -791,11 +833,11 @@ export function StudyPlannerCard({
           <ClipboardList className="h-4 w-4 text-primary" />
           برنامه‌ریزی مطالعه
           <span className="ms-auto text-xs font-normal tabular-nums text-muted-foreground">
-            مجموع برنامه‌ریزی‌شده: {toPersianDigits(plannedTotal)} دقیقه
+            مجموع برنامه‌ریزی‌شده: {formatMinutesDuration(plannedTotal)}
           </span>
         </CardTitle>
         <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-          بازه‌ای دلخواه تعیین کنید و برای هر روز، درس و دقیقه‌ی مطالعه بگذارید.
+          بازه‌ای دلخواه تعیین کنید و برای هر روز، درس و دقیقهٔ مطالعه بگذارید.
           انتشار، آخرین تغییرات را ذخیره و برنامه را برای دانش‌آموز نمایان می‌کند.
         </p>
       </CardHeader>
@@ -811,11 +853,9 @@ export function StudyPlannerCard({
           >
             <Sparkles className="h-4 w-4 text-primary" />
             ساخت پیش‌نویس با هوش مصنوعی
-            {aiOpen && (
-              <span className="hidden text-[11px] font-normal text-muted-foreground sm:inline">
-                پیش‌نویس فعلی جایگزین می‌شود
-              </span>
-            )}
+            <span className="text-[11px] font-normal text-muted-foreground">
+              پیش‌نویس فعلی جایگزین می‌شود
+            </span>
             <ChevronDown
               className={cn(
                 'ms-auto h-4 w-4 text-muted-foreground transition-transform',
@@ -825,6 +865,9 @@ export function StudyPlannerCard({
           </button>
           {aiOpen && (
             <div className="mt-3 space-y-2">
+              <p className="text-[11px] leading-relaxed text-muted-foreground">
+                خروجی هوش مصنوعی فقط ۷ روز را پوشش می‌دهد و همیشه پیش‌نویس است؛ قبل از انتشار آن را ویرایش کن.
+              </p>
               <Textarea
                 value={aiPrompt}
                 onChange={(event) => setAiPrompt(event.target.value)}
@@ -888,7 +931,7 @@ export function StudyPlannerCard({
             />
           </div>
           <div className="space-y-1">
-            <span className="text-[11px] font-medium text-muted-foreground">طول برنامه</span>
+            <span className="text-[11px] font-medium text-muted-foreground">مدت برنامه</span>
             <div className="flex flex-wrap items-center gap-1.5">
               {(['7', '14', '30'] as const).map((value) => (
                 <Button
@@ -917,7 +960,7 @@ export function StudyPlannerCard({
                   onChange={(e) => setCustomDuration(e.target.value)}
                   placeholder="۱ تا ۹۰"
                   inputMode="numeric"
-                  aria-label="طول دلخواه برنامه بر حسب روز"
+                  aria-label="مدت دلخواه برنامه بر حسب روز"
                   className="h-9 w-24 rounded-lg"
                 />
               )}
@@ -927,7 +970,7 @@ export function StudyPlannerCard({
 
         {/* ── rows editor: one compact bar per row, grouped by day ───────── */}
         <div className="space-y-3 rounded-xl border border-border/40 p-4">
-          <span className="text-sm font-medium">ردیف‌های برنامه</span>
+          <span className="text-sm font-medium">درس‌های هر روز</span>
 
           {subjectsError && (
             <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-destructive/40 bg-destructive/5 px-3 py-2">
@@ -953,7 +996,7 @@ export function StudyPlannerCard({
           {subjects && subjects.length === 0 && (
             <p className="rounded-lg border border-dashed px-3 py-6 text-center text-xs leading-relaxed text-muted-foreground">
               هنوز درسی برای این دانش‌آموز انتخاب نشده است. ابتدا از فهرست
-              دانش‌آموزان، با دکمه‌ی «انتخاب درس‌ها» درس‌هایی مشخص کنید.
+              دانش‌آموزان، با دکمهٔ «انتخاب درس‌ها» درس‌هایی مشخص کنید.
             </p>
           )}
 
@@ -1025,7 +1068,7 @@ export function StudyPlannerCard({
                                 onChange={(e) => updateRow(row.uid, { minutes: e.target.value })}
                                 placeholder="دقیقه"
                                 inputMode="numeric"
-                                aria-label="دقیقه‌ی مطالعه"
+                                aria-label="دقیقهٔ مطالعه"
                                 className="h-9 w-20 rounded-lg text-center text-xs tabular-nums"
                               />
 
@@ -1134,7 +1177,7 @@ export function StudyPlannerCard({
                   افزودن ردیف
                 </Button>
                 {durationDays === null && (
-                  <p className="text-xs text-destructive">طول برنامه باید بین ۱ و ۹۰ روز باشد.</p>
+                  <p className="text-xs text-destructive">مدت برنامه باید بین ۱ و ۹۰ روز باشد.</p>
                 )}
               </div>
             </>
@@ -1213,7 +1256,7 @@ export function StudyPlannerCard({
           </div>
           {durationDays !== null && durationDays > 7 && (
             <p className="border-t border-border/40 px-4 py-3 text-xs leading-relaxed text-muted-foreground">
-              یادداشت روزها برای هفتۀ اول برنامه ثبت می‌شود.
+              یادداشت روزها برای هفتهٔ اول برنامه ثبت می‌شود.
             </p>
           )}
         </div>
@@ -1222,7 +1265,7 @@ export function StudyPlannerCard({
         <div className="flex flex-wrap items-center gap-2">
           <Button type="button" onClick={handlePublish} disabled={busy} className="h-9 px-4 text-sm">
             {publishing && <Loader2 className="ml-2 h-4 w-4 animate-spin" />}
-            انتشار
+            انتشار برنامه
           </Button>
           <Button type="button" variant="outline" size="sm" onClick={handleSave} disabled={busy}>
             {saving && <Loader2 className="ml-2 h-4 w-4 animate-spin" />}
@@ -1277,7 +1320,7 @@ export function StudyPlannerCard({
                               variant="outline"
                               className={`text-[11px] font-normal tabular-nums ${adherenceColorClass(plan.percent)}`}
                             >
-                              پایبندی {formatAdherence(plan.percent)}
+                              اجرا {formatAdherence(plan.percent)}
                             </Badge>
                           )}
                           <span className="text-xs tabular-nums text-muted-foreground">
@@ -1318,6 +1361,36 @@ export function StudyPlannerCard({
           )}
         </div>
       </CardContent>
+
+      {/* ── AI draft replacement confirm (challenge-card revoke pattern) ── */}
+      <AlertDialog
+        open={aiReplaceConfirm}
+        onOpenChange={(open) => {
+          if (!open) setAiReplaceConfirm(false);
+        }}
+      >
+        <AlertDialogContent dir="rtl">
+          <AlertDialogHeader>
+            <AlertDialogTitle>پیش‌نویس فعلی جایگزین شود؟</AlertDialogTitle>
+            <AlertDialogDescription>
+              همهٔ ردیف‌های پیش‌نویس فعلی با خروجی هوش مصنوعی عوض می‌شوند.
+              انتشارشده‌ها دست‌نخورده می‌مانند.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>انصراف</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(event) => {
+                event.preventDefault();
+                setAiReplaceConfirm(false);
+                void runAiDraft();
+              }}
+            >
+              جایگزین کن
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Card>
   );
 }

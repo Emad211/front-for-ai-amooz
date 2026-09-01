@@ -60,7 +60,7 @@ export const SUBJECT_SOURCE_LABELS: Record<string, string> = {
   TEXTBOOK: 'کتاب درسی',
   TEACHER_BOOKLET: 'جزوه معلم',
   VIDEO: 'فیلم',
-  KONKUR_BOOKLET: 'جزوه/دفترنامۀ کنکور',
+  KONKUR_BOOKLET: 'جزوه/دفترنامهٔ کنکور',
   OTHER: 'سایر',
 };
 
@@ -195,7 +195,7 @@ export function SubjectPickerDialog({
       // 409 (engagement not active) and 400 (subject not assignable / bad
       // source) surface their Persian detail here; the advisor learns why
       // without a status code.
-      toast.error(err instanceof Error ? err.message : 'ذخیره‌ی درس‌ها ناموفق بود.');
+      toast.error(err instanceof Error ? err.message : 'ذخیرهٔ درس‌ها ناموفق بود.');
     } finally {
       setSaving(false);
     }
@@ -227,7 +227,7 @@ export function SubjectPickerDialog({
             )}
           </DialogTitle>
           <DialogDescription className="text-xs leading-relaxed">
-            از برنامه‌ی درسیِ این دانش‌آموز، درس‌هایی را که می‌خواهید روی آن‌ها
+            از برنامهٔ درسیِ این دانش‌آموز، درس‌هایی را که می‌خواهید روی آن‌ها
             تمرکز شود انتخاب کنید و «ذخیره» بزنید. هرچه انتخاب نشود کنار گذاشته
             می‌شود.
           </DialogDescription>
@@ -248,7 +248,7 @@ export function SubjectPickerDialog({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">همه‌ی پایه‌ها (دهم تا دوازدهم)</SelectItem>
+                <SelectItem value="all">همهٔ پایه‌ها (دهم تا دوازدهم)</SelectItem>
                 {gradeChoices.map((g) => (
                   <SelectItem key={g.value} value={g.value}>
                     پایه {g.label}
@@ -299,7 +299,7 @@ export function SubjectPickerDialog({
               <p className="px-2 py-8 text-center text-sm leading-relaxed text-muted-foreground">
                 {catalog.length === 0
                   ? studentGrade === null
-                    ? 'تا وقتی دانش‌آموز پایه‌اش را در پروفایل ثبت نکند، برنامه‌ی درسی‌ای برای انتخاب نیست.'
+                    ? 'تا وقتی دانش‌آموز پایه‌اش را در پروفایل ثبت نکند، برنامهٔ درسی‌ای برای انتخاب نیست.'
                     : 'برای این پایه و رشته هنوز درسی در برنامه ثبت نشده است.'
                   : 'درسی با این فیلترها پیدا نشد.'}
               </p>
@@ -353,7 +353,7 @@ export function SubjectPickerDialog({
                         onValueChange={(value) => setSource(s.id, value)}
                       >
                         <SelectTrigger
-                          aria-label={`منبع مطالعۀ ${s.name}`}
+                          aria-label={`منبع مطالعهٔ ${s.name}`}
                           className="h-8 w-32 shrink-0 text-xs"
                         >
                           <SelectValue placeholder="—" />

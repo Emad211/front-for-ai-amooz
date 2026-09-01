@@ -7,6 +7,7 @@
  * - MANAGER → /org     (dedicated org-management panel; a manager is NOT a teacher)
  * - TEACHER → /teacher (teaching panel; freelancer and/or org teacher)
  * - ADVISOR → /advisor (مشاور study-planning panel; freelance and/or org advisor)
+ * - PARENT  → /parent  (والد read-only weekly digest panel)
  * - STUDENT → /home
  *
  * The `default` arm is deliberate: an unknown/absent role lands on the student
@@ -23,6 +24,8 @@ export function landingFor(role: string | null | undefined): string {
       return '/teacher';
     case 'advisor':
       return '/advisor';
+    case 'parent':
+      return '/parent';
     default:
       return '/home';
   }

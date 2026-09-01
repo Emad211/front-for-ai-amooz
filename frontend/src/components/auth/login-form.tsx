@@ -91,6 +91,7 @@ export function LoginForm({ onSwitchToJoin }: LoginFormProps) {
         manager: '/org',
         teacher: '/teacher',
         advisor: '/advisor',
+        parent: '/parent',
       };
 
       const isAllowedByRole = (path: string) => {

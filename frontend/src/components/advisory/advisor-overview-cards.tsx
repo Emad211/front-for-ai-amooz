@@ -134,7 +134,7 @@ export function AdvisorStatStrip({
         />
         <StatCell
           icon={TrendingUp}
-          label="میانگین تعهد ۷روزه"
+          label="میانگین اجرای هفته"
           value={
             averageAdherence7d === null ? (
               '—'
@@ -196,7 +196,7 @@ export function AdvisorStudentCardView({
                 aria-valuenow={adherence7d}
                 aria-valuemin={0}
                 aria-valuemax={100}
-                aria-label={`تعهد هفتگی ${student.studentName}`}
+                aria-label={`درصد اجرای برنامهٔ ${student.studentName}`}
                 className="h-1 flex-1 overflow-hidden rounded-full bg-muted"
               >
                 <div
@@ -221,7 +221,7 @@ export function AdvisorStudentCardView({
               <p className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
                 <Target className="h-3.5 w-3.5 shrink-0" />
                 <span className="truncate" title={activeChallengeTitle}>
-                  {activeChallengeTitle}
+                  چالش: {activeChallengeTitle}
                 </span>
               </p>
             )}

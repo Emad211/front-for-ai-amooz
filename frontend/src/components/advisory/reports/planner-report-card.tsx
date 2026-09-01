@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { AlertCircle, ClipboardList, Download } from 'lucide-react';
+import { AlertCircle, ClipboardList, Download, RefreshCw } from 'lucide-react';
 import {
   Bar,
   BarChart,
@@ -14,6 +14,7 @@ import {
 } from 'recharts';
 
 import { toPersianDigits } from '@/lib/persian-digits';
+import { formatPersianDate } from '@/lib/date-utils';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -136,7 +137,7 @@ export function PlannerReportCard({ engagementId }: PlannerReportCardProps) {
         </div>
 
         <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2">
-          <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label="بازه‌ی گزارش">
+          <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label="بازهٔ گزارش">
             {RANGE_CHIPS.map((days) => {
               const selected = range === days;
               return (
@@ -156,7 +157,7 @@ export function PlannerReportCard({ engagementId }: PlannerReportCardProps) {
           </div>
           {!loading && report && (
             <span className="text-xs text-muted-foreground">
-              از {toPersianDigits(windowDates.from)} تا {toPersianDigits(windowDates.to)}
+              از {formatPersianDate(windowDates.from)} تا {formatPersianDate(windowDates.to)}
             </span>
           )}
         </div>
@@ -174,10 +175,20 @@ export function PlannerReportCard({ engagementId }: PlannerReportCardProps) {
         )}
 
         {!loading && error && (
-          <p className="flex items-center gap-2 py-6 text-sm text-muted-foreground">
-            <AlertCircle className="h-4 w-4 shrink-0" />
-            {error}
-          </p>
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-destructive/40 bg-destructive/5 px-3 py-2">
+            <p className="flex items-center gap-2 text-xs text-destructive">
+              <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+              {error}
+            </p>
+            <Button
+              variant="outline"
+              className="h-11"
+              onClick={() => setReloadKey((k) => k + 1)}
+            >
+              <RefreshCw className="ml-2 h-3.5 w-3.5" />
+              تلاش مجدد
+            </Button>
+          </div>
         )}
 
         {!loading && !error && report && (
@@ -210,7 +221,7 @@ export function PlannerReportCard({ engagementId }: PlannerReportCardProps) {
                     />
                     <Legend wrapperStyle={{ fontSize: '12px', paddingTop: '6px' }} />
                     <Bar dataKey="planned" name="برنامه‌ریزی‌شده" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} maxBarSize={36} />
-                    <Bar dataKey="actual" name="انجام‌شده" fill="#10b981" radius={[4, 4, 0, 0]} maxBarSize={36} />
+                    <Bar dataKey="actual" name="انجام‌شده" fill="hsl(var(--chart-2))" radius={[4, 4, 0, 0]} maxBarSize={36} />
                   </BarChart>
                 </ResponsiveContainer>
               </div>
@@ -228,7 +239,7 @@ export function PlannerReportCard({ engagementId }: PlannerReportCardProps) {
                       <th scope="col" className="px-3 py-2 font-medium">درس</th>
                       <th scope="col" className="px-3 py-2 font-medium">برنامه‌ریزی‌شده</th>
                       <th scope="col" className="px-3 py-2 font-medium">انجام‌شده</th>
-                      <th scope="col" className="px-3 py-2 font-medium">پوشش٪</th>
+                      <th scope="col" className="px-3 py-2 font-medium">درصد اجرا</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border/40">

@@ -22,11 +22,14 @@ import { ExamScoresCard } from '@/components/advisory/exam-scores-card';
 import { ExamAnalysisCard } from '@/components/advisory/exam-analysis-card';
 import { MonthlyOutlookCard } from '@/components/advisory/monthly-outlook-card';
 import { ChallengeCard } from '@/components/advisory/challenge-card';
+import { ParentLinksCard } from '@/components/advisory/parent-links-card';
+import { AdvisorGrowthPanel } from '@/components/advisory/advisor-growth-panel';
 import {
   resolveStudentDetailTab,
   StudentDetailTabKey,
   StudentDetailTabs,
-  StudentDetailTabPlaceholder,
+  studentDetailPanelId,
+  studentDetailTabId,
 } from '@/components/advisory/student-detail-tabs';
 
 /**
@@ -148,10 +151,17 @@ function AdvisorStudentDetailContent() {
         <div className="mx-auto w-full max-w-4xl space-y-6">
           <StudentDetailTabs activeTab={activeTab} onTabChange={handleTabChange} />
 
-          {/* Read the evidence first, then plan — DOM order = visual order.
-          Tabs whose cards have not landed yet render the «به‌زودی» placeholder
-          so the IA stays stable until their waves arrive. */}
-          {activeTab === 'feed' && (
+          <section
+            id={studentDetailPanelId(activeTab)}
+            role="tabpanel"
+            aria-labelledby={studentDetailTabId(activeTab)}
+            tabIndex={0}
+            className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+          >
+          {activeTab === 'decision' && (
+            <AdvisorGrowthPanel engagementId={engagementId} />
+          )}
+          {activeTab === 'activity' && (
             <div className="space-y-6">
               <StudyFeedCard engagementId={engagementId} />
               <PlannerReportCard engagementId={engagementId} />
@@ -164,32 +174,21 @@ function AdvisorStudentDetailContent() {
               startedOn={student.startedOn}
             />
           )}
-          {activeTab === 'intake' && <IntakeCard engagementId={engagementId} />}
-          {activeTab === 'exams' && (
+          {activeTab === 'record' && (
             <div className="space-y-6">
+              {/* Daily-use records first; ParentLinks is the rare setup
+              action and deliberately closes the tab. */}
               <ExamScoresCard engagementId={engagementId} />
               <ExamAnalysisCard engagementId={engagementId} />
-            </div>
-          )}
-          {activeTab === 'assess' && (
-            <div className="space-y-6">
-              <WeeklyAssessmentCard engagementId={engagementId} />
               <CallLogCard engagementId={engagementId} />
+              <WeeklyAssessmentCard engagementId={engagementId} />
+              <IntakeCard engagementId={engagementId} />
+              <MonthlyOutlookCard engagementId={engagementId} />
+              <ChallengeCard engagementId={engagementId} />
+              <ParentLinksCard engagementId={engagementId} />
             </div>
           )}
-          {activeTab === 'month' && <MonthlyOutlookCard engagementId={engagementId} />}
-          {activeTab === 'challenges' && (
-            <ChallengeCard engagementId={engagementId} />
-          )}
-          {activeTab !== 'feed' &&
-            activeTab !== 'plan' &&
-            activeTab !== 'exams' &&
-            activeTab !== 'intake' &&
-            activeTab !== 'assess' &&
-            activeTab !== 'month' &&
-            activeTab !== 'challenges' && (
-              <StudentDetailTabPlaceholder tabKey={activeTab} />
-            )}
+          </section>
         </div>
       )}
     </div>

@@ -86,7 +86,7 @@ export function ImpersonationBanner() {
           variant="outline"
           disabled={stopping}
           onClick={handleExit}
-          className="h-7 border-amber-900/40 bg-transparent text-xs font-bold text-amber-950 hover:bg-amber-950/10 hover:text-amber-950"
+          className="h-9 border-amber-900/40 bg-transparent text-xs font-bold text-amber-950 hover:bg-amber-950/10 hover:text-amber-950"
         >
           <LogOut className="ml-1.5 h-3.5 w-3.5" aria-hidden />
           {stopping ? 'در حال بازگشت…' : 'پایان جلسه و بازگشت'}

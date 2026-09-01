@@ -159,7 +159,7 @@ export function WeeklyAssessmentCard({ engagementId }: { engagementId: number })
     if (criteria === null || criteria.length === 0) return;
     if (!complete) {
       toast.error(
-        `به همه‌ی ${toPersianDigits(criteria.length)} معیار نمره‌ی ۱ تا ۵ بدهید.`,
+        `به همهٔ ${toPersianDigits(criteria.length)} معیار نمرهٔ ۱ تا ۵ بدهید.`,
       );
       return;
     }
@@ -173,7 +173,7 @@ export function WeeklyAssessmentCard({ engagementId }: { engagementId: number })
       refetch();
     } catch (err: unknown) {
       // Server 400s name the offending criterion in Persian — surface verbatim.
-      toast.error(err instanceof Error ? err.message : 'ذخیره‌ی ارزیابی ناموفق بود.');
+      toast.error(err instanceof Error ? err.message : 'ذخیرهٔ ارزیابی ناموفق بود.');
     } finally {
       setSaving(false);
     }
@@ -198,7 +198,7 @@ export function WeeklyAssessmentCard({ engagementId }: { engagementId: number })
           </div>
         </div>
         <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-          برای هر هفته، به همه‌ی معیارها نمره‌ی ۱ تا ۵ بدهید و جمع‌بندی مشاور را
+          برای هر هفته، به همهٔ معیارها نمرهٔ ۱ تا ۵ بدهید و جمع‌بندی مشاور را
           بنویسید.
         </p>
       </CardHeader>
@@ -215,7 +215,7 @@ export function WeeklyAssessmentCard({ engagementId }: { engagementId: number })
             هفتهٔ قبل
           </button>
           <div className="rounded-lg border border-border/40 bg-muted/30 px-3 py-1.5 text-xs tabular-nums text-muted-foreground">
-            هفتۀ{' '}
+            هفتهٔ{' '}
             <span className="font-medium text-foreground">
               {formatPersianDate(parseIsoDate(selectedWeekStart) ?? selectedWeekStart)}
             </span>{' '}
@@ -265,7 +265,7 @@ export function WeeklyAssessmentCard({ engagementId }: { engagementId: number })
                 </span>
                 <div
                   role="group"
-                  aria-label={`نمرۀ «${criterion.label}»`}
+                  aria-label={`نمرهٔ «${criterion.label}»`}
                   className="flex shrink-0 items-center gap-1"
                 >
                   {SCORE_VALUES.map((value) => {
@@ -275,7 +275,7 @@ export function WeeklyAssessmentCard({ engagementId }: { engagementId: number })
                         key={value}
                         type="button"
                         aria-pressed={selected}
-                        aria-label={`نمرۀ ${toPersianDigits(value)}`}
+                        aria-label={`نمرهٔ ${toPersianDigits(value)}`}
                         onClick={() => setScore(criterion.code, value)}
                         className={cn(
                           'h-8 w-9 rounded-md border text-sm tabular-nums transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background',
@@ -293,7 +293,7 @@ export function WeeklyAssessmentCard({ engagementId }: { engagementId: number })
             ))}
             {criteria.length === 0 && (
               <li className="py-6 text-center text-xs text-muted-foreground">
-                فهرست معیارها از سرور دریافت نشد.
+                فهرست معیارها دریافت نشد.
               </li>
             )}
           </ul>
@@ -331,7 +331,7 @@ export function WeeklyAssessmentCard({ engagementId }: { engagementId: number })
               </Button>
               {!complete && (
                 <span className="text-xs text-muted-foreground">
-                  هنوز به همه‌ی معیارها نمره داده نشده است.
+                  هنوز به همهٔ معیارها نمره داده نشده است.
                 </span>
               )}
             </div>
@@ -359,7 +359,7 @@ export function WeeklyAssessmentCard({ engagementId }: { engagementId: number })
                         )}
                       >
                         <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
-                          هفتۀ{' '}
+                          هفتهٔ{' '}
                           {formatPersianDate(parseIsoDate(item.weekStart) ?? item.weekStart)}
                         </span>
                         <span className="flex min-w-0 items-center gap-2">

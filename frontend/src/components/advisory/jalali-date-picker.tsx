@@ -152,7 +152,7 @@ type JalaliDatePickerProps = {
 export function JalaliDatePicker({
   value,
   onChange,
-  placeholder = '?????? ????? ????',
+  placeholder = 'انتخاب تاریخ',
   disabled = false,
   clearable = true,
   id,

@@ -81,6 +81,11 @@ const ROLE_MAP: Record<string, { label: string; icon: typeof Users; className: s
     icon: ClipboardList,
     className: 'bg-amber-500/15 text-amber-700 dark:text-amber-400 border-amber-500/20',
   },
+  PARENT: {
+    label: 'والد',
+    icon: UserCircle,
+    className: 'bg-rose-500/15 text-rose-700 dark:text-rose-400 border-rose-500/20',
+  },
 };
 
 const STATUS_BADGE = {
@@ -362,6 +367,7 @@ export default function AdminUsersPage() {
                   <SelectItem value="MANAGER">مدیر سازمان آموزشی</SelectItem>
                   <SelectItem value="TEACHER">معلم</SelectItem>
                   <SelectItem value="ADVISOR">مشاور</SelectItem>
+                  <SelectItem value="PARENT">والد</SelectItem>
                   <SelectItem value="STUDENT">دانش‌آموز</SelectItem>
                 </SelectContent>
               </Select>
@@ -573,6 +579,7 @@ export default function AdminUsersPage() {
                     <SelectItem value="MANAGER">مدیر سازمان آموزشی</SelectItem>
                     <SelectItem value="TEACHER">معلم</SelectItem>
                     <SelectItem value="ADVISOR">مشاور</SelectItem>
+                    <SelectItem value="PARENT">والد</SelectItem>
                     <SelectItem value="STUDENT">دانش‌آموز</SelectItem>
                   </SelectContent>
                 </Select>

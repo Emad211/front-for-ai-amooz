@@ -159,15 +159,15 @@ export function IntakeProfileForm({
       freeDayMinutesRaw.trim() !== '' &&
       parseFreeDayMinutes(freeDayMinutesRaw.trim()) === null
     ) {
-      return 'میانگین مطالعۀ روز آزاد باید عددی بین ۰ و ۱۴۴۰ دقیقه باشد.';
+      return 'میانگین مطالعهٔ روز آزاد باید عددی بین ۰ و ۱۴۴۰ دقیقه باشد.';
     }
     for (const row of rows) {
-      if (!row.name.trim()) return 'نام کلاس هر ردیف را بنویسید.';
+      if (!row.name.trim()) return 'نام کلاس هر ردیف را بنویس.';
       if (row.startTime && !TIME_PATTERN.test(row.startTime)) {
-        return 'قالب ساعت شروع باید HH:MM باشد.';
+        return 'قالب ساعت شروع باید مثل ۱۶:۳۰ باشد.';
       }
       if (row.endTime && !TIME_PATTERN.test(row.endTime)) {
-        return 'قالب ساعت پایان باید HH:MM باشد.';
+        return 'قالب ساعت پایان باید مثل ۱۶:۳۰ باشد.';
       }
       if (
         row.startTime &&
@@ -292,7 +292,7 @@ export function IntakeProfileForm({
             htmlFor="intake-institute"
             className="text-[11px] font-medium text-muted-foreground"
           >
-            مؤسسۀ آزمون
+            مؤسسهٔ آزمون
           </label>
           <Input
             id="intake-institute"
@@ -308,7 +308,7 @@ export function IntakeProfileForm({
             htmlFor="intake-free-minutes"
             className="text-[11px] font-medium text-muted-foreground"
           >
-            میانگین مطالعۀ روزِ آزاد (دقیقه)
+            میانگین مطالعهٔ روزِ آزاد (دقیقه)
           </label>
           <Input
             id="intake-free-minutes"
@@ -318,7 +318,7 @@ export function IntakeProfileForm({
             }
             inputMode="numeric"
             placeholder="۰ تا ۱۴۴۰"
-            aria-label="میانگین مطالعۀ روز آزاد بر حسب دقیقه"
+            aria-label="میانگین مطالعهٔ روز آزاد بر حسب دقیقه"
             className="h-9 rounded-lg text-center text-sm tabular-nums"
           />
         </div>
@@ -335,7 +335,7 @@ export function IntakeProfileForm({
 
         {rows.length === 0 && (
           <p className="rounded-lg border border-dashed px-3 py-4 text-center text-xs leading-relaxed text-muted-foreground">
-            هنوز کلاسی ثبت نشده است. کلاس‌های کنکور یا مدرسۀ دانش‌آموز را اینجا اضافه کنید.
+            هنوز کلاسی ثبت نشده است. کلاس‌های کنکور یا مدرسه‌ات را اینجا اضافه کن.
           </p>
         )}
 
@@ -422,7 +422,7 @@ export function IntakeProfileForm({
         </Button>
         {atCap && (
           <p className="text-xs leading-relaxed text-muted-foreground">
-            حداکثر {toPersianDigits(MAX_CLASSES)} ردیف کلاس می‌توانید ثبت کنید.
+            حداکثر {toPersianDigits(MAX_CLASSES)} ردیف کلاس می‌توانی ثبت کنی.
           </p>
         )}
       </div>
@@ -472,7 +472,7 @@ export function IntakeCard({ engagementId }: { engagementId: number }) {
       await AdvisoryService.putIntake(engagementId, payload);
       toast.success('فرم شناخت ذخیره شد.');
     } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : 'ذخیره‌ی فرم شناخت ناموفق بود.');
+      toast.error(err instanceof Error ? err.message : 'ذخیرهٔ فرم شناخت ناموفق بود.');
     } finally {
       setSaving(false);
     }

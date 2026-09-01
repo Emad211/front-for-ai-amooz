@@ -209,7 +209,7 @@ export function MonthlyOutlookForm({
     }
     for (let i = 0; i < strategies.length; i++) {
       if (!strategies[i].title.trim()) {
-        return `عنوان استراتژی شمارۀ ${toPersianDigits(i + 1)} را بنویسید.`;
+        return `عنوان استراتژی شمارهٔ ${toPersianDigits(i + 1)} را بنویسید.`;
       }
     }
     return null;
@@ -341,8 +341,8 @@ export function MonthlyOutlookForm({
       <section className="border-t border-border/40 pt-4">
         <h4 className="text-sm font-medium">استراتژی‌های ماه</h4>
         <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-          چهار استراتژی این ماه را با مجریِ مشخص بنویسید؛ ذخیره، همۀ اسلات‌ها را
-          یکجا جایگزین می‌کند.
+          چهار استراتژی این ماه را با مجریِ مشخص بنویسید؛ با ذخیره، هر چهار
+          مورد یکجا به‌روز می‌شود.
         </p>
         <ul className="mt-2 divide-y divide-border/40">
           {strategies.map((slot, index) => (
@@ -472,10 +472,10 @@ export function MonthlyOutlookCard({ engagementId }: { engagementId: number }) {
     setSaving(true);
     try {
       await AdvisoryService.putMonthlyOutlook(engagementId, monthStart, payload);
-      toast.success('برنامۀ ماه ذخیره شد.');
+      toast.success('برنامهٔ ماه ذخیره شد.');
     } catch (err: unknown) {
       toast.error(
-        err instanceof Error ? err.message : 'ذخیرۀ برنامۀ ماه ناموفق بود.',
+        err instanceof Error ? err.message : 'ذخیرهٔ برنامهٔ ماه ناموفق بود.',
       );
     } finally {
       setSaving(false);
@@ -531,7 +531,7 @@ export function MonthlyOutlookCard({ engagementId }: { engagementId: number }) {
             </SelectContent>
           </Select>
           <span className="text-xs tabular-nums text-muted-foreground">
-            شروع ماه میلادی: {formatJalaliDate(monthStart)}
+            ماه انتخابی: {formatJalaliDate(monthStart)}
           </span>
         </div>
 

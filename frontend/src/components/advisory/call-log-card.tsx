@@ -121,7 +121,7 @@ export function CallLogCard({ engagementId }: { engagementId: number }) {
         }));
       }
     } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : 'ذخیره‌ی تماس ناموفق بود.');
+      toast.error(err instanceof Error ? err.message : 'ذخیرهٔ تماس ناموفق بود.');
     } finally {
       setSavingWeeks((prev) => {
         const nextSet = new Set(prev);
@@ -198,7 +198,7 @@ export function CallLogCard({ engagementId }: { engagementId: number }) {
                       onCheckedChange={(checked) =>
                         void persistRow(row.weekStart, { done: checked === true })
                       }
-                      aria-label={`تماس هفتۀ ${weekRangeLabel(row.weekStart)} انجام شد`}
+                      aria-label={`تماس هفتهٔ ${weekRangeLabel(row.weekStart)} انجام شد`}
                       className="h-4 w-4"
                     />
                     <span
@@ -229,8 +229,8 @@ export function CallLogCard({ engagementId }: { engagementId: number }) {
                         void persistRow(row.weekStart, { topic: e.target.value })
                       }
                       maxLength={200}
-                      placeholder="مثلاً ارائۀ برنامۀ هفتگی و هدف‌گذاری"
-                      aria-label={`موضوع تماس هفتۀ ${weekRangeLabel(row.weekStart)}`}
+                      placeholder="مثلاً ارائهٔ برنامهٔ هفتگی و هدف‌گذاری"
+                      aria-label={`موضوع تماس هفتهٔ ${weekRangeLabel(row.weekStart)}`}
                       className="h-9 min-w-0 flex-1 text-sm"
                       disabled={busy}
                     />
@@ -255,7 +255,7 @@ export function CallLogCard({ engagementId }: { engagementId: number }) {
                       rows={2}
                       maxLength={2000}
                       placeholder="یادداشت کوتاه تماس…"
-                      aria-label={`یادداشت تماس هفتۀ ${weekRangeLabel(row.weekStart)}`}
+                      aria-label={`یادداشت تماس هفتهٔ ${weekRangeLabel(row.weekStart)}`}
                       className="mt-2 min-h-[60px] text-xs leading-relaxed"
                       disabled={busy}
                     />

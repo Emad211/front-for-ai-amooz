@@ -78,7 +78,7 @@ export default function AdvisorSubjectsPage() {
     const seen = new Map<string, string>();
     for (const s of subjects ?? []) {
       const key = s.major ?? 'general';
-      if (!seen.has(key)) seen.set(key, s.majorLabel ?? 'مشترک (همه‌ی رشته‌ها)');
+      if (!seen.has(key)) seen.set(key, s.majorLabel ?? 'مشترک (همهٔ رشته‌ها)');
     }
     return [...seen.entries()].map(([value, label]) => ({ value, label }));
   }, [subjects]);
@@ -119,7 +119,7 @@ export default function AdvisorSubjectsPage() {
             درس‌ها
           </h1>
           <p className="mt-1.5 text-sm text-muted-foreground">
-            کاتالوگِ کاملِ درس‌ها. برنامه‌ی هر دانش‌آموز از پایه و رشته‌ی خودش
+            کاتالوگِ کاملِ درس‌ها. برنامهٔ هر دانش‌آموز از پایه و رشتهٔ خودش
             ساخته می‌شود؛ اینجا فقط فهرست را می‌بینید.
           </p>
         </div>
@@ -191,7 +191,7 @@ export default function AdvisorSubjectsPage() {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">همه‌ی پایه‌ها</SelectItem>
+                <SelectItem value="all">همهٔ پایه‌ها</SelectItem>
                 {gradeOptions.map((o) => (
                   <SelectItem key={o.value} value={o.value}>
                     {o.label}
@@ -204,7 +204,7 @@ export default function AdvisorSubjectsPage() {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">همه‌ی رشته‌ها</SelectItem>
+                <SelectItem value="all">همهٔ رشته‌ها</SelectItem>
                 {majorOptions.map((o) => (
                   <SelectItem key={o.value} value={o.value}>
                     {o.label}
@@ -217,7 +217,7 @@ export default function AdvisorSubjectsPage() {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">همه‌ی زیرشاخه‌ها</SelectItem>
+                <SelectItem value="all">همهٔ زیرشاخه‌ها</SelectItem>
                 {nameOptions.map((n) => (
                   <SelectItem key={n} value={n}>
                     {n}

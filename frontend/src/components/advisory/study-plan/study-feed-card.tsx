@@ -150,7 +150,7 @@ export function StudyFeedCard({ engagementId }: StudyFeedCardProps) {
         {/* Compact toolbar: range chips + adherence as bare colored type +
         the exact window — everything scannable in one line. */}
         <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2">
-          <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label="بازه‌ی گزارش">
+          <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label="بازهٔ گزارش">
             {RANGE_CHIPS.map((chip) => {
               const selected = range === chip.value;
               return (
@@ -171,8 +171,9 @@ export function StudyFeedCard({ engagementId }: StudyFeedCardProps) {
           {!loading && adherencePercent !== null && (
             <span
               className={`text-xs font-medium tabular-nums ${adherenceTextClass(adherencePercent)}`}
+              title="درصد مطالعهٔ ثبت‌شده نسبت به برنامهٔ همین بازه؛ بالای ۱۰۰٪ یعنی بیش از برنامه خوانده است."
             >
-              پایبندی بازه: {formatAdherence(adherencePercent)}
+              اجرا نسبت به برنامه: {formatAdherence(adherencePercent)}
             </span>
           )}
           {rangeLabel && !loading && (
