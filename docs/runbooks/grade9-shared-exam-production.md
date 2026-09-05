@@ -161,6 +161,21 @@ Note: when a question is OCR-flawed (missing options, inline-option text, or an 
 
 ### 4.5 Attach the ten demo students
 
+> **2026-09-05 change — real-kid accounts are now auto-created at deploy.** Migration
+> `apps/accounts/migrations/0011_seed_grade9_demo_students` seeds the ten real students
+> (names taken from `exam-result.json`, group نهم) as STUDENT accounts **during the normal
+> deploy-time `migrate`** — no manual creation step. Their login id **and** phone are the
+> reserved fake mobiles `09129091001` … `09129091010` (deliberately distinct from the old
+> `091290900xx` demo block); shared demo password `grade9-demo-123`; grade `09`. The seed is
+> skipped on pytest/Django test databases (`test_*` name guard) and never hijacks an account
+> that is not one of its reserved ids.
+>
+> The old block below (creating `grade9_student_01..10` / `09129090001..010`) is **superseded**:
+> re-running it with phones that already belong to the auto-seeded accounts violates
+> `uniq_student_phone`. Attaching invitations + importing results for the ten exams should map
+> the export rows to the auto-seeded phones `09129091001..010` instead (operator commands for
+> that mapping land with the exam build step).
+
 Create one roster file from the export **row order** so names, phones, and result import stay aligned (row 1 of the export ↔ `grade9_student_01` ↔ `09129090001`, and so on). The names in the export are real student names; use them as `name` in the roster. Example shell that writes `/tmp/grade9/roster.json` inside the backend container from the export order:
 
 ```bash
