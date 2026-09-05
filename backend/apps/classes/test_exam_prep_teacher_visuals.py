@@ -606,3 +606,34 @@ def test_solution_upload_for_stem_is_allowed_and_persisted(private_storage):
     assert len(visuals) == 1
     assert visuals[0]['role'] == 'solution'
     assert visuals[0]['url'].endswith('/content/')
+
+
+def test_student_detail_keeps_teacher_visual_url_and_serves_content(private_storage):
+    teacher = _teacher()
+    session = _session(teacher, published=True)
+    attach_teacher_visual(
+        session,
+        question_id='q1',
+        role='question',
+        image_content=_png_bytes(),
+        image_name='stem.png',
+    )
+    student = baker.make('accounts.User', role='STUDENT', phone='09120000013')
+    ClassInvitation.objects.create(session=session, phone=student.phone, invite_code='t-visual-stem')
+    client = _client(student)
+
+    detail = client.get(f'/api/classes/student/exam-preps/{session.id}/')
+
+    assert detail.status_code == 200
+    q1 = next(q for q in detail.data['questions'] if q['question_id'] == 'q1')
+    question_visuals = [v for v in q1['visuals'] if v['role'] == 'question']
+    assert len(question_visuals) == 1
+    teacher_url = question_visuals[0]['url']
+    assert '/visuals/teacher/' in teacher_url
+
+    content = client.get(teacher_url)
+
+    assert content.status_code == 200
+    assert content['Content-Type'].startswith('image/png')
+    assert b''.join(content.streaming_content) == _png_bytes()
+

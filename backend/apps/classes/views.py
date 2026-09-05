@@ -4934,6 +4934,11 @@ class StudentExamPrepDetailView(APIView):
                                 or not visual_url.startswith(f'{v4_url_prefix}question/')
                             ):
                                 continue
+                        elif (
+                            visual_url.startswith('/api/classes/exam-prep-sessions/')
+                            and f'/exam-prep-sessions/{session.id}/' in visual_url
+                        ):
+                            pass
                         else:
                             visual_url = (
                                 f'/api/classes/exam-prep-sessions/{session.id}/'
