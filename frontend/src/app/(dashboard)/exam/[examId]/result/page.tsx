@@ -36,6 +36,8 @@ type ExamPrepResult = {
   }[];
 };
 
+type ResultFilter = 'all' | 'wrong';
+
 export default function ExamResultPage() {
   const params = useParams();
   const router = useRouter();
@@ -47,6 +49,7 @@ export default function ExamResultPage() {
   const [isLoading, setIsLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
   const [isResetting, setIsResetting] = React.useState(false);
+  const [resultFilter, setResultFilter] = React.useState<ResultFilter>('all');
 
   React.useEffect(() => {
     const eid = String(examId ?? '').trim();
@@ -93,6 +96,19 @@ export default function ExamResultPage() {
     return map;
   }, [exam?.questionsList]);
 
+  const items = React.useMemo(
+    () => Array.isArray(result?.items) ? result.items : [],
+    [result?.items],
+  );
+  const wrongItems = React.useMemo(
+    () => items.filter((item) => item.attempts > 0 && !item.is_correct),
+    [items],
+  );
+  const visibleItems = React.useMemo(
+    () => result?.finalized && resultFilter === 'wrong' ? wrongItems : items,
+    [items, result?.finalized, resultFilter, wrongItems],
+  );
+
   if (isLoading) {
     return <div className="flex items-center justify-center min-h-[60vh]">در حال بارگذاری نتیجه...</div>;
   }
@@ -133,8 +149,6 @@ export default function ExamResultPage() {
       </main>
     );
   }
-
-  const items = Array.isArray(result.items) ? result.items : [];
 
   const handleRetake = async () => {
     const eid = String(examId ?? '').trim();
@@ -190,9 +204,45 @@ export default function ExamResultPage() {
       </div>
 
       <div className="bg-card border border-border rounded-2xl p-6">
-        <h2 className="text-base font-bold mb-4">جزئیات پاسخ‌ها</h2>
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+          <h2 className="text-base font-bold">جزئیات پاسخ‌ها</h2>
+          {result.finalized ? (
+            <div className="flex flex-wrap items-center gap-2" role="group" aria-label="فیلتر پاسخ‌ها">
+              <div className="flex items-center gap-1">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={resultFilter === 'all' ? 'default' : 'outline'}
+                  aria-pressed={resultFilter === 'all'}
+                  aria-label={`نمایش همه پاسخ‌ها، ${items.length} سؤال`}
+                  onClick={() => setResultFilter('all')}
+                >
+                  همه
+                </Button>
+                <Badge variant={resultFilter === 'all' ? 'secondary' : 'outline'} aria-label={`${items.length} سؤال`}>
+                  {items.length}
+                </Badge>
+              </div>
+              <div className="flex items-center gap-1">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={resultFilter === 'wrong' ? 'default' : 'outline'}
+                  aria-pressed={resultFilter === 'wrong'}
+                  aria-label={`نمایش پاسخ‌های غلط، ${wrongItems.length} سؤال`}
+                  onClick={() => setResultFilter('wrong')}
+                >
+                  پاسخ‌های غلط
+                </Button>
+                <Badge variant={resultFilter === 'wrong' ? 'secondary' : 'outline'} aria-label={`${wrongItems.length} سؤال`}>
+                  {wrongItems.length}
+                </Badge>
+              </div>
+            </div>
+          ) : null}
+        </div>
         <div className="space-y-3">
-          {items.map((it) => {
+          {visibleItems.length > 0 ? visibleItems.map((it) => {
             const meta = questionIndex.get(String(it.question_id));
             const number = meta?.number ?? '?';
             const qText = meta?.text ?? '';
@@ -351,7 +401,11 @@ export default function ExamResultPage() {
                 )}
               </div>
             );
-          })}
+          }) : result.finalized && resultFilter === 'wrong' ? (
+            <div className="rounded-xl border border-border bg-background p-6 text-center text-sm text-muted-foreground">
+              پاسخ غلطی برای نمایش وجود ندارد.
+            </div>
+          ) : null}
         </div>
       </div>
     </main>
