@@ -22,6 +22,39 @@ _DATA_URL_RE = re.compile(
 )
 _MAX_INLINE_BYTES = 2 * 1024 * 1024
 
+_STORED_CROP_PATH_RE = re.compile(
+    r"^exam-prep/source/visuals/.+\.(?:png|jpe?g|webp)$",
+    re.IGNORECASE,
+)
+_STORED_CROP_MAX_BYTES = 8 * 1024 * 1024
+
+
+def _stored_crop_payload(target: dict):
+    """Stream the crop the extraction pipeline already rendered and stored."""
+    storage_path = str(target.get('storagePath') or '').strip()
+    content_type = str(target.get('contentType') or '').strip().lower()
+    if not _STORED_CROP_PATH_RE.fullmatch(storage_path):
+        return None
+    if not content_type.startswith('image/'):
+        return None
+    try:
+        declared_size = int(target.get('byteSize') or 0)
+    except (TypeError, ValueError):
+        declared_size = 0
+    if declared_size > _STORED_CROP_MAX_BYTES:
+        return None
+    try:
+        from django.core.files.storage import storages
+
+        with storages['answer_sources'].open(storage_path, 'rb') as handle:
+            payload = handle.read()
+    except Exception:
+        return None
+    if not payload or len(payload) > _STORED_CROP_MAX_BYTES:
+        return None
+    return payload, content_type
+
+
 
 def _source_bbox(value):
     if not isinstance(value, dict):
@@ -187,6 +220,14 @@ class InlineOrStoredExamVisualContentView(APIView):
                 response['Cache-Control'] = 'private, no-store, max-age=0'
                 response['X-Content-Type-Options'] = 'nosniff'
                 return response
+
+        stored = _stored_crop_payload(target)
+        if stored is not None:
+            crop_payload, crop_content_type = stored
+            response = HttpResponse(crop_payload, content_type=crop_content_type)
+            response['Cache-Control'] = 'private, no-store, max-age=0'
+            response['X-Content-Type-Options'] = 'nosniff'
+            return response
 
         payload = _render_dynamic_source_crop(session, target)
         if not payload:
