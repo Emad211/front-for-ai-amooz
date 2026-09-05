@@ -112,16 +112,16 @@ def normalize_exam_prep_question(raw: Any, *, index: int) -> dict[str, Any] | No
     if not isinstance(raw, dict):
         return None
 
-    question_text = clean_exam_markdown(raw.get("question_text_markdown"))
-    if not question_text:
-        return None
-
     has_question_visual = any(
         isinstance(item, dict)
         and item.get("role") != "solution"
         and (item.get("id") or item.get("dataUrl"))
         for item in (raw.get("visuals") or [])
     )
+
+    question_text = clean_exam_markdown(raw.get("question_text_markdown"))
+    if not question_text and not has_question_visual:
+        return None
     options: list[dict[str, str]] = []
     raw_options = raw.get("options")
     if isinstance(raw_options, list):
