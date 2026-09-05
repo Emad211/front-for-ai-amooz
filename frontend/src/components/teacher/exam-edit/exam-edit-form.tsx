@@ -61,11 +61,16 @@ const levelOptions = [
   { value: 'پیشرفته', label: 'پیشرفته' },
 ];
 
-const PERSIAN_OPTION_LABELS = ['الف', 'ب', 'ج', 'د', 'ه', 'و', 'ز', 'ح', 'ط', 'ی'] as const;
+const STANDARD_OPTION_LABELS = ['1', '2', '3', '4'] as const;
 
-function nextOptionLabel(options: readonly { label: string }[]): string | null {
-  const usedLabels = new Set(options.map((option) => option.label));
-  return PERSIAN_OPTION_LABELS.find((label) => !usedLabels.has(label)) ?? null;
+function editableOptionLabels(options: readonly { label: string }[]): string[] {
+  const labels: string[] = [...STANDARD_OPTION_LABELS];
+  for (const option of options) {
+    if (!labels.includes(option.label)) {
+      labels.push(option.label);
+    }
+  }
+  return labels;
 }
 
 function initialExamData(examDetail: ExamPrepSessionDetail): ExamPrepData {
@@ -178,12 +183,12 @@ export function ExamEditForm({ examDetail, onSave, isSaving }: ExamEditFormProps
       question_id: `q-${Date.now()}`,
       question_text_markdown: '',
       options: [
-        { label: 'الف', text_markdown: '' },
-        { label: 'ب', text_markdown: '' },
-        { label: 'ج', text_markdown: '' },
-        { label: 'د', text_markdown: '' },
+        { label: '1', text_markdown: '' },
+        { label: '2', text_markdown: '' },
+        { label: '3', text_markdown: '' },
+        { label: '4', text_markdown: '' },
       ],
-      correct_option_label: 'الف',
+      correct_option_label: '1',
       correct_option_text_markdown: '',
       teacher_solution_markdown: '',
       final_answer_markdown: '',
@@ -280,20 +285,14 @@ export function ExamEditForm({ examDetail, onSave, isSaving }: ExamEditFormProps
     });
   };
 
-  const updateOption = (questionIndex: number, optionIndex: number, text: string) => {
+  const upsertOptionText = (questionIndex: number, label: string, text: string) => {
     const question = examData.exam_prep.questions[questionIndex];
-    const options = [...question.options];
-    options[optionIndex] = { ...options[optionIndex], text_markdown: text };
+    const options = question.options.some((option) => option.label === label)
+      ? question.options.map((option) => (
+          option.label === label ? { ...option, text_markdown: text } : option
+        ))
+      : [...question.options, { label, text_markdown: text }];
     updateQuestion(questionIndex, { options });
-  };
-
-  const addOption = (questionIndex: number) => {
-    const question = examData.exam_prep.questions[questionIndex];
-    const label = nextOptionLabel(question.options);
-    if (label === null) return;
-    updateQuestion(questionIndex, {
-      options: [...question.options, { label, text_markdown: '' }],
-    });
   };
 
   const acknowledgeQuestion = (
@@ -683,74 +682,52 @@ export function ExamEditForm({ examDetail, onSave, isSaving }: ExamEditFormProps
                   </div>
 
                   <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                    {question.options.map((option, optionIndex) => (
-                      <div key={`${option.label}-${optionIndex}`} className="space-y-1">
-                        <div className="flex items-center justify-between">
-                          <Label className="text-xs text-muted-foreground">
-                            گزینه {option.label}
-                          </Label>
-                          {question.correct_option_label === option.label && (
-                            <span className="flex items-center gap-1 rounded-full bg-green-100 px-1.5 text-[10px] text-green-700">
-                              <CheckCircle2 className="h-2 w-2" />
-                              پاسخ صحیح
-                            </span>
-                          )}
+                    {editableOptionLabels(question.options).map((label, optionIndex) => {
+                      const option = question.options.find((item) => item.label === label);
+                      return (
+                        <div key={`${label}-${optionIndex}`} className="space-y-1">
+                          <div className="flex items-center justify-between">
+                            <Label className="text-xs text-muted-foreground">
+                              گزینه {label}
+                            </Label>
+                            {question.correct_option_label === label && (
+                              <span className="flex items-center gap-1 rounded-full bg-green-100 px-1.5 text-[10px] text-green-700">
+                                <CheckCircle2 className="h-2 w-2" />
+                                پاسخ صحیح
+                              </span>
+                            )}
+                          </div>
+                          <Input
+                            value={option?.text_markdown || ''}
+                            onChange={(event) => upsertOptionText(
+                              questionIndex,
+                              label,
+                              event.target.value,
+                            )}
+                            placeholder={`متن گزینه ${label}`}
+                            disabled={sourceAware}
+                          />
+                          {question.visuals
+                            ?.filter(
+                              (visual) =>
+                                visual.role === 'option' && visualMatchesOption(visual, label),
+                            )
+                            .map((visual) => (
+                              <TeacherVisualCard
+                                key={String(visual.id)}
+                                visual={visual}
+                                sessionId={examDetail.id}
+                                alt={visual.altText || `تصویر گزینه ${label}`}
+                                className="mt-2 h-auto max-h-64 min-h-24 w-full rounded-md border object-contain"
+                                removable={!sourceAware}
+                                disabled={isSaving || isUploadingVisual}
+                                onRemove={(visualId) => removeVisual(value, visualId)}
+                              />
+                            ))}
                         </div>
-                        <Input
-                          value={option.text_markdown || ''}
-                          onChange={(event) => updateOption(
-                            questionIndex,
-                            optionIndex,
-                            event.target.value,
-                          )}
-                          placeholder={`متن گزینه ${option.label}`}
-                          disabled={sourceAware}
-                        />
-                        {question.visuals
-                          ?.filter(
-                            (visual) =>
-                              visual.role === 'option' && visualMatchesOption(visual, option.label),
-                          )
-                          .map((visual) => (
-                            <TeacherVisualCard
-                              key={String(visual.id)}
-                              visual={visual}
-                              sessionId={examDetail.id}
-                              alt={visual.altText || `تصویر گزینه ${option.label}`}
-                              className="mt-2 h-auto max-h-64 min-h-24 w-full rounded-md border object-contain"
-                              removable={!sourceAware}
-                              disabled={isSaving || isUploadingVisual}
-                              onRemove={(visualId) => removeVisual(value, visualId)}
-                            />
-                          ))}
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
-
-                  {!sourceAware && (
-                    <div className="space-y-1">
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        className="w-full gap-2 border-dashed"
-                        onClick={() => addOption(questionIndex)}
-                        disabled={
-                          isSaving ||
-                          isUploadingVisual ||
-                          nextOptionLabel(question.options) === null
-                        }
-                      >
-                        <Plus className="h-4 w-4" />
-                        افزودن گزینه
-                      </Button>
-                      <p className="text-[11px] leading-5 text-muted-foreground">
-                        {question.options.length === 0
-                          ? 'این سؤال گزینه‌ای ندارد؛ ابتدا گزینه اضافه کنید تا بتوانید متن یا تصویر گزینه را ثبت کنید.'
-                          : 'برای افزودن گزینه‌ی تصویری، گزینه را اضافه و سپس تصویر آن را پیوست کنید.'}
-                      </p>
-                    </div>
-                  )}
 
                   <div className="grid grid-cols-1 gap-4 md:grid-cols-2 md:gap-6">
                     <div className="space-y-2">
@@ -766,9 +743,9 @@ export function ExamEditForm({ examDetail, onSave, isSaving }: ExamEditFormProps
                           <SelectValue placeholder="پاسخ صحیح را انتخاب کنید" />
                         </SelectTrigger>
                         <SelectContent>
-                          {question.options.map((option) => (
-                            <SelectItem key={option.label} value={option.label}>
-                              گزینه {option.label}
+                          {editableOptionLabels(question.options).map((label) => (
+                            <SelectItem key={label} value={label}>
+                              گزینه {label}
                             </SelectItem>
                           ))}
                         </SelectContent>
