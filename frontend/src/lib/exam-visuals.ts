@@ -85,3 +85,12 @@ export function visualsForRole(
 ): ExamVisualRefLike[] {
   return (visuals ?? []).filter((visual) => visual.role === role);
 }
+
+/**
+ * Teacher-added visuals carry a `teacher-` id prefix; OCR-extracted visuals
+ * (`inline-*`, numeric or opaque `v4-*` ids) never do.  This prefix is what
+ * makes a visual removable from the editor.
+ */
+export function isTeacherUploadedVisual(visual: ExamVisualRefLike): boolean {
+  return String(visual.id ?? '').trim().startsWith('teacher-');
+}

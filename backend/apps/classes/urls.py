@@ -104,6 +104,10 @@ from .views import (
     StudentExamPrepChatMediaView,
 )
 from .views_exam_prep_source_crops import ExamPrepSourceCropView
+from .views_exam_prep_teacher_visuals import (
+    TeacherExamPrepVisualContentView,
+    TeacherExamPrepVisualUploadView,
+)
 
 urlpatterns = [
     # Class Pipeline (5 steps)
@@ -173,6 +177,8 @@ urlpatterns = [
     path('exam-prep-sessions/<int:session_id>/publish/', ExamPrepSessionPublishView.as_view(), name='exam_prep_session_publish'),
     path('exam-prep-sessions/<int:session_id>/visuals/<int:asset_id>/', ExamPrepVisualAssetView.as_view(), name='exam_prep_visual_asset'),
     path('exam-prep-sessions/<int:session_id>/visuals/<int:asset_id>/content/', ExamPrepVisualAssetContentView.as_view(), name='exam_prep_visual_asset_content'),
+    path('exam-prep-sessions/<int:session_id>/visuals/teacher/', TeacherExamPrepVisualUploadView.as_view(), name='exam_prep_teacher_visual_upload'),
+    path('exam-prep-sessions/<int:session_id>/visuals/teacher/<str:storage_name>/content/', TeacherExamPrepVisualContentView.as_view(), name='exam_prep_teacher_visual_content'),
     path('exam-prep-source-crops/<int:project_id>/<str:record_kind>/<int:record_id>/', ExamPrepSourceCropView.as_view(), name='exam_prep_source_crop'),
     path('exam-prep-sessions/<int:session_id>/extraction-review/confirm/', ExamPrepExtractionReviewConfirmView.as_view(), name='exam_prep_extraction_review_confirm'),
     path('exam-prep-sessions/<int:session_id>/extraction-units/<int:unit_id>/retry/', ExamPrepExtractionUnitRetryView.as_view(), name='exam_prep_extraction_unit_retry'),

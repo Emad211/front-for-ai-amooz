@@ -38,9 +38,10 @@ import type {
   ExamPrepData,
   ExamPrepQuestion,
   ExamPrepSessionUpdatePayload,
+  ExamPrepTeacherVisual,
 } from '@/services/classes-service';
-import { ProtectedExamVisual } from '@/components/exam-prep/protected-exam-visual';
-import { resolveExamVisualUrl, visualMatchesOption, visualsForRole } from '@/lib/exam-visuals';
+import { visualMatchesOption, visualsForRole } from '@/lib/exam-visuals';
+import { QuestionVisualUploader, TeacherVisualCard } from './question-visual-tools';
 import {
   buildExamReviewSummary,
   type ExamQuestionReviewState,
@@ -89,6 +90,7 @@ export function ExamEditForm({ examDetail, onSave, isSaving }: ExamEditFormProps
   const [examData, setExamData] = useState<ExamPrepData>(() => initialExamData(examDetail));
   const [reviewFilter, setReviewFilter] = useState<ReviewFilter>('all');
   const [openQuestionIds, setOpenQuestionIds] = useState<string[]>([]);
+  const [isUploadingVisual, setIsUploadingVisual] = useState(false);
   const questionRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
   const reviewSummary = useMemo(
@@ -151,6 +153,7 @@ export function ExamEditForm({ examDetail, onSave, isSaving }: ExamEditFormProps
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
+    if (isUploadingVisual) return;
     await onSave({
       title: formData.title,
       description: formData.description,
@@ -199,6 +202,39 @@ export function ExamEditForm({ examDetail, onSave, isSaving }: ExamEditFormProps
       exam_prep: {
         ...previous.exam_prep,
         questions: previous.exam_prep.questions.filter((_, itemIndex) => itemIndex !== index),
+      },
+    }));
+  };
+
+  const attachVisual = (questionId: string, visual: ExamPrepTeacherVisual) => {
+    setExamData((previous) => ({
+      ...previous,
+      exam_prep: {
+        ...previous.exam_prep,
+        questions: previous.exam_prep.questions.map((question) => (
+          question.question_id === questionId
+            ? { ...question, visuals: [...(question.visuals ?? []), visual] }
+            : question
+        )),
+      },
+    }));
+  };
+
+  const removeVisual = (questionId: string, visualId: string | number) => {
+    setExamData((previous) => ({
+      ...previous,
+      exam_prep: {
+        ...previous.exam_prep,
+        questions: previous.exam_prep.questions.map((question) => (
+          question.question_id === questionId
+            ? {
+                ...question,
+                visuals: (question.visuals ?? []).filter(
+                  (item) => String(item.id) !== String(visualId),
+                ),
+              }
+            : question
+        )),
       },
     }));
   };
@@ -588,19 +624,31 @@ export function ExamEditForm({ examDetail, onSave, isSaving }: ExamEditFormProps
                     </div>
                   )}
 
+                  {!sourceAware && (
+                    <QuestionVisualUploader
+                      sessionId={examDetail.id}
+                      questionId={value}
+                      optionLabels={question.options.map((option) => option.label)}
+                      disabled={isSaving || isUploadingVisual}
+                      onUploadStateChange={setIsUploadingVisual}
+                      onVisualUploaded={(visual) => attachVisual(value, visual)}
+                    />
+                  )}
+
                   {visualsForRole(question.visuals, 'question').length > 0 && (
                     <div className="grid gap-3 sm:grid-cols-2">
-                      {visualsForRole(question.visuals, 'question').map((visual) => {
-                        const url = resolveExamVisualUrl(visual, examDetail.id);
-                        return url ? (
-                          <ProtectedExamVisual
-                            key={String(visual.id)}
-                            url={url}
-                            alt={visual.altText || 'تصویر مرتبط با صورت سؤال'}
-                            className="h-auto max-h-[60vh] min-h-32 w-full rounded-md border object-contain"
-                          />
-                        ) : null;
-                      })}
+                      {visualsForRole(question.visuals, 'question').map((visual) => (
+                        <TeacherVisualCard
+                          key={String(visual.id)}
+                          visual={visual}
+                          sessionId={examDetail.id}
+                          alt={visual.altText || 'تصویر مرتبط با صورت سؤال'}
+                          className="h-auto max-h-[60vh] min-h-32 w-full rounded-md border object-contain"
+                          removable={!sourceAware}
+                          disabled={isSaving || isUploadingVisual}
+                          onRemove={(visualId) => removeVisual(value, visualId)}
+                        />
+                      ))}
                     </div>
                   )}
 
@@ -647,17 +695,18 @@ export function ExamEditForm({ examDetail, onSave, isSaving }: ExamEditFormProps
                             (visual) =>
                               visual.role === 'option' && visualMatchesOption(visual, option.label),
                           )
-                          .map((visual) => {
-                            const url = resolveExamVisualUrl(visual, examDetail.id);
-                            return url ? (
-                              <ProtectedExamVisual
-                                key={String(visual.id)}
-                                url={url}
-                                alt={visual.altText || `تصویر گزینه ${option.label}`}
-                                className="mt-2 h-auto max-h-64 min-h-24 w-full rounded-md border object-contain"
-                              />
-                            ) : null;
-                          })}
+                          .map((visual) => (
+                            <TeacherVisualCard
+                              key={String(visual.id)}
+                              visual={visual}
+                              sessionId={examDetail.id}
+                              alt={visual.altText || `تصویر گزینه ${option.label}`}
+                              className="mt-2 h-auto max-h-64 min-h-24 w-full rounded-md border object-contain"
+                              removable={!sourceAware}
+                              disabled={isSaving || isUploadingVisual}
+                              onRemove={(visualId) => removeVisual(value, visualId)}
+                            />
+                          ))}
                       </div>
                     ))}
                   </div>
@@ -712,17 +761,18 @@ export function ExamEditForm({ examDetail, onSave, isSaving }: ExamEditFormProps
                     />
                     {visualsForRole(question.visuals, 'solution').length > 0 && (
                       <div className="grid gap-3 sm:grid-cols-2">
-                        {visualsForRole(question.visuals, 'solution').map((visual) => {
-                          const url = resolveExamVisualUrl(visual, examDetail.id);
-                          return url ? (
-                            <ProtectedExamVisual
-                              key={String(visual.id)}
-                              url={url}
-                              alt={visual.altText || 'تصویر راه‌حل سؤال'}
-                              className="h-auto max-h-[60vh] min-h-32 w-full rounded-md border object-contain"
-                            />
-                          ) : null;
-                        })}
+                        {visualsForRole(question.visuals, 'solution').map((visual) => (
+                          <TeacherVisualCard
+                            key={String(visual.id)}
+                            visual={visual}
+                            sessionId={examDetail.id}
+                            alt={visual.altText || 'تصویر راه‌حل سؤال'}
+                            className="h-auto max-h-[60vh] min-h-32 w-full rounded-md border object-contain"
+                            removable={!sourceAware}
+                            disabled={isSaving || isUploadingVisual}
+                            onRemove={(visualId) => removeVisual(value, visualId)}
+                          />
+                        ))}
                       </div>
                     )}
                   </div>
@@ -755,7 +805,7 @@ export function ExamEditForm({ examDetail, onSave, isSaving }: ExamEditFormProps
             ? `${reviewCount} سؤال هنوز در صف بازبینی است.`
             : 'پس از ذخیره، وضعیت انتشار و audit دوباره محاسبه می‌شود.'}
         </p>
-        <Button type="submit" disabled={isSaving} size="lg" className="px-8 shadow-lg">
+        <Button type="submit" disabled={isSaving || isUploadingVisual} size="lg" className="px-8 shadow-lg">
           {isSaving ? (
             <Loader2 className="ml-2 h-5 w-5 animate-spin" />
           ) : (

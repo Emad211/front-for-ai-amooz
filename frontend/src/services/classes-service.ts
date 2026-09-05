@@ -965,7 +965,7 @@ export interface ExamPrepVisualRef {
   id: string | number;
   role: 'question' | 'option' | 'solution';
   optionLabel?: string | null;
-  altText?: string;
+  altText?: string | null;
   selectedVariant?: 'source' | 'generated';
   /** Source-first projections provide a protected crop URL directly. */
   url?: string | null;
@@ -1229,6 +1229,69 @@ export async function getExamPrepVisualBlob(
   }
   const url = parsed.toString();
   return requestBlob(url, signal);
+}
+
+// --------------------------------------------------------------------------
+// TEACHER-UPLOADED QUESTION VISUALS
+// --------------------------------------------------------------------------
+
+export type ExamPrepTeacherVisualRole = 'question' | 'option' | 'solution';
+
+/**
+ * A visual the teacher attached to a question stem, a specific option, or the
+ * solution. Teacher-added visuals are identified by the `teacher-` id prefix
+ * returned by the upload endpoint (never produced by OCR extraction).
+ */
+export interface ExamPrepTeacherVisual {
+  id: string;
+  role: ExamPrepTeacherVisualRole;
+  optionLabel: string | null;
+  altText: string | null;
+  url: string;
+}
+
+export interface ExamPrepTeacherVisualUploadPayload {
+  questionId: string;
+  role: ExamPrepTeacherVisualRole;
+  optionLabel?: string | null;
+  file: File;
+}
+
+export interface ExamPrepTeacherVisualUploadResult {
+  visual: ExamPrepTeacherVisual;
+  question: ExamPrepQuestion;
+}
+
+/**
+ * Attach a teacher-uploaded image to one question (multipart).  The backend
+ * stores the file, returns the created visual plus the updated question, and
+ * the editor merges the returned visual into its local copy of the question.
+ */
+export async function uploadExamPrepTeacherVisual(
+  sessionId: string | number,
+  params: ExamPrepTeacherVisualUploadPayload,
+): Promise<ExamPrepTeacherVisualUploadResult> {
+  if (!RAW_API_URL) {
+    throw new Error('NEXT_PUBLIC_API_URL تنظیم نشده است.');
+  }
+
+  const formData = new FormData();
+  formData.append('image', params.file, params.file.name);
+  formData.append('question_id', params.questionId);
+  formData.append('role', params.role);
+  if (params.role === 'option') {
+    formData.append('option_label', params.optionLabel ?? '');
+  }
+
+  const url = `${API_URL}/classes/exam-prep-sessions/${sessionId}/visuals/teacher/`;
+  return requestJson<ExamPrepTeacherVisualUploadResult>(url, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${getAccessToken()}`,
+    },
+    // FormData sets its own multipart Content-Type + boundary.
+    body: formData,
+  });
 }
 
 /**
