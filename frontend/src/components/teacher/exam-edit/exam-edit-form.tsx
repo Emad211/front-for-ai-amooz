@@ -33,14 +33,19 @@ import {
   AccordionTrigger,
 } from '@/components/ui/accordion';
 import { CLASS_TITLE_MAX_LENGTH } from '@/constants/teacher-limits';
-import type {
-  ExamPrepSessionDetail,
-  ExamPrepData,
-  ExamPrepQuestion,
-  ExamPrepSessionUpdatePayload,
-  ExamPrepTeacherVisual,
+import {
+  removeExamPrepTeacherVisual,
+  type ExamPrepSessionDetail,
+  type ExamPrepData,
+  type ExamPrepQuestion,
+  type ExamPrepSessionUpdatePayload,
+  type ExamPrepTeacherVisual,
 } from '@/services/classes-service';
-import { visualMatchesOption, visualsForRole } from '@/lib/exam-visuals';
+import {
+  isTeacherUploadedVisual,
+  visualMatchesOption,
+  visualsForRole,
+} from '@/lib/exam-visuals';
 import { QuestionVisualUploader, TeacherVisualCard } from './question-visual-tools';
 import {
   buildExamReviewSummary,
@@ -103,6 +108,7 @@ export function ExamEditForm({ examDetail, onSave, isSaving }: ExamEditFormProps
   const [reviewFilter, setReviewFilter] = useState<ReviewFilter>('all');
   const [openQuestionIds, setOpenQuestionIds] = useState<string[]>([]);
   const [isUploadingVisual, setIsUploadingVisual] = useState(false);
+  const [isRemovingVisual, setIsRemovingVisual] = useState(false);
   const questionRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
   const reviewSummary = useMemo(
@@ -232,7 +238,24 @@ export function ExamEditForm({ examDetail, onSave, isSaving }: ExamEditFormProps
     }));
   };
 
-  const removeVisual = (questionId: string, visualId: string | number) => {
+  const removeVisual = async (questionId: string, visualId: string | number) => {
+    const question = examData.exam_prep.questions.find(
+      (item) => item.question_id === questionId,
+    );
+    const visual = (question?.visuals ?? []).find(
+      (item) => String(item.id) === String(visualId),
+    );
+    if (!visual) return;
+    if (isTeacherUploadedVisual(visual)) {
+      setIsRemovingVisual(true);
+      try {
+        await removeExamPrepTeacherVisual(examDetail.id, String(visual.id));
+      } catch {
+        return;
+      } finally {
+        setIsRemovingVisual(false);
+      }
+    }
     setExamData((previous) => ({
       ...previous,
       exam_prep: {
@@ -249,6 +272,16 @@ export function ExamEditForm({ examDetail, onSave, isSaving }: ExamEditFormProps
         )),
       },
     }));
+  };
+
+  const removeOptionByLabel = (questionIndex: number, label: string) => {
+    const question = examData.exam_prep.questions[questionIndex];
+    if (!question.options.some((option) => option.label === label)) return;
+    updateQuestion(questionIndex, {
+      options: question.options.filter((option) => option.label !== label),
+      correct_option_label:
+        question.correct_option_label === label ? '' : question.correct_option_label,
+    });
   };
 
   const updateQuestion = (
@@ -644,7 +677,7 @@ export function ExamEditForm({ examDetail, onSave, isSaving }: ExamEditFormProps
                       sessionId={examDetail.id}
                       questionId={value}
                       optionLabels={question.options.map((option) => option.label)}
-                      disabled={isSaving || isUploadingVisual}
+                      disabled={isSaving || isUploadingVisual || isRemovingVisual}
                       onUploadStateChange={setIsUploadingVisual}
                       onVisualUploaded={(visual) => attachVisual(value, visual)}
                     />
@@ -660,7 +693,7 @@ export function ExamEditForm({ examDetail, onSave, isSaving }: ExamEditFormProps
                           alt={visual.altText || 'تصویر مرتبط با صورت سؤال'}
                           className="h-auto max-h-[60vh] min-h-32 w-full rounded-md border object-contain"
                           removable={!sourceAware}
-                          disabled={isSaving || isUploadingVisual}
+                          disabled={isSaving || isUploadingVisual || isRemovingVisual}
                           onRemove={(visualId) => removeVisual(value, visualId)}
                         />
                       ))}
@@ -686,16 +719,32 @@ export function ExamEditForm({ examDetail, onSave, isSaving }: ExamEditFormProps
                       const option = question.options.find((item) => item.label === label);
                       return (
                         <div key={`${label}-${optionIndex}`} className="space-y-1">
-                          <div className="flex items-center justify-between">
+                          <div className="flex items-center justify-between gap-2">
                             <Label className="text-xs text-muted-foreground">
                               گزینه {label}
                             </Label>
-                            {question.correct_option_label === label && (
-                              <span className="flex items-center gap-1 rounded-full bg-green-100 px-1.5 text-[10px] text-green-700">
-                                <CheckCircle2 className="h-2 w-2" />
-                                پاسخ صحیح
-                              </span>
-                            )}
+                            <div className="flex items-center gap-1">
+                              {question.correct_option_label === label && (
+                                <span className="flex items-center gap-1 rounded-full bg-green-100 px-1.5 text-[10px] text-green-700">
+                                  <CheckCircle2 className="h-2 w-2" />
+                                  پاسخ صحیح
+                                </span>
+                              )}
+                              {option && (
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-6 w-6 text-muted-foreground hover:text-destructive"
+                                  disabled={isSaving}
+                                  onClick={() => removeOptionByLabel(questionIndex, label)}
+                                  aria-label={`حذف گزینه ${label}`}
+                                  title={`حذف گزینه ${label}`}
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </Button>
+                              )}
+                            </div>
                           </div>
                           <Input
                             value={option?.text_markdown || ''}
@@ -720,7 +769,7 @@ export function ExamEditForm({ examDetail, onSave, isSaving }: ExamEditFormProps
                                 alt={visual.altText || `تصویر گزینه ${label}`}
                                 className="mt-2 h-auto max-h-64 min-h-24 w-full rounded-md border object-contain"
                                 removable={!sourceAware}
-                                disabled={isSaving || isUploadingVisual}
+                                disabled={isSaving || isUploadingVisual || isRemovingVisual}
                                 onRemove={(visualId) => removeVisual(value, visualId)}
                               />
                             ))}
@@ -787,7 +836,7 @@ export function ExamEditForm({ examDetail, onSave, isSaving }: ExamEditFormProps
                             alt={visual.altText || 'تصویر راه‌حل سؤال'}
                             className="h-auto max-h-[60vh] min-h-32 w-full rounded-md border object-contain"
                             removable={!sourceAware}
-                            disabled={isSaving || isUploadingVisual}
+                            disabled={isSaving || isUploadingVisual || isRemovingVisual}
                             onRemove={(visualId) => removeVisual(value, visualId)}
                           />
                         ))}
@@ -823,7 +872,7 @@ export function ExamEditForm({ examDetail, onSave, isSaving }: ExamEditFormProps
             ? `${reviewCount} سؤال هنوز در صف بازبینی است.`
             : 'پس از ذخیره، وضعیت انتشار و audit دوباره محاسبه می‌شود.'}
         </p>
-        <Button type="submit" disabled={isSaving || isUploadingVisual} size="lg" className="px-8 shadow-lg">
+        <Button type="submit" disabled={isSaving || isUploadingVisual || isRemovingVisual} size="lg" className="px-8 shadow-lg">
           {isSaving ? (
             <Loader2 className="ml-2 h-5 w-5 animate-spin" />
           ) : (

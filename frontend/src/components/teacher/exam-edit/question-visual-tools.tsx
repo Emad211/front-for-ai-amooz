@@ -14,7 +14,6 @@ import {
 } from '@/components/ui/select';
 import { ProtectedExamVisual } from '@/components/exam-prep/protected-exam-visual';
 import {
-  isTeacherUploadedVisual,
   resolveExamVisualUrl,
   type ExamVisualRefLike,
 } from '@/lib/exam-visuals';
@@ -65,7 +64,7 @@ export function TeacherVisualCard({
   if (!url) return null;
 
   const image = <ProtectedExamVisual url={url} alt={alt} className={className} />;
-  if (!removable || !isTeacherUploadedVisual(visual)) return image;
+  if (!removable) return image;
 
   return (
     <div className="relative">

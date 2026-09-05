@@ -1294,6 +1294,23 @@ export async function uploadExamPrepTeacherVisual(
   });
 }
 
+export async function removeExamPrepTeacherVisual(
+  sessionId: string | number,
+  visualId: string,
+): Promise<void> {
+  if (!RAW_API_URL) {
+    throw new Error('NEXT_PUBLIC_API_URL تنظیم نشده است.');
+  }
+
+  const url = `${API_URL}/classes/exam-prep-sessions/${sessionId}/visuals/teacher/?visual_id=${encodeURIComponent(visualId)}`;
+  await requestJson<void>(url, {
+    method: 'DELETE',
+    headers: {
+      Authorization: `Bearer ${getAccessToken()}`,
+    },
+  });
+}
+
 /**
  * Cancel a running exam-prep pipeline (teacher, owner-only).
  *
