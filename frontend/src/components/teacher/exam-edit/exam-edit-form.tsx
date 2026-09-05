@@ -61,6 +61,13 @@ const levelOptions = [
   { value: 'پیشرفته', label: 'پیشرفته' },
 ];
 
+const PERSIAN_OPTION_LABELS = ['الف', 'ب', 'ج', 'د', 'ه', 'و', 'ز', 'ح', 'ط', 'ی'] as const;
+
+function nextOptionLabel(options: readonly { label: string }[]): string | null {
+  const usedLabels = new Set(options.map((option) => option.label));
+  return PERSIAN_OPTION_LABELS.find((label) => !usedLabels.has(label)) ?? null;
+}
+
 function initialExamData(examDetail: ExamPrepSessionDetail): ExamPrepData {
   return examDetail.exam_prep_data || {
     exam_prep: { title: examDetail.title, questions: [] },
@@ -278,6 +285,15 @@ export function ExamEditForm({ examDetail, onSave, isSaving }: ExamEditFormProps
     const options = [...question.options];
     options[optionIndex] = { ...options[optionIndex], text_markdown: text };
     updateQuestion(questionIndex, { options });
+  };
+
+  const addOption = (questionIndex: number) => {
+    const question = examData.exam_prep.questions[questionIndex];
+    const label = nextOptionLabel(question.options);
+    if (label === null) return;
+    updateQuestion(questionIndex, {
+      options: [...question.options, { label, text_markdown: '' }],
+    });
   };
 
   const acknowledgeQuestion = (
@@ -710,6 +726,31 @@ export function ExamEditForm({ examDetail, onSave, isSaving }: ExamEditFormProps
                       </div>
                     ))}
                   </div>
+
+                  {!sourceAware && (
+                    <div className="space-y-1">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="w-full gap-2 border-dashed"
+                        onClick={() => addOption(questionIndex)}
+                        disabled={
+                          isSaving ||
+                          isUploadingVisual ||
+                          nextOptionLabel(question.options) === null
+                        }
+                      >
+                        <Plus className="h-4 w-4" />
+                        افزودن گزینه
+                      </Button>
+                      <p className="text-[11px] leading-5 text-muted-foreground">
+                        {question.options.length === 0
+                          ? 'این سؤال گزینه‌ای ندارد؛ ابتدا گزینه اضافه کنید تا بتوانید متن یا تصویر گزینه را ثبت کنید.'
+                          : 'برای افزودن گزینه‌ی تصویری، گزینه را اضافه و سپس تصویر آن را پیوست کنید.'}
+                      </p>
+                    </div>
+                  )}
 
                   <div className="grid grid-cols-1 gap-4 md:grid-cols-2 md:gap-6">
                     <div className="space-y-2">
