@@ -32,7 +32,7 @@ from apps.core.views import HealthCheckView
 from apps.core.throttling import SafeScopedRateThrottle
 from apps.classes.views_exam_prep import ExamPrepPdfStep1View
 from apps.classes.views_exam_prep_inline_visual import InlineOrStoredExamVisualContentView
-from apps.classes.views_exam_prep_review import PageFirstExamPrepSessionDetailView
+from apps.classes.views_exam_prep_review import ExamPrepReviewSessionDetailView
 
 
 # New Exam Prep always uses the simple non-versioned product flow. The actual
@@ -117,7 +117,7 @@ urlpatterns = [
     ),
     path(
         'api/classes/exam-prep-sessions/<int:session_id>/',
-        PageFirstExamPrepSessionDetailView.as_view(),
+        ExamPrepReviewSessionDetailView.as_view(),
         name='exam_prep_session_detail_page_first',
     ),
     path(
