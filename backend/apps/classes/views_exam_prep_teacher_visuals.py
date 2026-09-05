@@ -33,6 +33,7 @@ from .services.exam_prep_teacher_visuals import (
     UnknownTeacherVisualQuestionError,
     attach_teacher_visual,
     find_teacher_visual_reference,
+    remove_teacher_visual,
     teacher_visual_content_type,
     teacher_visual_storage_path,
 )
@@ -46,7 +47,8 @@ def _session_or_none(session_id: int) -> ClassCreationSession | None:
 
 
 class TeacherExamPrepVisualUploadView(APIView):
-    """Attach an uploaded image to a question of a legacy Exam Prep session."""
+    """Attach an uploaded image to a question of a legacy Exam Prep session
+    (POST) or detach a previously uploaded teacher image (DELETE)."""
 
     permission_classes = [IsAuthenticated, IsTeacherUser]
     parser_classes = [FormParser, MultiPartParser]
@@ -103,6 +105,46 @@ class TeacherExamPrepVisualUploadView(APIView):
         except TeacherVisualError as exc:
             return Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         return Response(result, status=status.HTTP_201_CREATED)
+
+    def delete(self, request, session_id: int):
+        """Detach and delete one teacher-uploaded visual (``?visual_id=…``).
+
+        Only the owning teacher may remove a visual; the JSON reference is
+        dropped and the stored private file is deleted.  OCR source-crop
+        visuals are stored outside this endpoint and are never touched here.
+        """
+        session = _session_or_none(session_id)
+        if session is None:
+            return Response(
+                {'detail': 'جلسه آمادگی آزمون یافت نشد.'},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        if session.teacher_id != request.user.id:
+            return Response(
+                {'detail': 'شما مالک این جلسه نیستید.'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        visual_id = str(
+            request.query_params.get('visual_id')
+            or request.data.get('visual_id')
+            or ''
+        ).strip()
+        if not visual_id:
+            return Response(
+                {'detail': 'شناسه تصویر (visual_id) ارسال نشده است.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        try:
+            removed = remove_teacher_visual(session, visual_id=visual_id)
+        except TeacherVisualError as exc:
+            return Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        if not removed:
+            return Response(
+                {'detail': 'تصویر افزوده‌شده یافت نشد.'},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 class TeacherExamPrepVisualContentView(APIView):

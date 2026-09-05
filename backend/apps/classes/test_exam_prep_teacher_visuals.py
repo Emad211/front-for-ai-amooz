@@ -523,6 +523,54 @@ def test_remove_teacher_visual_deletes_entry_and_stored_file(private_storage):
     assert remove_teacher_visual(session, visual_id=visual['id']) is False
 
 
+def test_delete_endpoint_removes_entry_and_stored_file(private_storage):
+    teacher = _teacher()
+    session = _session(teacher)
+    storage_name = _uploaded_storage_name(session, teacher)
+    visual_id = _visuals_of(session, 'q1')[0]['id']
+    stored = (
+        private_storage / 'exam-prep' / 'teacher-visuals'
+        / str(session.id) / storage_name
+    )
+    assert stored.exists()
+
+    response = _client(teacher).delete(
+        _upload_url(session),
+        {'visual_id': visual_id},
+    )
+
+    assert response.status_code == 204
+    assert _visuals_of(session, 'q1') == []
+    assert not stored.exists()
+
+
+def test_delete_endpoint_guards_unknown_visual_and_foreign_owner(private_storage):
+    teacher = _teacher()
+    session = _session(teacher)
+    storage_name = _uploaded_storage_name(session, teacher)
+    visual_id = _visuals_of(session, 'q1')[0]['id']
+
+    unknown = _client(teacher).delete(
+        _upload_url(session),
+        {'visual_id': 'teacher-00000000000000000000000000000000'},
+    )
+    assert unknown.status_code == 404
+
+    stranger = _teacher()
+    forbidden = _client(stranger).delete(
+        _upload_url(session),
+        {'visual_id': visual_id},
+    )
+    assert forbidden.status_code == 403
+
+    stored = (
+        private_storage / 'exam-prep' / 'teacher-visuals'
+        / str(session.id) / storage_name
+    )
+    assert stored.exists()
+    assert len(_visuals_of(session, 'q1')) == 1
+
+
 def test_attach_rejects_non_exam_prep_session():
     teacher = _teacher()
     session = ClassCreationSession.objects.create(
